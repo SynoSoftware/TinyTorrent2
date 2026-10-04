@@ -1077,8 +1077,8 @@ public class FeatureProofTests
                 // Column b sorts the other way round, so its order is not the row order.
                 t.Columns[0].DefinesRowOrder = true;
                 t.Schema<Row>()
-                    .Sort(t.Columns[0], row => row.Key)
-                    .Sort(t.Columns[1], row => -row.Rank);
+                    .SortKey(t.Columns[0], row => row.Key)
+                    .SortKey(t.Columns[1], row => -row.Rank);
                 t.CanReorder = true;
             },
             height: 400);
@@ -1174,7 +1174,7 @@ public class FeatureProofTests
                     Schema<Row> schema = t.Schema<Row>();
                     foreach (Column column in t.Columns)
                     {
-                        schema.Sort(column, row => row.Key);
+                        schema.SortKey(column, row => row.Key);
                     }
 
                     t.Columns[0].DefinesRowOrder = true;
@@ -1217,8 +1217,8 @@ public class FeatureProofTests
                 {
                     t.Columns[0].DefinesRowOrder = true;
                     t.Schema<Row>()
-                        .Sort(t.Columns[0], row => row.Key)
-                        .Sort(t.Columns[1], row => -row.Rank);
+                        .SortKey(t.Columns[0], row => row.Key)
+                        .SortKey(t.Columns[1], row => -row.Rank);
                     t.CanReorder = true;
                 },
                 height: 400);

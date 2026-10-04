@@ -26,11 +26,11 @@ public sealed partial class DeparturesPage : Page
         InitializeComponent();
 
         Table.Schema<Departure>()
-            .Sort(TimeColumn, row => row.Scheduled)
-            .Sort(FlightColumn, row => row.Flight)
-            .Sort(DestinationColumn, row => row.Destination)
-            .Sort(GateColumn, row => row.Gate ?? string.Empty)
-            .Sort(StatusColumn, row => row.Delay?.TotalMinutes ?? 0);
+            .SortKey(TimeColumn, row => row.Scheduled)
+            .SortKey(FlightColumn, row => row.Flight)
+            .SortKey(DestinationColumn, row => row.Destination)
+            .SortKey(GateColumn, row => row.Gate ?? string.Empty)
+            .SortKey(StatusColumn, row => row.Delay?.TotalMinutes ?? 0);
 
         Post();
     }

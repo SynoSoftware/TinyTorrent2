@@ -315,33 +315,7 @@ public class SelectionTests
                 new("dup"), new("dup"),
             });
 
-        Assert.AreSame(h.Rows, h.Table.ItemsSource);
         Assert.AreSame(h[1], h.Table.Selection.Current);
-    });
-
-    [TestMethod]
-    public Task AcceptedNestedSourceUpdateSurvivesHandlerFailure() => TestHost.RunAsync(async () =>
-    {
-        SelectionHarness h = await SelectionHarness.LoadAsync(3);
-        h.Table.Selection = new(new object[] { h[1] });
-        ObservableCollection<Row> replacement = new(h.Rows.Select(row => new Row(row.Key)));
-        bool entered = false;
-        void OnSelection(object? sender, Selection selection)
-        {
-            if (entered) return;
-            entered = true;
-            replacement.Add(new Row("k3"));
-            throw new InvalidOperationException("Host callback failed after publishing.");
-        }
-        h.Table.SelectionChanged += OnSelection;
-        Expect.Throws<InvalidOperationException>(() => h.Table.ItemsSource = replacement);
-        h.Table.SelectionChanged -= OnSelection;
-
-        Assert.AreSame(replacement, h.Table.ItemsSource);
-        Assert.AreSame(replacement[1], h.Table.Selection.Current);
-        replacement.RemoveAt(1);
-        Assert.AreEqual(0, h.Table.Selection.Items.Count);
-        Assert.IsNull(h.Table.Selection.Current);
     });
 
     // ------------------------------------------------------------------ the hosted list

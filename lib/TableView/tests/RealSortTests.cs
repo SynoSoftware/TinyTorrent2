@@ -149,7 +149,7 @@ public class RealSortTests
     {
         table.Schema<SortRow>()
             .Key(row => row.Key)
-            .Sort(table.Columns[0], row => row.Rank);
+            .SortKey(table.Columns[0], row => row.Rank);
         table.Height = 300;
         table.ItemsSource = rows;
     }

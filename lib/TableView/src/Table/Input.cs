@@ -900,7 +900,7 @@ public sealed partial class Table
 
     /// <summary>
     /// Walk from the input target up to the hosted list. An interactive descendant, an explicit
-    /// <c>SuppressRowGestures</c> subtree, and the scroll bars all stop a table gesture; anything
+    /// <c>IsRowGestureEnabled="False"</c> subtree, and the scroll bars all stop a table gesture; anything
     /// else that reaches the list without passing a container is empty row surface.
     /// </summary>
     private HitTarget HitTest(DependencyObject? source, out object? item)
@@ -920,7 +920,7 @@ public sealed partial class Table
                 return item is null ? HitTarget.Suppressed : HitTarget.Row;
             }
 
-            if (node is ScrollBar || GetSuppressRowGestures(node))
+            if (node is ScrollBar || !GetIsRowGestureEnabled(node))
             {
                 return HitTarget.Suppressed;
             }

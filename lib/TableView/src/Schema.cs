@@ -16,7 +16,7 @@ namespace Syno.TableView;
 /// silently stops matching.
 /// </para>
 /// </remarks>
-public sealed class Schema<TRow>
+public sealed class Schema<TRow> where TRow : class
 {
     private readonly Table _table;
 
@@ -51,7 +51,7 @@ public sealed class Schema<TRow>
     /// <summary>
     /// Make this column sortable, by the key this returns for a row.
     /// </summary>
-    public Schema<TRow> Sort<TKey>(Column column, Func<TRow, TKey> key,
+    public Schema<TRow> SortKey<TKey>(Column column, Func<TRow, TKey> key,
         IComparer<TKey>? comparer = null)
     {
         ArgumentNullException.ThrowIfNull(column);

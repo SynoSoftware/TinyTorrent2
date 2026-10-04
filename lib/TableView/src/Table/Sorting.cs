@@ -133,7 +133,6 @@ public sealed partial class Table
             }
 
             // Comparison can invoke host code; finish it before committing the new sort.
-            ValidateRows(_source.Snapshot);
             IReadOnlyList<object> order = SortedSnapshot(_source.Snapshot, column, direction);
             _sortColumn = column;
             _sortDirection = direction;
@@ -162,7 +161,7 @@ public sealed partial class Table
         {
             throw new ArgumentException(
                 $"Column '{column.DisplayName}' has no sort key. Give it one with " +
-                "Schema<TRow>().Sort(column, row => …).",
+                "Schema<TRow>().SortKey(column, row => …).",
                 "value");
         }
 

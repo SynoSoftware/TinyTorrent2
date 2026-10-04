@@ -68,6 +68,9 @@ ideas must satisfy the current owner's contract before reuse.
 
 The [historical torrent table reference](archive/torrent-table-reference.md)
 preserves the old host integration formerly embedded in the table contract.
+The [archived TableView API proposal](archive/tableview-api-proposal.md) preserves
+the design rationale and review record behind the current table API, and a map of
+old torrent application files to their new owners.
 
 Build configuration and dependencies live in project/build files. Do not copy a
 toolchain inventory or measured performance result into a plan as though it were

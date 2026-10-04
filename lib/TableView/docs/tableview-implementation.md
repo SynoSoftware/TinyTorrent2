@@ -76,7 +76,7 @@ and out-of-process automation still require relevant runtime evidence under the
 
 ## Localisation and source lifetime
 
-`Strings.LoadAsync` prepares an immutable catalogue with parent/English fallback
+`Strings.Load` prepares an immutable catalogue with parent/English fallback
 and placeholder validation. `Table.Strings`, `Column.DisplayName` and `Column.Header`
 refresh existing presentation through the table's text path. Generated menu items
 subscribe while open. The standalone default remains English. This code has not
@@ -84,9 +84,9 @@ yet been built or exercised in a live language switch.
 
 `Body.Source` suspends collection subscriptions on unload, recaptures notifying
 sources on reload and retains plain snapshots. Explicit detached setters reconcile
-logical selection and ordering without touching containers. Acceptance precedes
-public selection events; a later handler failure does not roll back an accepted
-source. Source lifetime still needs a focused runtime check.
+logical selection and ordering without touching containers. A snapshot is
+validated before it is accepted; the table does not undo an assignment when
+validation or a host handler throws. Source lifetime still needs a focused runtime check.
 
 ## Other known integration gaps
 
@@ -125,19 +125,16 @@ in a running product, Narrator, or an external automation client in this review.
 
 ## API verification
 
-The API upgrade has two independent source reviews. Syntax parsing of the library,
-sample and tests found no C# syntax errors; this is not a build or type check.
-Builds and desktop test runs were not performed under the owner's instruction.
+The API upgrade has two independent source reviews. The library, sample and tests
+build. Desktop test runs were not performed under the owner's instruction.
 
 Existing selection checks now cover replacement-instance notifications and packet
-order. Duplicate-source rejection also checks that accepted source and selection
-remain intact. Two regressions cover previously unguarded failures:
+order. Duplicate-source rejection also checks that the selection remains intact.
+One regression covers a previously unguarded failure:
 
 - `InitialStateResolvesTogetherWithTheLatestSort`: initial selection and the first
   displayed order must use the completed schema and final sort, without evaluating
   a superseded saved comparer.
-- `AcceptedNestedSourceUpdateSurvivesHandlerFailure`: a handler that publishes a
-  newer snapshot and then throws must not restore an obsolete source subscription.
 
 These checks are authored, not reported as passing. Live localisation, detached
 reload, keyboard/automation behavior and full caller ergonomics still need the

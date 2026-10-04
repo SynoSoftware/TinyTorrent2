@@ -209,27 +209,8 @@ public sealed partial class Table
         set => SetValue(NoResultsContentTemplateProperty, value);
     }
 
-    private bool _restoringSource;
-
-    private static void OnItemsSourceChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
-    {
-        Table table = (Table)d;
-        if (table._restoringSource) return;
-        try
-        {
-            table.SetItemsSource(e.NewValue as IEnumerable);
-        }
-        catch
-        {
-            if (!ReferenceEquals(table._source.Input, e.NewValue))
-            {
-                table._restoringSource = true;
-                try { table.SetValue(ItemsSourceProperty, table._source.Input); }
-                finally { table._restoringSource = false; }
-            }
-            throw;
-        }
-    }
+    private static void OnItemsSourceChanged(DependencyObject d, DependencyPropertyChangedEventArgs e) =>
+        ((Table)d).SetItemsSource(e.NewValue as IEnumerable);
 
     private static void OnStateInputChanged(DependencyObject d, DependencyPropertyChangedEventArgs e) =>
         ((Table)d).UpdateStateLayer();

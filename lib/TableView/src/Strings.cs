@@ -18,14 +18,13 @@ public sealed class Strings
     private Strings(Dictionary<string, Dictionary<string, string>> text) => _text = text;
 
     /// <summary>
-    /// Prepare embedded text off the UI thread. Missing messages use parent languages, then
-    /// English; invalid catalogues fail without changing any control's current text.
+    /// Prepare embedded text. Missing messages use parent languages, then English; an invalid
+    /// catalogue throws without changing any control's current text.
     /// </summary>
-    public static Task<Strings> LoadAsync(string language, CancellationToken cancellation = default)
+    public static Strings Load(string language)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(language);
-        CultureInfo culture = CultureInfo.GetCultureInfo(language);
-        return Task.Run(() => Load(culture, cancellation), cancellation);
+        return Load(CultureInfo.GetCultureInfo(language));
     }
 
     internal string HeaderStripAccessibleName => Get("header", "accessible_name");
@@ -82,7 +81,7 @@ public sealed class Strings
     private string Format(string group, string key, params object[] values) =>
         string.Format(System.Globalization.CultureInfo.CurrentCulture, Get(group, key), values);
 
-    private static Strings Load(CultureInfo culture, CancellationToken cancellation)
+    private static Strings Load(CultureInfo culture)
     {
         Dictionary<string, Dictionary<string, string>> text = English._text.ToDictionary(
             group => group.Key, group => new Dictionary<string, string>(group.Value));
@@ -91,7 +90,6 @@ public sealed class Strings
             languages.Push(current.Name);
         foreach (string language in languages)
         {
-            cancellation.ThrowIfCancellationRequested();
             if (language.Equals("en", StringComparison.OrdinalIgnoreCase)) continue;
             if (Read(language) is not { } translated) continue;
             foreach (var group in translated)
@@ -107,7 +105,6 @@ public sealed class Strings
                 }
             }
         }
-        cancellation.ThrowIfCancellationRequested();
         return new Strings(text);
     }
 

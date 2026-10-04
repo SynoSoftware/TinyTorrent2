@@ -41,21 +41,21 @@ public sealed partial class JobsPage : Page
         Table.Schema<Job>()
             .Key(row => row.Id)
             .CanInteract(row => !row.IsPending)
-            .Sort(IndexColumn, row => row.Index)
-            .Sort(NameColumn, row => row.Name)
-            .Sort(StateColumn, row => row.State)
-            .Sort(ProgressColumn, row => row.Progress)
-            .Sort(ThroughputColumn, row => row.ActiveRate)
-            .Sort(WorkersColumn, row => row.WorkersBusy)
-            .Sort(YieldColumn, row => row.Yield)
-            .Sort(RemainingColumn, row => row.Remaining, Comparer<TimeSpan?>.Create((left, right) =>
+            .SortKey(IndexColumn, row => row.Index)
+            .SortKey(NameColumn, row => row.Name)
+            .SortKey(StateColumn, row => row.State)
+            .SortKey(ProgressColumn, row => row.Progress)
+            .SortKey(ThroughputColumn, row => row.ActiveRate)
+            .SortKey(WorkersColumn, row => row.WorkersBusy)
+            .SortKey(YieldColumn, row => row.Yield)
+            .SortKey(RemainingColumn, row => row.Remaining, Comparer<TimeSpan?>.Create((left, right) =>
             {
                 if (!left.HasValue) return right.HasValue ? 1 : 0;
                 if (!right.HasValue) return -1;
                 return left.Value.CompareTo(right.Value);
             }))
-            .Sort(SubmittedColumn, row => row.SubmittedText)
-            .Sort(FinishedColumn, row => row.FinishedOrder);
+            .SortKey(SubmittedColumn, row => row.SubmittedText)
+            .SortKey(FinishedColumn, row => row.FinishedOrder);
 
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;

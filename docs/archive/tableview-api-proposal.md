@@ -1,8 +1,12 @@
 # TableView and application ownership — independent proposal
 
+Archived. The [TableView contract](../../lib/TableView/docs/tableview-contract.md)
+is the only description of the table API; names and rules below that differ from
+it are superseded.
+
 Implementation status, 2026-10-04: the generic keys/comparers, single schema row
 type, initial state, selection notifications, synchronous event rules and live
-text API have been adopted in code and the [authoritative contract](../lib/TableView/docs/tableview-contract.md).
+text API have been adopted in code and the [authoritative contract](../../lib/TableView/docs/tableview-contract.md).
 Their implementation has not yet been built or run. This document retains the
 independent design rationale; broader adoption and readiness criteria below are
 not a claim that every proposed behavior is implemented.
@@ -240,7 +244,7 @@ logical-only notification and deferred-handler rules cannot coexist with them.
 
 There is concrete evidence for the key/comparison changes: the old inspector
 converts a tracker identifier to a string, while the current
-[jobs host](../lib/TableView/sample/Jobs/JobsPage.cs) casts an enum and substitutes
+[jobs host](../../lib/TableView/sample/Jobs/JobsPage.cs) casts an enum and substitutes
 values for absent measurements. Those are caller workarounds the proposed
 selectors can remove. Their intended ordering still belongs to the host.
 
@@ -536,7 +540,7 @@ same application operation. Peers need none of this code.
 
 The table owns the words for its generic operations, the host owns column names
 and cell text, and Lucide owns its font assets. Follow the repository's
-[per-project catalogues](localisation.md), with English usable in a standalone
+[per-project catalogues](../localisation.md), with English usable in a standalone
 table. Do not inject torrent text keys or expose the table's catalogue dictionary.
 
 Prepared strings are proposed as one immutable library value, extending the
@@ -633,8 +637,8 @@ The library owns complete keyboard, focus, high-contrast and automation behavior
 for its mechanics. Hosts supply useful domain labels and accessible cell content.
 No host should patch table internals to make Ctrl+Arrow location visible or to
 make selection work through UI Automation. Existing interaction and Fluent rules
-remain governed by the [control contract](../lib/TableView/docs/tableview-contract.md)
-and [interface guidance](interface.md); this API proposal does not approve the
+remain governed by the [control contract](../../lib/TableView/docs/tableview-contract.md)
+and [interface guidance](../interface.md); this API proposal does not approve the
 current pixels or remove recorded accessibility work.
 
 ## 6. Alternatives considered
@@ -666,7 +670,7 @@ There is no need for a compatibility facade for repository-internal callers.
 4. Adapt the existing departures/jobs samples, then implement product table
    callers with real engine projections. Do not copy the old torrent host into
    the library's sample or test dependency graph.
-5. Reuse focused checks under the [testing policy](testing.md). Add a check only
+5. Reuse focused checks under the [testing policy](../testing.md). Add a check only
    for an otherwise unprotected failure; a rename does not earn a new test suite.
 
 Use the first real torrent, peers and trackers callers to reassess open design
@@ -731,17 +735,17 @@ defines the evidence limits.
 
 ## Source basis
 
-- [Current schema](../lib/TableView/src/Schema.cs), [columns](../lib/TableView/src/Column.cs),
-  [events](../lib/TableView/src/Events.cs) and [selection](../lib/TableView/src/Selection.cs).
-- [Control properties](../lib/TableView/src/Table/Properties.cs),
-  [sorting](../lib/TableView/src/Table/Sorting.cs),
-  [input/selection setup](../lib/TableView/src/Table/Selection.cs) and
-  [source capture](../lib/TableView/src/Body/Source.cs).
-- [Departures host](../lib/TableView/sample/Board/DeparturesPage.cs) and
-  [its XAML](../lib/TableView/sample/Board/DeparturesPage.xaml).
-- [Control contract](../lib/TableView/docs/tableview-contract.md),
-  [implementation findings](../lib/TableView/docs/tableview-implementation.md),
-  [target architecture](architecture.md) and [naming policy](naming.md).
+- [Current schema](../../lib/TableView/src/Schema.cs), [columns](../../lib/TableView/src/Column.cs),
+  [events](../../lib/TableView/src/Events.cs) and [selection](../../lib/TableView/src/Selection.cs).
+- [Control properties](../../lib/TableView/src/Table/Properties.cs),
+  [sorting](../../lib/TableView/src/Table/Sorting.cs),
+  [input/selection setup](../../lib/TableView/src/Table/Selection.cs) and
+  [source capture](../../lib/TableView/src/Body/Source.cs).
+- [Departures host](../../lib/TableView/sample/Board/DeparturesPage.cs) and
+  [its XAML](../../lib/TableView/sample/Board/DeparturesPage.xaml).
+- [Control contract](../../lib/TableView/docs/tableview-contract.md),
+  [implementation findings](../../lib/TableView/docs/tableview-implementation.md),
+  [target architecture](../architecture.md) and [naming policy](../naming.md).
 
 The implementation map and source links identify the current owners. Remaining
 gap reports are review leads, not fresh runtime verification.

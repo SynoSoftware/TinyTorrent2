@@ -51,8 +51,8 @@ without loading product messages, starting the engine, or reading its
 preferences.
 
 The product's process-local localisation owner prepares TableView's immutable
-`Strings` value with `Strings.LoadAsync(language, cancellation)`, alongside its
-own text. It publishes `Table.Strings`, host bindings, language and flow direction
+`Strings` value with `Strings.Load(language)`, alongside its
+own text and on the same background thread. It publishes `Table.Strings`, host bindings, language and flow direction
 together on the UI thread. TableView keeps catalogue lookup internal and owns no
 saved language preference. New views bind to the same current prepared value.
 Standalone English uses the same presentation refresh path without host setup.

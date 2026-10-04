@@ -176,16 +176,16 @@ internal static class Downloads
         switch (id)
         {
             case "name":
-                schema.Sort(column, row => row.Name);
+                schema.SortKey(column, row => row.Name);
                 break;
             case "progress":
-                schema.Sort(column, row => row.Progress);
+                schema.SortKey(column, row => row.Progress);
                 break;
             case "size":
-                schema.Sort(column, row => row.Size);
+                schema.SortKey(column, row => row.Size);
                 break;
             default:
-                schema.Sort(column, row => row.Queue);
+                schema.SortKey(column, row => row.Queue);
                 break;
         }
     }

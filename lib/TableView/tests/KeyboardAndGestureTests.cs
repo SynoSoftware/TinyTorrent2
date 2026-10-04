@@ -20,7 +20,7 @@ public class KeyboardAndGestureTests
                 <TextBlock Text="passive" />
                 <Button Content="go" />
                 <TextBox Width="40" />
-                <Border s:Table.SuppressRowGestures="True" Width="20" Height="10">
+                <Border s:Table.IsRowGestureEnabled="False" Width="20" Height="10">
                     <Rectangle Width="10" Height="10" />
                 </Border>
             </StackPanel>
@@ -289,7 +289,7 @@ public class KeyboardAndGestureTests
     });
 
     [TestMethod]
-    public Task SuppressRowGesturesStopsAGestureFromItsSubtree() => TestHost.RunAsync(async () =>
+    public Task DisabledRowGestureStopsAGestureFromItsSubtree() => TestHost.RunAsync(async () =>
     {
         SelectionHarness h = await LoadWithRichCellsAsync();
         ListViewItem container = RealizedContainer(h);

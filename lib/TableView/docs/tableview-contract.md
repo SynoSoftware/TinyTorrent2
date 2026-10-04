@@ -233,13 +233,13 @@ public sealed class Table : Control
 {
     public IEnumerable? ItemsSource { get; set; }
     public ObservableCollection<Column> Columns { get; }
-    public Schema<TRow> Schema<TRow>();
+    public Schema<TRow> Schema<TRow>() where TRow : class;
     public Strings Strings { get; set; }
 
     public ListViewSelectionMode SelectionMode { get; set; } // default Extended
     public Selection Selection { get; set; }
-    public static void SetSuppressRowGestures(DependencyObject element, bool value);
-    public static bool GetSuppressRowGestures(DependencyObject element);
+    public static void SetIsRowGestureEnabled(DependencyObject element, bool value); // default true
+    public static bool GetIsRowGestureEnabled(DependencyObject element);
 
     public Placeholder Placeholder { get; set; } // Empty | Loading | NoResults
     public bool IsMarqueeEnabled { get; set; }   // default true
@@ -269,17 +269,17 @@ public sealed class Table : Control
     public event EventHandler<LayoutChange> LayoutChanged;
 }
 
-public sealed class Schema<TRow>
+public sealed class Schema<TRow> where TRow : class
 {
     public Schema<TRow> Key<TKey>(Func<TRow, TKey> key) where TKey : notnull;
     public Schema<TRow> CanInteract(Func<TRow, bool> predicate);
-    public Schema<TRow> Sort<TKey>(Column column, Func<TRow, TKey> key,
+    public Schema<TRow> SortKey<TKey>(Column column, Func<TRow, TKey> key,
         IComparer<TKey>? comparer = null);
 }
 
 public sealed class Strings
 {
-    public static Task<Strings> LoadAsync(string language, CancellationToken cancellation = default);
+    public static Strings Load(string language);
 }
 
 public sealed class Selection
@@ -329,7 +329,8 @@ non-generic class can still have a generic method, and XAML never sees one.
 
 Each table has one row type. Repeated `Schema<T>()` calls return the same setup;
 a different row type is rejected. Retaining the schema does not bypass its setup
-lifetime. Value rows are allowed; stable keys preserve their identity across boxing.
+lifetime. Rows are reference types, so one row instance stays one object for
+selection, focus and cell bindings.
 
 The table captures the structural schema exactly once, at its first `Loaded` event. A host
 may populate it in XAML or code before then; calling `Schema<TRow>()`
@@ -408,7 +409,7 @@ The control deliberately has two extension mechanisms, with no overlap:
 |---|---|---|---|
 | `Schema<TRow>().Key` | synchronous policy callback | stable item identity | allocate, fetch, mutate, or depend on visual state |
 | `Schema<TRow>().CanInteract` | synchronous policy callback | display-only versus interactive rows | execute a command or change selection |
-| `Schema<TRow>().Sort` | synchronous column callback | the value a column orders a row by | format UI, mutate items, or call RPC |
+| `Schema<TRow>().SortKey` | synchronous column callback | the value a column orders a row by | format UI, mutate items, or call RPC |
 | `SelectionChanged` | host event | publish an optional external selection/current projection | continuously feed its own output back |
 | `ItemInvoked` | host event | primary domain action | assume an action was completed |
 | `ItemContextRequested` | host event | construct/show a domain menu | put domain menu logic in the table |
@@ -547,9 +548,7 @@ assignment, `Add`, `Remove`, `Move`, `Replace`, and `Reset`—reconciles selecte
 items, current item, selection anchor, and focus to the current row instances
 by key. `Selection.Items` then exposes those new instances.
 `SelectionChanged` reports a changed exposed packet: identities, item order,
-current item, or replacement row instances. For value rows, compare identities
-first, then `EqualityComparer<T>.Default`; custom value equality cannot hide a
-changed selected key. Ordinary property changes on the same reference do not
+current item, or replacement row instances. Ordinary property changes on the same reference do not
 raise this event. An
 anchor or focus item that no longer survives clears. Without a selector, object
 reference is identity, so a replacement object is a removal and an addition.
@@ -654,7 +653,7 @@ The type carries the context, so the names do not repeat it: inside a
 baseline visibility, and `CellAlignment` is how its cells align.
 
 Sortability is not on this type at all. A column sorts because
-`Schema<TRow>().Sort(column, row => key)` gave it a key, and does not otherwise;
+`Schema<TRow>().SortKey(column, row => key)` gave it a key, and does not otherwise;
 the flag and the comparer that previously had to agree are one call, so the
 disagreement is no longer representable.
 
@@ -709,11 +708,12 @@ and structural column settings remain setup-only. Bind changing presentation wit
 `Mode=OneWay`. Updating text preserves existing header elements, including custom
 content whose instance has not changed.
 
-Prepare control text with `await Strings.LoadAsync(language, cancellation)`, then
+Prepare control text with `Strings.Load(language)`, then
 publish `Table.Strings` on the UI thread with the host's prepared text, language
 and flow direction. The immutable value exposes no catalogue dictionary. The
-loader reads this library's embedded catalogues off-thread, falling back through
-parent languages to English. Invalid or cancelled preparation leaves the current
+loader reads this library's embedded catalogues on the calling thread, so the
+host chooses that thread, and falls back through
+parent languages to English. An invalid catalogue throws and leaves the current
 value intact. English is the standalone default; no host setup is required.
 
 A language change updates generated headers, open menu labels, placeholders,
@@ -783,7 +783,7 @@ Input rules:
   `INotifyPropertyChanged`.
 
 For a custom interactive control the table cannot recognize automatically, set
-`Table.SuppressRowGestures="True"` on its root or an ancestor. It prevents
+`Table.IsRowGestureEnabled="False"` on its root or an ancestor. It prevents
 row selection, invocation, row-context requests, marquee initiation, and row
 dragging from that subtree without adding another policy callback. It does not
 suppress the descendant's own normal focus, keyboard, context-menu, or
@@ -1369,7 +1369,7 @@ host forwards command intent to its view model but creates/shows the flyout
 at the view boundary while that target is valid. Closing a flyout returns focus
 through normal native flyout behavior. The host owns its menu's labels,
 enablement, keyboard behavior, and accessibility; `Table` owns only the
-selected/current mechanics and transient placement context. `SuppressRowGestures`
+selected/current mechanics and transient placement context. `IsRowGestureEnabled="False"`
 and interactive cell descendants suppress the row request and retain their own
 context menus. This makes multi-selection context menus predictable for any
 domain without giving the generic table a domain menu model.

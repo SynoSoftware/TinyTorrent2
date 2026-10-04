@@ -43,8 +43,8 @@ public class SortingTests
             new Dictionary<string, double>(), "b", SortDirection.Ascending);
         table.Sort = new Sort(table.Columns[0], SortDirection.Descending);
         table.Schema<Row>().Key(row => row.Rank)
-            .Sort(table.Columns[0], row => (int?)row.Rank)
-            .Sort(table.Columns[1], row => (object)row);
+            .SortKey(table.Columns[0], row => (int?)row.Rank)
+            .SortKey(table.Columns[1], row => (object)row);
         int selections = 0;
         int layouts = 0;
         table.SelectionChanged += (_, _) => selections++;
@@ -456,7 +456,7 @@ internal sealed class SortHarness
         Schema<SortRow> schema = table.Schema<SortRow>().Key(row => row.Key);
         for (int i = 0; i < sortableColumns; i++)
         {
-            schema.Sort(table.Columns[i], row => row.Rank);
+            schema.SortKey(table.Columns[i], row => row.Rank);
         }
 
         table.Width = 700;

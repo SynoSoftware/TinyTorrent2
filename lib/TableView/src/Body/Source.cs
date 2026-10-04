@@ -16,47 +16,25 @@ internal sealed class Source
     private INotifyCollectionChanged? _notifier;
     private IReadOnlyList<object> _snapshot = Array.Empty<object>();
     private bool _suspended = true;
-    private long _revision;
 
     internal Source(DispatcherQueue dispatcher) => _dispatcher = dispatcher;
 
     internal event EventHandler<IReadOnlyList<object>>? SnapshotChanged;
 
-    internal void Accept(IReadOnlyList<object> snapshot)
-    {
-        _snapshot = snapshot;
-        _revision++;
-    }
+    internal void Accept(IReadOnlyList<object> snapshot) => _snapshot = snapshot;
 
     /// <summary>The last accepted source snapshot.</summary>
     internal IReadOnlyList<object> Snapshot => _snapshot;
-    internal IEnumerable? Input => _source;
 
     internal void SetSource(IEnumerable? source)
     {
         RequireUiThread();
 
         IReadOnlyList<object> next = Capture(source);
-        IEnumerable? previous = _source;
-        // A later nested publication must not make an accepted assignment look rejected.
-        long revision = _revision;
         Detach();
         _source = source;
         if (!_suspended) Attach();
-        try
-        {
-            SnapshotChanged?.Invoke(this, next);
-        }
-        catch
-        {
-            if (ReferenceEquals(_source, source) && _revision == revision)
-            {
-                Detach();
-                _source = previous;
-                if (!_suspended) Attach();
-            }
-            throw;
-        }
+        SnapshotChanged?.Invoke(this, next);
     }
 
     internal void Suspend()

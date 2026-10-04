@@ -35,14 +35,14 @@ public sealed partial class Table
 
     /// <summary>
     /// Section 7's escape hatch for a custom interactive control the table cannot recognize. Set
-    /// on the control's root or an ancestor inside a cell template.
+    /// to false on the control's root or an ancestor inside a cell template.
     /// </summary>
-    public static readonly DependencyProperty SuppressRowGesturesProperty =
+    public static readonly DependencyProperty IsRowGestureEnabledProperty =
         DependencyProperty.RegisterAttached(
-            "SuppressRowGestures",
+            "IsRowGestureEnabled",
             typeof(bool),
             typeof(Table),
-            new PropertyMetadata(false));
+            new PropertyMetadata(true));
 
     private readonly ItemIdentity _identity = new();
 
@@ -50,7 +50,6 @@ public sealed partial class Table
     private Selection? _pendingSelection;
     private object? _schema;
     private Type? _rowType;
-    private Func<object, object, bool>? _sameValue;
     private ListViewSelectionMode _selectionMode = ListViewSelectionMode.Extended;
 
     /// <summary>Set while the table is writing the hosted list's selection, to stop re-entry.</summary>
@@ -108,16 +107,12 @@ public sealed partial class Table
     /// every column's sort key with it. Setup-only, like <see cref="Columns"/>: the table captures
     /// the schema at its first <c>Loaded</c> and asking for one afterwards is a configuration error.
     /// </summary>
-    public Schema<TRow> Schema<TRow>()
+    public Schema<TRow> Schema<TRow>() where TRow : class
     {
         RequireSetup();
         if (_schema is Schema<TRow> existing) return existing;
         if (_schema is not null) throw ConfigurationError("A table has one schema row type.");
         _rowType = typeof(TRow);
-        if (_rowType.IsValueType)
-        {
-            _sameValue = (left, right) => EqualityComparer<TRow>.Default.Equals((TRow)left, (TRow)right);
-        }
         Schema<TRow> schema = new(this);
         _schema = schema;
         return schema;
@@ -287,11 +282,11 @@ public sealed partial class Table
         return -1;
     }
 
-    public static void SetSuppressRowGestures(DependencyObject element, bool value) =>
-        element.SetValue(SuppressRowGesturesProperty, value);
+    public static void SetIsRowGestureEnabled(DependencyObject element, bool value) =>
+        element.SetValue(IsRowGestureEnabledProperty, value);
 
-    public static bool GetSuppressRowGestures(DependencyObject element) =>
-        (bool)element.GetValue(SuppressRowGesturesProperty);
+    public static bool GetIsRowGestureEnabled(DependencyObject element) =>
+        (bool)element.GetValue(IsRowGestureEnabledProperty);
 
     /// <summary>
     /// Section 15: an already-selected row keeps the whole selected packet, and any other row
@@ -415,7 +410,6 @@ public sealed partial class Table
                 throw ConfigurationError("The schema key selector returned null.");
             if (!seen.Add(item))
                 throw ConfigurationError("The source contains duplicate row identities.");
-            CanInteract?.Invoke(item);
         }
     }
 
@@ -474,33 +468,20 @@ public sealed partial class Table
         return next;
     }
 
-    private bool SameSelection(Selection left, Selection right)
+    private static bool SameSelection(Selection left, Selection right)
     {
-        if (left.Items.Count != right.Items.Count || !SameItem(left.Current, right.Current))
+        if (left.Items.Count != right.Items.Count || !ReferenceEquals(left.Current, right.Current))
         {
             return false;
         }
         for (int index = 0; index < left.Items.Count; index++)
         {
-            if (!SameItem(left.Items[index], right.Items[index]))
+            if (!ReferenceEquals(left.Items[index], right.Items[index]))
             {
                 return false;
             }
         }
         return true;
-    }
-
-    private bool SameItem(object? left, object? right)
-    {
-        if (ReferenceEquals(left, right))
-        {
-            return true;
-        }
-        if (left is null || right is null || !_identity.Equals(left, right))
-        {
-            return false;
-        }
-        return _sameValue is not null && _sameValue(left, right);
     }
 
     private IReadOnlyList<object> BuildSelectedPacket()

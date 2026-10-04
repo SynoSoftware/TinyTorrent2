@@ -159,9 +159,9 @@ public sealed partial class Table : Control
 
             // A restored sort changes the private view. Schema capture rebuilds it itself, so only
             // the post-load path needs this, and only when the effective sort actually moved.
-            if (ApplyLayoutCore(value, out IReadOnlyList<object> order))
+            if (ApplyLayoutCore(value))
             {
-                RebuildView(preparedOrder: order);
+                RebuildView();
             }
         }
     }
@@ -300,7 +300,7 @@ public sealed partial class Table : Control
         {
             ColumnLayout pending = _pendingLayout;
             _pendingLayout = null;
-            ApplyLayoutCore(pending, out _, prepare: false);
+            ApplyLayoutCore(pending);
         }
 
         if (_hasPendingSort)
@@ -410,13 +410,8 @@ public sealed partial class Table : Control
     // ------------------------------------------------------- layout persistence
 
     /// <returns>True when the restored sort is not the one that was already in force.</returns>
-    private bool ApplyLayoutCore(ColumnLayout state, out IReadOnlyList<object> view, bool prepare = true)
+    private bool ApplyLayoutCore(ColumnLayout state)
     {
-        var previous = _resolved.Select(column => (Column: column,
-            Width: column.WidthOverride, Visibility: column.VisibilityOverride)).ToArray();
-        ResolvedColumn? previousSort = _sortColumn;
-        SortDirection previousDirection = _sortDirection;
-        DateTimeOffset previousSettled = _orderSettledAt;
         Dictionary<string, ResolvedColumn> byId = new(StringComparer.Ordinal);
         foreach (ResolvedColumn column in _resolved)
         {
@@ -500,23 +495,6 @@ public sealed partial class Table : Control
         EnsureOneVisibleColumn(ordered);
 
         bool sortChanged = RestoreSort(state, byId);
-        try
-        {
-            ValidateRows(_source.Snapshot);
-            view = prepare ? SortedSnapshot(_source.Snapshot, _sortColumn, _sortDirection) : _source.Snapshot;
-        }
-        catch
-        {
-            foreach (var entry in previous)
-            {
-                entry.Column.WidthOverride = entry.Width;
-                entry.Column.VisibilityOverride = entry.Visibility;
-            }
-            _sortColumn = previousSort;
-            _sortDirection = previousDirection;
-            _orderSettledAt = previousSettled;
-            throw;
-        }
 
         // SetOrder republishes the geometry, which re-applies each header cell's sort indicator.
         Geometry.SetOrder(ordered);
