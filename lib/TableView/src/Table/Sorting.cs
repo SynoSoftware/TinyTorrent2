@@ -178,6 +178,8 @@ public sealed partial class Table
     /// Section 9's cycle on header activation: unsorted becomes ascending, ascending becomes
     /// descending, and descending returns to natural order. A non-sortable header has no action.
     /// </summary>
+    internal void ActivateSort(Column column) => ActivateSort(RequireSortable(column));
+
     internal void ActivateSort(ResolvedColumn column)
     {
         if (!column.Column.CanSort)

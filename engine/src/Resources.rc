@@ -1,0 +1,4 @@
+#include <windows.h>
+1 RCDATA "Resources/en.json"
+2 ICON "../../resources/TinyTorrent.ico"
+3 RCDATA "Resources/es.json"

@@ -1,0 +1,26 @@
+{
+  "header": {
+    "accessible_name": "Encabezados de columna",
+    "sorted_ascending": "Orden ascendente",
+    "sorted_descending": "Orden descendente"
+  },
+  "placeholder": {
+    "loading": "Cargando",
+    "empty": "No hay elementos",
+    "no_results": "No hay coincidencias"
+  },
+  "column_menu": {
+    "hide": "Ocultar columna «{0}»",
+    "show": "Mostrar columna «{0}»",
+    "fit": "Ajustar columna «{0}»",
+    "fit_visible": "Ajustar columnas visibles",
+    "move_left": "Mover a la izquierda",
+    "move_right": "Mover a la derecha",
+    "shown": "Visible",
+    "hidden": "Oculta"
+  },
+  "row_drag": {
+    "before_row": "Destino: antes de la fila {0} de {1}",
+    "at_end": "Destino: final de la lista"
+  }
+}

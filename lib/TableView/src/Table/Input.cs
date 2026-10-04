@@ -100,9 +100,6 @@ public sealed partial class Table
         _itemsView.ContextRequested += OnRowsContextRequested;
         _itemsView.SelectionChanged += OnHostedSelectionChanged;
 
-        // Focus is deliberately not watched here. It used to be, because the rows drew a cue for it;
-        // nothing draws one now, so telling every realized row to repaint whenever focus moved was
-        // work for a visual that no longer exists.
     }
 
     private void DetachInput()
@@ -1085,7 +1082,7 @@ public sealed partial class Table
         CommitSelection();
         if (_detached || !ReferenceEquals(_selection.Current, item)) return true;
 
-        ScrollItemIntoView(item);
+        ScrollIntoView(item);
 
         // Keyboard navigation is the one path that should show the platform's focus ring: this is
         // reached from the arrow, Home, End and page keys, and section 19 requires a visible focus
@@ -1189,11 +1186,11 @@ public sealed partial class Table
     }
 
     /// <summary>
-    /// With <c>ItemsStackPanel</c> the first call lands one row short while the extent is still
-    /// estimated, so the request is repeated.
+    /// Reveal an item in the current view without changing selection or keyboard focus.
     /// </summary>
-    private void ScrollItemIntoView(object item)
+    public void ScrollIntoView(object item)
     {
+        // ItemsStackPanel's first request can land one row short while estimating its extent.
         _itemsView?.ScrollIntoView(item);
         _itemsView?.ScrollIntoView(item);
     }

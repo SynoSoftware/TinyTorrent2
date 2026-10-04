@@ -40,8 +40,8 @@
 
   <!-- After Microsoft.Cpp.Default.props, which imports Directory.Build.props and so ArtifactsPath. -->
   <PropertyGroup>
-    <OutDir>$(ArtifactsPath)\bin\Engine\$(Configuration)\</OutDir>
-    <IntDir>$(ArtifactsPath)\obj\Engine\$(Configuration)\</IntDir>
+    <OutDir>$(ArtifactsPath)\bin\$(MSBuildProjectName)\$(Configuration)\</OutDir>
+    <IntDir>$(ArtifactsPath)\obj\$(MSBuildProjectName)\$(Configuration)\</IntDir>
   </PropertyGroup>
 
   <PropertyGroup Label="Vcpkg">
@@ -67,16 +67,18 @@
            must equal INTERFACE_COMPILE_DEFINITIONS in the installed
            share\LibtorrentRasterbar\LibtorrentRasterbarTargets.cmake; a difference changes
            libtorrent's types under the engine. Recheck them when vcpkg.json changes. -->
-      <PreprocessorDefinitions>TORRENT_ABI_VERSION=100;TORRENT_USE_RTC=0;TORRENT_USE_OPENSSL;TORRENT_USE_LIBCRYPTO;TORRENT_SSL_PEERS;OPENSSL_NO_SSL2;OPENSSL_NO_SSL3;OPENSSL_NO_TLS1;OPENSSL_NO_TLS1_1;OPENSSL_NO_DTLS1;BOOST_ASIO_NO_DEPRECATED;BOOST_ASIO_HAS_STD_CHRONO;BOOST_ASIO_ENABLE_CANCELIO;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NOMINMAX;WIN32_LEAN_AND_MEAN;BOOST_ALL_NO_LIB;BOOST_SYSTEM_USE_UTF8;_SCL_SECURE_NO_DEPRECATE;_CRT_SECURE_NO_DEPRECATE;_SILENCE_CXX17_ALLOCATOR_VOID_DEPRECATION_WARNING;TORRENT_ABI_VERSION=100;TORRENT_USE_RTC=0;TORRENT_USE_OPENSSL;TORRENT_USE_LIBCRYPTO;TORRENT_SSL_PEERS;OPENSSL_NO_SSL2;OPENSSL_NO_SSL3;OPENSSL_NO_TLS1;OPENSSL_NO_TLS1_1;OPENSSL_NO_DTLS1;BOOST_ASIO_NO_DEPRECATED;BOOST_ASIO_HAS_STD_CHRONO;BOOST_ASIO_ENABLE_CANCELIO;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
-      <SubSystem>Console</SubSystem>
+      <SubSystem>Windows</SubSystem>
+      <AdditionalDependencies>advapi32.lib;shell32.lib;user32.lib;ole32.lib;uuid.lib;crypt32.lib;iphlpapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'">
     <ClCompile>
       <Optimization>Disabled</Optimization>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+      <PreprocessorDefinitions>TORRENT_USE_ASSERTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'">
@@ -88,6 +90,11 @@
 
   <ItemGroup>
     <ClCompile Include="Main.cpp" />
+    <ClCompile Include="Engine.cpp" />
+    <ClCompile Include="Store.cpp" />
+    <ClCompile Include="Desktop.cpp" />
+    <ClCompile Include="Pipe.cpp" />
+    <ResourceCompile Include="Resources.rc" />
   </ItemGroup>
   <ItemGroup>
     <None Include="vcpkg.json" />

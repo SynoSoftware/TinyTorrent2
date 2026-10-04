@@ -89,8 +89,7 @@ public sealed partial class Row : ContentControl
     /// <summary>
     /// A selected row and a dragged row are what this control paints. Selection is read for the bar
     /// only; the selected background stays the container's, because drawing one here put a second
-    /// fill over it. Neither the current row nor the focused row is drawn at all: Fluent's list has
-    /// no treatment for either, and the owner ruled that this table will not invent one. The cursor
+    /// fill over it. Keyboard focus stays the native container's visual. The cursor
     /// is the one other cue: the move cursor while the table would drag this row, which is also how
     /// a sorted table, where the table withholds the drag, says so before the press. Without the
     /// move cursor a drag from the row is section 14's sweep.

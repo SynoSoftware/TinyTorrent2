@@ -41,6 +41,12 @@ exception with its reason. Lucide icons are the recorded exception for
 iconography. Surfaces that Windows draws, including pickers, system dialogs, and
 the tray menu, keep the appearance Windows gives them.
 
+The owner selected the LabForms caption button template, dimensions and chrome
+tint. These caption resources are an explicit visual exception because the app
+actions must look like the adjacent Windows caption buttons. Keep native focus
+visuals and automation. The caption logo uses the canonical SVG so it remains
+sharp at different display scales; Windows shell icons use the canonical ICO.
+
 Use the native platform's expression of Fluent. Web component APIs and examples
 do not override WinUI's control semantics or require a second design system.
 
@@ -96,6 +102,30 @@ text to wrap or expose the full value when trimming is appropriate. Text,
 accessibility names, formatting, and direction follow the single
 [localisation contract](localisation.md).
 
+## Buttons
+
+A button runs a command or opens a surface. A control that shows a setting, such
+as the alternative speed limits or the Errors shortcut, is a toggle or a selection
+control: it shows which state is current, and a button looks the same in every
+state. Label wording and icon use follow
+[Text, icons, and typography](#text-icons-and-typography).
+
+- **One act, one name.** The same act has the same label, the same accelerator,
+  and, where it shows one, the same Lucide icon in the toolbar, the context menu,
+  and dialogs. Where [Main window](#main-window) names a command, that name is
+  the label. A person who learns Pause once recognizes it everywhere, while two
+  names for one act read as two acts.
+- **The accent marks the default button.** The platform's accent style goes on a
+  surface's default button, the one Enter runs, and every other button keeps the
+  standard style. The default is the commit, such as Add or Save, except in the
+  Remove and Delete files dialogs, where Cancel is the default so that Enter cannot
+  remove a torrent or delete data. A surface with no commit has no accent. The
+  accent then never points at an act
+  that Enter does not run, and a row of accents never hides the main action.
+- **An icon-only button names itself in a tooltip,** with its accelerator, on
+  keyboard focus as well as on hover. With no visible label, the tooltip is where
+  a person learns what the icon does.
+
 ## Windows, layout, and themes
 
 Design against available window space and content pressure, using effective
@@ -107,8 +137,10 @@ a desktop task.
 WinUI owns its saved window placement. Restore against current monitor work
 areas and DPI, recovering a reachable position and usable size. Preserve normal
 Windows move/resize behavior, caption buttons, and title-bar accessibility.
-Use documented title-bar and backdrop APIs. The product window uses Mica as its
-base material, with the platform's fallback where Mica is unavailable; menus,
+Use documented title-bar and backdrop APIs. The product window uses desktop
+acrylic as its base material, with the platform's fallback where acrylic is
+unavailable. Microsoft recommends Mica for a window's base, but the owner chose
+acrylic so that the window shows a blurred view of what is behind it. Menus,
 flyouts, and other transient surfaces keep the platform's acrylic. A material
 is never a substitute for readable content or hierarchy.
 
@@ -186,14 +218,48 @@ Language selection retains its immediate, in-place behavior.
 
 ### Main window
 
+The download window extends acrylic content into its title bar, following the
+LabForms title-bar layout and caption-matched button template. Icon-only commands
+sit beside the native minimize, maximize and close buttons, using the same
+32-pixel height, 46-pixel hit width and hover treatment. They retain accessible
+names, keyboard shortcuts and focus cues. A theme button switches Light/Dark in
+place; a language button uses the current language abbreviation, never flags,
+and switches through the same language preference as Preferences. One chrome
+row leaves the torrent table more space and avoids a separate Windows caption
+above the commands. Native dragging, resizing and caption semantics remain.
+The first window has a 720 by 560 effective-pixel minimum, updated for monitor
+DPI. The application name trims within the space left by the commands and
+caption buttons, so enlarging text cannot push those controls out of reach.
+Add torrent file opens the native picker first; cancelling returns to the table
+without a draft. The selected source then opens the Add form for destination,
+Start paused and Add/Cancel, following the Show the Add form preference.
+
 The torrent table is the primary workspace, with an optional inspector and
-focused Add and Preferences tasks. Filtering belongs to the page: a status
-filter (All, Downloading, Seeding, Completed, Paused, Error), a tracker filter
-derived from each torrent's tracker hosts, and a text filter. Completed
-includes finished torrents that are paused, and Paused includes them too, so
-the person finds such a torrent under either. TableView owns its
-generic interaction. Domain actions from toolbar, context
-menu, and keyboard use the same command owner.
+focused Add and Preferences tasks. Text search finds a known torrent; an Errors
+shortcut isolates torrents that need attention and shows when errors exist.
+Status and progress remain visible and sortable in the table. These serve finding,
+troubleshooting, and scanning without a permanent filter sidebar or status and
+tracker dropdowns taking space from the primary workspace. Tracker information
+belongs in the selected torrent's inspector. TableView owns generic interaction.
+The application menu contains global actions. The three-dot command overflow
+contains secondary actions for the selection, while the row context menu also
+offers the primary selection commands. Both call the same command owner.
+Properties belongs only in the row context menu, for one selected torrent while
+the inspector is closed; omitting it otherwise avoids an action with no effect.
+Disable the three-dot menu when no torrent is selected, so its scope is clear.
+Show the selected count at the top of command overflow; the row context menu names
+the torrent for a single selection. Clicking
+outside dismisses it; Escape dismisses it and returns focus to its invoker. Use
+native MenuFlyout behavior, because command menus should respond as Windows users
+expect.
+
+Preferences keeps the caption identity and shows its page name in place of
+torrent commands. Clicking TinyTorrent or choosing Torrents in the application
+menu returns to the table, preserving selection and the inspector. This avoids
+a separate return row consuming content space. The caption logo reveals the
+application menu glyph on hover and keyboard focus, following Forge's chosen
+interaction; omit the flip when animations are disabled so the affordance stays
+clear without motion.
 
 The table starts with Name, Size, Progress, Status, Down speed, Up speed, ETA,
 Ratio, Seeds/Peers, and Added; the person can hide, show, and reorder them.
@@ -202,7 +268,10 @@ Torrent commands are Pause, Resume, Force start, Open, Open folder, Copy magnet
 link, Copy info hash, Move, Verify, Remove, and Delete files. Open hands the file
 of a single-file torrent, or the folder of a multi-file torrent, to Windows as
 Explorer does, only on the person's request. Double-click and Enter on a row
-open the inspector. Add torrent file opens the native picker, and Add magnet
+open the inspector; Properties in the torrent context menu does the same. The
+panel has a Close action rather than an ambiguous toolbar toggle, because its
+entry points already identify the torrent being inspected. Add torrent file opens
+the native picker, and Add magnet
 link opens a field for the link even when the Add form is turned off; the
 source then follows the Show the Add form preference. Pause all and Resume all
 are in the window and the tray, and keep each torrent's own
@@ -254,7 +323,13 @@ standard [ContentDialog buttons](https://learn.microsoft.com/en-us/windows/apps/
 Routine pause, resume, and applied settings need no confirmation.
 
 Retain recognizable identity and last-known read-only values on disconnect, mark
-them stale, and disable writes until the engine is available. Pending operations
+them stale, and disable writes until the engine is available. Current speed is
+unknown while disconnected and displays an em dash; old rates must not appear
+current. Show loading separately from an empty list. Progress fills its column
+and uses distinct paused and error brushes alongside the written status, so state
+is visible without depending on color. Routine outcomes are announced to assistive
+technology without a visible toast; actionable failures appear in the affected
+message bar or field. Pending operations
 and failures remain visible without exposing internal protocol machinery.
 Reconnection preserves presentation state according to the protocol contract.
 After reconnecting, show the confirmed list; do not leave a permanent busy state.
@@ -288,7 +363,15 @@ Never show again check box, which turns off the Show the Add form preference
 where the person meets the form.
 
 Search within files changes visibility, not wanted choices. Bulk selection has
-an explicit scope. Keep file identity and selected bytes clear; when a known list
+an explicit scope. Folders form an expandable hierarchy. A folder's wanted checkbox
+and priority apply to every descendant, including filtered or collapsed files.
+Folder priority offers Leave unchanged to preserve individual child priorities;
+Normal, High, and Low apply once to all descendants. Mixed wanted choices show
+an indeterminate checkbox. Bulk Select all/none acts on files matching the
+search. The same file browser serves Add and the inspector, so these rules have
+one owner. Keep its summary, search, and bulk actions on one compact row and give
+the list the remaining viewport, because files are the task's primary content.
+Keep file identity and selected bytes clear; when a known list
 has no wanted files, explain why Add is unavailable. The destination starts from
 the default download folder, initially Windows' Downloads known folder, and remains changeable through a native picker. A failed
 free-space check must not be presented as proof of an invalid folder.
@@ -322,7 +405,14 @@ connected-server scopes in this local product.
 Use the [commit rules](#committing-edits): ordinary settings apply individually,
 with no page-wide Save step or confirmation on close. Reveal dependent fields
 when relevant; keep an explicit editor's actions reachable. Native navigation
-and scrolling handle smaller windows. Do not show an engine field dump. Disk
+and scrolling handle smaller windows. Preferences uses a full page with horizontal
+category selection and grouped sections, so settings have room without obscuring
+the task. Returning to torrents preserves selection and the inspector view.
+Preferences keeps this LabForms layout independently of the torrent inspector's
+vertical tabs. Put Browse beside the default download path,
+and beside Add's destination, using the native Windows folder picker. Cancelling
+the picker preserves the current path and other unfinished input.
+Do not show an engine field dump. Disk
 caching remains [automatic engine policy](engine.md#disk-write-caching), not a
 Preferences choice.
 
@@ -337,6 +427,15 @@ the torrent; nothing is removed without a request. Resuming that torrent by
 hand lifts the limit for it, so it seeds on as asked instead of pausing again.
 The sleep switch names its mains-power condition, so a laptop that sleeps on
 battery does not surprise its owner.
+
+Scheduler presents one weekly overview with normal limits, alternative limits,
+and paused periods, because separate schedules obscure their combined effect.
+Each period has start days, start/end times, and a choice of alternative limits
+or pause, edited with native checkboxes, TimePicker controls, and radio buttons.
+Normal limits apply outside periods; pause takes precedence on overlap. Overnight
+periods end on the following day. The schedule is disabled by default and repeats
+in local time. Its engine owner preserves individually paused torrents and manual
+Pause all, so a scheduled boundary cannot undo the person's explicit pause.
 
 Preferences offers one Start when I sign in switch and an Open torrents with
 TinyTorrent action covering `.torrent` files and magnet links. These call the
@@ -357,6 +456,11 @@ changes need neither a confirmation dialog nor a technical explanation.
 General, Files, Peers, Trackers, Speed, and Pieces answer different questions;
 request data only for the visible view. Preserve useful data coverage and choose
 each layout for its task. The Pieces view is the [Pieces map](#pieces-map).
+Peers and Trackers use the existing TableView, sharing its header, selection,
+column, keyboard, and scrolling behavior with the main torrent table. Files uses
+a native TreeView with wanted, size, progress, and priority content, because
+folders require hierarchy and TableView's contract excludes tree rows. Reuse the
+file browser in Add; do not extend TableView with torrent-specific tree behavior.
 
 Apply individual choices and explicit file commands through the same commit
 rules. When a coherent edit needs a draft, keep one active editor bound to the

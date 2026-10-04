@@ -1,0 +1,30 @@
+{
+  "window": {
+    "title": "TinyTorrent", "torrents": "Torrents", "add": "Añadir torrent", "pause": "Pausar", "resume": "Reanudar", "exit": "Salir",
+    "empty_title": "Todavía no hay torrents", "empty": "Añade un archivo torrent para empezar a descargar.", "connecting": "Conectando…",
+    "disconnected": "Sin conexión — se muestran los últimos datos conocidos. Reconectando…",
+    "error": "No se pudo completar la operación. {0}", "rates": "Descarga: {0}   Subida: {1}",
+    "storage_failed": "No se pudieron cargar las descargas guardadas. Cierra TinyTorrent y comprueba su carpeta de datos antes de volver a intentarlo."
+  },
+  "chrome": { "dark": "Cambiar al tema oscuro", "light": "Cambiar al tema claro", "english": "Idioma: español. Cambiar a inglés", "spanish": "Idioma: inglés. Cambiar a español" },
+  "columns": { "name": "Nombre", "size": "Tamaño", "progress": "Progreso", "status": "Estado", "down": "Velocidad de descarga", "up": "Velocidad de subida" },
+  "add": {
+    "title": "Añadir torrent", "source": "Archivo torrent", "browse": "Examinar…", "destination": "Carpeta de descarga",
+    "paused": "Iniciar en pausa", "submit": "Añadir", "cancel": "Cancelar", "preview": "{0} · {1}",
+    "pending": "Añadiendo…", "discard": "¿Descartar la adición sin terminar?",
+    "discard_detail": "El torrent no se ha añadido. Sigue editando para conservar tus opciones.",
+    "discard_action": "Descartar", "keep": "Seguir editando"
+  },
+  "status": { "unknown": "Desconocido", "downloading": "Descargando", "seeding": "Compartiendo", "paused": "En pausa", "all_paused": "Todos en pausa", "checking": "Comprobando", "queued": "En cola", "error": "Error", "completed": "Completado", "metadata": "Obteniendo metadatos" },
+  "units": { "bytes": "{0:N0} B", "kib": "{0:N1} KiB", "mib": "{0:N1} MiB", "gib": "{0:N1} GiB", "tib": "{0:N1} TiB", "rate": "{0}/s" },
+  "errors": {
+    "unknown": "No se pudo completar la operación.", "detail": "{0}\n{1}", "torrent": "{0}: {1}",
+    "torrent_error": "El torrent se detuvo debido a un error.",
+    "storage_failed": "No se pudo leer o guardar el estado de las descargas. Comprueba la carpeta de datos del motor y vuelve a intentarlo.",
+    "language_unsaved": "El idioma elegido está activo, pero no se ha guardado. Al reiniciar TinyTorrent se usará el último idioma guardado.",
+    "invalid_destination": "Elige una carpeta de descarga existente con permiso de escritura.",
+    "incomplete_add": "Elige un archivo torrent y una carpeta de descarga.", "duplicate": "Este torrent ya está añadido.",
+    "invalid_source": "Elige un archivo torrent válido.", "starting": "TinyTorrent está cargando las descargas guardadas. Vuelve a intentarlo en unos instantes."
+  },
+  "connection": { "version": "Las versiones del motor y de la ventana no coinciden. Instala una versión completa de TinyTorrent.", "unavailable": "El motor no está disponible.", "overload": "Hay demasiadas órdenes pendientes. Vuelve a intentarlo en unos instantes.", "uncertain": "Se perdió la conexión. Reconectando para confirmar el estado actual.", "missing": "No se encontró Engine.exe junto a la aplicación ni en la salida de compilación." }
+}

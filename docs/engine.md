@@ -172,6 +172,18 @@ before changing existing data.
 - Choose checkpoint frequency and flush semantics against recovery loss and disk
   cost. The rename is the commit; do not add a second durable command log.
 
+The first implementation checkpoints every 30 seconds and limits outstanding
+resume requests to eight. Failed writes retain the need for another checkpoint.
+Membership and explicit choices commit immediately through the same ordered
+writer. The writer flushes temporary metadata before atomic replacement with
+`MoveFileEx`; this does not claim payload power-loss durability. Periodic
+checkpoints cover libtorrent's dirty state and retained failed saves, so idle
+torrents do not require a disk flush every 30 seconds. Queue overload completes
+as a failed storage outcome rather than escaping the state owner's dispatch.
+Payload disk errors retain their own reason; checkpoint failures do not replace
+the actual transfer status. Resume clears libtorrent's disk error and upload
+mode before applying the saved running intent.
+
 ### Shared files
 
 Several torrents can use the same files, for example the same content seeded
@@ -268,7 +280,15 @@ Background startup and status changes do not take focus.
 
 The tray uses standard Win32 menus, keyboard behavior, accessibility, and system
 colors. Restore its icon after Explorer restarts. Its tooltip shows the total
-download and upload speed, or why transfers are stopped. The engine owns this
+download and upload speed, or why transfers are stopped. The complete menu has
+two live, disabled status rows, a separator, Open TinyTorrent and Pause Transfers,
+a separator, and Exit. The first status row shows aggregate download and upload
+speed; the second shows active and queued counts. While the session is paused,
+the second row is Paused with the torrent count, and Resume Transfers replaces
+Pause Transfers. The pause command uses the saved session pause above and keeps
+each torrent's own choice. Double-click opens the application. The menu has at
+most two status rows and three commands; no secondary actions belong there, so
+its immediate status and controls remain readable at a glance. The engine owns this
 tray, the splash, and native startup failure feedback; product dialogs belong to
 WinUI.
 
@@ -410,8 +430,9 @@ the window and the tray tooltip say why, so traffic never leaks onto another
 adapter.
 
 Global download and upload limits and a second, alternative pair of limits use
-libtorrent's session rate limits. One toggle, in the window and the tray,
-switches between the two pairs.
+libtorrent's session rate limits. One toggle in the window switches between the
+two pairs. The deliberately small tray menu contains only its immediate session
+controls.
 
 ## Notifications and sleep
 

@@ -9,6 +9,24 @@ its English text this way; the product projects follow the same pattern. There
 is no need for a web i18n framework or translation service in this native
 application.
 
+## English only during development
+
+`en.json` is the only language file anyone reads or edits during development.
+Every other language file is frozen until the translation task: it stays unread
+and unedited, and adding, renaming, or removing a key is an edit to `en.json`
+alone. A message still being reworded makes every edit to a second catalogue
+wasted work. The translation task translates the settled text once, against
+`en.json` as it stands then.
+
+A key that `en.json` lacks shows as its dotted name, `column_menu.hide`, where
+the text belongs. Lookup never throws for a missing key: a person sees the gap on
+screen at once, and one forgotten key cannot break a window.
+
+Finding missing keys (used by code, absent from `en.json`) and unused keys
+(present in `en.json`, used by no code) happens only on request, by a compiler
+step or an agent scan. No standing test or build step does it, because a missing
+key already shows on screen and an unused key causes no fault a user can see.
+
 ## One catalogue per project
 
 Each project that shows text owns an `en.json` in the `Resources/` folder beside
@@ -87,12 +105,19 @@ input system. Keep blocking resource work off the UI thread. Publish a prepared 
 together and retain the current language if preparation fails. Coalesce rapid
 choices so older work or an acknowledgement cannot overwrite the latest selection.
 
-Language is chosen only in Preferences, and only one UI runs. The UI sends the
-choice through the ordinary settings command, and the engine updates the tray
+Language is chosen in Preferences or the title bar, and only one UI runs. The
+title-bar control uses a language abbreviation, never a flag: language does not
+identify a country. Both controls use the same preference owner and live refresh
+path so switching stays immediate wherever the person makes the choice. The UI
+sends the choice through the ordinary settings command, and the engine updates the tray
 from it; nothing needs to flow back, so there is no language notification and no
 other transport or event bus. Saving runs asynchronously under the [engine persistence contract](engine.md#persistence-and-file-safety):
 distinguish the live language from a successfully saved preference, report save
-failure, and never silently claim persistence. Reconnecting reads the engine's
+failure, and never silently claim persistence. The engine selects the validated
+language when accepting the command; storage completion updates only the saved
+preference. A failed save keeps the current language until another selection or
+restart. Snapshot settings carry that live selection and `language_saved`
+states whether it matches the saved choice. Reconnecting reads the engine's
 language again. Tray menus use the current catalogue when shown; an already-open
 tray menu must be refreshed or safely reopened without executing a selection.
 
@@ -103,8 +128,8 @@ project's loader applies this same rule; fallback is a complete message,
 including all its plural forms. Preserve the language of the resolved message so
 inherited English uses English plural rules.
 
-Reject invalid catalogue data before packaging: missing English keys, duplicate
-keys, incompatible placeholders, and incomplete plural sets. A failed language load
+Reject invalid catalogue data before packaging: translated keys that English
+lacks, duplicate keys, incompatible placeholders, and incomplete plural sets. A failed language load
 cannot prevent startup; embedded English remains available. Keep unknown engine
 error codes usable through a translated generic message with optional diagnostic
 detail.
@@ -153,13 +178,11 @@ editable source for each message, one lookup policy per process, and the same
 fallback results. No translation server, network fetch, watcher, or plugin framework is needed.
 
 Follow [the testing policy](testing.md). A quick catalogue integrity check covers
-keys, placeholders, and required forms when catalogues change; it does not assert
-the wording of screen strings. One focused live-switch exercise should cover an
-open draft, an owned control, tray state, fallback, and switching back while
-downloads continue. It switches between English and Spanish once `es.json`
-ships as the first production translation. Until then it switches to a language
-generated from `en.json` at test time, because keeping a second catalogue in
-step during development costs more than it proves. Use temporary long-text/RTL data to
+duplicate keys, placeholders, and required forms when catalogues change; it does
+not assert the wording of screen strings. One focused live-switch exercise should
+cover an open draft, an owned control, tray state, fallback, and switching back
+while downloads continue. It switches to a language generated from `en.json` at
+test time, because every other language file is frozen. Use temporary long-text/RTL data to
 review layout when that path changes, not a maintained screenshot suite. Check
 that the visible switch has no perceptible pause on this machine; investigate an
 observed delay instead of imposing a benchmark run on every translation edit.

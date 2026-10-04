@@ -258,6 +258,7 @@ public sealed class Table : Control
     public TimeSpan SortInterval { get; set; }
     public bool ShowsFitButton { get; set; }     // default false
     public void RefreshView();
+    public void ScrollIntoView(object item);
     public void Fit(Column column);
     public void FitColumns();
     public void ResetLayout();
@@ -542,6 +543,10 @@ interaction predicate, the host calls `RefreshView()` once.
 sort, and does not re-enumerate or fetch a non-notifying source. When rows are
 then allowed to trade places is section 9's settling question, not this one.
 Display-only updates need no call.
+
+`ScrollIntoView(item)` reveals an item in the current private view without
+changing selection or keyboard focus. Hosts use it after a confirmed operation
+whose result should be visible, without accessing the control's template parts.
 
 When the schema supplies a key selector, every new source snapshot—including
 assignment, `Add`, `Remove`, `Move`, `Replace`, and `Reset`—reconciles selected
@@ -842,12 +847,10 @@ chrome:
 The retained row appearance has specific exceptions awaiting the
 [hands-on Fluent review](../../../docs/architecture.md#decisions-still-open): no hover
 fill, square corners for edge-to-edge rows, and section 19's neutral selection
-bar. Native row focus is also suppressed because recycling previously restored
-focus to the wrong place. Retain these choices until that review, rather than
-restoring visuals mechanically. Focus suppression remains a
-[known accessibility gap](tableview-implementation.md#other-known-integration-gaps)
-against section 19; the review must establish visible keyboard location without
-reintroducing incorrect focus movement.
+bar. Native row focus is enabled after the first product journey verified visible
+keyboard location, selection, Pause/Resume and focus recovery during refresh.
+The [integration record](tableview-implementation.md#keyboard-and-automation-integration)
+keeps broader automation and RTL verification separate from that narrow path.
 
 `Table` exposes no palette, visual-style object, font setting, token map,
 or menu-style API. It must not create component-specific colors, bespoke

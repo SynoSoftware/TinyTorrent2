@@ -1,0 +1,30 @@
+{
+  "window": {
+    "title": "TinyTorrent", "torrents": "Torrents", "add": "Add torrent", "pause": "Pause", "resume": "Resume", "exit": "Exit",
+    "empty_title": "No torrents yet", "empty": "Add a torrent file to start downloading.", "connecting": "Connecting…",
+    "disconnected": "Disconnected — showing last known values. Reconnecting…",
+    "error": "The operation could not be completed. {0}", "rates": "Download: {0}   Upload: {1}",
+    "storage_failed": "Saved downloads could not be loaded. Close TinyTorrent and check the engine data folder before trying again."
+  },
+  "chrome": { "dark": "Switch to dark theme", "light": "Switch to light theme", "english": "Language: Spanish. Switch to English", "spanish": "Language: English. Switch to Spanish" },
+  "columns": { "name": "Name", "size": "Size", "progress": "Progress", "status": "Status", "down": "Down speed", "up": "Up speed" },
+  "add": {
+    "title": "Add torrent", "source": "Torrent file", "browse": "Browse…", "destination": "Download folder",
+    "paused": "Start paused", "submit": "Add", "cancel": "Cancel", "preview": "{0} · {1}",
+    "pending": "Adding…", "discard": "Discard unfinished addition?",
+    "discard_detail": "The torrent has not been added. Keep editing to preserve your choices.",
+    "discard_action": "Discard", "keep": "Keep editing"
+  },
+  "status": { "unknown": "Unknown", "downloading": "Downloading", "seeding": "Seeding", "paused": "Paused", "all_paused": "All paused", "checking": "Checking", "queued": "Queued", "error": "Error", "completed": "Completed", "metadata": "Getting metadata" },
+  "units": { "bytes": "{0:N0} B", "kib": "{0:N1} KiB", "mib": "{0:N1} MiB", "gib": "{0:N1} GiB", "tib": "{0:N1} TiB", "rate": "{0}/s" },
+  "errors": {
+    "unknown": "The operation could not be completed.", "detail": "{0}\n{1}", "torrent": "{0}: {1}",
+    "torrent_error": "The torrent stopped because of an error.",
+    "storage_failed": "Saved download state could not be read or written. Check the engine data folder and try again.",
+    "language_unsaved": "Your language choice is active but has not been saved. Restarting TinyTorrent will use the last saved language.",
+    "invalid_destination": "Choose an existing, writable download folder.",
+    "incomplete_add": "Choose a torrent file and a download folder.", "duplicate": "This torrent is already added.",
+    "invalid_source": "Choose a valid torrent file.", "starting": "TinyTorrent is still loading saved downloads. Try again shortly."
+  },
+  "connection": { "version": "The engine and window versions do not match. Install a complete TinyTorrent release.", "unavailable": "The engine is unavailable.", "overload": "Too many commands are pending. Try again shortly.", "uncertain": "The connection was lost. Reconnecting to confirm the current state.", "missing": "Engine.exe was not found beside the application or in the developer build output." }
+}

@@ -68,8 +68,8 @@ Rich cell templates receive row items directly. Live values use live bindings;
 formatting can stay lazy so invisible cells do not allocate display strings.
 
 The control adds its own selection cues where the standard container does not
-meet the contract. It currently draws no current-row or focus cue, as recorded
-below. Earlier selected-row contrast of 1.08:1 is the reason the
+meet the contract. Keyboard location uses the native container focus visual.
+Earlier selected-row contrast of 1.08:1 is the reason the
 regression check exists, not a current rendering claim. Actual contrast, Narrator,
 and out-of-process automation still require relevant runtime evidence under the
 [testing policy](../../../docs/testing.md).
@@ -88,45 +88,45 @@ logical selection and ordering without touching containers. A snapshot is
 validated before it is accepted; the table does not undo an assignment when
 validation or a host handler throws. Source lifetime still needs a focused runtime check.
 
-## Other known integration gaps
+## Keyboard and automation integration
 
-Source review found these gaps on 2026-10-03. They are unresolved implementation
-work, not completed fixes or grounds for replacing the control.
+Source review found these gaps on 2026-10-03. Their implementation now follows
+the existing owners. The first product journey verifies realized-row selection,
+visible row focus, pointer selection, keyboard Pause/Resume and live text.
+Broader virtualization, Narrator and RTL scenarios remain unverified.
 
 - **Automation selection:** [Table.Selection](../src/Table/Selection.cs)
   restores its own selection after every unsolicited native `SelectionChanged`.
-  Native UI Automation selection therefore gets undone too. Route automation
-  requests to the existing selection operations; accepting arbitrary native
-  selection would break the deliberate pointer arbitration.
+  [Body.Surface](../src/Body/Surface.cs) supplies native row peers whose selection
+  actions request `Table.Selection`. Unsolicited native selection remains
+  rejected, preserving deliberate pointer arbitration.
 - **Automation exposure:** [Header.Cell](../src/Header/Cell.cs)
-  and Table derive from `Control` without creating automation peers. Header
-  name/sort attached properties and the table's drag announcement therefore lack
-  those peers. Supply the needed header actions/status and table notification
-  support using [platform peers](https://learn.microsoft.com/en-us/windows/apps/design/accessibility/custom-automation-peers),
-  preserving the hosted list's native automation instead of duplicating it.
+  and Table create framework automation peers. Sortable header peers invoke the
+  same sort operation as pointer and keyboard input. The hosted list retains
+  native list automation and the table peer supports drag notifications.
 - **Keyboard location:** [Generic.xaml](../src/Themes/Generic.xaml)
-  deliberately suppresses native row focus, while `Body.Row` draws neither
-  focus nor current state. Ctrl+Arrow can move the keyboard location invisibly,
-  conflicting with contract section 19. The suppression is a retained workaround
-  for incorrect focus restoration during recycling. Resolve it in the
+  enables native row focus. Before reconciliation removes containers, physical
+  focus moves to the list in pointer state; the existing logical focus owner
+  restores row focus afterward. Verify this in the
   [hands-on row review](tableview-contract.md#8-rendering-layout-and-visual-language),
   preserving visible keyboard location without reintroducing focus movement to
   unrelated rows or controls. The implementation remains incomplete against the
   keyboard contract until that correction has relevant runtime evidence.
 - **RTL header navigation:** [Header.Strip](../src/Header/Strip.cs)
-  maps Left/Right to index minus/plus one without considering `FlowDirection`.
-  Those keys must follow the mirrored visual order. Include them in the existing
+  maps Left/Right according to `FlowDirection`, following mirrored visual order.
+  Include them in the existing
   live-language exercise. [XAML already mirrors the coordinate frame](https://learn.microsoft.com/en-us/windows/windows-app-sdk/api/winrt/microsoft.ui.xaml.frameworkelement.flowdirection);
   do not add a second panel-mirroring path based only on this input defect.
 
 The lifetime and automation findings follow concrete source paths. The RTL
-consequence also depends on documented platform mirroring. None has been checked
-in a running product, Narrator, or an external automation client in this review.
+consequence also depends on documented platform mirroring. The narrow product
+evidence is recorded in [implementation](../../../docs/implementation.md);
+it does not establish Narrator, detached reload or unrealized-row behavior.
 
 ## API verification
 
 The API upgrade has two independent source reviews. The library, sample and tests
-build. Desktop test runs were not performed under the owner's instruction.
+build. The first milestone's noninteractive run passed 207 checks.
 
 Existing selection checks now cover replacement-instance notifications and packet
 order. Duplicate-source rejection also checks that the selection remains intact.
@@ -136,9 +136,9 @@ One regression covers a previously unguarded failure:
   displayed order must use the completed schema and final sort, without evaluating
   a superseded saved comparer.
 
-These checks are authored, not reported as passing. Live localisation, detached
-reload, keyboard/automation behavior and full caller ergonomics still need the
-relevant runtime evidence.
+The recorded run includes these checks. Live localisation and the first keyboard
+journey also ran in the product; detached reload, wider automation behavior and
+full caller ergonomics still need their relevant runtime evidence.
 
 The existing non-interactive context check also covers a selection callback that
 makes its row ineligible without replacing it. Context invocation rechecks the

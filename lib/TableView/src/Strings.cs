@@ -72,7 +72,9 @@ public sealed class Strings
 
     internal string ColumnHidden => Get("column_menu", "hidden");
 
-    private string Get(string group, string key) => _text[group][key];
+    private string Get(string group, string key) =>
+        _text.TryGetValue(group, out var messages) && messages.TryGetValue(key, out var text)
+            ? text : group + "." + key;
 
     /// <summary>
     /// A label that carries a column's name. The current culture, not the invariant one: this is

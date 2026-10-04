@@ -33,9 +33,10 @@ The product manages local downloads and seeds. It supports magnet and torrent-fi
 addition, including several sources at once and drag-and-drop, metadata preview,
 destination and file choices, paused addition, duplicate detection with tracker
 merging, pause/resume, force start, queue order, global and alternative speed
-limits, peer limits, seeding policies, verification, relocation, and distinct
+limits, scheduled pauses and speed limits, peer limits, seeding policies,
+verification, relocation, and distinct
 remove versus delete-data actions. It opens downloaded files and folders, copies
-magnet links and info hashes, and filters torrents by text, status, and tracker. It exposes
+magnet links and info hashes, and finds torrents by text or isolates errors. It exposes
 useful errors and on-demand files, peers, trackers, pieces, and speed
 information, including tracker editing and reannounce. Keyboard use,
 accessibility, shell activation, and recovery after restart are part of the product.
@@ -132,6 +133,14 @@ protocol.
 Tray actions and pipe requests call the same engine operations. Transport checks
 belong to the adapter; torrent-state validation and download policy belong to the
 engine. The tray does not call its own process through IPC.
+
+WinUI uses MVVM. `MainViewModel` owns the window's presentation state, selection,
+command availability, and commands through one concrete pipe client. `AddDraft`
+owns unfinished addition choices and preview state. Views bind to those owners;
+they retain native pickers, dialogs, window chrome, and control-specific focus
+and scrolling. View models use `INotifyPropertyChanged` and `ICommand` directly,
+without a new framework, service interface, or second torrent database. This
+keeps gestures on one command path and stops control lifetime from owning edits.
 
 WinUI presents confirmed state and pending work. File pickers, clipboard actions,
 and opening Explorer use Windows directly; changes to engine-owned files go
@@ -292,9 +301,10 @@ reference this same installer without becoming a Store dependency.
 
 ## First implementation
 
-The [build scaffold](architecture-current.md#build-integration) is in place;
-the libtorrent session check is not a working torrent client. The next deliverable
-is one usable download path. Start with a `.torrent` file, destination choice,
+The [existing projects](architecture-current.md#build-integration) implement
+the first usable download path; [the implementation record](implementation.md)
+holds its checks, measurements and review findings. This plan establishes the
+remaining work in order. The first path uses a `.torrent` file, destination choice,
 Add, live progress in TableView, and Pause/Resume. Include saved membership and
 intent, basic process launch, close/reopen, disconnect feedback, and a minimal
 tray icon with Open and Exit: closing the window leaves the engine running, so
@@ -303,7 +313,7 @@ the user needs a way to reopen the window and to stop the engine.
 Implement the engine operations and pipe messages that this path needs, then
 connect the first WinUI screen. TableView API polish can proceed alongside the
 engine work; integrate through the agreed public API. Resolve the
-[control gaps affecting that screen](../lib/TableView/docs/tableview-implementation.md#other-known-integration-gaps)
+[control gaps affecting that screen](../lib/TableView/docs/tableview-implementation.md#keyboard-and-automation-integration)
 before treating its interaction as complete. Design each journey against the
 [interface contract](interface.md), keeping implementation tied to a real caller.
 The [testing policy](testing.md) governs evidence and desktop execution.
@@ -311,7 +321,7 @@ The [testing policy](testing.md) governs evidence and desktop execution.
 | Milestone | What it establishes | Completion evidence |
 | --- | --- | --- |
 | First usable download | The narrow path above: libtorrent state, durable identity, one command and persistence owner, [safe addition](engine.md#addition-and-identity), and [bounded diagnostics](engine.md#diagnostics). One pipe connects the WinUI host to that engine, and a minimal tray icon offers Open and Exit. Use [text catalogues](localisation.md#one-catalogue-per-project) from the first screen. | Add a real torrent, see progress, pause and resume. Closing WinUI leaves the transfer running; Open from the tray restores confirmed state, and Exit stops the engine. Membership and intent survive engine restart; failed storage is not reported as saved. Complete a hands-on [journey review](interface.md#implementation-review) with pointer and keyboard and the first [resource check](testing.md#resource-checks) before expanding the UI. |
-| Everyday torrent actions | Extend the same Add path with magnet metadata preview and file choices, several sources in one form, drag-and-drop and paste, and tracker merging for duplicates. Then add queue ordering, force start, verification, Remove keeping files, status filters, the [main window commands](interface.md#main-window), and the global and alternative speed limits. Establish the [preview guard](engine.md#addition-and-identity) before acquiring magnet metadata. | Preview writes no payload; cancellation and duplicates preserve existing downloads. Intended choices reach the engine. Thirty torrent files opened from Explorer arrive in one Add form. A confirmed removal stays removed after restart while its files remain. Reconnect reconciles pending work without silently repeating uncertain commands. |
+| Everyday torrent actions | Extend the same Add path with magnet metadata preview and file choices, several sources in one form, drag-and-drop and paste, and tracker merging for duplicates. Then add queue ordering, force start, verification, Remove keeping files, text search and the Errors shortcut, the [main window commands](interface.md#main-window), and the global and alternative speed limits. Establish the [preview guard](engine.md#addition-and-identity) before acquiring magnet metadata. | Preview writes no payload; cancellation and duplicates preserve existing downloads. Intended choices reach the engine. Thirty torrent files opened from Explorer arrive in one Add form. A confirmed removal stays removed after restart while its files remain. Reconnect reconciles pending work without silently repeating uncertain commands. |
 | Background and desktop behavior | Complete tray, activation, splash, startup failure feedback, coordinated Exit, and [Windows registration](engine.md#windows-registration). Add the scoped completion and error notifications, the first-close notice, and idle-sleep behavior. | Tray and launch actions reach the same engine; engine restart reattaches a surviving UI; saved work survives shutdown and Exit protects unfinished input. Registration uses one owner. Notifications and sleep behavior work with WinUI closed. |
 | Details and preferences | Add the [inspector journeys](interface.md#inspector-and-edits) and [Preferences](interface.md#preferences), one task at a time. Include file choices and priorities, trackers, peer information, speed/pieces visuals, live language switching, and RTL header navigation. | Committed choices apply without unnecessary save prompts; real drafts survive failed edits. Hidden views stop detail work. The Speed view shows transfer from while WinUI was closed. Switching languages updates existing surfaces, controls, and tray without losing input or breaking keyboard navigation; the [live-switch exercise](localisation.md#cost-and-proportionate-evidence) proves it. Review each adopted surface in use. |
 | Move and delete files | Relocation and explicit delete-data, following [removal and relocation](engine.md#removal-and-relocation) and the [shared-files policy](engine.md#shared-files). | A destination collision is reported, not replaced. A move interrupted by a crash leaves the torrent paused with Move interrupted instead of downloading again. Neither deletion nor relocation reaches the files of a torrent outside the command; cross-seeded torrents move and delete together. |
@@ -336,7 +346,6 @@ unrelated questions remain open.
 
 | Decision | When it matters | Owner |
 | --- | --- | --- |
-| Catalogue loading and live refresh | Catalogue loading and fallback with the first screen; language selection and live refresh with Details and preferences. Extend the existing embedded-JSON pattern to the app and engine. | [Localisation](localisation.md) |
 | Release prerequisites and installation mechanics | With the first release build. Pin supported runtime versions/architectures and official downloads, signing configuration, and recoverable upgrade ordering for the selected installer. | [Installation and updates](#installation-and-updates) |
 | Preferences, screen layouts, and tray contents | Before each affected journey. Choose the controls needed for the agreed scope. | [Product scope](#product-and-scope), [engine](engine.md), and [interface](interface.md) |
 | Table row appearance | With hands-on testing before product integration. Review row hover, selection accent, corner shape, and focus treatment. Retain the existing appearance until that review; invisible keyboard location remains an accessibility gap. | [TableView visual contract](../lib/TableView/docs/tableview-contract.md#8-rendering-layout-and-visual-language) |

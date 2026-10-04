@@ -229,10 +229,6 @@ public sealed partial class Table
     internal bool IsRowCurrent(object? item) =>
         item is not null && _selection.IsSame(item, _selection.Current);
 
-    // No IsRowFocused. Nothing draws a focus cue on a row: Fluent's list has none and the owner
-    // ruled that this table will not invent one. Focus is still tracked and still restored across a
-    // reconcile — it decides where the keyboard goes — it is simply never painted.
-
     /// <summary>Section 5.3: withdrawing the marquee mid-gesture cancels it before the flag applies.</summary>
     private static void OnMarqueeChanged(
         DependencyObject d, DependencyPropertyChangedEventArgs e)
@@ -350,6 +346,9 @@ public sealed partial class Table
         // changes. Once the focused row's container is gone the framework has already rescued
         // focus, carrying that container's state to whatever it landed on, which is not the row's.
         FocusState rowFocus = RowSurfaceFocusState();
+        // Remove keyboard focus before containers leave so native focus rescue cannot
+        // carry a row's keyboard cue onto an unrelated control.
+        if (rowFocus != FocusState.Unfocused) _itemsView?.Focus(FocusState.Pointer);
 
         // The hosted list keeps a selection of its own and revises it on every single removal and
         // insertion. A re-sort of 2,002 rows once sent it about 3,800 of those, under the reconcile

@@ -1,5 +1,7 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
+using Microsoft.UI.Xaml.Automation.Peers;
+using Microsoft.UI.Xaml.Automation.Provider;
 using Microsoft.UI.Xaml.Controls;
 using Windows.Foundation;
 
@@ -11,6 +13,24 @@ namespace Syno.TableView.Header;
 /// </summary>
 public sealed partial class Cell : Control
 {
+    protected override AutomationPeer OnCreateAutomationPeer() => new Peer(this);
+
+    private sealed class Peer(Cell cell) : FrameworkElementAutomationPeer(cell), IInvokeProvider
+    {
+        protected override AutomationControlType GetAutomationControlTypeCore() => AutomationControlType.HeaderItem;
+
+        protected override object GetPatternCore(PatternInterface pattern) =>
+            pattern == PatternInterface.Invoke && cell.Column?.CanSort == true
+                ? this : base.GetPatternCore(pattern);
+
+        public void Invoke()
+        {
+            if (!IsEnabled()) throw new ElementNotEnabledException();
+            if (cell.Column?.CanSort == true && Body.Row.FindOwner(cell) is Table table)
+                table.ActivateSort(cell.Column);
+        }
+    }
+
     private const string ContentPartName = "PART_Header";
     private const string SortGlyphPartName = "PART_SortGlyph";
 

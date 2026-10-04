@@ -232,8 +232,8 @@ public sealed partial class Strip : Control
         int current = _activeIndex < 0 ? 0 : Math.Min(_activeIndex, count - 1);
         int target = e.Key switch
         {
-            VirtualKey.Left => current - 1,
-            VirtualKey.Right => current + 1,
+            VirtualKey.Left => current + (FlowDirection == FlowDirection.RightToLeft ? 1 : -1),
+            VirtualKey.Right => current + (FlowDirection == FlowDirection.RightToLeft ? -1 : 1),
             VirtualKey.Home => 0,
             _ => count - 1,
         };

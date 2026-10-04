@@ -1,0 +1,19 @@
+{
+  "tray": {
+    "tooltip": "TinyTorrent",
+    "open": "Abrir TinyTorrent",
+    "exit": "Salir",
+    "background": "Las transferencias continúan en el área de notificación. Selecciona Salir en el menú de TinyTorrent para detenerlas."
+  },
+  "startup": {
+    "opening": "Abriendo TinyTorrent…"
+  },
+  "error": {
+    "start": "TinyTorrent no pudo iniciarse.",
+    "ownership": "TinyTorrent no puede abrir sus datos guardados. Otra sesión de Windows puede estar utilizando esta carpeta:",
+    "launch": "TinyTorrent no pudo abrir su ventana. Selecciona Abrir en el área de notificación para volver a intentarlo.",
+    "startup": "La ventana de TinyTorrent no se abrió. Las descargas continúan. Vuelve a intentar Abrir cuando el proceso de la ventana se cierre.",
+    "save": "No se pudo guardar el último punto de control. Selecciona Reintentar para guardarlo de nuevo o Cancelar para salir de todas formas.",
+    "unresponsive": "La ventana no responde. ¿Salir de todas formas y descartar los datos sin guardar?"
+  }
+}

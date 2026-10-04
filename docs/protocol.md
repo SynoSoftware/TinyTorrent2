@@ -35,6 +35,11 @@ unlimited notification backlog.
 
 ## Encoding and validation
 
+The concrete first-screen fields and units are defined in the
+[implementation record](implementation.md#wire-representation), beside the
+code implementing both codecs. This contract remains the authority for their
+behavior.
+
 Each message is a 4-byte little-endian length followed by that many bytes of
 UTF-8 JSON, at most 16 MiB. The engine reads it with nlohmann/json and WinUI
 with System.Text.Json. JSON is readable in a log when something breaks, and at a

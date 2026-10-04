@@ -1,0 +1,19 @@
+{
+  "tray": {
+    "tooltip": "TinyTorrent",
+    "open": "Open TinyTorrent",
+    "exit": "Exit",
+    "background": "Transfers continue in the notification area. Choose Exit from the TinyTorrent menu to stop."
+  },
+  "startup": {
+    "opening": "Opening TinyTorrent…"
+  },
+  "error": {
+    "start": "TinyTorrent could not start.",
+    "ownership": "TinyTorrent cannot open its saved data. Another Windows logon may already be using this folder:",
+    "launch": "TinyTorrent could not start its window. Open from the notification area to try again.",
+    "startup": "The TinyTorrent window did not open. Downloads continue. Try Open again after the window process exits.",
+    "save": "The final checkpoint could not be saved. Retry to save again, or Cancel to exit anyway.",
+    "unresponsive": "The window is not responding. Exit anyway and discard unfinished input?"
+  }
+}

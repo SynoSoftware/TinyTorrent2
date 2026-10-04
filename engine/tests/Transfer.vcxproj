@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <VcpkgManifestRoot>$(MSBuildThisFileDirectory)..\src\</VcpkgManifestRoot>
+  </PropertyGroup>
+  <Import Project="../src/Engine.vcxproj" />
+  <PropertyGroup>
+    <ProjectGuid>{579E8749-AD42-44BD-AC88-13C1B54E3F37}</ProjectGuid>
+  </PropertyGroup>
+  <ItemGroup>
+    <ClCompile Remove="@(ClCompile)" />
+    <ResourceCompile Remove="@(ResourceCompile)" />
+    <ClCompile Include="Transfer.cpp" />
+  </ItemGroup>
+  <ItemDefinitionGroup>
+    <Link><SubSystem>Console</SubSystem></Link>
+  </ItemDefinitionGroup>
+</Project>

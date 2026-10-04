@@ -43,23 +43,7 @@
         <Setter Property="HorizontalAlignment" Value="Left" />
         <!-- Rows sit edge to edge, so a rounded corner lands on the seam with the row above. -->
         <Setter Property="CornerRadius" Value="0" />
-        <!--
-            No focus rectangle on a row. The owner rejected it repeatedly and finally ruled it out
-            outright, and it could not be fixed by correcting who asks for focus: the framework
-            rescues focus from a container it is destroying and carries that container's own
-            FocusState to whatever it lands on (CControl::LeaveImpl). Once any row holds
-            FocusState.Keyboard, every reconcile hands it to the next row, or out of the table
-            entirely — the ring the owner saw on the host's Clear button. Only Keyboard draws a
-            ring (CFocusManager::GetFocusTarget gates on IsKeyboardFocused), and no resource can
-            reach that gate, so this setter is the one thing that does stop it.
-
-            The cost, stated so nobody rediscovers it as a bug: a keyboard user moving with
-            Ctrl+Arrow, which changes the current row without selecting it, now has no visual for
-            where they are. Plain Arrow navigation still selects as it moves, so the accent bar
-            shows it. Section 19 wants a focus indicator; this is a deliberate exception, not an
-            oversight.
-        -->
-        <Setter Property="UseSystemFocusVisuals" Value="False" />
+        <Setter Property="UseSystemFocusVisuals" Value="True" />
     </Style>
 
     <DataTemplate x:Key="TableViewRowTemplate">
@@ -114,20 +98,6 @@
                                    Fill="{ThemeResource ListViewItemForegroundSelected}"
                                    Opacity="0" />
 
-                        <!--
-                            Nothing is drawn for focus, which is why there is no second element
-                            here. Fluent's list has no focus treatment on a row, and the owner ruled
-                            that this table will not invent one: the platform's own visual is
-                            switched off on the container, and the fill that stood in for it here is
-                            gone.
-
-                            The fill was the third attempt, and what killed it was when it appeared
-                            rather than how it looked. It shows on a row that holds focus and is not
-                            selected, and deselecting a row produces exactly that state — so the
-                            owner clicked a selected row off and watched a mark arrive instead of
-                            leave. A cue nobody asked for, appearing at the moment a row is
-                            dismissed, is worse than no cue.
-                        -->
                         <ContentPresenter Content="{TemplateBinding Content}"
                                           ContentTemplate="{TemplateBinding ContentTemplate}"
                                           HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
@@ -361,7 +331,7 @@
                         <header:Strip x:Name="PART_HeaderStrip" Grid.Row="0" />
 
                         <Grid Grid.Row="1">
-                            <ListView x:Name="PART_ItemsView"
+                            <body:Surface x:Name="PART_ItemsView"
                                       Padding="0"
                                       SelectionMode="Multiple"
                                       IsMultiSelectCheckBoxEnabled="False"
@@ -422,7 +392,7 @@
                                                          ItemsUpdatingScrollMode="KeepScrollOffset" />
                                     </ItemsPanelTemplate>
                                 </ListView.ItemsPanel>
-                            </ListView>
+                            </body:Surface>
 
                             <ContentPresenter x:Name="PART_StateLayer"
                                               HorizontalAlignment="Stretch"

@@ -2,6 +2,7 @@ using System.Collections;
 using System.Collections.Specialized;
 using Microsoft.UI.Input;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
@@ -16,6 +17,8 @@ namespace Syno.TableView;
 /// </summary>
 public sealed partial class Table : Control
 {
+    protected override AutomationPeer OnCreateAutomationPeer() => new FrameworkElementAutomationPeer(this);
+
     private const string HeaderStripPartName = "PART_HeaderStrip";
     private const string ItemsViewPartName = "PART_ItemsView";
     private const string StateLayerPartName = "PART_StateLayer";
