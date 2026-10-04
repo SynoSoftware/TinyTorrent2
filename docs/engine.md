@@ -20,6 +20,12 @@ user's policy, not another transfer scheduler. The tray, pipe, and UI cannot
 implement their own queue policy or reconstruct state from command
 acknowledgements.
 
+Pause all pauses the libtorrent session, which keeps each torrent's own running
+or paused state, so Resume all does not start torrents the person paused one by
+one. The session pause is saved and survives a restart. While all are paused, a
+torrent's own Resume takes effect at Resume all, and the window and the tray say
+All paused, so the person sees why nothing moves.
+
 Callbacks and worker completions wake the owner through an engine-owned window.
 Create that window before producers start and retain it until they have stopped.
 Use window messages rather than [`PostThreadMessage`](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-postthreadmessagew),
@@ -59,9 +65,9 @@ The engine records the session's total download and upload rate once a second,
 also while WinUI is closed, so the Speed view shows what happened while the
 window was closed. Keep the last five minutes at one sample a second for a live
 chart, and the last 24 hours at one averaged sample a minute to cover a day away
-from the window. The history is session-wide, as qBittorrent's speed graph is:
-a history per torrent would cost memory for every torrent while the window is
-closed, the state this product measures first. History is not saved: the time while the engine was stopped is
+from the window. The history is session-wide: a history per torrent would cost
+memory for every torrent while the window is closed, the state this product
+measures first. History is not saved: the time while the engine was stopped is
 unknown in any case, so after a restart the chart starts empty.
 
 ## Committed edits
@@ -139,9 +145,8 @@ torrent first. A stale preview identifier is not reusable.
 
 ## Persistence and file safety
 
-Keep one persistence owner for engine data. As qBittorrent does, store each
-torrent's libtorrent resume data in its own file, named by its durable torrent
-identity, and settings and the other application facts in `settings.json`. Write
+Keep one persistence owner for engine data. Store each torrent's libtorrent
+resume data in its own file, named by its durable torrent identity, and settings and the other application facts in `settings.json`. Write
 each file under a temporary name and rename it over the old one, so a crash
 leaves the old file or the new one, never a partial file. One writer queue
 performs every write in order. Each file changes on its own, so the rename makes
@@ -170,9 +175,9 @@ before changing existing data.
 ### Shared files
 
 Several torrents can use the same files, for example the same content seeded
-from two trackers. qBittorrent and other established clients allow this, and
-people who seed on several trackers depend on it. libtorrent refuses a second
-torrent with the same info hash; the engine adds no other ownership check. A
+from two trackers. People who seed on several trackers depend on it. libtorrent
+refuses a second torrent with the same info hash; the engine adds no other
+ownership check. A
 torrent that finds existing files verifies them before using them and downloads
 the pieces that do not match, which overwrites those files. The
 [Add form](interface.md#add) therefore names the torrents that already use files
@@ -200,20 +205,25 @@ interrupted by a crash is not repeated, because repeating an uncertain
 destructive action is unsafe; the remaining files stay on disk, and recovery
 does not restore the removed torrent.
 
-A relocation moves the scope presented to the user. For a dedicated torrent
-folder, include its contents, such as user-added subtitles. A shared download
-directory is not that torrent's folder: confine the move to its payload. Use
+A relocation moves the torrent's own files, as libtorrent's
 [`move_storage`](https://github.com/arvidn/libtorrent/blob/v2.1.2/include/libtorrent/torrent_handle.hpp)
-with `fail_if_exist`, so a file already at the destination is reported as a
-collision instead of replaced; the default replaces it. The flag's documented
-race, another program creating a destination file during the move, is rare and
-needs no further mechanism.
+does: other files in its folder, such as added subtitles, stay where they are,
+and only folders left empty are removed. Use `fail_if_exist`, so a file already
+at the destination is reported as a collision instead of replaced; the default
+replaces it. The flag's documented race, another program creating a destination
+file during the move, is rare and needs no further mechanism.
+
+A collision offers Use the files there. It points the torrent at the
+destination with the `reset_save_path` move flag, which verifies the files
+instead of moving them, so a person who moved the files or whose drive letter
+changed gets the torrent back without downloading it again. Pieces that do not
+match are downloaded again over those files.
 
 Before a move starts, save its destination with the torrent and clear it when
 the move ends. After a crash during a move, that saved destination keeps the
 torrent paused with a Move interrupted error, so it does not download again
-into the old folder. Its Move action points the torrent at the folder that holds
-the files, and verification establishes what is there. The user's running or
+into the old folder. Moving it to the folder that holds the files offers Use the
+files there, and verification establishes what is there. The user's running or
 paused intent does not change, and the move is neither rolled back nor repeated.
 
 ## Startup and activation
@@ -257,8 +267,10 @@ window and use normal taskbar attention if foreground activation is denied.
 Background startup and status changes do not take focus.
 
 The tray uses standard Win32 menus, keyboard behavior, accessibility, and system
-colors. Restore its icon after Explorer restarts. The engine owns this tray,
-the splash, and native startup failure feedback; product dialogs belong to WinUI.
+colors. Restore its icon after Explorer restarts. Its tooltip shows the total
+download and upload speed, or why transfers are stopped. The engine owns this
+tray, the splash, and native startup failure feedback; product dialogs belong to
+WinUI.
 
 The splash is a small native window with the application icon and short localised
 status, readable in light, dark, and contrast themes. Load no UI framework for
@@ -418,6 +430,10 @@ When direct addition adds a torrent while no window is open, notify that it was
 added, or that it could not be added and why, coalesced like completions.
 Without the window, nothing else shows that a double-click on a torrent file
 worked. With the window open, the new row is the feedback.
+
+When a torrent stops on an error, such as a full disk or a missing folder, while
+no window is open, notify its name and the reason, coalesced like completions.
+Without the window, a stopped download would otherwise go unnoticed for days.
 
 A file deletion that fails, fully or in part, is notified with the torrent name
 and the reason, with the window open or closed, and written to the log. The

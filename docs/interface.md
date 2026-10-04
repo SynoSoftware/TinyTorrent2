@@ -189,9 +189,9 @@ Language selection retains its immediate, in-place behavior.
 The torrent table is the primary workspace, with an optional inspector and
 focused Add and Preferences tasks. Filtering belongs to the page: a status
 filter (All, Downloading, Seeding, Completed, Paused, Error), a tracker filter
-derived from each torrent's tracker hosts, and a text filter. As in qBittorrent,
-Completed includes finished torrents that are paused, and Paused includes them
-too, so the person finds such a torrent under either. TableView owns its
+derived from each torrent's tracker hosts, and a text filter. Completed
+includes finished torrents that are paused, and Paused includes them too, so
+the person finds such a torrent under either. TableView owns its
 generic interaction. Domain actions from toolbar, context
 menu, and keyboard use the same command owner.
 
@@ -202,8 +202,12 @@ Torrent commands are Pause, Resume, Force start, Open, Open folder, Copy magnet
 link, Copy info hash, Move, Verify, Remove, and Delete files. Open hands the file
 of a single-file torrent, or the folder of a multi-file torrent, to Windows as
 Explorer does, only on the person's request. Double-click and Enter on a row
-open the inspector. Pause all and Resume
-all are in the window and the tray. Exit is in the window as well as the tray.
+open the inspector. Add torrent file opens the native picker, and Add magnet
+link opens a field for the link even when the Add form is turned off; the
+source then follows the Show the Add form preference. Pause all and Resume all
+are in the window and the tray, and keep each torrent's own
+[paused or running state](engine.md#state-and-work). Exit is in the window as
+well as the tray.
 
 Dropping torrent files or magnet text on the window, or pasting them with Ctrl+V
 while the table has focus, opens Add with those sources. An empty list says how
@@ -243,7 +247,7 @@ once with the affected torrent names or count, a specific action such as Remove
 or Delete files, and a safe Cancel action. Remove confirms because a removed
 torrent cannot be restored without its torrent file or magnet link. Delete files
 also states the file scope, that deletion is permanent, and that files other
-torrents use are kept. Deletion bypasses the Recycle Bin, as in qBittorrent,
+torrents use are kept. Deletion bypasses the Recycle Bin,
 because people delete a torrent's files to free disk space. The dialog
 opens with focus on Cancel, so Enter cannot delete data by accident. Use
 standard [ContentDialog buttons](https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/dialogs-and-flyouts/dialogs).
@@ -279,7 +283,7 @@ several files from Explorer, or by one drop, share one form: their names and
 sizes, one destination, Start paused, and Add all. A source already in the
 list is marked Already added, with the offer to merge its trackers. Sources that
 arrive while the form is open join it. File choices for each torrent move to the Files view.
-Thirty torrents are one form, not thirty. As in qBittorrent, the form has a
+Thirty torrents are one form, not thirty. The form has a
 Never show again check box, which turns off the Show the Add form preference
 where the person meets the form.
 
@@ -329,9 +333,10 @@ port mapping, and listen port; completion notifications; preventing idle sleep
 while downloading on mains power, and also while seeding; Check for updates,
 following the [update model](architecture.md#installation-and-updates); and
 language. Each uses the existing settings path. Reaching a seeding limit pauses
-the torrent, as in qBittorrent; nothing is removed without a request. The sleep switch names its
-mains-power condition, so a laptop that sleeps on battery does not surprise
-its owner.
+the torrent; nothing is removed without a request. Resuming that torrent by
+hand lifts the limit for it, so it seeds on as asked instead of pausing again.
+The sleep switch names its mains-power condition, so a laptop that sleeps on
+battery does not surprise its owner.
 
 Preferences offers one Start when I sign in switch and an Open torrents with
 TinyTorrent action covering `.torrent` files and magnet links. These call the
@@ -359,15 +364,16 @@ torrent identity; protect only its unfinished input when changing context or
 closing. An untouched inspector and an already-applied change never trigger a
 save prompt. A removed target cannot receive a write.
 
-Move makes its scope clear: moving a dedicated torrent folder includes companion
-files such as subtitles. A shared download directory is never silently moved as
-one torrent's folder. Show source and destination, preserve choices on failure,
-and give an actionable explanation for a collision or an unsafe scope, following
-[engine relocation](engine.md#removal-and-relocation). When other torrents use
-the files, name them and offer to move them together.
+Move moves the torrent's own files; other files in its folder stay. Show the
+folder the files will be in, so choosing the torrent's own folder instead of
+the folder that contains it is visible before the move. Preserve choices on
+failure. When files are already at the destination, offer Use the files there,
+following [engine relocation](engine.md#removal-and-relocation). When other
+torrents use the files, name them and offer to move them together.
 
 The Speed view shows the [engine's session-wide speed history](engine.md#state-and-work),
-whichever torrent is selected, as qBittorrent's does. It continues while WinUI
+whichever torrent is selected, and its heading says All torrents, so nobody
+reads it as the selected torrent's speed. It continues while WinUI
 is closed, so reopening shows what happened meanwhile. Offer the last five
 minutes and the last 24 hours. Unknown gaps, such as the time before an engine
 restart, are not interpolated into invented history. Provide current/peak text
@@ -375,9 +381,10 @@ alongside a chart.
 
 One page owner allocates table and inspector space. Remember an explicit split
 adjustment within current usable bounds; the splitter is keyboard-adjustable and
-reports its range. If both panes cannot show their essential content, use the
-same inspector in a single-pane presentation with Back. Preserve selection and
-the requested split; do not hide an inspector while continuing its detail work.
+reports its range. The window's minimum size fits the table and the inspector at
+their minimum heights, so there is no second layout for small windows. Preserve
+selection and the requested split; do not hide an inspector while continuing its
+detail work.
 
 ### Pieces map
 
