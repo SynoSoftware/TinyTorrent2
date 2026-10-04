@@ -1,0 +1,14 @@
+# Native build output
+bin/
+obj/
+bin-fl/
+artifacts/
+TestResults/
+*.user
+*.log
+*.dmp
+
+# Local editor state
+.vs/
+.idea/
+*.suo

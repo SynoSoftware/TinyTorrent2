@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Page
+    x:Class="Synapse_Sample.Round3bPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:Synapse_Sample">
+
+    <Page.Resources>
+
+        <!--  The design's actual container style: BasedOn the default, Stretch, Padding 0,
+              and no MinHeight / MinWidth so no chrome is removed as a side effect.  -->
+        <Style x:Key="DesignRowStyle" TargetType="ListViewItem"
+               BasedOn="{StaticResource DefaultListViewItemStyle}">
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Padding" Value="0" />
+        </Style>
+
+        <!--  Plain row content. Transparent background so the row surface hit-tests,
+              text kept to the left so most of the row shows container chrome only.  -->
+        <DataTemplate x:Key="PlainRowTemplate">
+            <Grid Height="32" Background="Transparent">
+                <TextBlock Margin="8,0,0,0" VerticalAlignment="Center" FontSize="14" Text="{Binding Name}" />
+            </Grid>
+        </DataTemplate>
+
+        <!--  Coloured cells inside the shared row panel, for the header/row registration test.  -->
+        <DataTemplate x:Key="CellRowTemplate">
+            <local:RowPanel>
+                <Border Background="#FF101080"><TextBlock Margin="4" Text="c0" Foreground="White" /></Border>
+                <Border Background="#FF20A0FF"><TextBlock Margin="4" Text="c1" Foreground="White" /></Border>
+                <Border Background="#FF30C030"><TextBlock Margin="4" Text="c2" Foreground="White" /></Border>
+                <Border Background="#FFFFD000"><TextBlock Margin="4" Text="c3" Foreground="Black" /></Border>
+                <Border Background="#FFFF6000"><TextBlock Margin="4" Text="c4" Foreground="Black" /></Border>
+                <Border Background="#FFE00040"><TextBlock Margin="4" Text="c5" Foreground="White" /></Border>
+                <Border Background="#FF9000C0"><TextBlock Margin="4" Text="c6" Foreground="White" /></Border>
+                <Border Background="#FF00C0C0"><TextBlock Margin="4" Text="c7" Foreground="Black" /></Border>
+                <Border Background="#FF80FF00"><TextBlock Margin="4" Text="c8" Foreground="Black" /></Border>
+                <Border Background="#FF404040"><TextBlock Margin="4" Text="c9" Foreground="White" /></Border>
+            </local:RowPanel>
+        </DataTemplate>
+
+        <ItemsPanelTemplate x:Key="IspPanel3b">
+            <ItemsStackPanel />
+        </ItemsPanelTemplate>
+
+    </Page.Resources>
+
+    <Grid>
+        <Grid x:Name="Host"
+              Width="900"
+              Height="500"
+              HorizontalAlignment="Left"
+              VerticalAlignment="Top"
+              Background="{ThemeResource ApplicationPageBackgroundThemeBrush}" />
+    </Grid>
+</Page>

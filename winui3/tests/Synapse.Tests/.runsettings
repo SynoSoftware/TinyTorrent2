@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RunSettings>
+
+  <RunConfiguration>
+    <!--
+      WHY THIS EXISTS. Four test classes inject real Windows pointer and keyboard messages.
+      They prove the one thing nothing else can: that input actually travels the whole path,
+      from the window through the input site and the hosted ListView into the gesture arbiter.
+      Every other test in this project calls our code directly, so all 201 of them would still
+      pass if the arbiter were never attached to the ListView at all.
+
+      The cost is that injection takes the pointer and keyboard away from whoever is sitting at
+      the machine, for the length of the run. And the path they cover only changes when input
+      code changes, so paying that on every build buys nothing.
+
+      So they are excluded here, and asked for deliberately, with the test filter
+      TestCategory=Interactive on the dotnet test command line. (The switch itself cannot be
+      written here: an XML comment may not contain two hyphens in a row.)
+
+      Run them after touching input handling, a template part name, or an event subscription —
+      the three ways that path breaks silently.
+    -->
+    <TestCaseFilter>TestCategory!=Interactive</TestCaseFilter>
+  </RunConfiguration>
+
+</RunSettings>

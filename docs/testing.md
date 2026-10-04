@@ -1,0 +1,178 @@
+# Testing that earns its cost
+
+The default feedback loop for a small edit should take seconds, not a five-minute
+suite followed by another five-minute suite. Choose evidence for the failure the
+change could cause. Neither a test per change nor a full run per task is required.
+This policy owns test scope across TinyTorrent; local instructions still govern
+build entry points and permission to launch desktop applications.
+
+## The everyday loop
+
+Start with source reasoning, compiler guarantees, and existing coverage. Run the
+smallest relevant existing check, using its native filter where available. Build
+only the affected target through the repository's supported workflow when a
+compile check is needed. Reuse valid build outputs; never test stale binaries.
+Documentation and screen-copy edits do not justify an application build or suite.
+
+Aim for seconds for routine checks. If the only available check takes five
+minutes, decide whether this edit needs the evidence it provides. A focused
+review or an authorized, narrow manual check can be sufficient for a low-risk
+change. State what remains unverified. Do not build a new test framework merely
+to avoid one slow run, and do not skip essential data-integrity evidence to meet
+an arbitrary time budget.
+
+Run a slower integration check after related edits have settled when the risk
+actually crosses that boundary. Rerun it if a subsequent change affects what it
+proved or a failure requires another attempt. Do not rerun unchanged checks just
+because another agent reviewed the work or a small unrelated edit followed.
+Coordinate one run and share its result.
+
+A full suite is a deliberate integration or release check, or an explicit user
+request. It is not the default completion gate for each bug fix. A known relevant
+failure still needs resolution; postponing broad coverage does not excuse it.
+
+## What earns a test
+
+**Owner ruling: high-return tests only.** Tests are not the safety net here;
+review and measurement are. A test that does not earn its place is deleted later,
+so writing it is work done twice, and the time comes out of the real deliverable.
+A change is finished when the behavior is right, whether it carries one test or
+none.
+
+**One question decides it: what specific failure does this test watch for?**
+Name what breaks, what the user would observe, and why nothing else already
+catches it: an existing test, the compiler, libtorrent, or the platform. "A late
+resume-data save re-adds a torrent the user removed, so it reappears after
+restart" answers the question. "This code should have tests" does not, and
+neither does a plan that lists a test out of habit. When there is no answer,
+there is nothing to test: say so in the report and move on. An instruction to
+"add tests" is bound by the same question.
+
+Failures worth watching:
+
+- Loss of the user's data or downloads: saved state that does not survive a
+  restart, a destructive action that reaches another torrent's files, a late
+  write that resurrects a removed torrent.
+- The pipe contract: malformed or interrupted messages, checked through a small
+  set of byte fixtures that both codecs read. Not a test for every field or enum.
+- An invariant, pinned once. One test of the rule beats twelve rows of examples.
+- A defect already paid for, that a plausible simplification would bring back.
+  The selected-row cue that measured 1.08:1 against its 3:1 requirement is one.
+  These tests are the memory of a measured failure, and they stay.
+- A rule that nothing else guards.
+
+**Presentation is reviewed in the product, never asserted.** Screen text, labels,
+wording, XAML or source text, colors, spacing, screenshots and displayed number
+strings change with every copy or layout edit while the behavior stands still.
+A test on them forces a matching test edit and proves nothing. A measured
+requirement, such as a contrast ratio, is a contract, not presentation. Getters,
+pass-through mappings, framework behavior, every arm of an enum, a second example
+of a rule already pinned, and a test that counts other tests watch nothing either.
+
+Report each new or materially expanded test method with the failure it watches,
+what would be observed, and why existing coverage misses it.
+
+## A test asserts the outcome the failure would change
+
+Assert what the user or the caller would see go wrong: the saved state, the files
+on disk, the refusal, the reply on the pipe, the state a control is left in. The
+expected value is a literal that the scenario predicts, never a value that the
+production code under test computes again. A test that still passes when the
+feature is deleted watches nothing.
+
+Text finds a control; the assertion is what using it does: focus, selection, a
+command enabled or disabled, an action taken, state saved. Exact text or bytes are
+the assertion only when they are data or an external contract, such as a torrent
+name, a path, or the bytes on the pipe.
+
+A test runs the code and asserts what it did. It never reads a source file. Text
+found in a `.cs`, `.cpp`, `.xaml` or resource file proves that a line was typed,
+not that the product does anything. A rule about source structure or conventions
+belongs to the compiler, an analyzer, or review.
+
+## The cheapest layer, the smallest set
+
+Prove the failure at the cheapest layer that can fail for that reason: engine
+logic before a pipe round trip, and a pipe round trip before a running WinUI
+window. A higher layer repeats a lower one only when it can fail for a reason the
+lower layer cannot see. Pin a rule with one representative case, plus one case
+for each boundary or failure mode that is materially different. A case that
+differs only in its literal adds nothing.
+
+A test is deterministic or it is a defect. Fix the source of the nondeterminism,
+or delete the test. A retry, a sleep or a longer timeout hides the defect and
+keeps its cost. Wait for observable completion, with a bound.
+
+Reuse the fixtures that exist. A new fixture, builder or helper is justified only
+by setup that a valuable test cannot avoid, because each one is a second
+architecture the next engineer must learn. Production keeps its shape: a member
+made public, an interface added, or a class split only so that a test can reach
+it is the test bending the product.
+
+## A failing test has three outcomes
+
+1. Production is wrong: fix production.
+2. The test pinned behavior that changed on purpose: delete or rewrite it, and
+   report what it pinned and why that protection is no longer needed.
+3. The test was wrong: fix it and say why.
+
+Decide which before you touch either. Weakening an assertion, widening a
+tolerance, copying the observed value into the expected one, raising a timeout,
+or skipping the test is none of the three. When one change turns many tests red,
+the tests were coupled to the implementation: that is evidence for the second
+outcome, not a reason to update them all.
+
+**When you change a string, search for the string.** A test's class name does
+not say what it asserts. A search for the literal finds every assertion on it.
+The same applies to a renamed member, a changed enum value, or a moved key.
+
+**Deleting a test is a real option.** When a test you touch fails a rule above,
+deleting it is the default. Report which behavior each deleted test pinned.
+Deleting a test because it is red is the failure mode, not this.
+
+## Windows evidence
+
+Use this machine and the targeted checks below for the
+[architecture](architecture.md).
+Lifecycle behavior needs a real process check when it changes; a cache-policy
+or hot-path change may need a short comparable workload. Cosmetic changes do not
+inherit those costs. Respect the local restriction on launching WinUI tests or
+samples; this policy does not grant permission to interrupt the desktop.
+
+Report the relevant checks performed, their outcome, and any material gap.
+Distinguish source review, compilation, automated behavior checks, and manual
+observation. None should be described as stronger evidence than it provides.
+
+## Resource checks
+
+Clear ownership, bounded retention, on-demand UI, and sensible upstream defaults
+guide the design before measurements exist. Do not invent a memory promise or
+require a benchmark for every implementation choice.
+
+Once a real download/seeding path works, take one short memory/throughput check
+before expanding the UI. Repeat a focused whole-application check when the
+intended functionality works, leaving time to address findings before release.
+Between milestones, repeat only for a concrete regression or a change likely to
+affect memory or throughput, after related edits settle.
+
+For the milestone checks:
+
+- Compare idle and active downloads/seeding with WinUI closed, added cost while
+  open, and peaks during a representative operation.
+- Record resident working set and private committed memory separately. Identify
+  mapped/file-cache effects and avoid double-counting shared pages.
+- Include throughput, CPU, UI startup, and release package size with required
+  DLLs and runtimes. Size is secondary to correct, useful transfer behavior.
+- Check that repeated UI open/close and language switching do not accumulate
+  retained state. Closing WinUI releases its process and UI-only snapshots/history.
+
+Use the same machine and comparable conditions. Prefer repeatable local input
+over a volatile public swarm for transfer comparison. Synthetic rows can exercise
+large lists without another computer. No benchmark service or hardware lab is
+required.
+
+Data-integrity changes need focused evidence when they occur. Broader fault and
+release checks cover simultaneous launches, Unicode paths, malformed messages,
+write failures, remove/re-add races, incoming seeding, actual peer limits, and
+shutdown during relocation. These scenarios guide relevant checks, not a suite
+to run after every edit. Report untested conditions honestly.

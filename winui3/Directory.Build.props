@@ -1,0 +1,30 @@
+<Project>
+
+  <!--
+    Applies to every project under winui3/.
+
+    WHY THIS EXISTS. The WinUI XAML compiler writes a copy of each XAML file into a "bin-fl"
+    folder, resolving "$(BaseOutputPath)-fl" against the wrong working directory. That copy lands
+    INSIDE the output tree. The SDK's default globs then pick it up as SOURCE on the next build,
+    the compiler writes another copy one level deeper, and the path grows without bound on every
+    build. It reached 18 directory levels here and broke the build with
+    "Xaml Internal Error WMC9999: Could not find a part of the path".
+
+    The compiler is a binary we cannot patch. But the recursion only compounds because build
+    output re-enters the build as input. Removing bin/ and obj/ from every item glob breaks that
+    loop, so the folder can be written but never consumed, and depth stays constant.
+
+    Do not remove these without re-testing that a repeated build does not deepen
+    src/Synapse/bin/**/bin-fl.
+  -->
+  <ItemGroup>
+    <Page Remove="bin/**;obj/**;bin-fl/**" />
+    <ApplicationDefinition Remove="bin/**;obj/**;bin-fl/**" />
+    <Compile Remove="bin/**;obj/**;bin-fl/**" />
+    <Content Remove="bin/**;obj/**;bin-fl/**" />
+    <None Remove="bin/**;obj/**;bin-fl/**" />
+    <EmbeddedResource Remove="bin/**;obj/**;bin-fl/**" />
+    <PRIResource Remove="bin/**;obj/**;bin-fl/**" />
+  </ItemGroup>
+
+</Project>

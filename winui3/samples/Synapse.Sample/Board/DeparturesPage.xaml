@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Page
+    x:Class="Synapse_Sample.DeparturesPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:Synapse_Sample"
+    xmlns:t="using:Synapse"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+
+    <!--
+        Nothing here configures the table's appearance. No header style, no cell padding, no ids,
+        no marquee flag: the control's own defaults are the whole of it, and this page exists to
+        show that a host that is not the torrent list needs none of them.
+    -->
+    <Page.Resources>
+        <Style x:Key="Cell" TargetType="TextBlock">
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="TextWrapping" Value="NoWrap" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+        </Style>
+
+        <DataTemplate x:Key="TimeCell" x:DataType="local:Departure">
+            <TextBlock Text="{x:Bind TimeText}" Style="{StaticResource Cell}" />
+        </DataTemplate>
+
+        <DataTemplate x:Key="FlightCell" x:DataType="local:Departure">
+            <TextBlock Text="{x:Bind Flight}" Style="{StaticResource Cell}" FontFamily="Consolas" />
+        </DataTemplate>
+
+        <DataTemplate x:Key="DestinationCell" x:DataType="local:Departure">
+            <TextBlock Text="{x:Bind Destination}" Style="{StaticResource Cell}" />
+        </DataTemplate>
+
+        <DataTemplate x:Key="GateCell" x:DataType="local:Departure">
+            <TextBlock Text="{x:Bind GateText}" Style="{StaticResource Cell}" />
+        </DataTemplate>
+
+        <DataTemplate x:Key="StatusCell" x:DataType="local:Departure">
+            <TextBlock Text="{x:Bind StatusText}" Style="{StaticResource Cell}" />
+        </DataTemplate>
+    </Page.Resources>
+
+    <Grid RowSpacing="8" Padding="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="12">
+            <TextBlock Text="Departures"
+                       Style="{StaticResource SubtitleTextBlockStyle}"
+                       VerticalAlignment="Center" />
+            <Button Content="Post a new board" Click="OnPostClick" VerticalAlignment="Center" />
+            <Button Content="Clear the board" Click="OnClearClick" VerticalAlignment="Center" />
+            <TextBlock x:Name="Status"
+                       VerticalAlignment="Center"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+        </StackPanel>
+
+        <t:TableView x:Name="Table"
+                     Grid.Row="1"
+                     AutomationProperties.Name="Departures"
+                     Background="{ThemeResource LayerFillColorDefaultBrush}"
+                     BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                     BorderThickness="1"
+                     SelectionStateChanged="OnSelectionStateChanged">
+            <t:TableView.Columns>
+                <t:TableColumn x:Name="TimeColumn"
+                               DisplayName="Time"
+                               Width="90"
+                               CellTemplate="{StaticResource TimeCell}" />
+                <t:TableColumn x:Name="FlightColumn"
+                               DisplayName="Flight"
+                               Width="110"
+                               CellTemplate="{StaticResource FlightCell}" />
+                <t:TableColumn x:Name="DestinationColumn"
+                               DisplayName="Destination"
+                               Width="260"
+                               CellTemplate="{StaticResource DestinationCell}" />
+                <t:TableColumn x:Name="GateColumn"
+                               DisplayName="Gate"
+                               Width="90"
+                               CellAlignment="Right"
+                               CellTemplate="{StaticResource GateCell}" />
+                <t:TableColumn x:Name="StatusColumn"
+                               DisplayName="Status"
+                               Width="180"
+                               CellTemplate="{StaticResource StatusCell}" />
+            </t:TableView.Columns>
+        </t:TableView>
+    </Grid>
+</Page>

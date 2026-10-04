@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Application
+    x:Class="Synapse_Sample.App"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:Synapse_Sample">
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
+                <!-- Other merged dictionaries here -->
+            </ResourceDictionary.MergedDictionaries>
+
+            <!--
+                The focus visual, for the whole application. The platform default is a two-tone
+                rectangle, a thick near-black stroke with a thin near-white one inside it, drawn
+                that way so it stays visible over anything. Wherever it lands on this page — a menu
+                item, a button, a column header — it reads as a hard box belonging to no part of the
+                design. The outer stroke is dropped here and what is left is the accent, which still
+                says where the keyboard is without framing the thing it is on.
+
+                These two brushes are what the platform builds every focus visual from, so the pair
+                below covers every control on the page, including the ones added next year. It was
+                once done with a style per control type, which is a list that reached three kinds of
+                menu item and nothing else: the column header kept the platform's rectangle, and a
+                right-click on a header showed it.
+
+                An earlier attempt at this same override was reverted because Synapse's Generic.xaml
+                read these two brushes as the fills for section 11's column drop marker, section
+                16's row drop marker and section 15's marquee, so re-theming focus quietly turned
+                three specified cues from a two-tone pair into one tone. Those markers now build
+                their own pair from FocusStrokeColorOuter and FocusStrokeColorInner, the colours
+                behind these brushes, which nothing here touches.
+
+                Declared in ThemeDictionaries because a ThemeResource lookup searches those first;
+                the same keys as plain application resources are found after the merged WinUI ones
+                and never take effect. High contrast keeps the platform's own pair: the accent
+                measures 1.00:1 in contrast themes, which is the case the two-tone pair exists for.
+            -->
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Default">
+                    <SolidColorBrush x:Key="FocusStrokeColorOuterBrush" Color="Transparent" />
+                    <SolidColorBrush x:Key="FocusStrokeColorInnerBrush"
+                                     Color="{ThemeResource SystemAccentColorLight2}" />
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Light">
+                    <SolidColorBrush x:Key="FocusStrokeColorOuterBrush" Color="Transparent" />
+                    <SolidColorBrush x:Key="FocusStrokeColorInnerBrush"
+                                     Color="{ThemeResource SystemAccentColorDark1}" />
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="HighContrast">
+                    <SolidColorBrush x:Key="FocusStrokeColorOuterBrush"
+                                     Color="{ThemeResource FocusStrokeColorOuter}" />
+                    <SolidColorBrush x:Key="FocusStrokeColorInnerBrush"
+                                     Color="{ThemeResource FocusStrokeColorInner}" />
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>
