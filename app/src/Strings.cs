@@ -74,6 +74,9 @@ public sealed class Strings
     public string Format(string group, string key, params object[] values) =>
         string.Format(CultureInfo.CurrentCulture, Get(group, key), values);
 
+    internal string FormatCount(string group, string key, int count, params object[] values) =>
+        Format(group, key + (count == 1 ? "_one" : "_other"), [count, .. values]);
+
     public string Status(string code) =>
         _current.Text.TryGetValue("status", out var messages) && messages.TryGetValue(code, out var text)
             ? text : Get("status", "unknown");

@@ -1,5 +1,59 @@
 # Implementation decisions and evidence
 
+## Approved application navigation
+
+Four perspectives considered the remaining prototype navigation in sequence:
+
+- Everyday user: keep Torrents, Settings and About together, and make returning
+  to downloads preserve the selected torrent and inspector.
+- Heavy seeder: keep session pause and limits reachable through their existing
+  tray, shortcuts and search; a navigation menu need not duplicate them.
+- WinUI designer: use a native MenuFlyout and a simple scrollable About surface,
+  with the canonical vector icon and normal type roles on the shared acrylic.
+- Product owner: follow the approved four-command menu, show the running version
+  rather than prototype sample text, and add no help or promotional destinations.
+
+The selected implementation keeps one `WindowPage` in the main view model.
+The view owns native focus and the discard dialog. The same navigation guard
+protects unfinished Preferences input when returning to Torrents or opening
+About. Global search calls those same commands. This is a UI checkpoint, not
+completion evidence for the pending engine refactor or milestone 4.
+
+The update-check decision was considered in sequence by four roles. An everyday
+user wanted a quiet, useful link rather than a failed-network dialog. A Windows
+engineer wanted cancellation with the window lifetime and no resident worker.
+A release maintainer wanted the public latest stable release, no credentials
+and a bounded request. The product owner wanted the already-planned preference
+to work while leaving installation and signing outside these milestones.
+The selected implementation caches each attempt for 24 hours, compares the
+published tag with the running assembly version, and opens the fixed project
+release page only on request. GitHub's [release API documentation](https://docs.github.com/en/rest/releases/releases#get-the-latest-release)
+defines the source. Missing release/network failures are silent; the cache is
+optional UI state and cannot block Close.
+
+The About/navigation Release build passed. The post-build Everything query
+reported only the concurrent dependency checkout's existing `boostlook/doc/bin`
+and `tools/perl/bin` input folders. Native capture found the isolated window but
+required interactive app approval and timed out. The window-only copy was then
+closed. No engine was launched, and painted navigation/acrylic acceptance is
+still pending; build success is not visual evidence.
+
+The fresh Astra shell review found four concrete defects. Add dialog cleanup
+now cancels only the Add draft; confirmed addition reveal waits for that dialog
+to finish. A filter refusal synchronizes the visible table and command selection
+while the inspector owner retains unfinished or pending edits. Saved peer and
+tracker snapshots are independently optional, so an incomplete inspector layout
+recovers to the respective table defaults instead of throwing on first open.
+The optional update request observes the preference owner's changes, including
+an immediate off choice, rather than waiting for the next transfer snapshot.
+These are source corrections; their native scenarios still need runtime proof.
+The second Astra pass found no remaining findings in this shell scope. The
+corrected managed Release build passed. The final Everything query reported
+only the same two concurrent dependency-input folders. No new test was added:
+the presentation and modal journeys require review in the product, and this
+checkpoint changes no TableView library implementation. All owned UI and engine
+processes are closed. Milestones 3–5 remain incomplete.
+
 ## First usable download
 
 The first window extends acrylic content into its LabForms-style title bar, with icon-only
@@ -898,7 +952,60 @@ directory with background activation; it never replays an addition. The managed
 explicit Restart uses ProcessStartInfo.ArgumentList to preserve directory
 arguments, including a volume root.
 
+### Advisory engine issues 57–66
+
+The user requested a fresh Sol 6.1 assessment of these advisory issues. It read
+the current engine and contracts, proposed the concrete changes, and implemented
+only the approved engine state/queue/name corrections. No GitHub issue was
+closed, edited or consolidated.
+
+| Issue | Disposition |
+| --- | --- |
+| 57 | Fixed the concrete overload failure: Change owns its bound and returns refusal; commands report overloaded and rejected guarded additions release their handles. No current missed slot release was found, so the broader queue rewrite remains advisory. |
+| 58 | Fixed independent alias conflict, hash-save and checkpoint failure state. Hash membership saves retry and unresolved final hash writes cannot be reported as saved. Checkpoint success clears only its own failure. |
+| 59 | Fixed the confirmed unnamed-magnet discrepancy and unnecessary full status query. Preview, row, detail and notification use one cached name/hash fallback. Broader preview/tracker/priority deduplication remains a structural advisory. |
+| 60 | Fixed the stale Loading tooltip by using one tooltip calculation, including loading state. Executable-path, registry and cross-language identity literals remain structural advisories without another demonstrated behavioral disagreement. |
+| 61 | Retained the existing JSON command boundary and reply composition. The tray calls the engine owner directly, without self-IPC. A typed-command/envelope migration adds no required user behavior here and remains advisory. |
+| 62 | Fixed modal pause failure feedback and the same direct-add storage-failure path. Both use bounded nonblocking native notices; engine ticking continues. |
+| 63 | Direct-add success now names the confirmed torrent; duplicates say already in the list. Failed magnets use a localised Magnet link label instead of raw private URI text. |
+| 64 | Closed-set enums remain a design advisory; no reported typo establishes a runtime failure. The concrete multiplexed-error bug is fixed by independent facts rather than a blanket conversion of the wire protocol. |
+| 65 | Reviewed new names at their use sites; no mass rename was made. Broader legacy vocabulary/style suggestions remain advisory. |
+| 66 | Kept the native desktop lifetime owner and existing registration component. The current change fixes concrete lifetime failures there; splitting its Win32 callbacks solely by count would add interfaces between code that shares one lifetime. |
+
+Decision review in series: the downloader prioritises lost work and stalled
+transfers; the libtorrent engineer keeps alias identity independent of storage
+outcomes; the Windows engineer keeps one live engine and native message owner;
+the maintainer centralises the actual queue bound and name rule; the product
+owner accepts these small fixes and rejects automatic broad restructuring.
+The native Registration header stays concise: two consumers need its declaration
+and the implementation hides the registry details. Padding it or moving Windows
+declarations into unrelated engine state would reduce clarity merely to satisfy
+the generic file-size guideline.
+
+The user subsequently assigned another agent an engine structure pass: command
+and alert handlers, change-slot ownership, shared rules, typed status/failure
+modes, pipe-owned request IDs, and a separate native desktop decomposition.
+These are now authorised changes, rather than proposals to reject mechanically.
+The work above is its starting state and must be preserved. This orchestrator
+leaves engine/src untouched during that pass and reviews its completed diff and
+runtime evidence before the milestone commit.
+
+The third fresh review found two remaining native feedback defects for that
+pass: a failed tray pause is currently suppressed while WinUI exists, though
+that window never received the failure reply; and the completion preference
+incorrectly suppresses direct-add acknowledgements. It also found a WinUI
+Restart launch error hidden by generic disconnection text. The latter now shows
+the reported error in the same disconnected feedback used by main, Add and
+speed-limit surfaces, retaining the Restart command and unfinished input.
+
 ### Background checks
+
+The prototype author wants its study commit preserved; the repository maintainer
+keeps one primary development branch; the implementer avoids creating a second
+primary history; the product owner follows the user's intent to keep product
+work separate from the prototype. The user moved the shared checkout back to
+`main`. There is no branch named `master`; the user's primary-branch instruction
+therefore uses the repository's existing `main`, without a rename or extra branch.
 
 Release builds of Engine and TinyTorrent pass. Each build and focused runtime
 check ends with an empty stray-folder check. All check-owned engines, WinUI
@@ -917,6 +1024,7 @@ windows, peers and temporary browser processes are closed.
 | DesktopWindow-171ba2a8-3804-4977-8b4b-ce242555d57b | Ordinary Close released WinUI while the engine continued; the first-close notice flag was durably saved; the actual native double-click callback opened a fresh usable window. The ready window's shell properties contained Engine as relaunch target, its icon/display resources and the shared AppID. |
 | DesktopStartup-6efe2bd3-523a-453c-a808-240407793769 | An isolated delivery without WinUI showed native failure and Retry on a captionless surface. Retry opened the repaired delivery; readiness removed stale feedback. GetApplicationRestartSettings returned the canonical store and background arguments. |
 | Frames-3b225228-dc56-430c-9c86-818b0b6a3dfd | Malformed registration operation input returned invalid_request; the next valid snapshot still worked. Existing fragmented/invalid/oversized frame checks also passed. |
+| RestartFailure-21b111ce-bd48-4b42-8346-e3960ecd554a | Removing only the isolated delivery's engine executable made explicit Restart fail. The real Add form exposed the launch error and retained destination/Start paused. Restoring that executable and invoking Restart reattached the same UI and store without submitting its draft. |
 
 The added CheckpointRetry check watches loss of a failed application checkpoint
 after libtorrent has already cleared its dirty flag; prior failed-membership
@@ -935,6 +1043,195 @@ policy is implemented and source-reviewed, but actual idle sleep and battery
 transitions need a hands-on check. Registered default-choice UI and actual
 taskbar pin/relaunch belong to later manual/release checks; no Windows default
 was changed and no installer was produced.
+
+## Details and preferences preparation
+
+The owner's parallel engine pass has exclusive ownership of `engine/`. WinUI
+preparation continues separately; the background milestone still needs its final
+integration review before its completion commit.
+
+The inspector design follows the reviewed Files prototype using native WinUI
+controls. The following roles considered immediate file edits and navigation,
+in sequence:
+
+- Everyday user: a wanted checkbox or priority choice applies immediately; viewing
+  progress must not create an unsaved page.
+- Heavy seeder: keep a failed choice visible and bind it to the durable torrent
+  identity, so removing and re-adding content cannot redirect an old edit.
+- Product owner: keep the six required views and omit unrelated controls; one
+  shared file browser serves Add and Properties.
+- Fluent designer: use native navigation, the existing TreeView for
+  hierarchy and TableView for Peers and Trackers. Use native progress indicators,
+  theme brushes and text roles rather than copying web components.
+- Keyboard user: retain expansion and focus while progress changes; all bulk
+  actions state their filtered scope, while folder choices still affect every
+  descendant.
+- Accessibility reviewer: expose file identity, checkbox state, priority and
+  progress in native controls; avoid announcing every transfer tick.
+- Engine engineer: transmit only changed file indices and priorities. A tracker
+  list is one coherent edit, with Save and Cancel, rather than several uncertain
+  mutations.
+- Maintainer: keep the file-choice rule at FileSelection. A separate Edited event
+  distinguishes intended choices from ordinary refresh notifications.
+
+The resulting design applies ordinary file choices once, retains failed choices
+for an explicit retry, and protects only actual unfinished input. Inspector
+detail requests belong to the visible section and durable target; obsolete
+replies are consumed without replacing the current view. Progress refreshes
+update existing tree nodes rather than rebuilding their expansion state.
+
+The separate Preferences model and native form now compile through the existing
+Release WinUI target. They are preparation, not yet connected to the application
+page or treated as a completed journey. The four serial reviews chose individual
+field commits for the everyday user; native navigation, editors and textual
+schedule facts for Windows and accessibility; existing settings/registration
+owners for engine semantics; and one field draft owner for maintainability.
+
+Root review corrected a rate edit that relied on dispatcher snapshot timing:
+SaveLimits returns its validated, saved byte values, and the preference confirms
+those values. It also corrected focus departure into a draft-protection dialog
+submitting that very draft; departure commits only within Preferences. Native
+switch labels use the live catalogue. The compiler exposed and resolved the
+C# 14 `field` keyword, generated names hiding platform members, and an unqualified
+static x:Bind call. English/Spanish catalogue integrity passed, and every build
+and check left the stray-folder query empty.
+
+The actual shared-file Add journey passed with the latest WinUI build in
+`SharedFilesUi-a942855b-2412-44c6-9943-887bcbe5ecea`: toggling the native checkbox
+submitted priorities 0,4, the chosen folder and paused intent; the committed form
+closed without a draft prompt. It used the previously verified isolated engine
+binary, leaving the incoming engine source pass untouched. A PowerShell
+test-harness variable shadowed its UI Automation condition on the first attempt;
+renaming that variable corrected the harness without changing product code.
+
+Four serial roles revisited navigation after laying out the lower inspector:
+the everyday user keeps all six sections discoverable; the Fluent designer uses
+native top NavigationView and its overflow; the keyboard user keeps the platform's
+composite navigation and focus behavior; the product owner avoids increasing the
+minimum window merely to fit six vertical rows. Top navigation was selected
+because it preserves the working width and usable height of the file browser and
+tables. The interface document owns that decision.
+
+The prepared Inspector model owns one durable target, visible section, confirmed
+facts and failed edits. Peer and Tracker rows carry sampled raw facts, with
+regional formatting and live text derived when read. The Files view reuses
+FileBrowser. Peers and Trackers declare public TableView schemas with stable
+endpoint/URL keys and typed sort keys; no library change is required. The tracker
+editor preserves its coherent draft until Save or Cancel. SpeedGraph uses native
+paths with separate figures across unknown time gaps. PiecesMap uses one BGRA
+bitmap, 16-pixel squares, 4-pixel gaps and 6-pixel gutters after each group of
+eight, matching the previous native map. Geometry and theme changes invalidate
+the raster; equal data does not. Grouped squares use the documented state tie
+order, received fill and a mixed-state corner. Arrow/Home/End navigation, a
+read-only UI Automation value and Ctrl+C expose the same range facts as hover.
+These surfaces are not yet connected to the product or runtime-reviewed.
+
+The owner's latest reference is `app/prototype.html` at `4082f7f`, variant C,
+compact-polished. An isolated, hidden Chrome preview rendered the table, status
+drawer and all six inspector sections; screenshots are in
+`artifacts/evidence/Prototype-4082f7f-details`. The preview browser was closed.
+The application connection was unavailable, so the prototype agent's running
+critique could not be retrieved; no claim of coordination is made.
+
+Four roles considered how to carry this updated owner ruling into WinUI, in
+series. The everyday user wants the six detail sections visible beside their
+content and status choices available without permanently taking table width.
+The Fluent designer chooses native left NavigationView for inspector sections,
+a native collapsible pane for status choices and AutoSuggestBox for search.
+The keyboard and accessibility reviewer keeps platform selection, focus and
+scrolling and excludes interactive caption controls from the drag region.
+The product owner keeps the existing LabForms caption metrics and the explicit
+language and theme actions, with no flags. The result supersedes the earlier
+top-inspector decision: the latest owner-selected prototype owns the layout;
+WinUI, MVVM and TableView continue to own behavior and control semantics.
+
+Their pending engine representation is explicit so integration has one answer:
+`torrent` takes `view` (general/files/peers/trackers/pieces), with `include_files`
+when opening Pieces. General adds comment, creator, created (Unix seconds),
+piece_size and nullable private; Files adds downloaded bytes. Peer rows contain
+endpoint, client, transport, incoming, encrypted, progress, download_rate,
+upload_rate, downloaded and uploaded. Tracker rows contain url, tier, status,
+seeds, leechers, downloaded, next_announce (Unix seconds or zero), and message.
+Pieces returns metadata_ready, piece_size, peers, verified booleans, per-piece
+availability, downloading index/progress pairs and, on opening, files with path,
+first_piece and exclusive end_piece. `history` takes range five_minutes/day and
+returns timestamped aggregate-rate samples; absent time remains a gap. `edit`
+takes torrent_id and intended changes: indexed priorities or a complete URL/tier
+tracker list. These fields remain preparation until the engine implements them.
+
+The owner ruled that code about to change does not receive repeated intermediate
+reviews. Testing now explicitly requires integration of a coherent slice before
+independent review; the final milestone adversarial review remains. The updated
+native layout is integrated in one batch: a SplitView status drawer, an
+AutoSuggestBox in the caption, the lower inspector with native vertical
+NavigationView, and the full Preferences page. The finding model owns one status
+filter and bounded suggestions; its commands call established command owners.
+Settings results navigate to fields without changing them. The inspector
+suspends optional detail requests while Preferences is shown. One window-owned
+confirmation task coordinates draft protection across navigation and Exit.
+The native Thumb splitter exposes keyboard adjustments and its bounded height
+through the RangeValue automation pattern. These are source changes awaiting
+the batch build and runtime evidence; engine detail/settings integration is
+still pending the separately owned engine pass.
+
+The approved prototype is now `8614126`, variant C. Its final changes widen Add
+and correct focused-row activation, focus return and shortcut scope. The native
+host uses TableView activation, preserves its selection owner, returns inspector
+focus to the table, and routes selection shortcuts from the toolbar and inspector
+while leaving editors and Preferences alone. Add uses the approved 864-pixel
+native dialog width, bounded by the window. Inspector and Preferences controls
+are created when first opened, keeping their controls out of the initial-window
+path. The owner's continuous-acrylic ruling applies the existing chrome tint
+once at the root; caption, table workspace and filter drawer have transparent
+fills above that same backdrop. TableView remains unchanged.
+
+The integrated UI compiled in Release and passed the native journey in
+`artifacts/evidence/NativeLayout-252fe99b-1f1b-4c59-81e5-b26424876ce1`:
+status filtering, Enter on a torrent row, all six inspector navigation items,
+the splitter's RangeValue adjustment, Preferences navigation, rapid language
+choices, live theme switching, retained unfinished folder input, Keep editing,
+and Discard followed by ordinary Close. Both owned processes exited. This used
+the verified pre-refactor engine; it does not establish the pending detail wire
+fields or the refactored engine's behavior. Painted acrylic, contrast, physical
+pointer input and Narrator speech remain unverified.
+
+Filter choices now keep their six identities across status ticks; their labels
+and counts are computed from the current catalogue and torrent facts. Replacing
+the choices each tick invalidated native selection during the first journey.
+The later Close-check failures came from the automation helper reaching controls
+of a dismissed dialog before its completion; onscreen targeting and a complete
+theme-change journey separated the two user actions. No Close behavior was
+weakened to pass that check.
+
+Four roles considered saved layout independently, in sequence. The Windows
+desktop engineer chose normal bounds, saved display scale and current work-area
+recovery. The everyday user wanted the chosen table layout and inspector split
+back on reopening. The keyboard user required a reachable caption and controls
+after removing a monitor. The product owner kept this optional UI state out of
+the engine and refused to block Exit over a layout-file failure. The chosen
+implementation stores one WinUI-owned window snapshot on Close and uses
+TableView's public layout API; no control-library change is needed.
+
+The owner identified the repeated Windows Security popup as the engine's
+firewall prompt. Earlier advice about a download marker addressed a different
+tool and did not fix it. Native UI checks had copied Engine.exe into a new
+delivery directory each time; Windows' program rules identify those separate
+paths. Further checks use `artifacts/checks/delivery/Engine.exe`, with separate
+stores and evidence directories. The owner-requested administrator script
+`V:/temp/TinyTorrent-AllowFirewall.ps1` grants TCP/UDP inbound access on Private
+and Public profiles only to that fixed path and the existing product build.
+It is not product startup behavior or installer work. No administrator token is
+available to this task, and no firewall rule has been changed by it.
+
+The named stray-folder check's installed Everything CLI carries a download
+marker in protected Program Files. An identical, validly signed copy in
+`artifacts/tools/Everything/es.exe` has no marker and is used for these checks.
+The Everything IPC endpoint is unavailable inside the restricted process, so
+checks use its normal-process endpoint or the equivalent filesystem traversal.
+The concurrent dependency checkout produced `3rdParty/tools/perl/bin` and
+`3rdParty/boost/tools/boostlook/doc/bin`; these are downloaded input directories,
+not recursive WinUI output. They were reported and left intact. The owner is
+replacing vcpkg in another thread; that work remains outside this UI pass.
 
 ## Wire representation
 

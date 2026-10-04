@@ -7,14 +7,9 @@ namespace Syno.TinyTorrent;
 public sealed partial class MainViewModel
 {
     private JsonElement _settings;
-    private string _search = string.Empty;
-    private bool _errorsOnly;
     private bool _receivingSources;
     private bool _sourcesPending;
     public SpeedLimits Speed { get; }
-    public ObservableCollection<Torrent> VisibleTorrents { get; } = [];
-    public string Search { get => _search; set { if (_search == value) return; _search = value; Refresh(); } }
-    public bool ErrorsOnly { get => _errorsOnly; set { if (_errorsOnly == value) return; _errorsOnly = value; Refresh(); } }
     public bool AllPaused { get; private set; }
     public bool HasIncoming { get; private set; }
     public string Incoming => Text.Get("window", HasIncoming ? "incoming" : "no_incoming");
@@ -34,11 +29,8 @@ public sealed partial class MainViewModel
         get => Setting("alternative_limits", false);
         set { if (value != AlternativeLimits) _ = SaveAlternative(value); }
     }
-    public Torrent? Inspector { get; private set; }
-    public bool HasInspector => Inspector is not null;
-    public string InspectorDownloaded => Inspector is null ? string.Empty : Text.Bytes(Inspector.Downloaded);
-    public string InspectorRemaining => Inspector is null ? string.Empty : Text.Bytes(Inspector.Remaining);
-    public string InspectorFolder => Inspector?.SavePath ?? string.Empty;
+    public Inspector Inspector { get; }
+    public bool HasInspector => Inspector.IsOpen;
     public ICommand AddMagnet { get; }
     public ICommand Force { get; }
     public ICommand Verify { get; }
@@ -65,21 +57,6 @@ public sealed partial class MainViewModel
         _settings.TryGetProperty(name, out var value) ? value.GetBoolean() : fallback;
     public double Limit(string name) => _settings.ValueKind == JsonValueKind.Object &&
         _settings.TryGetProperty(name, out var value) ? value.GetInt32() / 1024.0 : 0;
-
-    private void Project()
-    {
-        var desired = Torrents.Where(torrent => torrent.Name.Contains(_search, StringComparison.OrdinalIgnoreCase) &&
-            (!_errorsOnly || torrent.ErrorCode.Length > 0)).OrderBy(torrent => torrent.QueueOrder).ToArray();
-        foreach (var torrent in VisibleTorrents.Where(torrent => !desired.Contains(torrent)).ToArray()) VisibleTorrents.Remove(torrent);
-        foreach (var torrent in desired)
-            if (!VisibleTorrents.Contains(torrent)) VisibleTorrents.Add(torrent);
-        for (var index = 0; index < desired.Length; index++)
-        {
-            var current = VisibleTorrents.IndexOf(desired[index]);
-            if (current != index) VisibleTorrents.Move(current, index);
-        }
-        if (Inspector is not null && !Torrents.Contains(Inspector)) CloseInspector();
-    }
 
     internal Torrent? Find(IEnumerable<string> hashes) => Torrents.FirstOrDefault(torrent =>
         torrent.Hashes.Intersect(hashes, StringComparer.OrdinalIgnoreCase).Any());
@@ -136,7 +113,8 @@ public sealed partial class MainViewModel
     internal async Task SaveSettings(object changes)
     {
         await _client.Send("settings", new { changes });
-        await _client.Send("snapshot");
+        try { await _client.Send("snapshot"); }
+        catch (Exception error) { Report(error); }
     }
 
     private async Task SaveAlternative(bool enabled)
@@ -148,7 +126,7 @@ public sealed partial class MainViewModel
         finally { Busy(false); }
     }
 
-    public async Task SaveLimits(IReadOnlyDictionary<string, double> values)
+    public async Task<IReadOnlyDictionary<string, int>> SaveLimits(IReadOnlyDictionary<string, double> values)
     {
         if (!CanEdit) throw new InvalidOperationException(Message.Length > 0 ? Message : Text.Get("connection", "unavailable"));
         var changes = new Dictionary<string, int>();
@@ -159,7 +137,13 @@ public sealed partial class MainViewModel
             changes[name] = checked((int)Math.Round(value * 1024));
         }
         Busy(true);
-        try { await SaveSettings(changes); Accepted("commands", "limits"); ClearError(); }
+        try
+        {
+            await SaveSettings(changes);
+            Accepted("commands", "limits");
+            ClearError();
+            return changes;
+        }
         finally { Busy(false); }
     }
 
@@ -235,13 +219,13 @@ public sealed partial class MainViewModel
         catch (Exception error) { Report(error); }
     }
 
-    private Task ShowInspector()
+    private Task Inspect(InspectorSection section)
     {
         if (_selected.Length != 1) return Task.CompletedTask;
-        Inspector = _selected[0];
+        if (Inspector.Open(_selected[0])) Inspector.Select(section);
         Refresh();
         return Task.CompletedTask;
     }
 
-    public void CloseInspector() { Inspector = null; Changed(string.Empty); }
+    public void CloseInspector() { Inspector.Close(); Changed(nameof(HasInspector)); }
 }

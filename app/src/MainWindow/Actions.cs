@@ -1,5 +1,6 @@
 using System.Windows.Input;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Data;
@@ -33,7 +34,7 @@ public sealed partial class MainWindow
         // VirtualKey omits the Windows OEM plus and minus codes.
         const VirtualKey plus = (VirtualKey)0xBB;
         const VirtualKey minus = (VirtualKey)0xBD;
-        if (args.Key != plus && args.Key != minus || HasDialog) return;
+        if (args.Key != plus && args.Key != minus || HasDialog || Model.Page != WindowPage.Torrents || HasEditorFocus()) return;
         if (!Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Control).HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down)) return;
         if (Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Menu).HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down)) return;
         var shift = Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Shift).HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
@@ -46,12 +47,9 @@ public sealed partial class MainWindow
     private void OnMenu(object sender, RoutedEventArgs args)
     {
         var menu = new MenuFlyout();
-        Menu(menu, "add_file", Model.Add);
-        Menu(menu, "add_magnet", Model.AddMagnet);
-        menu.Items.Add(new MenuFlyoutSeparator());
-        Menu(menu, "pause_all", Model.PauseAll);
-        Menu(menu, "resume_all", Model.ResumeAll);
-        Menu(menu, "limits", Model.Limits);
+        menu.Items.Add(new MenuFlyoutItem { Text = Model.Text.Get("window", "torrents"), Command = Model.ShowTorrents });
+        menu.Items.Add(new MenuFlyoutItem { Text = Model.Text.Get("finding", "settings"), Command = Model.ShowPreferences });
+        menu.Items.Add(new MenuFlyoutItem { Text = Model.Text.Get("about", "title"), Command = Model.ShowAbout });
         menu.Items.Add(new MenuFlyoutSeparator());
         Menu(menu, "exit", Model.Exit);
         menu.ShowAt(AppMenu);
@@ -136,6 +134,7 @@ public sealed partial class MainWindow
         feedback.SetBinding(InfoBar.IsOpenProperty, new Binding { Source = Model.Speed, Path = new PropertyPath(nameof(SpeedLimits.HasError)), Mode = BindingMode.OneWay });
         body.Children.Add(feedback);
         var restart = new Button { Command = Model.Restart };
+        AutomationProperties.SetAutomationId(restart, "Restart");
         restart.SetBinding(ContentControl.ContentProperty, new Binding { Source = Model, Path = new PropertyPath(nameof(MainViewModel.RestartText)), Mode = BindingMode.OneWay });
         var connection = new InfoBar { IsClosable = false, Severity = InfoBarSeverity.Error, ActionButton = restart };
         connection.SetBinding(InfoBar.MessageProperty, new Binding { Source = Model, Path = new PropertyPath(nameof(MainViewModel.Message)), Mode = BindingMode.OneWay });
@@ -166,7 +165,17 @@ public sealed partial class MainWindow
         }
     }
 
-    private void OnInspectorClose(object sender, RoutedEventArgs args) => Model.CloseInspector();
+    private async void OnInspectorClose(object sender, RoutedEventArgs args)
+    {
+        if (Model.Inspector.IsPending) return;
+        if (Model.Inspector.HasDraft)
+        {
+            if (!await ConfirmDiscard()) return;
+            Model.Inspector.CancelDraft();
+        }
+        Model.CloseInspector();
+        Torrents.Focus(FocusState.Programmatic);
+    }
 
     private async Task PasteSources()
     {

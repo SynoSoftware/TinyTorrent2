@@ -3,23 +3,35 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:local="using:Syno.TinyTorrent">
     <Grid RowSpacing="8">
-        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
         <Grid ColumnSpacing="8">
             <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="160" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
             <TextBlock Text="{x:Bind Model.Summary, Mode=OneWay}" VerticalAlignment="Center" TextWrapping="Wrap" />
             <TextBox x:Name="Search" Grid.Column="1" Text="{x:Bind Model.Search, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-            <Button x:Name="All" Grid.Column="2" Click="OnAll" />
-            <Button x:Name="None" Grid.Column="3" Click="OnNone" />
+            <Button x:Name="All" Grid.Column="2" Click="OnAll" IsEnabled="{x:Bind Model.IsEnabled, Mode=OneWay}" />
+            <Button x:Name="None" Grid.Column="3" Click="OnNone" IsEnabled="{x:Bind Model.IsEnabled, Mode=OneWay}" />
         </Grid>
-        <TreeView Grid.Row="1" ItemsSource="{x:Bind Model.Roots, Mode=OneWay}" SelectionMode="None" CanDragItems="False" CanReorderItems="False">
+        <Grid Grid.Row="1" ColumnSpacing="8" Padding="32,0,16,0">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="84" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="140" /></Grid.ColumnDefinitions>
+            <TextBlock x:Name="NameLabel" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            <TextBlock x:Name="SizeLabel" Grid.Column="1" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextAlignment="Right" />
+            <TextBlock x:Name="ProgressLabel" Grid.Column="2" Width="108" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Visibility="{x:Bind Model.ShowsProgress, Mode=OneWay}" />
+            <TextBlock x:Name="PriorityLabel" Grid.Column="3" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+        </Grid>
+        <TreeView Grid.Row="2" ItemsSource="{x:Bind Model.Roots, Mode=OneWay}" SelectionMode="None" CanDragItems="False" CanReorderItems="False" KeyDown="OnFilesKey">
             <TreeView.ItemTemplate>
                 <DataTemplate x:DataType="local:FileNode">
                     <TreeViewItem ItemsSource="{x:Bind Children}" IsExpanded="True" HorizontalContentAlignment="Stretch">
                         <Grid ColumnSpacing="8">
-                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="84" /><ColumnDefinition Width="140" /></Grid.ColumnDefinitions>
-                            <CheckBox Content="{x:Bind Name}" IsChecked="{x:Bind Wanted, Mode=TwoWay}" AutomationProperties.HelpText="{x:Bind Path}" />
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="84" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="140" /></Grid.ColumnDefinitions>
+                            <CheckBox Content="{x:Bind Name}" IsChecked="{x:Bind Wanted, Mode=TwoWay}" IsEnabled="{x:Bind IsEnabled, Mode=OneWay}" AutomationProperties.HelpText="{x:Bind Path}" />
                             <TextBlock Grid.Column="1" Text="{x:Bind SizeText, Mode=OneWay}" VerticalAlignment="Center" TextAlignment="Right" />
-                            <ComboBox Grid.Column="2" SelectedIndex="{x:Bind PriorityIndex, Mode=TwoWay}" AutomationProperties.Name="{x:Bind Name}">
+                            <Grid Grid.Column="2" Width="108" VerticalAlignment="Center" RowSpacing="4" Visibility="{x:Bind ShowsProgress, Mode=OneWay}">
+                                <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                                <ProgressBar Minimum="0" Maximum="1" Value="{x:Bind Progress, Mode=OneWay}" Height="4" AutomationProperties.AccessibilityView="Raw" />
+                                <TextBlock Grid.Row="1" Text="{x:Bind ProgressText, Mode=OneWay}" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            </Grid>
+                            <ComboBox Grid.Column="3" SelectedIndex="{x:Bind PriorityIndex, Mode=TwoWay}" IsEnabled="{x:Bind IsEnabled, Mode=OneWay}" AutomationProperties.Name="{x:Bind Name}">
                                 <ComboBoxItem Content="{x:Bind Unchanged, Mode=OneWay}" Visibility="{x:Bind IsFolder}" />
                                 <ComboBoxItem Content="{x:Bind Skip, Mode=OneWay}" />
                                 <ComboBoxItem Content="{x:Bind Low, Mode=OneWay}" />

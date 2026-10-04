@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Globalization;
 using System.Text.Json;
 
 namespace Syno.TinyTorrent;
@@ -9,8 +10,20 @@ public sealed class FileSelection(Strings strings) : INotifyPropertyChanged
     private readonly List<FileNode> _roots = [];
     private readonly List<FileNode> _files = [];
     private string _search = string.Empty;
+    private bool _showsProgress;
+    private bool _enabled = true;
     public Strings Text => strings;
     public ObservableCollection<FileNode> Roots { get; } = [];
+    public bool ShowsProgress
+    {
+        get => _showsProgress;
+        internal set { if (_showsProgress == value) return; _showsProgress = value; Refresh(); }
+    }
+    public bool IsEnabled
+    {
+        get => _enabled;
+        internal set { if (_enabled == value) return; _enabled = value; Refresh(); }
+    }
     public string Search
     {
         get => _search;
@@ -21,6 +34,7 @@ public sealed class FileSelection(Strings strings) : INotifyPropertyChanged
         _files.Count(file => !file.IsPadding), strings.Bytes(_files.Where(file => file.Priority > 0).Sum(file => file.Size)));
     public event PropertyChangedEventHandler? PropertyChanged;
     public event EventHandler? Changed;
+    public event EventHandler<IReadOnlyDictionary<int, int>>? Edited;
 
     internal void Clear()
     {
@@ -74,20 +88,49 @@ public sealed class FileSelection(Strings strings) : INotifyPropertyChanged
 
     internal void SelectAll() => Want(_files, true);
 
+    internal void Apply(JsonElement files, bool preserveChoices)
+    {
+        var known = _files.ToDictionary(file => file.Index);
+        foreach (var item in files.EnumerateArray())
+        {
+            if (!known.TryGetValue(item.GetProperty("index").GetInt32(), out var file)) continue;
+            file.Downloaded = item.GetProperty("downloaded").GetInt64();
+            if (!preserveChoices) file.SetPriority(item.GetProperty("priority").GetInt32());
+        }
+        Refresh();
+    }
+
     internal void Want(FileNode node, bool wanted) => Want(node.Files(), wanted);
 
     private void Want(IEnumerable<FileNode> files, bool wanted)
     {
+        if (!IsEnabled) return;
+        var changes = new Dictionary<int, int>();
         foreach (var file in files)
-            if (!file.IsPadding && (!wanted || file.Priority == 0)) file.SetPriority(wanted ? 4 : 0);
+        {
+            if (file.IsPadding) continue;
+            if (wanted && file.Priority > 0) continue;
+            var priority = wanted ? 4 : 0;
+            if (file.Priority == priority) continue;
+            file.SetPriority(priority);
+            changes.Add(file.Index, file.Priority);
+        }
         Refresh();
+        if (changes.Count > 0) Edited?.Invoke(this, changes);
     }
 
     internal void Change(FileNode node, int priority)
     {
-        if (priority < 0) return;
-        foreach (var file in node.Files()) file.SetPriority(priority);
+        if (!IsEnabled || priority < 0) return;
+        var changes = new Dictionary<int, int>();
+        foreach (var file in node.Files())
+        {
+            if (file.Priority == priority) continue;
+            file.SetPriority(priority);
+            changes.Add(file.Index, priority);
+        }
         Refresh();
+        if (changes.Count > 0) Edited?.Invoke(this, changes);
     }
 
     internal int[] Priorities() => _files.OrderBy(file => file.Index).Select(file => file.Priority).ToArray();
@@ -130,7 +173,20 @@ public sealed class FileNode : INotifyPropertyChanged
     public bool IsFolder => Index < 0;
     public bool IsPadding { get; internal set; }
     public long Size { get; internal set; }
+    public long Downloaded { get; internal set; }
     public string SizeText => _owner.Text.Bytes(Files().Sum(file => file.Size));
+    public double Progress
+    {
+        get
+        {
+            var files = Files().ToArray();
+            var size = files.Sum(file => file.Size);
+            return size == 0 ? 1 : Math.Clamp((double)files.Sum(file => file.Downloaded) / size, 0, 1);
+        }
+    }
+    public string ProgressText => Progress.ToString("P1", CultureInfo.CurrentCulture);
+    public bool ShowsProgress => _owner.ShowsProgress;
+    public bool IsEnabled => _owner.IsEnabled;
     public bool? Wanted
     {
         get

@@ -20,17 +20,31 @@ public sealed partial class MainWindow
         LeftInset.Width = new GridLength(left);
         RightInset.Width = new GridLength(right > 0 ? right : 138);
         if (Caption.ActualHeight <= 0 || CaptionActions.ActualWidth <= 0) return;
-        CaptionText.MaxWidth = Math.Max(0, Caption.ActualWidth - left - RightInset.Width.Value -
-            CaptionActions.ActualWidth - AppMenu.ActualWidth - AppMenu.Margin.Left -
-            AppMenu.Margin.Right - CaptionText.Margin.Left - CaptionText.Margin.Right);
-        var bounds = CaptionActions.TransformToVisual(Caption)
-            .TransformBounds(new Rect(0, 0, CaptionActions.ActualWidth, CaptionActions.ActualHeight));
-        var logo = AppMenu.TransformToVisual(Caption)
-            .TransformBounds(new Rect(0, 0, AppMenu.ActualWidth, AppMenu.ActualHeight));
-        var start = Math.Max(left, logo.Right);
-        var width = Math.Max(0, bounds.Left - start);
-        AppWindow.TitleBar.SetDragRectangles([new RectInt32((int)Math.Round(start * scale), 0,
-            (int)Math.Round(width * scale), (int)Math.Round(Caption.ActualHeight * scale))]);
+        var torrents = Model.Page == WindowPage.Torrents;
+        var full = Caption.ActualWidth >= 1120 && torrents;
+        foreach (var button in new[] { MagnetButton, PauseButton, ResumeButton })
+            button.Visibility = full ? Visibility.Visible : Visibility.Collapsed;
+        foreach (var button in new[] { AddButton, OverflowButton })
+            button.Visibility = torrents ? Visibility.Visible : Visibility.Collapsed;
+        PageCaption.Visibility = torrents ? Visibility.Collapsed : Visibility.Visible;
+        HomeButton.Visibility = Caption.ActualWidth >= 880 ? Visibility.Visible : Visibility.Collapsed;
+        FilterCaption.Visibility = Caption.ActualWidth >= 1000 ? Visibility.Visible : Visibility.Collapsed;
+        var exclusions = new FrameworkElement[] { AppMenu, HomeButton, FilterButton, Search, CaptionActions }
+            .Where(control => control.Visibility == Visibility.Visible && control.ActualWidth > 0)
+            .Select(control => control.TransformToVisual(Caption).TransformBounds(new Rect(0, 0, control.ActualWidth, control.ActualHeight)))
+            .OrderBy(bounds => bounds.Left);
+        var rectangles = new List<RectInt32>();
+        var start = left;
+        foreach (var bounds in exclusions)
+        {
+            if (bounds.Left > start) rectangles.Add(new RectInt32((int)Math.Ceiling(start * scale), 0,
+                (int)Math.Floor((bounds.Left - start) * scale), (int)Math.Round(Caption.ActualHeight * scale)));
+            start = Math.Max(start, bounds.Right);
+        }
+        var end = Caption.ActualWidth - RightInset.Width.Value;
+        if (end > start) rectangles.Add(new RectInt32((int)Math.Ceiling(start * scale), 0,
+            (int)Math.Floor((end - start) * scale), (int)Math.Round(Caption.ActualHeight * scale)));
+        AppWindow.TitleBar.SetDragRectangles(rectangles.ToArray());
     }
 
     private void UpdateMinimum(double scale)
@@ -101,17 +115,18 @@ public sealed partial class MainWindow
         RatioColumn.DisplayName = Model.Text.Get("columns", "ratio");
         PeersColumn.DisplayName = Model.Text.Get("columns", "peers");
         AddedColumn.DisplayName = Model.Text.Get("columns", "added");
-        TorrentsTitle.Text = Model.Text.Get("window", "torrents");
-        Search.PlaceholderText = Model.Text.Get("window", "search");
-        AutomationProperties.SetName(Search, Model.Text.Get("window", "search"));
+        Search.PlaceholderText = Model.Text.Get("finding", "placeholder");
+        AutomationProperties.SetName(Search, Model.Text.Get("finding", "search"));
+        Search.ItemsSource = Model.FindSuggestions(Search.Text);
+        FiltersTitle.Text = Model.Text.Get("filters", "title");
+        AutomationProperties.SetName(Filters, Model.Text.Get("filters", "title"));
+        AutomationProperties.SetName(FilterButton, Model.FilterLabel);
+        ToolTipService.SetToolTip(FilterButton, Model.FilterLabel);
+        NameButton(HomeButton, Model.Text.Get("window", "torrents"));
+        NameButton(FiltersClose, Model.Text.Get("filters", "close"));
+        AutomationProperties.SetName(Split, Model.Text.Get("inspector", "resize"));
         AlternativeText.Text = Model.Text.Get("window", "alternative");
         InspectorClose.Content = Model.Text.Get("inspector", "close");
-        DownloadedLabel.Text = Model.Text.Get("inspector", "downloaded");
-        RemainingLabel.Text = Model.Text.Get("inspector", "remaining");
-        RatioLabel.Text = Model.Text.Get("columns", "ratio");
-        FolderLabel.Text = Model.Text.Get("add", "destination");
-        AddedLabel.Text = Model.Text.Get("columns", "added");
-        TransferLabel.Text = Model.Text.Get("columns", "status");
         Torrents.Strings = Model.Text.Table;
         Root.FlowDirection = Model.Text.IsRightToLeft ? FlowDirection.RightToLeft : FlowDirection.LeftToRight;
         RefreshDialogs();

@@ -27,6 +27,14 @@ proved or a failure requires another attempt. Do not rerun unchanged checks just
 because another agent reviewed the work or a small unrelated edit followed.
 Coordinate one run and share its result.
 
+Review the settled change, not intermediate code that is about to be replaced.
+Finish and integrate a coherent working slice before its independent review;
+keep only checks that could prevent data loss or catch a failure in the next
+step. Repeated reviews of temporary arrangements cost time without establishing
+the delivered behavior. Milestone completion still needs its final adversarial
+review and relevant runtime evidence. Common sense takes precedence over a
+mechanical review sequence.
+
 A full suite is a deliberate integration or release check, or an explicit user
 request. It is not the default completion gate for each bug fix. A known relevant
 failure still needs resolution; postponing broad coverage does not excuse it.

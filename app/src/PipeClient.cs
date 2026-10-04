@@ -24,6 +24,7 @@ internal sealed class PipeClient : IDisposable
     private bool _hasConnected;
     private string? _enginePath;
     private string? _dataDirectory;
+    internal string? DataDirectory => _dataDirectory;
 
     internal static string LogonSid { get; } = ReadLogonSid();
 

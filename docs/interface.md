@@ -50,6 +50,12 @@ sharp at different display scales; Windows shell icons use the canonical ICO.
 Use the native platform's expression of Fluent. Web component APIs and examples
 do not override WinUI's control semantics or require a second design system.
 
+The approved visual and interaction reference is `app/prototype.html`, variant
+C, commit `8614126` on `main`. Preserve its compact table, collapsible status
+drawer, caption search, vertical inspector sections and Preferences composition.
+Implement them with native WinUI controls and the existing TableView and command
+owners. Prototype sample data and browser code are not production architecture.
+
 Use standard WinUI controls and documented Windows patterns for their semantics,
 input, focus, automation, sizing, and states. Compose them before creating or
 retemplating a control. A custom control must solve a concrete need and preserve
@@ -137,11 +143,19 @@ a desktop task.
 WinUI owns its saved window placement. Restore against current monitor work
 areas and DPI, recovering a reachable position and usable size. Preserve normal
 Windows move/resize behavior, caption buttons, and title-bar accessibility.
+On Close, WinUI saves normal bounds, their display scale, maximized state, the
+requested inspector split and the three tables' public layout snapshots in
+`window.json` beside the engine data. The engine does not read or write this file.
+A missing or damaged layout uses the declared defaults; a layout write failure
+does not keep the window or engine open. Layout recovery never changes downloads.
 Use documented title-bar and backdrop APIs. The product window uses desktop
 acrylic as its base material, with the platform's fallback where acrylic is
 unavailable. Microsoft recommends Mica for a window's base, but the owner chose
-acrylic so that the window shows a blurred view of what is behind it. Menus,
-flyouts, and other transient surfaces keep the platform's acrylic. A material
+acrylic so that the window shows a blurred view of what is behind it.
+The caption and workspace share that same continuous acrylic surface and tint;
+neither has an independent opaque fill or a contrasting title-bar band. Native
+control states and transient surfaces keep their own necessary layering.
+Menus, flyouts, and other transient surfaces keep the platform's acrylic. A material
 is never a substitute for readable content or hierarchy.
 
 Use theme resources for values that change with Light, Dark, or contrast themes.
@@ -238,13 +252,31 @@ without a draft. The selected source then opens the Add form for destination,
 Start paused and Add/Cancel, following the Show the Add form preference.
 
 The torrent table is the primary workspace, with an optional inspector and
-focused Add and Preferences tasks. Text search finds a known torrent; an Errors
-shortcut isolates torrents that need attention and shows when errors exist.
-Status and progress remain visible and sortable in the table. These serve finding,
-troubleshooting, and scanning without a permanent filter sidebar or status and
-tracker dropdowns taking space from the primary workspace. Tracker information
+focused Add and Preferences tasks. The caption contains native search for
+torrents, commands and settings. Selecting a result reveals its torrent, runs
+the existing command, or opens and focuses the named preference without changing
+it. Typing this global search does not silently filter the torrent table.
+Ctrl+K, Ctrl+F and Ctrl+E focus it. Scope labels distinguish a command for the
+selection from a command for all torrents.
+
+The Filters toggle opens a collapsible native pane with All, Downloading,
+Seeding, Paused, Queued and Errors choices and live counts. Closing the drawer
+keeps the chosen filter and its caption visible. Downloading includes metadata
+acquisition, Seeding includes completed torrents and Paused includes session
+pause. The Errors shortcut in the status bar selects the same Errors filter;
+there is one filter owner. The drawer starts closed so the table keeps its full
+width until the person asks to filter. Status and progress remain visible and
+sortable in the table. Tracker information
 belongs in the selected torrent's inspector. TableView owns generic interaction.
-The application menu contains global actions. The three-dot command overflow
+The application menu contains Torrents, Settings, About, a separator and Exit,
+matching the approved prototype. About shows the product identity and running
+version on the same acrylic surface. Add commands remain in the caption and
+global search; session commands remain in search, shortcuts and the tray. This
+keeps navigation small without taking away a command's established path.
+The current page belongs to the main view model. Leaving Settings preserves
+pending work and asks before discarding actual unfinished input; the inspector
+keeps its target and draft while another page is visible.
+The three-dot command overflow
 contains secondary actions for the selection, while the row context menu also
 offers the primary selection commands. Both call the same command owner.
 Properties belongs only in the row context menu, for one selected torrent while
@@ -298,14 +330,14 @@ network interface is absent, and Update available when a newer release exists.
 Shortcuts match qBittorrent's, so people who move from it keep their habits.
 TinyTorrent has no Print, Save, or Refresh command, so Ctrl+P, Ctrl+S, and
 Ctrl+R serve torrent actions as they do there. Torrent shortcuts act while the
-table has focus; an editor keeps its own keys.
+table, selection toolbar or inspector has focus; an editor keeps its own keys.
 
 | Key | Action |
 | --- | --- |
 | Ctrl+O | Add a torrent file |
 | Ctrl+Shift+O | Add a magnet link |
 | Ctrl+V | Add the pasted magnet link or torrent file |
-| Ctrl+F, Ctrl+E | Text filter |
+| Ctrl+K, Ctrl+F, Ctrl+E | Search torrents, commands and settings |
 | Ctrl+A | Select all torrents |
 | Enter | Open the inspector, as double-click does |
 | Ctrl+S | Resume |
@@ -400,6 +432,8 @@ an indeterminate checkbox. Bulk Select all/none acts on files matching the
 search. The same file browser serves Add and the inspector, so these rules have
 one owner. Keep its summary, search, and bulk actions on one compact row and give
 the list the remaining viewport, because files are the task's primary content.
+F2 opens the native priority choice for the focused file row; ordinary tree,
+checkbox and ComboBox keyboard behavior remains native.
 Keep file identity and selected bytes clear; when a known list
 has no wanted files, explain why Add is unavailable. The destination starts from
 the default download folder, initially Windows' Downloads known folder, and remains changeable through a native picker. A failed
@@ -437,8 +471,8 @@ when relevant; keep an explicit editor's actions reachable. Native navigation
 and scrolling handle smaller windows. Preferences uses a full page with horizontal
 category selection and grouped sections, so settings have room without obscuring
 the task. Returning to torrents preserves selection and the inspector view.
-Preferences keeps this LabForms layout independently of the torrent inspector's
-vertical tabs. Put Browse beside the default download path,
+Preferences keeps this LabForms layout independently of the torrent inspector.
+Put Browse beside the default download path,
 and beside Add's destination, using the native Windows folder picker. Cancelling
 the picker preserves the current path and other unfinished input.
 Do not show an engine field dump. Disk
@@ -490,6 +524,13 @@ column, keyboard, and scrolling behavior with the main torrent table. Files uses
 a native TreeView with wanted, size, progress, and priority content, because
 folders require hierarchy and TableView's contract excludes tree rows. Reuse the
 file browser in Add; do not extend TableView with torrent-specific tree behavior.
+
+The six inspector sections use a native left NavigationView with a narrow,
+open pane, following the owner's compact-polished prototype. The torrent name
+and Close action sit above the navigation and content. This keeps the sections
+visible beside the working view; native pane scrolling keeps them reachable
+when text scaling needs more height. The lower inspector starts with enough
+height for all six sections and lets the person adjust the split.
 
 Apply individual choices and explicit file commands through the same commit
 rules. When a coherent edit needs a draft, keep one active editor bound to the

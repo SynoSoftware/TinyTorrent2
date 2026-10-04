@@ -5,17 +5,19 @@
     xmlns:icons="using:Syno"
     xmlns:table="using:Syno.TableView">
     <Window.SystemBackdrop><DesktopAcrylicBackdrop /></Window.SystemBackdrop>
-    <Grid x:Name="Root" Loaded="OnLoaded" AllowDrop="True" Background="Transparent" DragOver="OnDragOver" Drop="OnDrop">
+    <Grid x:Name="Root" Loaded="OnLoaded" AllowDrop="True" Background="{ThemeResource TinyTorrentChromeBrush}" DragOver="OnDragOver" Drop="OnDrop">
+        <Grid.Resources>
+            <SolidColorBrush x:Key="NavigationViewContentBackground" Color="Transparent" />
+        </Grid.Resources>
         <Grid.RowDefinitions>
             <RowDefinition Height="{ThemeResource TinyTorrentCaptionHeight}" />
-            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
-        <Grid x:Name="Caption" Background="{ThemeResource TinyTorrentChromeBrush}" FlowDirection="LeftToRight">
+        <Grid x:Name="Caption" Background="Transparent" FlowDirection="LeftToRight">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition x:Name="LeftInset" Width="0" />
+                <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="*" />
@@ -31,11 +33,23 @@
             <FontIcon x:Name="MenuGlyph" FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Menu}" FontSize="16" Visibility="Collapsed" />
             </Grid>
             </Button>
-            <TextBlock x:Name="CaptionText" Grid.Column="2" Margin="8,0" VerticalAlignment="Center"
+            <Button x:Name="HomeButton" Grid.Column="2" Style="{StaticResource TinyTorrentCaptionButtonStyle}" Width="Auto" Padding="8,0" Click="OnTorrents">
+            <TextBlock x:Name="CaptionText" Margin="8,0" VerticalAlignment="Center"
                 FontSize="20" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
                 Foreground="{ThemeResource TextFillColorPrimaryBrush}" />
-            <Grid Grid.Column="3" />
-            <StackPanel x:Name="CaptionActions" Grid.Column="4" Orientation="Horizontal">
+            </Button>
+            <ToggleButton x:Name="FilterButton" Grid.Column="3" MinWidth="46" Height="32" Padding="8,0" CornerRadius="0"
+                Background="Transparent" BorderThickness="0" IsChecked="{x:Bind Model.IsFilterOpen, Mode=TwoWay}">
+                <StackPanel Orientation="Horizontal" Spacing="8"><FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Funnel}" FontSize="16" /><TextBlock x:Name="FilterCaption" Text="{x:Bind Model.FilterLabel, Mode=OneWay}" VerticalAlignment="Center" /></StackPanel>
+            </ToggleButton>
+            <Grid x:Name="SearchArea" Grid.Column="4" Margin="16,0" VerticalAlignment="Center">
+                <AutoSuggestBox x:Name="Search" MaxWidth="320" MinWidth="160" HorizontalAlignment="Stretch" Text="{x:Bind Model.Query, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                    QueryIcon="Find" TextMemberPath="Label" TextChanged="OnSearchChanged" QuerySubmitted="OnSearchSubmitted" GotFocus="OnSearchFocus">
+                    <AutoSuggestBox.ItemTemplate><DataTemplate x:DataType="local:Suggestion"><StackPanel Spacing="2" Margin="0,4"><TextBlock Text="{x:Bind Label}" TextWrapping="Wrap" /><TextBlock Text="{x:Bind Detail}" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" /></StackPanel></DataTemplate></AutoSuggestBox.ItemTemplate>
+                </AutoSuggestBox>
+            </Grid>
+            <StackPanel x:Name="CaptionActions" Grid.Column="5" Orientation="Horizontal">
+                <TextBlock x:Name="PageCaption" Text="{x:Bind Model.PageTitle, Mode=OneWay}" Margin="12,0" VerticalAlignment="Center" Style="{StaticResource BodyStrongTextBlockStyle}" Visibility="Collapsed" />
                 <Button x:Name="AddButton" Style="{StaticResource TinyTorrentCaptionButtonStyle}" Command="{x:Bind Model.Add}" />
                 <Button x:Name="MagnetButton" Style="{StaticResource TinyTorrentCaptionButtonStyle}" Command="{x:Bind Model.AddMagnet}" />
                 <Button x:Name="PauseButton" Style="{StaticResource TinyTorrentCaptionButtonStyle}" Command="{x:Bind Model.Pause}" />
@@ -46,13 +60,19 @@
                 <Button x:Name="ExitButton" Style="{StaticResource TinyTorrentCaptionButtonStyle}" Command="{x:Bind Model.Exit}" />
             </StackPanel>
         </Grid>
-        <Grid Grid.Row="1" Margin="16,12,16,8" ColumnSpacing="12">
-            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="240" /></Grid.ColumnDefinitions>
-            <TextBlock x:Name="TorrentsTitle" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center" />
-            <ToggleButton Grid.Column="1" Content="{x:Bind Model.ErrorCount, Mode=OneWay}" IsChecked="{x:Bind Model.ErrorsOnly, Mode=TwoWay}" />
-            <TextBox x:Name="Search" Grid.Column="3" Text="{x:Bind Model.Search, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-        </Grid>
-        <table:Table x:Name="Torrents" Grid.Row="2" ShowsFitButton="True" ItemsSource="{x:Bind Model.VisibleTorrents}" CanReorder="{x:Bind Model.CanReorder, Mode=OneWay}">
+        <SplitView x:Name="Workspace" Grid.Row="1" DisplayMode="Inline" OpenPaneLength="196" IsPaneOpen="{x:Bind Model.IsFilterOpen, Mode=TwoWay}" PaneBackground="Transparent" Background="Transparent">
+            <SplitView.Pane>
+                <Grid RowSpacing="8" Padding="8,8,8,0">
+                    <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+                    <Grid ColumnSpacing="8"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock x:Name="FiltersTitle" Margin="8,0" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center" /><Button x:Name="FiltersClose" Grid.Column="1" Click="OnFiltersClose" /></Grid>
+                    <ListView x:Name="Filters" Grid.Row="1" SelectionMode="Single" SelectionChanged="OnFilterChanged">
+                        <ListView.ItemTemplate><DataTemplate x:DataType="local:FilterChoice"><Grid ColumnSpacing="8"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="{x:Bind Label, Mode=OneWay}" TextWrapping="Wrap" /><TextBlock Grid.Column="1" Text="{x:Bind Count, Mode=OneWay}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" /></Grid></DataTemplate></ListView.ItemTemplate>
+                    </ListView>
+                </Grid>
+            </SplitView.Pane>
+            <Grid x:Name="TorrentWorkspace" Background="Transparent">
+                <Grid.RowDefinitions><RowDefinition Height="*" MinHeight="110" /><RowDefinition Height="Auto" /><RowDefinition x:Name="InspectorRow" Height="0" /></Grid.RowDefinitions>
+        <table:Table x:Name="Torrents" Background="Transparent" ShowsFitButton="True" ItemsSource="{x:Bind Model.VisibleTorrents}" CanReorder="{x:Bind Model.CanReorder, Mode=OneWay}">
             <table:Table.EmptyContent>
                 <Grid x:Name="EmptyState" Visibility="{x:Bind Model.IsEmptyVisible, Mode=OneWay}">
                     <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="420" Margin="24" Spacing="12">
@@ -116,36 +136,41 @@
                 </table:Column>
             </table:Table.Columns>
         </table:Table>
-        <Grid Grid.Row="3" Visibility="{x:Bind Model.HasInspector, Mode=OneWay}" BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}" BorderThickness="0,1,0,0" Padding="16,12" RowSpacing="8">
-            <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
-            <Grid ColumnSpacing="12">
+        <local:InspectorSplit x:Name="Split" Grid.Row="1" Visibility="{x:Bind Model.HasInspector, Mode=OneWay}" />
+        <Grid Grid.Row="2" Visibility="{x:Bind Model.HasInspector, Mode=OneWay}" BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}" BorderThickness="0,1,0,0">
+            <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+            <Grid ColumnSpacing="12" Padding="16,4">
                 <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                 <TextBlock Text="{x:Bind Model.Inspector.Name, Mode=OneWay}" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center" />
                 <Button x:Name="InspectorClose" Grid.Column="1" Click="OnInspectorClose" />
             </Grid>
-            <ScrollViewer Grid.Row="1" MaxHeight="180" VerticalScrollBarVisibility="Auto">
-                <Grid ColumnSpacing="24" RowSpacing="16">
-                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                    <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
-                    <StackPanel Spacing="4"><TextBlock x:Name="DownloadedLabel" Foreground="{ThemeResource TextFillColorSecondaryBrush}" /><TextBlock Text="{x:Bind Model.InspectorDownloaded, Mode=OneWay}" /></StackPanel>
-                    <StackPanel Grid.Column="1" Spacing="4"><TextBlock x:Name="RemainingLabel" Foreground="{ThemeResource TextFillColorSecondaryBrush}" /><TextBlock Text="{x:Bind Model.InspectorRemaining, Mode=OneWay}" /></StackPanel>
-                    <StackPanel Grid.Column="2" Spacing="4"><TextBlock x:Name="RatioLabel" Foreground="{ThemeResource TextFillColorSecondaryBrush}" /><TextBlock Text="{x:Bind Model.Inspector.RatioText, Mode=OneWay}" /></StackPanel>
-                    <StackPanel Grid.Row="1" Spacing="4"><TextBlock x:Name="FolderLabel" Foreground="{ThemeResource TextFillColorSecondaryBrush}" /><TextBlock Text="{x:Bind Model.InspectorFolder, Mode=OneWay}" TextWrapping="Wrap" /></StackPanel>
-                    <StackPanel Grid.Row="1" Grid.Column="1" Spacing="4"><TextBlock x:Name="AddedLabel" Foreground="{ThemeResource TextFillColorSecondaryBrush}" /><TextBlock Text="{x:Bind Model.Inspector.AddedText, Mode=OneWay}" TextWrapping="Wrap" /></StackPanel>
-                    <StackPanel Grid.Row="1" Grid.Column="2" Spacing="4"><TextBlock x:Name="TransferLabel" Foreground="{ThemeResource TextFillColorSecondaryBrush}" /><TextBlock Text="{x:Bind Model.Inspector.Status, Mode=OneWay}" TextWrapping="Wrap" /></StackPanel>
-                </Grid>
-            </ScrollViewer>
+            <ContentControl x:Name="InspectorContent" Grid.Row="1" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
         </Grid>
-        <StackPanel Grid.Row="4" Margin="16,8,16,12" Spacing="4">
+            </Grid>
+        </SplitView>
+        <ContentControl x:Name="PreferencesContent" Grid.Row="1" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" Visibility="Collapsed" />
+        <ScrollViewer x:Name="AboutContent" Grid.Row="1" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
+            <StackPanel Padding="32" Spacing="8">
+                <Image Width="64" Height="64" Margin="0,0,0,8" HorizontalAlignment="Left" AutomationProperties.AccessibilityView="Raw">
+                    <Image.Source><SvgImageSource UriSource="ms-appx:///Assets/tinyTorrent.svg" /></Image.Source>
+                </Image>
+                <TextBlock Text="{x:Bind Model.AboutTitle, Mode=OneWay}" Style="{StaticResource TitleTextBlockStyle}" TextWrapping="Wrap" />
+                <TextBlock Text="{x:Bind Model.AboutDescription, Mode=OneWay}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
+                <TextBlock Text="{x:Bind Model.VersionText, Mode=OneWay}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+            </StackPanel>
+        </ScrollViewer>
+        <StackPanel Grid.Row="2" Margin="16,8,16,12" Spacing="4">
             <InfoBar x:Name="Feedback" IsClosable="False" Severity="{x:Bind Model.Severity, Mode=OneWay}" Message="{x:Bind Model.Message, Mode=OneWay}" IsOpen="{x:Bind Model.HasFeedback, Mode=OneWay}">
-                <InfoBar.ActionButton><Button Content="{x:Bind Model.RestartText, Mode=OneWay}" Command="{x:Bind Model.Restart}" Visibility="{x:Bind Model.CanRestart, Mode=OneWay}" /></InfoBar.ActionButton>
+                <InfoBar.ActionButton><Button AutomationProperties.AutomationId="Restart" Content="{x:Bind Model.RestartText, Mode=OneWay}" Command="{x:Bind Model.Restart}" Visibility="{x:Bind Model.CanRestart, Mode=OneWay}" /></InfoBar.ActionButton>
             </InfoBar>
             <TextBlock x:Name="TorrentError" TextWrapping="Wrap" Text="{x:Bind Model.TorrentError, Mode=OneWay}" />
+            <Button Content="{x:Bind Model.UpdateText, Mode=OneWay}" Command="{x:Bind Model.OpenUpdate}" Visibility="{x:Bind Model.HasUpdate, Mode=OneWay}" />
             <Grid ColumnSpacing="12">
-                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                 <TextBlock x:Name="Rates" Text="{x:Bind Model.Rates, Mode=OneWay}" VerticalAlignment="Center" TextWrapping="Wrap" />
                 <ToggleButton x:Name="Alternative" Grid.Column="1" IsChecked="{x:Bind Model.AlternativeLimits, Mode=TwoWay}" IsEnabled="{x:Bind Model.CanEdit, Mode=OneWay}"><TextBlock x:Name="AlternativeText" MaxWidth="160" TextWrapping="Wrap" /></ToggleButton>
-                <TextBlock Grid.Column="2" Text="{x:Bind Model.Incoming, Mode=OneWay}" VerticalAlignment="Center" TextWrapping="Wrap" TextAlignment="Right" />
+                <ToggleButton Grid.Column="2" Content="{x:Bind Model.ErrorCount, Mode=OneWay}" IsChecked="{x:Bind Model.ErrorsOnly, Mode=TwoWay}" />
+                <TextBlock Grid.Column="3" Text="{x:Bind Model.Incoming, Mode=OneWay}" VerticalAlignment="Center" TextWrapping="Wrap" TextAlignment="Right" />
             </Grid>
         </StackPanel>
     </Grid>
