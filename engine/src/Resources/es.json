@@ -1,20 +1,50 @@
 {
   "tray": {
-    "tooltip": "TinyTorrent",
-    "open": "Abrir TinyTorrent",
+    "rates": "↓ {0}  ↑ {1}",
+    "counts": "{0} activos · {1} en cola",
+    "paused": "En pausa · {0} torrents",
+    "paused_one": "En pausa · {0} torrent",
+    "pause": "Pausar transferencias",
+    "resume": "Reanudar transferencias",
+    "open": "Mostrar ventana",
     "exit": "Salir",
     "background": "Las transferencias continúan en el área de notificación. Selecciona Salir en el menú de TinyTorrent para detenerlas."
   },
   "startup": {
-    "opening": "Abriendo TinyTorrent…"
+    "opening": "Abriendo TinyTorrent…",
+    "loading": "Cargando transferencias guardadas…"
+  },
+  "units": {
+    "bytes": "{0} B/s",
+    "kib": "{0} KiB/s",
+    "mib": "{0} MiB/s",
+    "gib": "{0} GiB/s"
+  },
+  "dialog": {
+    "retry": "Reintentar",
+    "close": "Cerrar",
+    "cancel": "Cancelar",
+    "exit_anyway": "Salir de todas formas"
+  },
+  "notification": {
+    "completed": "{0} terminó de descargarse.",
+    "added": "Se añadió {0}.",
+    "error": "{0} necesita atención.",
+    "aggregate": "{0} actualizaciones de transferencias.",
+    "add_failed": "No se pudo añadir {0}.",
+    "failures": "Errores de transferencias: {0}. {1}: {2}"
+  },
+  "power": {
+    "transfers": "TinyTorrent está transfiriendo archivos."
   },
   "error": {
     "start": "TinyTorrent no pudo iniciarse.",
     "source": "No se pudo añadir el torrent.",
     "ownership": "TinyTorrent no puede abrir sus datos guardados. Otra sesión de Windows puede estar utilizando esta carpeta:",
-    "launch": "TinyTorrent no pudo abrir su ventana. Selecciona Abrir en el área de notificación para volver a intentarlo.",
-    "startup": "La ventana de TinyTorrent no se abrió. Las descargas continúan. Vuelve a intentar Abrir cuando el proceso de la ventana se cierre.",
-    "save": "No se pudo guardar el último punto de control. Selecciona Reintentar para guardarlo de nuevo o Cancelar para salir de todas formas.",
+    "launch": "TinyTorrent no pudo abrir su ventana. Las descargas continúan. Reintenta para volver a abrirla.",
+    "startup": "La ventana de TinyTorrent no se abrió. Las descargas continúan. Puedes reintentar cuando termine el proceso de la ventana.",
+    "save": "No se pudo guardar el último punto de control. Reintenta o sal de todas formas y pierde los cambios desde el último guardado correcto.",
+    "pause": "No se pudo guardar el ajuste de pausa de las transferencias.",
     "unresponsive": "La ventana no responde. ¿Salir de todas formas y descartar los datos sin guardar?"
   }
 }

@@ -1,9 +1,12 @@
 #include "Desktop.h"
+#include "Registration.h"
 #include <sddl.h>
 #include <shlobj.h>
 #include <shobjidl.h>
 #include <shellapi.h>
 #include <stdexcept>
+
+#pragma comment(linker, "/manifestdependency:\"type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
 
 int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
 {
@@ -11,12 +14,14 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
     bool headless = false;
     try
     {
+        SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
         if (FAILED(SetCurrentProcessExplicitAppUserModelID(L"Syno.TinyTorrent")))
             throw std::runtime_error("Cannot set the application's Windows identity.");
         int count = 0;
         auto arguments = CommandLineToArgvW(GetCommandLineW(), &count);
         bool background = false;
         bool literal = false;
+        std::string registration;
         tiny::Json sources = tiny::Json::array();
         std::filesystem::path directory;
         for (int index = 1; index < count; ++index)
@@ -25,6 +30,12 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
             if (!literal && argument == L"--") literal = true;
             else if (!literal && argument == L"--headless") headless = true;
             else if (!literal && argument == L"--background") background = true;
+            else if (!literal && argument == L"--registration")
+            {
+                if (++index == count) throw std::runtime_error("The --registration option needs an operation.");
+                registration = tiny::Utf8(arguments[index]);
+                if (registration.empty()) throw std::runtime_error("The --registration option needs an operation.");
+            }
             else if (!literal && argument == L"--data")
             {
                 if (++index == count || std::wstring(arguments[index]) == L"--")
@@ -42,6 +53,8 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
             }
         }
         LocalFree(arguments);
+        if (!registration.empty() && !sources.empty())
+            throw std::runtime_error("Registration operations cannot include torrent sources.");
         if (!sources.empty() && !tiny::Desktop::ValidSources(sources))
             throw std::runtime_error("Torrent sources exceed the supported count or length.");
         if (directory.empty())
@@ -64,7 +77,8 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
         auto acquired = WaitForSingleObject(mutex, 0);
         if (acquired == WAIT_TIMEOUT)
         {
-            bool forwarded = sources.empty() ? background || headless ||
+            bool forwarded = !registration.empty() ? tiny::Pipe::Forward(L"\\\\.\\pipe\\TinyTorrent." + sid,
+                {{"command", "registration"}, {"operation", registration}}) : sources.empty() ? background || headless ||
                 tiny::Pipe::Forward(L"\\\\.\\pipe\\TinyTorrent." + sid) :
                 tiny::Pipe::Forward(L"\\\\.\\pipe\\TinyTorrent." + sid,
                     {{"command", "activate_sources"}, {"sources", sources}});
@@ -77,7 +91,13 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
         if (acquired != WAIT_OBJECT_0 && acquired != WAIT_ABANDONED)
             throw std::runtime_error("Cannot acquire engine instance ownership.");
         int result;
+        if (!registration.empty())
         {
+            auto response = tiny::Registration().Execute(registration);
+            result = response.value("ok", false) ? 0 : 1;
+            if (result) throw std::runtime_error(response.at("error").at("detail").get<std::string>());
+        }
+        else {
             tiny::Desktop desktop(directory, sid, headless);
             result = desktop.Run(background, std::move(sources));
         }

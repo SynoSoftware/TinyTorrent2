@@ -56,6 +56,9 @@ Both executables ship together, so reject a different version with a usable
 error rather than negotiating. The session identity lets a restart invalidate
 previews and other transient references; durable torrent identities survive a
 restart, and info hashes do not replace them.
+The greeting also gives the engine executable and absolute data-directory paths
+for an explicit Restart, so a surviving UI restarts the same saved store rather
+than silently choosing a different developer or user-data location.
 
 ## Outcomes and reconnection
 

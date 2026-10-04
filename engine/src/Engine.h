@@ -23,6 +23,9 @@ public:
     void Disconnect(std::string const& connection);
     void Shutdown(std::function<void(bool)> completion);
     Json Snapshot() const;
+    Json Activity() const;
+    Json TakeNotifications();
+    std::string Folder(std::string const& identity) const;
     std::string Language() const;
     bool IsStopping() const;
     bool IsLoading() const;

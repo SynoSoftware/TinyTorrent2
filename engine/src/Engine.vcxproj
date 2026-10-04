@@ -71,7 +71,7 @@
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
-      <AdditionalDependencies>advapi32.lib;shell32.lib;user32.lib;ole32.lib;uuid.lib;crypt32.lib;iphlpapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>advapi32.lib;shell32.lib;user32.lib;ole32.lib;uuid.lib;crypt32.lib;iphlpapi.lib;propsys.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'">
@@ -93,6 +93,7 @@
     <ClCompile Include="Engine.cpp" />
     <ClCompile Include="Store.cpp" />
     <ClCompile Include="Desktop.cpp" />
+    <ClCompile Include="Registration.cpp" />
     <ClCompile Include="Pipe.cpp" />
     <ResourceCompile Include="Resources.rc" />
   </ItemGroup>

@@ -28,6 +28,7 @@ public sealed partial class MainWindow : Window
     private TaskCompletionSource? _dialogClosed;
     private bool _allowClose;
     private bool _closing;
+    private bool _engineExit;
     private bool _loaded;
 
     public MainWindow(Strings strings)
@@ -81,11 +82,14 @@ public sealed partial class MainWindow : Window
             try { var content = new DataPackage(); content.SetText(text); Clipboard.SetContent(content); }
             catch (Exception error) { Model.Report(error); }
         };
-        Model.ActivateRequested += (_, _) =>
+        Model.ActivateRequested += async (_, _) =>
         {
+            if (_closing) { await Model.Activated(false); return; }
             if (AppWindow.Presenter is OverlappedPresenter { State: OverlappedPresenterState.Minimized } presenter)
                 presenter.Restore();
             Activate();
+            SetForegroundWindow(WinRT.Interop.WindowNative.GetWindowHandle(this));
+            await Model.Activated(true);
         };
         Model.CloseRequested += async (_, engineExit) => await CloseWindow(engineExit);
         RefreshText();
@@ -264,18 +268,31 @@ public sealed partial class MainWindow : Window
 
     private async Task CloseWindow(bool engineExit)
     {
+        _engineExit |= engineExit;
         if (_closing) return;
         _closing = true;
-        var wasOpen = _addDialog is not null;
-        var hadLimits = _limitsDialog is not null;
+        var wasOpen = false;
+        var hadLimits = false;
         var keepDraft = false;
         try
         {
             if (!Model.CanClose)
             {
-                if (engineExit) await Model.CancelClose();
-                return;
+                var idle = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                void OnIdle(object? sender, PropertyChangedEventArgs args)
+                {
+                    if (Model.CanClose) idle.TrySetResult();
+                }
+                Model.PropertyChanged += OnIdle;
+                try
+                {
+                    if (Model.CanClose) idle.TrySetResult();
+                    await idle.Task;
+                }
+                finally { Model.PropertyChanged -= OnIdle; }
             }
+            wasOpen = _addDialog is not null;
+            hadLimits = _limitsDialog is not null;
             var hadRemoval = _removeDialog is not null;
             _addDialog?.Hide();
             _limitsDialog?.Hide();
@@ -292,13 +309,13 @@ public sealed partial class MainWindow : Window
                 _closePrompt = null;
                 if (choice != ContentDialogResult.Primary)
                 {
-                    if (engineExit) await Model.CancelClose();
+                    if (_engineExit) await Model.CancelClose();
                     keepDraft = true;
                     return;
                 }
                 await Model.CancelDraft();
             }
-            await Model.Close(engineExit);
+            await Model.Close(_engineExit);
             _allowClose = true;
             Close();
         }
@@ -306,8 +323,10 @@ public sealed partial class MainWindow : Window
         finally
         {
             _closing = false;
+            _engineExit = false;
             if (keepDraft)
             {
+                await Model.Activated(true);
                 if (hadLimits) _ = ShowLimits(false);
                 else if (wasOpen || Model.Draft.Sources.Count > 0 || Model.Draft.EditingMagnet) _ = ShowAdd();
             }
@@ -316,4 +335,8 @@ public sealed partial class MainWindow : Window
 
     [DllImport("user32.dll")]
     private static extern uint GetDpiForWindow(nint window);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetForegroundWindow(nint window);
 }

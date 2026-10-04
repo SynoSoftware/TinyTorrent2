@@ -215,24 +215,9 @@ public sealed partial class MainViewModel
         {
             var detail = await Detail(torrent);
             var destination = detail.GetProperty("save_path").GetString()!;
-            var files = detail.GetProperty("files").EnumerateArray().ToArray();
-            var path = destination;
-            if (files.Length == 1)
-            {
-                var file = Path.Combine(destination, files[0].GetProperty("path").GetString()!);
-                path = folder ? Path.GetDirectoryName(file)! : file;
-            }
-            else if (files.Length > 1)
-            {
-                var first = files[0].GetProperty("path").GetString()!.Replace('\\', '/');
-                var separator = first.IndexOf('/');
-                if (separator > 0)
-                {
-                    var root = first[..separator];
-                    if (files.All(file => file.GetProperty("path").GetString()!.Replace('\\', '/').StartsWith(root + "/", StringComparison.OrdinalIgnoreCase)))
-                        path = Path.Combine(destination, root);
-                }
-            }
+            var files = detail.GetProperty("files").EnumerateArray().Where(file => !file.GetProperty("padding").GetBoolean()).ToArray();
+            var path = !folder && files.Length == 1 ? Path.Combine(destination, files[0].GetProperty("path").GetString()!) :
+                detail.GetProperty("folder").GetString()!;
             OpenRequested?.Invoke(this, path);
         }
         catch (Exception error) { Report(error); }

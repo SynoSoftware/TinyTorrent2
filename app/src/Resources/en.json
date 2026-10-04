@@ -2,7 +2,7 @@
   "window": {
     "title": "TinyTorrent", "torrents": "Torrents", "add": "Add torrent", "pause": "Pause", "resume": "Resume", "exit": "Exit",
     "empty_title": "No torrents yet", "empty": "Add a torrent file or magnet link to start downloading.", "connecting": "Connecting…",
-    "disconnected": "Disconnected — showing last known values. Reconnecting…",
+    "disconnected": "Downloads have stopped. Showing last known values. Choose Restart to restart the engine.",
     "error": "The operation could not be completed. {0}", "rates": "Download: {0}   Upload: {1}",
     "storage_failed": "Saved downloads could not be loaded. Close TinyTorrent and check the engine data folder before trying again.",
     "no_matches": "No matching torrents", "no_matches_detail": "Clear the search or Errors filter to see your other torrents.", "clear_filters": "Clear filters", "paused_rates": "{0} · All paused",
@@ -35,7 +35,7 @@
     "invalid_limits": "Enter a speed limit between 0 and 2,097,151 KiB/s.", "preview_expired": "This preview expired. Choose Add again to reacquire it with your choices.",
     "invalid_priorities": "Choose at least one file and a valid download priority.", "metadata_unavailable": "Metadata is not available yet.", "alias_conflict": "This torrent conflicts with another download. Review the existing torrent before adding it.", "preview_failed": "Torrent metadata could not be obtained. Try again."
   },
-  "connection": { "version": "The engine and window versions do not match. Install a complete TinyTorrent release.", "unavailable": "The engine is unavailable.", "overload": "Too many commands are pending. Try again shortly.", "uncertain": "The connection was lost. Reconnecting to confirm the current state.", "missing": "Engine.exe was not found beside the application or in the developer build output." },
+  "connection": { "restart": "Restart", "version": "The engine and window versions do not match. Install a complete TinyTorrent release.", "unavailable": "The engine is unavailable.", "overload": "Too many commands are pending. Try again shortly.", "uncertain": "The connection was lost. Reconnecting to confirm the current state.", "missing": "Engine.exe was not found beside the application or in the developer build output." },
   "commands": { "menu": "Application menu", "selection": "Selection actions", "add_file": "Add torrent file…", "add_magnet": "Add magnet link…", "pause": "Pause", "resume": "Resume", "force": "Force start", "verify": "Verify", "remove": "Remove", "open": "Open", "open_folder": "Open folder", "copy_magnet": "Copy magnet link", "copy_hash": "Copy info hash", "properties": "Properties", "up": "Move up", "down": "Move down", "top": "Move to top", "bottom": "Move to bottom", "pause_all": "Pause all", "resume_all": "Resume all", "limits": "Speed limits…", "exit": "Exit" },
   "files": { "summary": "{0} of {1} files · {2}", "search": "Find a file", "all_matching": "Select matching", "none_matching": "Deselect matching", "unchanged": "Leave unchanged", "skip": "Do not download", "low": "Low", "normal": "Normal", "high": "High" },
   "outcomes": { "accepted": "{0}: request accepted.", "queue": "Queue order" },

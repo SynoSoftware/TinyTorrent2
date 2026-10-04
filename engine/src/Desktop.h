@@ -1,5 +1,8 @@
 #pragma once
 #include "Pipe.h"
+#include "Registration.h"
+#include <optional>
+#include <oleacc.h>
 
 namespace tiny
 {
@@ -21,10 +24,25 @@ private:
     void Dispatch(Pipe::Client client, Json request);
     void Receive(Pipe::Client const& client, Json const& request);
     void Open();
+    void Relaunch(DWORD process);
     void Exit();
     void Shutdown();
     void Tick();
     void Refresh();
+    void Pause();
+    void Startup(std::string failure = {}, std::wstring detail = {});
+    void Notice(Json notice);
+    void Notify();
+    void Power();
+    void SessionEnd();
+    void Menu(POINT point);
+    LRESULT MenuRow(UINT message, LPARAM parameter);
+    std::wstring Format(std::string const& group, std::string const& key, std::vector<std::wstring> const& values) const;
+    std::wstring Rate(std::int64_t bytes) const;
+    std::wstring Rates() const;
+    std::wstring Counts() const;
+    std::wstring Tooltip() const;
+    static LRESULT CALLBACK Surface(HWND window, UINT message, WPARAM first, LPARAM second);
     Json Activate(Json const& sources);
     void Sources();
     void Finish(Json const& response);
@@ -38,18 +56,39 @@ private:
     HANDLE process_ = nullptr;
     bool headless_;
     bool exiting_ = false;
-    bool notified_ = false;
     bool ticking_ = false;
     bool adding_ = false;
     bool reopen_ = false;
+    bool ending_ = false;
+    std::optional<bool> end_saved_;
+    bool saving_ = false;
+    bool notice_saving_ = false;
     unsigned sequence_ = 0;
     ULONGLONG opened_ = 0;
     UINT explorer_ = 0;
     std::string language_ = "en";
     HMENU menu_ = nullptr;
+    HFONT menu_font_ = nullptr;
+    std::wstring menu_text_[2];
+    MSAAMENUINFO menu_names_[2]{};
+    HFONT font_ = nullptr;
+    HANDLE power_ = INVALID_HANDLE_VALUE;
+    bool awake_ = false;
+    HPOWERNOTIFY power_notification_ = nullptr;
+    std::string startup_failure_;
+    std::wstring startup_detail_;
+    std::wstring tooltip_;
+    Json activity_ = Json::object();
+    std::deque<Json> notices_;
+    Json failed_notice_;
+    unsigned failed_notices_ = 0;
+    Json notification_;
+    ULONGLONG notice_due_ = 0;
+    unsigned notice_count_ = 0;
     Json strings_;
     std::unique_ptr<Engine> engine_;
     std::unique_ptr<Pipe> pipe_;
+    Registration registration_;
     Pipe::Client ui_;
     std::deque<Activation> waiting_;
     std::deque<Activation> activations_;

@@ -91,7 +91,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     }
     public string TorrentError => _current is null || _current.ErrorCode.Length == 0 ? string.Empty :
         Text.Format("errors", "torrent", _current.Name, _current.ErrorText);
-    public string Message => !_connected ? _connectionReason ?? Text.Get("window", _loaded ? "disconnected" : "connecting") :
+    public string Message => !_connected ? _connectionReason is null ? Text.Get("window", _sessionId.Length == 0 ? "connecting" : "disconnected") :
+        Text.Format("errors", "detail", Text.Get("window", _sessionId.Length == 0 ? "connecting" : "disconnected"), _connectionReason) :
         _storageFailed ? Text.Error("storage_failed", _startupError) :
         _loading ? Text.Get("window", "connecting") :
         _error is not null ? FormatError(_error) :
@@ -108,6 +109,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     public event EventHandler? ActivateRequested;
     public event EventHandler<bool>? CloseRequested;
     public event EventHandler<string>? AnnouncementRequested;
+    public ICommand Restart { get; }
+    public bool CanRestart => !_connected && _connectionReason is not null;
+    public string RestartText => Text.Get("connection", "restart");
 
     internal MainViewModel(Strings strings, DispatcherQueue dispatcher)
     {
@@ -116,6 +120,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         _client = new PipeClient(strings);
         Draft = new AddDraft(this, _client, strings);
         Speed = new SpeedLimits(this);
+        Restart = new Command(() =>
+        {
+            try { _client.LaunchEngine(); }
+            catch (Exception error) { Report(error); }
+            return Task.CompletedTask;
+        }, () => CanRestart);
         Add = new Command(() => { FilesRequested?.Invoke(this, EventArgs.Empty); return Task.CompletedTask; },
             () => CanEdit && !_addOpen);
         Pause = new Command(() => Transfer("pause"), () => CanEdit && _selected.Length > 0);
@@ -380,6 +390,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         if (_connected) await _client.Send("close_reply", new { cancelled = true });
     }
 
+    internal async Task Activated(bool available)
+    {
+        try { await _client.Send("activate_reply", new { available }); }
+        catch (Exception error) { Report(error); }
+    }
+
     public async Task CancelDraft() { await Draft.Cancel(); Speed.Begin(); }
 
     public void Report(Exception error)
@@ -420,7 +436,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         Project();
         foreach (Command command in new[] { Add, AddMagnet, Pause, Resume, Force, Verify, Remove,
             Up, Down, Top, Bottom, PauseAll, ResumeAll, Open, OpenFolder, CopyMagnet, CopyHash,
-            Properties, Limits, ClearFilters, Exit, SwitchLanguage, SwitchTheme }) command.Refresh();
+            Properties, Limits, ClearFilters, Exit, SwitchLanguage, SwitchTheme, Restart }) command.Refresh();
     }
 
     private void Changed(string property) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(property));

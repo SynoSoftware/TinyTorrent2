@@ -2,7 +2,7 @@
   "window": {
     "title": "TinyTorrent", "torrents": "Torrents", "add": "Añadir torrent", "pause": "Pausar", "resume": "Reanudar", "exit": "Salir",
     "empty_title": "Todavía no hay torrents", "empty": "Añade un archivo torrent o un enlace magnet para empezar a descargar.", "connecting": "Conectando…",
-    "disconnected": "Sin conexión — se muestran los últimos datos conocidos. Reconectando…",
+    "disconnected": "Las descargas se han detenido. Se muestran los últimos datos conocidos. Pulsa Reiniciar para reiniciar el motor.",
     "error": "No se pudo completar la operación. {0}", "rates": "Descarga: {0}   Subida: {1}",
     "storage_failed": "No se pudieron cargar las descargas guardadas. Cierra TinyTorrent y comprueba su carpeta de datos antes de volver a intentarlo.",
     "no_matches": "No hay torrents coincidentes", "no_matches_detail": "Borra la búsqueda o el filtro de errores para ver los otros torrents.", "clear_filters": "Borrar filtros", "paused_rates": "{0} · Todos en pausa",
@@ -35,7 +35,7 @@
     "invalid_limits": "Introduce un límite de velocidad entre 0 y 2.097.151 KiB/s.", "preview_expired": "Esta vista previa ha caducado. Pulsa Añadir para obtenerla de nuevo con tus opciones.",
     "invalid_priorities": "Selecciona al menos un archivo y una prioridad válida.", "metadata_unavailable": "Los metadatos aún no están disponibles.", "alias_conflict": "Este torrent entra en conflicto con otra descarga. Revisa el torrent existente antes de añadirlo.", "preview_failed": "No se pudieron obtener los metadatos del torrent. Vuelve a intentarlo."
   },
-  "connection": { "version": "Las versiones del motor y de la ventana no coinciden. Instala una versión completa de TinyTorrent.", "unavailable": "El motor no está disponible.", "overload": "Hay demasiadas órdenes pendientes. Vuelve a intentarlo en unos instantes.", "uncertain": "Se perdió la conexión. Reconectando para confirmar el estado actual.", "missing": "No se encontró Engine.exe junto a la aplicación ni en la salida de compilación." },
+  "connection": { "restart": "Reiniciar", "version": "Las versiones del motor y de la ventana no coinciden. Instala una versión completa de TinyTorrent.", "unavailable": "El motor no está disponible.", "overload": "Hay demasiadas órdenes pendientes. Vuelve a intentarlo en unos instantes.", "uncertain": "Se perdió la conexión. Reconectando para confirmar el estado actual.", "missing": "No se encontró Engine.exe junto a la aplicación ni en la salida de compilación." },
   "commands": { "menu": "Menú de la aplicación", "selection": "Acciones de selección", "add_file": "Añadir archivo torrent…", "add_magnet": "Añadir enlace magnet…", "pause": "Pausar", "resume": "Reanudar", "force": "Forzar inicio", "verify": "Verificar", "remove": "Eliminar", "open": "Abrir", "open_folder": "Abrir carpeta", "copy_magnet": "Copiar enlace magnet", "copy_hash": "Copiar hash", "properties": "Propiedades", "up": "Subir", "down": "Bajar", "top": "Mover al principio", "bottom": "Mover al final", "pause_all": "Pausar todos", "resume_all": "Reanudar todos", "limits": "Límites de velocidad…", "exit": "Salir" },
   "files": { "summary": "{0} de {1} archivos · {2}", "search": "Buscar un archivo", "all_matching": "Seleccionar coincidencias", "none_matching": "Deseleccionar coincidencias", "unchanged": "Dejar sin cambios", "skip": "No descargar", "low": "Baja", "normal": "Normal", "high": "Alta" },
   "outcomes": { "accepted": "{0}: solicitud aceptada.", "queue": "Orden de la cola" },

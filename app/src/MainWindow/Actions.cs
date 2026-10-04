@@ -135,6 +135,12 @@ public sealed partial class MainWindow
         feedback.SetBinding(InfoBar.MessageProperty, new Binding { Source = Model.Speed, Path = new PropertyPath(nameof(SpeedLimits.Message)), Mode = BindingMode.OneWay });
         feedback.SetBinding(InfoBar.IsOpenProperty, new Binding { Source = Model.Speed, Path = new PropertyPath(nameof(SpeedLimits.HasError)), Mode = BindingMode.OneWay });
         body.Children.Add(feedback);
+        var restart = new Button { Command = Model.Restart };
+        restart.SetBinding(ContentControl.ContentProperty, new Binding { Source = Model, Path = new PropertyPath(nameof(MainViewModel.RestartText)), Mode = BindingMode.OneWay });
+        var connection = new InfoBar { IsClosable = false, Severity = InfoBarSeverity.Error, ActionButton = restart };
+        connection.SetBinding(InfoBar.MessageProperty, new Binding { Source = Model, Path = new PropertyPath(nameof(MainViewModel.Message)), Mode = BindingMode.OneWay });
+        connection.SetBinding(InfoBar.IsOpenProperty, new Binding { Source = Model, Path = new PropertyPath(nameof(MainViewModel.CanRestart)), Mode = BindingMode.OneWay });
+        body.Children.Add(connection);
         var dialog = new ContentDialog { XamlRoot = Root.XamlRoot, RequestedTheme = Root.ActualTheme, FlowDirection = Root.FlowDirection,
             Title = Model.Text.Get("commands", "limits"), Content = body, PrimaryButtonText = Model.Text.Get("limits", "apply"),
             CloseButtonText = Model.Text.Get("add", "cancel"), DefaultButton = ContentDialogButton.Primary };

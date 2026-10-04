@@ -155,6 +155,13 @@ bundle another ICU distribution, raise the minimum for plurals, or build a
 general message-expression interpreter. The catalogue contract needs only the
 message forms and substitutions actually used by the product.
 
+The currently shipped English and Spanish use the same singular rule for integer
+torrent counts: one at 1, other otherwise. The native tray selects its explicit
+singular or plural message by that known rule, because loading another API to
+produce identical results adds no user benefit. Revisit that selection when a
+shipped language needs a different rule; this is not a general plural rule for
+other languages.
+
 Allow longer translations, Unicode, appropriate font fallback, and right-to-left
 layout. Direction changes with the UI language; paths and identifiers retain
 readable direction. Focus, keyboard hints, and accessibility remain coherent.

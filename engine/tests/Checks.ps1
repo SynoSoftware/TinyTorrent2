@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory)]
-    [ValidateSet('Frames', 'FailedCommit', 'Restart', 'DiskError', 'PreviewGuard', 'RemoveKeepFiles', 'QueueOrder', 'SelectedTransfer', 'MagnetDownload')]
+    [ValidateSet('Frames', 'FailedCommit', 'CheckpointRetry', 'Restart', 'DiskError', 'PreviewGuard', 'RemoveKeepFiles', 'QueueOrder', 'SelectedTransfer', 'MagnetDownload')]
     [string] $Check,
     [Parameter(Mandatory)]
     [string] $TorrentFile
@@ -151,6 +151,39 @@ function Payload-Hash([string] $path) {
 try {
     $initial = Start-Engine
     switch ($Check) {
+        'CheckpointRetry' {
+            $previewId = Preview
+            $reply = Send-Command @{command='add';preview_id=$previewId;destination=$payload;paused=$true}
+            Assert $reply.ok 'Checkpoint retry fixture addition failed'
+            $torrentId = $reply.data.torrent_id
+            $blocked = Join-Path $directory ($torrentId + '.resume.tmp')
+            $until = [DateTime]::UtcNow.AddSeconds(5)
+            do {
+                if (-not (Test-Path -LiteralPath $blocked)) { break }
+                [Threading.Thread]::Sleep(50)
+            } while ([DateTime]::UtcNow -lt $until)
+            $null = New-Item -ItemType Directory -Path $blocked
+            $reply = Send-Command @{command='resume';torrent_ids=@($torrentId)}
+            Assert $reply.ok 'Checkpoint retry fixture did not resume'
+            $until = [DateTime]::UtcNow.AddSeconds(10)
+            do {
+                $snapshot = Send-Command @{command='snapshot'}
+                if ($snapshot.data.torrents[0].error -eq 'storage_failed') { break }
+                [Threading.Thread]::Sleep(50)
+            } while ([DateTime]::UtcNow -lt $until)
+            Assert ($snapshot.data.torrents[0].error -eq 'storage_failed') 'Blocked checkpoint was not reported'
+            Remove-Item -LiteralPath $blocked
+            $until = [DateTime]::UtcNow.AddSeconds(40)
+            do {
+                $snapshot = Send-Command @{command='snapshot'}
+                if ($snapshot.data.torrents[0].error -eq '') { break }
+                [Threading.Thread]::Sleep(100)
+            } while ([DateTime]::UtcNow -lt $until)
+            Assert ($snapshot.data.torrents[0].error -eq '') 'Failed checkpoint was skipped after libtorrent cleared its dirty flags'
+            Stop-Engine
+            $snapshot = Start-Engine
+            Assert ($snapshot.torrents.Count -eq 1 -and $snapshot.torrents[0].torrent_id -eq $torrentId -and -not $snapshot.torrents[0].paused) 'Recovered checkpoint lost saved membership or running intent'
+        }
         'MagnetDownload' {
             $reply = Send-Command @{ command = 'preview'; source = $TorrentFile; destination = $payload }
             Assert $reply.ok 'Known file could not supply the magnet hash'
@@ -292,6 +325,10 @@ try {
             Assert (-not $reply.data.torrents[0].forced -and -not $reply.data.torrents[0].paused) 'Ordinary resume retained force intent'
         }
         'Frames' {
+            $reply = Send-Command @{ command = 'registration'; operation = 42 }
+            Assert (-not $reply.ok -and $reply.error.code -eq 'invalid_request') 'Malformed registration terminated the download owner instead of being refused'
+            $reply = Send-Command @{ command = 'snapshot' }
+            Assert $reply.ok 'Malformed registration broke the subsequent valid command'
             foreach ($bytes in @([byte[]](1, 2), [BitConverter]::GetBytes(16777217),
                 [byte[]](1, 0, 0, 0, 123), [byte[]](1, 0, 0, 0, 255))) {
                 $client = Connect-Pipe
@@ -473,14 +510,27 @@ try {
             }
             $reply = Send-Command @{ command = 'queue'; torrent_ids = @($ids[0]); direction = 'down' }
             Assert $reply.ok 'Move down was refused'
-            $snapshot = Send-Command @{ command = 'snapshot' }
-            $order = @($snapshot.data.torrents | Sort-Object queue | ForEach-Object torrent_id)
+            $expected = @($ids[1], $ids[0], $ids[2]) -join ','
+            $until = [DateTime]::UtcNow.AddSeconds(5)
+            do {
+                $snapshot = Send-Command @{ command = 'snapshot' }
+                $order = @($snapshot.data.torrents | Sort-Object queue | ForEach-Object torrent_id)
+                if (($order -join ',') -eq $expected) { break }
+                [Threading.Thread]::Sleep(50)
+            } while ([DateTime]::UtcNow -lt $until)
             Assert (($order -join ',') -eq (@($ids[1], $ids[0], $ids[2]) -join ',')) 'Move down left the queue unchanged or moved the wrong torrent'
             $reply = Send-Command @{ command = 'queue'; torrent_ids = @($ids[2]); before_torrent_id = $ids[0] }
             Assert $reply.ok 'Atomic row drop was refused'
             Stop-Engine
             $snapshot = Start-Engine
-            $order = @($snapshot.torrents | Sort-Object queue | ForEach-Object torrent_id)
+            $expected = @($ids[1], $ids[2], $ids[0]) -join ','
+            $until = [DateTime]::UtcNow.AddSeconds(5)
+            do {
+                $order = @($snapshot.torrents | Sort-Object queue | ForEach-Object torrent_id)
+                if (($order -join ',') -eq $expected) { break }
+                [Threading.Thread]::Sleep(50)
+                $snapshot = (Send-Command @{ command = 'snapshot' }).data
+            } while ([DateTime]::UtcNow -lt $until)
             Assert (($order -join ',') -eq (@($ids[1], $ids[2], $ids[0]) -join ',')) 'Saved queue order was lost after restart'
         }
     }

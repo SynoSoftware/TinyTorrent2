@@ -212,6 +212,9 @@ Send only intended changes through the [engine's edit path](engine.md#committed-
 Refresh confirmed facts without replacing the user's current input. On refusal,
 keep that input and explain the actionable reason at the affected control.
 Reconnection preserves unfinished input but does not submit it automatically.
+When the engine is unavailable, Restart is reachable inside an open Add or
+speed-limit draft as well as the main window. A modal editor must not cover the
+only recovery command and force the person to discard input to reach it.
 Language selection retains its immediate, in-place behavior.
 
 ## Product journeys

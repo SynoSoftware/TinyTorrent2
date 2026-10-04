@@ -137,7 +137,9 @@
             </ScrollViewer>
         </Grid>
         <StackPanel Grid.Row="4" Margin="16,8,16,12" Spacing="4">
-            <InfoBar x:Name="Feedback" IsClosable="False" Severity="{x:Bind Model.Severity, Mode=OneWay}" Message="{x:Bind Model.Message, Mode=OneWay}" IsOpen="{x:Bind Model.HasFeedback, Mode=OneWay}" />
+            <InfoBar x:Name="Feedback" IsClosable="False" Severity="{x:Bind Model.Severity, Mode=OneWay}" Message="{x:Bind Model.Message, Mode=OneWay}" IsOpen="{x:Bind Model.HasFeedback, Mode=OneWay}">
+                <InfoBar.ActionButton><Button Content="{x:Bind Model.RestartText, Mode=OneWay}" Command="{x:Bind Model.Restart}" Visibility="{x:Bind Model.CanRestart, Mode=OneWay}" /></InfoBar.ActionButton>
+            </InfoBar>
             <TextBlock x:Name="TorrentError" TextWrapping="Wrap" Text="{x:Bind Model.TorrentError, Mode=OneWay}" />
             <Grid ColumnSpacing="12">
                 <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>

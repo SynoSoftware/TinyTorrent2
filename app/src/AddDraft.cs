@@ -40,7 +40,7 @@ public sealed class AddDraft : INotifyPropertyChanged
     public string SubmitText => _strings.Get("add", IsSubmitting ? "pending" : Sources.Count > 1 ? "submit_all" : "submit");
     public string Shared => string.Join(Environment.NewLine, Sources.Select(source => source.Shared).Where(text => text.Length > 0));
     private Exception? Failure => _failure ?? Sources.Select(source => source.Failure).FirstOrDefault(error => error is not null);
-    public string Message => Failure is { } failure ? _owner.FormatError(failure) :
+    public string Message => !_owner.IsConnected ? _owner.Message : Failure is { } failure ? _owner.FormatError(failure) :
         HasFiles && !Files.HasWanted ? _strings.Get("add", "no_files") : string.Empty;
     public bool HasError => Message.Length > 0;
     public InfoBarSeverity Severity => InfoBarSeverity.Error;

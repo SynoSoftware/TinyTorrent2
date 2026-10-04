@@ -43,6 +43,8 @@
             <CheckBox x:Name="Paused" IsChecked="{x:Bind Model.Draft.Paused, Mode=TwoWay}" IsEnabled="{x:Bind Model.Draft.CanEdit, Mode=OneWay}" />
             <CheckBox x:Name="NeverShow" IsChecked="{x:Bind Model.Draft.NeverShow, Mode=TwoWay}" IsEnabled="{x:Bind Model.Draft.CanEdit, Mode=OneWay}" />
         </StackPanel>
-        <InfoBar Grid.Row="5" IsClosable="False" IsOpen="{x:Bind Model.Draft.HasError, Mode=OneWay}" Message="{x:Bind Model.Draft.Message, Mode=OneWay}" Severity="{x:Bind Model.Draft.Severity, Mode=OneWay}" />
+        <InfoBar Grid.Row="5" IsClosable="False" IsOpen="{x:Bind Model.Draft.HasError, Mode=OneWay}" Message="{x:Bind Model.Draft.Message, Mode=OneWay}" Severity="{x:Bind Model.Draft.Severity, Mode=OneWay}">
+            <InfoBar.ActionButton><Button Content="{x:Bind Model.RestartText, Mode=OneWay}" Command="{x:Bind Model.Restart}" Visibility="{x:Bind Model.CanRestart, Mode=OneWay}" /></InfoBar.ActionButton>
+        </InfoBar>
     </Grid>
 </UserControl>

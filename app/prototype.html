@@ -1,0 +1,1242 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TinyTorrent — UI prototype</title>
+<!-- Throwaway layout study of docs/interface.md: three variants via ?variant=A|B|C.
+     Open this file directly; all commands affect sample data in memory only. -->
+<style>
+* { box-sizing: border-box; }
+:root { color-scheme:light; --base:#f3f3f3; --surface:#fbfbfb; --card:#fff; --field:#fff; --hover:#efefef; --line:#e5e5e5; --text:#1a1a1a; --muted:#606060; --accent:#005fb8; --selected:#e8f1fb; --green:#0f6b3d; --red:#b10e1c; --flyout:#fcfcfcf7; --scroll:#999; }
+body.dark { color-scheme:dark; --base:#202020; --surface:#272727; --card:#2d2d2d; --field:#303030; --hover:#363636; --line:#3c3c3c; --text:#f5f5f5; --muted:#c4c4c4; --accent:#99caff; --selected:#2f3c4a; --green:#89d5a7; --red:#ffb2b9; --flyout:#2c2c2cf7; --scroll:#797979; }
+body { margin:0; background:var(--base); color:var(--text); font:13px/1.45 'Segoe UI Variable','Segoe UI',sans-serif; }
+button,input,select,textarea { font:inherit; color:inherit; }
+button { cursor:default; border:1px solid var(--line); background:var(--card); border-radius:4px; padding:6px 14px; min-height:32px; }
+button:hover { background:var(--hover); }
+button:active:not(:disabled) { color:var(--muted); }
+button:disabled { opacity:.4; cursor:default; }
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,[tabindex]:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+input,select,textarea { min-height:32px; background:var(--field); border:1px solid var(--line); border-bottom-color:var(--scroll); border-radius:4px; padding:6px 10px; caret-color:var(--accent); }
+input:focus,textarea:focus { border-bottom:2px solid var(--accent); }
+::selection { background:var(--accent); color:var(--card); }
+.table-region,.detail,.dialog-body,.preferences-page { scrollbar-width:thin; scrollbar-color:var(--scroll) transparent; }
+input[type=checkbox] { min-height:0; accent-color:var(--accent); }
+input[type=range] { padding:0; accent-color:var(--accent); }
+textarea { width:100%; min-height:116px; resize:vertical; }
+h1,h2,h3,p { margin:0; }
+h2 { font-size:20px; font-weight:600; }
+h3 { font-size:15px; font-weight:600; }
+svg.icon { width:18px; height:18px; flex:none; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; vertical-align:middle; }
+.muted { color:var(--muted); }
+.green { color:var(--green); }
+.red { color:var(--red); }
+.primary { background:var(--accent); border-color:var(--accent); color:var(--surface); }
+body.dark .primary { color:#122031; }
+.primary:hover { filter:brightness(.94); background:var(--accent); }
+.study { max-width:1580px; margin:0 auto; padding:12px 20px 84px; min-width:920px; }
+.study-heading { display:flex; justify-content:space-between; gap:16px; align-items:center; margin-bottom:8px; color:var(--muted); font-size:12px; }
+.study-heading strong { color:var(--text); font-weight:600; }
+.window { display:flex; flex-direction:column; height:calc(100vh - 128px); min-height:560px; background:var(--base); border:1px solid var(--line); border-radius:8px; box-shadow:0 12px 32px #0000001c; overflow:hidden; }
+.caption { min-height:48px; display:grid; grid-template-columns:minmax(140px,1fr) clamp(200px,26vw,340px) minmax(400px,1fr); align-items:center; gap:8px; padding-left:12px; }
+.brand { display:flex; align-items:center; gap:12px; min-width:0; white-space:nowrap; }
+.brand-home { border:0; background:transparent; padding:4px 0; min-height:32px; min-width:0; overflow:hidden; text-overflow:ellipsis; cursor:pointer; }
+.brand-home:hover { background:transparent; text-decoration:underline; text-underline-offset:3px; }
+.filter-toggle { display:flex; align-items:center; gap:6px; flex:none; padding:4px 8px; background:transparent; border-color:transparent; }
+.filter-toggle[aria-expanded=true],.filter-toggle.active { background:var(--selected); }
+.filter-toggle svg { width:14px; height:14px; }
+.filter-pane { width:196px; flex:none; padding:8px; border-top:1px solid var(--line); border-right:1px solid var(--line); overflow:auto; }
+.filter-pane[hidden] { display:none; }
+.filter-heading { display:flex; align-items:center; justify-content:space-between; min-height:36px; padding-left:10px; margin-bottom:4px; }
+.filter-heading strong { font-weight:600; }
+.filter-heading button { border:0; background:transparent; }
+.filter-list { display:flex; flex-direction:column; gap:4px; }
+.filter-list button { position:relative; display:flex; align-items:center; gap:10px; min-height:36px; border:0; background:transparent; padding:8px 10px; text-align:left; }
+.filter-list button:hover { background:var(--hover); }
+.filter-list button[aria-selected=true] { background:var(--selected); }
+.filter-list button[aria-selected=true]::before { content:''; position:absolute; left:0; top:10px; bottom:10px; width:3px; border-radius:2px; background:var(--accent); }
+.filter-list svg { width:16px; height:16px; color:var(--muted); }
+.filter-count { margin-left:auto; color:var(--muted); font-variant-numeric:tabular-nums; }
+ .caption-page { color:var(--muted); overflow:hidden; text-overflow:ellipsis; }
+.caption-controls { display:flex; justify-content:flex-end; align-items:center; gap:4px; }
+.caption-controls>button { border:0; background:transparent; }
+.caption-controls>button:hover { background:var(--hover); }
+.caption .icon-button { width:32px; padding:6px; }
+.caption-search { position:relative; display:flex; align-items:center; }
+.caption-search input { width:100%; padding:5px 64px 5px 34px; background:var(--surface); }
+.caption-search input::placeholder { color:var(--muted); opacity:1; }
+.caption-search svg { position:absolute; left:10px; width:16px; height:16px; color:var(--muted); pointer-events:none; }
+.caption-search kbd { position:absolute; right:10px; font:11px 'Segoe UI',sans-serif; color:var(--muted); pointer-events:none; }
+.selection-tools { display:flex; align-items:center; gap:2px; }
+.selection-tools .icon-button { border:0; background:transparent; }
+.selection-tools .icon-button:hover { background:var(--hover); }
+.search-menu { position:fixed; inset:auto; margin:0; padding:6px; width:520px; max-width:calc(100vw - 32px); max-height:min(432px,calc(100vh - 120px)); overflow:auto; border:1px solid var(--line); border-radius:8px; color:var(--text); background:var(--flyout); box-shadow:0 8px 24px #0003; scrollbar-width:thin; scrollbar-color:var(--scroll) transparent; }
+.search-group { padding:8px 10px 4px; color:var(--muted); font-size:12px; }
+.search-result { display:flex; align-items:center; width:100%; gap:12px; border:0; background:transparent; padding:8px 10px; text-align:left; }
+.search-result[aria-selected=true] { background:var(--selected); }
+.search-result>svg { width:16px; height:16px; color:var(--muted); }
+.search-result>span { display:flex; flex-direction:column; min-width:0; }
+.search-result strong { font-weight:400; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.search-result small { color:var(--muted); font-size:11px; }
+.search-result .shortcut { margin-left:auto; color:var(--muted); font-size:12px; white-space:nowrap; }
+.search-empty { padding:20px 12px; color:var(--muted); }
+.flyout button[aria-current=page] { background:var(--selected); }
+.about-page { flex:1; padding:32px; background:var(--surface); border-top:1px solid var(--line); }
+.about-page img { width:64px; height:64px; margin-bottom:16px; }
+.about-page h1 { font-size:28px; font-weight:600; margin-bottom:8px; }
+.about-page p { color:var(--muted); margin-bottom:8px; }
+.brand-toggle { display:grid; place-items:center; width:36px; height:36px; padding:0; border:0; background:transparent; perspective:768px; }
+.brand-toggle:hover { background:transparent; }
+.brand-scene { position:relative; width:28px; height:28px; transform-style:preserve-3d; transition:transform 220ms cubic-bezier(.4,0,.2,1); }
+.brand-face { position:absolute; inset:0; display:grid; place-items:center; backface-visibility:hidden; }
+.brand-front img { width:28px; height:28px; }
+.brand-back { transform:rotateY(180deg); }
+.brand-toggle:hover .brand-scene,.brand-toggle:focus-visible .brand-scene,.brand-toggle[aria-expanded=true] .brand-scene { transform:rotateY(180deg); }
+.icon-button { display:inline-flex; justify-content:center; align-items:center; gap:6px; }
+.divider { height:16px; border-left:1px solid var(--line); margin:0 8px; }
+.caption-glyph { width:46px; height:48px; display:grid; place-items:center; color:var(--text); }
+.caption-glyph svg { width:12px; height:12px; stroke-width:1.5; }
+.content { display:flex; flex:1; min-height:0; }
+.workspace { display:flex; flex-direction:column; min-width:0; min-height:0; flex:1; background:var(--surface); border-top:1px solid var(--line); }
+.table-region { flex:1; min-height:110px; overflow:auto; position:relative; }
+table { width:100%; border-collapse:collapse; white-space:nowrap; font-variant-numeric:tabular-nums; }
+th { text-align:left; font-weight:400; color:var(--muted); height:32px; position:sticky; top:0; background:var(--surface); z-index:1; border-bottom:1px solid var(--line); }
+th,td { padding:6px 8px; }
+th:first-child,td:first-child { padding-left:16px; }
+th button { border:0; border-radius:0; min-height:0; padding:0; background:transparent; font-size:12px; color:inherit; }
+td { height:36px; font-size:12px; }
+.torrent-table { table-layout:fixed; min-width:1000px; }
+.torrent-table th:nth-child(1) { width:25%; }
+.torrent-table th:nth-child(2) { width:7%; }
+.torrent-table th:nth-child(3) { width:9%; }
+.torrent-table th:nth-child(4) { width:11%; }
+.torrent-table th:nth-child(5) { width:9%; }
+.torrent-table th:nth-child(6) { width:8%; }
+.torrent-table th:nth-child(7) { width:6%; }
+.torrent-table th:nth-child(8) { width:5%; }
+.torrent-table th:nth-child(9) { width:9%; }
+.torrent-table th:nth-child(10) { width:11%; }
+.torrent-table :is(th,td):nth-child(2),.torrent-table :is(th,td):nth-child(n+5):nth-child(-n+9) { text-align:right; }
+.torrent-table td:last-child { overflow:hidden; text-overflow:ellipsis; }
+.sort-icon { width:12px!important; height:12px!important; margin-left:4px; }
+tr { cursor:default; }
+tbody tr:hover { background:var(--hover); }
+tbody tr.selected { background:var(--selected); }
+tbody tr.selected td:first-child { box-shadow:inset 3px 0 var(--accent); }
+.torrent-name { font-size:13px; display:block; min-width:0; overflow:hidden; text-overflow:ellipsis; }
+.selected .torrent-name { font-weight:600; }
+.name-cell { display:flex; gap:8px; align-items:center; }
+.name-cell svg { width:16px; height:16px; color:var(--muted); }
+.progress { width:100%; }
+.progress .track { height:2px; background:var(--line); border-radius:2px; margin-top:4px; overflow:hidden; }
+.progress .fill { background:var(--accent); height:100%; }
+.progress.paused .fill { background:var(--muted); }
+.progress.error .fill { background:var(--red); }
+.status-word { display:flex; align-items:center; gap:6px; }
+.status-word svg { width:13px; height:13px; }
+.empty { padding:54px 20px; text-align:center; }
+.empty svg { width:36px; height:36px; color:var(--muted); margin-bottom:12px; }
+.empty p { margin:8px 0 20px; color:var(--muted); }
+.inspector { height:224px; min-height:155px; max-height:var(--inspector-max,70%); flex-shrink:0; display:flex; flex-direction:column; background:var(--surface); }
+.split { width:100%; height:8px; cursor:ns-resize; background:var(--surface); flex:none; display:flex; justify-content:center; align-items:center; border:0; border-top:1px solid var(--line); border-radius:0; min-height:0; padding:0; }
+.split:after { content:''; height:2px; width:24px; background:var(--scroll); opacity:.55; }
+.inspector-heading { display:flex; align-items:center; gap:12px; padding:8px 16px 0; }
+.inspector-heading strong { font-size:14px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.inspector-heading .close { margin-left:auto; padding:0; width:28px; height:28px; min-height:0; border:0; background:transparent; }
+.tabs { display:flex; gap:20px; padding:0 16px; flex:none; }
+.tabs button { position:relative; background:transparent; border:0; padding:8px 0; color:var(--muted); }
+.tabs button.active { color:var(--text); font-weight:600; }
+.tabs button.active:after { content:''; height:3px; width:20px; background:var(--accent); border-radius:2px; position:absolute; bottom:0; left:calc(50% - 10px); }
+.detail { flex:1; overflow:auto; padding:12px 16px 16px; }
+.facts { display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px 32px; }
+.fact { min-width:0; }
+.fact dt { color:var(--muted); font-size:12px; margin-bottom:2px; }
+.fact dd { margin:0; overflow-wrap:anywhere; }
+.fact .large { font-size:16px; font-weight:600; }
+.fact.wide { grid-column:span 2; }
+.detail dl { margin:0; }
+.tableview { table-layout:fixed; }
+.tableview :is(th,td) { padding:6px 12px; }
+.tableview td { height:36px; font-size:13px; overflow:hidden; text-overflow:ellipsis; }
+.tableview tbody tr:hover { background:transparent; }
+.tableview tbody tr.selected,.tableview tbody tr.selected:hover { background:var(--hover); }
+.tableview tbody tr.selected td:first-child { box-shadow:none; }
+.table-detail { display:flex; flex-direction:column; overflow:hidden; }
+.detail-table-region { flex:1; min-height:0; overflow:auto; }
+.detail-table-region .tableview { min-width:640px; }
+.detail-toolbar { display:flex; gap:8px; align-items:center; margin-bottom:12px; }
+.detail-toolbar .muted { margin-left:auto; font-size:12px; }
+.file-browser { display:flex; flex-direction:column; min-height:0; }
+.file-toolbar { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:8px; flex:none; }
+.file-summary { color:var(--muted); font-size:12px; font-weight:400; white-space:nowrap; }
+.file-toolbar button { padding:5px 10px; }
+.file-search { position:relative; flex:1; min-width:140px; max-width:240px; margin-left:auto; }
+.file-search input { width:100%; padding-right:32px; }
+.file-search input::placeholder { color:var(--muted); opacity:1; }
+.file-search svg { position:absolute; right:10px; top:8px; width:16px; height:16px; color:var(--muted); pointer-events:none; }
+.file-list { overflow:auto; max-height:220px; min-height:60px; scrollbar-width:thin; scrollbar-color:var(--scroll) transparent; }
+.files-detail { display:flex; overflow:hidden; }
+.files-detail .file-browser { flex:1; min-width:0; }
+.files-detail .file-list { flex:1; min-height:0; max-height:none; }
+.window .inspector:has(.files-detail) { height:400px; }
+.file-table { table-layout:fixed; min-width:880px; }
+.file-table:not(:has(.file-progress)) { min-width:760px; }
+.file-table :is(th,td) { padding:4px 12px; }
+.file-table th { height:32px; }
+.file-table td { height:40px; font-size:13px; }
+.file-table .file-size { width:96px; text-align:right; }
+.file-table .file-progress { width:120px; text-align:right; }
+.file-table .file-priority { width:184px; }
+.file-table select { width:100%; }
+.file-table tr:focus-visible { outline-offset:-2px; background:var(--selected); }
+.file-folder .file-label { font-weight:600; }
+.file-folder .file-priority select { color:var(--muted); }
+.file-skipped { color:var(--muted); }
+.file-name { display:flex; align-items:center; gap:8px; min-width:0; }
+.file-label { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.file-name svg { width:16px; height:16px; flex:none; color:var(--muted); }
+.file-name button,.file-indent { width:20px; height:32px; min-height:32px; padding:0; flex:none; border:0; background:transparent; }
+.file-name button:hover { background:var(--hover); }
+.file-check { width:24px; height:32px; display:flex; align-items:center; justify-content:center; flex:none; }
+.file-check input { width:16px; height:16px; margin:0; }
+.file-progress-value { display:flex; align-items:center; justify-content:flex-end; gap:8px; font-variant-numeric:tabular-nums; }
+.file-progress .track { width:40px; height:2px; background:var(--line); overflow:hidden; flex:none; }
+.file-progress .fill { height:100%; background:var(--accent); }
+.file-skipped .file-progress .fill { background:var(--muted); }
+.file-empty { padding:16px; color:var(--muted); }
+.pieces-detail { display:flex; flex-direction:column; gap:8px; }
+.pieces-detail .legend { margin-top:0; gap:12px; }
+.piece-heading { display:flex; align-items:baseline; flex-wrap:wrap; gap:8px 20px; }
+.piece-heading .muted { margin-left:auto; font-size:12px; }
+.piece-stats { display:flex; align-items:center; flex-wrap:wrap; gap:12px 24px; font-variant-numeric:tabular-nums; font-size:12px; }
+.piece-stats span { display:flex; align-items:baseline; gap:8px; }
+.piece-stats strong { font-weight:600; }
+.piece-map { width:100%; flex:1; min-height:40px; display:block; }
+.piece-tooltip { position:fixed; z-index:7; max-width:420px; padding:8px 12px; background:var(--flyout); border:1px solid var(--line); border-radius:4px; box-shadow:0 4px 12px #0002; font-size:12px; pointer-events:none; }
+.piece { width:10px; height:10px; border:1px solid var(--muted); background:var(--field); }
+.piece.verified { background:var(--accent); border-color:var(--accent); }
+.piece.downloading { background:linear-gradient(to right,var(--accent) 50%,var(--field) 50%); }
+.piece.common { background:var(--selected); }
+.piece.common:after { content:''; display:block; width:2px; height:2px; margin:3px; background:var(--muted); }
+.piece.rare { background:repeating-linear-gradient(45deg,var(--field),var(--field) 2px,var(--muted) 2px,var(--muted) 3px); }
+.piece.unavailable { background:var(--red); border-color:var(--red); }
+.legend { display:flex; flex-wrap:wrap; gap:16px; font-size:12px; color:var(--muted); margin-top:8px; }
+.legend span { display:flex; gap:5px; align-items:center; }
+.notice { background:var(--base); border-bottom:1px solid var(--line); padding:10px 16px; display:flex; align-items:center; gap:12px; }
+.notice button { margin-left:auto; }
+.statusbar { display:flex; align-items:center; flex-wrap:wrap; gap:16px; min-height:32px; padding:4px 16px; color:var(--muted); font-size:12px; }
+.statusbar .connection { margin-left:auto; }
+.statusbar button { border:0; background:transparent; font-size:12px; min-height:24px; padding:2px 8px; color:var(--muted); }
+.statusbar button[aria-pressed=true] { color:var(--accent); background:var(--selected); }
+.statusbar svg { width:14px; height:14px; margin-right:4px; }
+.variant-A .inspector { height:208px; }
+.variant-C .inspector { height:400px; }
+.variant-C .inspector-body { display:flex; flex:1; min-height:0; }
+.variant-C .inspector .tabs { flex-direction:column; gap:2px; width:144px; padding:8px; border-right:1px solid var(--line); }
+.variant-C .inspector .tabs button { text-align:left; padding:9px 12px; }
+.variant-C .inspector .tabs button.active { background:var(--selected); border-radius:4px; }
+.variant-C .inspector .tabs button.active:after { left:0; width:3px; height:18px; top:10px; }
+.variant-C .inspector-heading { padding-bottom:8px; }
+.variant-C .facts { gap:20px 32px; }
+.variant-B .inspector { height:256px; }
+.prototype-bar { position:fixed; z-index:5; bottom:16px; left:50%; transform:translateX(-50%); display:flex; align-items:center; gap:8px; padding:6px 12px; background:#161b24; color:#fff; border:1px solid #414957; border-radius:8px; box-shadow:0 8px 24px #0003; white-space:nowrap; font-size:12px; }
+.prototype-bar button,.prototype-bar select { border:1px solid #414957; background:#242b38; color:#fff; font-size:12px; }
+.prototype-bar button { padding:5px 10px; }
+.prototype-bar button svg { width:14px; height:14px; }
+.prototype-bar .variant-label { width:168px; text-align:center; }
+.prototype-bar small { color:#b6bfce; }
+.prototype-bar .separator { height:22px; width:1px; background:#414957; margin:0 4px; }
+#state-panel { position:fixed; bottom:86px; right:24px; z-index:6; background:#161b24; color:#e2e8f0; padding:16px; border:1px solid #414957; border-radius:8px; width:370px; max-height:55vh; overflow:auto; font:11px/1.5 Consolas,monospace; box-shadow:0 8px 30px #0003; }
+#state-panel[hidden] { display:none; }
+dialog { color:var(--text); background:var(--surface); border:1px solid var(--line); border-radius:8px; padding:0; width:600px; max-width:calc(100vw - 32px); max-height:calc(100vh - 64px); box-shadow:0 24px 80px #0004; }
+dialog::backdrop { background:#0005; }
+.add-dialog { width:864px; }
+.dialog-body { padding:24px; max-height:calc(100vh - 148px); overflow:auto; }
+.dialog-body > p { margin-top:8px; color:var(--muted); }
+.dialog-footer { display:flex; gap:8px; justify-content:flex-end; padding:16px 24px; background:var(--base); border-top:1px solid var(--line); }
+.dialog-footer button { min-width:100px; }
+.field { display:block; margin-top:20px; }
+.field > span { display:block; margin-bottom:6px; }
+.field input:not([type=checkbox]),.field select { width:100%; }
+.field > .field-row { display:flex; gap:8px; }
+.field-row button { flex:none; white-space:nowrap; }
+.field-row input { flex:1; min-width:0; }
+.check { display:flex; align-items:center; gap:8px; margin-top:16px; }
+.preview { margin-top:20px; border:1px solid var(--line); border-radius:4px; }
+.preview-heading { padding:12px; background:var(--field); border-bottom:1px solid var(--line); }
+.preview-files { padding:16px; }
+.help { color:var(--muted); font-size:12px; margin-top:8px; }
+.sample-controls { display:flex; gap:6px; margin:16px 0; }
+.sample-controls button { font-size:12px; }
+.preferences-shell { flex:1; min-height:0; display:flex; flex-direction:column; background:var(--surface); border-top:1px solid var(--line); }
+.preferences-page { flex:1; min-height:0; overflow:auto; background:var(--surface); }
+.preferences-content { width:calc(100% - 48px); max-width:800px; margin:24px auto 40px; }
+.preferences-heading { display:flex; align-items:center; gap:12px; margin-bottom:24px; }
+.preferences-heading h1 { font-size:28px; font-weight:600; }
+.preference-tabs { gap:24px; padding:0; margin-bottom:16px; }
+.preference-tabs button { display:flex; align-items:center; gap:8px; }
+.preference-tabs svg { width:16px; height:16px; }
+.settings-card { padding:24px; margin-bottom:16px; background:var(--card); border:1px solid var(--line); border-radius:4px; }
+.settings-card-heading { display:flex; align-items:center; gap:16px; margin-bottom:20px; }
+.settings-card-heading > svg { width:32px; height:32px; color:var(--accent); stroke-width:1.4; }
+.settings-card h2 { font-size:16px; }
+.settings-card-heading p { color:var(--muted); margin-top:4px; }
+.setting { display:flex; align-items:center; gap:24px; justify-content:space-between; min-height:52px; padding:10px 0; border-bottom:1px solid var(--line); }
+.setting:last-child { border-bottom:0; padding-bottom:0; }
+.setting small { display:block; color:var(--muted); margin-top:3px; }
+.setting select { width:240px; }
+.setting-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px 24px; }
+.setting-number { display:flex; flex-direction:column; align-items:stretch; gap:8px; min-width:0; }
+.setting-number small { display:block; color:var(--muted); font-size:12px; }
+.settings-card .field { margin-top:0; margin-bottom:12px; }
+.settings-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:16px; }
+.schedule-days { display:flex; flex-wrap:wrap; gap:16px; border:0; padding:0; margin:16px 0 20px; }
+.schedule-days legend { margin-bottom:12px; }
+.schedule-days label { display:flex; align-items:center; gap:6px; }
+.settings-card-heading .switch { margin-left:auto; }
+.schedule-axis { display:flex; margin-left:60px; justify-content:space-between; font-size:11px; color:var(--muted); margin-bottom:8px; }
+.schedule-day { display:flex; align-items:center; gap:12px; width:100%; min-height:36px; padding:4px 0; background:transparent; border:0; text-align:left; }
+.schedule-day > span:first-child { width:48px; flex:none; }
+.schedule-track { position:relative; flex:1; height:28px; overflow:hidden; border-radius:2px; background:var(--hover); }
+.schedule-band { position:absolute; top:0; bottom:0; display:grid; place-items:center; overflow:hidden; white-space:nowrap; font-size:11px; container-type:inline-size; }
+.schedule-band > span { display:none; padding:0 4px; }
+@container (min-width:140px) { .schedule-band > span { display:block; } }
+.schedule-band.normal,.schedule-swatch.normal { background:var(--hover); }
+.schedule-band.alternative,.schedule-swatch.alternative { background:var(--accent); color:var(--surface); }
+.schedule-band.paused,.schedule-swatch.paused { background:repeating-linear-gradient(135deg,var(--line),var(--line) 3px,var(--surface) 3px,var(--surface) 6px); }
+.schedule-inactive .schedule-band { background:transparent; color:var(--muted); outline:1px dashed var(--scroll); outline-offset:-1px; }
+.schedule-inactive .schedule-swatch { background:transparent; border-style:dashed; }
+.schedule-legend { display:flex; flex-wrap:wrap; gap:20px; margin:16px 0 24px; font-size:12px; }
+.schedule-legend > span { display:flex; align-items:center; gap:8px; }
+.schedule-swatch { display:inline-block; width:14px; height:14px; border:1px solid var(--muted); }
+.schedule-periods { border-top:1px solid var(--line); margin-top:16px; padding-top:16px; }
+.schedule-period { display:flex; align-items:center; gap:16px; padding:8px 0; }
+.schedule-period > div { flex:1; }
+.schedule-period small { display:block; color:var(--muted); }
+.schedule-period button { padding:6px 10px; }
+.period-mode { display:flex; gap:24px; margin-top:20px; }
+.period-mode label { display:flex; align-items:center; gap:8px; }
+.switch { position:relative; min-width:44px; width:44px; height:32px; padding:0; background:transparent; border:0; }
+.switch:hover { background:transparent; }
+.switch:before { content:''; position:absolute; width:40px; height:20px; left:2px; top:6px; border:1px solid var(--muted); border-radius:12px; }
+.switch:after { content:''; position:absolute; background:var(--muted); width:12px; height:12px; border-radius:50%; left:6px; top:10px; }
+.switch[aria-checked=true]:before { background:var(--accent); border-color:var(--accent); }
+.switch[aria-checked=true]:after { left:26px; background:var(--card); }
+body.dark .switch[aria-checked=true]:after { background:var(--base); }
+.flyout { position:fixed; inset:auto; width:276px; padding:4px; margin:0; color:var(--text); border:1px solid var(--line); border-radius:8px; background:var(--flyout); backdrop-filter:blur(20px); box-shadow:0 8px 24px #0003; }
+.flyout button { display:flex; align-items:center; gap:12px; width:100%; padding:7px 12px; border:0; background:transparent; text-align:left; }
+.flyout button:hover { background:var(--hover); }
+.flyout button svg { width:16px; height:16px; }
+.flyout .shortcut { margin-left:auto; font-size:12px; color:var(--muted); }
+.control-tip { position:fixed; inset:auto; margin:0; max-width:340px; padding:8px 12px; border:1px solid var(--line); border-radius:4px; background:var(--flyout); color:var(--text); font-size:12px; white-space:pre-line; box-shadow:0 4px 12px #0002; pointer-events:none; }
+.menu-scope { padding:8px 12px; color:var(--muted); font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.flyout { max-height:calc(100vh - 16px); overflow-y:auto; }
+.flyout hr { margin:4px 8px; border:0; border-top:1px solid var(--line); }
+.chart { width:100%; height:108px; margin-top:12px; }
+.chart line { stroke:var(--line); }
+.chart polyline { fill:none; stroke:var(--accent); stroke-width:2; }
+.chart .upload { stroke:var(--green); }
+#announcement { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+@media (max-height:680px) { .window { min-height:510px; } .inspector { height:208px; } .variant-C .inspector { height:264px; } }
+@media (forced-colors:active) { tbody tr.selected { outline:2px solid Highlight; } .piece.verified { background:Highlight; } .switch:before { border-color:ButtonText; } .switch[aria-checked=true]:before { background:Highlight; } }
+@media (prefers-reduced-motion:reduce) { .brand-scene { transition:none; } }
+</style>
+</head>
+<body>
+<div class="study">
+  <div class="study-heading"><span><strong>TinyTorrent</strong> / UI prototype · sample data only</span><span id="rationale"></span></div>
+  <main id="app" class="window" aria-label="TinyTorrent prototype"></main>
+</div>
+<nav class="prototype-bar" aria-label="Prototype controls">
+  <small>Prototype</small><span class="separator"></span>
+  <button data-action="previous" aria-label="Previous layout">←</button><strong class="variant-label" id="variant-label"></strong><button data-action="next" aria-label="Next layout">→</button>
+  <span class="separator"></span><select id="scenario" aria-label="Sample scenario"><option value="normal">Normal transfers</option><option value="loading">Loading</option><option value="offline">Disconnected</option><option value="empty">Empty library</option></select>
+  <button data-action="theme" id="theme-button">Dark theme</button><button data-action="state" aria-expanded="false">State</button><button data-action="reset">Reset</button>
+</nav>
+<pre id="state-panel" hidden></pre>
+<dialog id="dialog" aria-labelledby="dialog-title"></dialog>
+<div id="action-menu" class="flyout" popover="auto" role="menu" aria-label="Torrent actions"></div>
+<div id="command-search" class="search-menu" popover="auto" role="listbox" aria-label="Search results"></div>
+<div id="control-tip" class="control-tip" popover="manual" role="tooltip"></div>
+<div id="announcement" role="status" aria-live="polite"></div>
+<script>
+const icons = {
+  download:'<path d="M12 3v12m-5-5 5 5 5-5M4 17v4h16v-4"/>',
+  upload:'<path d="M12 16V4m-5 5 5-5 5 5M4 17v4h16v-4"/>',
+  plus:'<path d="M12 5v14M5 12h14"/>',
+  file:'<path d="M14 2H6v20h12V6l-4-4Z M14 2v5h5"/>',
+  link:'<path d="m10 13 4-4m-5 7-2 2a4 4 0 0 1-6-6l4-4a4 4 0 0 1 6 0m2-2 2-2a4 4 0 0 1 6 6l-4 4a4 4 0 0 1-6 0"/>',
+  pause:'<path d="M7 5v14M17 5v14"/>',
+  play:'<path d="m7 4 14 8-14 8V4Z"/>',
+  settings:'<path d="m9 3-1 3-3 1-2 3 2 2-1 3 3 2 3-1 2 2 3-1 1-3 3-1 2-3-2-2 1-3-3-2-3 1-2-2Z"/><circle cx="12" cy="11" r="3"/>',
+  more:'<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
+  folder:'<path d="M3 7V4h6l2 3h10v13H3V7Z"/>',
+  search:'<circle cx="10" cy="10" r="6"/><path d="m15 15 6 6"/>',
+  check:'<path d="m5 12 4 4L19 6"/>',
+  alert:'<path d="m12 3 10 18H2L12 3Z M12 9v5m0 3v1"/>',
+  all:'<path d="M4 5h16M4 12h16M4 19h16"/>',
+  filter:'<path d="M3 5h18l-7 8v6l-4 2v-8L3 5Z"/>',
+  clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  close:'<path d="m6 6 12 12M6 18 18 6"/>',
+  network:'<circle cx="12" cy="5" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="19" cy="19" r="2"/><path d="M12 7v6M5 17v-4h14v4"/>',
+  trash:'<path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7"/>',
+  left:'<path d="m14 6-6 6 6 6"/>',
+  right:'<path d="m10 6 6 6-6 6"/>',
+  up:'<path d="m6 14 6-6 6 6"/>',
+  down:'<path d="m6 10 6 6 6-6"/>',
+  minimize:'<path d="M4 12h16"/>',
+  maximize:'<rect x="4" y="4" width="16" height="16"/>',
+  verify:'<path d="M12 3 3 7v6c0 5 9 9 9 9s9-4 9-9V7l-9-4Z m-4 9 3 3 5-6"/>',
+  copy:'<rect x="8" y="8" width="13" height="13" rx="2"/><path d="M16 8V3H3v13h5"/>',
+  exit:'<path d="M9 3H3v18h6m6-15 6 6-6 6M9 12h12"/>',
+  menu:'<path d="M4 6h16M4 12h16M4 18h16"/>',
+  panel:'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 14h18"/>',
+  theme:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1 1M18 18l1 1M5 19l1-1M18 6l1-1"/>'
+};
+const icon = (name,classes='') => `<svg class="icon${classes?` ${classes}`:''}" viewBox="0 0 24 24" aria-hidden="true">${icons[name] || icons.file}</svg>`;
+const escape = value => String(value).replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+const logo = 'data:image/svg+xml,%3Csvg%20width%3D%22451%22%20height%3D%22489%22%20version%3D%221.1%22%20viewBox%3D%220%200%20451%20489%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20xmlns%3Axlink%3D%22http%3A%2F%2Fwww.w3.org%2F1999%2Fxlink%22%3E%3Cdefs%3E%3ClinearGradient%20id%3D%22b%22%20x1%3D%22229%22%20x2%3D%22226%22%20y1%3D%22392%22%20y2%3D%22-17.7%22%20gradientUnits%3D%22userSpaceOnUse%22%3E%3Cstop%20stop-color%3D%22%230075ff%22%20offset%3D%220%22%2F%3E%3Cstop%20stop-color%3D%22%230ff%22%20offset%3D%22.602%22%2F%3E%3C%2FlinearGradient%3E%3ClinearGradient%20id%3D%22a%22%20x1%3D%22245%22%20x2%3D%22245%22%20y1%3D%22461%22%20y2%3D%22210%22%20gradientUnits%3D%22userSpaceOnUse%22%3E%3Cstop%20stop-color%3D%22%230000b4%22%20offset%3D%220%22%2F%3E%3Cstop%20stop-color%3D%22%23008aff%22%20offset%3D%221%22%2F%3E%3C%2FlinearGradient%3E%3C%2Fdefs%3E%3Cpath%20d%3D%22m230-0.0195c-0.177%200.00225-0.256%200.0352-0.256%200.0352-51.5%2060.5-79.9%20109-103%20147-58%2098.1-54%20148-44.7%20177%2011%2029.5%2029.1%2038.7%2061.1%2045.1%2024.4%204.89%2029.7-2.13%2037.6-18.9%2010.7-22.6%2010.8-42.5%2010.2-58.8-0.748-20.3-21.4%2046.2-31.5-5.02-1.73-8.79%2027.3-39.6%2042.3-52.3%2044-37.5%2059.6%2030.2%20108%2056.6%2032.5%2017.8%2073.2-31.9%2051.3-87.1-17.3-43.5-114-204-131-204zm-121%20237c6.2-17.6%2025.7-61.5%2037.5-51.3%2011.9%2010.3-11.8%2033.4-20.2%2069.9-8.88%2038.4%208.48%2084.8-16.5%2069.7-16.6-10-6.64-71.7-0.799-88.3z%22%20fill%3D%22url(%23b)%22%20stroke-width%3D%220%22%2F%3E%3Cpath%20d%3D%22m122%20388c17.5%209.72%2058.9%209.62%2072-6.52%2019.3-23.8%2023-42.8%2023.3-71.9%200.258-27.8-6.69-48.7%2013.7-52.7%2013.5-2.61%2028.2%2033%2043.7%2045%2032.1%2024.8%2011.2-27.8%2019.9-23.7%2015.1%207.15%2023%2019.3%2045.5%207.79%2015.7-8.03%2031-44.6%2023.6-73.6-3.68-14.3%2023.5%2055.7%2016.1%2097-16.8%2094.6-83.3%20117-110%20124-42.6%2010.4-72.3%200.93-102-8.8-32.9-10.7-77.8-53.8-45.9-36.2z%22%20fill%3D%22url(%23a)%22%2F%3E%3Cpath%20d%3D%22m131%20427c7.67-11.7%202.9-15.7-16%200.381-18%2015.3%2046.5%2040.4%20123%2041.1%2062.6%200.61%20127-29.2%20109-40.2-21.8-13.5-30.8-12.7-15.4%202.4%2012.1%2011.9-68.6%2022.6-101%2022.2-66.4-0.828-108-13.9-99.7-26z%22%20fill%3D%22%230000b4%22%2F%3E%3Cpath%20d%3D%22m87%20411c20.5-10.9-23.2%201.32-34.9%2017.3-15.2%2020.8%2025.5%2066.8%20204%2060.5%20169-5.93%20165-56.2%20145-70.1-25.2-17.7-46.3-22.3-19-0.389%2013.1%2010.5%2011.9%2027.9-29.8%2044.3-24.6%209.69-90.8%2013.1-125%2013.2-35.2%200.0709-86.2-7.32-129-16.2-51.6-10.8-23.6-42.4-11.7-48.7z%22%20fill%3D%22%230000b4%22%2F%3E%3Cpath%20d%3D%22m57.3%20408c-16.1%204.83-32.3%2010.4-38.1%2022.4-3.24%206.76-11.3%2037.6%2072.1%2052.4%2030.6%205.43-14.9-6.7-34.3-17.9-13.8-7.91-25.5-12.9-21.7-30.9%204.51-21.2%2043.5-32.5%2022-26.1z%22%20fill%3D%22%230000b4%22%2F%3E%3Cpath%20d%3D%22m407%20412c-21.2-17.6%2026.3%203.15%2035.3%2018.8%209.99%2017.4-15%2035.3-33.4%2043.4-18.5%208.21-70.8%2013.4-61.5%2010.6%2027-8.04%2070.5-19%2078.8-45%204.38-13.6-8.48-18.8-19.3-27.8z%22%20fill%3D%22%230000b4%22%2F%3E%3C%2Fsvg%3E';
+const variants = {
+  A:{name:'Table first',reason:'Full-width table · shallow inspector'},
+  B:{name:'Focused library',reason:'Full-width transfers · search and error recovery'},
+  C:{name:'Inspector focus',reason:'Compact torrent list · larger details · vertical inspector tabs'}
+};
+const preferenceGroups = [['Downloads','folder'],['Transfers','download'],['Scheduler','clock'],['Connection','link'],['Application','settings']];
+const tabs = ['General','Files','Peers','Trackers','Speed','Pieces'];
+const mintFiles = [['linuxmint-22.2-cinnamon-64bit.iso',2.9,true,'Normal'],['sha256sum.txt',.000001,true,'Normal']];
+const movieFiles = [
+  ['Movies/Big Buck Bunny/Big Buck Bunny.mp4',3.8],
+  ['Movies/Big Buck Bunny/Subtitles/English.srt',.0001],
+  ['Movies/Big Buck Bunny/Subtitles/French.srt',.0001],
+  ['Movies/Sintel/Sintel.mp4',4.2],
+  ['Movies/Sintel/Subtitles/English.srt',.0001],
+  ['Movies/Sintel/Subtitles/Spanish.srt',.0001],
+  ['Movies/Tears of Steel/Tears of Steel.mp4',6.7],
+  ['Movies/Tears of Steel/Extras/Trailer.mp4',.06],
+  ['Movies/Tears of Steel/Extras/Behind the scenes.mp4',.025],
+  ['Artwork/Posters/Big Buck Bunny.jpg',.003],
+  ['Artwork/Posters/Sintel.jpg',.003],
+  ['Artwork/Wallpapers/Tears of Steel.png',.005],
+  ['README.txt',.0001],
+  ['LICENSE.txt',.0001]
+];
+const samples = [
+  {torrentId:1,name:'Ubuntu 24.04.3 Desktop amd64',size:6.2,progress:68.4,status:'Downloading',down:8.4,up:.32,eta:'3m 53s',ratio:.18,peers:'18 / 42',added:'Today, 09:41',tracker:'ubuntu.com',files:[['ubuntu-24.04.3-desktop-amd64.iso',6.2]]},
+  {torrentId:2,name:'Blender 4.5 · Open movies collection',size:14.8,progress:32.1,status:'Downloading',down:4.2,up:.18,eta:'39m 52s',ratio:.07,peers:'12 / 31',added:'Today, 09:28',tracker:'blender.org',files:movieFiles},
+  {torrentId:3,name:'Debian 13.0.0 amd64 DVD',size:3.7,progress:100,status:'Seeding',down:0,up:1.12,eta:'—',ratio:2.41,peers:'6 / 17',added:'Yesterday, 18:12',tracker:'debian.org',files:[['debian-13.0.0-amd64-DVD-1.iso',3.7]]},
+  {torrentId:4,name:'Fedora Workstation 42',size:2.4,progress:100,status:'Seeding',down:0,up:.64,eta:'—',ratio:1.32,peers:'4 / 12',added:'Yesterday, 15:36',tracker:'fedoraproject.org',files:[['Fedora-Workstation-Live-x86_64-42.iso',2.4]]},
+  {torrentId:5,name:'Internet Archive · Public domain jazz',size:1.8,progress:45.2,status:'Paused',down:0,up:0,eta:'—',ratio:.22,peers:'0 / 0',added:'Yesterday, 13:08',tracker:'archive.org',files:[['Jazz collection.flac',1.8]]},
+  {torrentId:6,name:'NASA · Earth imagery collection',size:8.6,progress:0,status:'Queued',down:0,up:0,eta:'—',ratio:0,peers:'0 / 0',added:'Today, 09:52',tracker:'archive.org',files:[['Earth imagery.zip',8.6]]},
+  {torrentId:7,name:'Free Music Archive · Instrumentals',size:.84,progress:100,status:'Paused',down:0,up:0,eta:'—',ratio:1.08,peers:'0 / 0',added:'Oct 2, 12:24',tracker:'archive.org',files:[['Instrumentals.zip',.84]]},
+  {torrentId:8,name:'OpenStreetMap · Regional extract',size:4.1,progress:12.7,status:'Error',down:0,up:0,eta:'—',ratio:.02,peers:'0 / 0',added:'Today, 08:17',tracker:'opentopography.org',error:'The download folder is unavailable. Choose an accessible folder to continue.',files:[['region.osm.pbf',4.1]]}
+];
+const defaults = {folder:'C:\\Users\\Alex\\Downloads',showAdd:true,downLimit:0,upLimit:0,alternativeDown:2048,alternativeUp:256,downloads:3,seeds:5,ratio:2,seedingTime:0,connections:200,perTorrent:50,interface:'Any interface',port:49160,portMapping:true,notify:true,sleep:true,seedSleep:false,updates:true,startup:false,language:'English'};
+const weekdays = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+const modes = {normal:'Normal limits',alternative:'Alternative limits',paused:'Paused'};
+const defaultSchedule = {enabled:false,periods:[{days:[0,1,2,3,4,5,6],start:'00:00',end:'07:00',mode:'paused'},{days:[0,1,2,3,4],start:'09:00',end:'18:00',mode:'alternative'}]};
+const state = {variant:variants[new URLSearchParams(location.search).get('variant')] ? new URLSearchParams(location.search).get('variant') : 'C',page:'torrents',preferenceGroup:'Downloads',scenario:'normal',filter:'All',filtersOpen:false,fileSearch:{add:'',torrent:''},fileCollapsed:{add:[],torrent:[]},detailSort:{Peers:null,Trackers:null},detailSelection:{Peers:[],Trackers:[]},selection:[1],tab:'General',inspector:false,split:{},allPaused:false,alternative:false,sort:'',descending:false,settings:{...defaults},schedule:structuredClone(defaultSchedule),draft:null,picker:null};
+let torrents = structuredClone(samples);
+let timer;
+const app = document.getElementById('app');
+const dialog = document.getElementById('dialog');
+const menu = document.getElementById('action-menu');
+const searchMenu = document.getElementById('command-search');
+let searchMatches = [];
+let searchActive = -1;
+let map;
+const controlTip=document.getElementById('control-tip');
+let tipControl;
+function prepareTips(root) {
+  for(const control of root.querySelectorAll('button,input,select,textarea,[data-file-path],[data-torrent]')) {
+    const help=[control.title,control.closest('.setting')?.title,control.closest('.settings-card')?.querySelector('h2')?.title,control.matches('[data-file-search]')?control.closest('.preview')?.querySelector('.preview-heading')?.title:''].filter(Boolean);
+    if(help.length){const text=[...new Set(help)].join('\n');control.title=text;control.setAttribute('aria-description',text);}
+  }
+}
+function hideControlTip() {
+  if(controlTip.matches(':popover-open'))controlTip.hidePopover();
+  if(tipControl){const ids=(tipControl.getAttribute('aria-describedby')||'').split(' ').filter(id=>id&&id!=='control-tip');if(ids.length)tipControl.setAttribute('aria-describedby',ids.join(' '));else tipControl.removeAttribute('aria-describedby');}
+  tipControl=null;
+}
+document.addEventListener('focusin',event=>{
+  hideControlTip();
+  const control=event.target;
+  if(!control.matches(':focus-visible')||!control.getAttribute('aria-description'))return;
+  tipControl=control;
+  controlTip.textContent=control.getAttribute('aria-description');
+  controlTip.showPopover();
+  const bounds=control.getBoundingClientRect();
+  controlTip.style.left=`${Math.max(8,Math.min(innerWidth-controlTip.offsetWidth-8,bounds.left))}px`;
+  controlTip.style.top=`${bounds.bottom+controlTip.offsetHeight+8<innerHeight?bounds.bottom+8:Math.max(8,bounds.top-controlTip.offsetHeight-8)}px`;
+  control.setAttribute('aria-describedby',`${control.getAttribute('aria-describedby')||''} control-tip`.trim());
+});
+document.addEventListener('focusout',hideControlTip);
+document.addEventListener('pointerdown',hideControlTip,true);
+document.addEventListener('scroll',hideControlTip,true);
+document.addEventListener('keydown',event=>{if(event.key==='Escape')hideControlTip();},true);
+const observer=new ResizeObserver(()=>{layoutInspector();drawPieces();});
+document.querySelector('[data-action=previous]').innerHTML=icon('left');
+document.querySelector('[data-action=next]').innerHTML=icon('right');
+const connected = () => !['offline','loading'].includes(state.scenario);
+const library = () => ['empty','loading'].includes(state.scenario) ? [] : torrents;
+const selected = () => rows().filter(torrent => state.selection.includes(torrent.torrentId));
+const filters = [['All','All torrents'],['Downloading','Downloading'],['Seeding','Seeding'],['Paused','Paused'],['Queued','Queued'],['Error','Errors']];
+const status = torrent => state.allPaused && torrent.status!=='Error' ? 'Paused' : torrent.status;
+const matchesFilter = (torrent,filter) => filter==='All' || status(torrent)===filter;
+const rows = () => library().filter(torrent => matchesFilter(torrent,state.filter)).sort((a,b) => {
+  if (!state.sort) return 0;
+  const comparison = typeof a[state.sort] === 'number' ? a[state.sort]-b[state.sort] : String(a[state.sort]).localeCompare(String(b[state.sort]));
+  return state.descending ? -comparison : comparison;
+});
+const size = value => value === null ? 'Unknown' : value === 0 ? '0 B' : value < 1/1024 ? `${Math.round(value*1024*1024)} KiB` : value < 1 ? `${Math.round(value*1024)} MiB` : `${value.toFixed(1)} GiB`;
+const rate = value => connected() && value ? `${value.toFixed(2)} MiB/s` : '—';
+const rates = () => ({down:state.allPaused?0:library().reduce((total,torrent)=>total+torrent.down,0),up:state.allPaused?0:library().reduce((total,torrent)=>total+torrent.up,0)});
+const glyph = status => ({Downloading:'download',Seeding:'upload',Paused:'pause',Queued:'clock',Error:'alert'}[status] || 'file');
+const command = (action,label,name,disabled=false) => `<button class="icon-button" data-action="${action}" aria-label="${label}" title="${label}" ${disabled?'disabled':''}>${icon(name)}</button>`;
+
+function filterPane() {
+  return `<nav class="filter-pane" id="torrent-filters" aria-label="Torrent filters" ${state.filtersOpen?'':'hidden'}><div class="filter-heading"><strong>Filters</strong>${command('filters','Close filters','close')}</div><div class="filter-list" role="listbox" aria-label="Torrent states">${filters.map(([filter,label])=>{const count=library().filter(torrent=>matchesFilter(torrent,filter)).length;return `<button role="option" data-filter="${filter}" aria-selected="${state.filter===filter}" aria-label="${label} · ${count} ${count===1?'torrent':'torrents'}" tabindex="${state.filter===filter?'0':'-1'}">${icon(filter==='All'?'all':glyph(filter))}<span>${label}</span><span class="filter-count" aria-hidden="true">${count}</span></button>`;}).join('')}</div></nav>`;
+}
+function filterTorrents(filter) {
+  state.filter=filter;
+  state.selection=state.selection.filter(id=>rows().some(torrent=>torrent.torrentId===id));
+  render();
+  (state.filtersOpen?app.querySelector(`[data-filter="${filter}"]`):app.querySelector('[data-action=filters]'))?.focus();
+}
+
+function table() {
+  if(state.scenario==='loading')return '<div class="empty" role="status" aria-busy="true"><h2>Loading torrents…</h2><p>Your torrent list is being retrieved.</p><button data-action="reconnect">Finish loading sample</button></div>';
+  if (!rows().length) return `<div class="empty">${icon('download')}<h2>${library().length ? 'No matching torrents' : 'Your downloads start here'}</h2>${library().length?'':'<p>Add a torrent file or magnet link. You can also drop them here.</p>'}<button data-action="${library().length?'clear':'add'}" class="primary">${library().length?'Show all torrents':'Add torrent'}</button></div>`;
+  const columns = [['name','Name'],['size','Size'],['progress','Progress'],['status','Status'],['down','Down speed'],['up','Up speed'],['eta','ETA'],['ratio','Ratio'],['peers','Seeds/Peers'],['added','Added']];
+  return `<table class="torrent-table tableview" aria-label="Torrents"><thead><tr>${columns.map(([key,label]) => `<th aria-sort="${state.sort===key?(state.descending?'descending':'ascending'):'none'}"><button data-sort="${key}">${label}${state.sort===key?icon(state.descending?'down':'up','sort-icon'):''}</button></th>`).join('')}</tr></thead><tbody>${rows().map(torrent => `<tr data-torrent="${torrent.torrentId}" tabindex="0" aria-selected="${state.selection.includes(torrent.torrentId)}" class="${state.selection.includes(torrent.torrentId)?'selected':''}" aria-label="${escape(torrent.name)}"><td><div class="name-cell">${icon(torrent.files.length>1?'folder':'file')}<span class="torrent-name" title="${escape(torrent.name)}">${escape(torrent.name)}</span></div></td><td>${size(torrent.size)}</td><td><div class="progress ${torrent.status==='Error'?'error':state.allPaused||torrent.status==='Paused'?'paused':''}">${torrent.progress.toFixed(1)} %<div class="track"><div class="fill" style="width:${torrent.progress}%"></div></div></div></td><td><span class="status-word ${torrent.status==='Error'?'red':torrent.status==='Seeding'?'green':''}">${icon(glyph(status(torrent)))}${state.allPaused && !['Paused','Error'].includes(torrent.status)?'All paused':status(torrent)}</span></td><td>${rate(state.allPaused?0:torrent.down)}</td><td>${rate(state.allPaused?0:torrent.up)}</td><td>${torrent.eta}</td><td>${torrent.ratio.toFixed(2)}</td><td>${torrent.peers}</td><td title="${escape(torrent.added)}">${torrent.added}</td></tr>`).join('')}</tbody></table>`;
+}
+const fact = (label,value,extra='') => `<div class="fact ${extra}"><dt>${label}</dt><dd>${value}</dd></div>`;
+const files = scope => scope==='add'?state.draft.files:selected()[0].files;
+const shownFiles = scope => files(scope).map((file,index)=>({file,index})).filter(({file})=>file[0].toLowerCase().includes(state.fileSearch[scope].toLowerCase()));
+const fileSummary = scope => { const wanted=files(scope).filter(file=>file[2]!==false);return `${wanted.length} of ${files(scope).length} selected · ${size(wanted.reduce((total,file)=>total+file[1],0))}`; };
+const folderFiles = (scope,path) => files(scope).map((file,index)=>({file,index})).filter(({file})=>file[0].startsWith(path+'/'));
+function fileTable(scope) {
+  const root={children:new Map()};
+  let first=true;
+  for(const {file,index} of shownFiles(scope)) {
+    let node=root,path='';
+    const parts=file[0].split('/');
+    for(const [depth,name] of parts.entries()) {
+      path=path?path+'/'+name:name;
+      if(!node.children.has(name))node.children.set(name,{name,path,children:new Map()});
+      node=node.children.get(name);
+      if(depth===parts.length-1){node.file=file;node.index=index;}
+    }
+  }
+  if(!root.children.size)return '<p class="file-empty">No matching files. Your download choices are unchanged.</p>';
+  const renderNode=(node,depth)=>{
+    const folder=!node.file;
+    const descendants=folder?folderFiles(scope,node.path):[{file:node.file,index:node.index}];
+    const wanted=descendants.filter(({file})=>file[2]!==false).length;
+    const mixed=wanted>0&&wanted<descendants.length;
+    const priorities=[...new Set(descendants.map(({file})=>file[3]||'Normal'))];
+    const priority=priorities.length===1?priorities[0]:'Mixed';
+    const collapsed=!state.fileSearch[scope]&&state.fileCollapsed[scope].includes(node.path);
+    const disabled=connected()?'':'disabled';
+    const progress=scope==='torrent'?selected()[0].progress:null;
+    const tabIndex=first?0:-1;
+    first=false;
+    const row=`<tr role="row" data-file-path="${escape(node.path)}" data-scope="${scope}" tabindex="${tabIndex}" aria-label="${escape(node.path)}" title="${escape(node.path)}" class="${folder?'file-folder':''} ${wanted===0?'file-skipped':''}" aria-level="${depth+1}" ${folder?`aria-expanded="${!collapsed}"`:''}><td><span class="file-name" style="padding-left:${depth*20}px">${folder?`<button tabindex="-1" data-folder-toggle="${escape(node.path)}" data-scope="${scope}" aria-label="${collapsed?'Expand':'Collapse'} folder ${escape(node.path)}" aria-expanded="${!collapsed}">${icon(collapsed?'right':'down')}</button>`:'<span class="file-indent"></span>'}<label class="file-check"><input tabindex="-1" type="checkbox" data-${folder?'folder':'file'}="${folder?escape(node.path):node.index}" data-scope="${scope}" aria-label="Download ${escape(node.path)}${folder?' and all contents':''}" title="${folder?'Select this folder and all subfolders':escape(node.path)}" ${wanted===descendants.length?'checked':''} ${mixed?'data-mixed="true" aria-checked="mixed"':''} ${disabled}></label>${icon(folder?'folder':'file')}<span class="file-label" title="${escape(node.path)}">${escape(node.name)}</span></span></td><td class="file-size">${size(descendants.reduce((total,{file})=>total+file[1],0))}</td>${scope==='torrent'?`<td class="file-progress"><span class="file-progress-value"><span class="track" aria-hidden="true"><span class="fill" style="display:block;width:${progress}%"></span></span>${progress.toFixed(1)} %</span></td>`:''}<td class="file-priority"><select tabindex="-1" data-${folder?'folder-priority':'priority'}="${folder?escape(node.path):node.index}" data-scope="${scope}" aria-label="Priority for ${escape(node.path)}" title="${folder?`Current contents: ${priority}. Leave unchanged preserves each file’s priority. Other choices apply to all contents and subfolders.`:'Priority for this file'}" ${disabled}>${folder?'<option value="" selected>Leave unchanged</option>':''}${['Normal','High','Low'].map(value=>`<option ${!folder&&value===priority?'selected':''}>${value}</option>`).join('')}</select></td></tr>`;
+    return row+(folder&&!collapsed?[...node.children.values()].map(child=>renderNode(child,depth+1)).join(''):'');
+  };
+  return `<table class="file-table" role="treegrid" aria-label="${scope==='add'?'Preview files':'Torrent files'}"><thead><tr><th>Name</th><th class="file-size">Size</th>${scope==='torrent'?'<th class="file-progress">Progress</th>':''}<th class="file-priority">Priority</th></tr></thead><tbody>${[...root.children.values()].map(node=>renderNode(node,0)).join('')}</tbody></table>`;
+}
+function applyFileChoices(scope,indexes,key,value) {
+  for(const index of indexes)files(scope)[index][key]=value;
+  updateFiles(scope);
+}
+function expandFolder(scope,path,expanded) {
+  state.fileCollapsed[scope]=state.fileCollapsed[scope].filter(value=>value!==path);
+  if(!expanded)state.fileCollapsed[scope].push(path);
+  updateFiles(scope);
+  const row=[...document.querySelectorAll(`[data-file-browser=${scope}] [data-file-path]`)].find(row=>row.dataset.filePath===path);
+  if(row)focusFile(row);
+}
+function setMixedChecks() {
+  for(const input of document.querySelectorAll('input[data-mixed]'))input.indeterminate=true;
+}
+function focusFile(row,move=true) {
+  for(const item of row.closest('.file-table').querySelectorAll('tbody tr')) {
+    item.tabIndex=item===row?0:-1;
+    for(const control of item.querySelectorAll('input,select'))control.tabIndex=item===row?0:-1;
+  }
+  if(move)row.focus();
+}
+document.addEventListener('focusin',event=>{
+  const row=event.target.closest('[data-file-path]');
+  if(row)focusFile(row,false);
+});
+document.addEventListener('keydown',event=>{
+  if(event.isComposing)return;
+  const row=event.target.closest('[data-file-path]');
+  if(!row)return;
+  if(event.target!==row) {
+    if(event.key!=='Escape'||!event.target.matches('input[type=checkbox],button'))return;
+    event.preventDefault();event.stopPropagation();return focusFile(row);
+  }
+  if(!['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Home','End','Enter','F2',' '].includes(event.key))return;
+  event.preventDefault();event.stopPropagation();
+  const rows=[...row.closest('.file-table').querySelectorAll('tbody tr')];
+  const index=rows.indexOf(row),level=Number(row.getAttribute('aria-level'));
+  const folder=row.querySelector('[data-folder-toggle]');
+  if(event.key===' '){row.querySelector('input:not(:disabled)')?.click();return;}
+  if(event.key==='Enter'||event.key==='F2'){row.querySelector(event.key==='F2'?'select:not(:disabled)':'input:not(:disabled)')?.focus();return;}
+  if(event.key==='ArrowRight') {
+    if(!folder)return;
+    if(row.getAttribute('aria-expanded')==='false')return expandFolder(row.dataset.scope,row.dataset.filePath,true);
+    if(rows[index+1]&&Number(rows[index+1].getAttribute('aria-level'))>level)focusFile(rows[index+1]);
+    return;
+  }
+  if(event.key==='ArrowLeft') {
+    if(folder&&row.getAttribute('aria-expanded')==='true')return expandFolder(row.dataset.scope,row.dataset.filePath,false);
+    const parent=rows.slice(0,index).findLast(item=>Number(item.getAttribute('aria-level'))<level);
+    if(parent)focusFile(parent);
+    return;
+  }
+  focusFile(rows[event.key==='Home'?0:event.key==='End'?rows.length-1:Math.max(0,Math.min(rows.length-1,index+(event.key==='ArrowUp'?-1:1)))]);
+},true);
+function fileBrowser(scope) {
+  return `<section class="file-browser" data-file-browser="${scope}"><div class="file-toolbar"><span class="file-summary">${fileSummary(scope)}</span><button data-file-bulk="all" data-scope="${scope}" aria-label="Select all shown files" title="Select all shown files" ${connected()?'':'disabled'}>Select all</button><button data-file-bulk="none" data-scope="${scope}" aria-label="Deselect all shown files" title="Deselect all shown files" ${connected()?'':'disabled'}>Select none</button><label class="file-search">${icon('search')}<input data-file-search="${scope}" aria-label="Find files ${scope==='add'?'to add':'in torrent'}" placeholder="Find files" value="${escape(state.fileSearch[scope])}"></label></div><div class="file-list">${fileTable(scope)}</div></section>`;
+}
+function updateFiles(scope) {
+  const browser=scope==='add'?dialog.querySelector('[data-file-browser=add]'):app.querySelector('[data-file-browser=torrent]');
+  const focus=document.activeElement;
+  const path=focus.closest('[data-file-path]')?.dataset.filePath;
+  const attribute=['file','priority','folder','folderPriority','folderToggle'].find(key=>focus.dataset[key]!==undefined);
+  const index=attribute?focus.dataset[attribute]:undefined;
+  const list=browser.querySelector('.file-list');
+  const scroll=list.scrollTop;
+  const horizontal=list.scrollLeft;
+  list.innerHTML=fileTable(scope);
+  list.scrollTop=scroll;
+  list.scrollLeft=horizontal;
+  browser.querySelector('.file-summary').textContent=fileSummary(scope);
+  setMixedChecks();
+  prepareTips(browser);
+  const row=[...list.querySelectorAll('[data-file-path]')].find(row=>row.dataset.filePath===path);
+  if(row){focusFile(row,false);(index!==undefined?[...row.querySelectorAll('input,select,button')].find(control=>control.dataset[attribute]===index):row)?.focus({preventScroll:true});}
+  if(scope==='add')updateAdd();
+  showState();
+}
+function detailTable(view,headers,items) {
+  const sort=state.detailSort[view];
+  const ordered=[...items];
+  if(sort)ordered.sort((a,b)=>{const x=a[sort.column],y=b[sort.column];const value=typeof x==='number'?x-y:String(x).localeCompare(String(y));return sort.descending?-value:value;});
+  return `<div class="detail-table-region"><table class="tableview" aria-label="${view}"><thead><tr>${headers.map((header,index)=>`<th aria-sort="${sort?.column===index?(sort.descending?'descending':'ascending'):'none'}" style="width:${view==='Peers'?[30,25,15,15,15][index]:[65,20,15][index]}%"><button data-detail-sort="${index}" data-detail-view="${view}">${header}${sort?.column===index?icon(sort.descending?'down':'up','sort-icon'):''}</button></th>`).join('')}</tr></thead><tbody>${ordered.map(row=>`<tr data-detail-row="${escape(row[0])}" data-detail-view="${view}" tabindex="0" aria-label="${escape(row[0])}" aria-selected="${state.detailSelection[view].includes(row[0])}" class="${state.detailSelection[view].includes(row[0])?'selected':''}">${row.map((value,index)=>`<td title="${escape(String(value))}">${view==='Peers'&&index===2?value.toFixed(1)+' %':view==='Peers'&&index>=3?rate(value):escape(String(value))}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+}
+function selectDetailRows(view,ids) {
+  state.detailSelection[view]=ids;
+  for(const row of app.querySelectorAll('[data-detail-row]')){
+    const selected=ids.includes(row.dataset.detailRow);
+    row.classList.toggle('selected',selected);row.setAttribute('aria-selected',String(selected));
+  }
+  showState();
+}
+const trackerCommands = [['edit-trackers','Edit trackers','settings',''],['reannounce','Reannounce','link','']];
+function detail() {
+  const items = selected();
+  if (items.length !== 1) return `<h3>${items.length ? `${items.length} torrents selected` : 'Select a torrent to see its details'}</h3>${items.length?`<p class="help">Pause, resume, and remove apply to every selected torrent.</p>`:''}`;
+  const torrent = items[0];
+  if (!torrent.files.length && ['General','Files','Pieces'].includes(state.tab)) return '<h3>Waiting for metadata</h3><p class="help">The torrent has been added. File choices and piece information become available when metadata arrives.</p>';
+  if (state.tab === 'General') return `${torrent.error?`<p class="red" style="margin-bottom:16px">${icon('alert')} ${escape(torrent.error)}</p>`:''}<dl class="facts">${fact('Downloaded',`<span class="large">${size(torrent.size*torrent.progress/100)}</span><span class="muted"> / ${size(torrent.size)}</span>`)}${fact('Remaining',`${torrent.progress===100?'Complete':size(torrent.size*(1-torrent.progress/100))}`)}${fact('Share ratio',torrent.ratio.toFixed(2))}${fact('Save folder',escape(torrent.destination || state.settings.folder),'wide')}${fact('Availability',torrent.status==='Error'?'Unknown':'All wanted pieces available')}${fact('Added',torrent.added)}${fact('Tracker',escape(torrent.tracker))}${fact('Transfer',state.allPaused?'All paused':torrent.status)}</dl>`;
+  if (state.tab === 'Files') return fileBrowser('torrent');
+  if (state.tab === 'Trackers') return `<div class="detail-toolbar">${trackerCommands.map(([action,label])=>`<button data-action="${action}" ${connected()?'':'disabled'}>${label}</button>`).join('')}<span class="muted">Next announce in 18m 24s · sample</span></div>${detailTable('Trackers',['Tracker URL','Status','Peers'],(torrent.trackers || [`https://tracker.${torrent.tracker}/announce`]).map(url=>[url,torrent.status==='Error'?'Waiting':'Working',Number(torrent.peers.split(' / ')[1])]))}`;
+  if (state.tab === 'Peers') return detailTable('Peers',['Endpoint','Client','Progress','Down speed','Up speed'],[['192.0.2.41:51413','libtorrent',100,2.42,.1445],['198.51.100.18:6881','libtorrent',100,1.86,.09375],['203.0.113.7:49160','Transmission',87.2,.918,0]]);
+  if (state.tab === 'Speed') return `<div class="detail-toolbar"><strong>All torrents</strong><select id="history" aria-label="Speed history"><option>Last five minutes</option><option>Last 24 hours</option></select><span class="muted">Illustrative history</span></div><div class="legend"><span>${icon('download')} Current ${rate(rates().down)}</span><span>Peak 16.8 MiB/s</span><span>${icon('upload')} Current ${rate(rates().up)}</span></div><svg class="chart" viewBox="0 0 800 100" preserveAspectRatio="none" role="img" aria-label="Sample session speed history. Download peak 16.8 MiB per second."><line x1="0" y1="20" x2="800" y2="20"/><line x1="0" y1="55" x2="800" y2="55"/><line x1="0" y1="90" x2="800" y2="90"/><polyline points="0,74 30,68 60,72 90,52 120,48 150,61 180,33 210,43 240,29 270,32 300,46 330,40 360,35 390,22 420,26 450,38 480,31 510,36 540,20 570,27 600,31 630,22 660,28 690,19 720,25 750,31 800,28"/><polyline class="upload" points="0,90 80,88 160,86 240,89 320,83 400,84 480,80 560,84 640,81 720,85 800,82"/></svg>`;
+  const pieces=pieceSummary();
+  return `<div class="piece-heading"><h3>${torrent.progress===100?'Complete':pieces.counts.missing?'No peers connected':'All missing pieces are available'}</h3><span class="muted">${pieces.count.toLocaleString()} sample pieces · ${pieces.size} each</span></div><div class="legend">${Object.entries(pieces.counts).map(([state,count])=>`<span><i class="piece ${state}"></i>${state[0].toUpperCase()+state.slice(1)} ${count.toLocaleString()}</span>`).join('')}</div><canvas class="piece-map" id="piece-map" tabindex="0" role="img" aria-label="Sample pieces map. Use arrow keys to inspect a piece range." aria-describedby="piece-tip"></canvas><div class="piece-stats"><span><strong>${torrent.progress.toFixed(1)} %</strong><span class="muted">verified</span></span><span><span class="muted">Downloaded</span><strong>${size(torrent.size*torrent.progress/100)}</strong></span><span>${icon('download')}<strong>${rate(state.allPaused?0:torrent.down)}</strong></span><span>${icon('upload')}<strong>${rate(state.allPaused?0:torrent.up)}</strong></span></div><div id="piece-tip" class="piece-tooltip" role="tooltip" hidden></div>`;
+}
+function pieceSummary() {
+  const torrent=selected()[0];
+  const count=8192;
+  const verified=Math.floor(count*torrent.progress/100);
+  const downloading=torrent.status==='Downloading'&&!state.allPaused?Math.min(32,count-verified):0;
+  const peers=torrent.peers!=='0 / 0';
+  const rare=peers?Math.min(128,count-verified-downloading):0;
+  const missing=peers?0:count-verified-downloading;
+  return {count,size:`${(torrent.size*1024*1024/count).toFixed(1)} KiB`,counts:{verified,downloading,common:count-verified-downloading-rare-missing,rare,missing,unavailable:0}};
+}
+function layoutInspector() {
+  const panel=app.querySelector('.inspector');
+  if(!panel)return;
+  const maximum=Math.max(155,Math.min(500,app.querySelector('.workspace').clientHeight-110));
+  panel.style.setProperty('--inspector-max',`${maximum}px`);
+  const split=panel.querySelector('.split');
+  split.setAttribute('aria-valuemax',String(maximum));
+  split.setAttribute('aria-valuenow',String(panel.offsetHeight));
+}
+function observeLayout() {
+  observer.disconnect();
+  map=undefined;
+  const canvas=document.getElementById('piece-map');
+  app.querySelector('.detail')?.classList.toggle('pieces-detail',!!canvas);
+  const workspace=app.querySelector('.workspace');
+  if(workspace)observer.observe(workspace);
+  layoutInspector();
+  if(canvas)observer.observe(canvas);
+}
+function drawPieces() {
+  const canvas=document.getElementById('piece-map');
+  if(!canvas)return;
+  const summary=pieceSummary();
+  const width=canvas.clientWidth;
+  const height=canvas.clientHeight;
+  const columns=Math.max(1,Math.floor((width+3)/13));
+  const rows=Math.max(1,Math.floor((height+3)/13));
+  const count=Math.min(summary.count,columns*rows);
+  const context=canvas.getContext('2d');
+  canvas.width=Math.round(width*devicePixelRatio);
+  canvas.height=Math.round(height*devicePixelRatio);
+  context.scale(devicePixelRatio,devicePixelRatio);
+  const style=getComputedStyle(canvas);
+  const color=name=>style.getPropertyValue(name).trim();
+  const colors={verified:color('--accent'),downloading:color('--accent'),common:color('--selected'),rare:color('--muted'),missing:color('--field'),unavailable:color('--red')};
+  const order=['unavailable','rare','common','missing','downloading','verified'];
+  const ranges=Object.entries(summary.counts);
+  const cells=[];
+  const offset=Math.floor((width-Math.min(columns,count)*13+3)/2);
+  for(let index=0;index<count;index++) {
+    const start=Math.floor(index*summary.count/count);
+    const end=Math.floor((index+1)*summary.count/count);
+    let cursor=0;
+    const counts={};
+    for(const [state,total] of ranges){counts[state]=Math.max(0,Math.min(end,cursor+total)-Math.max(start,cursor));cursor+=total;}
+    const state=order.reduce((best,state)=>counts[state]>counts[best]?state:best,order[0]);
+    const x=offset+(index%columns)*13;
+    const y=Math.floor(index/columns)*13;
+    context.fillStyle=colors[state];
+    context.fillRect(x,y,10,10);
+    if(state==='downloading'){context.fillStyle=color('--field');context.fillRect(x+5,y,5,10);}
+    if(state==='common'){context.fillStyle=color('--muted');context.fillRect(x+4,y+4,2,2);}
+    if(state==='rare'){context.strokeStyle=color('--field');context.beginPath();context.moveTo(x,y+7);context.lineTo(x+7,y);context.moveTo(x+3,y+10);context.lineTo(x+10,y+3);context.stroke();}
+    if(state!=='verified'){context.strokeStyle=color('--muted');context.strokeRect(x+.5,y+.5,9,9);}
+    if(Object.values(counts).filter(Boolean).length>1){context.fillStyle=color('--text');context.beginPath();context.moveTo(x+6,y);context.lineTo(x+10,y);context.lineTo(x+10,y+4);context.fill();}
+    cells.push({start,end,counts,x,y});
+  }
+  map={canvas,columns,cells,index:Math.min(map?.index||0,cells.length-1)};
+}
+function showPiece(index) {
+  if(!map)return;
+  map.index=Math.max(0,Math.min(map.cells.length-1,index));
+  const cell=map.cells[map.index];
+  const torrent=selected()[0];
+  const total=torrent.files.reduce((sum,file)=>sum+file[1],0);
+  const count=pieceSummary().count;
+  let offset=0;
+  const files=torrent.files.filter(file=>{const start=offset;offset+=file[1];return offset/total>cell.start/count&&start/total<cell.end/count;}).map(file=>file[0]);
+  const text=`Pieces ${cell.start+1}–${cell.end} · ${files.join(', ')} · ${Object.entries(cell.counts).filter(([,count])=>count).map(([state,count])=>`${count} ${state}`).join(', ')}`;
+  const tip=document.getElementById('piece-tip');
+  tip.textContent=text;
+  tip.hidden=false;
+  const bounds=map.canvas.getBoundingClientRect();
+  tip.style.left=`${Math.max(8,Math.min(innerWidth-428,bounds.left+cell.x))}px`;
+  tip.style.top=`${Math.min(innerHeight-tip.offsetHeight-8,bounds.top+cell.y+16)}px`;
+  map.canvas.setAttribute('aria-label',text);
+}
+function inspector() {
+  if (!state.inspector) return '';
+  const items = selected();
+  return `<section class="inspector" aria-label="Torrent inspector" ${state.split[state.variant]?`style="height:${state.split[state.variant]}px"`:''}><button class="split" role="separator" aria-label="Resize inspector" aria-orientation="horizontal" aria-valuemin="155" aria-valuemax="500" tabindex="0"></button><div class="inspector-heading"><strong>${items.length===1?escape(items[0].name):items.length?`${items.length} torrents selected`:'Torrent details'}</strong><button class="close" data-action="hide-inspector" aria-label="Close inspector">${icon('close')}</button></div><div class="inspector-body" style="${state.variant==='C'?'':'display:contents'}"><div class="tabs" role="tablist" aria-label="Torrent details" ${state.variant==='C'?'aria-orientation="vertical"':''}>${tabs.map(tab=>`<button role="tab" id="tab-${tab}" aria-selected="${state.tab===tab}" aria-controls="detail" data-tab="${tab}" class="${state.tab===tab?'active':''}" tabindex="${state.tab===tab?'0':'-1'}">${tab}</button>`).join('')}</div><div class="detail ${state.tab==='Files'?'files-detail':['Peers','Trackers'].includes(state.tab)?'table-detail':''}" id="detail" role="tabpanel" aria-labelledby="tab-${state.tab}" tabindex="0">${detail()}</div></div></section>`;
+}
+function statusbar() {
+  const {down,up} = rates();
+  return `<footer class="statusbar"><span>${icon('download')}${rate(down)}</span><span>${icon('upload')}${rate(up)}</span><button data-action="alternative" aria-pressed="${state.alternative}" ${connected()?'':'disabled'}>${state.alternative?icon('check'):''}Alternative speed limits</button><span>${state.allPaused?'All paused':`${state.scenario==='loading'?'Loading…':`${library().length} torrents`}`}</span>${library().some(torrent=>torrent.status==='Error')||state.filter==='Error'?`<button data-action="filter-errors" aria-pressed="${state.filter==='Error'}" class="red">${icon('alert')}Errors · ${library().filter(torrent=>torrent.status==='Error').length}</button>`:''}<span class="connection">${icon('network')}${state.scenario==='loading'?'Connecting…':connected()?'Incoming connections available':'Last-known values'}</span></footer>`;
+}
+function render() {
+  hideControlTip();
+  const focus = document.activeElement;
+  const hadFocus = app.contains(focus);
+  const focusAction = focus?.dataset.action;
+  const focusSort = focus?.dataset.sort;
+  const focusTab = focus?.dataset.tab;
+  const focusTorrent = focus?.dataset.torrent;
+  const focusFilter = focus?.dataset.filter;
+  app.className = `window variant-${state.variant}`;
+  app.innerHTML = `<header class="caption"><div class="brand"><button class="brand-toggle" data-action="app-menu" aria-label="Application menu" title="Application menu" aria-haspopup="menu" aria-expanded="false" aria-controls="action-menu"><span class="brand-scene" aria-hidden="true"><span class="brand-face brand-front"><img src="${logo}" alt=""></span><span class="brand-face brand-back">${icon('menu')}</span></span></button><button class="brand-home" data-action="torrents" title="Torrents" aria-label="TinyTorrent · Return to torrents">TinyTorrent</button>${state.page==='torrents'?`<button class="filter-toggle ${state.filter==='All'?'':'active'}" data-action="filters" aria-expanded="${state.filtersOpen}" aria-controls="torrent-filters" title="Torrent filters">${icon('filter')}<span>${state.filter==='All'?'Filters':`${filters.find(([filter])=>filter===state.filter)[1]} · ${rows().length}`}</span></button>`:`<span class="caption-page">/ ${state.page==='preferences'?'Settings':'About'}</span>`}</div><label class="caption-search">${icon('search')}<input id="global-search" role="combobox" aria-label="Search torrents, commands and settings" aria-autocomplete="list" aria-controls="command-search" aria-expanded="false" placeholder="Search TinyTorrent" autocomplete="off" spellcheck="false"><kbd>Ctrl+K</kbd></label><div class="caption-controls">${state.page==='torrents'?`${addCommands.map(([action,label,name,shortcut])=>command(action,`${label} · ${shortcut}`,name,!connected())).join('')}<span class="divider"></span><div class="selection-tools" aria-label="Selected torrent commands">${command('pause','Pause · Ctrl+P','pause',!connected()||!selected().length)}${command('resume','Resume · Ctrl+S','play',!connected()||!selected().length)}${command('actions',`More actions · ${selected().length} ${selected().length===1?'torrent':'torrents'} selected`,'more',!connected()||!selected().length)}</div>`:''}${command('theme',document.body.classList.contains('dark')?'Switch to light theme':'Switch to dark theme','theme')}<span class="divider"></span><span class="caption-glyph" aria-hidden="true">${icon('minimize')}</span><span class="caption-glyph" aria-hidden="true">${icon('maximize')}</span><span class="caption-glyph" aria-hidden="true">${icon('close')}</span></div></header>${state.scenario==='offline'?'<div class="notice" role="status">'+icon('alert')+'<span><strong>Connection lost</strong> · Showing last-known transfers. Actions are unavailable while reconnecting.</span><button data-action="reconnect">Reconnect sample</button></div>':''}${state.page==='preferences'?preferencesContent():state.page==='about'?`<section class="about-page"><img src="${logo}" alt=""><h1>TinyTorrent</h1><p>Windows torrent client</p><p>UI prototype · Sample data</p></section>`:`<div class="content">${filterPane()}<section class="workspace"><div class="table-region">${table()}</div>${inspector()}</section></div>`}${statusbar()}`;
+  prepareTips(app);
+  for(const button of app.querySelectorAll('[data-action=actions],[data-action=app-menu]'))button.setAttribute('aria-haspopup','menu');
+  document.getElementById('variant-label').textContent = `${state.variant} · ${variants[state.variant].name}`;
+  document.getElementById('rationale').textContent = variants[state.variant].reason;
+  document.getElementById('scenario').value = state.scenario;
+  app.querySelector('.split')?.setAttribute('aria-valuenow',String(app.querySelector('.inspector').offsetHeight));
+  if (focusAction) app.querySelector(`[data-action="${focusAction}"]`)?.focus();
+  if (focusSort) app.querySelector(`[data-sort="${focusSort}"]`)?.focus();
+  if (focusTab) app.querySelector(`[data-tab="${focusTab}"]`)?.focus();
+  if (focusTorrent) app.querySelector(`[data-torrent="${focusTorrent}"]`)?.focus();
+  if (focusFilter && state.filtersOpen) app.querySelector(`[data-filter="${focusFilter}"]`)?.focus();
+  if (hadFocus && state.page==='torrents' && document.activeElement===document.body) (app.querySelector(`[data-torrent="${state.selection[0]}"]`) || app.querySelector('[data-torrent]') || app.querySelector('.brand-home')).focus();
+  observeLayout();
+  setMixedChecks();
+  showState();
+}
+function selectTorrents(ids) {
+  state.selection=ids;
+  for(const row of app.querySelectorAll('[data-torrent]')) {
+    const selected=ids.includes(Number(row.dataset.torrent));
+    row.classList.toggle('selected',selected);row.setAttribute('aria-selected',String(selected));
+  }
+  const heading=app.querySelector('.inspector-heading strong');
+  if(heading){const items=selected();heading.textContent=items.length===1?items[0].name:items.length?`${items.length} torrents selected`:'Torrent details';app.querySelector('.detail').innerHTML=detail();}
+  const overflow=app.querySelector('[data-action=actions]');
+  if(overflow){const label=`More actions · ${selected().length} ${selected().length===1?'torrent':'torrents'} selected`;overflow.setAttribute('aria-label',label);overflow.title=label;}
+  for(const action of ['pause','resume','actions'])app.querySelector(`[data-action="${action}"]`)?.toggleAttribute('disabled',!connected()||!selected().length);
+  observeLayout();setMixedChecks();prepareTips(app);showState();
+}
+function showState() {
+  document.getElementById('state-panel').textContent = JSON.stringify({...state,torrents:library().map(({torrentId,name,status,progress,files})=>({torrentId,name,status,progress,files}))},null,2);
+}
+function switchVariant(offset) {
+  state.variant = Object.keys(variants)[(Object.keys(variants).indexOf(state.variant)+offset+3)%3];
+  const url = new URL(location.href);
+  url.searchParams.set('variant',state.variant);
+  history.replaceState(null,'',url);
+  render();
+  console.log('Prototype state',JSON.stringify(state));
+}
+function announce(message) {
+  clearTimeout(timer);
+  document.getElementById('announcement').textContent = message;
+  timer = setTimeout(()=>document.getElementById('announcement').textContent='',4000);
+}
+function openDialog(body,footer,className='') {
+  dialog.className = className;
+  dialog.innerHTML = `<div class="dialog-body">${body}</div><div class="dialog-footer">${footer}</div>`;
+  prepareTips(dialog);
+  dialog.showModal();
+  dialog.querySelector('.primary:not(:disabled)')?.focus();
+  setMixedChecks();
+}
+const cancel = '<button data-action="close-dialog">Cancel</button>';
+function closeDialog() {
+  dialog.close();
+  if(state.picker) { const target=state.picker;state.picker=null;if(target==='add')addDialog(); }
+  else state.draft=null;
+  showState();
+}
+function pickSource() {
+  state.draft={operation:'source',batch:false};
+  openDialog('<h2 id="dialog-title">Open torrent files</h2><p>Choose a sample file selection.</p><label class="check"><input type="radio" name="sample-source" data-source="single" checked>Linux Mint 22.2 Cinnamon.torrent</label><label class="check"><input type="radio" name="sample-source" data-source="batch">Linux Mint, Alpine Linux, and Arch Linux · 3 torrent files</label><p class="help">This stands in for the native Windows file picker. Cancel returns to the table.</p>',`${cancel}<button data-action="open-source" class="primary">Open</button>`);
+  showState();
+}
+function pickFolder(target='settings') {
+  state.picker=target;
+  if(dialog.open)dialog.close();
+  const folders=[...new Set([target==='add'?state.draft.destination:state.settings.folder,defaults.folder,'D:\\Downloads'])];
+  openDialog(`<h2 id="dialog-title">Select download folder</h2><label class="field"><span>Sample folder</span><select id="folder-choice">${folders.map(folder=>`<option>${escape(folder)}</option>`).join('')}</select></label><p class="help">The native app opens the Windows folder picker here. This prototype uses sample folders.</p>`,`${cancel}<button data-action="select-folder" class="primary">Select folder</button>`);
+}
+function add(mode='file') {
+  state.fileSearch.add='';state.fileCollapsed.add=[];
+  state.draft={mode,name:'Linux Mint 22.2 Cinnamon',source:mode==='magnet'?'':'Linux Mint 22.2 Cinnamon.torrent',destination:state.settings.folder,paused:false,metadata:mode!=='magnet',files:structuredClone(mintFiles),batch:false,neverShow:false};
+  addDialog();
+}
+const addNames = () => state.draft.batch?['Linux Mint 22.2 Cinnamon','Alpine Linux 3.22','Arch Linux 2026.10']:[state.draft.name];
+const addDuplicates = () => torrents.filter(torrent=>addNames().includes(torrent.name));
+function revealTorrents(ids) {
+  state.page='torrents';state.selection=ids;state.filter='All';
+  closeDialog();render();app.querySelector(`[data-torrent="${ids[0]}"]`)?.focus();
+}
+function addDialog() {
+  const draft=state.draft;
+  if (dialog.open) dialog.close();
+  openDialog(`<h2 id="dialog-title">${draft.batch?'Add 3 torrents':draft.mode==='magnet'?'Add magnet link':'Add torrent'}</h2><div class="sample-controls" aria-label="Sample sources"><button data-action="sample-file">Sample torrent</button><button data-action="sample-magnet">Waiting for metadata</button><button data-action="sample-batch">Sample batch</button><button data-action="sample-tree">Sample folder tree</button></div><label class="field"><span>${draft.mode==='magnet'?'Magnet link':'Torrent source'}</span><input id="add-source" value="${escape(draft.source)}" placeholder="magnet:?xt=urn:btih:…" ${draft.batch?'readonly':''}></label><div id="add-duplicates"></div><div class="preview"><div class="preview-heading" title="Choose files and download priorities here, or in torrent properties after adding. File choices become available when metadata arrives."><strong>${draft.batch?'Linux Mint · Alpine Linux · Arch Linux':draft.metadata?escape(draft.name):'Waiting for metadata'}</strong>${draft.batch?'<div class="help">3 sources · 4.3 GiB total</div>':''}</div>${draft.metadata&&!draft.batch?`<div class="preview-files">${fileBrowser('add')}</div>`:''}</div><label class="field"><span>Save to</span><span class="field-row"><input id="add-destination" value="${escape(draft.destination)}" title="Prototype: this path is a sample; no folder is read or written."><button type="button" data-action="browse-add-folder">Browse…</button></span></label><label class="check"><input type="checkbox" id="start-paused" ${draft.paused?'checked':''}>Start paused</label><label class="check"><input type="checkbox" id="never-show" ${draft.neverShow?'checked':''}>Never show the Add form again</label><p id="add-error" class="red help"></p>`,`${cancel}<button data-action="submit-add" class="primary">${draft.batch?'Add all':'Add'}</button>`,'add-dialog');
+  updateAdd();
+  showState();
+}
+function canAdd() {
+  const draft=state.draft;
+  return draft.source.trim()&&draft.destination.trim()&&addDuplicates().length<addNames().length&&(!draft.metadata||draft.batch||draft.files.some(file=>file[2]!==false));
+}
+function updateAdd() {
+  const duplicates=addDuplicates();
+  document.getElementById('add-duplicates').innerHTML=duplicates.length?'<div class="notice"><span><strong>Already added</strong><br>'+duplicates.map(torrent=>escape(torrent.name)).join('<br>')+'</span><button data-action="view-existing">View existing</button></div>':'';
+  dialog.querySelector('[data-action=submit-add]').disabled=!canAdd();
+  document.getElementById('add-error').textContent=state.draft.metadata&&!state.draft.batch&&!state.draft.files.some(file=>file[2]!==false)?'Choose at least one file to add this torrent.':'';
+}
+function submitAdd() {
+  const draft=state.draft;
+  if (!canAdd()) {
+    document.getElementById('add-error').textContent='Enter a source and destination, and choose at least one file.';
+    return;
+  }
+  const names=addNames();
+  const ids=[];
+  let duplicate=false;
+  for (const [index,name] of names.entries()) {
+    const existing=torrents.find(torrent=>torrent.name===name);
+    if (existing) { ids.push(existing.torrentId); duplicate=true; continue; }
+    const torrentId=Math.max(0,...torrents.map(torrent=>torrent.torrentId))+1;
+    torrents.push({torrentId,name,size:draft.metadata?(draft.batch?[2.9,.24,1.2][index]:draft.files.reduce((total,file)=>total+file[1],0)):null,progress:0,status:draft.paused?'Paused':draft.metadata?'Downloading':'Metadata',down:0,up:0,eta:'—',ratio:0,peers:'0 / 0',added:'Just now',tracker:'linuxmint.com',destination:draft.destination,files:draft.metadata?(draft.batch?[[`${name}.iso`,[2.9,.24,1.2][index]]]:structuredClone(draft.files)):[]});
+    ids.push(torrentId);
+  }
+  if (draft.neverShow) state.settings.showAdd=false;
+  revealTorrents(ids); announce(duplicate?'Already added. The existing sample torrent is selected.':`${ids.length===1?names[0]:`${ids.length} torrents`} added to the sample library.`);
+}
+function transfer(action) {
+  if (!connected()) return;
+  const count=selected().length;
+  for (const torrent of selected()) {
+    if (action==='pause') { torrent.status='Paused'; torrent.down=0; torrent.up=0; }
+    else { torrent.status=torrent.progress===100?'Seeding':torrent.files.length?'Downloading':'Metadata'; torrent.error=undefined; torrent.down=0; torrent.up=0; }
+  }
+  render(); announce(`${count} sample ${count===1?'torrent':'torrents'} ${action==='pause'?'paused':'resumed'}.`);
+}
+function remove(files=false) {
+  const items=selected();
+  if (!items.length || !connected()) return;
+  state.draft={operation:files?'delete':'remove',torrentIds:items.map(torrent=>torrent.torrentId)};
+  openDialog(`<h2 id="dialog-title">${files?'Delete files':'Remove'} ${items.length===1?'torrent':`${items.length} torrents`}?</h2><p>${files?'Files are permanently deleted, bypassing the Recycle Bin. Files used by other torrents are kept.':'The downloaded files are kept. To restore a removed torrent, you need its torrent file or magnet link.'}</p><ul>${items.map(torrent=>`<li>${escape(torrent.name)}</li>`).join('')}</ul>${files?`<p>File scope: ${items.reduce((total,torrent)=>total+torrent.files.length,0)} sample files in the selected torrents’ save folders.</p>`:''}<p class="help">This prototype changes the sample list only.</p>`,`${cancel.replace('<button','<button class="primary"')}<button data-action="confirm-remove">${files?'Delete files':'Remove'}</button>`);
+  showState();
+}
+function preferences(group=state.preferenceGroup) {
+  state.page='preferences';
+  state.preferenceGroup=group;
+  render();
+  app.querySelector(`[data-group="${group}"]`).focus();
+}
+function scheduleContent() {
+  return `<section class="settings-card ${state.schedule.enabled?'':'schedule-inactive'}"><div class="settings-card-heading">${icon('clock')}<div><h2>Weekly schedule</h2><p>${state.schedule.enabled?'On · Repeats in your computer’s local time':'Off · Periods saved'}</p></div><button class="switch" role="switch" aria-label="Enable weekly schedule" title="Click a day to add a period. Outside scheduled periods, normal limits apply. Paused periods take precedence if periods overlap. Schedules preserve individually paused torrents. A manual Pause all remains paused." aria-checked="${state.schedule.enabled}" data-action="toggle-schedule" ${connected()?'':'disabled'}></button></div><div class="schedule-axis" aria-hidden="true">${[0,3,6,9,12,15,18,21,24].map(hour=>`<span>${String(hour).padStart(2,'0')}</span>`).join('')}</div>${weekdays.map((day,index)=>{const ranges=dayRanges(index);const summary=ranges.map(range=>`${modes[range.mode]} ${clock(range.start)}–${clock(range.end)}`).join('; ');return `<button class="schedule-day" data-schedule-day="${index}" aria-label="Add a period on ${day}. ${summary}" title="${day}: ${summary}" ${connected()?'':'disabled'}><span>${day.slice(0,3)}</span><span class="schedule-track" aria-hidden="true">${ranges.map(range=>`<span class="schedule-band ${range.mode}" style="left:${range.start/1440*100}%;width:${(range.end-range.start)/1440*100}%"><span>${modes[range.mode]}</span></span>`).join('')}</span></button>`;}).join('')}<div class="schedule-legend">${Object.entries(modes).map(([mode,label])=>`<span><i class="schedule-swatch ${mode}"></i>${label}</span>`).join('')}</div><div class="schedule-periods"><h3>Periods</h3>${state.schedule.periods.map((period,index)=>`<div class="schedule-period"><i class="schedule-swatch ${period.mode}"></i><div><strong>${modes[period.mode]}</strong><small>${period.days.length===7?'Every day':period.days.map(day=>weekdays[day].slice(0,3)).join(', ')} · ${period.start}–${period.end}${period.end<=period.start?' · ends the following day':''}</small></div><button data-edit-period="${index}" aria-label="Edit period ${index+1}" ${connected()?'':'disabled'}>Edit</button><button data-remove-period="${index}" aria-label="Remove period ${index+1}" ${connected()?'':'disabled'}>Remove</button></div>`).join('')}<div class="settings-actions"><button data-group="Transfers">Speed limits</button><button data-action="add-period" ${connected()?'':'disabled'}>Add period</button></div></div></section>`;
+}
+const minutes = value => { const [hours,minutes]=value.split(':').map(Number);return hours*60+minutes; };
+const clock = value => `${String(Math.floor(value/60)).padStart(2,'0')}:${String(value%60).padStart(2,'0')}`;
+function scheduleMode(day,time) {
+  const active=state.schedule.periods.filter(period=>{const start=minutes(period.start);const end=minutes(period.end);return start<end?period.days.includes(day)&&time>=start&&time<end:(period.days.includes(day)&&time>=start)||(period.days.includes((day+6)%7)&&time<end);});
+  return active.some(period=>period.mode==='paused')?'paused':active.length?'alternative':'normal';
+}
+function dayRanges(day) {
+  const ranges=[];
+  for(let minute=0;minute<1440;minute+=30){const mode=scheduleMode(day,minute);const last=ranges.at(-1);if(last?.mode===mode)last.end=minute+30;else ranges.push({start:minute,end:minute+30,mode});}
+  return ranges;
+}
+function editPeriod(index=null,day=null) {
+  state.draft={operation:'schedule',index,...(index===null?{days:day===null?[0,1,2,3,4,5,6]:[day],start:'09:00',end:'17:00',mode:'alternative'}:structuredClone(state.schedule.periods[index]))};
+  const period=state.draft;
+  openDialog(`<h2 id="dialog-title">${index===null?'Add':'Edit'} scheduled period</h2><div class="period-mode">${['alternative','paused'].map(mode=>`<label><input type="radio" name="period-mode" data-period-mode="${mode}" ${period.mode===mode?'checked':''}>${modes[mode]}</label>`).join('')}</div><fieldset class="schedule-days"><legend>Start on</legend>${weekdays.map((day,index)=>`<label><input type="checkbox" data-period-day="${index}" aria-label="${day}" ${period.days.includes(index)?'checked':''}>${day.slice(0,3)}</label>`).join('')}</fieldset><div class="setting-grid">${[['start','From'],['end','Until']].map(([part,label])=>`<label class="setting-number"><span>${label}</span><input type="time" title="Local time: 30-minute steps. An end time at or before the start ends the following day." required step="1800" data-period-time="${part}" value="${period[part]}"></label>`).join('')}</div><p id="period-error" class="help red"></p>`,`${cancel}<button data-action="save-period" class="primary">Save period</button>`);
+}
+function updatePeriod() {
+  const valid=state.draft.days.length>0&&[...dialog.querySelectorAll('[data-period-time]')].every(input=>input.validity.valid);
+  dialog.querySelector('[data-action=save-period]').disabled=!valid;
+  document.getElementById('period-error').textContent=valid?'':'Choose at least one start day and valid times in 30-minute steps.';
+  showState();
+}
+function preferencesContent(group=state.preferenceGroup) {
+  const settings=state.settings;
+  const toggle=(key,label,help='')=>`<div class="setting"${help?` title="${escape(help)}"`:''}><div>${label}</div><button class="switch" role="switch" aria-label="${label}" aria-checked="${settings[key]}" data-setting="${key}" ${connected()?'':'disabled'}></button></div>`;
+  const number=(key,label,help='')=>`<label class="setting-number"><span>${label}</span><input type="number" min="0" data-setting="${key}" value="${settings[key]}"${help?` title="${escape(help)}"`:''} ${connected()?'':'disabled'}></label>`;
+  const card=(title,description,name,body)=>`<section class="settings-card"><div class="settings-card-heading">${icon(name)}<div><h2${description?` title="${escape(description)}"`:''}>${title}</h2></div></div>${body}</section>`;
+  const bodies={
+    Scheduler:scheduleContent(),
+    Downloads:card('Adding torrents','Choose where new downloads go and review them before starting.','folder',`<label class="field"><span>Default download folder</span><span class="field-row"><input data-setting="folder" value="${escape(settings.folder)}" ${connected()?'':'disabled'}><button type="button" data-action="browse-folder" aria-label="Browse for default download folder" ${connected()?'':'disabled'}>Browse…</button></span></label>${toggle('showAdd','Show the Add form','Review the destination and file choices before adding a torrent.')}`)+card('Completion','Know when your files are ready.','check',toggle('notify','Notify when a download finishes')),
+    Transfers:card('Speed limits','0 means unlimited. All speeds are in KiB/s.','download',`<div class="setting-grid">${number('downLimit','Download limit (KiB/s)','0 means unlimited')}${number('upLimit','Upload limit (KiB/s)','0 means unlimited')}${number('alternativeDown','Alternative download limit (KiB/s)','0 means unlimited')}${number('alternativeUp','Alternative upload limit (KiB/s)','0 means unlimited')}</div>`)+card('Queue','Limit how many torrents transfer at the same time.','clock',`<div class="setting-grid">${number('downloads','Active downloads')}${number('seeds','Active seeds')}</div>`)+card('Seeding limits','Reaching a limit pauses the torrent and keeps its files.','upload',`<div class="setting-grid">${number('ratio','Seed until share ratio','0 means unlimited')}${number('seedingTime','Seed for (minutes)','0 means unlimited')}</div>`),
+    Connection:card('Network','Choose the connection TinyTorrent uses.','link',`<label class="setting"><span>Network interface</span><select data-setting="interface" ${connected()?'':'disabled'}>${['Any interface','Ethernet','Sample VPN'].map(value=>`<option ${settings.interface===value?'selected':''}>${value}</option>`).join('')}</select></label>${toggle('portMapping','Automatic port mapping','UPnP / NAT-PMP')}<div class="setting-grid" style="margin-top:20px">${number('port','Listen port')}</div>`)+card('Connection limits','','all',`<div class="setting-grid">${number('connections','Maximum connections')}${number('perTorrent','Connections per torrent')}</div>`),
+    Application:card('Startup','Keep Windows sign-in behavior under your control.','play',`${toggle('startup','Start when I sign in')}<div class="settings-actions"><button data-action="windows-startup">Windows Startup settings</button></div>`)+card('Power and updates','','settings',`${toggle('sleep','Prevent sleep while downloading on mains power')}${toggle('seedSleep','Prevent sleep while seeding on mains power')}${toggle('updates','Check for updates')}`)+card('Default app','Open torrent files and magnet links with TinyTorrent.','file',`<div class="settings-actions"><button data-action="unregister">Remove as a handler</button><button data-action="register">Choose defaults</button></div>`)+card('Language','','all',`<label class="setting"><span>Application language</span><select data-setting="language" title="English is the only catalogue in this prototype." disabled><option>English</option></select></label>`)
+  };
+  return `<section class="preferences-shell" aria-label="Settings" title="Prototype: changes apply immediately to the sample. Nothing is saved."><section class="preferences-page"><div class="preferences-content"><div class="preferences-heading"><h1>Settings</h1></div><div class="tabs preference-tabs" role="tablist" aria-label="Preference categories">${preferenceGroups.map(([name,glyph])=>`<button role="tab" data-group="${name}" id="preference-${name}" aria-controls="preference-panel" aria-selected="${state.preferenceGroup===name}" tabindex="${state.preferenceGroup===name?0:-1}" class="${state.preferenceGroup===name?'active':''}">${icon(glyph)}${name}</button>`).join('')}</div><div id="preference-panel" role="tabpanel" aria-labelledby="preference-${state.preferenceGroup}">${bodies[group]}</div></div></section></section>`;
+}
+const pageCommands = [['torrents','Torrents','panel',''],['preferences','Settings','settings','Alt+O'],['about','About','file',''],['exit','Exit','exit','Ctrl+Q']];
+const addCommands = [['add','Add torrent file','plus','Ctrl+O'],['magnet','Add magnet link','link','Ctrl+Shift+O']];
+const torrentGroups = [
+  [['pause','Pause','pause','Ctrl+P'],['resume','Resume','play','Ctrl+S']],
+  [['force','Force start','play','Ctrl+M'],['open','Open','file',''],['folder','Open folder','folder','']],
+  [['copy-magnet','Copy magnet link','link',''],['copy-hash','Copy info hash','copy',''],['move','Move','folder',''],['verify','Verify','verify','Ctrl+R']],
+  [['remove','Remove','close','Delete'],['delete','Delete files','trash','Shift+Delete']]
+];
+const sessionCommands = () => [[state.allPaused?'resume-all':'pause-all',state.allPaused?'Resume all':'Pause all',state.allPaused?'play':'pause',''],['alternative','Alternative speed limits','download','']];
+function actions(scope='selection',point) {
+  const groups=scope==='app'?[pageCommands.slice(0,3),pageCommands.slice(3)]:scope==='selection'?torrentGroups.slice(1):[...(!state.inspector&&selected().length===1?[[['properties','Properties','panel','Enter']]]:[]),...torrentGroups];
+  menu.dataset.invoker=scope==='app'?'app-menu':'actions';
+  menu.dataset.torrent=scope==='context'?(document.activeElement.dataset.torrent || ''):'';
+  menu.setAttribute('aria-label',scope==='app'?'Application menu':scope==='selection'?'More actions for selected torrents':'Torrent context menu');
+  menu.innerHTML=(['selection','context'].includes(scope)?`<div class="menu-scope">${scope==='context'&&selected().length===1?escape(selected()[0].name):`${selected().length} ${selected().length===1?'torrent':'torrents'} selected`}</div><hr role="separator">`:'')+groups.map((group,index)=>(index?'<hr role="separator">':'')+group.map(([action,label,name,shortcut])=>`<button role="${action==='alternative'?'menuitemcheckbox':'menuitem'}" ${action==='alternative'?`aria-checked="${state.alternative}"`:state.page===({torrents:'torrents',preferences:'preferences',about:'about'})[action]?'aria-current="page"':''} tabindex="-1" data-action="${action}" ${!['torrents','preferences','about','exit','properties'].includes(action)&&(!connected() || (['selection','context'].includes(scope)&&!selected().length))?'disabled':''}>${icon(name)}${label}<span class="shortcut">${shortcut}</span></button>`).join('')).join('');
+  const anchor=app.querySelector(`[data-action=${menu.dataset.invoker}]`).getBoundingClientRect();
+  menu.style.left=`${Math.max(8,Math.min(innerWidth-284,point?.x??(scope==='app'?anchor.left:anchor.right-276)))}px`;
+  menu.style.top='8px';
+  menu.showPopover();
+  menu.style.top=`${Math.max(8,Math.min(innerHeight-menu.offsetHeight-8,point?.y??anchor.bottom+4))}px`;
+  menu.querySelector('button:not(:disabled)')?.focus();
+}
+function searchEntries() {
+  const entries=[];
+  entries.push({group:'Commands',label:'Filters',name:'filter',action:'filters',detail:'Torrent states'});
+  for(const [filter,label] of filters)entries.push({group:'Commands',label,name:filter==='All'?'all':glyph(filter),filter,detail:'Torrent filter'});
+  for(const [action,label,name,shortcut] of [...pageCommands,...addCommands,...sessionCommands(),['theme','Switch theme','theme','']])entries.push({group:'Commands',label,name,shortcut,action,detail:['pause-all','resume-all','alternative'].includes(action)?'All torrents':'TinyTorrent',disabled:!['torrents','preferences','about','exit','theme'].includes(action)&&!connected()});
+  for(const [action,label,name,shortcut] of torrentGroups.flat())entries.push({group:'Commands',label,name,shortcut,action,detail:`${selected().length} ${selected().length===1?'torrent':'torrents'} selected`,disabled:!connected()||!selected().length});
+  for(const [action,label,name] of trackerCommands)entries.push({group:'Commands',label,name,action,detail:selected().length===1?selected()[0].name:'One torrent required',disabled:!connected()||selected().length!==1});
+  if(selected().length===1)for(const tab of tabs)entries.push({group:'Commands',label:tab,name:'panel',tab,detail:`Properties · ${selected()[0].name}`});
+  for(const [category,name] of preferenceGroups){
+    entries.push({group:'Settings',label:category,name,category,detail:'Settings'});
+    const template=document.createElement('template');template.innerHTML=preferencesContent(category);
+    for(const control of template.content.querySelectorAll('[data-setting],[data-action]')){
+      const label=control.getAttribute('aria-label')||control.closest('label')?.querySelector('span')?.textContent||control.closest('.setting')?.querySelector('div')?.textContent||control.textContent.trim();
+      entries.push({group:'Settings',label,name,category,setting:control.dataset.setting,action:control.dataset.action,detail:`Settings · ${category}`,keywords:`${control.title} ${control.closest('.settings-card')?.querySelector('h2')?.textContent||''}`,disabled:control.disabled});
+    }
+  }
+  return [...library().map(torrent=>({group:'Torrents',label:torrent.name,name:torrent.files.length>1?'folder':'file',torrentId:torrent.torrentId,detail:`${size(torrent.size)} · ${torrent.status}`})),...entries];
+}
+function showSearch() {
+  const input=app.querySelector('#global-search');
+  const words=input.value.toLowerCase().trim().split(/\s+/).filter(Boolean);
+  const entries=searchEntries();
+  searchMatches=words.length?entries.filter(entry=>words.every(word=>`${entry.label} ${entry.detail} ${entry.keywords||''}`.toLowerCase().includes(word))):entries.filter(entry=>entry.group==='Commands'&&['torrents','preferences','about','add','magnet',state.allPaused?'resume-all':'pause-all'].includes(entry.action));
+  searchMenu.innerHTML=searchMatches.length?['Torrents','Commands','Settings'].map(group=>{const matches=searchMatches.map((entry,index)=>({entry,index})).filter(({entry})=>entry.group===group);return matches.length?`<div class="search-group" role="presentation">${group}</div>${matches.map(({entry,index})=>`<button class="search-result" role="option" tabindex="-1" id="search-result-${index}" data-search-result="${index}" aria-selected="false" ${entry.disabled?'disabled':''}>${icon(entry.name)}<span><strong>${escape(entry.label)}</strong><small>${escape(entry.detail)}</small></span>${entry.shortcut?`<span class="shortcut">${entry.shortcut}</span>`:''}</button>`).join('')}`:'';}).join(''):'<div class="search-empty" role="presentation">No results</div>';
+  if(!searchMenu.matches(':popover-open'))searchMenu.showPopover();
+  positionSearch();
+  input.setAttribute('aria-expanded','true');
+  setSearchActive(searchMatches.findIndex(entry=>!entry.disabled));
+}
+function positionSearch() {
+  const anchor=app.querySelector('#global-search').getBoundingClientRect();
+  searchMenu.style.left=`${Math.max(16,Math.min(innerWidth-searchMenu.offsetWidth-16,anchor.left))}px`;
+  searchMenu.style.top=`${anchor.bottom+6}px`;
+}
+window.addEventListener('resize',()=>{if(searchMenu.matches(':popover-open'))positionSearch();});
+function setSearchActive(index) {
+  searchActive=index;
+  for(const button of searchMenu.querySelectorAll('[data-search-result]'))button.setAttribute('aria-selected',String(Number(button.dataset.searchResult)===index));
+  const input=app.querySelector('#global-search');
+  if(index<0){input.removeAttribute('aria-activedescendant');return;}
+  input.setAttribute('aria-activedescendant',`search-result-${index}`);
+  searchMenu.querySelector(`#search-result-${index}`).scrollIntoView({block:'nearest'});
+}
+function chooseSearch(index) {
+  const entry=searchMatches[index];if(!entry||entry.disabled)return;
+  searchMenu.hidePopover();app.querySelector('#global-search').value='';
+  if(entry.torrentId)return revealTorrents([entry.torrentId]);
+  if(entry.filter){state.page='torrents';state.filtersOpen=true;return filterTorrents(entry.filter);}
+  if(entry.tab){state.page='torrents';state.inspector=true;state.tab=entry.tab;render();app.querySelector(`[data-tab="${entry.tab}"]`).focus();return;}
+  if(entry.category){
+    preferences(entry.category);
+    const control=entry.setting?app.querySelector(`[data-setting="${entry.setting}"]`):entry.action?app.querySelector(`[data-action="${entry.action}"]`):app.querySelector(`[data-group="${entry.category}"]`);
+    control?.scrollIntoView({block:'nearest'});control?.focus();
+    if(entry.action&&control?.getAttribute('role')!=='switch')handle(entry.action);return;
+  }
+  handle(entry.action);
+  if(!dialog.open)(app.querySelector(`[data-action="${entry.action}"]`)||app.querySelector('[data-torrent][aria-selected=true]')||app.querySelector('.brand-home'))?.focus();
+}
+searchMenu.addEventListener('toggle',event=>{
+  const input=app.querySelector('#global-search');
+  input?.setAttribute('aria-expanded',String(event.newState==='open'));
+  if(event.newState==='closed')input?.removeAttribute('aria-activedescendant');
+});
+function closeMenu(restoreFocus=true) {
+  menu.hidePopover();
+  if(restoreFocus)(app.querySelector(`[data-torrent="${menu.dataset.torrent}"]`) || app.querySelector(`[data-action=${menu.dataset.invoker}]`))?.focus();
+}
+function handle(action) {
+  if (action==='previous') return switchVariant(-1);
+  if (action==='next') return switchVariant(1);
+  if (action==='state') { const panel=document.getElementById('state-panel'); panel.hidden=!panel.hidden; document.querySelector('[data-action=state]').setAttribute('aria-expanded',String(!panel.hidden)); return; }
+  if (action==='theme') { document.body.classList.toggle('dark'); document.getElementById('theme-button').textContent=document.body.classList.contains('dark')?'Light theme':'Dark theme'; render();return; }
+  if (action==='reset') { torrents=structuredClone(samples); Object.assign(state,{page:'torrents',preferenceGroup:'Downloads',scenario:'normal',filter:'All',filtersOpen:false,fileSearch:{add:'',torrent:''},fileCollapsed:{add:[],torrent:[]},detailSort:{Peers:null,Trackers:null},detailSelection:{Peers:[],Trackers:[]},selection:[1],tab:'General',inspector:false,split:{},allPaused:false,alternative:false,sort:'',descending:false,settings:{...defaults},schedule:structuredClone(defaultSchedule),draft:null,picker:null}); if(dialog.open)dialog.close(); return render(); }
+  if (action==='reconnect') { state.scenario='normal'; return render(); }
+  if (action==='clear') return filterTorrents('All');
+  if (action==='filter-errors') { state.page='torrents'; return filterTorrents(state.filter==='Error'?'All':'Error'); }
+  if (action==='filters') { state.page='torrents';state.filtersOpen=!state.filtersOpen;render();(state.filtersOpen?app.querySelector(`[data-filter="${state.filter}"]`):app.querySelector('[data-action=filters]')).focus();return; }
+  if (action==='close-dialog') return closeDialog();
+  if (action==='properties' || action==='hide-inspector') { state.inspector=action==='properties'; return render(); }
+  if (action==='preferences') return preferences();
+  if (action==='browse-folder') return pickFolder();
+  if (action==='browse-add-folder') return pickFolder('add');
+  if (action==='select-folder') { const target=state.picker;(target==='add'?state.draft:state.settings)[target==='add'?'destination':'folder']=document.getElementById('folder-choice').value;closeDialog();if(target==='settings')render();return; }
+  if (action==='torrents') { state.page='torrents'; render(); (app.querySelector(`[data-torrent="${state.selection[0]}"]`) || document.getElementById('global-search')).focus(); return; }
+  if (action==='app-menu') return actions('app');
+  if (action==='about') { state.page='about';render();app.querySelector('.brand-home').focus();return; }
+  if (action==='toggle-schedule') { state.schedule.enabled=!state.schedule.enabled;return render(); }
+  if (action==='add-period') return editPeriod();
+  if (action==='actions') return actions();
+  if (action==='add' || action==='magnet') { if(connected()){if(action==='add')pickSource();else add('magnet');} return; }
+  if (action==='open-source') { const batch=state.draft.batch;dialog.close();add();if(batch){Object.assign(state.draft,{source:'3 sample torrent files',batch:true});addDialog();}if(!state.settings.showAdd)submitAdd();return; }
+  if (action==='sample-tree') { state.fileSearch.add='';state.fileCollapsed.add=[];Object.assign(state.draft,{name:'Open movies · Complete library',source:'Open movies - Complete library.torrent',mode:'file',metadata:true,batch:false,files:structuredClone(movieFiles)});return addDialog(); }
+  if (action==='sample-file') { state.fileSearch.add='';state.fileCollapsed.add=[];Object.assign(state.draft,{name:'Linux Mint 22.2 Cinnamon',mode:'file',source:'Linux Mint 22.2 Cinnamon.torrent',metadata:true,batch:false,files:structuredClone(mintFiles)}); return addDialog(); }
+  if (action==='sample-magnet') { Object.assign(state.draft,{name:'Linux Mint 22.2 Cinnamon',mode:'magnet',source:'magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567',metadata:false,batch:false}); return addDialog(); }
+  if (action==='sample-batch') { Object.assign(state.draft,{mode:'file',source:'3 sample torrent files',metadata:true,batch:true}); return addDialog(); }
+  if (action==='view-existing') return revealTorrents(addDuplicates().map(torrent=>torrent.torrentId));
+  if (action==='submit-add') return submitAdd();
+  if (!connected()) return;
+  if (action==='save-period') {
+    const {index,days,start,end,mode}=state.draft;
+    const period={days:[...days],start,end,mode};
+    if(index===null)state.schedule.periods.push(period);else state.schedule.periods[index]=period;
+    closeDialog();render();app.querySelector(`[data-edit-period="${index??state.schedule.periods.length-1}"]`)?.focus();return;
+  }
+  if (action==='pause' || action==='resume') return transfer(action);
+  if (action==='alternative') { state.alternative=!state.alternative; return render(); }
+  if (action==='remove' || action==='delete') { if(dialog.open)dialog.close(); return remove(action==='delete'); }
+  if (action==='confirm-remove') { const ids=state.draft.torrentIds; torrents=torrents.filter(torrent=>!ids.includes(torrent.torrentId)); state.selection=[]; closeDialog(); render(); return announce('Selected torrents removed from the sample list.'); }
+  if (action==='pause-all' || action==='resume-all') { state.allPaused=action==='pause-all'; closeDialog(); return render(); }
+  if (action==='force') { closeDialog(); return transfer('resume'); }
+  if (action==='edit-trackers') {
+    state.draft={operation:'trackers',torrentId:selected()[0].torrentId,trackers:(selected()[0].trackers || [`https://tracker.${selected()[0].tracker}/announce`]).join('\n')};
+    openDialog('<h2 id="dialog-title">Edit trackers</h2><label class="field"><span>One tracker URL per line</span><textarea id="tracker-draft">'+escape(state.draft.trackers)+'</textarea></label>',`${cancel}<button class="primary" data-action="save-trackers">Save</button>`); return showState();
+  }
+  if (action==='save-trackers') { const torrent=torrents.find(torrent=>torrent.torrentId===state.draft.torrentId); torrent.trackers=state.draft.trackers.split('\n').map(url=>url.trim()).filter(Boolean); closeDialog(); return render(); }
+  if (action==='move') { closeDialog(); state.draft={operation:'move',torrentIds:state.selection.slice()}; openDialog('<h2 id="dialog-title">Move torrent files</h2><label class="field"><span>Destination folder for the torrent files</span><input id="move-destination" value="D:\\Downloads"></label><p class="help">Other files in the current folder stay. This prototype only updates the sample path.</p>',`${cancel}<button class="primary" data-action="confirm-move">Move</button>`); return; }
+  if (action==='confirm-move') { const destination=document.getElementById('move-destination').value.trim(); if(!destination)return; selected().forEach(torrent=>torrent.destination=destination); closeDialog(); return render(); }
+  if (action==='verify') { closeDialog(); announce('Sample verification requested. No files are accessed.'); return; }
+  if (action==='reannounce') return announce('Sample tracker reannounce requested.');
+  if (dialog.open) closeDialog();
+  announce(({open:'A real app would open the downloaded file or folder in Windows.',folder:'A real app would open the save folder in Explorer.','copy-magnet':'Prototype: no real magnet link is available.','copy-hash':'Prototype: no real info hash is available.',exit:'Closing the window leaves transfers running. Exit stops TinyTorrent and its transfers.','windows-startup':'A real app would open Windows Startup settings.',register:'A real app would open Windows default-app choices.',unregister:'Prototype handler registration removed.'})[action] || 'Sample action requested.');
+}
+document.addEventListener('pointerdown',event=>{
+  if(menu.matches(':popover-open')&&!menu.contains(event.target)&&!event.target.closest(`[data-action="${menu.dataset.invoker}"]`))closeMenu(false);
+},true);
+document.addEventListener('click',event=>{
+  if(event.target.id==='global-search')return showSearch();
+  const button=event.target.closest('button');
+  if(button?.dataset.searchResult!==undefined)return chooseSearch(Number(button.dataset.searchResult));
+  if(button?.dataset.filter)return filterTorrents(button.dataset.filter);
+  if (button?.dataset.action) { if(menu.matches(':popover-open')){const toggle=button.dataset.action===menu.dataset.invoker;closeMenu(false);if(toggle)return;}handle(button.dataset.action); return; }
+  if (button?.dataset.tab) { state.tab=button.dataset.tab; return render(); }
+  if(button?.dataset.detailSort!==undefined){const view=button.dataset.detailView,column=Number(button.dataset.detailSort),previous=state.detailSort[view];state.detailSort[view]={column,descending:previous?.column===column?!previous.descending:false};app.querySelector('.detail').innerHTML=detail();app.querySelector(`[data-detail-sort="${column}"]`)?.focus();showState();return;}
+  if (button?.dataset.sort) { state.descending=state.sort===button.dataset.sort?!state.descending:false; state.sort=button.dataset.sort; return render(); }
+  if (button?.dataset.group) return preferences(button.dataset.group);
+  if(button?.dataset.folderToggle){const {scope,folderToggle:path}=button.dataset;return expandFolder(scope,path,state.fileCollapsed[scope].includes(path));}
+  if (button?.dataset.fileBulk) { const scope=button.dataset.scope;return applyFileChoices(scope,shownFiles(scope).map(({index})=>index),2,button.dataset.fileBulk==='all'); }
+  if (button?.dataset.scheduleDay!==undefined && connected()) return editPeriod(null,Number(button.dataset.scheduleDay));
+  if (button?.dataset.editPeriod!==undefined && connected()) return editPeriod(Number(button.dataset.editPeriod));
+  if (button?.dataset.removePeriod!==undefined && connected()) { state.schedule.periods.splice(Number(button.dataset.removePeriod),1);render();app.querySelector('[data-action=add-period]').focus();return; }
+  if (button?.dataset.setting) { state.settings[button.dataset.setting]=!state.settings[button.dataset.setting]; button.setAttribute('aria-checked',String(state.settings[button.dataset.setting])); return showState(); }
+  const detailRow=event.target.closest('[data-detail-row]');
+  if(detailRow){const {detailView:view,detailRow:id}=detailRow.dataset,selection=state.detailSelection[view];selectDetailRows(view,event.ctrlKey?(selection.includes(id)?selection.filter(value=>value!==id):[...selection,id]):[id]);detailRow.focus();return;}
+  const row=event.target.closest('[data-torrent]');
+  if(row) {
+    const torrentId=Number(row.dataset.torrent);
+    selectTorrents(event.ctrlKey||event.metaKey?(state.selection.includes(torrentId)?state.selection.filter(id=>id!==torrentId):[...state.selection,torrentId]):[torrentId]);
+    row.focus();
+  }
+});
+document.addEventListener('dblclick',event=>{ if(event.target.closest('[data-torrent]'))handle('properties'); });
+document.addEventListener('input',event=>{
+  const input=event.target;
+  if(input.id==='global-search')return showSearch();
+  if(input.dataset.fileSearch){state.fileSearch[input.dataset.fileSearch]=input.value;updateFiles(input.dataset.fileSearch);}
+  if(input.id==='add-source'){state.draft.source=input.value;updateAdd();showState();}
+  if(input.id==='add-destination'){state.draft.destination=input.value;updateAdd();showState();}
+  if(input.id==='tracker-draft'){state.draft.trackers=input.value;showState();}
+});
+document.addEventListener('change',event=>{
+  const input=event.target;
+  if(input.dataset.periodMode){state.draft.mode=input.dataset.periodMode;return updatePeriod();}
+  if(input.dataset.periodDay!==undefined){const day=Number(input.dataset.periodDay);state.draft.days=input.checked?[...state.draft.days,day].sort((a,b)=>a-b):state.draft.days.filter(value=>value!==day);return updatePeriod();}
+  if(input.dataset.periodTime){state.draft[input.dataset.periodTime]=input.value;return updatePeriod();}
+  if(input.id==='scenario'){state.scenario=input.value;render();}
+  if(input.id==='start-paused'){state.draft.paused=input.checked;showState();}
+  if(input.id==='never-show'){state.draft.neverShow=input.checked;showState();}
+  if(input.dataset.source!==undefined){state.draft.batch=input.dataset.source==='batch';showState();}
+  if(input.dataset.folder!==undefined)return applyFileChoices(input.dataset.scope,folderFiles(input.dataset.scope,input.dataset.folder).map(({index})=>index),2,input.checked);
+  if(input.dataset.folderPriority!==undefined){if(!input.value)return;return applyFileChoices(input.dataset.scope,folderFiles(input.dataset.scope,input.dataset.folderPriority).map(({index})=>index),3,input.value);}
+  if(input.dataset.file!==undefined)return applyFileChoices(input.dataset.scope,[Number(input.dataset.file)],2,input.checked);
+  if(input.dataset.priority!==undefined)return applyFileChoices(input.dataset.scope,[Number(input.dataset.priority)],3,input.value);
+  if(input.dataset.setting && input.tagName!=='BUTTON'){
+    if(input.type==='number' && !input.validity.valid) return input.reportValidity();
+    state.settings[input.dataset.setting]=input.type==='number'?Number(input.value):input.value;showState();
+  }
+});
+dialog.addEventListener('keydown',event=>{
+  if(event.key!=='Enter'||event.isComposing||event.target.closest('button,textarea,select'))return;
+  const commit=dialog.querySelector('.dialog-footer .primary:not(:disabled)');
+  if(commit){event.preventDefault();commit.click();}
+});
+dialog.addEventListener('cancel',event=>{if(state.picker){event.preventDefault();return closeDialog();}state.draft=null;showState();});
+menu.addEventListener('toggle',event=>{for(const button of app.querySelectorAll('[data-action=app-menu],[data-action=actions]'))button.setAttribute('aria-expanded',String(event.newState==='open'&&button.dataset.action===menu.dataset.invoker));});
+menu.addEventListener('keydown',event=>{
+  if(!['ArrowUp','ArrowDown','Home','End','Escape'].includes(event.key))return;
+  event.preventDefault();event.stopPropagation();
+  if(event.key==='Escape'){closeMenu();return;}
+  const buttons=[...menu.querySelectorAll('button:not(:disabled)')];
+  const index=buttons.indexOf(document.activeElement);
+  buttons[event.key==='Home'?0:event.key==='End'?buttons.length-1:(index+(event.key==='ArrowUp'?-1:1)+buttons.length)%buttons.length].focus();
+});
+document.addEventListener('keydown',event=>{
+  if(event.isComposing)return;
+  if(event.ctrlKey&&event.key.toLowerCase()==='k'){
+    event.preventDefault();if(dialog.open)return;
+    app.querySelector('#global-search').focus();return showSearch();
+  }
+  if(event.target.id==='global-search'){
+    if(event.key==='Escape'){event.preventDefault();searchMenu.hidePopover();return;}
+    if(['ArrowDown','ArrowUp'].includes(event.key)){
+      event.preventDefault();if(!searchMenu.matches(':popover-open'))showSearch();
+      const available=searchMatches.map((entry,index)=>entry.disabled?-1:index).filter(index=>index>=0);
+      if(available.length)setSearchActive(available[(available.indexOf(searchActive)+(event.key==='ArrowDown'?1:-1)+available.length)%available.length]);
+    }
+    if(event.key==='Enter'){event.preventDefault();if(searchActive>=0)chooseSearch(searchActive);}
+    return;
+  }
+  if(event.target.closest('input,textarea,select,[contenteditable=true]')) return;
+  if(dialog.open || menu.matches(':popover-open')) return;
+  const key=event.key.toLowerCase();
+  const filter=event.target.closest('[data-filter]');
+  if(event.target.closest('.filter-pane')&&event.key==='Escape'){event.preventDefault();return handle('filters');}
+  if(filter && ['ArrowUp','ArrowDown','Home','End'].includes(event.key)){
+    event.preventDefault();const index=filters.findIndex(([value])=>value===filter.dataset.filter);
+    return filterTorrents(filters[event.key==='Home'?0:event.key==='End'?filters.length-1:Math.max(0,Math.min(filters.length-1,index+(event.key==='ArrowUp'?-1:1)))][0]);
+  }
+  const detailRow=event.target.closest('[data-detail-row]');
+  if(detailRow&&(['ArrowUp','ArrowDown','Home','End'].includes(event.key)||event.ctrlKey&&key==='a')){
+    event.preventDefault();const view=detailRow.dataset.detailView,rows=[...app.querySelectorAll('[data-detail-row]')],index=rows.indexOf(detailRow);
+    if(event.ctrlKey&&key==='a')return selectDetailRows(view,rows.map(row=>row.dataset.detailRow));
+    const next=rows[event.key==='Home'?0:event.key==='End'?rows.length-1:Math.max(0,Math.min(rows.length-1,index+(event.key==='ArrowUp'?-1:1)))];
+    selectDetailRows(view,[next.dataset.detailRow]);next.focus();return;
+  }
+  const group=event.target.closest('[data-group]');
+  if(group && ['ArrowLeft','ArrowRight','Home','End'].includes(event.key)) {
+    event.preventDefault(); const names=preferenceGroups.map(([name])=>name); const index=names.indexOf(state.preferenceGroup);
+    return preferences(names[event.key==='Home'?0:event.key==='End'?names.length-1:(index+(event.key==='ArrowLeft'?-1:1)+names.length)%names.length]);
+  }
+  if(state.page!=='torrents' && event.key==='Escape'){event.preventDefault();return handle('torrents');}
+  const tab=event.target.closest('[data-tab]');
+  const row=event.target.closest('[data-torrent]');
+  const splitter=event.target.closest('.split');
+  if(event.target.id==='piece-map'&&map){
+    if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End'].includes(event.key)){event.preventDefault();showPiece(event.key==='Home'?0:event.key==='End'?map.cells.length-1:map.index+({ArrowLeft:-1,ArrowRight:1,ArrowUp:-map.columns,ArrowDown:map.columns}[event.key]));return;}
+    if(event.ctrlKey&&key==='c'){event.preventDefault();navigator.clipboard.writeText(map.canvas.getAttribute('aria-label'));return;}
+  }
+  if(splitter && ['ArrowUp','ArrowDown'].includes(event.key)){
+    event.preventDefault(); const panel=splitter.closest('.inspector'); const height=Math.max(155,Math.min(500,panel.offsetHeight+(event.key==='ArrowUp'?20:-20))); state.split[state.variant]=height;panel.style.height=`${height}px`;splitter.setAttribute('aria-valuenow',String(panel.offsetHeight));showState();return;
+  }
+  if(tab && ['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End'].includes(event.key)){
+    event.preventDefault();const index=tabs.indexOf(state.tab);state.tab=event.key==='Home'?tabs[0]:event.key==='End'?tabs.at(-1):tabs[(index+(['ArrowLeft','ArrowUp'].includes(event.key)?-1:1)+tabs.length)%tabs.length];render();app.querySelector(`[data-tab="${state.tab}"]`).focus();return;
+  }
+  if(row && ['ArrowUp','ArrowDown','Enter'].includes(event.key)){
+    event.preventDefault();if(event.key==='Enter'){const id=Number(row.dataset.torrent);if(!state.selection.includes(id))selectTorrents([id]);handle('properties');app.querySelector('[role=tab][aria-selected=true]')?.focus();return;}
+    const visible=rows();const index=visible.findIndex(torrent=>torrent.torrentId===Number(row.dataset.torrent));const torrent=visible[Math.max(0,Math.min(visible.length-1,index+(event.key==='ArrowUp'?-1:1)))];state.selection=[torrent.torrentId];render();app.querySelector(`[data-torrent="${torrent.torrentId}"]`)?.focus();return;
+  }
+  if(!event.ctrlKey&&!event.altKey && ['ArrowLeft','ArrowRight'].includes(event.key)){event.preventDefault();return switchVariant(event.key==='ArrowLeft'?-1:1);}
+  if(event.ctrlKey && ['f','e'].includes(key)){event.preventDefault();app.querySelector('#global-search').focus();return showSearch();}
+  if(event.ctrlKey && key==='o'){event.preventDefault();return handle(event.shiftKey?'magnet':'add');}
+  if(event.altKey && key==='o'){event.preventDefault();return preferences();}
+  if(event.ctrlKey && key==='q'){event.preventDefault();return handle('exit');}
+  if(row && event.ctrlKey && key==='a'){event.preventDefault();selectTorrents(rows().map(torrent=>torrent.torrentId));return;}
+  if(state.page==='torrents' && event.ctrlKey && ['p','s','m','r'].includes(key)){
+    event.preventDefault();if(!selected().length && !(event.shiftKey && ['p','s'].includes(key)))return;return handle({p:event.shiftKey?'pause-all':'pause',s:event.shiftKey?'resume-all':'resume',m:'force',r:'verify'}[key]);
+  }
+  if(row && event.key==='Delete'){event.preventDefault();return remove(event.shiftKey);}
+  if(row && event.shiftKey && event.key==='F10'){event.preventDefault();return actions('context');}
+});
+app.addEventListener('contextmenu',event=>{
+  const row=event.target.closest('[data-torrent]');
+  if(!row)return;
+  event.preventDefault();
+  const torrentId=Number(row.dataset.torrent);
+  if(!state.selection.includes(torrentId))selectTorrents([torrentId]);
+  app.querySelector(`[data-torrent="${torrentId}"]`).focus();
+  actions('context',{x:event.clientX,y:event.clientY});
+});
+app.addEventListener('dragover',event=>{event.preventDefault();});
+app.addEventListener('pointermove',event=>{if(event.target.id==='piece-map'&&map){const bounds=map.canvas.getBoundingClientRect();const cell=map.cells.findIndex(cell=>event.clientX-bounds.left>=cell.x&&event.clientX-bounds.left<cell.x+10&&event.clientY-bounds.top>=cell.y&&event.clientY-bounds.top<cell.y+10);if(cell>=0)showPiece(cell);}});
+app.addEventListener('pointerout',event=>{if(event.target.id==='piece-map')document.getElementById('piece-tip')?.setAttribute('hidden','');});
+app.addEventListener('drop',event=>{event.preventDefault();if(connected()){add();announce('Drop received. The prototype uses sample metadata only.');}});
+app.addEventListener('pointerdown',event=>{
+  const split=event.target.closest('.split');if(!split)return;
+  const panel=split.closest('.inspector');const top=event.clientY;const height=panel.offsetHeight;split.setPointerCapture(event.pointerId);
+  const move=event=>{const value=Math.max(155,Math.min(500,height+top-event.clientY));state.split[state.variant]=value;panel.style.height=`${value}px`;split.setAttribute('aria-valuenow',String(panel.offsetHeight));showState();};
+  split.addEventListener('pointermove',move);split.addEventListener('pointerup',()=>split.removeEventListener('pointermove',move),{once:true});
+});
+render();
+</script>
+</body>
+</html>

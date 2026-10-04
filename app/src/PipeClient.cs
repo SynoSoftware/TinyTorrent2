@@ -21,6 +21,9 @@ internal sealed class PipeClient : IDisposable
     private long _awaitingId;
     private int _refreshPending;
     private volatile bool _connected;
+    private bool _hasConnected;
+    private string? _enginePath;
+    private string? _dataDirectory;
 
     internal static string LogonSid { get; } = ReadLogonSid();
 
@@ -93,7 +96,7 @@ internal sealed class PipeClient : IDisposable
             try
             {
                 try { await pipe.ConnectAsync(1000, token); }
-                catch (TimeoutException) when (!launched)
+                catch (TimeoutException) when (!launched && !_hasConnected)
                 {
                     launched = true;
                     try { LaunchEngine(); }
@@ -104,6 +107,9 @@ internal sealed class PipeClient : IDisposable
                 if (hello.GetProperty("type").GetString() != "hello" || hello.GetProperty("version").GetInt32() != 1)
                     throw new InvalidDataException(_strings.Get("connection", "version"));
                 _ = hello.GetProperty("session_id").GetString() ?? throw new InvalidDataException();
+                _enginePath = hello.TryGetProperty("engine_path", out var engine) ? engine.GetString() : _enginePath;
+                _dataDirectory = hello.TryGetProperty("data_directory", out var directory) ? directory.GetString() : _dataDirectory;
+                _hasConnected = true;
                 _connected = true;
                 launchFailure = null;
                 lastFailure = null;
@@ -244,8 +250,20 @@ internal sealed class PipeClient : IDisposable
         catch (Exception error) when (error is IOException or OperationCanceledException or TimeoutException) { }
     }
 
-    private void LaunchEngine()
+    internal void LaunchEngine()
     {
+        if (_enginePath is not null)
+        {
+            var start = new ProcessStartInfo(_enginePath) { UseShellExecute = false, CreateNoWindow = true };
+            start.ArgumentList.Add("--background");
+            if (_dataDirectory is not null)
+            {
+                start.ArgumentList.Add("--data");
+                start.ArgumentList.Add(_dataDirectory);
+            }
+            Process.Start(start);
+            return;
+        }
         var adjacent = Path.Combine(AppContext.BaseDirectory, "Engine.exe");
         if (File.Exists(adjacent))
         {

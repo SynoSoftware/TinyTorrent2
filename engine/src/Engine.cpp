@@ -17,6 +17,7 @@
 #include <libtorrent/torrent_info.hpp>
 #include <libtorrent/write_resume_data.hpp>
 #include <chrono>
+#include <cstdio>
 #include <algorithm>
 #include <deque>
 #include <fstream>
@@ -82,6 +83,10 @@ public:
         std::string detail;
         std::string diskError;
         std::chrono::steady_clock::time_point retryAt{};
+        lt::torrent_status status;
+        bool receivedPayload = false;
+        std::int64_t savedUploaded = 0;
+        std::string notifiedError;
     };
 
     struct Preview
@@ -113,6 +118,8 @@ public:
     std::vector<std::string> queueOrder;
     std::string language;
     std::map<std::string, Torrent> torrents;
+    std::map<lt::torrent_handle, Torrent*> handles;
+    Json notifications = Json::array();
     std::map<std::string, Preview> previews;
     std::map<std::string, Addition> additions;
     std::vector<std::shared_ptr<Preview>> parsing;
@@ -130,6 +137,7 @@ public:
     std::string startupError;
     std::function<void(bool)> shutdown;
     std::chrono::steady_clock::time_point checkpointAt = std::chrono::steady_clock::now();
+    std::chrono::steady_clock::time_point statusAt{};
 
     State(std::filesystem::path path, std::function<void()> notification) :
         directory(std::move(path)), store(notification), wake(std::move(notification))
@@ -146,7 +154,8 @@ public:
             {"port_mapping", true}, {"listen_port", 6881}, {"show_add", true},
             {"all_paused", false}, {"download_limit", 0}, {"upload_limit", 0},
             {"alternative_download_limit", 10 * 1024}, {"alternative_upload_limit", 10 * 1024},
-            {"alternative_limits", false}};
+            {"alternative_limits", false}, {"notifications_enabled", true},
+            {"prevent_sleep", true}, {"prevent_sleep_seeding", false}, {"background_notice_shown", false}};
         language = settings.at("language").get<std::string>();
 
         auto loaded = std::make_shared<Json>();
@@ -196,7 +205,7 @@ public:
                     params.flags &= ~lt::torrent_flags::auto_managed;
                     params.flags |= lt::torrent_flags::paused;
                     auto handle = session->add_torrent(params);
-                    torrents.emplace(id, Torrent{id, handle, facts});
+                    Install(id, handle, facts);
                     if (facts.contains("trackers"))
                     {
                         std::vector<lt::announce_entry> trackers;
@@ -221,8 +230,14 @@ public:
 
     void Log(std::string kind, std::string id, std::string code)
     {
-        auto line = kind + " " + id + " " + code + "\n";
-        if (!diagnostics.empty() && diagnostics.back() == line) return;
+        auto message = kind + " " + id + " " + code;
+        if (!diagnostics.empty() && diagnostics.back().ends_with(message + "\n")) return;
+        SYSTEMTIME time;
+        GetSystemTime(&time);
+        char stamp[32];
+        sprintf_s(stamp, "%04u-%02u-%02uT%02u:%02u:%02uZ ", time.wYear, time.wMonth,
+            time.wDay, time.wHour, time.wMinute, time.wSecond);
+        auto line = std::string(stamp) + message + "\n";
         if (diagnostics.size() == 32) diagnostics.pop_front();
         diagnostics.push_back(std::move(line));
     }
@@ -370,7 +385,7 @@ public:
 
     static Json ContentHashes(Torrent const& torrent)
     {
-        auto hashes = Hashes(torrent.handle.info_hashes());
+        auto hashes = Hashes(torrent.status.info_hashes);
         for (auto const& hash : torrent.facts.value("hashes", Json::array()))
             if (std::find(hashes.begin(), hashes.end(), hash) == hashes.end()) hashes.push_back(hash);
         return hashes;
@@ -480,7 +495,8 @@ public:
             {
                 bool supported = (key == "language" && (value == "en" || value == "es")) ||
                     (key == "theme" && (value == "system" || value == "light" || value == "dark")) ||
-                    ((key == "show_add" || key == "alternative_limits") && value.is_boolean()) ||
+                    ((key == "show_add" || key == "alternative_limits" || key == "notifications_enabled" ||
+                        key == "prevent_sleep" || key == "prevent_sleep_seeding" || key == "background_notice_shown") && value.is_boolean()) ||
                     ((key == "download_limit" || key == "upload_limit" || key == "alternative_download_limit" ||
                         key == "alternative_upload_limit") && value.is_number_integer() && value >= 0 && value <= INT_MAX) ||
                     (key == "default_destination" && value.is_string() && !value.get<std::string>().empty() &&
@@ -670,6 +686,7 @@ public:
             data["name"] = torrent.handle.status().name;
             data["metadata_ready"] = bool(metadata);
             data["files"] = Files(metadata);
+            data["folder"] = Folder(torrent);
             data["hashes"] = ContentHashes(torrent);
             lt::add_torrent_params magnet;
             magnet.ti = metadata;
@@ -745,7 +762,11 @@ public:
                     for (auto const& id : ids)
                         if (!torrents.at(id).handle.torrent_file())
                         { reply(Failure("metadata_unavailable")); committing = false; Next(); return; }
-                    for (auto const& id : ids) torrents.at(id).handle.force_recheck();
+                    for (auto const& id : ids)
+                    {
+                        torrents.at(id).receivedPayload = false;
+                        torrents.at(id).handle.force_recheck();
+                    }
                     reply(Success());
                     committing = false;
                     Next();
@@ -822,6 +843,7 @@ public:
                             auto found = torrents.find(id);
                             if (found == torrents.end()) continue;
                             session->remove_torrent(found->second.handle);
+                            handles.erase(found->second.handle);
                             torrents.erase(found);
                         }
                         store.Run([path = directory, ids]
@@ -860,28 +882,55 @@ public:
         reply(Failure("unknown_command"));
     }
 
-    Json Snapshot() const
+    static std::string Status(Torrent const& torrent, bool paused)
     {
-        Json rows = Json::array();
-        int download = 0;
-        int upload = 0;
+        auto const& status = torrent.status;
+        if (status.errc || (bool(status.flags & lt::torrent_flags::upload_mode) && !status.is_seeding)) return "error";
+        if (torrent.facts.at("paused") || paused) return "paused";
+        if (status.state == lt::torrent_status::checking_files || status.state == lt::torrent_status::checking_resume_data) return "checking";
+        if (!status.has_metadata) return "metadata";
+        if (bool(status.flags & lt::torrent_flags::paused)) return "queued";
+        if (status.is_seeding) return "seeding";
+        if (status.is_finished) return "completed";
+        return "downloading";
+    }
+
+    Json Activity() const
+    {
+        std::int64_t download = 0;
+        std::int64_t upload = 0;
+        unsigned active = 0;
+        unsigned queued = 0;
+        bool downloading = false;
+        bool seeding = false;
         bool incoming = false;
         for (auto const& [id, torrent] : torrents)
         {
-            auto status = torrent.handle.status();
+            auto code = Status(torrent, settings.at("all_paused"));
+            download += torrent.status.download_payload_rate;
+            upload += torrent.status.upload_payload_rate;
+            incoming |= torrent.status.has_incoming;
+            active += code == "downloading" || code == "seeding" || code == "completed" || code == "metadata" || code == "checking";
+            queued += code == "queued";
+            downloading |= code == "downloading";
+            seeding |= code == "seeding" || code == "completed";
+        }
+        return {{"download_rate", download}, {"upload_rate", upload}, {"active", active}, {"queued", queued},
+            {"torrent_count", torrents.size()}, {"all_paused", settings.at("all_paused")},
+            {"downloading", downloading && !stopping}, {"seeding", seeding && !stopping}, {"has_incoming", incoming},
+            {"notifications_enabled", settings.at("notifications_enabled")}, {"prevent_sleep", settings.at("prevent_sleep")},
+            {"prevent_sleep_seeding", settings.at("prevent_sleep_seeding")},
+            {"background_notice_shown", settings.at("background_notice_shown")}};
+    }
+
+    Json Snapshot() const
+    {
+        Json rows = Json::array();
+        for (auto const& [id, torrent] : torrents)
+        {
+            auto const& status = torrent.status;
             bool diskBlocked = bool(status.flags & lt::torrent_flags::upload_mode) && !status.is_seeding;
-            std::string code = "downloading";
-            if (status.errc || diskBlocked) code = "error";
-            else if (torrent.facts.at("paused") || settings.at("all_paused")) code = "paused";
-            else if (status.state == lt::torrent_status::checking_files ||
-                status.state == lt::torrent_status::checking_resume_data) code = "checking";
-            else if (!status.has_metadata) code = "metadata";
-            else if (status.is_seeding) code = "seeding";
-            else if (status.is_finished) code = "completed";
-            else if (bool(status.flags & lt::torrent_flags::paused)) code = "queued";
-            download += status.download_payload_rate;
-            upload += status.upload_payload_rate;
-            incoming |= status.has_incoming;
+            auto code = Status(torrent, settings.at("all_paused"));
             auto hashes = ContentHashes(torrent);
             auto name = status.name;
             if (name.empty() && !hashes.empty()) name = hashes.front().get<std::string>();
@@ -901,18 +950,54 @@ public:
         }
         auto current = settings;
         current["language"] = language;
+        auto activity = Activity();
         return {{"session_id", identity}, {"torrents", std::move(rows)}, {"settings", std::move(current)},
             {"language_saved", language == settings.at("language").get<std::string>()},
-            {"download_rate", download}, {"upload_rate", upload}, {"all_paused", settings.at("all_paused")},
-            {"has_incoming", incoming},
+            {"download_rate", activity.at("download_rate")}, {"upload_rate", activity.at("upload_rate")}, {"all_paused", settings.at("all_paused")},
+            {"has_incoming", activity.at("has_incoming")},
             {"stopping", stopping}, {"loading", loading}, {"storage_failed", !startupError.empty()},
             {"startup_error", startupError}};
     }
 
     Torrent* Find(lt::torrent_handle const& handle)
     {
-        for (auto& [id, torrent] : torrents) if (torrent.handle == handle) return &torrent;
-        return nullptr;
+        auto found = handles.find(handle);
+        return found == handles.end() ? nullptr : found->second;
+    }
+
+    Torrent& Install(std::string const& id, lt::torrent_handle handle, Json const& facts)
+    {
+        auto& torrent = torrents.emplace(id, Torrent{id, handle, facts}).first->second;
+        torrent.status = handle.status(lt::torrent_handle::query_name);
+        torrent.savedUploaded = torrent.status.all_time_upload;
+        handles.emplace(handle, &torrent);
+        return torrent;
+    }
+
+    std::string Folder(Torrent const& torrent) const
+    {
+        auto destination = std::filesystem::path(Wide(torrent.facts.at("save_path")));
+        auto metadata = torrent.handle.torrent_file();
+        if (!metadata) return Utf8(destination.wstring());
+        auto files = Files(metadata);
+        files.erase(std::remove_if(files.begin(), files.end(), [](Json const& file)
+            { return file.at("padding").get<bool>(); }), files.end());
+        if (files.empty()) return Utf8(destination.wstring());
+        auto first = std::filesystem::path(Wide(files.front().at("path")));
+        if (files.size() == 1) return Utf8((destination / first).parent_path().wstring());
+        auto root = *first.begin();
+        if (first.has_parent_path() && std::all_of(files.begin(), files.end(), [&root](Json const& file)
+            { return *std::filesystem::path(Wide(file.at("path"))).begin() == root; }))
+            destination /= root;
+        return Utf8(destination.wstring());
+    }
+
+    void Notify(std::string kind, Torrent const& torrent, std::string detail = {})
+    {
+        Log("notification", torrent.identity, kind);
+        if (notifications.size() == 32) notifications.erase(notifications.begin());
+        notifications.push_back({{"kind", std::move(kind)}, {"torrent_id", torrent.identity},
+            {"name", torrent.status.name}, {"detail", std::move(detail)}});
     }
 
     void RecordHashes(std::string const& id, Json hashes)
@@ -957,6 +1042,7 @@ public:
         for (auto handle : {alert.handle, alert.conflicting_torrent})
             if (auto torrent = Find(handle))
             {
+                torrent->status.info_hashes = alert.metadata->info_hashes();
                 RecordHashes(torrent->identity, Hashes(alert.metadata->info_hashes()));
                 if (released)
                 {
@@ -1030,10 +1116,9 @@ public:
                     }
                     else
                     {
-                        auto [position, inserted] = torrents.emplace(id,
-                            Torrent{id, addition.handle, addition.facts});
+                        auto& torrent = Install(id, addition.handle, addition.facts);
                         queueOrder.push_back(id);
-                        ApplyIntent(position->second);
+                        ApplyIntent(torrent);
                         Log("add", id, "saved");
                         reply(Success({{"torrent_id", id}, {"duplicate", false}}));
                     }
@@ -1047,7 +1132,14 @@ public:
     {
         if (torrent.checkpoint) return;
         torrent.checkpoint = true;
-        torrent.handle.save_resume_data(lt::torrent_handle::save_info_dict);
+        auto flags = lt::torrent_handle::save_info_dict;
+        if (!stopping && torrent.error != "storage_failed" && torrent.error != "checkpoint_failed")
+        {
+            flags |= lt::torrent_handle::if_download_progress | lt::torrent_handle::if_config_changed |
+                lt::torrent_handle::if_state_changed | lt::torrent_handle::if_metadata_changed;
+            if (torrent.status.all_time_upload != torrent.savedUploaded) flags |= lt::torrent_handle::if_counters_changed;
+        }
+        torrent.handle.save_resume_data(flags);
     }
 
     void Tick()
@@ -1067,7 +1159,31 @@ public:
         session->pop_alerts(&alerts);
         for (auto* alert : alerts)
         {
-            if (auto added = lt::alert_cast<lt::add_torrent_alert>(alert)) Added(*added);
+            if (auto updated = lt::alert_cast<lt::state_update_alert>(alert))
+            {
+                for (auto const& status : updated->status)
+                    if (auto torrent = Find(status.handle))
+                    {
+                        torrent->receivedPayload |= status.total_payload_download > torrent->status.total_payload_download;
+                        torrent->status = status;
+                        auto error = status.errc ? status.errc.message() :
+                            bool(status.flags & lt::torrent_flags::upload_mode) && !status.is_seeding ? torrent->diskError : std::string();
+                        if (!error.empty() && error != torrent->notifiedError) Notify("error", *torrent, error);
+                        torrent->notifiedError = std::move(error);
+                    }
+            }
+            else if (auto finished = lt::alert_cast<lt::torrent_finished_alert>(alert))
+            {
+                if (auto torrent = Find(finished->handle))
+                {
+                    auto status = finished->handle.status(lt::torrent_handle::query_name);
+                    bool received = torrent->receivedPayload || status.total_payload_download > torrent->status.total_payload_download;
+                    torrent->receivedPayload = false;
+                    torrent->status = std::move(status);
+                    if (received) Notify("completed", *torrent);
+                }
+            }
+            else if (auto added = lt::alert_cast<lt::add_torrent_alert>(alert)) Added(*added);
             else if (auto moved = lt::alert_cast<lt::storage_moved_alert>(alert))
             {
                 auto found = std::find_if(additions.begin(), additions.end(), [moved](auto const& entry)
@@ -1093,7 +1209,9 @@ public:
                 if (auto torrent = Find(received->handle))
                 {
                     ApplyIntent(*torrent);
-                    RecordHashes(torrent->identity, Hashes(received->handle.info_hashes()));
+                    auto hashes = received->handle.info_hashes();
+                    torrent->status.info_hashes = hashes;
+                    RecordHashes(torrent->identity, Hashes(hashes));
                 }
             }
             else if (auto failed = lt::alert_cast<lt::metadata_failed_alert>(alert))
@@ -1108,12 +1226,13 @@ public:
                     auto id = torrent->identity;
                     store.Write(directory / Wide(id + ".resume"), [params = saved->params]
                         { auto bytes = lt::write_resume_data_buf(params); return std::string(bytes.begin(), bytes.end()); },
-                        [this, id](StorageOutcome outcome)
+                        [this, id, uploaded = saved->params.total_uploaded](StorageOutcome outcome)
                     {
                         auto found = torrents.find(id);
                         if (found == torrents.end()) return;
                         found->second.checkpoint = false;
                         found->second.unsaved = !outcome.saved;
+                        if (outcome.saved) found->second.savedUploaded = uploaded;
                         if (outcome.saved && (found->second.error == "storage_failed" ||
                             found->second.error == "checkpoint_failed"))
                         {
@@ -1137,6 +1256,11 @@ public:
                 if (auto torrent = Find(failed->handle))
                 {
                     torrent->checkpoint = false;
+                    if (failed->error == lt::errors::resume_data_not_modified)
+                    {
+                        torrent->unsaved = false;
+                        continue;
+                    }
                     torrent->unsaved = true;
                     if (torrent->error != "checkpoint_failed")
                         Log("checkpoint", torrent->identity, "checkpoint_failed");
@@ -1149,14 +1273,14 @@ public:
             else if (auto failed = lt::alert_cast<lt::torrent_error_alert>(alert))
             {
                 if (auto torrent = Find(failed->handle))
-                    Log("torrent", torrent->identity, std::to_string(failed->error.value()));
+                    Log("torrent", torrent->identity, std::string(failed->error.category().name()) + ":" + std::to_string(failed->error.value()));
             }
             else if (auto failed = lt::alert_cast<lt::file_error_alert>(alert))
             {
                 if (auto torrent = Find(failed->handle))
                 {
                     torrent->diskError = failed->error.message();
-                    Log("file", torrent->identity, std::to_string(failed->error.value()));
+                    Log("file", torrent->identity, std::string(failed->error.category().name()) + ":" + std::to_string(failed->error.value()));
                 }
             }
             else if (auto paused = lt::alert_cast<lt::torrent_paused_alert>(alert))
@@ -1203,11 +1327,18 @@ public:
             }
         }
         auto now = std::chrono::steady_clock::now();
+        if (!stopping && now - statusAt >= std::chrono::seconds(1))
+        {
+            statusAt = now;
+            session->post_torrent_updates(lt::torrent_handle::query_name);
+        }
         if (now - checkpointAt >= std::chrono::seconds(30) && !stopping)
         {
             checkpointAt = now;
             for (auto& [id, torrent] : torrents)
-                torrent.unsaved |= torrent.handle.need_save_resume_data();
+                torrent.unsaved |= torrent.status.all_time_upload != torrent.savedUploaded || bool(torrent.status.need_save_resume_data &
+                    (lt::torrent_handle::if_download_progress | lt::torrent_handle::if_config_changed |
+                        lt::torrent_handle::if_state_changed | lt::torrent_handle::if_metadata_changed));
         }
         unsigned outstanding = 0;
         for (auto const& [id, torrent] : torrents) outstanding += torrent.checkpoint;
@@ -1270,6 +1401,13 @@ void Engine::Execute(Json const& request, std::function<void(Json)> reply)
 }
 void Engine::Tick() { state_->Tick(); }
 Json Engine::Snapshot() const { return state_->Snapshot(); }
+Json Engine::Activity() const { return state_->Activity(); }
+Json Engine::TakeNotifications() { auto pending = std::move(state_->notifications); state_->notifications = Json::array(); return pending; }
+std::string Engine::Folder(std::string const& identity) const
+{
+    auto found = state_->torrents.find(identity);
+    return found == state_->torrents.end() ? std::string() : state_->Folder(found->second);
+}
 std::string Engine::Language() const { return state_->language; }
 bool Engine::IsStopping() const { return state_->stopping; }
 bool Engine::IsLoading() const { return state_->loading; }

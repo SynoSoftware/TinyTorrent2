@@ -772,11 +772,176 @@ scaling and contrast acceptance remain explicitly unproven. The same thirty
 native source activations used by Explorer were verified; exercising registered
 Explorer associations follows the desktop registration milestone.
 
+## Background and desktop behavior: implementation decisions
+
+The everyday user needs Open to survive a window that is closing, and a Restart
+action when transfers stop. The Windows engineer records the actual ready UI's
+process and acknowledges activation rather than assuming a pipe write showed a
+window. The maintainer separates initial direct-UI engine startup from later
+failure recovery. The product owner chooses an explicit Restart after failure,
+while reconnecting automatically if the engine returns independently. Recovered
+drafts are never submitted by that restart.
+
+For resident status work, the heavy seeder rejects a blocking status query per
+torrent every second. The libtorrent engineer uses state-update alerts without
+piece bitfields, retaining the last status per accepted torrent. The tray and
+sleep owner consume a cheap aggregate of those statuses. The maintainer keeps
+one status classification for window rows and native activity and one handle
+index for alerts. The product owner accepts a one-second telemetry cadence;
+commands and membership remain authoritative immediately. A new or restored
+torrent gets one initial status before entering that cache. Completion feedback
+requires payload received in this run, so restoring or verifying an existing
+seed does not create a completion notification.
+
+The Windows lifetime engineer uses the top-level broadcast window for session
+end and a bounded noninteractive save. The storage engineer keeps asynchronous
+completion pumping and labels normal save failure Retry or Exit anyway. The
+designer uses native system colors and DPI for feedback; the accessibility user
+keeps native tray semantics. The security engineer gives per-user registration
+one writer and observes actual target values without touching Windows' default
+choice. The product owner keeps the exact two-status-row, three-command tray.
+
+For Exit during a pending window command, the everyday user expects Exit to
+continue once it settles, rather than silently cancelling. The storage engineer
+keeps the submitted edit alive through its reply; the Windows engineer waits on
+the existing presentation notification while native dialogs and the owner keep
+pumping; the product owner prompts only if unfinished choices remain afterward.
+The same close path now waits for the window's busy work or picker to settle and
+then applies its existing draft protection. The native owner retains its hung-UI
+deadline instead of inventing another window timer.
+
+For idle checkpoints, the heavy seeder avoids rewriting unchanged metadata just
+because libtorrent's active-time counters advance. The ratio user keeps actual
+uploaded bytes durable; the libtorrent engineer uses progress/config/state/
+metadata conditions and includes counters when payload upload has changed. The
+storage engineer requests an unconditional retry after an application write
+failure, because generating resume data can already clear libtorrent's dirty
+flags. The maintainer records only the uploaded counter from the last successful
+checkpoint. Final shutdown remains unconditional. A not-modified response is a
+successful skip rather than a torrent error.
+
+The draft owner keeps edits on failure; the everyday user needs recovery inside
+that same task. The accessibility reviewer rejects putting Restart behind a
+modal form; the WinUI engineer binds the same command in each affected surface;
+the maintainer retains one launch implementation. Add and speed-limit forms now
+expose the main presentation owner's Restart command. The app Release build
+passed after these controls and the pending-close corrections; the stray-folder
+check was empty.
+
+### Background review corrections
+
+The fresh Astra review found a lost Exit request when ordinary Close already
+showed a draft prompt, discarded failed-addition details in combined native
+notifications, language-dependent tray number formatting, and missing taskbar
+relaunch properties. The window now retains an incoming Exit through its active
+close flow and sends cancellation when the person keeps editing. Native number
+formatting uses Windows regional preferences. Notification and relaunch
+corrections retain the first failed source and reason in a combined notice and
+put the engine relaunch command, icon, display-name resource and shared AppID on
+the actual ready product window.
+
+For taskbar routing, the Windows engineer puts the relaunch properties on the
+actual ready product window; the maintainer keeps their implementation beside
+the existing native shell APIs; the everyday user expects a pinned task to
+reopen TinyTorrent through its tray owner; the product owner chooses the engine
+as the target, preserving one activation authority. A normal SetForegroundWindow
+attempt follows restoration. Windows provides taskbar attention when it denies
+foreground activation, as documented by
+[Microsoft](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setforegroundwindow).
+
+For sleep preferences, the laptop user expects the mains-power switch to govern
+both activities; the overnight seeder reads Also while seeding as an extension;
+the Windows engineer keeps one SystemRequired request and never prevents display
+sleep; the product owner keeps that familiar dependent choice. The download
+switch is the master, and Also while seeding extends it rather than silently
+remaining active after the master is turned off.
+
+For the paused torrent count, the everyday user wants 1 torrent to read correctly;
+the translator confirms both shipped languages have the same integer singular
+rule; the Windows engineer reserves ICU for languages whose rules need it; the
+maintainer rejects another dependency for the same answer. The product owner
+chooses explicit singular and plural keys for EN/ES at their current scope and
+records the condition for revisiting it in the localisation contract.
+
+The tray user recognizes TinyTorrent from its icon and wants a shorter window
+command. The everyday user chooses Show window to distinguish it from opening
+a torrent file; the heavy seeder wants the existing window restored; the Windows
+designer keeps one clear verb and object; the product owner chooses Show window.
+The same operation and double-click behavior remain. For the status rows, the
+accessibility user requires normal readable text; the Windows engineer preserves
+disabled menu semantics and draws only their text; the maintainer keeps native
+commands and system colors; the product owner accepts this small presentation
+change because grey status falsely looks unavailable. This follows the user's
+updated ruling that statistics must not be greyed out.
+
+The everyday user wants opening feedback without a second titled window. The
+Windows engineer keeps the existing native splash independent of WinUI; the
+designer uses a centered product icon and short status without a caption; the
+accessibility user retains a named native surface and native Retry/Close controls
+on failure. The product owner chooses that captionless splash for both opening
+and recoverable failure, following the user's explicit ruling.
+
+For combined background errors, the downloader needs a useful reason, the heavy
+seeder rejects a burst of modal messages, the Windows engineer uses the existing
+tray notification with error severity, and the product owner keeps a bounded
+first name/reason plus the failure count. That context now survives coalescing
+for both failed additions and torrent errors. A failed tray pause uses the same
+nonblocking notification path, so it cannot hold the engine tick in a modal
+message loop.
+
+The second fresh review found unchecked registration operation types, missing
+names/reasons in combined runtime errors, and Windows application restart
+selecting a default store after a custom-store crash. Registration rejects an
+operation of the wrong type before dispatch. Combined errors retain their first
+name/reason and error severity. Windows restart records the canonical data
+directory with background activation; it never replays an addition. The managed
+explicit Restart uses ProcessStartInfo.ArgumentList to preserve directory
+arguments, including a volume root.
+
+### Background checks
+
+Release builds of Engine and TinyTorrent pass. Each build and focused runtime
+check ends with an empty stray-folder check. All check-owned engines, WinUI
+windows, peers and temporary browser processes are closed.
+
+| Evidence directory under artifacts/evidence | What ran and passed |
+| --- | --- |
+| CheckpointRetry-e03240e7-1c82-4ca3-bfe5-05046b30ae29 | A blocked application resume-file write was reported; repairing it allowed the automatic retry without another command, and membership/running intent survived restart. |
+| QueueOrder-ead9afb0-6e54-42b9-863c-ca4ab87bc51b | The expected queue order arrived and survived restart. The check now waits for the observable asynchronous status update instead of assuming an immediate cached snapshot; the expected order is unchanged. |
+| EverydayUi-12fb5a91-9ee5-4e81-bf45-3345b1f13133 | Two real engine failures left the same Add window and its choices intact. No engine restarted silently. Each explicit Restart used the same store and reattached that surviving UI; Add then applied its original paused/file choices. |
+| EverydayUi-de64be10-8e98-42d0-a7f2-1a828ed87db3 | Exit arriving during an ordinary Close draft prompt cancelled when Keep editing was invoked; the repeated overlap with Discard closed both processes successfully. |
+| DesktopTray-fc9c0a65-a0c0-4684-9152-a7ea82cb838a | The real native menu exposed two disabled status rows, two separators and three commands through Win32 and MSAA. Pause/Resume changed session state while preserving the individually paused torrent. Exit ended the engine. |
+| DesktopBackground-534d1ca2-2daa-4d01-adef-d37f29cf3450 | With WinUI absent, a 64 MiB local payload downloaded and matched SHA-256 62B89C1E1DF10F82EB427DA59876867D19EDD50507DDB64B9953A46A381C9E9B. The engine emitted exactly one completion event. |
+| DesktopSessionEnd-3db9321c-57b2-4f80-ad63-7212c234a76b | WM_ENDSESSION sent only to the owned engine's broadcast window saved and exited in 584 ms; a deliberately blocked final checkpoint exited with failure in 193 ms. Durable membership remained recoverable. This did not log off Windows. |
+| DesktopRegistration-884ac365-3efc-4d8b-8780-02df72fc176e | Running-engine forwarding and short-lived maintenance used the same registration owner. Handler/startup targets were exact; defaults and other handlers remained unchanged. Only absent TinyTorrent entries were created, and those were removed afterward. The check exposed the registry read-buffer size error, which is fixed. |
+| DesktopWindow-171ba2a8-3804-4977-8b4b-ce242555d57b | Ordinary Close released WinUI while the engine continued; the first-close notice flag was durably saved; the actual native double-click callback opened a fresh usable window. The ready window's shell properties contained Engine as relaunch target, its icon/display resources and the shared AppID. |
+| DesktopStartup-6efe2bd3-523a-453c-a808-240407793769 | An isolated delivery without WinUI showed native failure and Retry on a captionless surface. Retry opened the repaired delivery; readiness removed stale feedback. GetApplicationRestartSettings returned the canonical store and background arguments. |
+| Frames-3b225228-dc56-430c-9c86-818b0b6a3dfd | Malformed registration operation input returned invalid_request; the next valid snapshot still worked. Existing fragmented/invalid/oversized frame checks also passed. |
+
+The added CheckpointRetry check watches loss of a failed application checkpoint
+after libtorrent has already cleared its dirty flag; prior failed-membership
+coverage does not exercise that retry. The Frames extension watches malformed
+registration terminating the owner through the new desktop dispatch branch;
+framing alone cannot guard a valid envelope with an invalid operation value.
+No TableView code changed in this milestone, so its full suite was not rerun.
+
+Machine-check gaps remain explicit. The locked desktop prevents physical
+pointer/keyboard and painted acceptance, actual Narrator speech, and notification
+delivery observation. Native menu state and accessibility actions were checked;
+normal text color is established by source using COLOR_MENUTEXT, not a pixel
+measurement. Windows powercfg /requests requires administrator rights here, so
+the global power-request counter was not observed. The mains/battery/display
+policy is implemented and source-reviewed, but actual idle sleep and battery
+transitions need a hands-on check. Registered default-choice UI and actual
+taskbar pin/relaunch belong to later manual/release checks; no Windows default
+was changed and no installer was produced.
+
 ## Wire representation
 
 Protocol version 1 uses a four-byte little-endian UTF-8 JSON frame length,
 bounded to 16 MiB. The endpoint is `TinyTorrent.<logon SID>`; each connecting
-client first receives `{type:"hello",version:1,session_id:"..."}`. Requests are
+client first receives `{type:"hello",version:1,session_id:"...",engine_path:"...",data_directory:"..."}`. The two paths are absolute and preserve the
+same engine/store for explicit Restart. Requests are
 `{request_id:integer,command:string,...}`. Replies repeat `request_id` and have
 `ok:boolean`, either `data` or `error:{code:string,detail:string}`. Native control
 notifications are `{type:"activate"}`, `{type:"close"}`, and `{type:"sources"}`. A request's
@@ -789,15 +954,25 @@ torrent_id), `torrent` (torrent_id), `pause`, `resume`, `force`, `verify`, and
 `remove` (torrent_ids), `queue` (torrent_ids with direction: up/down/top/bottom,
 or before_torrent_id: string/null for a row drop; null means end),
 `session_pause` (paused), `settings` (changes), `open`, `ready`,
-`ui_closed`, `close_reply` (cancelled boolean), and `exit`. Current settings changes accept language (`en`, `es`)
+`ui_closed`, `activate_reply` (available boolean), `close_reply` (cancelled boolean), and `exit`. Activation acknowledgement lets Open wait through an
+old window's close path without losing the request. Current settings changes accept language (`en`, `es`)
 and theme (`system`, `light`, `dark`); unknown fields or values are refused. A
 settings acknowledgement confirms the same durable replacement as membership.
 Settings also accept `default_destination` (absolute path), `show_add` and
 `alternative_limits` (booleans), and `download_limit`, `upload_limit`,
 `alternative_download_limit`, `alternative_upload_limit` (bytes per second,
 integer 0 through INT_MAX; 0 means unlimited). Alternative limits initially use
-10 KiB/s in each direction. Session pause is persisted as `all_paused` through
+10 KiB/s in each direction. Settings also accept `notifications_enabled`,
+`prevent_sleep`, `prevent_sleep_seeding` and `background_notice_shown` (booleans).
+Session pause is persisted as `all_paused` through
 its command and preserves individual torrent intent.
+`registration` takes an `operation` string: `observe`, `register_handlers`,
+`unregister_handlers`, `enable_startup`, `disable_startup`, `open_defaults`, or
+`open_startup`. Its data contains `handlers_registered`, `startup_enabled`,
+`startup_target`, `torrent_default` and `magnet_default`; an unavailable default
+query is null. A partial failure includes the observed data with the refusal.
+The same operations are available through `Engine.exe --registration OPERATION`
+without starting transfers or WinUI.
 Snapshot settings contain the live language, with `language_saved` indicating
 whether it matches the saved preference. The store retains only saved settings;
 a failed save leaves the live choice selected and reports the failure.
@@ -815,7 +990,8 @@ size (bytes), progress (0..1), status (stable code), paused, download_rate and
 upload_rate (bytes/second), save_path, error (stable code), diagnostic detail,
 added (Unix seconds), seeds, peers, downloaded/uploaded (bytes), queue
 (libtorrent position), complete, incoming, forced, and hashes. `torrent` returns
-the torrent's facts, name, metadata_ready, files, hashes, and magnet link.
+the torrent's facts, name, metadata_ready, files, hashes, current content folder,
+and magnet link.
 All identities are strings. Settings are intended changes rather than replacement
 snapshots. Input sources are bounded to 32 KiB and retained previews/parses to
 256. `activate_sources` forwards sources, preserving relative-path meaning at

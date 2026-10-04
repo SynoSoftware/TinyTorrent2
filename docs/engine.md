@@ -66,6 +66,12 @@ after its torrent leaves the list, so its failure is
 hold on files while it can still affect them. After an engine crash, unfinished
 work is unknown until recovered, never inferred as success.
 
+Routine status uses libtorrent state-update alerts without piece bitfields.
+Retain the latest status per accepted torrent and classify it once for summary
+rows, tray counts and power policy. This avoids synchronous per-torrent queries
+on every tray or window refresh. A new or restored torrent gets one initial
+status; metadata and file details remain on demand.
+
 The engine records the session's total download and upload rate once a second,
 also while WinUI is closed, so the Speed view shows what happened while the
 window was closed. Keep the last five minutes at one sample a second for a live
@@ -310,7 +316,7 @@ Background startup and status changes do not take focus.
 The tray uses standard Win32 menus, keyboard behavior, accessibility, and system
 colors. Restore its icon after Explorer restarts. Its tooltip shows the total
 download and upload speed, or why transfers are stopped. The complete menu has
-two live, disabled status rows, a separator, Open TinyTorrent and Pause Transfers,
+two live, nonclickable status rows, a separator, Show window and Pause Transfers,
 a separator, and Exit. The first status row shows aggregate download and upload
 speed; the second shows active and queued counts. While the session is paused,
 the second row is Paused with the torrent count, and Resume Transfers replaces
@@ -318,10 +324,14 @@ Pause Transfers. The pause command uses the saved session pause above and keeps
 each torrent's own choice. Double-click opens the application. The menu has at
 most two status rows and three commands; no secondary actions belong there, so
 its immediate status and controls remain readable at a glance. The engine owns this
-tray, the splash, and native startup failure feedback; product dialogs belong to
+tray. Its status text uses the normal menu text color rather than a disabled
+command's grey, because status remains information to read, not an unavailable
+action. Only those two rows use native owner drawing; the commands retain normal
+Windows behavior. The engine owns the
+splash and native startup failure feedback; product dialogs belong to
 WinUI.
 
-The splash is a small native window with the application icon and short localised
+The splash is a compact, captionless native surface with the application icon and short localised
 status, readable in light, dark, and contrast themes. Load no UI framework for
 it. Show it only while
 opening WinUI, avoiding a flash for an already-ready window; close it when the
@@ -501,7 +511,9 @@ without it the person cannot tell that transfers continue.
 The idle-sleep preference starts enabled for active payload downloads on mains
 power. A second preference, also while seeding, starts disabled; it keeps the PC
 awake for a person who seeds overnight. Paused/queued torrents, metadata
-previews, and torrents blocked by an error do not keep the PC awake. One
+previews, and torrents blocked by an error do not keep the PC awake. The first
+switch governs idle-sleep prevention; Also while seeding extends it when enabled.
+One
 engine-owned [power request](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-powersetrequest)
 with a localised reason is held only while needed. Clear it when the condition
 ends, on battery power, or on Exit. The display may turn off;
