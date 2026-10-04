@@ -53,11 +53,12 @@ affecting a new addition, and an uncertain delete being replayed.
 
 ### 2. Complete the existing localisation seam — Strong
 
-**Current:** [TableResources](../../winui3/src/Synapse/TableResources.cs) uses a static
-resource loader; [TableColumn](../../winui3/src/Synapse/TableColumn.cs) does not notify
-changes to `DisplayName`. Resource generation alone cannot update already-built
-headers, menus, or accessibility text. This is a confirmed implementation gap,
-already recorded in the [control map](../../winui3/docs/tableview-implementation.md#known-localisation-gap).
+**At review:** `TableResources` used a static resource loader, and `TableColumn`
+did not notify changes to `DisplayName`. Their current counterparts are
+[Strings](../../lib/TableView/src/Strings.cs) and
+[Column](../../lib/TableView/src/Columns/Column.cs). Resource generation alone
+cannot update already-built headers, menus, or accessibility text. This is a confirmed implementation gap,
+already recorded in the [control map](../../lib/TableView/docs/tableview-implementation.md#known-localisation-gap).
 
 **Proposed:** implement the existing [localisation contract](../localisation.md)
 with the first product surfaces: one editable catalogue, generated native and
@@ -89,7 +90,7 @@ reconciliation. Verify stale-state handling and durable identity where the real
 host consumes snapshots. Do not add a substitute engine or duplicate the control
 suite merely to exercise that seam.
 
-The [table contract's Appendix A](../../winui3/docs/tableview-contract.md#appendix-a--reference-integration-torrent-list)
+The [table contract's Appendix A](../../lib/TableView/docs/tableview-contract.md#appendix-a--reference-integration-torrent-list)
 is explicitly informative reference. Its daemon/RPC and optimistic queue examples
 are not competing product requirements. No conflict needs reopening; their
 authority has already been limited by the active documents.

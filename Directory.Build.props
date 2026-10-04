@@ -1,0 +1,40 @@
+<Project>
+
+  <!--
+    Everything the build generates goes under artifacts/ at the repository root, outside every
+    project folder, so no project's default globs can read it back as source. .NET projects put
+    bin and obj there through UseArtifactsOutput; Engine.vcxproj puts its output and vcpkg's
+    libraries and downloads there through ArtifactsPath.
+  -->
+  <PropertyGroup>
+    <ArtifactsPath>$(MSBuildThisFileDirectory)artifacts</ArtifactsPath>
+    <UseArtifactsOutput>true</UseArtifactsOutput>
+  </PropertyGroup>
+
+  <!--
+    Generated folders that still appear inside a project folder are never build input.
+
+    WHY THIS EXISTS. The WinUI XAML compiler writes a copy of each XAML file into a "bin-fl"
+    folder, resolving "$(BaseOutputPath)-fl" against the wrong working directory. That copy lands
+    INSIDE the output tree. The SDK's default globs then pick it up as SOURCE on the next build,
+    the compiler writes another copy one level deeper, and the path grows without bound on every
+    build. It reached 18 directory levels here and broke the build with
+    "Xaml Internal Error WMC9999: Could not find a part of the path".
+
+    The compiler is a binary we cannot patch. But the recursion only compounds because build
+    output re-enters the build as input. Test runs leave TestResults folders inside test projects
+    the same way. Excluding these folders, at any depth, from the default item globs breaks that
+    loop, so the folders can be written but never consumed, and depth stays constant.
+
+    This must be the DefaultItemExcludes property, not item Remove lines. MSBuild reads every
+    property before any item, so the exclusion is in place when the SDK and Windows App SDK
+    globs run; a Remove here runs before those globs exist and removes nothing.
+
+    Do not remove these without re-testing that a repeated build does not create or deepen a
+    bin-fl folder.
+  -->
+  <PropertyGroup>
+    <DefaultItemExcludes>$(DefaultItemExcludes);**/bin/**;**/obj/**;**/bin-fl/**;**/TestResults/**</DefaultItemExcludes>
+  </PropertyGroup>
+
+</Project>

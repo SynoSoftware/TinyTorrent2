@@ -1,0 +1,10 @@
+{
+  "$comment": "Default features stay off: the libtorrent port enables WebTorrent by default, which adds a WebRTC stack this product does not use.",
+  "builtin-baseline": "da3634ccfb1fa989adbe84da5632db5ccdc67f1d",
+  "dependencies": [
+    {
+      "name": "libtorrent",
+      "default-features": false
+    }
+  ]
+}

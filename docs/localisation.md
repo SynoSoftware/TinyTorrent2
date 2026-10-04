@@ -4,62 +4,64 @@ This is part of the [architecture](architecture.md), not an
 implemented feature. English alone must provide a complete working application.
 Adding another language changes catalogue data, not application behavior.
 
-Use the same text path from the first product screen. The catalogues and build
-generation described here do not exist yet; existing Synapse resources are the
-starting material, not a second permanent English authority. There is no need
-for a web i18n framework or translation service in this native application.
+Use the same text path from the first product screen. TableView already reads
+its English text this way; the product projects follow the same pattern. There
+is no need for a web i18n framework or translation service in this native
+application.
 
-## One source for application text
+## One catalogue per project
 
-Use `resources/locales/en.json` as the canonical source of message keys and
-English fallback text. Other shipped languages use the same keys in
-`resources/locales/<language-tag>.json`. These are shared product resources,
-available to the engine build without WinUI.
+Each project that shows text owns an `en.json` in the `Resources/` folder beside
+its project file: the canonical message keys and English text for that project's
+surfaces. Another shipped language is a `<language-tag>.json` with the same keys
+in the same folder. These
+files are the project's catalogues. The project embeds them in its own binary,
+so a library or the engine works without another project's text.
 JSON has a concrete role here as editable translation data; IPC remains binary.
+
+Group keys by surface in one level of objects, with snake_case names that do not
+repeat their group: `column_menu.hide`, not `column_menu.hide_column`.
+Placeholders are numbered, `{0}`, and a translation may reorder them.
 
 Cover every application-authored surface: windows, dialogs, menus, tray text,
 tooltips, status and error messages, empty states, notifications, keyboard hints,
-and accessibility names/announcements, including those inside Synapse controls.
+and accessibility names/announcements, including those inside TableView controls.
 Use stable semantic keys, not English sentences as identifiers. Keep whole
-messages together with named arguments; translators control word order. Text is
+messages together; translators control word order through the placeholders. Text is
 plain data, never executable markup. Preserve user text, torrent names, paths,
 URLs, hashes, and peer/tracker messages as data rather than translation keys.
 Windows-owned dialogs and shell surfaces retain platform-controlled language
 behavior; TinyTorrent cannot promise to relabel an already-open system dialog.
 
-Move hard-coded WinUI/Synapse text into this authority as desktop consumers are
-implemented. Keep one English source rather than hand-maintained duplicates
-in XAML, C++, C#, and `.resw`. Start by generating Windows resources from the JSON:
-`.resw` for all WinUI text, including Synapse and packaging, and a native subset
-for the engine. WinUI uses [MRT Core](https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk/mrtcore/mrtcore-overview)
-for lookup; it does not also load a parallel JSON catalogue at runtime. Exact
-generated layouts and build tooling belong to the first implementation.
-Shipping another language is separate from this architecture requirement; expose
-only installed, validated catalogues in the language selector.
+Move hard-coded text into its project's `en.json` as surfaces are implemented.
+Keep one English source for each message rather than copies in XAML, C++, C#,
+and `.resw`. WinUI projects read their embedded catalogues directly; they do not
+use `.resw` or MRT Core for application text. The engine reads its own embedded
+`en.json` for its native surfaces. Exact loader code belongs to the first
+implementation in each project. Shipping another language is separate from this
+architecture requirement; expose only installed, validated catalogues in the
+language selector.
 
-## Synapse
+## TableView
 
-Shared authoring does not make the reusable control depend on the torrent
-application. Synapse owns the generic keys for its menus, placeholders, and
-accessibility text. Keep those keys in a distinct group of the canonical
-catalogue; the library build generates and ships only that resource subset.
-Generated `.resw` or native resources are outputs, never edited translations.
-Standalone samples and other hosts receive a complete English fallback without
-loading product messages, starting the engine, or reading its preferences.
+TableView owns the generic keys for its menus, placeholders, and accessibility
+text in its own `en.json`, so the reusable control does not depend on the
+torrent application. Standalone samples and other hosts receive complete English
+without loading product messages, starting the engine, or reading its
+preferences.
 
-The product's process-local localisation owner supplies the selected language,
-resource context, and refresh notification. Synapse uses its resource subset
-through that same lookup policy and a domain-neutral refresh mechanism; it must
-not reference engine types or own a second saved language preference. Keep its
-resource access internal to the control and use the same refresh path for
-standalone and product hosts. Choose the smallest concrete interface when
+The product's process-local localisation owner supplies the selected language
+and refresh notification. TableView selects its own catalogue for that language
+and uses a domain-neutral refresh mechanism; it must not reference engine types
+or own a second saved language preference. Keep its text access internal to the
+control and use the same refresh path for standalone and product hosts. Choose the smallest concrete interface when
 implementing this path; no new localisation package or provider framework is
 prescribed.
 
-The [TableView contract](../winui3/docs/tableview-contract.md) owns what a switch
+The [TableView contract](../lib/TableView/docs/tableview-contract.md) owns what a switch
 preserves: structural schema and interaction state stay intact while presentation
-text changes. Its [implementation map](../winui3/docs/tableview-implementation.md)
-records the current gap, so resource generation alone cannot be reported as live
+text changes. Its [implementation map](../lib/TableView/docs/tableview-implementation.md)
+records the current gap, so embedded English alone cannot be reported as live
 language support.
 
 ## Ownership and live behavior
@@ -104,21 +106,13 @@ tray menu must be refreshed or safely reopened without executing a selection.
 
 ## Language rules and fallback
 
-Resolve missing messages from a shipped parent language, then English, when
-generating each shipped catalogue. Share that rule between native and WinUI
-outputs; fallback is a complete message, including all its plural forms. Preserve
-the language of the resolved message so inherited English uses English plural
-rules. This avoids independent runtime fallback implementations. Windows
-[language matching](https://learn.microsoft.com/en-us/windows/uwp/app-resources/how-rms-matches-lang-tags)
-can select compatible regional variants; an explicit resource context alone does
-not implement this catalogue inheritance rule.
+Resolve a missing message from a shipped parent language, then English. Every
+project's loader applies this same rule; fallback is a complete message,
+including all its plural forms. Preserve the language of the resolved message so
+inherited English uses English plural rules.
 
 Reject invalid catalogue data before packaging: missing English keys, duplicate
-keys, incompatible placeholders, incomplete plural sets, and identifiers that
-collide in generated Windows resources. MRT identifiers are case-insensitive,
-and a base identifier can conflict with a property identifier; check the
-[emitted names](https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk/mrtcore/localize-strings#store-strings-in-a-resources-file)
-as well as the source keys. A failed language load
+keys, incompatible placeholders, and incomplete plural sets. A failed language load
 cannot prevent startup; embedded English remains available. Keep unknown engine
 error codes usable through a translated generic message with optional diagnostic
 detail.
@@ -147,30 +141,27 @@ checking those imports.
 Allow longer translations, Unicode, appropriate font fallback, and right-to-left
 layout. Direction changes with the UI language; paths and identifiers retain
 readable direction. Focus, keyboard hints, and accessibility remain coherent.
-Microsoft documents [layout and RTL requirements](https://learn.microsoft.com/en-us/windows/apps/design/globalizing/adjust-layout-and-fonts--and-support-rtl)
-and [WinUI resource behavior](https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk/mrtcore/localize-strings).
+Microsoft documents [layout and RTL requirements](https://learn.microsoft.com/en-us/windows/apps/design/globalizing/adjust-layout-and-fonts--and-support-rtl).
 
-Use an explicit resource context and owned refresh for product text. Microsoft's
+Use the owned refresh path for product text. Microsoft's
 [language override documentation](https://learn.microsoft.com/en-us/windows/windows-app-sdk/api/winrt/microsoft.windows.globalization.applicationlanguages.primarylanguageoverride)
 notes that already-loaded UI resources may not update immediately and that the
 override persists for packaged apps. If platform controls require an override,
-derive and reapply it from the engine's language, and verify its interaction with
-explicit contexts in the chosen SDK. Never read it as a second preference
+derive and reapply it from the engine's language. Never read it as a second preference
 authority or rely on it to refresh existing bindings.
 
 ## Cost and proportionate evidence
 
-Generated resources are the initial implementation choice: they reuse WinUI's
-existing text path and give the engine only text for its native surfaces. The
-engine must not load .NET, WinUI, or the full UI catalogue for localisation.
+Embedded catalogues per project are the implementation choice: each binary
+carries only its own text. The engine must not load .NET, WinUI, or the UI's
+catalogues for localisation.
 Release obsolete language state after a switch and list languages without
 loading every translation. Load platform formatting support only where needed.
 
-Confirm this small build path with the first localised screen and tray message.
-Revisit the representation if that implementation finds a simpler arrangement;
-preserve one editable authority, one lookup policy per process, and the same
-fallback results. Generated outputs never become hand-edited translations. No
-translation server, network fetch, watcher, or plugin framework is needed.
+Confirm this path with the first localised screen and tray message. Revisit the
+representation if that implementation finds a simpler arrangement; preserve one
+editable source for each message, one lookup policy per process, and the same
+fallback results. No translation server, network fetch, watcher, or plugin framework is needed.
 
 Follow [the testing policy](testing.md). A quick catalogue integrity check covers
 keys, placeholders, and required forms when catalogues change; it does not assert

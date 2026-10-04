@@ -7,29 +7,40 @@ here so moving a topic does not require renaming its links.
 | Order | Document | Authority |
 | --- | --- | --- |
 | 1 | [Current architecture](architecture-current.md) | Source-backed map of the existing projects, runtime, and control data flow. |
-| 2 | [Target architecture](architecture.md) | Product scope, responsibilities, dependencies, reuse, and implementation direction. |
+| 2 | [Target architecture](architecture.md) | Product scope, responsibilities, dependencies, reuse, and the [implementation plan](architecture.md#first-implementation). |
 | 3 | [Engine](engine.md) | Torrent state, durable changes, activation, and process lifetime. |
 | 4 | [Protocol](protocol.md) | Local communication, snapshots, and connection outcomes. |
 | 5 | [Localisation](localisation.md) | Text sources, language selection, live updates, and formatting. |
 | 6 | [Interface](interface.md) | Product journeys and native Windows interaction and presentation. |
 | 7 | [Testing](testing.md) | Which evidence earns its cost and what it establishes. |
+| 8 | [Naming and structure](naming.md) | Names and placement of types, files, folders, namespaces, and resource keys. |
 
 The architecture owns the [live decision list](architecture.md#decisions-still-open).
 Update it as choices are made; historical reviews do not supply active requirements.
 
-For Synapse work, continue with the [table glossary](../winui3/CONTEXT.md),
-[TableView contract](../winui3/docs/tableview-contract.md), and
-[TableView implementation](../winui3/docs/tableview-implementation.md).
+For TableView work, continue with the [table glossary](../lib/TableView/CONTEXT.md),
+[TableView contract](../lib/TableView/docs/tableview-contract.md), and
+[TableView implementation](../lib/TableView/docs/tableview-implementation.md).
 The [product glossary](../CONTEXT.md) defines terms, not additional requirements.
-[Root instructions](../AGENTS.md) and [WinUI instructions](../winui3/AGENTS.md)
-route contributors to these documents.
+[Root instructions](../AGENTS.md), [WinUI instructions](../app/AGENTS.md), and
+[TableView instructions](../lib/TableView/AGENTS.md) route contributors to these documents.
+
+## Where documents belong
+
+Keep repository instructions and the product glossary at the root. Product
+contracts and plans live in `docs/`; TableView's contract, source map, glossary,
+and control history stay beside the library in `lib/TableView/`. Folder-specific
+`AGENTS.md` files contain local guidance and inherit the root rules. Keep licence
+notices with their assets or dependencies. Link between these owners rather
+than keeping copies in both locations.
 
 ## Status and authority
 
-The engine, its pipe, the new product UI, and shared live localisation are target
-contracts. Their documentation is not evidence that they are implemented.
-Synapse, its sample, and its tests are existing code; the implementation document
-identifies known differences from the target contract.
+The native build and libtorrent session check exist alongside TableView, Lucide,
+the sample, and the control tests; see [current build integration](architecture-current.md#build-integration).
+Torrent operations, the pipe, the product UI, the installer, and live localisation
+remain target contracts. Their documentation is not implementation evidence.
+The control's implementation document identifies known gaps against its contract.
 
 Each rule has one home. Link to it from another subject instead of copying it.
 Product scope belongs to the architecture; a control specification does not add
@@ -49,10 +60,14 @@ choices and review dispositions. Consult the active contracts for current behavi
 The later [skill audit](archive/skill-audit-2026-10-03.md) records additional
 source-backed findings, their disposition, and the limits of the review.
 
-[Archived WinUI documents](../winui3/docs/archive/README.md) preserve earlier
-construction reasoning and interface reviews. They are reference material, not
+[Archived TableView documents](../lib/TableView/docs/archive/README.md) preserve
+earlier control construction reasoning. The [archived interface review](archive/interface-review.md)
+preserves earlier product presentation work. These are reference material, not
 current plans, implementation permissions, or proof of current behavior. Useful
 ideas must satisfy the current owner's contract before reuse.
+
+The [historical torrent table reference](archive/torrent-table-reference.md)
+preserves the old host integration formerly embedded in the table contract.
 
 Build configuration and dependencies live in project/build files. Do not copy a
 toolchain inventory or measured performance result into a plan as though it were

@@ -1,0 +1,17 @@
+<Solution>
+  <Configurations>
+    <Platform Name="x64" />
+  </Configurations>
+  <Project Path="src/TableView.csproj">
+    <Platform Solution="*|x64" Project="x64" />
+  </Project>
+  <Project Path="tests/TableViewTests.csproj">
+    <Platform Solution="*|x64" Project="x64" />
+  </Project>
+  <Project Path="sample/TableViewSample.csproj">
+    <Platform Solution="*|x64" Project="x64" />
+  </Project>
+  <Project Path="../Lucide/src/Lucide.csproj">
+    <Platform Solution="*|x64" Project="x64" />
+  </Project>
+</Solution>

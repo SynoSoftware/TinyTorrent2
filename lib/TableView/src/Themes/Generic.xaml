@@ -1,0 +1,516 @@
+<ResourceDictionary
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:Syno.TableView"
+    xmlns:header="using:Syno.TableView.Header"
+    xmlns:body="using:Syno.TableView.Body"
+    xmlns:primitives="using:Microsoft.UI.Xaml.Controls.Primitives">
+
+    <!--
+        The marker pair. Sections 11, 15 and 16 draw the column drop marker, the marquee and the row
+        drop marker as two strokes, a wide one with a narrow one inside it, so the cue stays visible
+        over any cell content whatever the theme. That is the same pair the platform builds a focus
+        visual from, and these markers used to read the platform's focus brushes directly. An
+        application that re-themes its focus visual overrides exactly those brushes — the sample
+        does, to a single accent stroke — and silently flattened all three cues to one tone. Built
+        from the platform's colours instead, the markers still track the theme and no longer sit in
+        the way of a decision about focus that belongs to the host.
+    -->
+    <SolidColorBrush x:Key="TableViewMarkerOuterBrush" Color="{ThemeResource FocusStrokeColorOuter}" />
+    <SolidColorBrush x:Key="TableViewMarkerInnerBrush" Color="{ThemeResource FocusStrokeColorInner}" />
+
+    <!-- Shared column geometry needs exactly these two container values. -->
+    <Style x:Key="TableViewRowContainerStyle"
+           TargetType="ListViewItem"
+           BasedOn="{StaticResource DefaultListViewItemStyle}">
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="Padding" Value="0" />
+        <!--
+            A row is as wide as its columns, not as wide as the list. The space to the right of the
+            last column belongs to no row, and section 14's marquee begins from it, exactly as the
+            reference does: its rows sit on a canvas the width of the columns inside a scroll
+            container the width of the viewport, and a press in the space between the two starts
+            its rectangle. A full table has no other place to start one.
+
+            That space has to be visible, or it reads as a drag that stopped working. Measured once
+            on the original host at 2,538 wide with 1,120-wide rows: 56% of every row band started a
+            rectangle, and nothing on screen marked the line, because the row's own fill shows only
+            when it is selected and hover is off by the owner's ruling. That host's diagnostics
+            harness has been deleted, so specification 14 records the figure and nothing reproduces
+            it now. RowVisual sets the move cursor over a row that can be dragged, so the
+            pointer itself shows where the columns end, the way the reference's grab cursor does.
+        -->
+        <Setter Property="HorizontalAlignment" Value="Left" />
+        <!-- Rows sit edge to edge, so a rounded corner lands on the seam with the row above. -->
+        <Setter Property="CornerRadius" Value="0" />
+        <!--
+            No focus rectangle on a row. The owner rejected it repeatedly and finally ruled it out
+            outright, and it could not be fixed by correcting who asks for focus: the framework
+            rescues focus from a container it is destroying and carries that container's own
+            FocusState to whatever it lands on (CControl::LeaveImpl). Once any row holds
+            FocusState.Keyboard, every reconcile hands it to the next row, or out of the table
+            entirely — the ring the owner saw on the host's Clear button. Only Keyboard draws a
+            ring (CFocusManager::GetFocusTarget gates on IsKeyboardFocused), and no resource can
+            reach that gate, so this setter is the one thing that does stop it.
+
+            The cost, stated so nobody rediscovers it as a bug: a keyboard user moving with
+            Ctrl+Arrow, which changes the current row without selecting it, now has no visual for
+            where they are. Plain Arrow navigation still selects as it moves, so the accent bar
+            shows it. Section 19 wants a focus indicator; this is a deliberate exception, not an
+            oversight.
+        -->
+        <Setter Property="UseSystemFocusVisuals" Value="False" />
+    </Style>
+
+    <DataTemplate x:Key="TableViewRowTemplate">
+        <body:Row>
+            <local:CellsPanel />
+        </body:Row>
+    </DataTemplate>
+
+    <!--
+        This control paints two things on a row: the selected bar and a drag. The selected
+        background stays the container's, because drawing a second fill here read as two
+        backgrounds. Neither focus nor the current row is drawn at all.
+
+        The container's fill alone measured 1.08:1 in Light and 1.18:1 in Dark, so the bar must
+        carry section 19's 3:1 independently of the user's accent. The selected-item foreground
+        resolves to the primary text brush in Light/Dark and highlight text in High Contrast.
+        It keeps the same single bar while removing the accent dependency; RowCueContrastTests
+        measures the rendered cue, including a deliberately low-contrast accent brush.
+
+        Not the two-tone marker pair, which would clear 3:1 in every theme and is already proven
+        here: three wide, vertical, at x = 0 it is section 11's column drop marker exactly, parked
+        at the first boundary. Two different promises must not share a picture.
+    -->
+    <Style TargetType="body:Row">
+        <Setter Property="IsTabStop" Value="False" />
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="VerticalContentAlignment" Value="Stretch" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="body:Row">
+                    <Grid x:Name="Root">
+                        <!--
+                            Full row height, square, and no inset. Every one of those follows from
+                            the rows sitting edge to edge, which is also why the container is
+                            CornerRadius="0": an inset bar with its own corner radius leaves a gap
+                            at each row seam, so a run of selected rows reads as separate marks
+                            instead of one block.
+
+                            Three wide is the platform's own indicator width. It publishes no
+                            width key — the resource tree was enumerated for one — but it publishes
+                            ListViewItemSelectionIndicatorCornerRadius as 1.5 in every theme, which
+                            is half of a fully rounded bar, and NavigationViewSelectionIndicatorWidth
+                            as 3.
+
+                            Under the cells, so a cell's content is never painted over. Section 8
+                            already forbids a cell template painting a row backdrop, which is the
+                            one thing that could hide the bar from underneath.
+                        -->
+                        <Rectangle x:Name="SelectedBar"
+                                   Width="3"
+                                   HorizontalAlignment="Left"
+                                   Fill="{ThemeResource ListViewItemForegroundSelected}"
+                                   Opacity="0" />
+
+                        <!--
+                            Nothing is drawn for focus, which is why there is no second element
+                            here. Fluent's list has no focus treatment on a row, and the owner ruled
+                            that this table will not invent one: the platform's own visual is
+                            switched off on the container, and the fill that stood in for it here is
+                            gone.
+
+                            The fill was the third attempt, and what killed it was when it appeared
+                            rather than how it looked. It shows on a row that holds focus and is not
+                            selected, and deselecting a row produces exactly that state — so the
+                            owner clicked a selected row off and watched a mark arrive instead of
+                            leave. A cue nobody asked for, appearing at the moment a row is
+                            dismissed, is worse than no cue.
+                        -->
+                        <ContentPresenter Content="{TemplateBinding Content}"
+                                          ContentTemplate="{TemplateBinding ContentTemplate}"
+                                          HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                          VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
+
+                        <VisualStateManager.VisualStateGroups>
+                            <VisualStateGroup x:Name="RowEmphasis">
+                                <VisualState x:Name="Rest" />
+                                <VisualState x:Name="Selected">
+                                    <VisualState.Setters>
+                                        <Setter Target="SelectedBar.Opacity" Value="1" />
+                                    </VisualState.Setters>
+                                </VisualState>
+                            </VisualStateGroup>
+                            <!-- Section 16: the moving packet stays identifiable, in the same
+                                 treatment the platform gives a dragged list item and section 11
+                                 gives a dragged header. -->
+                            <VisualStateGroup x:Name="DragStates">
+                                <VisualState x:Name="NotDragging" />
+                                <VisualState x:Name="Dragging">
+                                    <VisualState.Setters>
+                                        <Setter Target="Root.Opacity"
+                                                Value="{ThemeResource ListViewItemDragThemeOpacity}" />
+                                    </VisualState.Setters>
+                                </VisualState>
+                            </VisualStateGroup>
+                        </VisualStateManager.VisualStateGroups>
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style TargetType="header:Cell">
+        <Setter Property="IsTabStop" Value="True" />
+        <Setter Property="UseSystemFocusVisuals" Value="True" />
+        <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+        <!--
+            No Padding setter here. The row container is Padding="0" because shared column geometry
+            requires it, so the inset inside a column is the table's own Table.CellPadding,
+            applied to this cell and to the row cell in one method so the two cannot drift. A
+            setter here would win over that and split the ownership again.
+        -->
+        <Setter Property="HorizontalContentAlignment" Value="Left" />
+        <!--
+            Without a brush the cell's empty space is not hit-testable, so a press beside the label
+            reaches the strip's background instead and starts neither section 11's drag nor a sort.
+        -->
+        <Setter Property="Background" Value="Transparent" />
+        <!-- The visible half of section 10's resize separator. The strip's grab zone is wider. -->
+        <Setter Property="BorderBrush" Value="{ThemeResource DividerStrokeColorDefaultBrush}" />
+        <Setter Property="BorderThickness" Value="0,0,1,0" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="header:Cell">
+                    <Grid x:Name="Root"
+                          Background="{TemplateBinding Background}"
+                          Padding="{TemplateBinding Padding}"
+                          BorderBrush="{TemplateBinding BorderBrush}"
+                          BorderThickness="{TemplateBinding BorderThickness}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <ContentPresenter x:Name="PART_Header"
+                                          Grid.Column="0"
+                                          Foreground="{TemplateBinding Foreground}"
+                                          HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                          VerticalAlignment="Center" />
+
+                        <!--
+                            Section 9's direction glyph on the active header. The state itself is
+                            on the cell as AutomationProperties.ItemStatus, so the glyph is a
+                            decoration the automation tree does not need to repeat.
+                        -->
+                        <FontIcon x:Name="PART_SortGlyph"
+                                  Grid.Column="1"
+                                  Margin="4,0,0,0"
+                                  FontSize="14"
+                                  Glyph="&#xE70E;"
+                                  Foreground="{ThemeResource TextFillColorPrimaryBrush}"
+                                  VerticalAlignment="Center"
+                                  AutomationProperties.AccessibilityView="Raw"
+                                  Visibility="Collapsed" />
+
+                        <VisualStateManager.VisualStateGroups>
+                            <!-- Section 11: the dragged header stays identifiable, in the same
+                                 treatment the platform gives a dragged list item. -->
+                            <VisualStateGroup x:Name="DragStates">
+                                <VisualState x:Name="NotDragging" />
+                                <VisualState x:Name="Dragging">
+                                    <VisualState.Setters>
+                                        <Setter Target="Root.Opacity"
+                                                Value="{ThemeResource ListViewItemDragThemeOpacity}" />
+                                    </VisualState.Setters>
+                                </VisualState>
+                            </VisualStateGroup>
+                        </VisualStateManager.VisualStateGroups>
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style TargetType="header:Strip">
+        <Setter Property="IsTabStop" Value="False" />
+        <Setter Property="TabNavigation" Value="Once" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="header:Strip">
+                    <Border x:Name="PART_Clip"
+                            Background="{ThemeResource LayerFillColorDefaultBrush}"
+                            BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
+                            BorderThickness="0,0,0,1">
+                        <Grid>
+                            <local:CellsPanel x:Name="PART_HeaderPanel" />
+
+                            <!--
+                                Fit visible columns, offered in the strip's trailing space. Opt-in:
+                                the table adds no visible command to a host's header unless asked,
+                                and a host that already has its own fit button would otherwise
+                                show two. The strip collapses it whenever the columns reach far
+                                enough right to need that space, so it is only ever where nothing
+                                else wants to be.
+
+                                Subtle style, not accent: this sits in the header's own surface
+                                and must not read as louder than the column labels beside it.
+                            -->
+                            <Button x:Name="PART_FitButton"
+                                    HorizontalAlignment="Right"
+                                    VerticalAlignment="Stretch"
+                                    Padding="8,0"
+                                    MinWidth="0"
+                                    BorderThickness="0"
+                                    Background="Transparent"
+                                    Visibility="Collapsed">
+                                <!--
+                                    No icon here. The strip gives this button the same one the menu
+                                    gives Fit visible columns, from Icons, so the two cannot
+                                    show different pictures for the same command and the font path
+                                    is named in one place.
+                                -->
+                            </Button>
+
+                            <!--
+                                Section 11's insertion marker, positioned by the strip on the
+                                boundary a drop would use. Two-tone in the platform's own focus
+                                stroke pair, which measures above 3:1 in every contrast theme, and
+                                the wider cap at the leading end is section 19's positional cue so
+                                the destination does not depend on colour.
+                            -->
+                            <Grid x:Name="PART_ColumnInsertionMarker"
+                                  Width="9"
+                                  HorizontalAlignment="Left"
+                                  IsHitTestVisible="False"
+                                  AutomationProperties.AccessibilityView="Raw"
+                                  Visibility="Collapsed">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <Rectangle Grid.Row="0" Width="9" Height="5"
+                                           HorizontalAlignment="Center" VerticalAlignment="Top"
+                                           Fill="{ThemeResource TableViewMarkerInnerBrush}" />
+                                <Rectangle Grid.Row="0" Width="7" Height="3"
+                                           HorizontalAlignment="Center" VerticalAlignment="Top"
+                                           Margin="0,1,0,0"
+                                           Fill="{ThemeResource TableViewMarkerOuterBrush}" />
+
+                                <Rectangle Grid.Row="1" Width="3"
+                                           HorizontalAlignment="Center"
+                                           Fill="{ThemeResource TableViewMarkerInnerBrush}" />
+                                <Rectangle Grid.Row="1" Width="1"
+                                           HorizontalAlignment="Center"
+                                           Fill="{ThemeResource TableViewMarkerOuterBrush}" />
+                            </Grid>
+
+                            <!--
+                                Section 10's resize guide. The width used to change on every
+                                pointer move, and each move re-measured every realized row: the
+                                owner watched the table fall to about two frames a second, with the
+                                pointer itself no longer tracking. The width now lands once, on
+                                release, and this line is the whole of what the drag costs — one
+                                element moving, whatever the table is holding.
+
+                                A hairline with a halo, and deliberately not the insertion marker's
+                                silhouette. That marker promises "the column will drop here" and
+                                carries a cap to say so; this one promises "the edge will land
+                                here". Two different promises should not share a picture.
+
+                                In a Popup because the line has to cross the rows and the strip
+                                clips its own children. The offsets are measured from the strip's
+                                top-left, which is the table's, so a line the table's own height
+                                spans the header and every row below it.
+                            -->
+                            <primitives:Popup x:Name="PART_ResizeGuide"
+                                              IsLightDismissEnabled="False">
+                                <Grid Width="3"
+                                      IsHitTestVisible="False"
+                                      AutomationProperties.AccessibilityView="Raw">
+                                    <Rectangle Width="3" Fill="{ThemeResource TableViewMarkerInnerBrush}" />
+                                    <Rectangle Width="1" Fill="{ThemeResource TableViewMarkerOuterBrush}" />
+                                </Grid>
+                            </primitives:Popup>
+                        </Grid>
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style TargetType="local:Table">
+        <Setter Property="IsTabStop" Value="False" />
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="VerticalContentAlignment" Value="Stretch" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="local:Table">
+                    <Grid x:Name="PART_Root"
+                          Background="{TemplateBinding Background}"
+                          BorderBrush="{TemplateBinding BorderBrush}"
+                          BorderThickness="{TemplateBinding BorderThickness}">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <header:Strip x:Name="PART_HeaderStrip" Grid.Row="0" />
+
+                        <Grid Grid.Row="1">
+                            <ListView x:Name="PART_ItemsView"
+                                      Padding="0"
+                                      SelectionMode="Multiple"
+                                      IsMultiSelectCheckBoxEnabled="False"
+                                      IsItemClickEnabled="False"
+                                      ItemContainerStyle="{StaticResource TableViewRowContainerStyle}"
+                                      ItemTemplate="{StaticResource TableViewRowTemplate}"
+                                      ScrollViewer.HorizontalScrollMode="Disabled"
+                                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                      ScrollViewer.VerticalScrollMode="Enabled"
+                                      ScrollViewer.VerticalScrollBarVisibility="Auto">
+                                <!--
+                                    No hover cue on a row. A table row is not a button: pointing at
+                                    one says nothing about what will happen, and with hundreds of
+                                    rows under a moving pointer it is a light following the mouse.
+                                    Overriding the two brushes here rather than in the app scopes it
+                                    to this control's rows, so a host's other lists keep theirs. The
+                                    selected row resolves to its own selected background while
+                                    hovered, so pointing at a selected row changes nothing either.
+                                -->
+                                <ListView.Resources>
+                                    <SolidColorBrush x:Key="ListViewItemBackgroundPointerOver" Color="Transparent" />
+                                    <StaticResource x:Key="ListViewItemBackgroundSelectedPointerOver"
+                                                    ResourceKey="ListViewItemBackgroundSelected" />
+                                </ListView.Resources>
+
+                                <!--
+                                    No ItemContainerTransitions here on purpose: the platform's
+                                    default set is what the rows animate with. Entrance, content,
+                                    add/delete and reorder are all wanted, and the view never
+                                    resets, so none of them replays over rows that did not change.
+                                -->
+                                <ListView.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <!--
+                                            Half a viewport of rows realized beyond the visible
+                                            ones, not the default four viewports. Measured with the
+                                            original host: 77 containers realized for 17 rows on
+                                            screen at the default, 36 at one viewport. Every
+                                            realized row is bound to its item and pays for each
+                                            update the source sends, whether it is on screen or not.
+                                        -->
+                                        <!--
+                                            KeepScrollOffset: a reorder moves rows through a fixed
+                                            viewport and never the viewport. The default,
+                                            KeepItemsInView, shifts the scroll offset to keep the
+                                            first visible row where it was whenever rows are
+                                            removed or inserted above it, and a sort by a live value
+                                            does that on every settle, for every realized row that
+                                            changes place. The owner saw the result while sweeping a
+                                            marquee over a table sorted by speed: the rectangle's
+                                            fixed corner, which is a point in the scrolled content,
+                                            jumped up and down with the row the panel was following.
+                                            Under a live sort the viewport is the thing to hold
+                                            still; rows moving through it is what the sort means.
+                                        -->
+                                        <ItemsStackPanel Orientation="Vertical"
+                                                         CacheLength="0.5"
+                                                         ItemsUpdatingScrollMode="KeepScrollOffset" />
+                                    </ItemsPanelTemplate>
+                                </ListView.ItemsPanel>
+                            </ListView>
+
+                            <ContentPresenter x:Name="PART_StateLayer"
+                                              HorizontalAlignment="Stretch"
+                                              VerticalAlignment="Stretch"
+                                              Visibility="Collapsed" />
+
+                            <!--
+                                Section 14's rectangle, sized and positioned by the gesture over
+                                the row surface: a faint neutral surface, and nothing else, so the
+                                rectangle looks like the selection it is making. In this table a
+                                selected row's fill is neutral and nothing in its selection is
+                                accent-coloured, the owner having ruled the accent bar out, so an
+                                accent rectangle was the one accent-coloured piece of the selection
+                                language; Explorer's rubber band is accent because Explorer's
+                                selected items are. The platform's selection rectangle also draws
+                                a line around its surface; the owner ruled that out here, so the
+                                surface carries the shape alone.
+
+                                A neutral highlight is a light wash of the foreground colour, and
+                                the primary text brush is the one platform brush that carries the
+                                foreground colour in every theme: 89% black in Light, white in
+                                Dark, and the window text colour in a contrast theme. At this
+                                element opacity that is a 12% to 14% wash in all three, under
+                                which row text keeps at least 10:1. Name the brush, never its
+                                colour key: the contrast dictionary's TextFillColorPrimary colour
+                                is a red placeholder, and only the brush points at the window
+                                text colour. The list-highlight brushes
+                                carry their own 20% only in Light and Dark; in a contrast theme
+                                they resolve to the opaque highlight colour, and the opacity that
+                                gave 14% there gave a 70% wash that hid the text under it. Over
+                                the rows it has selected in a contrast theme the rectangle is still
+                                hard to tell from them, because the highlight is what a selected
+                                row is there; that is accepted, since the rows the rectangle covers
+                                are selected as it covers them, and that, not the surface, is the
+                                feedback section 19 requires to read without colour.
+                            -->
+                            <Grid x:Name="PART_MarqueeOverlay"
+                                  HorizontalAlignment="Left"
+                                  VerticalAlignment="Top"
+                                  IsHitTestVisible="False"
+                                  AutomationProperties.AccessibilityView="Raw"
+                                  Visibility="Collapsed">
+                                <Rectangle Fill="{ThemeResource TextFillColorPrimaryBrush}"
+                                           Opacity="0.14" />
+                            </Grid>
+
+                            <!--
+                                Section 16's insertion marker, positioned by the drag on the
+                                boundary a drop would use. It is section 11's column marker turned
+                                on its side, in the same marker pair, so the two boundaries read alike
+                                and the wider cap at the leading end is section 19's positional cue.
+                            -->
+                            <Grid x:Name="PART_RowInsertionMarker"
+                                  Height="9"
+                                  VerticalAlignment="Top"
+                                  IsHitTestVisible="False"
+                                  AutomationProperties.AccessibilityView="Raw"
+                                  Visibility="Collapsed">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+
+                                <Rectangle Grid.Column="0" Width="5" Height="9"
+                                           HorizontalAlignment="Left" VerticalAlignment="Center"
+                                           Fill="{ThemeResource TableViewMarkerInnerBrush}" />
+                                <Rectangle Grid.Column="0" Width="3" Height="7"
+                                           HorizontalAlignment="Left" VerticalAlignment="Center"
+                                           Margin="1,0,0,0"
+                                           Fill="{ThemeResource TableViewMarkerOuterBrush}" />
+
+                                <Rectangle Grid.Column="1" Height="3"
+                                           VerticalAlignment="Center"
+                                           Fill="{ThemeResource TableViewMarkerInnerBrush}" />
+                                <Rectangle Grid.Column="1" Height="1"
+                                           VerticalAlignment="Center"
+                                           Fill="{ThemeResource TableViewMarkerOuterBrush}" />
+                            </Grid>
+                        </Grid>
+
+                        <primitives:ScrollBar x:Name="PART_HorizontalScrollBar"
+                                              Grid.Row="2"
+                                              Orientation="Horizontal"
+                                              Visibility="Collapsed" />
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+</ResourceDictionary>

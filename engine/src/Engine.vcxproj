@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>17.0</VCProjectVersion>
+    <Keyword>Win32Proj</Keyword>
+    <ProjectGuid>{537AA260-FEA5-49AC-A79E-E79BF6AE966B}</ProjectGuid>
+    <RootNamespace>Engine</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0.28000.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+
+  <PropertyGroup Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <PlatformToolset>v145</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Label="Configuration" Condition="'$(Configuration)'=='Release'">
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+  </PropertyGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings" />
+  <ImportGroup Label="Shared" />
+  <ImportGroup Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+
+  <!-- After Microsoft.Cpp.Default.props, which imports Directory.Build.props and so ArtifactsPath. -->
+  <PropertyGroup>
+    <OutDir>$(ArtifactsPath)\bin\Engine\$(Configuration)\</OutDir>
+    <IntDir>$(ArtifactsPath)\obj\Engine\$(Configuration)\</IntDir>
+  </PropertyGroup>
+
+  <PropertyGroup Label="Vcpkg">
+    <VcpkgEnableManifest>true</VcpkgEnableManifest>
+    <!-- Static libraries and, with RuntimeLibrary below, the static C runtime: the engine is one
+         executable with no dependency DLLs beside it. -->
+    <VcpkgUseStatic>true</VcpkgUseStatic>
+    <!-- Keep vcpkg's output in artifacts, with one copy of each download. By default Visual
+         Studio's read-only vcpkg leaves every build tree behind, saves a zip of every built
+         library in a per-user cache (one more set for each dependency change), and downloads its
+         tools into the per-user profile. A packaged app sees its own private copy of that
+         profile folder, so the same files were downloaded twice. -->
+    <VcpkgInstalledDir>$(ArtifactsPath)\vcpkg_installed\</VcpkgInstalledDir>
+    <VcpkgAdditionalInstallOptions>--clean-after-build --binarysource=clear "--downloads-root=$(ArtifactsPath)\vcpkg_downloads"</VcpkgAdditionalInstallOptions>
+  </PropertyGroup>
+
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <!-- libtorrent's public compile definitions, as vcpkg built the library. vcpkg's MSBuild
+           integration passes include paths and libraries only, so they are repeated here. They
+           must equal INTERFACE_COMPILE_DEFINITIONS in the installed
+           share\LibtorrentRasterbar\LibtorrentRasterbarTargets.cmake; a difference changes
+           libtorrent's types under the engine. Recheck them when vcpkg.json changes. -->
+      <PreprocessorDefinitions>TORRENT_ABI_VERSION=100;TORRENT_USE_RTC=0;TORRENT_USE_OPENSSL;TORRENT_USE_LIBCRYPTO;TORRENT_SSL_PEERS;OPENSSL_NO_SSL2;OPENSSL_NO_SSL3;OPENSSL_NO_TLS1;OPENSSL_NO_TLS1_1;OPENSSL_NO_DTLS1;BOOST_ASIO_NO_DEPRECATED;BOOST_ASIO_HAS_STD_CHRONO;BOOST_ASIO_ENABLE_CANCELIO;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'">
+    <ClCompile>
+      <Optimization>Disabled</Optimization>
+      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'">
+    <ClCompile>
+      <Optimization>MaxSpeed</Optimization>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+    </ClCompile>
+  </ItemDefinitionGroup>
+
+  <ItemGroup>
+    <ClCompile Include="Main.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="vcpkg.json" />
+  </ItemGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+    <!-- The vcpkg that Visual Studio installs. Imported here so the build needs neither a
+         user-wide "vcpkg integrate install" nor a vcpkg clone in the repository. -->
+    <Import Project="$(VCInstallDir)vcpkg\scripts\buildsystems\msbuild\vcpkg.targets" />
+  </ImportGroup>
+</Project>

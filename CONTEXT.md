@@ -1,6 +1,6 @@
 # Product vocabulary
 
-Terms for TinyTorrent. The [table glossary](winui3/CONTEXT.md) defines Synapse's
+Terms for TinyTorrent. The [table glossary](lib/TableView/CONTEXT.md) defines TableView's
 separate, domain-neutral vocabulary. Decisions belong in the
 [architecture](docs/architecture.md).
 
@@ -43,4 +43,5 @@ inspected without downloading payload or creating payload files.
 
 **Splash window**: the temporary window shown while the product interface opens.
 
-**Synapse**: the reusable WinUI control library containing TableView.
+**TableView**: the reusable, domain-neutral WinUI table library. Its control is
+the `Table` type.

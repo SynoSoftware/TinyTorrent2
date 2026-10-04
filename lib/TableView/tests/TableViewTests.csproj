@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <RootNamespace>Syno.TableView.Tests</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Platforms>x86;x64;ARM64</Platforms>
+    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">win-$([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString().ToLowerInvariant())</RuntimeIdentifier>
+    <UseWinUI>true</UseWinUI>
+    <WinUIDSKReferences>false</WinUIDSKReferences>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <WindowsPackageType>None</WindowsPackageType>
+    <!-- The XAML runtime loads the control's compiled Generic.xaml through the merged resource
+         index, which an unpackaged process looks for as resources.pri beside the running
+         executable. Without this the test project emits TableViewTests.pri instead. -->
+    <ProjectPriFileName>resources.pri</ProjectPriFileName>
+    <!-- Keeps the input-injecting tests out of a plain `dotnet test`. See .runsettings. -->
+    <RunSettingsFilePath>$(MSBuildProjectDirectory)\.runsettings</RunSettingsFilePath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Page Remove="UnitTestApp.xaml" />
+    <ApplicationDefinition Include="UnitTestApp.xaml" />
+    <ProjectCapability Include="TestContainer" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Manifest Include="$(ApplicationManifest)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.2705" />
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.4.0" />
+    <PackageReference Include="MSTest.TestAdapter" Version="4.4.0" />
+    <PackageReference Include="MSTest.TestFramework" Version="4.4.0" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.9.0" />
+    <PackageReference Include="Microsoft.TestPlatform.TestHost" Version="18.9.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\src\TableView.csproj" />
+  </ItemGroup>
+</Project>

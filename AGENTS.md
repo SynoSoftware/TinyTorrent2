@@ -8,6 +8,17 @@ on the first pass.
 For product and implementation decisions, apply
 [Usability comes first](docs/architecture.md#usability-comes-first).
 
+## Every rule states why
+
+A rule in these instructions or in a contract states what it protects, in the
+present tense. Without its reason, nobody can tell whether the rule still
+applies, so it is either copied into cases it was never about or dropped when it
+is inconvenient. How a rule arose belongs in the commit message.
+
+Before applying a rule, check that its reason holds in the case in front of you.
+If it does not, report that and ask before continuing; do not comply anyway and
+do not quietly ignore it. A rule whose reason you cannot find is a finding.
+
 ## Read for the change
 
 - Before changing ownership, dependencies, or project structure, read
@@ -17,11 +28,13 @@ For product and implementation decisions, apply
 - Before changing communication, read the [protocol contract](docs/protocol.md).
 - Before changing text, language selection, or display formatting, read
   [localisation](docs/localisation.md).
-- Before changing WinUI or its tooling, read [winui3/AGENTS.md](winui3/AGENTS.md).
+- Before changing the product UI, read [WinUI instructions](app/AGENTS.md).
+- Before changing the table library, its development hosts, or its tooling, read
+  [TableView instructions](lib/TableView/AGENTS.md).
 - Before writing, changing, deleting, choosing, or running tests, read
   [testing](docs/testing.md). It decides whether a test is worth writing.
 - Use [product vocabulary](CONTEXT.md) and, for controls,
-  [table vocabulary](winui3/CONTEXT.md).
+  [table vocabulary](lib/TableView/CONTEXT.md).
 
 The [documentation guide](docs/README.md) identifies current authorities and
 historical references. The source repository at `../TinyTorrent` stays untouched.
@@ -34,34 +47,59 @@ do not define this product.
   material ambiguity before dependent changes.
 - Inspect the existing owner, data flow, and adjacent patterns before editing.
   Commands and gestures for the same operation call the same implementation.
+- Follow the existing solution to the same problem. Departing from it needs a
+  requirement you can name; "cleaner" and "more flexible" are not requirements.
+  When the existing solution is the worse one, report it instead of building a
+  third. Usability wins when it conflicts with consistency.
+- When the change exposes two implementations of one rule, move their direct
+  callers to the established owner in the same change; two matching copies are
+  free to drift. Report duplication outside the change instead of widening it.
 - Add a type or abstraction only when it owns a concrete decision or hides
   necessary complexity. Separate responsibilities do not require separate
   projects, interfaces, or processes.
 - Touch only what the request requires. Match the existing style and remove only
   orphans created by the change. Keep unrelated cleanup out of the diff.
-- Prefer explicit state and legal transitions over combinations of flags. Keep
-  computed display values as projections, rather than another mutable authority.
-- Let names and structure carry intent. Comments explain constraints, evidence,
-  and reasons the code cannot express; update them with the code they explain.
+- Prefer explicit state and legal transitions over combinations of flags.
+- Store facts and decisions; derive display values and other computed state
+  when read. A stored derived value is a second answer that can drift, so keep
+  one only for a measured reason and name it as derived.
+- State an invariant in a type wherever the type system can express it: a
+  comment asks every later writer to remember, while a type refuses for them.
+  One owner enforces an invariant that a type cannot express.
+- Let names and structure carry intent. Prefer straight-line control flow and
+  early returns where they clarify a decision; a reader follows one operation
+  without crossing pass-through layers. In C#, use the null-forgiving `!` only
+  where a real invariant guarantees the value; elsewhere it hides the null it
+  claims cannot happen.
 - Read the final diff. Every new file, type, state, dependency, and branch must
   answer a concrete requirement.
 - Build affected native targets when compilation evidence is needed. Launch
   applications and desktop test hosts only when explicitly requested. Close
   what you launched and report what was verified and any material gaps.
+- After every build or test run, check that it did not start a recursive copy.
+  All generated output belongs in `artifacts/`, so this command, run from the
+  repository root, must print nothing:
+  `& "C:\Program Files\Everything\es.exe" -path $PWD /ad "wfn:bin|wfn:obj|wfn:bin-fl|wfn:TestResults" "!*\artifacts\*"`.
+  A result is a defect: report it and find the output path that caused it
+  before continuing. Do not delete the folder and move on.
 
 ## Naming
 
-Use one canonical term for each concept. Prefer established domain and platform
-vocabulary. Judge clarity where a name is read: the owner, namespace, and type
-carry context; the name carries the distinctions that remain.
+Read [naming and structure](docs/naming.md) before naming or placing a type,
+member, file, folder, namespace, or resource key, or before adding an interface
+or a signature, and run its naming review on every new or changed name. One
+policy serves every project.
 
-Name types and state with nouns, operations with verbs, booleans as affirmative
-conditions, and collections with plurals. Challenge filler and repeated context,
-but keep every word needed for meaning. There is no word-count limit and no rule
-that requires splitting a coherent type to shorten a name.
+Each project or library has its own `Enums.cs` beside its project file, and
+every enum that project declares lives there, one member per line, including
+enums only one type uses. This gives each project's vocabulary one discoverable
+home instead of scattering declarations among their current consumers.
 
-Files and folders follow the same principle. Use familiar language conventions,
-including partial-type filenames where they help navigation. Renaming a public
-member changes a contract; review its callers and specification together. Search
-literal consumers of resource keys, template parts, and visual states as well as
-typed references.
+## Code comments
+
+Read [code comments](docs/comments.md) before adding, changing, or reviewing
+comments or API documentation. Comments are short and written only when the
+code cannot carry the knowledge itself. Before reporting a code change complete,
+check every comment added in the diff against that policy and remove the ones
+that fail. This catches explanatory prose that looked useful while writing but
+adds nothing once the code is in place. One policy serves every project.

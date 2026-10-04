@@ -2,8 +2,8 @@
 
 Target interaction and presentation for the new WinUI application. The
 [architecture](architecture.md) owns product scope; the [engine](engine.md) owns
-operation semantics. Existing Synapse behavior follows its
-[TableView contract](../winui3/docs/tableview-contract.md). This document does not
+operation semantics. Existing TableView behavior follows its
+[TableView contract](../lib/TableView/docs/tableview-contract.md). This document does not
 claim a product UI is implemented or visually verified.
 
 Common sense and intuitive use take precedence when choosing the interaction.
@@ -52,7 +52,7 @@ equivalent keyboard, theme, focus, and accessibility behavior.
 The WinUI resource system is the visual authority. Reuse platform controls,
 styles, type roles, brushes, and corner resources, then existing project styles.
 A new semantic resource needs demonstrated reuse. A one-place spacing default
-does not need a global token. Synapse's stricter resource rules stay with its
+does not need a global token. TableView's stricter resource rules stay with its
 contract. Do not add a palette, spacing framework, icon runtime, or parallel
 styling system.
 
@@ -285,9 +285,9 @@ changes need neither a confirmation dialog nor a technical explanation.
 ### Inspector and edits
 
 General, Files, Peers, Trackers, Speed, and Pieces answer different questions;
-request data only for the visible view. Preserve useful data coverage without
-copying the old tab layouts. Design each view around its task; the Pieces map's
-required behavior is described below.
+request data only for the visible view. Preserve useful data coverage and choose
+each layout for its task.
+The Pieces map's required behavior is described below.
 
 Apply individual choices and explicit file commands through the same commit
 rules. When a coherent edit needs a draft, keep one active editor bound to the
@@ -321,6 +321,6 @@ methods under [testing](testing.md). Review native semantics, reachable actions,
 focus return, automation, live text, and bounded hidden work. State the evidence
 and gaps explicitly; a static screenshot cannot establish all of them.
 
-[Historical reviews](../winui3/docs/archive/interface-review.md) preserve earlier
+[Historical reviews](archive/interface-review.md) preserve earlier
 experiments. Their approvals, old shortcuts, Transmission limits, and unsupported
 features do not expand this contract or replace a design for the actual product.

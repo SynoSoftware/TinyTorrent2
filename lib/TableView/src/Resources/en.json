@@ -1,0 +1,26 @@
+{
+  "header": {
+    "accessible_name": "Column headers",
+    "sorted_ascending": "Sorted ascending",
+    "sorted_descending": "Sorted descending"
+  },
+  "placeholder": {
+    "loading": "Loading",
+    "empty": "Nothing to show",
+    "no_results": "No matching items"
+  },
+  "column_menu": {
+    "hide": "Hide column “{0}”",
+    "show": "Show column “{0}”",
+    "fit": "Fit column “{0}”",
+    "fit_visible": "Fit visible columns",
+    "move_left": "Move left",
+    "move_right": "Move right",
+    "shown": "Shown",
+    "hidden": "Hidden"
+  },
+  "row_drag": {
+    "before_row": "Drop destination: before row {0} of {1}",
+    "at_end": "Drop destination: end of list"
+  }
+}
