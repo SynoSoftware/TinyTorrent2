@@ -25,6 +25,10 @@ public:
     Json Snapshot() const;
     std::string Language() const;
     bool IsStopping() const;
+    bool IsLoading() const;
+    bool HasStorageFailure() const;
+    bool ShowsAdd() const;
+    std::string DefaultDestination() const;
 
 private:
     class State;

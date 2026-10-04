@@ -10,6 +10,7 @@
   },
   "error": {
     "start": "TinyTorrent could not start.",
+    "source": "The torrent could not be added.",
     "ownership": "TinyTorrent cannot open its saved data. Another Windows logon may already be using this folder:",
     "launch": "TinyTorrent could not start its window. Open from the notification area to try again.",
     "startup": "The TinyTorrent window did not open. Downloads continue. Try Open again after the window process exits.",

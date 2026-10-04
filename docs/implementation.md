@@ -353,6 +353,425 @@ and Exit closed both processes. The latest source re-review reported no remainin
 actionable findings within First usable download and passed MVVM ownership.
 All launched engine, product and transfer fixture processes were closed.
 
+## Everyday torrent actions: design and ownership
+
+First usable download was committed as `e0a5a92`. The next milestone extends its
+existing owners; it does not introduce a second command or draft implementation.
+
+The everyday user asks for one Add form when many sources arrive and an immediate
+native file picker. The heavy seeder wants duplicate content to preserve existing
+choices, with an explicit offer for new trackers. The libtorrent engineer requires
+zero-priority guards before magnet acquisition and transfers that guarded handle
+to accepted membership only after durable choices commit. The Windows engineer
+retains launch inputs until the single UI acknowledges their ownership and treats
+association input as data rather than maintenance options. The keyboard user keeps
+editor keys and uses the established torrent shortcuts on the table. The WinUI
+designer follows variant C: compact search/Errors row, the main table, a quiet
+status bar, and a lower General inspector. The maintainer keeps one MVVM owner for
+each draft and reuses one native file browser for Add and Files. The product owner
+exposes real commands as their milestones implement them, rather than presenting
+inert Move, Delete files or Preferences entries ahead of their owning work.
+
+These answers preserve ordinary client behavior with the smallest arrangement:
+one batch draft, one tree of file choices, one source handoff and one engine
+operation path. Unknown magnet metadata permits Add with all files wanted; known
+single-source metadata permits wanted and priority choices. Batch additions keep
+one destination and paused choice, with later file editing in Files. Search changes
+visibility alone. Folder choices affect all descendants; bulk actions affect the
+files matching search. Preview work runs only while the form consumes it.
+
+Queue order records the user's explicit ordering and applies it through
+libtorrent's queue API, including restart restoration. It does not become another
+transfer scheduler. Session pause is a saved session choice and never rewrites
+per-torrent paused choices. Removal commits membership before removing a handle,
+without a delete-data flag. Global and alternative speed limits are ordinary saved
+choices applied through libtorrent; the status toggle shows which set is active.
+
+The guarded magnet's save-path transition was also decided in series. The user
+wants the chosen folder to be the actual destination. The libtorrent engineer
+requires the asynchronous storage result before releasing priorities. The Windows
+engineer avoids moving payload that a preview must never have created. The
+maintainer retains the existing handle and three explicit addition phases rather
+than removing and recreating a swarm. The product owner selects a paused
+`reset_save_path` operation, followed by its completion alert, then the same
+durable addition path. Failure removes only the unconfirmed handle and reports
+the addition failure. No accepted torrent or existing payload is deleted.
+
+The enum home follows the native language. In series, the C++ engineer chooses
+`Enums.h`; the managed engineer retains `Enums.cs` for C#; the maintainer wants
+one discoverable vocabulary per project; and the reviewer rejects padding a tiny
+required home to meet the general fragmentation minimum. The product owner
+selects those language-specific homes with that narrow minimum-size exception.
+
+Focused native checks now prove magnet metadata without payload, cancellation
+remaining absent after restart, saved session pause with individual stopped intent
+preserved on Resume Transfers, Remove retaining real payload through restart, and
+queue-down plus atomic row-drop ordering surviving restart. `PreviewGuard` watches
+unconfirmed payload writes that the compiler and ordinary Add do not catch.
+`RemoveKeepFiles` watches late checkpoint resurrection and accidental payload
+deletion. `QueueOrder` retains a queue branch defect found in source review and
+watches loss of the explicit order on restart. The existing `Restart` check now
+also watches session resume starting an individually stopped torrent. A first run
+of that extension incorrectly inspected the reply wrapper for appearance settings;
+correcting the check to inspect its snapshot data made the existing behavior pass.
+
+Evidence directories are `PreviewGuard-ef1e2b0f-cbd3-4aaa-bbc7-2950cbcd1928`,
+`Restart-b2a89768-91e9-48f8-9a8e-b5735f399527`,
+`QueueOrder-3c62d466-f1a9-4f6a-be7c-b5553b3cf592`, and
+`RemoveKeepFiles-11171033-6a21-4aef-8807-82ae561d4faa` under
+`artifacts/evidence`. Each run used the current native Release binary, closed its
+engine and local peer, and passed the stray-folder check. These checks do not yet
+claim hands-on completion of the WinUI journeys.
+
+Rate-limit scope was decided in series. The everyday user expects a global
+limit to cover every transfer. The heavy seeder accepts slower LAN transfers
+while that explicit limit is enabled. The libtorrent engineer adds the global
+peer class by socket type, preserving existing IP-class defaults. The maintainer
+avoids a second LAN limit or exception toggle. The product owner chooses all
+traffic under either configured pair; ordinary unlimited defaults still apply.
+
+The fresh Everyday torrent actions review found six defects: routine snapshots
+cancelled queue dragging; confirmed additions stayed hidden behind filters;
+disconnected speed edits could be discarded; preview metadata errors were ignored;
+queue shortcuts required a keypad; and paste/drop duplicated source decoding.
+The application now refreshes queue/natural order only when queue positions
+change, clears filters on confirmed revelation, retains refused speed-limit
+drafts, displays preview errors, handles ordinary plus/minus keys, and uses one
+paste/drop decoder. A second source review and the remaining UI evidence still
+gate completion.
+
+The second review found the alternative-limit toggle remained usable while
+writes were unavailable, and a recovered preview retained an obsolete transport
+error. The toggle now binds to the existing editing capability. A successful
+preview clears its own recovered acquisition error while preserving an uncertain
+Add outcome and explicit addition refusals. These fixes do not treat reconnection
+as permission to submit unfinished input.
+
+Queue refresh policy was decided in series. The everyday user wants a slow drag
+to survive an unchanged transfer tick. The TableView maintainer preserves the
+public contract that an explicit refresh cancels a drag. The libtorrent engineer
+uses queue positions as the authoritative base order. The application maintainer
+derives whether that order changed during snapshot application, without storing
+a second queue. The product owner chooses no explicit refresh for unchanged
+queue or natural order, with normal refreshes for other active sorts. The existing
+projection also follows queue order so clearing a header sort preserves the same
+meaning for a row drop. The library's public API and implementation stay unchanged.
+
+Reconnect source retention was decided in series. The user keeps every supplied
+magnet or file input when equivalent sources collapse to one torrent. The seeder
+keeps distinct tracker URLs, whose paths can be case-sensitive. The libtorrent
+engineer reacquires all retained inputs through the existing hash-based preview
+owner. The maintainer stores those inputs as facts on the one draft entry rather
+than a second preview implementation. The product owner selects literal input
+deduplication and retains the full input list when previews coalesce. Reconnect
+then rebuilds the same tracker intent instead of retaining only the first URI.
+
+The current Windows review session is locked: WTSInfoEx reported session 1,
+SessionFlags 0. The capture shows black client content despite a populated UI
+Automation tree. Input review stops while locked; code and native checks continue.
+Those circumstances establish no rendered or hands-on UI evidence and do not
+mean that the user withheld authorization. The earlier incomplete picker attempt
+was an automation targeting error, corrected in the First usable download review.
+
+`SelectedTransfer-46224db3-a110-4041-a9a3-4c665f706209` proves a real selected-file
+download: the skipped aligned 32 MiB file received no payload; the wanted file's
+SHA-256 was `EC8ABFBE8A399AA3E2D30E329594B3EE12D5DA193A1AA52C9F5A654F66C2E302`,
+matching its seed. Over ten-second payload intervals, the configured normal
+131,072 B/s limit produced 112,776 B/s and alternative 524,288 B/s produced
+472,644 B/s, including the local peer. Tracker merge and cancellation retained
+one durable identity, the original destination, priorities 0/7, stopped intent,
+payload and merged URL across restart. Force start set forced intent; ordinary
+Resume cleared it. The check watches skipped payload writes, local limit bypass
+and destructive duplicate merging, which acknowledgement checks cannot prove.
+The fixture build and focused run passed; each stray-folder check was empty and
+all launched processes closed. Separate checks below cover upload ceilings and
+corruption repair. `QueueOrder-052e3563-8280-4bad-8ca1-3f28561d377e` also passed after
+startup restoration was ordered before transfer activation.
+
+Accepted unknown-metadata magnets exposed a real transfer failure in
+`MagnetDownload-1fad4212-0f8d-4544-85c0-b7ac4f8c7c26`: no payload arrived.
+A bounded Force diagnostic acquired metadata, but still showed zero wanted bytes.
+The pinned libtorrent initializer retains `default_dont_download`; its runtime
+flag setter does not release it. The decision was taken in series: the everyday
+user expects Add to download every file when no selection is yet possible; the
+seeder requires Cancel previews to stay harmless; the libtorrent engineer applies
+explicit priorities after metadata instead of relying on an unsupported flag
+change; the Windows engineer keeps saved intent independent of temporary metadata
+acquisition; the maintainer uses the existing intent owner; the product owner
+chooses this small correction and a real download/repair check. Running accepted
+magnets acquire metadata outside automatic queue management, then the same owner
+applies the saved choices and restores queue policy. Missing metadata cannot
+establish completion. Dropped alerts reconcile the same saved intent and hashes,
+except during shutdown or an unresolved accepted alias conflict.
+
+`MagnetDownload-09fdff67-c7ba-452a-bf07-2bf9180e4d3b` passed: Add preceded metadata
+and the local peer; the full 64 MiB payload completed in the chosen destination
+with SHA-256 `62B89C1E1DF10F82EB427DA59876867D19EDD50507DDB64B9953A46A381C9E9B`.
+No preview payload remained. An offline byte corruption changed that hash; after
+restart, Verify and Resume restored it. An earlier harness incorrectly compared
+download counters across restart/verification; that redundant assertion was
+removed because the epochs are not comparable. The physical corruption and
+repair assertions remain. The clean focused run passed, all owned processes
+closed, and its stray-folder check was empty.
+
+The third review found two further divergences: a fresh torrent displayed ratio
+zero but sorted as infinity, and pasted or dropped magnets ignored Never show
+again. Ratio now has one numeric owner for sorting and formatting. Supplied
+sources now follow the same saved Add-form preference. The preference decision
+was taken in series: the everyday user expects Never show again to apply to
+paste; the keyboard user keeps the explicit Add magnet editor for entering a
+new link; the seeder keeps the explicit duplicate tracker offer; the maintainer
+uses the existing shared Add path; the product owner chooses those ordinary
+semantics without a source-format exception.
+
+`BatchUi-7eabfb34-a7a3-4235-bc10-ace6b4415448` exercised the real engine launch
+entry with thirty distinct torrent paths and read the real WinUI automation tree.
+One product HWND exposed one Add task, `30 sources`, and an enabled Add all
+button; the engine still had no confirmed torrents. This proves batched launch
+handoff and a populated form, without asserting Explorer association behavior
+or rendered appearance. No keyboard or pointer input was sent on the locked
+desktop. The isolated unconfirmed UI was terminated for cleanup, its engine
+then completed coordinated Exit, and the stray-folder check was empty. This is
+not evidence for the ordinary draft-close prompt. Registration and the actual
+Explorer entry remain for the desktop milestone.
+
+The fourth review found that sources arriving during Remove confirmation could
+be acknowledged and then cleared when a second ContentDialog failed to open.
+It also found two shortcut registration implementations with different modal
+rules. The modal decision was taken in series: the everyday user keeps incoming
+sources; the keyboard user keeps commands inside the active task; the Windows
+engineer permits one ContentDialog at a time; the maintainer makes the existing
+shortcut owner accept the platform accelerator and derives one modal guard;
+the product owner defers Add until confirmation closes. Remove now exposes its
+modal lifetime to that guard and Close, and failed display does not count as
+user cancellation. Cancelled window closure restores the previous editor after
+closing state ends, preserving its input.
+
+`UploadLimits-875b320e-5524-4420-a5cb-109a857bc018` measured real upload with
+WinUI closed. Ten-second payload intervals in the same engine lifetime produced
+120,203 B/s for the normal 131,072 B/s ceiling and 450,295 B/s for the alternative
+524,288 B/s ceiling. The local leecher received the payload; changing the active
+pair replaced the normal limit. This measurement used an evidence script, not
+another retained test of the already-covered global-limit rule. Both processes
+closed and the exact stray-folder check was empty.
+
+Unnamed magnets were decided in series: the user needs to distinguish a waiting
+row; the keyboard user needs a searchable identity; the libtorrent engineer uses
+the already-known full info hash until metadata names it; the maintainer derives
+that fallback while taking the snapshot; the product owner chooses that ordinary
+identity instead of a blank row. No additional stored display name is needed.
+
+The fifth review found four concrete gaps. Native activation bypassed an open
+draft when Show the Add form was off; the speed editor accepted newer typing
+while its captured edit saved; General fetched a full file tree merely to read
+the destination; Remove missed the established live dialog refresh. Existing
+WinUI now receives native sources and applies the same Add choice used by paste
+and drop; closed-window direct addition remains native. Speed editors and Apply
+bind to the existing editing capability while submission is pending. General
+reads the destination already carried by its row, eliminating its unnecessary
+detail request and stale-reply state. Remove joins the common theme, direction
+and text refresh with its captured confirmation scope.
+
+The decisions were taken in series: the everyday user keeps the destination and
+Start paused choice of the open form; the keyboard user retains unfinished input
+and edits only when a save can accept it; the Windows engineer routes incoming
+sources to the existing UI; the libtorrent engineer keeps closed-window addition
+on its established native owner; the maintainer shares the existing Add decision
+and uses summary facts for General; the Fluent designer updates every open
+dialog together; the product owner chooses these existing owners without a new
+protocol, state machine or presentation authority.
+
+`OpenDraft-35645795-7a4e-4e7f-a26b-89fdfc77a759` verifies the native activation
+fix against the real window: one source opened Add, Show the Add form was saved
+off through the engine, and a second engine launch joined that existing form.
+The automation tree showed `2 sources` and the confirmed list stayed empty.
+No desktop input was sent. Owned processes closed and the stray-folder check
+was empty. This proves source routing into the open draft; it does not prove
+pointer edits of destination or Start paused, or Explorer associations.
+
+The localisation owner now records the user's explicit live English/Spanish
+requirement during implementation. English remains the canonical key/text
+authority; Spanish accompanies settled implemented surfaces. Other catalogues
+retain the original freeze until their translation task. This records the
+user's ruling where future changes read it instead of leaving contradictory
+development instructions.
+
+The sixth review found Paste could assign a new magnet during Add's captured
+submission, or after its view closed, and that moving a no-wanted-files source
+into a batch hid its recovery controls. Paste and preview actions now share the
+draft's editing capability; a clipboard reply applies only to its loaded,
+editable view. A blocked batch source offers Select all files through the same
+file-choice owner, without depending on its old search filter.
+
+Batch recovery was decided in series: the everyday user needs an immediate way
+to make Add all available; the heavy seeder keeps previously selected priorities;
+the keyboard user gets a named action beside the offending source; the designer
+keeps one compact form; the maintainer shares the existing wanted-choice rule;
+the product owner selects explicit recovery rather than resetting selections
+when a second source arrives.
+
+The seventh review found that Get metadata staged a magnet while leaving the
+same text pending for Submit. Removing its staged source could therefore add it
+again. The draft now consumes that input synchronously when it stages the source,
+before awaiting preview work, and the view calls that one operation. The staged
+entry retains failed input and choices; explicit removal leaves no pending copy.
+
+The eighth review found inconsistent Queue sorting for completed seeds and full
+file-priority/tracker arrays copied into every routine summary. Queue display
+now has one derived sort key shared by natural order and its column. Engine
+queue moves operate only on downloads; seeds remain selectable but cannot move.
+TableView gains one setup-only row reorder predicate through its public schema,
+independent of selection eligibility, so the product does not invent a gesture
+implementation. Mixed selected packets containing a seed are not draggable.
+Snapshot rows now explicitly contain summary fields; file choices and trackers
+remain in the torrent detail reply. The existing tracker-merge check reads that
+detail for its persisted-choice assertions.
+
+Queue scope was decided in series. The everyday user wants the Queue column and
+the unsorted list to agree. The heavy seeder wants completed torrents to retain
+their ordinary commands. The libtorrent engineer identifies queue positions as
+download order and seeds as position -1, without a seed-order meaning. The WinUI
+engineer needs a row to be selectable without being draggable. The maintainer
+keeps a single predicate at the existing gesture owner. The product owner chooses
+downloads first, seeds last, and download-only moves; no second seed scheduler.
+The upstream [queue contract](https://libtorrent.org/reference-Torrent_Handle.html#queue_position)
+confirms that distinction. The focused TableView check watches the otherwise
+unguarded failure where an unqueued but selectable row enters a drag packet.
+
+The Release engine and app builds passed after that correction. The focused
+`FullyQualifiedName~F11_&TestCategory!=Interactive` run passed all eight row-drag
+checks, including the selectable-but-not-draggable packet case. The retained
+QueueOrder check passed again in
+`artifacts/evidence/QueueOrder-24ccd30c-fd5b-4b4c-937b-df4c3b425ae1`.
+Each build and test was followed by an empty stray-folder check.
+
+Locked-desktop review was reconsidered in series. The sleeping owner requires
+continued unattended work, with no unlock request. The Windows engineer
+distinguishes native accessibility control patterns from physical input, which
+cannot reach the locked desktop. The security reviewer leaves LockApp and the
+lock state untouched and confines actions to owned test instances. The QA
+reviewer accepts actual UI Automation command outcomes as functional evidence,
+while retaining gaps for pixels, physical gestures and keyboard routing. The
+product owner chooses available automation rather than treating a lock as missing
+authorization. Review continues through native control patterns; no claim of
+pointer or rendered appearance follows from them. The computer-use skill's
+instruction to stop and request an unlock cannot govern this unattended task,
+because the user explicitly forbids waiting and asking and authorizes UI
+Automation review. No unlock or LockApp interaction is attempted.
+
+The ninth source review found no further actionable code defect. It identified
+one wording mismatch: the modal-deferral sentence did not account for turning
+the Add form off. The everyday user expects Never show again to apply to new
+sources; the heavy downloader expects sources to continue arriving during other
+tasks; the Windows engineer defers only a form that needs the dialog surface;
+the maintainer avoids a second modal policy in the view model; the product owner
+keeps the shared preference and narrows the interface sentence. Sources needing
+a form wait in the draft; direct additions proceed, while an existing Add form
+always keeps ownership of arrivals. This clarifies the contract rather than
+changing the user's preference during a modal task.
+
+The real UI Automation review in
+`artifacts/evidence/EverydayUi-da1e3c24-fdf7-4aa8-8bfc-8baad6d26a13`
+completed the native file picker through its nested filename Edit, then the
+native folder picker. Deselect matching, a file search and Select matching
+changed wanted choices; the folder priority control applied High and the file
+checkbox excluded `a.bin`. Live Spanish refreshed the open form, and the theme
+button changed the saved preference to light. Add committed the selected folder,
+Start paused and priorities `0,7`; `added-snapshot.json` and `added-detail.json`
+record the actual engine outcome. Force start, Pause, ordinary Resume and Verify
+were invoked from the real selected-torrent controls. Force and ordinary Resume
+were checked against confirmed intent. Open folder opened the correct Explorer
+path; that owned Explorer window was then closed.
+
+The four NumberBox RangeValue automation patterns committed normal limits
+128/64 KiB/s and alternative limits 512/256 KiB/s, and the actual alternative
+toggle saved its enabled preference. `speed-settings.json` records the outcome.
+An earlier attempt wrote the internal numeric TextBoxes without completing the
+last field's validation; the native NumberBox patterns corrected the automation,
+without changing production. Microsoft documents numeric validation on Enter or
+[loss of focus](https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/number-box).
+
+An engine crash left the real Add form's wanted file, Start paused and edited
+destination intact in `reconnect-before.json` and `reconnect-after.json`.
+That first fault harness was insufficiently isolated: the UI automatically
+started the default background engine before the explicit isolated restart.
+No Add was submitted to that engine. The draft was cancelled and coordinated
+Exit closed both owned processes. The recovery observation proves draft retention,
+but not a same-store retry outcome; a corrected fault check must prevent that
+automatic launch while replacing the isolated engine. All owned pickers, app,
+engine and Explorer windows closed; the stray-folder check was empty.
+
+The corrected same-store fault check passed. It held the owned UI only during
+replacement of the isolated engine, preventing default-store startup. Add was
+pending when that engine stopped; after reconnect, membership stayed at the one
+previous torrent through repeated snapshots. The form retained its edited folder,
+Start paused and unwanted file. Explicit retry then committed the second torrent
+with priorities `0,7` and those original choices. The captures are
+`isolated-draft-before.json`, `isolated-uncertain-reconnected.json`,
+`explicit-retry-snapshot.json` and `explicit-retry-detail.json` in the same
+EverydayUi evidence folder. Coordinated Exit closed the app and engine, and the
+stray-folder check was empty.
+
+The summary/detail change's selected-transfer check passed in
+`artifacts/evidence/SelectedTransfer-5249dcd5-cae5-4a24-ae48-2f49b8c11756`.
+The milestone-end TableView suite ran once with `TestCategory!=Interactive`:
+208 passed, none failed or skipped, in 21 seconds. Its report is
+`artifacts/TestResults/milestone2-final.trx`. Both checks ended with an empty
+stray-folder check. Physical input tests were excluded because the desktop
+remained locked; their UI and rendering gaps remain explicit.
+
+The thirty-source functional UI review passed in
+`artifacts/evidence/BatchUi-408c5bde-413e-48d0-85aa-e2e929eafcf6`.
+Thirty separate native activations joined one real Add form, and Add all committed
+all thirty with the selected folder and Start paused. Table search isolated
+`transfer14.bin`; its queue menu moved it up, and Remove committed its removal.
+Spanish refreshed the open Remove dialog before confirmation. These are control
+pattern actions, not a claim of Explorer association or physical dragging.
+The earlier Remove assertion read a snapshot before the asynchronous UI command
+finished; the corrected harness waits for confirmed membership. It changed no
+production behavior. All owned processes closed and the stray-folder check was
+empty.
+
+Hands-on automation also exposed an Add file-search defect: clearing and
+rebuilding matching hierarchy collections collapsed a folder that still matched.
+The everyday user expects the matching file to stay visible; the file-picker user
+keeps wanted choices independent of search; the WinUI engineer retains tree nodes
+instead of reusing their containers after a wholesale clear; the maintainer uses
+one collection-reconciliation rule for roots and children; the product owner
+chooses stable matching folders over resetting the entire tree. FileSelection
+now removes only nonmatching nodes and inserts newly matching nodes in their
+original order. No new expansion state or renderer is introduced.
+
+The focused real-control search check passed after the Release app build in
+`artifacts/evidence/EverydayUi-28d1f2b0-6481-431e-a6e3-527f552dfb85`.
+Searching for `a.bin` retained its expanded folder; clearing search restored
+`b.bin` without collapsing that folder, and the unwanted choice on `a.bin`
+stayed off. The captured control tree is `file-search-cleared.json`. All owned
+processes closed and the stray-folder check was empty.
+
+The tenth fresh review found that routine torrent commands lacked an explicit
+screen-reader outcome notification. The Narrator user needs confirmation without
+moving focus; the WinUI engineer uses the existing table automation peer's
+notification API; the libtorrent engineer distinguishes an accepted Verify from
+finished verification; the maintainer keeps one presentation event and one native
+announcement path; the product owner keeps transfer ticks silent. MainViewModel
+now announces accepted commands and reported failures through that event. Add
+announces its batch outcome once. The text says request accepted so asynchronous
+work is not reported as finished. No live telemetry invokes the path. This uses
+Microsoft's [notification API](https://learn.microsoft.com/en-us/windows/windows-app-sdk/api/winrt/microsoft.ui.xaml.automation.peers.automationpeer.raisenotificationevent).
+Actual Narrator speech remains a hands-on gap on the locked desktop.
+
+The eleventh fresh adversarial review found no further confirmed source defect.
+It withdrew a padding-path candidate because no supported libtorrent layout
+established its proposed failure. The final app Release build passed and the
+stray-folder check was empty. A final Add search journey also passed in
+`artifacts/evidence/EverydayUi-4b5aa9c7-dd30-47c5-a970-82c3c273edd3` and closed
+its owned processes. Milestone 2's functional and source gates pass; physical
+pointer/keyboard routing, actual Narrator speech and painted variant C/LabForms,
+scaling and contrast acceptance remain explicitly unproven. The same thirty
+native source activations used by Explorer were verified; exercising registered
+Explorer associations follows the desktop registration milestone.
+
 ## Wire representation
 
 Protocol version 1 uses a four-byte little-endian UTF-8 JSON frame length,
@@ -360,32 +779,49 @@ bounded to 16 MiB. The endpoint is `TinyTorrent.<logon SID>`; each connecting
 client first receives `{type:"hello",version:1,session_id:"..."}`. Requests are
 `{request_id:integer,command:string,...}`. Replies repeat `request_id` and have
 `ok:boolean`, either `data` or `error:{code:string,detail:string}`. Native control
-notifications are `{type:"activate"}` and `{type:"close"}`. A request's
+notifications are `{type:"activate"}`, `{type:"close"}`, and `{type:"sources"}`. A request's
 `connection_id` is set by the engine pipe adapter, never trusted from the wire.
 
-First-screen commands are `snapshot`, `preview` (source, destination), `add`
-(preview_id, destination, paused), `cancel_preview` (preview_id), `pause`
-(torrent_ids), `resume` (torrent_ids), `settings` (changes), `open`, `ready`,
+Commands are `snapshot`, `preview` (source, destination), `preview_detail`
+(preview_id, destination), `add` (preview_id, destination, paused, optional
+priorities), `cancel_preview` (preview_id), `merge_trackers` (preview_id,
+torrent_id), `torrent` (torrent_id), `pause`, `resume`, `force`, `verify`, and
+`remove` (torrent_ids), `queue` (torrent_ids with direction: up/down/top/bottom,
+or before_torrent_id: string/null for a row drop; null means end),
+`session_pause` (paused), `settings` (changes), `open`, `ready`,
 `ui_closed`, `close_reply` (cancelled boolean), and `exit`. Current settings changes accept language (`en`, `es`)
 and theme (`system`, `light`, `dark`); unknown fields or values are refused. A
 settings acknowledgement confirms the same durable replacement as membership.
+Settings also accept `default_destination` (absolute path), `show_add` and
+`alternative_limits` (booleans), and `download_limit`, `upload_limit`,
+`alternative_download_limit`, `alternative_upload_limit` (bytes per second,
+integer 0 through INT_MAX; 0 means unlimited). Alternative limits initially use
+10 KiB/s in each direction. Session pause is persisted as `all_paused` through
+its command and preserves individual torrent intent.
 Snapshot settings contain the live language, with `language_saved` indicating
 whether it matches the saved preference. The store retains only saved settings;
 a failed save leaves the live choice selected and reports the failure.
-Preview replies contain preview_id, name, size, files (index, path, size), and
+Preview replies contain preview_id, name, size, files (index, path, size,
+priority, padding), metadata_ready, hashes (full v1/v2 hexadecimal strings),
+trackers (URLs), merge_available, error, shared_with (torrent names), and
 duplicate torrent identity when present. Add returns torrent_id after storage
-commit, or the existing torrent_id for duplicate content. File preview parses
+commit with duplicate:false, or the existing torrent_id with duplicate:true.
+File preview parses
 metadata without creating a payload handle; destination is applied at Add.
 Snapshot contains session_id, torrents, settings, language_saved, download_rate,
-upload_rate, all_paused, stopping, loading, storage_failed, and startup_error.
+upload_rate, all_paused, has_incoming, stopping, loading, storage_failed, and startup_error.
 Torrent rows contain torrent_id, name,
 size (bytes), progress (0..1), status (stable code), paused, download_rate and
 upload_rate (bytes/second), save_path, error (stable code), diagnostic detail,
-added (Unix seconds), priorities, seeds, peers, downloaded/uploaded (bytes), queue
-(libtorrent position), complete, and incoming.
+added (Unix seconds), seeds, peers, downloaded/uploaded (bytes), queue
+(libtorrent position), complete, incoming, forced, and hashes. `torrent` returns
+the torrent's facts, name, metadata_ready, files, hashes, and magnet link.
 All identities are strings. Settings are intended changes rather than replacement
 snapshots. Input sources are bounded to 32 KiB and retained previews/parses to
-256. Explorer source batching belongs to Everyday torrent actions.
+256. `activate_sources` forwards sources, preserving relative-path meaning at
+the launching process. `pending_sources` returns activations with activation_id
+and sources; `sources_received` acknowledges activation_ids after the UI owns
+them. The engine retains each accepted batch until that acknowledgement.
 
 Persistence uses format 1 settings.json with authoritative membership and user
 intent, plus per-identity libtorrent resume files. The ordered writer atomically

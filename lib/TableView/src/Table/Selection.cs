@@ -140,6 +140,7 @@ public sealed partial class Table
     /// eligibility and the cursor that shows it there.
     /// </summary>
     internal Func<object, bool>? CanInteract { get; set; }
+    internal Func<object, bool>? CanReorderItem { get; set; }
 
     /// <summary>
     /// The selected packet and the current row. Reading gives the state that stands; assigning is

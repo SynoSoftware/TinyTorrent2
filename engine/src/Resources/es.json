@@ -10,6 +10,7 @@
   },
   "error": {
     "start": "TinyTorrent no pudo iniciarse.",
+    "source": "No se pudo añadir el torrent.",
     "ownership": "TinyTorrent no puede abrir sus datos guardados. Otra sesión de Windows puede estar utilizando esta carpeta:",
     "launch": "TinyTorrent no pudo abrir su ventana. Selecciona Abrir en el área de notificación para volver a intentarlo.",
     "startup": "La ventana de TinyTorrent no se abrió. Las descargas continúan. Vuelve a intentar Abrir cuando el proceso de la ventana se cierre.",

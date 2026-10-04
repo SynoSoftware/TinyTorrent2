@@ -16,15 +16,34 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
         int count = 0;
         auto arguments = CommandLineToArgvW(GetCommandLineW(), &count);
         bool background = false;
+        bool literal = false;
+        tiny::Json sources = tiny::Json::array();
         std::filesystem::path directory;
         for (int index = 1; index < count; ++index)
         {
             std::wstring argument(arguments[index]);
-            if (argument == L"--headless") headless = true;
-            else if (argument == L"--background") background = true;
-            else if (argument == L"--data" && index + 1 < count) directory = arguments[++index];
+            if (!literal && argument == L"--") literal = true;
+            else if (!literal && argument == L"--headless") headless = true;
+            else if (!literal && argument == L"--background") background = true;
+            else if (!literal && argument == L"--data")
+            {
+                if (++index == count || std::wstring(arguments[index]) == L"--")
+                    throw std::runtime_error("The --data option needs a folder.");
+                directory = arguments[index];
+            }
+            else
+            {
+                if (argument.size() >= 7 && CompareStringOrdinal(argument.c_str(), 7,
+                    L"magnet:", 7, TRUE) == CSTR_EQUAL)
+                    argument.replace(0, 7, L"magnet:");
+                if (!argument.empty() && !argument.starts_with(L"magnet:"))
+                    argument = std::filesystem::absolute(std::filesystem::path(argument)).wstring();
+                sources.push_back(tiny::Utf8(argument));
+            }
         }
         LocalFree(arguments);
+        if (!sources.empty() && !tiny::Desktop::ValidSources(sources))
+            throw std::runtime_error("Torrent sources exceed the supported count or length.");
         if (directory.empty())
         {
             PWSTR local = nullptr;
@@ -45,11 +64,14 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
         auto acquired = WaitForSingleObject(mutex, 0);
         if (acquired == WAIT_TIMEOUT)
         {
-            bool forwarded = background || headless || tiny::Pipe::Forward(L"\\\\.\\pipe\\TinyTorrent." + sid);
+            bool forwarded = sources.empty() ? background || headless ||
+                tiny::Pipe::Forward(L"\\\\.\\pipe\\TinyTorrent." + sid) :
+                tiny::Pipe::Forward(L"\\\\.\\pipe\\TinyTorrent." + sid,
+                    {{"command", "activate_sources"}, {"sources", sources}});
             CloseHandle(mutex);
             mutex = nullptr;
             if (!forwarded)
-                throw std::runtime_error("The running engine could not accept the Open request.");
+                throw std::runtime_error("The running engine could not accept the activation request.");
             return 0;
         }
         if (acquired != WAIT_OBJECT_0 && acquired != WAIT_ABANDONED)
@@ -57,7 +79,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
         int result;
         {
             tiny::Desktop desktop(directory, sid, headless);
-            result = desktop.Run(background);
+            result = desktop.Run(background, std::move(sources));
         }
         ReleaseMutex(mutex);
         CloseHandle(mutex);

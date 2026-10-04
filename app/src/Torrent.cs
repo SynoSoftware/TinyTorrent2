@@ -9,10 +9,24 @@ public sealed class Torrent(string torrentId, Strings strings) : INotifyProperty
     private bool _connected;
     public string TorrentId { get; } = torrentId;
     public string Name { get; private set; } = string.Empty;
+    public string SavePath { get; private set; } = string.Empty;
     public long Size { get; private set; }
+    public long Downloaded { get; private set; }
+    public long Uploaded { get; private set; }
+    public int Seeds { get; private set; }
+    public int Peers { get; private set; }
+    public int Queue { get; private set; }
+    public int QueueOrder => Queue < 0 ? int.MaxValue : Queue;
+    public long Added { get; private set; }
+    public string[] Hashes { get; private set; } = [];
     public double Progress { get; private set; }
+    public double Remaining => Size * (1 - Progress);
+    public double Ratio => Downloaded == 0 ? Uploaded == 0 ? 0 : double.PositiveInfinity : (double)Uploaded / Downloaded;
     public string StatusCode { get; private set; } = string.Empty;
     public string Status => strings.Status(StatusCode);
+    public bool IsPaused => StatusCode is "paused" or "all_paused";
+    public bool IsError => StatusCode == "error";
+    public bool IsProgressNormal => !IsPaused && !IsError;
     public string StatusGlyph => StatusCode switch
     {
         "downloading" => Syno.Lucide.ArrowDownToLine,
@@ -34,6 +48,13 @@ public sealed class Torrent(string torrentId, Strings strings) : INotifyProperty
     public string ProgressText => Progress.ToString("P1", CultureInfo.CurrentCulture);
     public string DownloadText => _connected ? strings.Format("units", "rate", strings.Bytes(DownloadRate)) : "—";
     public string UploadText => _connected ? strings.Format("units", "rate", strings.Bytes(UploadRate)) : "—";
+    public string EtaText => !_connected || DownloadRate <= 0 || Remaining <= 0 ? "—" :
+        strings.Format("units", "eta", (int)Math.Ceiling(Remaining / DownloadRate / 60));
+    public string RatioText => double.IsPositiveInfinity(Ratio) ? "∞" :
+        Ratio.ToString(Downloaded == 0 ? "N0" : "N2", CultureInfo.CurrentCulture);
+    public string PeersText => strings.Format("units", "peers", Seeds, Peers);
+    public string AddedText => Added <= 0 ? "—" : DateTimeOffset.FromUnixTimeSeconds(Added).LocalDateTime.ToString("g", CultureInfo.CurrentCulture);
+    public string QueueText => Queue < 0 ? "—" : (Queue + 1).ToString(CultureInfo.CurrentCulture);
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -47,7 +68,15 @@ public sealed class Torrent(string torrentId, Strings strings) : INotifyProperty
     {
         _connected = true;
         Name = row.GetProperty("name").GetString()!;
+        SavePath = row.GetProperty("save_path").GetString()!;
         Size = row.GetProperty("size").GetInt64();
+        Downloaded = row.GetProperty("downloaded").GetInt64();
+        Uploaded = row.GetProperty("uploaded").GetInt64();
+        Seeds = row.GetProperty("seeds").GetInt32();
+        Peers = row.GetProperty("peers").GetInt32();
+        Queue = row.GetProperty("queue").GetInt32();
+        Added = row.GetProperty("added").GetInt64();
+        Hashes = row.GetProperty("hashes").EnumerateArray().Select(hash => hash.GetString()!).ToArray();
         Progress = row.GetProperty("progress").GetDouble();
         StatusCode = row.GetProperty("status").GetString()!;
         DownloadRate = row.GetProperty("download_rate").GetDouble();

@@ -1,30 +1,45 @@
 {
   "window": {
     "title": "TinyTorrent", "torrents": "Torrents", "add": "Add torrent", "pause": "Pause", "resume": "Resume", "exit": "Exit",
-    "empty_title": "No torrents yet", "empty": "Add a torrent file to start downloading.", "connecting": "Connecting…",
+    "empty_title": "No torrents yet", "empty": "Add a torrent file or magnet link to start downloading.", "connecting": "Connecting…",
     "disconnected": "Disconnected — showing last known values. Reconnecting…",
     "error": "The operation could not be completed. {0}", "rates": "Download: {0}   Upload: {1}",
-    "storage_failed": "Saved downloads could not be loaded. Close TinyTorrent and check the engine data folder before trying again."
+    "storage_failed": "Saved downloads could not be loaded. Close TinyTorrent and check the engine data folder before trying again.",
+    "no_matches": "No matching torrents", "no_matches_detail": "Clear the search or Errors filter to see your other torrents.", "clear_filters": "Clear filters", "paused_rates": "{0} · All paused",
+    "incoming": "Incoming connections available", "no_incoming": "No incoming connections yet", "selected": "{0} selected", "errors": "Errors · {0}", "search": "Find a torrent", "alternative": "Alternative limits"
   },
   "chrome": { "dark": "Switch to dark theme", "light": "Switch to light theme", "english": "Language: Spanish. Switch to English", "spanish": "Language: English. Switch to Spanish" },
-  "columns": { "name": "Name", "size": "Size", "progress": "Progress", "status": "Status", "down": "Down speed", "up": "Up speed" },
+  "columns": { "name": "Name", "size": "Size", "progress": "Progress", "status": "Status", "down": "Down speed", "up": "Up speed",
+    "queue": "#", "eta": "ETA", "ratio": "Ratio", "peers": "Seeds/Peers", "added": "Added"
+  },
   "add": {
     "title": "Add torrent", "source": "Torrent file", "browse": "Browse…", "destination": "Download folder",
-    "paused": "Start paused", "submit": "Add", "cancel": "Cancel", "preview": "{0} · {1}",
-    "pending": "Adding…", "discard": "Discard unfinished addition?",
-    "discard_detail": "The torrent has not been added. Keep editing to preserve your choices.",
-    "discard_action": "Discard", "keep": "Keep editing"
+    "paused": "Start paused", "submit": "Add", "submit_all": "Add all", "cancel": "Cancel", "preview": "{0} · {1}",
+    "pending": "Adding…", "discard": "Discard unfinished changes?",
+    "discard_detail": "Keep editing to preserve your choices.",
+    "discard_action": "Discard", "keep": "Keep editing", "remove_source": "Remove source", "all_files": "Select all files",
+    "sources": "{0} sources", "more_files": "Add files…", "magnet": "Magnet link", "paste": "Paste", "review": "Get metadata", "metadata": "Getting metadata…", "already_added": "Already added", "merge": "Merge new trackers", "shared": "Files at this destination are also used by: {0}", "never_show": "Never show again", "no_files": "Select at least one file to add this torrent."
   },
   "status": { "unknown": "Unknown", "downloading": "Downloading", "seeding": "Seeding", "paused": "Paused", "all_paused": "All paused", "checking": "Checking", "queued": "Queued", "error": "Error", "completed": "Completed", "metadata": "Getting metadata" },
-  "units": { "bytes": "{0:N0} B", "kib": "{0:N1} KiB", "mib": "{0:N1} MiB", "gib": "{0:N1} GiB", "tib": "{0:N1} TiB", "rate": "{0}/s" },
+  "units": { "bytes": "{0:N0} B", "kib": "{0:N1} KiB", "mib": "{0:N1} MiB", "gib": "{0:N1} GiB", "tib": "{0:N1} TiB", "rate": "{0}/s",
+    "eta": "{0} min", "peers": "{0} / {1}"
+  },
   "errors": {
     "unknown": "The operation could not be completed.", "detail": "{0}\n{1}", "torrent": "{0}: {1}",
     "torrent_error": "The torrent stopped because of an error.",
     "storage_failed": "Saved download state could not be read or written. Check the engine data folder and try again.",
     "language_unsaved": "Your language choice is active but has not been saved. Restarting TinyTorrent will use the last saved language.",
     "invalid_destination": "Choose an existing, writable download folder.",
-    "incomplete_add": "Choose a torrent file and a download folder.", "duplicate": "This torrent is already added.",
-    "invalid_source": "Choose a valid torrent file.", "starting": "TinyTorrent is still loading saved downloads. Try again shortly."
+    "incomplete_add": "Choose a source and a download folder.", "duplicate": "This torrent is already added.",
+    "invalid_source": "Enter a valid magnet link or choose a valid torrent file.", "starting": "TinyTorrent is still loading saved downloads. Try again shortly.",
+    "invalid_limits": "Enter a speed limit between 0 and 2,097,151 KiB/s.", "preview_expired": "This preview expired. Choose Add again to reacquire it with your choices.",
+    "invalid_priorities": "Choose at least one file and a valid download priority.", "metadata_unavailable": "Metadata is not available yet.", "alias_conflict": "This torrent conflicts with another download. Review the existing torrent before adding it.", "preview_failed": "Torrent metadata could not be obtained. Try again."
   },
-  "connection": { "version": "The engine and window versions do not match. Install a complete TinyTorrent release.", "unavailable": "The engine is unavailable.", "overload": "Too many commands are pending. Try again shortly.", "uncertain": "The connection was lost. Reconnecting to confirm the current state.", "missing": "Engine.exe was not found beside the application or in the developer build output." }
+  "connection": { "version": "The engine and window versions do not match. Install a complete TinyTorrent release.", "unavailable": "The engine is unavailable.", "overload": "Too many commands are pending. Try again shortly.", "uncertain": "The connection was lost. Reconnecting to confirm the current state.", "missing": "Engine.exe was not found beside the application or in the developer build output." },
+  "commands": { "menu": "Application menu", "selection": "Selection actions", "add_file": "Add torrent file…", "add_magnet": "Add magnet link…", "pause": "Pause", "resume": "Resume", "force": "Force start", "verify": "Verify", "remove": "Remove", "open": "Open", "open_folder": "Open folder", "copy_magnet": "Copy magnet link", "copy_hash": "Copy info hash", "properties": "Properties", "up": "Move up", "down": "Move down", "top": "Move to top", "bottom": "Move to bottom", "pause_all": "Pause all", "resume_all": "Resume all", "limits": "Speed limits…", "exit": "Exit" },
+  "files": { "summary": "{0} of {1} files · {2}", "search": "Find a file", "all_matching": "Select matching", "none_matching": "Deselect matching", "unchanged": "Leave unchanged", "skip": "Do not download", "low": "Low", "normal": "Normal", "high": "High" },
+  "outcomes": { "accepted": "{0}: request accepted.", "queue": "Queue order" },
+  "inspector": { "close": "Close inspector", "downloaded": "Downloaded", "remaining": "Remaining" },
+  "remove": { "title": "Remove torrents?", "detail": "Remove these torrents from TinyTorrent? Downloaded files will remain.\n\n{0}" },
+  "limits": { "download_limit": "Download (KiB/s)", "upload_limit": "Upload (KiB/s)", "alternative_download_limit": "Alternative download (KiB/s)", "alternative_upload_limit": "Alternative upload (KiB/s)", "units": "0 means unlimited. Apply changes to both sets of limits together.", "apply": "Apply" }
 }

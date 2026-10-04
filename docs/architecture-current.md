@@ -13,7 +13,7 @@ development hosts in `lib/TableView/sample/` and `lib/TableView/tests/`.
 [TinyTorrent.slnx](../TinyTorrent.slnx) includes these projects, Lucide, and a
 native engine and product WinUI host. Its [entry point](../engine/src/Main.cpp)
 claims one logon-scoped engine and starts the native desktop owner. The first
-usable `.torrent` download path is implemented; the later implementation
+usable `.torrent` download path and everyday torrent actions are implemented; the later implementation
 milestones remain work in progress.
 
 | Existing project | Role | Project dependency |

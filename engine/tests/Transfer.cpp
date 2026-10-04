@@ -23,27 +23,36 @@ int main(int argc, char** argv)
     try
     {
         auto mode = argc == 4 ? std::string(argv[3]) : "seed";
-        if (argc < 2 || argc > 4 || (mode != "seed" && mode != "download"))
-            throw std::runtime_error("Usage: Transfer evidence-directory [product-port] [seed|download]");
+        if (argc < 2 || argc > 4 || (mode != "seed" && mode != "download" && mode != "seed-files"))
+            throw std::runtime_error("Usage: Transfer evidence-directory [product-port] [seed|download|seed-files]");
         bool isLeecher = mode == "download";
+        bool multiple = mode == "seed-files";
         auto directory = std::filesystem::absolute(argv[1]);
         auto seed = directory / "seed";
         auto destination = directory / (isLeecher ? "leecher" : "download");
         std::filesystem::create_directories(seed);
         std::filesystem::create_directories(destination);
-        auto payload = seed / "transfer.bin";
+        auto payload = seed / (multiple ? "selection/skip.bin" : "transfer.bin");
+        std::filesystem::create_directories(payload.parent_path());
         std::ofstream content(payload, std::ios::binary | std::ios::trunc);
         content.exceptions(std::ios::badbit | std::ios::failbit);
         std::string block(65536, '\0');
-        for (int index = 0; index < 1024; ++index)
+        for (int index = 0; index < (multiple ? 512 : 1024); ++index)
         {
             for (size_t offset = 0; offset < block.size(); ++offset)
                 block[offset] = static_cast<char>((offset * 37 + index * 19) & 255);
             content.write(block.data(), block.size());
         }
         content.close();
+        if (multiple)
+            std::filesystem::copy_file(payload, seed / "selection/wanted.bin",
+                std::filesystem::copy_options::overwrite_existing);
 
-        lt::create_torrent creator({{"transfer.bin", 64 * 1024 * 1024}},
+        std::vector<lt::create_file_entry> files = multiple ?
+            std::vector<lt::create_file_entry>{{"selection/skip.bin", 32 * 1024 * 1024},
+                {"selection/wanted.bin", 32 * 1024 * 1024}} :
+            std::vector<lt::create_file_entry>{{"transfer.bin", 64 * 1024 * 1024}};
+        lt::create_torrent creator(files,
             256 * 1024, lt::create_torrent::v1_only);
         lt::set_piece_hashes(creator, seed.string());
         auto bytes = creator.generate_buf();

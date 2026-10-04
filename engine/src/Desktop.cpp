@@ -1,4 +1,5 @@
 #include "Desktop.h"
+#include <algorithm>
 #include <sddl.h>
 #include <shellapi.h>
 #include <stdexcept>
@@ -150,9 +151,9 @@ std::wstring Desktop::Text(std::string const& group, std::string const& key) con
 
 void Desktop::Feedback(std::string const& key, std::wstring detail)
 {
-    if (headless_) return;
     auto message = Text("error", key);
     if (!detail.empty()) message += L"\n\n" + detail;
+    if (headless_) { OutputDebugStringW(message.c_str()); return; }
     MessageBoxW(window_, message.c_str(), L"TinyTorrent", MB_OK | MB_ICONERROR);
 }
 
@@ -186,7 +187,40 @@ void Desktop::Receive(Pipe::Client const& client, Json const& request)
     }
     auto command = request.at("command").get<std::string>();
     auto reply = [&] { client->Send(Json{{"request_id", request["request_id"]}, {"ok", true}, {"data", Json::object()}}); };
-    if (command == "open") { Open(); reply(); }
+    if (command == "activate_sources")
+    {
+        auto response = Activate(request.value("sources", Json()));
+        response["request_id"] = request["request_id"];
+        client->Send(std::move(response));
+    }
+    else if (command == "pending_sources" || command == "sources_received")
+    {
+        auto ids = request.value("activation_ids", Json::array());
+        if (ui_ != client || (command == "sources_received" &&
+            (!ids.is_array() || ids.size() > 256 || std::any_of(ids.begin(), ids.end(),
+                [](Json const& id) { return !id.is_string(); }))))
+        {
+            client->Send(Json{{"request_id", request["request_id"]}, {"ok", false},
+                {"error", {{"code", "invalid_request"}, {"detail", ""}}}});
+            return;
+        }
+        if (command == "sources_received")
+        {
+            std::erase_if(activations_, [&ids](Activation const& activation)
+                { return std::find(ids.begin(), ids.end(), activation.activation_id) != ids.end(); });
+            if (activations_.empty()) reopen_ = false;
+            reply();
+        }
+        else
+        {
+            auto activations = Json::array();
+            for (auto const& activation : activations_)
+                activations.push_back({{"activation_id", activation.activation_id}, {"sources", activation.sources}});
+            client->Send(Json{{"request_id", request["request_id"]}, {"ok", true},
+                {"data", {{"activations", std::move(activations)}}}});
+        }
+    }
+    else if (command == "open") { Open(); reply(); }
     else if (command == "ready")
     {
         if (ui_ && ui_ != client)
@@ -200,6 +234,7 @@ void Desktop::Receive(Pipe::Client const& client, Json const& request)
         if (splash_ && IsWindow(splash_)) DestroyWindow(splash_);
         splash_ = nullptr;
         reply();
+        if (!activations_.empty()) ui_->Send(Json{{"type", "sources"}});
         if (exiting_)
         {
             ui_->Send(Json{{"type", "close"}});
@@ -332,10 +367,107 @@ void Desktop::Shutdown()
     });
 }
 
-int Desktop::Run(bool background)
+bool Desktop::ValidSources(Json const& sources)
+{
+    return sources.is_array() && !sources.empty() && sources.size() <= 256 &&
+        std::all_of(sources.begin(), sources.end(), [](Json const& source)
+        {
+            if (!source.is_string()) return false;
+            auto const& text = source.get_ref<std::string const&>();
+            return !text.empty() && text.size() <= 32768 && text.find('\0') == std::string::npos;
+        });
+}
+
+Json Desktop::Activate(Json const& sources)
+{
+    size_t count = 0;
+    for (auto const& activation : waiting_) count += activation.sources.size();
+    for (auto const& activation : activations_) count += activation.sources.size();
+    if (!ValidSources(sources) || count + sources.size() > 256)
+        return {{"ok", false}, {"error", {{"code", "invalid_sources"}, {"detail", ""}}}};
+    if (exiting_ || engine_->IsStopping() || engine_->HasStorageFailure())
+        return {{"ok", false}, {"error", {{"code", "unavailable"}, {"detail", ""}}}};
+    auto id = std::to_string(++sequence_);
+    waiting_.push_back({id, sources.get<std::vector<std::string>>()});
+    PostMessageW(window_, wake, 0, 0);
+    return {{"ok", true}, {"data", {{"activation_id", id}}}};
+}
+
+void Desktop::Sources()
+{
+    if (adding_ || waiting_.empty() || engine_->IsLoading() || exiting_ || engine_->IsStopping()) return;
+    if (engine_->HasStorageFailure())
+    {
+        adding_ = true;
+        Feedback("source", Wide(waiting_.front().sources.front()));
+        waiting_.clear();
+        adding_ = false;
+        return;
+    }
+    if (ui_ || engine_->ShowsAdd())
+    {
+        while (!waiting_.empty())
+        {
+            activations_.push_back(std::move(waiting_.front()));
+            waiting_.pop_front();
+        }
+        if (ui_) ui_->Send(Json{{"type", "sources"}});
+        reopen_ = ui_ || (process_ && WaitForSingleObject(process_, 0) == WAIT_TIMEOUT);
+        Open();
+        return;
+    }
+    adding_ = true;
+    auto connection = "activation." + waiting_.front().activation_id;
+    auto destination = engine_->DefaultDestination();
+    engine_->Execute({{"command", "preview"}, {"source", waiting_.front().sources.front()},
+        {"destination", destination}, {"connection_id", connection}},
+        [this, connection, destination](Json response)
+        {
+            if (!response.value("ok", false)) { Finish(response); return; }
+            auto const& preview = response.at("data");
+            if (preview.value("merge_available", false))
+            {
+                engine_->Disconnect(connection);
+                activations_.push_back(std::move(waiting_.front()));
+                waiting_.pop_front();
+                adding_ = false;
+                if (ui_) ui_->Send(Json{{"type", "sources"}});
+                reopen_ = ui_ || (process_ && WaitForSingleObject(process_, 0) == WAIT_TIMEOUT);
+                Open();
+                PostMessageW(window_, wake, 0, 0);
+                return;
+            }
+            engine_->Execute({{"command", "add"}, {"preview_id", preview.at("preview_id")},
+                {"destination", destination}, {"paused", false}, {"connection_id", connection}},
+                [this](Json result) { Finish(result); });
+        });
+}
+
+void Desktop::Finish(Json const& response)
+{
+    auto& activation = waiting_.front();
+    engine_->Disconnect("activation." + activation.activation_id);
+    if (!response.value("ok", false))
+        Feedback("source", Wide(activation.sources.front()) + L"\n" + Wide(response.at("error").dump()));
+    activation.sources.erase(activation.sources.begin());
+    if (activation.sources.empty()) waiting_.pop_front();
+    adding_ = false;
+    PostMessageW(window_, wake, 0, 0);
+}
+
+int Desktop::Run(bool background, Json sources)
 {
     Tray(NIM_ADD);
-    if (!background && !headless_) Open();
+    if (!sources.empty())
+    {
+        auto response = Activate(sources);
+        if (!response.value("ok", false))
+        {
+            Feedback("source", Wide(response.at("error").dump()));
+            return 1;
+        }
+    }
+    else if (!background && !headless_) Open();
     MSG message{};
     while (GetMessageW(&message, nullptr, 0, 0) > 0)
     {
@@ -351,6 +483,12 @@ void Desktop::Tick()
     ticking_ = true;
     engine_->Tick();
     Refresh();
+    Sources();
+    if (reopen_ && !ui_ && (!process_ || WaitForSingleObject(process_, 0) == WAIT_OBJECT_0))
+    {
+        reopen_ = false;
+        Open();
+    }
     ticking_ = false;
 }
 

@@ -264,6 +264,12 @@ clear without motion.
 The table starts with Name, Size, Progress, Status, Down speed, Up speed, ETA,
 Ratio, Seeds/Peers, and Added; the person can hide, show, and reorder them.
 
+Queue ascending and natural order put downloads in libtorrent queue order,
+followed by completed seeds, whose Queue cell is empty. Seeds remain selectable
+for torrent commands but cannot join a queue move or drag. Dropping downloads
+before a seed means the end of the download queue. This keeps queue actions
+meaningful instead of suggesting a seed priority that libtorrent does not use.
+
 Torrent commands are Pause, Resume, Force start, Open, Open folder, Copy magnet
 link, Copy info hash, Move, Verify, Remove, and Delete files. Open hands the file
 of a single-file torrent, or the folder of a multi-file torrent, to Windows as
@@ -279,7 +285,9 @@ are in the window and the tray, and keep each torrent's own
 well as the tray.
 
 Dropping torrent files or magnet text on the window, or pasting them with Ctrl+V
-while the table has focus, opens Add with those sources. An empty list says how
+while the table has focus, follows the same Show the Add form preference. Sources
+join an already-open Add task; otherwise that preference decides whether the
+form opens or addition proceeds directly. An empty list says how
 to add a torrent. A status bar shows total download and upload speed, the
 alternative speed toggle, whether incoming connections arrive or the selected
 network interface is absent, and Update available when a newer release exists.
@@ -343,6 +351,8 @@ Use native source/destination pickers and an editable magnet input with an
 explicit Paste action. Read the clipboard only after the relevant user action.
 Preserve accepted input and choices when a picker is cancelled or a replacement
 source fails; successful replacement deliberately starts a new preview.
+Getting metadata transfers pending magnet text into the staged source once.
+Removing that source cannot leave another copy pending for Add.
 
 Show preview progress immediately, keep cancellation available while acquiring
 metadata, and expose file choices when metadata is ready. The engine supplies
@@ -361,9 +371,25 @@ arrive while the form is open join it. File choices for each torrent move to the
 Thirty torrents are one form, not thirty. The form has a
 Never show again check box, which turns off the Show the Add form preference
 where the person meets the form.
+If a source has no wanted files when a single-source task becomes a batch,
+Select all files beside that source restores a valid choice. Keep prior file
+choices until this explicit action; adding another source does not reset them.
+
+Equivalent staged sources keep all their original inputs on the one draft entry.
+Reconnect reacquires them through the engine's existing preview owner, preserving
+distinct tracker URLs and the user's choices. Literal input deduplication keeps
+case-sensitive tracker paths distinct.
+
+When sources require the Add form, those arriving during another modal task
+remain in the Add draft and open when that task closes. Turning Show the Add
+form off allows direct addition during other tasks; an already-open Add form
+still owns new sources and its choices. Failure to show a form does not cancel
+its input. One window-owned shortcut path keeps application actions out of modal editors;
+Close and Exit still follow the unfinished-input rules.
 
 Search within files changes visibility, not wanted choices. Bulk selection has
-an explicit scope. Folders form an expandable hierarchy. A folder's wanted checkbox
+an explicit scope. Filtering retains folders that still match, so their existing
+expansion does not collapse when the person types. Folders form an expandable hierarchy. A folder's wanted checkbox
 and priority apply to every descendant, including filtered or collapsed files.
 Folder priority offers Leave unchanged to preserve individual child priorities;
 Normal, High, and Low apply once to all descendants. Mixed wanted choices show

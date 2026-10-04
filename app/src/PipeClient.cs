@@ -214,7 +214,7 @@ internal sealed class PipeClient : IDisposable
                 var message = await Read(pipe, token);
                 if (message.TryGetProperty("type", out var type))
                 {
-                    if (type.GetString() is "activate" or "close") Control?.Invoke(type.GetString()!);
+                    if (type.GetString() is "activate" or "close" or "sources") Control?.Invoke(type.GetString()!);
                 }
                 else if (message.TryGetProperty("request_id", out var id) && id.GetInt64() == _awaitingId)
                     _reply?.TrySetResult(message);

@@ -274,6 +274,7 @@ public sealed class Schema<TRow> where TRow : class
 {
     public Schema<TRow> Key<TKey>(Func<TRow, TKey> key) where TKey : notnull;
     public Schema<TRow> CanInteract(Func<TRow, bool> predicate);
+    public Schema<TRow> CanReorder(Func<TRow, bool> predicate);
     public Schema<TRow> SortKey<TKey>(Column column, Func<TRow, TKey> key,
         IComparer<TKey>? comparer = null);
 }
@@ -307,7 +308,7 @@ is on; most tables have no domain order, so the reorder is off.
 
 `CanReorder` is the only owner of that capability. A gesture is
 offered when the flag is true, the view shows the row order, and the row is
-eligible; having a `ReorderRequested` handler is not part of the test,
+eligible for dragging; having a `ReorderRequested` handler is not part of the test,
 because two owners of one capability eventually disagree. The view shows
 the row order when it is unsorted, which is the source order, or sorted either
 way by the column whose `DefinesRowOrder` is true (section 6); under any other
@@ -377,6 +378,13 @@ declared and must carry a sort key from `Schema<TRow>()`; a request that cannot
 be met is the host asking for something impossible, so it throws. A saved sort
 arriving from storage is the other case entirely and belongs in `Layout`, which
 recovers defensively (section 18).
+
+`Schema<TRow>().CanReorder` defaults to every interactive row being draggable.
+Its setup-only predicate restricts dragging without restricting selection,
+invocation, or context commands. A selected packet containing a refused row
+cannot be dragged; an unselected permitted row still moves alone. After a
+predicate input changes, the host calls `RefreshView`, as for `CanInteract`.
+This allows display rows outside a domain order to retain their ordinary actions.
 
 `Schema<TRow>().CanInteract` defaults to every row being interactive. When the
 predicate returns false, the item still renders but cannot be selected, invoked,
@@ -1398,7 +1406,8 @@ there is no post-drop accept/reject protocol.
 - dragging an unselected row creates a one-item packet without disturbing the
   existing selected packet;
 - dragging a selected row moves the complete selected packet;
-- non-interactive display rows cannot start or join a drag packet;
+- non-interactive display rows and rows refused by the reorder predicate cannot
+  start or join a drag packet;
 - packet order follows the current visual order;
 - an immediate, theme-aware insertion indicator identifies the legal boundary;
 - the event supplies `Items` and `Before` as defined in section

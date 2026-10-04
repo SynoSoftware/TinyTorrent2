@@ -21,12 +21,15 @@ public sealed partial class MainWindow
         RightInset.Width = new GridLength(right > 0 ? right : 138);
         if (Caption.ActualHeight <= 0 || CaptionActions.ActualWidth <= 0) return;
         CaptionText.MaxWidth = Math.Max(0, Caption.ActualWidth - left - RightInset.Width.Value -
-            CaptionActions.ActualWidth - CaptionLogo.ActualWidth - CaptionLogo.Margin.Left -
-            CaptionLogo.Margin.Right - CaptionText.Margin.Left - CaptionText.Margin.Right);
+            CaptionActions.ActualWidth - AppMenu.ActualWidth - AppMenu.Margin.Left -
+            AppMenu.Margin.Right - CaptionText.Margin.Left - CaptionText.Margin.Right);
         var bounds = CaptionActions.TransformToVisual(Caption)
             .TransformBounds(new Rect(0, 0, CaptionActions.ActualWidth, CaptionActions.ActualHeight));
-        var width = Math.Max(0, bounds.Left - left);
-        AppWindow.TitleBar.SetDragRectangles([new RectInt32((int)Math.Round(left * scale), 0,
+        var logo = AppMenu.TransformToVisual(Caption)
+            .TransformBounds(new Rect(0, 0, AppMenu.ActualWidth, AppMenu.ActualHeight));
+        var start = Math.Max(left, logo.Right);
+        var width = Math.Max(0, bounds.Left - start);
+        AppWindow.TitleBar.SetDragRectangles([new RectInt32((int)Math.Round(start * scale), 0,
             (int)Math.Round(width * scale), (int)Math.Round(Caption.ActualHeight * scale))]);
     }
 
@@ -77,6 +80,9 @@ public sealed partial class MainWindow
         Title = Model.Text.Get("window", "title");
         CaptionText.Text = Title;
         NameButton(AddButton, Model.Text.Get("window", "add"));
+        NameButton(AppMenu, Model.Text.Get("commands", "menu"));
+        NameButton(MagnetButton, Model.Text.Get("commands", "add_magnet"));
+        NameButton(OverflowButton, Model.Text.Get("commands", "selection"));
         NameButton(PauseButton, Model.Text.Get("window", "pause"));
         NameButton(ResumeButton, Model.Text.Get("window", "resume"));
         NameButton(ExitButton, Model.Text.Get("window", "exit"));
@@ -90,29 +96,46 @@ public sealed partial class MainWindow
         StatusColumn.DisplayName = Model.Text.Get("columns", "status");
         DownColumn.DisplayName = Model.Text.Get("columns", "down");
         UpColumn.DisplayName = Model.Text.Get("columns", "up");
-        EmptyTitle.Text = Model.Text.Get("window", "empty_title");
-        EmptyInstruction.Text = Model.Text.Get("window", "empty");
-        EmptyAdd.Content = Model.Text.Get("window", "add");
+        QueueColumn.DisplayName = Model.Text.Get("columns", "queue");
+        EtaColumn.DisplayName = Model.Text.Get("columns", "eta");
+        RatioColumn.DisplayName = Model.Text.Get("columns", "ratio");
+        PeersColumn.DisplayName = Model.Text.Get("columns", "peers");
+        AddedColumn.DisplayName = Model.Text.Get("columns", "added");
+        TorrentsTitle.Text = Model.Text.Get("window", "torrents");
+        Search.PlaceholderText = Model.Text.Get("window", "search");
+        AutomationProperties.SetName(Search, Model.Text.Get("window", "search"));
+        AlternativeText.Text = Model.Text.Get("window", "alternative");
+        InspectorClose.Content = Model.Text.Get("inspector", "close");
+        DownloadedLabel.Text = Model.Text.Get("inspector", "downloaded");
+        RemainingLabel.Text = Model.Text.Get("inspector", "remaining");
+        RatioLabel.Text = Model.Text.Get("columns", "ratio");
+        FolderLabel.Text = Model.Text.Get("add", "destination");
+        AddedLabel.Text = Model.Text.Get("columns", "added");
+        TransferLabel.Text = Model.Text.Get("columns", "status");
         Torrents.Strings = Model.Text.Table;
         Root.FlowDirection = Model.Text.IsRightToLeft ? FlowDirection.RightToLeft : FlowDirection.LeftToRight;
         RefreshDialogs();
-        _source.Header = Model.Text.Get("add", "source");
-        _destination.Header = Model.Text.Get("add", "destination");
-        _paused.Content = Model.Text.Get("add", "paused");
-        if (_sourceButton is not null)
+        _form?.RefreshText();
+        if (_limitsDialog?.Content is StackPanel limits)
         {
-            _sourceButton.Content = Model.Text.Get("add", "browse");
-            AutomationProperties.SetName(_sourceButton, Model.Text.Get("add", "source"));
+            _limitsDialog.Title = Model.Text.Get("commands", "limits");
+            _limitsDialog.PrimaryButtonText = Model.Text.Get("limits", "apply");
+            _limitsDialog.CloseButtonText = Model.Text.Get("add", "cancel");
+            foreach (var editor in limits.Children.OfType<NumberBox>())
+                editor.Header = Model.Text.Get("limits", ((LimitChoice)editor.DataContext).Name);
+            foreach (var label in limits.Children.OfType<TextBlock>()) label.Text = Model.Text.Get("limits", "units");
         }
-        if (_destinationButton is not null)
+        if (_removeDialog is { } removal)
         {
-            _destinationButton.Content = Model.Text.Get("add", "browse");
-            AutomationProperties.SetName(_destinationButton, Model.Text.Get("add", "destination"));
+            removal.Title = Model.Text.Get("remove", "title");
+            removal.PrimaryButtonText = Model.Text.Get("commands", "remove");
+            removal.CloseButtonText = Model.Text.Get("add", "cancel");
+            if (removal.Tag is Torrent[] torrents)
+                removal.Content = Model.Text.Format("remove", "detail", string.Join(Environment.NewLine, torrents.Select(torrent => torrent.Name)));
         }
         if (_addDialog is not null)
         {
             _addDialog.Title = Model.Text.Get("add", "title");
-            _addDialog.PrimaryButtonText = Model.Text.Get("add", Model.IsBusy ? "pending" : "submit");
             _addDialog.CloseButtonText = Model.Text.Get("add", "cancel");
         }
         if (_closePrompt is not null)
@@ -127,7 +150,7 @@ public sealed partial class MainWindow
 
     private void RefreshDialogs()
     {
-        ContentDialog?[] dialogs = [_addDialog, _closePrompt];
+        ContentDialog?[] dialogs = [_addDialog, _closePrompt, _limitsDialog, _removeDialog];
         foreach (var dialog in dialogs)
         {
             if (dialog is null) continue;

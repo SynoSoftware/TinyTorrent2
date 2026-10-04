@@ -71,6 +71,9 @@ void Pipe::Connection::Send(Json message)
 {
     std::lock_guard lock(mutex);
     if (closed) return;
+    if (message.contains("type"))
+        for (auto const& queued : output)
+            if (queued == message) return;
     if (output.size() >= 4)
     {
         closed = true;
@@ -192,17 +195,19 @@ void Pipe::Serve(HANDLE handle)
     }
 }
 
-bool Pipe::Forward(std::wstring const& name)
+bool Pipe::Forward(std::wstring const& name, Json request)
 {
     auto deadline = GetTickCount64() + 5000;
-    while (!WaitNamedPipeW(name.c_str(), 100))
+    HANDLE handle = INVALID_HANDLE_VALUE;
+    while (handle == INVALID_HANDLE_VALUE)
     {
         if (GetTickCount64() >= deadline) return false;
+        if (WaitNamedPipeW(name.c_str(), 100))
+            handle = CreateFileW(name.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr,
+                OPEN_EXISTING, FILE_FLAG_OVERLAPPED, nullptr);
+        if (handle != INVALID_HANDLE_VALUE) break;
         Sleep(25);
     }
-    auto handle = CreateFileW(name.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr,
-        OPEN_EXISTING, FILE_FLAG_OVERLAPPED, nullptr);
-    if (handle == INVALID_HANDLE_VALUE) return false;
     Json hello;
     Io io{handle, nullptr, nullptr, GetTickCount64() + 5000};
     bool success = Read(io, hello) && hello.value("version", 0) == 1;
@@ -210,9 +215,10 @@ bool Pipe::Forward(std::wstring const& name)
     {
         ULONG process = 0;
         if (GetNamedPipeServerProcessId(handle, &process)) AllowSetForegroundWindow(process);
-        auto bytes = Json{{"request_id", 1}, {"command", "open"}}.dump();
+        request["request_id"] = 1;
+        auto bytes = request.dump();
         Json reply;
-        success = Write(io, bytes) && Read(io, reply) && reply.value("ok", false);
+        success = Write(io, bytes) && Read(io, reply) && reply.value("request_id", 0) == 1 && reply.value("ok", false);
     }
     CloseHandle(handle);
     return success;

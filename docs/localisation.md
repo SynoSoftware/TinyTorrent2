@@ -9,14 +9,17 @@ its English text this way; the product projects follow the same pattern. There
 is no need for a web i18n framework or translation service in this native
 application.
 
-## English only during development
+## Languages during implementation
 
-`en.json` is the only language file anyone reads or edits during development.
-Every other language file is frozen until the translation task: it stays unread
-and unedited, and adding, renaming, or removing a key is an edit to `en.json`
-alone. A message still being reworded makes every edit to a second catalogue
-wasted work. The translation task translates the settled text once, against
-`en.json` as it stands then.
+`en.json` owns canonical keys and English text. The owner requires live English
+and Spanish throughout implementation, so maintain `es.json` for each implemented
+surface alongside its settled English text. This makes the requested language
+switch useful immediately, including new dialogs, without flags.
+
+Other language files remain frozen until their translation task: they stay
+unread and unedited. A message still being reworded makes repeated translation
+wasted work. Those tasks translate the settled text once against `en.json` as it
+stands then.
 
 A key that `en.json` lacks shows as its dotted name, `column_menu.hide`, where
 the text belongs. Lookup never throws for a missing key: a person sees the gap on

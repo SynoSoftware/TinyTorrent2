@@ -1,30 +1,45 @@
 {
   "window": {
     "title": "TinyTorrent", "torrents": "Torrents", "add": "Añadir torrent", "pause": "Pausar", "resume": "Reanudar", "exit": "Salir",
-    "empty_title": "Todavía no hay torrents", "empty": "Añade un archivo torrent para empezar a descargar.", "connecting": "Conectando…",
+    "empty_title": "Todavía no hay torrents", "empty": "Añade un archivo torrent o un enlace magnet para empezar a descargar.", "connecting": "Conectando…",
     "disconnected": "Sin conexión — se muestran los últimos datos conocidos. Reconectando…",
     "error": "No se pudo completar la operación. {0}", "rates": "Descarga: {0}   Subida: {1}",
-    "storage_failed": "No se pudieron cargar las descargas guardadas. Cierra TinyTorrent y comprueba su carpeta de datos antes de volver a intentarlo."
+    "storage_failed": "No se pudieron cargar las descargas guardadas. Cierra TinyTorrent y comprueba su carpeta de datos antes de volver a intentarlo.",
+    "no_matches": "No hay torrents coincidentes", "no_matches_detail": "Borra la búsqueda o el filtro de errores para ver los otros torrents.", "clear_filters": "Borrar filtros", "paused_rates": "{0} · Todos en pausa",
+    "incoming": "Conexiones entrantes disponibles", "no_incoming": "Aún no hay conexiones entrantes", "selected": "{0} seleccionados", "errors": "Errores · {0}", "search": "Buscar un torrent", "alternative": "Límites alternativos"
   },
   "chrome": { "dark": "Cambiar al tema oscuro", "light": "Cambiar al tema claro", "english": "Idioma: español. Cambiar a inglés", "spanish": "Idioma: inglés. Cambiar a español" },
-  "columns": { "name": "Nombre", "size": "Tamaño", "progress": "Progreso", "status": "Estado", "down": "Velocidad de descarga", "up": "Velocidad de subida" },
+  "columns": { "name": "Nombre", "size": "Tamaño", "progress": "Progreso", "status": "Estado", "down": "Velocidad de descarga", "up": "Velocidad de subida",
+    "queue": "#", "eta": "Tiempo restante", "ratio": "Ratio", "peers": "Semillas/Pares", "added": "Añadido"
+  },
   "add": {
     "title": "Añadir torrent", "source": "Archivo torrent", "browse": "Examinar…", "destination": "Carpeta de descarga",
-    "paused": "Iniciar en pausa", "submit": "Añadir", "cancel": "Cancelar", "preview": "{0} · {1}",
-    "pending": "Añadiendo…", "discard": "¿Descartar la adición sin terminar?",
-    "discard_detail": "El torrent no se ha añadido. Sigue editando para conservar tus opciones.",
-    "discard_action": "Descartar", "keep": "Seguir editando"
+    "paused": "Iniciar en pausa", "submit": "Añadir", "submit_all": "Añadir todos", "cancel": "Cancelar", "preview": "{0} · {1}",
+    "pending": "Añadiendo…", "discard": "¿Descartar los cambios sin terminar?",
+    "discard_detail": "Sigue editando para conservar tus opciones.",
+    "discard_action": "Descartar", "keep": "Seguir editando", "remove_source": "Quitar fuente", "all_files": "Seleccionar todos los archivos",
+    "sources": "{0} fuentes", "more_files": "Añadir archivos…", "magnet": "Enlace magnet", "paste": "Pegar", "review": "Obtener metadatos", "metadata": "Obteniendo metadatos…", "already_added": "Ya añadido", "merge": "Combinar nuevos rastreadores", "shared": "Otros torrents usan archivos en esta carpeta: {0}", "never_show": "No volver a mostrar", "no_files": "Selecciona al menos un archivo para añadir este torrent."
   },
   "status": { "unknown": "Desconocido", "downloading": "Descargando", "seeding": "Compartiendo", "paused": "En pausa", "all_paused": "Todos en pausa", "checking": "Comprobando", "queued": "En cola", "error": "Error", "completed": "Completado", "metadata": "Obteniendo metadatos" },
-  "units": { "bytes": "{0:N0} B", "kib": "{0:N1} KiB", "mib": "{0:N1} MiB", "gib": "{0:N1} GiB", "tib": "{0:N1} TiB", "rate": "{0}/s" },
+  "units": { "bytes": "{0:N0} B", "kib": "{0:N1} KiB", "mib": "{0:N1} MiB", "gib": "{0:N1} GiB", "tib": "{0:N1} TiB", "rate": "{0}/s",
+    "eta": "{0} min", "peers": "{0} / {1}"
+  },
   "errors": {
     "unknown": "No se pudo completar la operación.", "detail": "{0}\n{1}", "torrent": "{0}: {1}",
     "torrent_error": "El torrent se detuvo debido a un error.",
     "storage_failed": "No se pudo leer o guardar el estado de las descargas. Comprueba la carpeta de datos del motor y vuelve a intentarlo.",
     "language_unsaved": "El idioma elegido está activo, pero no se ha guardado. Al reiniciar TinyTorrent se usará el último idioma guardado.",
     "invalid_destination": "Elige una carpeta de descarga existente con permiso de escritura.",
-    "incomplete_add": "Elige un archivo torrent y una carpeta de descarga.", "duplicate": "Este torrent ya está añadido.",
-    "invalid_source": "Elige un archivo torrent válido.", "starting": "TinyTorrent está cargando las descargas guardadas. Vuelve a intentarlo en unos instantes."
+    "incomplete_add": "Elige una fuente y una carpeta de descarga.", "duplicate": "Este torrent ya está añadido.",
+    "invalid_source": "Introduce un enlace magnet válido o elige un archivo torrent válido.", "starting": "TinyTorrent está cargando las descargas guardadas. Vuelve a intentarlo en unos instantes.",
+    "invalid_limits": "Introduce un límite de velocidad entre 0 y 2.097.151 KiB/s.", "preview_expired": "Esta vista previa ha caducado. Pulsa Añadir para obtenerla de nuevo con tus opciones.",
+    "invalid_priorities": "Selecciona al menos un archivo y una prioridad válida.", "metadata_unavailable": "Los metadatos aún no están disponibles.", "alias_conflict": "Este torrent entra en conflicto con otra descarga. Revisa el torrent existente antes de añadirlo.", "preview_failed": "No se pudieron obtener los metadatos del torrent. Vuelve a intentarlo."
   },
-  "connection": { "version": "Las versiones del motor y de la ventana no coinciden. Instala una versión completa de TinyTorrent.", "unavailable": "El motor no está disponible.", "overload": "Hay demasiadas órdenes pendientes. Vuelve a intentarlo en unos instantes.", "uncertain": "Se perdió la conexión. Reconectando para confirmar el estado actual.", "missing": "No se encontró Engine.exe junto a la aplicación ni en la salida de compilación." }
+  "connection": { "version": "Las versiones del motor y de la ventana no coinciden. Instala una versión completa de TinyTorrent.", "unavailable": "El motor no está disponible.", "overload": "Hay demasiadas órdenes pendientes. Vuelve a intentarlo en unos instantes.", "uncertain": "Se perdió la conexión. Reconectando para confirmar el estado actual.", "missing": "No se encontró Engine.exe junto a la aplicación ni en la salida de compilación." },
+  "commands": { "menu": "Menú de la aplicación", "selection": "Acciones de selección", "add_file": "Añadir archivo torrent…", "add_magnet": "Añadir enlace magnet…", "pause": "Pausar", "resume": "Reanudar", "force": "Forzar inicio", "verify": "Verificar", "remove": "Eliminar", "open": "Abrir", "open_folder": "Abrir carpeta", "copy_magnet": "Copiar enlace magnet", "copy_hash": "Copiar hash", "properties": "Propiedades", "up": "Subir", "down": "Bajar", "top": "Mover al principio", "bottom": "Mover al final", "pause_all": "Pausar todos", "resume_all": "Reanudar todos", "limits": "Límites de velocidad…", "exit": "Salir" },
+  "files": { "summary": "{0} de {1} archivos · {2}", "search": "Buscar un archivo", "all_matching": "Seleccionar coincidencias", "none_matching": "Deseleccionar coincidencias", "unchanged": "Dejar sin cambios", "skip": "No descargar", "low": "Baja", "normal": "Normal", "high": "Alta" },
+  "outcomes": { "accepted": "{0}: solicitud aceptada.", "queue": "Orden de la cola" },
+  "inspector": { "close": "Cerrar inspector", "downloaded": "Descargado", "remaining": "Restante" },
+  "remove": { "title": "¿Eliminar torrents?", "detail": "¿Eliminar estos torrents de TinyTorrent? Se conservarán los archivos descargados.\n\n{0}" },
+  "limits": { "download_limit": "Descarga (KiB/s)", "upload_limit": "Subida (KiB/s)", "alternative_download_limit": "Descarga alternativa (KiB/s)", "alternative_upload_limit": "Subida alternativa (KiB/s)", "units": "0 significa sin límite. Aplica los cambios a ambos grupos de límites a la vez.", "apply": "Aplicar" }
 }

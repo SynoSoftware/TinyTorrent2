@@ -20,6 +20,11 @@ user's policy, not another transfer scheduler. The tray, pipe, and UI cannot
 implement their own queue policy or reconstruct state from command
 acknowledgements.
 
+Queue moves operate on libtorrent's download queue. Completed seeds have no
+download queue position and are refused as move targets; a placement before a
+seed means append to the download queue. Restore applies saved positions only
+to torrents currently in that queue, so seeds cannot create gaps in its order.
+
 Pause all pauses the libtorrent session, which keeps each torrent's own running
 or paused state, so Resume all does not start torrents the person paused one by
 one. The session pause is saved and survives a restart. While all are paused, a
@@ -117,6 +122,25 @@ Cancel releases that preview, never the files of an existing duplicate. Confirm
 rechecks duplicates and transfers ownership to the engine; the accepted addition
 survives UI exit. When the Show the Add form preference is off, direct addition
 confirms the same workflow without opening WinUI.
+
+Matching sources staged by the same connection share one preview and merge their
+tracker URLs. This keeps a file and its magnet from acquiring parallel handles.
+Confirmation pauses a magnet preview and waits for libtorrent to acknowledge its
+new save path before committing membership; its payload guard remains in place.
+Unknown metadata still permits confirmation with all files wanted. Known metadata
+accepts priorities 0 (unwanted), 1 (low), 4 (normal), and 7 (high), with at least
+one wanted file. A batch shares destination and paused intent; individual file
+choices belong to a single-source form or the Files inspector after addition.
+
+An accepted running magnet acquires metadata before entering automatic queue
+management. When metadata arrives, the same intent owner applies normal priority
+to every non-padding file for the saved all-files choice, then restores queue
+management. In libtorrent 2.1.2, `default_dont_download` is an initial-parameter
+flag; unsetting handle flags does not change its delayed initialization. Explicit
+priorities after metadata prevent an accepted magnet from remaining finished
+with no wanted payload. Unconfirmed previews retain their guard.
+Until metadata provides a name, an unnamed accepted magnet shows its full info
+hash, so the person can identify its row rather than seeing a blank torrent.
 
 Keep the payload-write guard until membership and the initial user choices
 commit. A failed commit must not leave an unrecorded addition writing files. After commit, apply
@@ -263,6 +287,11 @@ until exit, so one window owns the drafts, also across engine restarts. A WinUI
 that cannot acquire the mutex forwards its activation through the engine to the
 existing window and exits. The mutex stores no product state; the engine still
 owns launch policy.
+
+An existing UI receives incoming sources and applies the shared Add-form choice,
+so they join its open draft and reveal confirmed additions despite table filters.
+With no UI and Show the Add form off, the engine confirms through the same
+guarded addition workflow at the default destination.
 
 Bound pending additions and report overload. Readiness means the engine can
 answer, rather than merely having a process or tray icon. While a WinUI the
@@ -431,7 +460,11 @@ adapter.
 
 Global download and upload limits and a second, alternative pair of limits use
 libtorrent's session rate limits. One toggle in the window switches between the
-two pairs. The deliberately small tray menu contains only its immediate session
+two pairs. Both pairs include LAN and loopback peers: global means all torrent
+traffic, with no undisclosed local-network exemption. The engine assigns every
+peer socket type to libtorrent's global peer class while retaining its other
+class defaults. This makes the displayed limits apply to local transfers too.
+The deliberately small tray menu contains only its immediate session
 controls.
 
 ## Notifications and sleep

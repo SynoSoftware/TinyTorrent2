@@ -1,15 +1,19 @@
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Windows.Input;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
+using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Data;
 using Microsoft.UI.Xaml.Input;
 using Windows.Graphics;
 using Windows.Storage.Pickers;
 using Windows.System;
+using Windows.ApplicationModel.DataTransfer;
+using Windows.Storage;
 
 namespace Syno.TinyTorrent;
 
@@ -17,16 +21,10 @@ public sealed partial class MainWindow : Window
 {
     public MainViewModel Model { get; }
 
-    private readonly TextBox _source = new() { IsReadOnly = true };
-    private readonly TextBox _destination = new();
-    private readonly CheckBox _paused = new();
-    private readonly TextBlock _preview = new() { TextWrapping = TextWrapping.Wrap };
-    private readonly InfoBar _addError = new() { IsClosable = false };
     private readonly FontIcon _themeIcon = new() { FontFamily = Syno.Lucide.Font, FontSize = 16 };
     private ContentDialog? _addDialog;
     private ContentDialog? _closePrompt;
-    private Button? _sourceButton;
-    private Button? _destinationButton;
+    private AddForm? _form;
     private TaskCompletionSource? _dialogClosed;
     private bool _allowClose;
     private bool _closing;
@@ -45,13 +43,21 @@ public sealed partial class MainWindow : Window
         ResumeButton.Content = new FontIcon { FontFamily = Syno.Lucide.Font, Glyph = Syno.Lucide.Play, FontSize = 16 };
         ExitButton.Content = new FontIcon { FontFamily = Syno.Lucide.Font, Glyph = Syno.Lucide.Power, FontSize = 16 };
         ThemeButton.Content = _themeIcon;
+        MagnetButton.Content = new FontIcon { FontFamily = Syno.Lucide.Font, Glyph = Syno.Lucide.Link, FontSize = 16 };
+        OverflowButton.Content = new FontIcon { FontFamily = Syno.Lucide.Font, Glyph = Syno.Lucide.Ellipsis, FontSize = 16 };
         Caption.SizeChanged += (_, _) => UpdateChrome();
         CaptionActions.SizeChanged += (_, _) => UpdateChrome();
         AppWindow.Changed += (_, _) => UpdateChrome();
         Root.ActualThemeChanged += (_, _) => { UpdateColors(); RefreshDialogs(); };
         Model.PropertyChanged += OnModelChanged;
         Model.TextChanged += (_, _) => RefreshText();
-        Model.SnapshotApplied += (_, _) => Torrents.RefreshView();
+        Model.AnnouncementRequested += (_, message) =>
+            FrameworkElementAutomationPeer.CreatePeerForElement(Torrents)?.RaiseNotificationEvent(
+                AutomationNotificationKind.ActionCompleted, AutomationNotificationProcessing.All, message, "command");
+        Model.SnapshotApplied += (_, queueChanged) =>
+        {
+            if (queueChanged || Torrents.Sort is { Column: var column } && column != QueueColumn) Torrents.RefreshView();
+        };
         Model.RevealRequested += (_, torrent) =>
         {
             Torrents.Selection = new Syno.TableView.Selection([torrent], torrent);
@@ -62,6 +68,19 @@ public sealed partial class MainWindow : Window
             try { await ShowAdd(); }
             catch (Exception error) { Model.Report(error); }
         };
+        Model.FilesRequested += async (_, _) => await PickSources();
+        Model.RemoveRequested += async (_, torrents) => await ConfirmRemove(torrents);
+        Model.LimitsRequested += async (_, _) => await ShowLimits();
+        Model.OpenRequested += (_, path) =>
+        {
+            try { Process.Start(new ProcessStartInfo(path) { UseShellExecute = true }); }
+            catch (Exception error) { Model.Report(error); }
+        };
+        Model.CopyRequested += (_, text) =>
+        {
+            try { var content = new DataPackage(); content.SetText(text); Clipboard.SetContent(content); }
+            catch (Exception error) { Model.Report(error); }
+        };
         Model.ActivateRequested += (_, _) =>
         {
             if (AppWindow.Presenter is OverlappedPresenter { State: OverlappedPresenterState.Minimized } presenter)
@@ -70,32 +89,44 @@ public sealed partial class MainWindow : Window
         };
         Model.CloseRequested += async (_, engineExit) => await CloseWindow(engineExit);
         RefreshText();
-        Torrents.Schema<Torrent>().Key(row => row.TorrentId)
+        Torrents.Schema<Torrent>().Key(row => row.TorrentId).CanReorder(row => row.Queue >= 0)
             .SortKey(NameColumn, row => row.Name, StringComparer.CurrentCultureIgnoreCase)
             .SortKey(SizeColumn, row => row.Size).SortKey(ProgressColumn, row => row.Progress)
             .SortKey(StatusColumn, row => row.Status).SortKey(DownColumn, row => row.DownloadRate)
-            .SortKey(UpColumn, row => row.UploadRate);
+            .SortKey(UpColumn, row => row.UploadRate).SortKey(QueueColumn, row => row.QueueOrder)
+            .SortKey(EtaColumn, row => row.DownloadRate <= 0 ? double.PositiveInfinity : row.Remaining / row.DownloadRate)
+            .SortKey(RatioColumn, row => row.Ratio)
+            .SortKey(PeersColumn, row => row.Seeds).SortKey(AddedColumn, row => row.Added);
+        Torrents.Sort = new Syno.TableView.Sort(QueueColumn);
         Torrents.Placeholder = Syno.TableView.Placeholder.Loading;
         Torrents.SelectionChanged += (_, _) => Model.Select(Torrents.Selection.Items.Cast<Torrent>(), Torrents.Selection.Current as Torrent);
-        Bind(_source, TextBox.TextProperty, nameof(AddDraft.Source));
-        Bind(_destination, TextBox.TextProperty, nameof(AddDraft.Destination), BindingMode.TwoWay);
-        Bind(_paused, CheckBox.IsCheckedProperty, nameof(AddDraft.Paused), BindingMode.TwoWay);
-        Bind(_preview, TextBlock.TextProperty, nameof(AddDraft.Preview));
-        Bind(_addError, InfoBar.MessageProperty, nameof(AddDraft.Message));
-        Bind(_addError, InfoBar.IsOpenProperty, nameof(AddDraft.HasError));
-        Bind(_addError, InfoBar.SeverityProperty, nameof(AddDraft.Severity));
-        Bind(_destination, TextBox.IsEnabledProperty, nameof(AddDraft.CanEdit));
-        Bind(_paused, CheckBox.IsEnabledProperty, nameof(AddDraft.CanEdit));
+        Torrents.ItemInvoked += (_, _) => Run(Model.Properties);
+        Torrents.ItemContextRequested += (_, args) => ShowSelectionMenu(args.Target, args.Position, true);
+        Torrents.ReorderRequested += async (_, args) => await Model.Reorder(args.Items.Cast<Torrent>(), args.Before as Torrent);
         var scale = GetDpiForWindow(WinRT.Interop.WindowNative.GetWindowHandle(this)) / 96.0;
         UpdateMinimum(scale);
         AppWindow.Resize(new SizeInt32((int)(1040 * scale), (int)(680 * scale)));
         AppWindow.Closing += OnClosing;
         Closed += (_, _) => Model.Dispose();
-        AddShortcut(VirtualKey.O, () => Run(Model.Add), AddButton);
-        AddShortcut(VirtualKey.W, () => _ = CloseWindow(false));
-        AddShortcut(VirtualKey.Q, () => Run(Model.Exit), ExitButton);
-        AddShortcut(VirtualKey.P, () => Run(Model.Pause), PauseButton, Torrents);
-        AddShortcut(VirtualKey.S, () => Run(Model.Resume), ResumeButton, Torrents);
+        AddShortcut(new() { Key = VirtualKey.O, Modifiers = VirtualKeyModifiers.Control }, () => Run(Model.Add), AddButton);
+        AddShortcut(new() { Key = VirtualKey.W, Modifiers = VirtualKeyModifiers.Control }, () => _ = CloseWindow(false));
+        AddShortcut(new() { Key = VirtualKey.Q, Modifiers = VirtualKeyModifiers.Control }, () => Run(Model.Exit), ExitButton);
+        AddShortcut(new() { Key = VirtualKey.P, Modifiers = VirtualKeyModifiers.Control, ScopeOwner = Torrents }, () => Run(Model.Pause), PauseButton);
+        AddShortcut(new() { Key = VirtualKey.S, Modifiers = VirtualKeyModifiers.Control, ScopeOwner = Torrents }, () => Run(Model.Resume), ResumeButton);
+        AddShortcut(new() { Key = VirtualKey.M, Modifiers = VirtualKeyModifiers.Control, ScopeOwner = Torrents }, () => Run(Model.Force));
+        AddShortcut(new() { Key = VirtualKey.R, Modifiers = VirtualKeyModifiers.Control, ScopeOwner = Torrents }, () => Run(Model.Verify));
+        AddShortcut(new() { Key = VirtualKey.V, Modifiers = VirtualKeyModifiers.Control, ScopeOwner = Torrents }, () => _ = PasteSources());
+        AddShortcut(new() { Key = VirtualKey.F, Modifiers = VirtualKeyModifiers.Control }, () => Search.Focus(FocusState.Keyboard));
+        AddShortcut(new() { Key = VirtualKey.E, Modifiers = VirtualKeyModifiers.Control }, () => Search.Focus(FocusState.Keyboard));
+        AddShortcut(new() { Key = VirtualKey.O, Modifiers = VirtualKeyModifiers.Control | VirtualKeyModifiers.Shift }, () => Run(Model.AddMagnet));
+        AddShortcut(new() { Key = VirtualKey.P, Modifiers = VirtualKeyModifiers.Control | VirtualKeyModifiers.Shift }, () => Run(Model.PauseAll));
+        AddShortcut(new() { Key = VirtualKey.S, Modifiers = VirtualKeyModifiers.Control | VirtualKeyModifiers.Shift }, () => Run(Model.ResumeAll));
+        AddShortcut(new() { Key = VirtualKey.Delete, ScopeOwner = Torrents }, () => Run(Model.Remove));
+        AddShortcut(new() { Key = VirtualKey.Add, Modifiers = VirtualKeyModifiers.Control, ScopeOwner = Torrents }, () => Run(Model.Up));
+        AddShortcut(new() { Key = VirtualKey.Subtract, Modifiers = VirtualKeyModifiers.Control, ScopeOwner = Torrents }, () => Run(Model.Down));
+        AddShortcut(new() { Key = VirtualKey.Add, Modifiers = VirtualKeyModifiers.Control | VirtualKeyModifiers.Shift, ScopeOwner = Torrents }, () => Run(Model.Top));
+        AddShortcut(new() { Key = VirtualKey.Subtract, Modifiers = VirtualKeyModifiers.Control | VirtualKeyModifiers.Shift, ScopeOwner = Torrents }, () => Run(Model.Bottom));
+        Torrents.KeyDown += OnQueueKey;
     }
 
     private void Bind(FrameworkElement control, DependencyProperty property, string path,
@@ -128,12 +159,12 @@ public sealed partial class MainWindow : Window
         Model.Start();
     }
 
-    private void AddShortcut(VirtualKey key, Action action, UIElement? target = null, DependencyObject? scope = null)
+    private void AddShortcut(KeyboardAccelerator accelerator, Action action, UIElement? target = null)
     {
-        var accelerator = new KeyboardAccelerator { Key = key, Modifiers = VirtualKeyModifiers.Control, ScopeOwner = scope };
         accelerator.Invoked += (_, args) =>
         {
-            if (_addDialog is not null || Root.XamlRoot?.Content is null) return;
+            if (HasDialog && accelerator.Key is not (VirtualKey.W or VirtualKey.Q)) return;
+            if (Root.XamlRoot?.Content is null) return;
             action();
             args.Handled = true;
         };
@@ -144,60 +175,55 @@ public sealed partial class MainWindow : Window
 
     private async Task ShowAdd()
     {
-        if (_addDialog is not null) return;
-        if (Model.Draft.Source.Length == 0 && !await PickSource()) return;
-        _sourceButton = new Button();
-        Bind(_sourceButton, Button.IsEnabledProperty, nameof(AddDraft.CanEdit));
-        _sourceButton.Click += async (_, _) => await PickSource();
-        _destinationButton = new Button();
-        Bind(_destinationButton, Button.IsEnabledProperty, nameof(AddDraft.CanEdit));
-        _destinationButton.Click += async (_, _) => await PickDestination();
-        var body = new StackPanel { Spacing = 12 };
-        body.Children.Add(_source);
-        body.Children.Add(_sourceButton);
-        body.Children.Add(_preview);
-        body.Children.Add(_destination);
-        body.Children.Add(_destinationButton);
-        body.Children.Add(_paused);
-        body.Children.Add(_addError);
+        if (HasDialog) return;
+        _form = new AddForm(Model);
+        _form.FilesRequested += async (_, _) => await PickSources();
+        _form.DestinationRequested += async (_, _) => await PickDestination();
+        _form.AllowDrop = true;
+        _form.DragOver += OnDragOver;
+        _form.Drop += OnDrop;
+        var body = new ScrollViewer { Content = _form, MaxHeight = Math.Max(220, Root.ActualHeight - 180), VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
         var dialog = new ContentDialog { XamlRoot = Root.XamlRoot, Content = body, DefaultButton = ContentDialogButton.Primary };
         _addDialog = dialog;
         Model.IsAddOpen = true;
         RefreshText();
         Bind(dialog, ContentDialog.IsPrimaryButtonEnabledProperty, nameof(AddDraft.CanSubmit));
+        Bind(dialog, ContentDialog.PrimaryButtonTextProperty, nameof(AddDraft.SubmitText));
         _dialogClosed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         dialog.PrimaryButtonClick += OnSubmit;
-        dialog.Closing += (_, args) => { if (Model.IsBusy && !_closing) args.Cancel = true; };
-        try { await dialog.ShowAsync(); }
+        dialog.Closing += (_, args) => { if ((Model.Draft.IsSubmitting || Model.IsPicking) && !_closing) args.Cancel = true; };
+        var completed = false;
+        try { await dialog.ShowAsync(); completed = true; }
         catch (Exception error) { Model.Report(error); }
         finally
         {
-            body.Children.Clear();
+            body.Content = null;
+            _form = null;
             _addDialog = null;
             Model.IsAddOpen = false;
             _dialogClosed.TrySetResult();
         }
-        if (!_closing)
+        if (!_closing && completed)
         {
             try { await Model.CancelDraft(); }
             catch (Exception error) { Model.Report(error); }
         }
     }
 
-    private async Task<bool> PickSource()
+    private async Task PickSources()
     {
-        if (Model.IsBusy || Model.IsPicking) return false;
+        if (Model.IsBusy || Model.IsPicking) return;
         Model.IsPicking = true;
         try
         {
             var picker = new FileOpenPicker();
             picker.FileTypeFilter.Add(".torrent");
             WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(this));
-            var file = await picker.PickSingleFileAsync();
+            var files = await picker.PickMultipleFilesAsync();
             Model.IsPicking = false;
-            return file is not null && await Model.Draft.Prepare(file.Path);
+            if (files.Count > 0) await Model.AddSources(files.Select(file => file.Path));
         }
-        catch (Exception error) { Model.Report(error); return false; }
+        catch (Exception error) { Model.Report(error); }
         finally { Model.IsPicking = false; }
     }
 
@@ -211,6 +237,7 @@ public sealed partial class MainWindow : Window
             picker.FileTypeFilter.Add("*");
             WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(this));
             var folder = await picker.PickSingleFolderAsync();
+            Model.IsPicking = false;
             if (folder is not null) Model.Draft.Destination = folder.Path;
         }
         catch (Exception error) { Model.Report(error); }
@@ -221,11 +248,9 @@ public sealed partial class MainWindow : Window
     {
         args.Cancel = true;
         var deferral = args.GetDeferral();
-        sender.PrimaryButtonText = Model.Text.Get("add", "pending");
         try { args.Cancel = !await Model.Draft.Submit(); }
         finally
         {
-            sender.PrimaryButtonText = Model.Text.Get("add", "submit");
             deferral.Complete();
         }
     }
@@ -241,6 +266,9 @@ public sealed partial class MainWindow : Window
     {
         if (_closing) return;
         _closing = true;
+        var wasOpen = _addDialog is not null;
+        var hadLimits = _limitsDialog is not null;
+        var keepDraft = false;
         try
         {
             if (!Model.CanClose)
@@ -248,9 +276,13 @@ public sealed partial class MainWindow : Window
                 if (engineExit) await Model.CancelClose();
                 return;
             }
-            var wasOpen = _addDialog is not null;
+            var hadRemoval = _removeDialog is not null;
             _addDialog?.Hide();
+            _limitsDialog?.Hide();
+            _removeDialog?.Hide();
             if (wasOpen && _dialogClosed is not null) await _dialogClosed.Task;
+            if (hadLimits && _limitsClosed is not null) await _limitsClosed.Task;
+            if (hadRemoval && _removeClosed is not null) await _removeClosed.Task;
             if (Model.HasDraft)
             {
                 var prompt = new ContentDialog { XamlRoot = Root.XamlRoot, DefaultButton = ContentDialogButton.Close };
@@ -261,7 +293,7 @@ public sealed partial class MainWindow : Window
                 if (choice != ContentDialogResult.Primary)
                 {
                     if (engineExit) await Model.CancelClose();
-                    if (wasOpen) _ = ShowAdd();
+                    keepDraft = true;
                     return;
                 }
                 await Model.CancelDraft();
@@ -271,7 +303,15 @@ public sealed partial class MainWindow : Window
             Close();
         }
         catch (Exception error) { Model.Report(error); }
-        finally { _closing = false; }
+        finally
+        {
+            _closing = false;
+            if (keepDraft)
+            {
+                if (hadLimits) _ = ShowLimits(false);
+                else if (wasOpen || Model.Draft.Sources.Count > 0 || Model.Draft.EditingMagnet) _ = ShowAdd();
+            }
+        }
     }
 
     [DllImport("user32.dll")]

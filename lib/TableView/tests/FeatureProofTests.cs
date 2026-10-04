@@ -1059,6 +1059,23 @@ public class FeatureProofTests
         Assert.IsTrue((bool)Proof.Call(h.Table, "CanBeginRowDrag", h[2])!);
     });
 
+    [TestMethod]
+    public Task F11_RowsOutsideTheOrderStaySelectableButCannotJoinADrag() => TestHost.RunAsync(async () =>
+    {
+        SelectionHarness h = await SelectionHarness.LoadAsync(6, configure: table =>
+        {
+            table.CanReorder = true;
+            table.Schema<Row>().CanReorder(row => row.Rank < 3);
+        }, height: 300);
+        h.Table.Selection = new Selection([h[1], h[4]], h[4]);
+        CollectionAssert.AreEqual(new[] { "k1", "k4" }, h.SelectedKeys());
+        Assert.IsFalse((bool)Proof.Call(h.Table, "CanBeginRowDrag", h[4])!);
+        Assert.IsFalse((bool)Proof.Call(h.Table, "CanBeginRowDrag", h[1])!);
+        Assert.IsTrue((bool)Proof.Call(h.Table, "CanBeginRowDrag", h[2])!);
+        h.Table.Selection = new Selection([h[1]], h[1]);
+        Assert.IsTrue((bool)Proof.Call(h.Table, "CanBeginRowDrag", h[1])!);
+    });
+
     /// <summary>
     /// Section 16: the drag is offered only while the view shows the row order. Sorted by another
     /// column, a boundary between two rows is a place in that sort, so the table withholds the drag

@@ -120,6 +120,10 @@ is a fragmentation check: group a smaller file with its owner unless its standal
 required by the framework or build. Generated files are exempt. Never pad a file to meet the
 minimum. A low caller count is not proof that a cohesive asset is obsolete.
 
+The required central enum vocabulary uses `Enums.cs` in managed projects and
+`Enums.h` in the native project. That prescribed home may be smaller than the
+fragmentation minimum; keep it concise rather than padding it or scattering enums.
+
 Split code by authority, lifetime, thread ownership or transaction boundary, not by screen, action
 or file length: those splits scatter one decision across files that must change together. Code
 lives with its owner. Add no dumping-ground file such as `Utils.cs`, `Common.cs` or

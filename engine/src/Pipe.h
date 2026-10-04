@@ -36,7 +36,7 @@ public:
     Pipe(Pipe const&) = delete;
     Pipe& operator=(Pipe const&) = delete;
     void Stop();
-    static bool Forward(std::wstring const& name);
+    static bool Forward(std::wstring const& name, Json request = {{"command", "open"}});
 
 private:
     void Serve(HANDLE handle);

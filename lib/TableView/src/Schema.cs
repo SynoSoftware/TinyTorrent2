@@ -49,6 +49,19 @@ public sealed class Schema<TRow> where TRow : class
     }
 
     /// <summary>
+    /// Restricts row dragging without restricting selection or other actions.
+    /// A selected packet containing a refused row cannot be dragged. After a
+    /// predicate input changes, call <see cref="Table.RefreshView"/>.
+    /// </summary>
+    public Schema<TRow> CanReorder(Func<TRow, bool> predicate)
+    {
+        ArgumentNullException.ThrowIfNull(predicate);
+        _table.RequireSetup();
+        _table.CanReorderItem = item => predicate((TRow)item);
+        return this;
+    }
+
+    /// <summary>
     /// Make this column sortable, by the key this returns for a row.
     /// </summary>
     public Schema<TRow> SortKey<TKey>(Column column, Func<TRow, TKey> key,

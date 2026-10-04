@@ -609,7 +609,9 @@ public sealed partial class Table
         // The rows ask this for their cursor as soon as they load, which can be before any press
         // or reconcile has copied the host's eligibility predicate into the model.
         SyncSelectionPolicy();
-        return CanReorder && ShowsRowOrder && _selection.IsEligible(item);
+        return CanReorder && ShowsRowOrder && _selection.IsEligible(item) &&
+            (CanReorderItem is null || (CanReorderItem(item) &&
+                (!_selection.IsSelected(item) || SelectedItems.All(CanReorderItem))));
     }
 
     /// <summary>
