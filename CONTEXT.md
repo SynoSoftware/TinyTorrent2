@@ -23,13 +23,8 @@ _Avoid_: mutation, when naming the request rather than the state change.
 **Operation**: engine-owned work accepted from a command, which may continue
 after the originating window closes.
 
-**Outcome**: the known completion or failure of an operation. A retained outcome
-record is evidence of that outcome; losing the record does not undo the work.
+**Outcome**: the known completion or failure of an operation.
 _Avoid_: result, when naming an operation's outcome.
-
-**Storage claim**: the association reserving affected file paths for a torrent
-or an unfinished file operation.
-_Avoid_: file claim, path claim, payload claim.
 
 **Snapshot**: a coherent, completed copy of engine state for presentation.
 _Avoid_: observation, when it means the same copy.

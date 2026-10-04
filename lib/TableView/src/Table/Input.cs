@@ -396,14 +396,16 @@ public sealed partial class Table
         }
 
         SyncSelectionPolicy();
-        CommitSelection(_selection.Clear());
+        _selection.Clear();
+        CommitSelection();
     }
 
     /// <summary>Section 13's click, tap, and Space selection, applied through one model operation.</summary>
     private void SelectItem(object item, bool ctrl, bool shift)
     {
         SyncSelectionPolicy();
-        CommitSelection(_selection.Select(item, ctrl, shift, View));
+        _selection.Select(item, ctrl, shift, View);
+        CommitSelection();
     }
 
     private void OnRowsTapped(object sender, TappedRoutedEventArgs e)
@@ -431,7 +433,8 @@ public sealed partial class Table
         else
         {
             SyncSelectionPolicy();
-            CommitSelection(_selection.Clear());
+            _selection.Clear();
+            CommitSelection();
         }
 
         return true;
@@ -500,8 +503,11 @@ public sealed partial class Table
     /// Section 14's three compositions. The gesture's modifiers are the ones read at press, so a
     /// key pressed or released mid-drag does not change the rule the user started under.
     /// </summary>
-    private void ApplyMarqueeCoverage() =>
-        CommitSelection(_selection.SetMarqueeSelection(MarqueeItems(), View));
+    private void ApplyMarqueeCoverage()
+    {
+        _selection.SetMarqueeSelection(MarqueeItems(), View);
+        CommitSelection();
+    }
 
     /// <summary>
     /// What the rectangle selects, under the modifier the gesture started with. Read on every
@@ -572,19 +578,18 @@ public sealed partial class Table
 
     /// <summary>
     /// Section 14's Escape, and a host withdrawing the gesture mid-drag: both end the marquee by putting
-    /// back the selection the gesture started from. Reports whether that changed the logical state,
-    /// so a caller with its own commit can raise the single event.
+    /// back the selection the gesture started from. The caller publishes the restored selection.
     /// </summary>
-    private bool RestoreSelectionBeforeMarquee()
+    private void RestoreSelectionBeforeMarquee()
     {
         if (_gesture != RowGesture.Marquee)
         {
-            return false;
+            return;
         }
 
         List<object> restored = new(_gestureSelection);
         CancelGesture();
-        return _selection.SetMarqueeSelection(restored, View);
+        _selection.SetMarqueeSelection(restored, View);
     }
 
     // ------------------------------------------------------------------ row drag
@@ -693,8 +698,12 @@ public sealed partial class Table
         }
 
         _dragBoundary = boundary;
+        RefreshDragText();
+    }
 
-        string status = DragDestination(boundary);
+    private void RefreshDragText()
+    {
+        string status = DragDestination(_dragBoundary);
         AutomationProperties.SetItemStatus(this, status);
 
         if (status.Length > 0)
@@ -874,11 +883,18 @@ public sealed partial class Table
         // A right button pressed during a left-button press would otherwise leave the arbiter armed,
         // and its release would then re-select over this request's selection.
         CancelGesture();
-        CommitSelection(SelectForContext(item));
+        SelectForContext(item);
+        Selection packet = CommitSelection();
+
+        if (_detached || !_selection.IsEligible(item) || !SameSelection(packet, Selection)
+            || !View.Any(row => ReferenceEquals(row, item))
+            || _itemsView is null
+            || !ReferenceEquals(_itemsView.ItemFromContainer(placementTarget), item))
+            return true;
 
         ItemContextRequested?.Invoke(
             this,
-            new ItemContextRequestedEventArgs(item, SelectedItems, placementTarget, relativePoint));
+            new ItemContextRequestedEventArgs(item, packet.Items, placementTarget, relativePoint));
         return true;
     }
 
@@ -969,7 +985,8 @@ public sealed partial class Table
     {
         if (_gesture == RowGesture.Marquee)
         {
-            CommitSelection(RestoreSelectionBeforeMarquee());
+            RestoreSelectionBeforeMarquee();
+            CommitSelection();
             return true;
         }
 
@@ -1064,14 +1081,16 @@ public sealed partial class Table
 
     private bool MoveCurrentTo(object item, bool extend, bool ctrl)
     {
-        CommitSelection(_selection.Navigate(item, ctrl, extend, View));
+        _selection.Navigate(item, ctrl, extend, View);
+        CommitSelection();
+        if (_detached || !ReferenceEquals(_selection.Current, item)) return true;
 
         ScrollItemIntoView(item);
 
         // Keyboard navigation is the one path that should show the platform's focus ring: this is
         // reached from the arrow, Home, End and page keys, and section 19 requires a visible focus
         // cue for exactly this case.
-        FocusRow(item, FocusState.Keyboard);
+        if (!_detached && ReferenceEquals(_selection.Current, item)) FocusRow(item, FocusState.Keyboard);
         return true;
     }
 
@@ -1103,7 +1122,8 @@ public sealed partial class Table
             return false;
         }
 
-        CommitSelection(_selection.SelectAll(View));
+        _selection.SelectAll(View);
+        CommitSelection();
         return true;
     }
 

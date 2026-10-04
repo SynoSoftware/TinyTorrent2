@@ -21,7 +21,7 @@
 
   <!-- Strings reads the control's text from this file by its logical name. -->
   <ItemGroup>
-    <EmbeddedResource Include="Resources\en.json" LogicalName="en.json" />
+    <EmbeddedResource Include="Resources\*.json" LogicalName="%(Filename)%(Extension)" />
   </ItemGroup>
 
   <!-- The table's generated menu and sort glyphs draw from Lucide, so a host does not have to

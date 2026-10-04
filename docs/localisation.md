@@ -17,7 +17,7 @@ surfaces. Another shipped language is a `<language-tag>.json` with the same keys
 in the same folder. These
 files are the project's catalogues. The project embeds them in its own binary,
 so a library or the engine works without another project's text.
-JSON has a concrete role here as editable translation data; IPC remains binary.
+These catalogues own translation data; the [protocol](protocol.md#encoding-and-validation) owns IPC encoding.
 
 Group keys by surface in one level of objects, with snake_case names that do not
 repeat their group: `column_menu.hide`, not `column_menu.hide_column`.
@@ -50,19 +50,16 @@ torrent application. Standalone samples and other hosts receive complete English
 without loading product messages, starting the engine, or reading its
 preferences.
 
-The product's process-local localisation owner supplies the selected language
-and refresh notification. TableView selects its own catalogue for that language
-and uses a domain-neutral refresh mechanism; it must not reference engine types
-or own a second saved language preference. Keep its text access internal to the
-control and use the same refresh path for standalone and product hosts. Choose the smallest concrete interface when
-implementing this path; no new localisation package or provider framework is
-prescribed.
+The product's process-local localisation owner prepares TableView's immutable
+`Strings` value with `Strings.LoadAsync(language, cancellation)`, alongside its
+own text. It publishes `Table.Strings`, host bindings, language and flow direction
+together on the UI thread. TableView keeps catalogue lookup internal and owns no
+saved language preference. New views bind to the same current prepared value.
+Standalone English uses the same presentation refresh path without host setup.
 
-The [TableView contract](../lib/TableView/docs/tableview-contract.md) owns what a switch
-preserves: structural schema and interaction state stay intact while presentation
-text changes. Its [implementation map](../lib/TableView/docs/tableview-implementation.md)
-records the current gap, so embedded English alone cannot be reported as live
-language support.
+The [TableView contract](../lib/TableView/docs/tableview-contract.md) owns what a
+switch preserves. Its [implementation map](../lib/TableView/docs/tableview-implementation.md)
+records the implementation and the remaining runtime verification.
 
 ## Ownership and live behavior
 
@@ -82,23 +79,18 @@ a culture property or resource qualifier alone is not the refresh mechanism.
 Hidden or virtualized content uses the current language when it appears.
 
 Switch in place: no process restart, page recreation, reconnect, torrent reload,
-lost focus/selection, or discarded draft. Keep numeric edits under the culture in
-which editing began until they are committed or cancelled; reformat settled
-values without reinterpreting the user's input. Download work is unaffected.
-Native text composition and IME candidate handling get first refusal on input:
+lost focus/selection, or discarded draft. Download work is unaffected. Native
+text composition and IME candidate handling get first refusal on input:
 application shortcuts must not consume composition keys or commit unfinished
-text. Preserve the composing editor's text, caret, selection, and focus during
-language changes. Defer only editor updates that would interrupt composition
-until it ends; surrounding translated content still updates immediately. Use
-standard text controls and their composition behavior, not another input system.
-Keep blocking resource work off the UI thread. Publish a prepared language change
+text. Use standard text controls and their composition behavior, not another
+input system. Keep blocking resource work off the UI thread. Publish a prepared language change
 together and retain the current language if preparation fails. Coalesce rapid
 choices so older work or an acknowledgement cannot overwrite the latest selection.
 
-Use the settings command and the engine's control notifications to synchronize
-the live language and update tray surfaces; do not add a transport or event bus.
-UI feedback can preview the pending choice immediately, then reconcile with the
-engine. Saving runs asynchronously under the [engine persistence contract](engine.md#persistence-and-file-safety):
+Language is chosen only in Preferences, and only one UI runs. The UI sends the
+choice through the ordinary settings command, and the engine updates the tray
+from it; nothing needs to flow back, so there is no language notification and no
+other transport or event bus. Saving runs asynchronously under the [engine persistence contract](engine.md#persistence-and-file-safety):
 distinguish the live language from a successfully saved preference, report save
 failure, and never silently claim persistence. Reconnecting reads the engine's
 language again. Tray menus use the current catalogue when shown; an already-open
@@ -129,14 +121,11 @@ including when it falls back to English. Keep regional number/date/unit formatti
 consistent with Windows regional preferences; UI language and region are separate
 choices, without adding a second settings panel. Selecting a UI language must not
 assign that language to the regional formatting/parsing culture. Use platform
-globalization facilities; Windows supplies [ICU C APIs](https://learn.microsoft.com/en-us/windows/win32/intl/international-components-for-unicode--icu-)
-when plural selection needs them. Do not bundle another ICU distribution or build
-a general message-expression interpreter. The catalogue contract needs only the
-message forms and substitutions actually used by the product. The retained
-projects target Windows 10 1809: verify the chosen plural APIs and import libraries
-against that floor. The consolidated `icu.dll` requires 1903; the existing floor
-uses the older system ICU libraries. Do not raise the minimum merely to avoid
-checking those imports.
+globalization facilities, including the [ICU C APIs](https://learn.microsoft.com/en-us/windows/win32/intl/international-components-for-unicode--icu-)
+Windows supplies, which work on the projects' Windows 10 1809 minimum. Do not
+bundle another ICU distribution, raise the minimum for plurals, or build a
+general message-expression interpreter. The catalogue contract needs only the
+message forms and substitutions actually used by the product.
 
 Allow longer translations, Unicode, appropriate font fallback, and right-to-left
 layout. Direction changes with the UI language; paths and identifiers retain
@@ -165,9 +154,12 @@ fallback results. No translation server, network fetch, watcher, or plugin frame
 
 Follow [the testing policy](testing.md). A quick catalogue integrity check covers
 keys, placeholders, and required forms when catalogues change; it does not assert
-the wording of screen strings. One focused live-switch exercise during
-implementation should cover an open draft, an owned control, tray state, fallback,
-and switching back while downloads continue. Use temporary long-text/RTL data to
+the wording of screen strings. One focused live-switch exercise should cover an
+open draft, an owned control, tray state, fallback, and switching back while
+downloads continue. It switches between English and Spanish once `es.json`
+ships as the first production translation. Until then it switches to a language
+generated from `en.json` at test time, because keeping a second catalogue in
+step during development costs more than it proves. Use temporary long-text/RTL data to
 review layout when that path changes, not a maintained screenshot suite. Check
 that the visible switch has no perceptible pause on this machine; investigate an
 observed delay instead of imposing a benchmark run on every translation edit.

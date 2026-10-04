@@ -19,6 +19,24 @@ Before applying a rule, check that its reason holds in the case in front of you.
 If it does not, report that and ask before continuing; do not comply anyway and
 do not quietly ignore it. A rule whose reason you cannot find is a finding.
 
+## Plans start from common sense
+
+A plan or contract passes these tests, because each mechanism it asks for is
+permanent design, code, and review cost that the user never sees.
+
+- Start from what established libtorrent clients such as qBittorrent and other
+  Windows desktop applications already do. A different design names the user
+  benefit it gives; without one, follow the established design.
+- A requirement names the failure a user would see without it. A rare edge case
+  gets one sentence of reasoning, not a mechanism, because most edge cases never
+  occur and every mechanism must still be built and maintained.
+- List a decision as open only when two reasonable answers exist; otherwise
+  state the default at its owner. A list of open decisions makes obvious
+  defaults look uncertain and delays the work that depends on them.
+- A review also removes what no longer passes these tests. Reviews that only add
+  turn each edge case they find into a requirement, which is how a plan loses
+  common sense.
+
 ## Read for the change
 
 - Before changing ownership, dependencies, or project structure, read

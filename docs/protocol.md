@@ -1,9 +1,9 @@
 # Protocol contract
 
 Target communication between the engine and WinUI in the
-[architecture](architecture.md). Concrete operation codes and byte layouts will
-be defined with the first implementation. This document establishes their
-required behavior; it is not a second wire-format specification.
+[architecture](architecture.md). Concrete message fields will be defined with
+the first implementation. This document establishes their required behavior; it
+is not a second wire-format specification.
 
 ## One local connection
 
@@ -18,15 +18,16 @@ hold the request slot until all files have moved. Launch forwarding uses bounded
 short-lived pipe instances at the same endpoint and contract, so an attached UI
 cannot prevent another launch from forwarding its request.
 
-The engine also sends bounded control notifications for activation, language
-changes, and close requests. One receive dispatcher separates them from replies;
+The engine also sends bounded control notifications for activation and close
+requests. One receive dispatcher separates them from replies;
 one writer per connection serializes whole frames so notifications and replies
-cannot interleave. Preparing to close runs asynchronously, outside the request
-slot and receive loop, so committed edits or unfinished input can be settled
-before agreement. A clean UI agrees without prompting; the
-[interface](interface.md#committing-edits) owns that behavior. Close preparation
-and final close follow the engine's [shutdown sequence](engine.md#closing-and-shutdown);
-agreement alone does not close the window. Do not add another transport or event bus.
+cannot interleave. A close request for Exit runs asynchronously, outside the
+request slot and receive loop, so committed edits are sent and unfinished input
+can be prompted before the window closes. A clean UI closes without prompting;
+the [interface](interface.md#committing-edits) owns that behavior. A UI whose
+user keeps unfinished input replies that Exit is cancelled; the engine's
+[shutdown sequence](engine.md#closing-and-shutdown) owns the rest. Do not add
+another transport or event bus.
 
 Commands take priority over optional refreshes. Bound the command queue and
 report overload. A slow or absent UI cannot block transfers or create an
@@ -34,54 +35,42 @@ unlimited notification backlog.
 
 ## Encoding and validation
 
-Use length-delimited binary messages, operation codes, fixed-width integers,
-and length-prefixed UTF-8 strings and arrays. The implementation contract must
-define byte order, field meaning, units, and limits explicitly. Encode fields;
-C++ object memory and packed struct layouts are not a portable contract.
+Each message is a 4-byte little-endian length followed by that many bytes of
+UTF-8 JSON, at most 16 MiB. The engine reads it with nlohmann/json and WinUI
+with System.Text.Json. JSON is readable in a log when something breaks, and at a
+few hundred kilobytes a second a binary format saves nothing a user notices.
+Define each message's fields, units, and limits once, beside the implementation.
 
-Handle partial reads/writes and reject malformed or excessive lengths before
-allocation. Keep blocking I/O away from the WinUI thread. Transport validation
+Handle partial reads/writes and reject a length over the limit before
+allocating. Keep blocking I/O away from the WinUI thread. Transport validation
 checks structure and bounds; the engine checks whether an operation is legal in
-current application state.
+current application state. Start with the operations the actual UI needs.
 
-Define the layout once beside the implementation and check both C++ and C# codecs
-with the same byte fixtures. Start with operations the actual UI needs. A schema
-compiler, Transmission emulation, and speculative message families add no value
-to this initial contract.
-
-Ship both executables together. Reject incompatible protocol versions with a
-usable error instead of introducing negotiation and compatibility adapters.
-Include an engine-session identity so a restart invalidates previews, operations,
-and other transient references from the previous session. Durable torrent
-identities survive a restart; info hashes do not replace them.
+The first message carries the protocol version and an engine-session identity.
+Both executables ship together, so reject a different version with a usable
+error rather than negotiating. The session identity lets a restart invalidate
+previews and other transient references; durable torrent identities survive a
+restart, and info hashes do not replace them.
 
 ## Outcomes and reconnection
 
-After timeout or cancellation leaves a reply uncertain, discard the connection
-before sending another request. A late reply cannot be mistaken for the next
-command's reply. Cancelling the wait does not cancel work already accepted by
-the engine.
+Every request carries a request ID that its reply repeats, so a late reply cannot
+be mistaken for another; a reply nobody is waiting for is discarded. Cancelling
+a wait does not cancel work the engine already accepted.
 
-Acceptance, completion, and successful persistence have the meanings defined by
-the [engine contract](engine.md). Present pending work until confirmed state or a
-known outcome resolves it. Correlate a command using a value the caller knows
-before sending it and can retain across reconnects to the same engine session;
-losing the acceptance reply must not lose the ability to recognize its retained
-outcome. Include active operations and bounded recent outcome records in summary
-snapshots, independently of torrent membership, so a removed row does not hide
-a deletion failure. Concrete identifiers and retention bounds belong to the
-first wire layout.
+Each command names the state the user wants, not a step: Pause means "make it
+paused", and adding a torrent the engine already holds returns that torrent.
+Repeating a command after an uncertain reply is therefore safe. After a
+reconnect the UI reads the list again, and the confirmed list is the outcome; no
+store of past outcomes is needed.
 
-On reconnect, replace old snapshots and reconcile before retrying. For an
-unresolved command whose outcome record has expired, is absent, or belongs to a
-previous engine session, report its outcome as unavailable unless recovery
-establishes it. Expiry of a record already reported to the caller does not undo
-that known outcome. Missing is neither success nor proof that the command was never
-accepted. Refresh current facts, stop showing an unknown outcome as indefinitely
-pending, and keep the uncertainty visible. A missing row proves neither
-successful deletion nor safe reuse of its files. Never automatically replay a destructive command with an
-unknown outcome. Bounded outcome records do not replace the engine's durable
-recovery facts for unfinished file operations or promise general crash recovery.
+Delete-data and relocation are the exception, because repeating them is not
+safe. Never repeat one automatically after an uncertain reply. The list read
+after reconnecting shows whether it was accepted: a deleted torrent has left the
+list, and a moving torrent shows its move. A missing row does not prove the files
+were deleted; a deletion failure arrives as a
+[notification](engine.md#notifications-and-sleep), and a move failure shows on
+its torrent.
 
 Edit commands carry the intended fields and target identity defined by
 [committed edits](engine.md#committed-edits). Report an engine refusal distinctly
@@ -100,7 +89,8 @@ copy another thread is still filling. Membership and application state form one
 consistent copy; transfer telemetry is sampled, not a promise to freeze every
 swarm at one instant.
 
-Allow at most one refresh in flight. Refresh after a command. Use stable torrent
+While WinUI is connected, refresh the summary once a second, as other clients do,
+and after each command. Allow at most one refresh in flight. Use stable torrent
 identity to preserve UI selection, focus, and drafts across refresh/reconnect.
 If the torrent was removed, recover focus predictably and mark its draft target
 unavailable; never attach that draft to a re-added torrent with the same hashes.
@@ -112,19 +102,15 @@ and context remain current. If selection, section, or consumer lifetime changed,
 consume and discard the obsolete reply, then request current visible detail.
 Correct transport correlation alone does not make a reply current for the view.
 
-Bound payload size and retained snapshots. Small replies need no paging; add it
-when a real summary or detail set first needs to exceed the bound, rather than
-as scaffolding for the first small round trip. Never silently truncate a set or
-publish a partial copy as complete. Page one coherent snapshot in bounded
-request/reply units, yielding to commands between units. A giant response split
-into pipe writes does not provide that scheduling. Release retained pages on
-disconnect. Discard unfinished pages after a command changes the state they
-describe, before fetching a fresh snapshot. Ordinary transfer progress does not
-invalidate retained pages or a busy download could prevent a snapshot from ever
-completing.
+Bound payload size and retained snapshots. Never silently truncate a set or
+publish a partial copy as complete. A summary row is a few hundred bytes of JSON,
+so the 16 MiB limit holds well over ten thousand torrents; add paging only when a
+real set exceeds it. Paging must then still deliver one coherent snapshot, let
+commands run between pages, and complete while transfers continue.
 
-Stop refresh work when its UI consumer exits. Details, histories, and old
-snapshots do not accumulate behind a disconnected client. Do not add field-level
+Stop refresh work when its UI consumer exits. Details and old snapshots do not
+accumulate behind a disconnected client. Speed history is engine state with its
+own [bound](engine.md#state-and-work), not data kept for a client, so it continues. Do not add field-level
 patches, replay logs, or another cache authority to avoid modest summary copies.
 Measure a real payload problem before replacing this design.
 

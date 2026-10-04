@@ -33,6 +33,35 @@ internal sealed class SortRow
 public class SortingTests
 {
     [TestMethod]
+    public Task InitialStateResolvesTogetherWithTheLatestSort() => TestHost.RunAsync(async () =>
+    {
+        Table table = TestData.Table(TestData.Column("a", 160), TestData.Column("b", 160));
+        Row[] rows = { new("k1"), new("k2"), new("k3") };
+        table.ItemsSource = rows;
+        table.Selection = new(new object[] { new Row("k2") });
+        table.Layout = new ColumnLayout(new[] { "a", "b" }, new Dictionary<string, bool>(),
+            new Dictionary<string, double>(), "b", SortDirection.Ascending);
+        table.Sort = new Sort(table.Columns[0], SortDirection.Descending);
+        table.Schema<Row>().Key(row => row.Rank)
+            .Sort(table.Columns[0], row => (int?)row.Rank)
+            .Sort(table.Columns[1], row => (object)row);
+        int selections = 0;
+        int layouts = 0;
+        table.SelectionChanged += (_, _) => selections++;
+        table.LayoutChanged += (_, _) => layouts++;
+        Assert.AreEqual("a", table.Layout.SortColumnId);
+
+        await TableHarness.LoadAsync(table);
+
+        ListView list = SelectionHarness.Descendant<ListView>(table)!;
+        CollectionAssert.AreEqual(new[] { "k3", "k2", "k1" },
+            ((IEnumerable)list.ItemsSource).Cast<Row>().Select(row => row.Key).ToArray());
+        Assert.AreSame(rows[1], table.Selection.Current);
+        Assert.AreEqual(1, selections);
+        Assert.AreEqual(0, layouts);
+    });
+
+    [TestMethod]
     public Task Section9_TheCycleIsAscendingThenDescendingThenNaturalOrder() =>
         TestHost.RunAsync(async () =>
         {

@@ -59,10 +59,23 @@ public sealed partial class Strip : Control
     private UIElement? _escapeRoot;
     private bool _showingResizeCursor;
 
+    private Strings Text => _owner?.Strings ?? Strings.English;
+
+    internal void RefreshText()
+    {
+        AutomationProperties.SetName(this, Text.HeaderStripAccessibleName);
+        if (_fitButton is not null)
+        {
+            AutomationProperties.SetName(_fitButton, Text.FitVisibleColumns);
+            ToolTipService.SetToolTip(_fitButton, Text.FitVisibleColumns);
+        }
+        _panel?.RefreshHeaderCells();
+    }
+
     public Strip()
     {
         DefaultStyleKey = typeof(Strip);
-        AutomationProperties.SetName(this, Strings.HeaderStripAccessibleName);
+        AutomationProperties.SetName(this, Text.HeaderStripAccessibleName);
         GotFocus += OnHeaderGotFocus;
         ContextRequested += OnContextRequested;
         _cancelOnEscape = OnRootKeyDown;
@@ -77,6 +90,7 @@ public sealed partial class Strip : Control
         _owner = owner;
         ApplyTemplate();
         _panel?.AttachAsHeader(owner);
+        RefreshText();
     }
 
     protected override void OnApplyTemplate()
@@ -108,10 +122,8 @@ public sealed partial class Strip : Control
         {
             _fitButton.Click += OnFitClick;
             // The all-columns glyph, because that is the command this button is: it fits every visible
-        // column, not the one nearest to it.
-        _fitButton.Content = Icons.FitVisibleColumns();
-            AutomationProperties.SetName(_fitButton, Strings.FitVisibleColumns);
-            ToolTipService.SetToolTip(_fitButton, Strings.FitVisibleColumns);
+            // column, not the one nearest to it.
+            _fitButton.Content = Icons.FitVisibleColumns();
         }
 
         if (_marker is not null)
@@ -123,6 +135,7 @@ public sealed partial class Strip : Control
         {
             _panel.AttachAsHeader(_owner);
         }
+        RefreshText();
     }
 
     /// <summary>Cells scrolled past the viewport must not paint outside the strip.</summary>

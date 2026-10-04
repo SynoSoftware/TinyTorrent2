@@ -17,6 +17,8 @@ public sealed partial class Table
 
     private ResolvedColumn? _sortColumn;
     private SortDirection _sortDirection;
+    private Sort? _pendingSort;
+    private bool _hasPendingSort;
     private TimeSpan _sortInterval = DefaultSortInterval;
 
     /// <summary>When the rows were last allowed to take their sorted places.</summary>
@@ -99,9 +101,28 @@ public sealed partial class Table
     /// </remarks>
     public Sort? Sort
     {
-        get => _sortColumn is null ? null : new Sort(_sortColumn.Column, _sortDirection);
+        get
+        {
+            if (_schemaCaptured)
+            {
+                return _sortColumn is null ? null : new Sort(_sortColumn.Column, _sortDirection);
+            }
+            if (_hasPendingSort)
+            {
+                return _pendingSort;
+            }
+            return PendingSort();
+        }
         set
         {
+            if (!_schemaCaptured)
+            {
+                _pendingSort = value;
+                _hasPendingSort = true;
+                return;
+            }
+            if (value is Sort requested && !Enum.IsDefined(requested.Direction))
+                throw new ArgumentOutOfRangeException(nameof(value));
             ResolvedColumn? column = value is Sort sort ? RequireSortable(sort.Column) : null;
             SortDirection direction = value?.Direction ?? SortDirection.Ascending;
 
@@ -111,18 +132,26 @@ public sealed partial class Table
                 return;
             }
 
+            // Comparison can invoke host code; finish it before committing the new sort.
+            ValidateRows(_source.Snapshot);
+            IReadOnlyList<object> order = SortedSnapshot(_source.Snapshot, column, direction);
             _sortColumn = column;
             _sortDirection = direction;
 
-            // The host asked for this order, so it is taken now rather than at the next cadence.
-            _orderSettledAt = DateTimeOffset.MinValue;
-            RebuildView();
-
-            // Sorting changes no geometry, so nothing else republishes the header cells.
+            // Complete presentation before selection handlers can run or throw.
             _headerStrip?.Panel?.RefreshHeaderCells();
+            RebuildView(preparedOrder: order);
 
             RaiseLayoutChanged(LayoutChange.Sort);
         }
+    }
+
+    private Sort? PendingSort()
+    {
+        if (_pendingLayout?.SortColumnId is not string id) return null;
+        Column? column = Columns.FirstOrDefault(candidate => candidate.Id == id);
+        return column is not null && Enum.IsDefined(_pendingLayout.SortDirection)
+            ? new Sort(column, _pendingLayout.SortDirection) : null;
     }
 
     private ResolvedColumn RequireSortable(Column column)
@@ -205,21 +234,23 @@ public sealed partial class Table
     /// waits is existing rows trading places.
     /// </para>
     /// </remarks>
-    private IReadOnlyList<object> ViewOrder()
+    private IReadOnlyList<object> ViewOrder(IReadOnlyList<object> snapshot)
     {
         // Natural order belongs to the host, which reorders when it means to; an empty view has no
         // established order to preserve; and a zero interval is the host asking for none of this.
         if (_sortColumn is null || _view.Count == 0 || _sortInterval == TimeSpan.Zero)
         {
+            IReadOnlyList<object> order = SortedSnapshot(snapshot, _sortColumn, _sortDirection);
             _orderSettledAt = DateTimeOffset.UtcNow;
-            return SortedSnapshot();
+            return order;
         }
 
         DateTimeOffset now = DateTimeOffset.UtcNow;
         if (now - _orderSettledAt >= _sortInterval)
         {
+            IReadOnlyList<object> order = SortedSnapshot(snapshot, _sortColumn, _sortDirection);
             _orderSettledAt = now;
-            return SortedSnapshot();
+            return order;
         }
 
         // The base sequence, not the sorted one: a held update keeps the order the view already
@@ -230,10 +261,11 @@ public sealed partial class Table
         //
         // A membership change is never held back, so it is also never settled: HeldOrder returns
         // null for one, and the sorted order is what the arriving row needs anyway.
-        if (HeldOrder(_source.Snapshot) is not List<object> held)
+        if (HeldOrder(snapshot) is not List<object> held)
         {
+            IReadOnlyList<object> order = SortedSnapshot(snapshot, _sortColumn, _sortDirection);
             _orderSettledAt = now;
-            return SortedSnapshot();
+            return order;
         }
 
         ScheduleSettle(_sortInterval - (now - _orderSettledAt));
@@ -247,6 +279,7 @@ public sealed partial class Table
     /// </summary>
     private void ScheduleSettle(TimeSpan due)
     {
+        if (_detached) return;
         if (_settleDue is null)
         {
             _settleDue = DispatcherQueue.CreateTimer();
@@ -330,18 +363,18 @@ public sealed partial class Table
     /// stable, so equal values keep the exact base-sequence order they arrived in — descending
     /// included, because only the comparison is reversed and never the tie-break.
     /// </summary>
-    private IReadOnlyList<object> SortedSnapshot()
+    private static IReadOnlyList<object> SortedSnapshot(IReadOnlyList<object> snapshot,
+        ResolvedColumn? column, SortDirection direction)
     {
-        IReadOnlyList<object> snapshot = _source.Snapshot;
-        if (_sortColumn is null)
+        if (column is null)
         {
             return snapshot;
         }
 
         // A column becomes the sorted one only by carrying a comparer, so this cannot be null.
-        IComparer<object> comparer = _sortColumn.Column.Comparer!;
+        IComparer<object> comparer = column.Column.Comparer!;
 
-        return _sortDirection == SortDirection.Ascending
+        return direction == SortDirection.Ascending
             ? snapshot.OrderBy(item => item, comparer).ToList()
             : snapshot.OrderByDescending(item => item, comparer).ToList();
     }

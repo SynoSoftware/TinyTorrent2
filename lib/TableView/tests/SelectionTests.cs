@@ -193,7 +193,7 @@ public class SelectionTests
     // ------------------------------------------------------------------ reconciliation
 
     [TestMethod]
-    public Task SameKeyRehydrationKeepsTheStateAndRaisesNoEvent() => TestHost.RunAsync(async () =>
+    public Task SameKeyRehydrationNotifiesWithReplacementRows() => TestHost.RunAsync(async () =>
     {
         SelectionHarness h = await SelectionHarness.LoadAsync(6);
 
@@ -203,7 +203,8 @@ public class SelectionTests
         ObservableCollection<Row> replacement = new(h.Rows.Select(r => new Row(r.Key)));
         h.Table.ItemsSource = replacement;
 
-        Assert.AreEqual(0, h.Events, "Same identities on new objects is not a logical change.");
+        Assert.AreEqual(1, h.Events, "Observers must receive replacement instances.");
+        Assert.AreSame(replacement[3], h.LastCurrent);
         CollectionAssert.AreEqual(new[] { "k1", "k3" }, h.SelectedKeys());
         Assert.AreEqual("k3", h.CurrentKey());
         Assert.IsTrue(
@@ -231,7 +232,9 @@ public class SelectionTests
         SelectionHarness h = await SelectionHarness.LoadAsync(6);
 
         h.Table.Selection = new(new object[] { h[1], h[3] });
+        h.Events = 0;
         h.Rows.Move(3, 0);
+        Assert.AreEqual(1, h.Events, "The exposed packet changed order.");
 
         CollectionAssert.AreEqual(
             new[] { "k3", "k1" }, h.SelectedKeys(), "The packet is in current visual row order.");
@@ -305,13 +308,40 @@ public class SelectionTests
     {
         SelectionHarness h = await SelectionHarness.LoadAsync(3);
 
-        Exception error = Expect.Throws<InvalidOperationException>(
+        h.Table.Selection = new(new object[] { h[1] });
+        Expect.Throws<InvalidOperationException>(
             () => h.Table.ItemsSource = new ObservableCollection<Row>
             {
                 new("dup"), new("dup"),
             });
 
-        StringAssert.Contains(error.Message, "duplicate key");
+        Assert.AreSame(h.Rows, h.Table.ItemsSource);
+        Assert.AreSame(h[1], h.Table.Selection.Current);
+    });
+
+    [TestMethod]
+    public Task AcceptedNestedSourceUpdateSurvivesHandlerFailure() => TestHost.RunAsync(async () =>
+    {
+        SelectionHarness h = await SelectionHarness.LoadAsync(3);
+        h.Table.Selection = new(new object[] { h[1] });
+        ObservableCollection<Row> replacement = new(h.Rows.Select(row => new Row(row.Key)));
+        bool entered = false;
+        void OnSelection(object? sender, Selection selection)
+        {
+            if (entered) return;
+            entered = true;
+            replacement.Add(new Row("k3"));
+            throw new InvalidOperationException("Host callback failed after publishing.");
+        }
+        h.Table.SelectionChanged += OnSelection;
+        Expect.Throws<InvalidOperationException>(() => h.Table.ItemsSource = replacement);
+        h.Table.SelectionChanged -= OnSelection;
+
+        Assert.AreSame(replacement, h.Table.ItemsSource);
+        Assert.AreSame(replacement[1], h.Table.Selection.Current);
+        replacement.RemoveAt(1);
+        Assert.AreEqual(0, h.Table.Selection.Items.Count);
+        Assert.IsNull(h.Table.Selection.Current);
     });
 
     // ------------------------------------------------------------------ the hosted list

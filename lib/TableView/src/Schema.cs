@@ -23,13 +23,15 @@ public sealed class Schema<TRow>
     internal Schema(Table table) => _table = table;
 
     /// <summary>
-    /// A stable, non-empty, unique key per row, used to reconcile selection, current item, anchor
+    /// A stable, non-null, unique key per row, used to reconcile selection, current item, anchor
     /// and focus across a source change. Without one, identity is object reference.
     /// </summary>
-    public Schema<TRow> Key(Func<TRow, string> key)
+    public Schema<TRow> Key<TKey>(Func<TRow, TKey> key) where TKey : notnull
     {
         ArgumentNullException.ThrowIfNull(key);
+        _table.RequireSetup();
         _table.ItemKey = item => key((TRow)item);
+        _table.KeyComparer = new KeyEquality<TKey>();
         return this;
     }
 
@@ -41,6 +43,7 @@ public sealed class Schema<TRow>
     public Schema<TRow> CanInteract(Func<TRow, bool> predicate)
     {
         ArgumentNullException.ThrowIfNull(predicate);
+        _table.RequireSetup();
         _table.CanInteract = item => predicate((TRow)item);
         return this;
     }
@@ -48,41 +51,37 @@ public sealed class Schema<TRow>
     /// <summary>
     /// Make this column sortable, by the key this returns for a row.
     /// </summary>
-    /// <remarks>
-    /// <typeparamref name="TKey"/> must order itself, which is what makes an unorderable key a
-    /// compile error rather than a sort that quietly does nothing. It also refuses a nullable value
-    /// type — <c>DateTimeOffset?</c> does not implement <c>IComparable&lt;DateTimeOffset?&gt;</c> —
-    /// so the host says where its nulls sort instead of the table deciding invisibly.
-    /// </remarks>
-    public Schema<TRow> Sort<TKey>(Column column, Func<TRow, TKey> key)
-        where TKey : IComparable<TKey>
+    public Schema<TRow> Sort<TKey>(Column column, Func<TRow, TKey> key,
+        IComparer<TKey>? comparer = null)
     {
         ArgumentNullException.ThrowIfNull(column);
         ArgumentNullException.ThrowIfNull(key);
-        column.Comparer = new KeyOrder<TKey>(key);
+        _table.RequireSetup();
+        column.Comparer = new KeyOrder<TKey>(key, comparer ?? Comparer<TKey>.Default);
         return this;
     }
 
-    /// <summary>
-    /// The library's one comparer adapter, over the row type this schema named.
-    /// </summary>
-    /// <remarks>
-    /// The cast is hard on purpose. Both hosts wrote their own adapter and both returned 0 for a
-    /// row of the wrong type, which is a sort that silently does nothing over a source the host
-    /// believes is sorted. A wrong row type is a configuration error and now says so.
-    /// <para>
-    /// <see cref="Comparer{T}.Default"/> rather than <c>CompareTo</c> so that a null key — which a
-    /// reference-typed key still allows — orders first instead of throwing.
-    /// </para>
-    /// </remarks>
     private sealed class KeyOrder<TKey> : IComparer<object>
-        where TKey : IComparable<TKey>
     {
         private readonly Func<TRow, TKey> _key;
 
-        internal KeyOrder(Func<TRow, TKey> key) => _key = key;
+        private readonly IComparer<TKey> _comparer;
+
+        internal KeyOrder(Func<TRow, TKey> key, IComparer<TKey> comparer)
+        {
+            _key = key;
+            _comparer = comparer;
+        }
 
         public int Compare(object? x, object? y) =>
-            Comparer<TKey>.Default.Compare(_key((TRow)x!), _key((TRow)y!));
+            _comparer.Compare(_key((TRow)x!), _key((TRow)y!));
+    }
+
+    private sealed class KeyEquality<TKey> : IEqualityComparer<object> where TKey : notnull
+    {
+        public new bool Equals(object? x, object? y) =>
+            EqualityComparer<TKey>.Default.Equals((TKey)x!, (TKey)y!);
+
+        public int GetHashCode(object value) => EqualityComparer<TKey>.Default.GetHashCode((TKey)value);
     }
 }

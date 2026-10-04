@@ -234,6 +234,7 @@ public sealed class Table : Control
     public IEnumerable? ItemsSource { get; set; }
     public ObservableCollection<Column> Columns { get; }
     public Schema<TRow> Schema<TRow>();
+    public Strings Strings { get; set; }
 
     public ListViewSelectionMode SelectionMode { get; set; } // default Extended
     public Selection Selection { get; set; }
@@ -270,10 +271,15 @@ public sealed class Table : Control
 
 public sealed class Schema<TRow>
 {
-    public Schema<TRow> Key(Func<TRow, string> key);
+    public Schema<TRow> Key<TKey>(Func<TRow, TKey> key) where TKey : notnull;
     public Schema<TRow> CanInteract(Func<TRow, bool> predicate);
-    public Schema<TRow> Sort<TKey>(Column column, Func<TRow, TKey> key)
-        where TKey : IComparable<TKey>;
+    public Schema<TRow> Sort<TKey>(Column column, Func<TRow, TKey> key,
+        IComparer<TKey>? comparer = null);
+}
+
+public sealed class Strings
+{
+    public static Task<Strings> LoadAsync(string language, CancellationToken cancellation = default);
 }
 
 public sealed class Selection
@@ -289,7 +295,7 @@ public readonly record struct Sort(
     SortDirection Direction = SortDirection.Ascending);
 ```
 
-`ItemsSource`, `Placeholder`, `CellPadding`, and the runtime interaction flags
+`ItemsSource`, `Strings`, `Placeholder`, `CellPadding`, and the runtime interaction flags
 `IsMarqueeEnabled` and `CanReorder` are bindable
 dependency properties. Marquee selection defaults to enabled and row
 reordering to disabled, and the asymmetry is deliberate: a marquee is a
@@ -321,6 +327,10 @@ interaction predicate, and every column's sort key with it. The control stays
 non-generic because WinUI 3 XAML cannot instantiate an open generic; a
 non-generic class can still have a generic method, and XAML never sees one.
 
+Each table has one row type. Repeated `Schema<T>()` calls return the same setup;
+a different row type is rejected. Retaining the schema does not bypass its setup
+lifetime. Value rows are allowed; stable keys preserve their identity across boxing.
+
 The table captures the structural schema exactly once, at its first `Loaded` event. A host
 may populate it in XAML or code before then; calling `Schema<TRow>()`
 afterwards, changing a setup-only value, or structurally adding, removing, or
@@ -344,10 +354,13 @@ push it back without a suppression flag or a second owner. `Selection` is
 deliberately *not* a dependency property, so section 5.2's rule against a
 two-way selected-items binding is structural rather than prose.
 
-After the host has populated its setup-only schema, it may assign `Layout`
-before or after the first `Loaded` event. A pre-load snapshot is resolved after
-schema capture, determines the first effective layout, and remains silent just
-like a later assignment.
+`ItemsSource`, `Selection`, `Sort` and `Layout` may be assigned before first
+`Loaded`, in either source/schema order. Pending getters expose the requested
+state. At first load the table resolves them together against the completed
+schema and current source. A later `Layout` replaces the pending sort; a later
+`Sort` overrides the layout's sort. Initial layout is silent; resolved nonempty
+selection/current raises one `SelectionChanged`. After load, unavailable selection
+items are discarded immediately rather than retained as future requests.
 
 Assigning `Selection` atomically replaces the table-owned selection and current
 item after resolving both to eligible instances in the current private view. An
@@ -369,11 +382,13 @@ context-clicked, or included in a row drag packet. Keyboard navigation skips it.
 Eligibility is evaluated on each view rebuild and immediately before an item
 interaction.
 
-`Schema<TRow>().Key` is optional. Without it, identity is object reference. When
-provided, it returns a stable, non-empty, unique string key for every item in a
-source snapshot; the table uses ordinal string comparison to reconcile
-table-owned selection, current item, anchor, and focus across source
-rehydration. The selector MUST be pure and inexpensive.
+`Schema<TRow>().Key` is optional. Without it, identity is object reference.
+Configured keys use `EqualityComparer<TKey>.Default` (ordinal equality for
+strings). Keys must be stable, non-null and unique; empty strings and zero are
+valid keys. Every snapshot has unique effective identities, so repeated references
+without a key are rejected too. Distinct value-equal references remain distinct.
+Null rows, wrong row types and duplicate identities fail before replacing the
+accepted view. The selector MUST be pure and inexpensive.
 
 The API is intentionally non-generic at the XAML boundary, matching WinUI item
 controls and keeping the control directly usable from XAML. Type erasure is
@@ -403,10 +418,12 @@ The control deliberately has two extension mechanisms, with no overlap:
 Policy callbacks are called on the UI thread and MUST be pure, synchronous, and
 cheap. The table never calls them per render frame. A sort key is read
 `O(n log n)` times during an explicit sort and therefore must be especially
-cheap. Its type must order itself (`where TKey : IComparable<TKey>`), which
-makes an unorderable key a build error rather than a sort that quietly does
-nothing, and refuses a nullable value type so that the host says where its nulls
-sort instead of the table deciding invisibly.
+cheap. `Comparer<TKey>.Default` supplies normal .NET ordering, including enums
+and nullable keys; default nulls come first ascending. An optional comparer
+expresses domain ordering, such as unknown values last or ordinal text. Preserve
+the host's intended ordering when removing sentinel values. Unsupported key types
+fail when comparison is needed; comparisons finish before the new sort is committed.
+Equal values retain source order, including descending sorts.
 
 Events are the component's callback API for completed gestures or table-state
 changes. They fire only after the table has completed its own mechanics.
@@ -529,19 +546,21 @@ When the schema supplies a key selector, every new source snapshot—including
 assignment, `Add`, `Remove`, `Move`, `Replace`, and `Reset`—reconciles selected
 items, current item, selection anchor, and focus to the current row instances
 by key. `Selection.Items` then exposes those new instances.
-A rehydration with the same logical selected/current identities does not raise
-`SelectionChanged` merely because objects or visual positions changed. An
+`SelectionChanged` reports a changed exposed packet: identities, item order,
+current item, or replacement row instances. For value rows, compare identities
+first, then `EqualityComparer<T>.Default`; custom value equality cannot hide a
+changed selected key. Ordinary property changes on the same reference do not
+raise this event. An
 anchor or focus item that no longer survives clears. Without a selector, object
 reference is identity, so a replacement object is a removal and an addition.
-Null, empty, or duplicate configured keys are a source-contract error and fail
-fast.
+Null configured keys or duplicate effective identities fail fast.
 
 If an update removes an item or makes it non-interactive, the table prunes the
 effective selection/current item atomically. If that removes the current item
 while selected items remain, the first retained selected item in current visual
 order becomes current; otherwise current becomes `null`. The table raises at
 most one `SelectionChanged` event. Source reordering and header sorting do
-not raise that event when the logical selected/current packet is unchanged.
+not raise that event when the exposed selected/current packet is unchanged.
 
 A source update, `RefreshView()`, or sort change during a
 row drag cancels the drag without raising
@@ -558,9 +577,16 @@ reorder request.
 
 Policy callbacks MUST NOT mutate the source or call back into the table. Events
 are post-mechanics: a handler may publish an optimistic source update or start
-async domain work. If it changes source or control input synchronously, the
-table processes that change after the current event returns; it MUST NOT re-enter
-the gesture or expose a mixed old/new view.
+async domain work. Runtime setters commit synchronously, including inside an
+event handler. Event payloads describe that event; getters expose current state,
+which an earlier subscriber may already have changed. No hidden deferred setter
+queue exists. A compound gesture captures its intended packet, then rechecks
+state and target after selection handlers return. An invalidated context request
+is cancelled; keyboard navigation does not resume focus work for an obsolete row.
+
+Unloading suspends source subscriptions and timers. Explicit setters still
+reconcile logical state while detached. Reload recaptures a notifying source;
+a non-notifying one-shot source retains its captured snapshot.
 
 The table guarantees continuity only for its own key-addressable state. It does
 not merge domain snapshots, retain row view models, preserve arbitrary cell
@@ -678,14 +704,25 @@ key after that point is unsupported and is a configuration error. Values bound
 inside a cell or header template remain live, as does localized presentation
 text. Column identity, templates, comparers, and layout defaults remain fixed.
 
-A language change refreshes `DisplayName`, generated headers, open menu labels,
-and accessibility metadata through their existing owners. Preserve column
-instances, effective widths/order/visibility, sort state, rows, selection, focus,
-and active edits. Do not rebuild the schema, recreate the table, reset layout, or
-automatically refit every column to change text. Host-provided header templates
-use live localized bindings; translated presentation is never a persistence key.
-The desktop [localisation contract](../../../docs/localisation.md) owns catalogues,
-language selection, fallback, and composition protection.
+`Column.DisplayName` and `Column.Header` are live dependency properties; templates
+and structural column settings remain setup-only. Bind changing presentation with
+`Mode=OneWay`. Updating text preserves existing header elements, including custom
+content whose instance has not changed.
+
+Prepare control text with `await Strings.LoadAsync(language, cancellation)`, then
+publish `Table.Strings` on the UI thread with the host's prepared text, language
+and flow direction. The immutable value exposes no catalogue dictionary. The
+loader reads this library's embedded catalogues off-thread, falling back through
+parent languages to English. Invalid or cancelled preparation leaves the current
+value intact. English is the standalone default; no host setup is required.
+
+A language change updates generated headers, open menu labels, placeholders,
+sort status and drag status without recreating the table or changing selection,
+layout or source. New views bind to the host's current prepared `Strings` value.
+Prepare that initial value before creating the first localised bound view.
+Regional formatting remains separate from UI language. The desktop
+[localisation contract](../../../docs/localisation.md) owns catalogue policy and
+composition protection; the library does not persist a language preference.
 
 The declared defaults are: visible, hideable, resizable, non-sortable,
 left-aligned, a `Width` of 150 DIPs, a `MinWidth` of 48 DIPs, and an

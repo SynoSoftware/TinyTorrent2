@@ -1,0 +1,3 @@
+# The repository stores text with LF. Agents and Windows tools rewrite files
+# with CRLF; normalising on add keeps those rewrites out of diffs and commits.
+* text=auto eol=lf

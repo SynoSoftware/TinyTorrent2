@@ -790,8 +790,8 @@ public class FeatureProofTests
         h.Table.IsMarqueeEnabled = false;
         Assert.IsFalse((bool)Proof.Call(h.Table, "CanCommitGesture")!);
 
-        h.Table.IsMarqueeEnabled = true;
-        h.Table.SelectionMode = ListViewSelectionMode.Single;
+        h = await SelectionHarness.LoadAsync(6,
+            table => table.SelectionMode = ListViewSelectionMode.Single, height: 300);
         Proof.Call(h.Table, "SyncSelectionPolicy");
         Proof.Note("F09 marquee in Single mode allowed = " +
                    (bool)Proof.Call(h.Table, "CanCommitGesture")!);
@@ -907,6 +907,15 @@ public class FeatureProofTests
         Proof.Note($"F10 non-interactive row: handled={handled} requests={requests}");
         Assert.IsFalse(handled);
         Assert.AreEqual(0, requests);
+
+        // Selection callbacks can change policy without replacing the row or its container.
+        h[3].Interactive = true;
+        h.Table.SelectionChanged += (_, _) => h[3].Interactive = false;
+        handled = (bool)Proof.Call(
+            h.Table, "RequestRowContext", h[3], container, (Point?)null)!;
+
+        Assert.IsTrue(handled, "The selection consumed the gesture before policy changed.");
+        Assert.AreEqual(0, requests, "The host must not receive an ineligible context target.");
     });
 
     // ================================================================ F11 row drag reorder

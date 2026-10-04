@@ -1,6 +1,6 @@
 # TableView implementation
 
-Source map reviewed 2026-10-03. This describes the existing TableView library and
+Source map updated 2026-10-04. This describes the existing TableView library and
 the reasons for its construction. The [contract](tableview-contract.md) owns
 observable behavior and the public API; this map is not a competing specification.
 The sample and tests exist. No new rendering or runtime verification was performed
@@ -19,7 +19,7 @@ for this documentation review.
 | Row pointer arbitration | [Table input](../src/Table/Input.cs). |
 | Marquee geometry and row insertion feedback | [Body.Marquee](../src/Body/Marquee.cs) and [Body.Drag](../src/Body/Drag.cs), driven by the arbiter. |
 | Header gestures and generated menu | [Header.Strip](../src/Header/Strip.cs) and [Header.Menu](../src/Header/Menu.cs). |
-| Generic control text | [Strings](../src/Resources/Strings.cs), reading the embedded [en.json](../src/Resources/en.json). |
+| Generic control text | [Strings](../src/Strings.cs), reading the embedded [en.json](../src/Resources/en.json). |
 
 The source capture and displayed sequence serve different roles: one receives
 host items, the other presents the private view. Neither owns domain records or
@@ -36,6 +36,9 @@ responsibilities.
 
 The selection model reconciles identity across changing source instances.
 Containers reflect that model rather than supplying a second domain selection.
+Table publishes one immutable selection after the complete update. Comparing it
+with the previous publication decides whether to notify, including replacement
+instances and changes in visual order.
 Pointer, keyboard, menu, and automation paths must reach the same operations.
 Marquee and drag visuals do not decide which gesture is active.
 
@@ -71,31 +74,25 @@ regression check exists, not a current rendering claim. Actual contrast, Narrato
 and out-of-process automation still require relevant runtime evidence under the
 [testing policy](../../../docs/testing.md).
 
-## Known localisation gap
+## Localisation and source lifetime
 
-The contract requires live `DisplayName`, generated header/menu text, and
-accessibility updates without rebuilding the schema. Currently `DisplayName` is
-an ordinary CLR property without change notification; generated headers and
-automation names receive its value when built. `Strings` reads the library's
-embedded English `en.json` once. Neither provides the required live invalidation
-or language selection.
+`Strings.LoadAsync` prepares an immutable catalogue with parent/English fallback
+and placeholder validation. `Table.Strings`, `Column.DisplayName` and `Column.Header`
+refresh existing presentation through the table's text path. Generated menu items
+subscribe while open. The standalone default remains English. This code has not
+yet been built or exercised in a live language switch.
 
-Implement this once in TableView, following [localisation](../../../docs/localisation.md#tableview),
-before the new product relies on live switching. Retain standalone fallback and
-domain independence. Do not fork TableView, recreate the control on a language
-change, or quietly mark its existing contract complete.
+`Body.Source` suspends collection subscriptions on unload, recaptures notifying
+sources on reload and retains plain snapshots. Explicit detached setters reconcile
+logical selection and ordering without touching containers. Acceptance precedes
+public selection events; a later handler failure does not roll back an accepted
+source. Source lifetime still needs a focused runtime check.
 
 ## Other known integration gaps
 
 Source review found these gaps on 2026-10-03. They are unresolved implementation
 work, not completed fixes or grounds for replacing the control.
 
-- **Source lifetime:** [Body.Source](../src/Body/Source.cs) detaches
-  collection notifications only when its source changes. The table's unload
-  path stops its timer but leaves that subscription and `SnapshotChanged` rebuilds
-  active. A longer-lived collection can retain a detached table and keep updating
-  its old view. Suspend subscriptions while detached and recapture on reload at
-  the existing source owner, preserving selection and control state.
 - **Automation selection:** [Table.Selection](../src/Table/Selection.cs)
   restores its own selection after every unsolicited native `SelectionChanged`.
   Native UI Automation selection therefore gets undone too. Route automation
@@ -125,6 +122,31 @@ work, not completed fixes or grounds for replacing the control.
 The lifetime and automation findings follow concrete source paths. The RTL
 consequence also depends on documented platform mirroring. None has been checked
 in a running product, Narrator, or an external automation client in this review.
+
+## API verification
+
+The API upgrade has two independent source reviews. Syntax parsing of the library,
+sample and tests found no C# syntax errors; this is not a build or type check.
+Builds and desktop test runs were not performed under the owner's instruction.
+
+Existing selection checks now cover replacement-instance notifications and packet
+order. Duplicate-source rejection also checks that accepted source and selection
+remain intact. Two regressions cover previously unguarded failures:
+
+- `InitialStateResolvesTogetherWithTheLatestSort`: initial selection and the first
+  displayed order must use the completed schema and final sort, without evaluating
+  a superseded saved comparer.
+- `AcceptedNestedSourceUpdateSurvivesHandlerFailure`: a handler that publishes a
+  newer snapshot and then throws must not restore an obsolete source subscription.
+
+These checks are authored, not reported as passing. Live localisation, detached
+reload, keyboard/automation behavior and full caller ergonomics still need the
+relevant runtime evidence.
+
+The existing non-interactive context check also covers a selection callback that
+makes its row ineligible without replacing it. Context invocation rechecks the
+same interaction policy after the callback; otherwise the host receives a menu
+request for a row it just made unavailable.
 
 ## Earlier evidence
 

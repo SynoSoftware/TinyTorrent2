@@ -21,7 +21,7 @@ public sealed class Selection
     public Selection(IEnumerable<object> items, object? current = null)
     {
         ArgumentNullException.ThrowIfNull(items);
-        Items = items.ToList();
+        Items = Array.AsReadOnly(items.ToArray());
         Current = current;
     }
 

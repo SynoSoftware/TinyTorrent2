@@ -39,7 +39,7 @@ Enable the alert categories needed by accepted work and drain alerts even when
 WinUI is closed. The pinned [alert queue](https://github.com/arvidn/libtorrent/blob/v2.1.2/include/libtorrent/aux_/alert_manager.hpp)
 can drop even critical completion alerts. Bound batches of outstanding work and
 handle `alerts_dropped_alert` by reconciling affected operations: regenerate
-missing checkpoints, query effective state, and retain unresolved storage claims.
+missing checkpoints and query effective state.
 If completion cannot be established, report recovery required; do not infer
 success or wait forever for a lost alert. Increasing the queue limit alone does
 not solve this. Copy or move borrowed alert data needed after the next
@@ -47,13 +47,22 @@ not solve this. Copy or move borrowed alert data needed after the next
 the notification callback only wakes the state owner.
 
 An operation can be accepted, still running, completed, or failed. Cancellation
-of a caller's wait does not undo accepted work. Retain enough bounded operation
-state to report completion after a torrent disappears from the list, including
-after UI reconnection within the same engine instance. Bound retained outcome
-records separately from active work; never discard an operation's ownership
-while it can still affect files or state. Missing or expired outcome records follow
-[protocol reconciliation](protocol.md#outcomes-and-reconnection). After an engine
-crash, unfinished outcomes are unknown until recovered, never inferred as success.
+of a caller's wait does not undo accepted work. The confirmed list the UI reads
+again is a command's outcome, so the engine keeps no store of past outcomes. A
+move shows its progress and failure on its torrent. A file deletion continues
+after its torrent leaves the list, so its failure is
+[notified](#notifications-and-sleep) and logged. Never discard an operation's
+hold on files while it can still affect them. After an engine crash, unfinished
+work is unknown until recovered, never inferred as success.
+
+The engine records the session's total download and upload rate once a second,
+also while WinUI is closed, so the Speed view shows what happened while the
+window was closed. Keep the last five minutes at one sample a second for a live
+chart, and the last 24 hours at one averaged sample a minute to cover a day away
+from the window. The history is session-wide, as qBittorrent's speed graph is:
+a history per torrent would cost memory for every torrent while the window is
+closed, the state this product measures first. History is not saved: the time while the engine was stopped is
+unknown in any case, so after a restart the chart starts empty.
 
 ## Committed edits
 
@@ -100,12 +109,11 @@ downloaded or created with the pinned build.
 An unconfirmed preview belongs to its UI connection and is released on disconnect.
 Cancel releases that preview, never the files of an existing duplicate. Confirm
 rechecks duplicates and transfers ownership to the engine; the accepted addition
-survives UI exit. Direct addition, when explicitly enabled, confirms the same
-workflow without opening WinUI.
+survives UI exit. When the Show the Add form preference is off, direct addition
+confirms the same workflow without opening WinUI.
 
 Keep the payload-write guard until membership and the initial user choices
-commit, as well as until [storage claims](#payload-ownership) are validated. A failed
-commit must not leave an unrecorded addition writing files. After commit, apply
+commit. A failed commit must not leave an unrecorded addition writing files. After commit, apply
 the choices through the same operation owner. Recovery in that interval uses
 the committed choices, not an earlier resume checkpoint with preview priorities.
 Direct addition follows the same ordering.
@@ -129,18 +137,15 @@ On reconnect, preserve the user's preview inputs and draft choices, but reacquir
 and validate the preview. If confirmation may have succeeded, reconcile the
 torrent first. A stale preview identifier is not reusable.
 
-If importing old saved data becomes required, recover content hashes from
-metadata or resume data and assign each imported addition a durable torrent
-identity. Preserve and report records that cannot be recovered; a truncated
-best-hash value is not an adequate v2 identity. An import path must not become a
-second runtime model.
-
 ## Persistence and file safety
 
-Keep one persistence owner for engine data. Store libtorrent state in its resume
-representation and only the additional membership, settings, and application
-facts the product needs. No storage implementation has been selected here;
-choose it against these recovery rules before committing to a format or database.
+Keep one persistence owner for engine data. As qBittorrent does, store each
+torrent's libtorrent resume data in its own file, named by its durable torrent
+identity, and settings and the other application facts in `settings.json`. Write
+each file under a temporary name and rename it over the old one, so a crash
+leaves the old file or the new one, never a partial file. One writer queue
+performs every write in order. Each file changes on its own, so the rename makes
+every write atomic and a database is not needed.
 
 Refuse an unknown newer store format without rewriting it. Any required migration
 belongs to this persistence owner and must preserve a recoverable last good state
@@ -160,80 +165,56 @@ before changing existing data.
 - Report write failures honestly. Live settings and successfully saved settings
   are distinct facts until the write succeeds.
 - Choose checkpoint frequency and flush semantics against recovery loss and disk
-  cost. Use the chosen store's commit mechanisms, not a second durable command log.
+  cost. The rename is the commit; do not add a second durable command log.
 
-### Payload ownership
+### Shared files
 
-One engine owner tracks storage claims for accepted torrents and unfinished file
-operations. Reject overlapping storage claims between different torrent identities
-before ordinary downloads can create or write payload, not just before deletion
-or relocation. Pausing a torrent does not surrender its claim. Sharing a parent
-download directory is allowed when the affected files do not overlap; different
-hashes or differently spelled paths alone do not establish disjoint storage.
-Check absolute paths with relative segments resolved, directory case-sensitivity,
-junctions and symbolic links, and existing file identities for hard links.
-For paths not yet created, resolve the existing ancestor before comparing the
-remaining names. If the affected paths cannot be established, report that
-specific problem before allowing access; string spelling is not sufficient.
+Several torrents can use the same files, for example the same content seeded
+from two trackers. qBittorrent and other established clients allow this, and
+people who seed on several trackers depend on it. libtorrent refuses a second
+torrent with the same info hash; the engine adds no other ownership check. A
+torrent that finds existing files verifies them before using them and downloads
+the pieces that do not match, which overwrites those files. The
+[Add form](interface.md#add) therefore names the torrents that already use files
+at the chosen destination before the person confirms.
 
-Simultaneous shared-file seeding is outside the initial
-[product scope](architecture.md#product-and-scope). Multiple trackers on one
-torrent are a different case. Removing an old torrent while keeping its files
-can allow a later addition to reuse them, after the old handle's work ends,
-storage claims are released, and the new torrent verifies the content. A UI
-must not automate this as a Remove-then-Add sequence or assume the two commands
-form one successful replacement.
-
-Acquire claims when paths become known, before enabling payload access. An
-accepted magnet with unknown paths remains unable to write until metadata has
-been checked. On restart, restore membership and outstanding file-operation
-claims before allowing transfers to write. Existing files may be reused only as
-the selected torrent's content and verified as needed; presence is not ownership.
-
-If metadata reveals an overlap after a magnet was accepted, retain the addition
-without payload writes and report the affected path and its existing owner.
-Let the user change the new addition's destination or remove it without deleting
-files. Revalidate a new destination before continuing with the saved running or
-paused intent; an ownership hold is not a change to that intent.
-
-Deletion and relocation retain claims over every path they can affect, including
-both source and destination for a move. Release an operation's claim only when
-work has stopped and the resulting locations are known; a failure alert alone
-may leave unresolved placement. Row removal and UI disconnection do not release
-claims. Reject conflicting additions and moves while unrelated torrents remain
-eligible to run. libtorrent permits
+Delete files and Move must not reach the files of a torrent outside the command.
+When either runs, compare its full paths, without case as Windows compares names,
+with the files of the torrents in the list that the command does not include, so
+a command that includes every torrent using a file can delete or move it. Delete
+files keeps a file that a torrent outside the command uses, and reports it. Move
+refuses when its scope contains such a file, names those torrents, and offers to
+move them together. A move of several torrents moves the files once and points
+the other torrents at the new folder with libtorrent's `reset_save_path` move
+flag, which verifies there instead of moving again. libtorrent permits
 [re-addition before work on an old handle has ended](https://www.libtorrent.org/reference-Session.html#remove-torrent()),
-so identity and path checks must outlive list membership.
+so a deletion or move that has not finished stays in this comparison after its
+torrent leaves the list.
 
 ### Removal and relocation
 
-For delete-data, commit membership removal and the facts needed to recover the
-pending deletion before starting to delete payload. If that commit fails, do not
-delete files. Removal and deletion have separate outcomes: failed or uncertain
-deletion remains reportable after the row is gone. Recovery must neither restore
-the removed membership nor automatically retry an uncertain destructive action.
+For delete-data, commit membership removal before deleting payload. If that
+commit fails, do not delete files. Removal and deletion have separate outcomes:
+a failed deletion is notified after the row is gone. A deletion
+interrupted by a crash is not repeated, because repeating an uncertain
+destructive action is unsafe; the remaining files stay on disk, and recovery
+does not restore the removed torrent.
 
 A relocation moves the scope presented to the user. For a dedicated torrent
-folder, include its contents, such as user-added subtitles, when no other
-torrent has claims inside it. A shared download directory is not that torrent's
-folder: confine the move to its payload, or refuse if that cannot be done safely.
-Check and retain claims for the actual move scope at both ends. Do not overwrite
-destination collisions or discard source copies in favor of unverified files.
-The pinned
-[`move_storage` contract](https://github.com/arvidn/libtorrent/blob/v2.1.2/include/libtorrent/torrent_handle.hpp)
-defaults to replacement, documents a race in `fail_if_exist`, and permits moving
-unrelated files from the torrent's directory. Choosing that flag or doing a
-preflight scan is not itself a no-overwrite guarantee.
+folder, include its contents, such as user-added subtitles. A shared download
+directory is not that torrent's folder: confine the move to its payload. Use
+[`move_storage`](https://github.com/arvidn/libtorrent/blob/v2.1.2/include/libtorrent/torrent_handle.hpp)
+with `fail_if_exist`, so a file already at the destination is reported as a
+collision instead of replaced; the default replaces it. The flag's documented
+race, another program creating a destination file during the move, is rare and
+needs no further mechanism.
 
-Before relocation starts, commit the torrent identity, move scope, source,
-destination, and unfinished-operation state needed for recovery in the existing
-store. After an interruption, keep the affected torrent unable to write until
-actual file locations and contents have been reconciled and the resulting
-location is committed. Preserve the user's running/paused intent separately
-from this safety hold. A partial move is not rolled back merely because an alert reports failure;
-retain the affected claims and report recovery required when placement remains
-uncertain. These are recovery facts for unfinished work, not a durable command
-history or another persistence owner.
+Before a move starts, save its destination with the torrent and clear it when
+the move ends. After a crash during a move, that saved destination keeps the
+torrent paused with a Move interrupted error, so it does not download again
+into the old folder. Its Move action points the torrent at the folder that holds
+the files, and verification establishes what is there. The user's running or
+paused intent does not change, and the move is neither rolled back nor repeated.
 
 ## Startup and activation
 
@@ -248,33 +229,26 @@ for the cooperating processes, window, and engine-targeting shortcut. Without a
 shortcut, set the window's [relaunch command and display-name resource](https://learn.microsoft.com/en-us/windows/win32/properties/props-system-appusermodel-relaunchcommand)
 together. Verify pin/close/relaunch with the selected unpackaged installer.
 
-A freshly started WinUI executable without an engine-reserved launch forwards
-its activation through the engine and exits without creating a product window.
-The engine validates its reserved child by its live process identity; a command
-line switch alone does not establish ownership. That child connects to become
-the UI instead of forwarding again. A UI already running when the engine restarts
-reconnects through the existing pipe and is adopted as the live owner. Bind that
-adoption to the [actual pipe-client process](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-getnamedpipeclientprocessid)
-and its live handle under protocol isolation, not a PID supplied in a message.
+A WinUI executable started directly, for example from the debugger, starts the
+engine if none is running and then connects like any other UI. It needs no
+launch token or process check, because [protocol isolation](protocol.md#isolation)
+already admits only the same user and logon. A UI already running when the
+engine restarts reconnects through the same pipe.
 
 WinUI acquires one logon-scoped [mutex](https://learn.microsoft.com/en-us/windows/win32/sync/using-mutex-objects)
 without waiting and holds it on its main thread from before window/draft creation
-until exit. This preserves one draft owner across engine restarts. If a launch
-races the surviving UI's reconnection, the candidate that cannot acquire the
-guard reports that fact and exits; Open waits boundedly for the surviving UI or
-reports it unavailable.
-Candidate exit clears only that candidate's reservation, never an adopted UI's
-ownership. The guard stores no product state; the engine still owns launch policy.
+until exit, so one window owns the drafts, also across engine restarts. A WinUI
+that cannot acquire the mutex forwards its activation through the engine to the
+existing window and exits. The mutex stores no product state; the engine still
+owns launch policy.
 
 Bound pending additions and report overload. Readiness means the engine can
-answer, rather than merely having a process or tray icon. Reserve a UI launch
-before starting it asynchronously, so repeated Open requests share one launch
-and one owner of drafts. Bind that ownership to the UI process lifetime, not its
-pipe: a timeout or disconnect can leave a live UI with unsaved input. Release the
-reservation on confirmed process exit or failed launch. Bound readiness waiting
-and make failed startup retryable without starting a second live UI owner.
-Use the [process handle](https://learn.microsoft.com/en-us/windows/win32/procthread/terminating-a-process)
-to observe exit. Endpoint and data-directory exclusion follow
+answer, rather than merely having a process or tray icon. While a WinUI the
+engine started is still opening, further Open requests wait for it instead of
+starting another; the engine observes that launch through its
+[process handle](https://learn.microsoft.com/en-us/windows/win32/procthread/terminating-a-process).
+The mutex, not this wait, guarantees one window. Bound readiness waiting and make
+failed startup retryable. Endpoint and data-directory exclusion follow
 [protocol isolation](protocol.md#isolation).
 
 For a user-directed Open, carry [foreground permission](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-allowsetforegroundwindow)
@@ -287,9 +261,8 @@ colors. Restore its icon after Explorer restarts. The engine owns this tray,
 the splash, and native startup failure feedback; product dialogs belong to WinUI.
 
 The splash is a small native window with the application icon and short localised
-status. Use the documented [DWM transient backdrop](https://learn.microsoft.com/en-us/windows/win32/api/dwmapi/ne-dwmapi-dwm_systembackdrop_type)
-where supported, with a readable solid fallback on older Windows versions or
-when system settings require it. Load no UI framework for it. Show it only while
+status, readable in light, dark, and contrast themes. Load no UI framework for
+it. Show it only while
 opening WinUI, avoiding a flash for an already-ready window; close it when the
 product window is visible or a bounded wait expires. Sign-in with WinUI closed
 shows no splash.
@@ -297,9 +270,9 @@ shows no splash.
 Closing the splash must not hide a failed Open. On process-creation failure or
 unexpected exit before window readiness, show a localised native error dialog
 with a useful reason, Retry, and Close. Keep it independent of the WinUI runtime.
-An expected candidate handoff to the surviving UI is not a launch failure.
-If readiness times out while the process is still alive, report that it has not
-opened and retain its ownership; a timeout does not authorize another launch.
+A launched WinUI that hands off to an existing window and exits is not a launch
+failure. If readiness times out while the process is still alive, report that it
+has not opened; a timeout does not authorize another launch.
 Retry becomes available after failure or confirmed exit and reuses the existing
 activation handling, without resubmitting an addition whose outcome is unknown.
 Closing this feedback leaves existing transfers running. A late ready window
@@ -313,16 +286,14 @@ these registrations; do not mirror them in saved preferences. Read the expected
 values and target paths, not just whether a key exists, and report partial or
 failed changes truthfully.
 
-- Register application-specific ProgIDs for `.torrent` and `magnet:` under
-  `HKCU\Software\Classes`, plus the capabilities/RegisteredApplications entries
+- Register per-user handlers for `.torrent` and `magnet:`, with the entries
   Windows needs to list TinyTorrent in Default apps. Handler commands enter the
-  engine's ordinary activation path. Quote paths and treat the opened file or
-  URI as input, never as engine maintenance options. Unregister only TinyTorrent's
-  entries and references; leave shared keys and other applications untouched.
-- Use one value under
-  `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` to start the engine with
-  WinUI closed. The documented [Run mechanism](https://learn.microsoft.com/en-us/windows/win32/setupapi/run-and-runonce-registry-keys)
-  may be delayed or disabled by Windows. Remove only that value when requested.
+  engine's ordinary activation path and treat the opened file or URI as input,
+  never as engine maintenance options. Unregister only TinyTorrent's entries;
+  leave shared keys and other applications untouched.
+- Start at sign-in uses one per-user
+  [Run entry](https://learn.microsoft.com/en-us/windows/win32/setupapi/run-and-runonce-registry-keys),
+  which starts the engine with WinUI closed. Windows may delay or disable it.
   Never edit undocumented StartupApproved data or override Windows policy.
 
 For a request to open torrents with TinyTorrent, register its handlers, query
@@ -339,13 +310,14 @@ startup. Provide access to Windows Startup settings without trying to reverse
 its override through undocumented keys. Neither registration nor observation
 creates a second saved preference.
 
-The installer uses `--register` on first installation and `--unregister` before
-removing program files, with individual operations for any deselected setup
-choice. Preferences sends the same operations through the pipe. Maintenance
+The installer registers on first installation and unregisters before removing
+program files, through the engine's maintenance commands, with individual
+operations for any deselected setup choice. Preferences sends the same
+operations through the pipe. Maintenance
 launches forward to a running engine or use the same owner in a short-lived
 native process under instance exclusion, without starting transfers or WinUI.
-On upgrade, repair only registrations still requested; never use an unconditional
-`--register` to undo the user's off choice. Registration is completed for the
+On upgrade, repair only registrations still requested; never re-register what
+the person turned off. Registration is completed for the
 installing user, not an administrator account used to install a prerequisite.
 
 ## Closing and shutdown
@@ -353,34 +325,29 @@ installing user, not an administrator account used to install a prerequisite.
 Closing WinUI normally exits without confirmation. Resolve actual unfinished
 edits according to [the interface](interface.md#committing-edits), and do not
 silently drop changes already committed in the UI but still being submitted.
-Accepted operations and transfers continue in the engine. UI-only snapshots,
-detail collection, and graph history stop or are released with their last
-consumer; tray status, queue policy, swarm activity, and persistence continue.
+Accepted operations and transfers continue in the engine. UI-only snapshots and
+detail collection stop or are released with their last consumer; tray status,
+queue policy, swarm activity, [speed history](#state-and-work), and persistence
+continue.
 
-Tray Exit asks WinUI to prepare for close while engine commands still accept
-committed edits. WinUI agrees without a dialog when there is no unfinished work;
-it can cancel Exit when the user chooses to keep an unfinished edit. Agreement
-keeps the window available for status and necessary recovery, with new editing
-disabled, until the engine finishes Exit or abandons it. After agreement:
+Exit is in the tray menu and in the window. It first closes the window by the
+same rules as Close: a prompt appears only for actual unfinished input, and
+Cancel in that prompt cancels Exit. If a move or file deletion is running, Exit
+asks whether to exit when it finishes or to cancel Exit, because stopping it
+midway leaves files in two places. Then:
 
-1. Stop accepting ordinary new mutations and settle accepted state changes and
-   writes. Continue to accept the recovery actions needed to finish safely.
-2. Safely interrupt resumable work where supported. Keep status and recovery
-   actions available for relocation or other work that cannot yet stop safely.
-3. Pause the session and await transfer/disk quiescence without changing each
+1. Stop accepting new commands and settle accepted state changes and writes.
+2. Pause the session and await transfer/disk quiescence without changing each
    torrent's saved paused/running intent. Track actual outstanding work rather
    than expecting a new pause alert from an already-idle torrent.
-4. Settle outstanding resume requests, including success, not-modified, and
+3. Settle outstanding resume requests, including success, not-modified, and
    failure outcomes. Obtain final resume data and await application storage
    commit; a resume-data alert alone does not prove payload writes have flushed.
-5. Tell the attached WinUI process to close and observe its exit, using the hung
-   UI policy below if needed. Destroy/join libtorrent, close the pipe and tray,
-   then release data-directory ownership last.
+4. Destroy/join libtorrent, close the pipe and tray, then release data-directory
+   ownership last.
 
-If recovery or a required write prevents safe completion, keep its status and
-actions available and allow the user to cancel Exit. Abandoning Exit restores
-normal interaction and resumes the session without changing individual torrent
-intent.
+If the final save fails, report it with Retry and Exit anyway; exiting anyway
+loses only the changes since the last successful checkpoint.
 
 Keep the owner pumping messages while asynchronous shutdown work settles. Never
 join a worker that still needs the owner to process its completion; final joins
@@ -394,8 +361,7 @@ In the pinned [implementation](https://github.com/arvidn/libtorrent/blob/v2.1.2/
 before posting resume data. Its name is not a power-loss durability guarantee.
 
 A hung UI cannot block exit forever; report it and let the user choose whether
-to discard any unfinished input. A short deadline does not justify killing an
-unsafe file operation. Windows logoff/shutdown uses a bounded persistence path
+to discard any unfinished input. Windows logoff/shutdown uses a bounded persistence path
 that does not depend on an interactive confirmation. Abrupt termination may lose
 changes since the last successful checkpoint; do not promise zero loss.
 
@@ -425,6 +391,16 @@ choices; it does not implement another router client. Keep encryption at the
 pinned [upstream defaults](https://github.com/arvidn/libtorrent/blob/v2.1.2/src/settings_pack.cpp).
 Mapping success is not proof of public reachability or firewall permission.
 
+The network interface preference, by default any interface, limits torrent
+traffic to one adapter, such as a VPN, through libtorrent's listen and outgoing
+interface settings. While that adapter is absent, no torrent traffic flows and
+the window and the tray tooltip say why, so traffic never leaks onto another
+adapter.
+
+Global download and upload limits and a second, alternative pair of limits use
+libtorrent's session rate limits. One toggle, in the window and the tray,
+switches between the two pairs.
+
 ## Notifications and sleep
 
 Completion notifications are enabled by default and use the existing tray's
@@ -438,13 +414,27 @@ opens the application. Never execute a downloaded file. Keep only bounded pendin
 notification context, identified by durable torrent identity rather than a stale
 path. Completion state remains visible in WinUI when Windows suppresses feedback.
 
+When direct addition adds a torrent while no window is open, notify that it was
+added, or that it could not be added and why, coalesced like completions.
+Without the window, nothing else shows that a double-click on a torrent file
+worked. With the window open, the new row is the feedback.
+
+A file deletion that fails, fully or in part, is notified with the torrent name
+and the reason, with the window open or closed, and written to the log. The
+deletion runs after the torrent has left the list, so nothing else shows it.
+
+The first time the window closes while the engine keeps running, show one
+notification that TinyTorrent is still running in the notification area and that
+Exit is in its menu. Windows 11 places new tray icons in the hidden overflow, so
+without it the person cannot tell that transfers continue.
+
 The idle-sleep preference starts enabled for active payload downloads on mains
-power. Seeding alone, paused/queued torrents, metadata previews, and torrents
-blocked by an error do not keep the PC awake. One engine-owned power request
-uses the documented [power-request API](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-powersetrequest)
-with system-required and execution-required requests while needed, and a
-localised reason. Clear them when the condition ends, on battery power, or on
-Exit. The display may turn off;
+power. A second preference, also while seeding, starts disabled; it keeps the PC
+awake for a person who seeds overnight. Paused/queued torrents, metadata
+previews, and torrents blocked by an error do not keep the PC awake. One
+engine-owned [power request](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-powersetrequest)
+with a localised reason is held only while needed. Clear it when the condition
+ends, on battery power, or on Exit. The display may turn off;
 explicit Sleep, lid closure, and Windows power policy remain authoritative.
 Reconcile the request after resume or a power-source change. Do not use away
 mode or promise uninterrupted transfers through user-requested sleep.
@@ -461,23 +451,14 @@ or second telemetry pipeline.
 
 ## Disk write caching
 
-Start with the selected release's upstream Windows disk backend and write policy.
-In the reviewed **2.1.2** release, leaving
-`session_params::disk_io_constructor` unset selects pread. The reviewed
-[constructor](https://github.com/arvidn/libtorrent/blob/v2.1.2/src/session.cpp)
-is the authority for that selection. Its Windows
-[write policy](https://github.com/arvidn/libtorrent/blob/v2.1.2/src/settings_pack.cpp) is
-`disk_io_write_mode = write_through`. The
-[pread implementation](https://github.com/arvidn/libtorrent/blob/v2.1.2/src/pread_storage.cpp)
-uses that setting; `disk_write_mode = always_mmap_write` does not configure it.
-
-Disk caching is automatic engine policy, with no Preferences control, saved
-override, or user-facing restart state. Add a choice only if a concrete user
-need and measured behavior justify it. An imported `disk_cache_mb` value is not
-an equivalent budget and does not create an override.
+Use the selected libtorrent release's default Windows disk backend and write
+policy, leaving `session_params::disk_io_constructor` unset. In the reviewed
+2.1.2 release that is pread with write-through, which `disk_write_mode` does not
+configure. Disk caching is automatic engine policy, with no Preferences control
+or saved override; add a choice only if a concrete user need and measured
+behavior justify it. An imported `disk_cache_mb` value does not create one.
 
 The default is the starting point, not a claim of lower memory use. Take the
-first real workload measurement required by [testing](testing.md#resource-checks).
-Compare mmap if that reveals a disk or memory problem it could plausibly improve;
-choose from memory, throughput, and correctness together. No backend comparison
-or performance result exists in this repository yet.
+first real workload measurement required by [testing](testing.md#resource-checks),
+and compare mmap only if it shows a disk or memory problem mmap could plausibly
+improve.

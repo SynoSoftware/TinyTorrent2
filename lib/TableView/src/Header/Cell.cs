@@ -25,6 +25,8 @@ public sealed partial class Cell : Control
     private ContentPresenter? _presenter;
     private FontIcon? _sortGlyph;
     private SortDirection? _sort;
+    private Strings _strings = Strings.English;
+    private TextBlock? _label;
 
     public Cell() => DefaultStyleKey = typeof(Cell);
 
@@ -86,10 +88,22 @@ public sealed partial class Cell : Control
         ApplySort();
     }
 
+    internal void RefreshText(Strings strings)
+    {
+        _strings = strings;
+        if (Column is Column column)
+        {
+            AutomationProperties.SetName(this, column.DisplayName);
+        }
+        ApplyContent();
+        ApplySort();
+    }
+
     protected override void OnApplyTemplate()
     {
         base.OnApplyTemplate();
         _presenter = GetTemplateChild(ContentPartName) as ContentPresenter;
+        _label = null;
         _sortGlyph = GetTemplateChild(SortGlyphPartName) as FontIcon;
         ApplyContent();
         ApplySort();
@@ -99,8 +113,8 @@ public sealed partial class Cell : Control
     {
         AutomationProperties.SetItemStatus(this, _sort switch
         {
-            SortDirection.Ascending => Strings.SortedAscending,
-            SortDirection.Descending => Strings.SortedDescending,
+            SortDirection.Ascending => _strings.SortedAscending,
+            SortDirection.Descending => _strings.SortedDescending,
             _ => string.Empty,
         });
 
@@ -123,30 +137,27 @@ public sealed partial class Cell : Control
 
         if (Column.Header is not null || Column.HeaderTemplate is not null)
         {
-            _presenter.Content = Column.Header;
+            _label = null;
+            if (!ReferenceEquals(_presenter.Content, Column.Header))
+            {
+                _presenter.Content = Column.Header;
+            }
             _presenter.ContentTemplate = Column.HeaderTemplate;
             return;
         }
 
         _presenter.ContentTemplate = null;
-        _presenter.Content = CreateGeneratedLabel(Column.DisplayName);
-    }
-
-    /// <summary>
-    /// The generated label keeps a stable one-line treatment, trims when necessary, and exposes
-    /// the full DisplayName through its tooltip.
-    /// </summary>
-    private static TextBlock CreateGeneratedLabel(string displayName)
-    {
-        TextBlock label = new()
+        _label ??= new TextBlock
         {
-            Text = displayName,
             TextTrimming = TextTrimming.CharacterEllipsis,
             TextWrapping = TextWrapping.NoWrap,
             VerticalAlignment = VerticalAlignment.Center,
         };
-
-        ToolTipService.SetToolTip(label, displayName);
-        return label;
+        _label.Text = Column.DisplayName;
+        ToolTipService.SetToolTip(_label, Column.DisplayName);
+        if (!ReferenceEquals(_presenter.Content, _label))
+        {
+            _presenter.Content = _label;
+        }
     }
 }

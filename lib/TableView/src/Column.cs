@@ -4,7 +4,7 @@ namespace Syno.TableView;
 
 /// <summary>
 /// One column definition. Setup-only schema: <see cref="Table"/> captures every value here
-/// exactly once, at its first <c>Loaded</c>. Changing a value afterwards is unsupported.
+/// at its first <c>Loaded</c>. Header content and DisplayName remain live afterwards.
 /// </summary>
 public sealed partial class Column : DependencyObject
 {
@@ -17,11 +17,37 @@ public sealed partial class Column : DependencyObject
     public string? Id { get; set; }
 
     /// <summary>Non-empty localized plain-text name used by generated menus and UI Automation.</summary>
-    public string DisplayName { get; set; } = string.Empty;
+    public static readonly DependencyProperty DisplayNameProperty = DependencyProperty.Register(
+        nameof(DisplayName), typeof(string), typeof(Column), new PropertyMetadata(string.Empty, OnDisplayNameChanged));
+
+    public string DisplayName
+    {
+        get => (string)GetValue(DisplayNameProperty);
+        set => SetValue(DisplayNameProperty, value);
+    }
+
+    internal event EventHandler? TextChanged;
+
+    private static void OnDisplayNameChanged(DependencyObject sender, DependencyPropertyChangedEventArgs args)
+    {
+        if (args.NewValue is not string { Length: > 0 })
+            throw new ArgumentException("DisplayName must be non-empty.");
+        ((Column)sender).TextChanged?.Invoke(sender, EventArgs.Empty);
+    }
 
     /// <summary>Header content. When null and <see cref="HeaderTemplate"/> is null the table
     /// generates a trimmed one-line label from <see cref="DisplayName"/>.</summary>
-    public object? Header { get; set; }
+    public static readonly DependencyProperty HeaderProperty = DependencyProperty.Register(
+        nameof(Header), typeof(object), typeof(Column), new PropertyMetadata(null, OnHeaderChanged));
+
+    public object? Header
+    {
+        get => GetValue(HeaderProperty);
+        set => SetValue(HeaderProperty, value);
+    }
+
+    private static void OnHeaderChanged(DependencyObject sender, DependencyPropertyChangedEventArgs args) =>
+        ((Column)sender).TextChanged?.Invoke(sender, EventArgs.Empty);
 
     public DataTemplate? HeaderTemplate { get; set; }
 

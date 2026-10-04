@@ -1,11 +1,44 @@
 using System.Collections;
 using System.Collections.ObjectModel;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
 
 namespace Syno.TableView;
 
 public sealed partial class Table
 {
+    public static readonly DependencyProperty StringsProperty = DependencyProperty.Register(
+        nameof(Strings), typeof(Strings), typeof(Table), new PropertyMetadata(null, OnStringsChanged));
+
+    /// <summary>Prepared control text. Assign on the UI thread with the host's translated bindings.</summary>
+    public Strings Strings
+    {
+        get => (Strings?)GetValue(StringsProperty) ?? Syno.TableView.Strings.English;
+        set
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            SetValue(StringsProperty, value);
+        }
+    }
+
+    internal event EventHandler? TextChanged;
+
+    private static void OnStringsChanged(DependencyObject sender, DependencyPropertyChangedEventArgs args) =>
+        ((Table)sender).RefreshText();
+
+    private void OnColumnTextChanged(object? sender, EventArgs args) => RefreshText();
+
+    private void RefreshText()
+    {
+        _headerStrip?.RefreshText();
+        RefreshDragText();
+        if (_shippedPlaceholder is TextBlock label)
+            label.Text = _shippedPlaceholderKind == Placeholder.NoResults ? Strings.NoResults : Strings.Empty;
+        else if (_shippedPlaceholder is not null)
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_shippedPlaceholder, Strings.Loading);
+        TextChanged?.Invoke(this, EventArgs.Empty);
+    }
+
     private static readonly Thickness DefaultCellPadding = new(12, 6, 12, 6);
 
     public static readonly DependencyProperty ItemsSourceProperty =
@@ -176,8 +209,27 @@ public sealed partial class Table
         set => SetValue(NoResultsContentTemplateProperty, value);
     }
 
-    private static void OnItemsSourceChanged(DependencyObject d, DependencyPropertyChangedEventArgs e) =>
-        ((Table)d).SetItemsSource(e.NewValue as IEnumerable);
+    private bool _restoringSource;
+
+    private static void OnItemsSourceChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        Table table = (Table)d;
+        if (table._restoringSource) return;
+        try
+        {
+            table.SetItemsSource(e.NewValue as IEnumerable);
+        }
+        catch
+        {
+            if (!ReferenceEquals(table._source.Input, e.NewValue))
+            {
+                table._restoringSource = true;
+                try { table.SetValue(ItemsSourceProperty, table._source.Input); }
+                finally { table._restoringSource = false; }
+            }
+            throw;
+        }
+    }
 
     private static void OnStateInputChanged(DependencyObject d, DependencyPropertyChangedEventArgs e) =>
         ((Table)d).UpdateStateLayer();

@@ -64,10 +64,7 @@ internal static class Menu
                 holdOpen = true;
                 invoke();
 
-                foreach (Action update in refresh)
-                {
-                    update();
-                }
+                Refresh(owner, EventArgs.Empty);
 
                 menu.DispatcherQueue.TryEnqueue(() => holdOpen = false);
             };
@@ -85,15 +82,15 @@ internal static class Menu
             // second control for one state.
             menu.Items.Add(Item(
                 () => active.IsVisible
-                    ? Strings.HideColumn(active.Column.DisplayName)
-                    : Strings.ShowColumn(active.Column.DisplayName),
+                    ? owner.Strings.HideColumn(active.Column.DisplayName)
+                    : owner.Strings.ShowColumn(active.Column.DisplayName),
                 () => active.IsVisible ? Icons.HideColumn() : Icons.ShowColumn(),
                 () => !active.IsVisible || owner.CanHideColumn(active),
                 () => owner.SetColumnVisibility(active, !active.IsVisible)));
 
             menu.Items.Add(new MenuFlyoutSeparator());
             menu.Items.Add(Item(
-                () => Strings.FitColumn(active.Column.DisplayName),
+                () => owner.Strings.FitColumn(active.Column.DisplayName),
                 Icons.FitColumn,
                 () => owner.CanFitColumn(active),
                 () => owner.Fit(active)));
@@ -102,7 +99,7 @@ internal static class Menu
         // A right-click on unused header space has no column to act on, so the whole menu is about
         // the column set: this command and the list below it, with no door between them.
         menu.Items.Add(Item(
-            () => Strings.FitVisibleColumns,
+            () => owner.Strings.FitVisibleColumns,
             Icons.FitVisibleColumns,
             () => owner.CanFitColumns,
             owner.FitColumns));
@@ -120,12 +117,12 @@ internal static class Menu
         {
             menu.Items.Add(new MenuFlyoutSeparator());
             menu.Items.Add(Item(
-                () => Strings.MoveLeft,
+                () => owner.Strings.MoveLeft,
                 Icons.MoveLeft,
                 () => owner.CanMoveColumnBy(active, -1),
                 () => owner.MoveColumnBy(active, -1)));
             menu.Items.Add(Item(
-                () => Strings.MoveRight,
+                () => owner.Strings.MoveRight,
                 Icons.MoveRight,
                 () => owner.CanMoveColumnBy(active, 1),
                 () => owner.MoveColumnBy(active, 1)));
@@ -151,9 +148,22 @@ internal static class Menu
                 () => target.IsVisible ? Icons.Shown() : null,
                 () => !target.IsVisible || owner.CanHideColumn(target),
                 () => owner.SetColumnVisibility(target, !target.IsVisible),
-                () => target.IsVisible ? Strings.ColumnShown : Strings.ColumnHidden));
+                () => target.IsVisible ? owner.Strings.ColumnShown : owner.Strings.ColumnHidden));
         }
 
+        void Refresh(object? sender, EventArgs args)
+        {
+            foreach (Action update in refresh)
+            {
+                update();
+            }
+        }
+        menu.Opened += (_, _) =>
+        {
+            owner.TextChanged += Refresh;
+            Refresh(owner, EventArgs.Empty);
+        };
+        menu.Closed += (_, _) => owner.TextChanged -= Refresh;
         return menu;
     }
 

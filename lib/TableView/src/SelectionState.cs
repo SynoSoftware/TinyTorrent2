@@ -5,12 +5,14 @@ namespace Syno.TableView;
 
 /// <summary>
 /// Section 5's identity rule. Without a key selector identity is object reference; with one it is
-/// the ordinal string key. The selector is captured once, so the instance is created empty and
-/// filled at schema capture.
+/// the configured key using its default equality comparer. The selector is captured once, so the
+/// instance is created empty and filled at schema capture.
 /// </summary>
 internal sealed class ItemIdentity : IEqualityComparer<object>
 {
-    internal Func<object, string>? KeySelector { get; set; }
+    internal Func<object, object>? KeySelector { get; set; }
+
+    internal IEqualityComparer<object> KeyComparer { get; set; } = EqualityComparer<object>.Default;
 
     public new bool Equals(object? x, object? y)
     {
@@ -25,12 +27,12 @@ internal sealed class ItemIdentity : IEqualityComparer<object>
         }
 
         return KeySelector is not null
-            && string.Equals(KeySelector(x), KeySelector(y), StringComparison.Ordinal);
+            && KeyComparer.Equals(KeySelector(x), KeySelector(y));
     }
 
     public int GetHashCode(object obj) => KeySelector is null
         ? RuntimeHelpers.GetHashCode(obj)
-        : KeySelector(obj).GetHashCode(StringComparison.Ordinal);
+        : KeyComparer.GetHashCode(KeySelector(obj));
 }
 
 /// <summary>
@@ -39,10 +41,7 @@ internal sealed class ItemIdentity : IEqualityComparer<object>
 /// operation that needs order takes the current ordered view as an argument.
 /// </summary>
 /// <remarks>
-/// Each operation returns whether the <em>logical</em> state changed — the selected identities or
-/// the current identity. Rehydrating the same identities onto new instances, or reordering them,
-/// returns false, which is what keeps section 5.3's "at most one event, and none for positions"
-/// rule in one place.
+/// Table owns the ordered published snapshot and change notifications.
 /// </remarks>
 internal sealed class SelectionState
 {
@@ -90,47 +89,50 @@ internal sealed class SelectionState
     /// Section 13's click, tap and Space rules. The mode's semantics live here so every input
     /// path reports the same selection action.
     /// </summary>
-    internal bool Select(object item, bool ctrl, bool shift, IReadOnlyList<object> view)
+    internal void Select(object item, bool ctrl, bool shift, IReadOnlyList<object> view)
     {
         if (!IsEligible(item))
         {
-            return false;
+            return;
         }
 
         if (Mode == ListViewSelectionMode.None)
         {
-            return Apply(new List<object>(), item, item, item);
+            Apply(new List<object>(), item, item, item);
+            return;
         }
 
         if (shift)
         {
-            return Range(item, add: ctrl, view);
+            Range(item, add: ctrl, view);
+            return;
         }
 
         if (ctrl || Mode == ListViewSelectionMode.Multiple)
         {
-            return Toggle(item);
+            Toggle(item);
+            return;
         }
 
-        return Replace(item);
+        Replace(item);
     }
 
     /// <summary>Plain replace: one row selected, and it becomes current, anchor, and focus.</summary>
-    internal bool Replace(object item)
+    internal void Replace(object item)
     {
         if (!IsEligible(item))
         {
-            return false;
+            return;
         }
 
-        return Apply(Limit(new List<object> { item }), item, item, item);
+        Apply(Limit(new List<object> { item }), item, item, item);
     }
 
-    internal bool Toggle(object item)
+    internal void Toggle(object item)
     {
         if (!IsEligible(item))
         {
-            return false;
+            return;
         }
 
         List<object> next = Mode == ListViewSelectionMode.Single ? new() : new(_selected);
@@ -143,48 +145,59 @@ internal sealed class SelectionState
             next.Add(item);
         }
 
-        return Apply(Limit(next), item, item, item);
+        Apply(Limit(next), item, item, item);
     }
 
-    internal bool Navigate(object item, bool ctrl, bool shift, IReadOnlyList<object> view)
+    internal void Navigate(object item, bool ctrl, bool shift, IReadOnlyList<object> view)
     {
         if (!IsEligible(item))
         {
-            return false;
+            return;
         }
 
         if (shift && AllowsMultiple)
         {
-            return Range(item, add: ctrl, view);
+            Range(item, add: ctrl, view);
+            return;
         }
 
-        return ctrl || Mode == ListViewSelectionMode.Multiple
-            ? Apply(new List<object>(_selected), item, Anchor, item)
-            : Replace(item);
+        if (ctrl || Mode == ListViewSelectionMode.Multiple)
+        {
+            Apply(new List<object>(_selected), item, Anchor, item);
+            return;
+        }
+
+        Replace(item);
     }
 
     /// <summary>
     /// The inclusive range from the anchor to <paramref name="item"/>. The anchor does not move,
     /// so a second Shift click re-projects the range instead of growing it.
     /// </summary>
-    internal bool Range(object item, bool add, IReadOnlyList<object> view)
+    internal void Range(object item, bool add, IReadOnlyList<object> view)
     {
         if (!IsEligible(item))
         {
-            return false;
+            return;
         }
 
         if (!AllowsMultiple)
         {
-            return Mode == ListViewSelectionMode.None
-                ? Apply(new List<object>(), item, item, item)
-                : Replace(item);
+            if (Mode == ListViewSelectionMode.None)
+            {
+                Apply(new List<object>(), item, item, item);
+            }
+            else
+            {
+                Replace(item);
+            }
+            return;
         }
 
         int to = IndexOf(view, item);
         if (to < 0)
         {
-            return false;
+            return;
         }
 
         object anchor = Anchor ?? item;
@@ -207,15 +220,15 @@ internal sealed class SelectionState
             }
         }
 
-        return Apply(next, item, anchor, item);
+        Apply(next, item, anchor, item);
     }
 
     /// <summary>Ctrl+A. Only multiple selection can express it, and it leaves the anchor alone.</summary>
-    internal bool SelectAll(IReadOnlyList<object> view)
+    internal void SelectAll(IReadOnlyList<object> view)
     {
         if (!AllowsMultiple)
         {
-            return false;
+            return;
         }
 
         List<object> next = new();
@@ -228,31 +241,30 @@ internal sealed class SelectionState
         }
 
         object? current = Current ?? (next.Count > 0 ? next[0] : null);
-        return Apply(next, current, Anchor ?? current, Focus ?? current);
+        Apply(next, current, Anchor ?? current, Focus ?? current);
     }
 
-    internal bool Clear() => Apply(new List<object>(), null, null, null);
+    internal void Clear() => Apply(new List<object>(), null, null, null);
 
     /// <summary>
     /// Section 14. The marquee's result replaces the selected packet and moves nothing else. The
     /// anchor especially must not move: a Shift marquee re-projects its range from that anchor on
     /// every pointer move, and an anchor that followed the result would walk with it.
     /// </summary>
-    internal bool SetMarqueeSelection(List<object> items, IReadOnlyList<object> view) =>
+    internal void SetMarqueeSelection(List<object> items, IReadOnlyList<object> view) =>
         Apply(ResolveSelection(items, null, view, out _), Current, Anchor, Focus);
 
     // ------------------------------------------------------------------ programmatic and source
 
     /// <summary>
-    /// Section 5's <c>SetSelection</c>: resolve the requested identities against the current view,
-    /// drop duplicates, unavailable and non-interactive items, then apply the mode limit — all in
-    /// one step, and silently when the resulting identities are unchanged.
+    /// Resolve requested identities against the view, excluding duplicate,
+    /// unavailable and non-interactive items, then apply the mode limit in one step.
     /// </summary>
-    internal bool SetSelection(IEnumerable<object> items, object? currentItem, IReadOnlyList<object> view)
+    internal void SetSelection(IEnumerable<object> items, object? currentItem, IReadOnlyList<object> view)
     {
         List<object> resolved = ResolveSelection(items, currentItem, view, out object? current);
         current ??= resolved.Count > 0 ? resolved[0] : null;
-        return Apply(resolved, current, current, current);
+        Apply(resolved, current, current, current);
     }
 
     private List<object> ResolveSelection(
@@ -294,7 +306,7 @@ internal sealed class SelectionState
     /// Section 5.3's reconciliation. One pass over the new view rehydrates every tracked identity
     /// onto the new instances, prunes what left or became non-interactive, and repairs current.
     /// </summary>
-    internal bool Reconcile(IReadOnlyList<object> view)
+    internal void Reconcile(IReadOnlyList<object> view)
     {
         List<object> kept = new();
         object? current = null;
@@ -337,7 +349,7 @@ internal sealed class SelectionState
             current = kept[0];
         }
 
-        return Apply(kept, current, anchor, focus);
+        Apply(kept, current, anchor, focus);
     }
 
     // ------------------------------------------------------------------ internals
@@ -350,24 +362,10 @@ internal sealed class SelectionState
     };
 
     /// <summary>
-    /// Store the new state and report whether the logical identities moved. The stored instances
-    /// are always replaced, so a same-identity rehydration silently adopts the new objects.
+    /// Always adopt the resolved instances, even when their identities are unchanged.
     /// </summary>
-    private bool Apply(List<object> selected, object? current, object? anchor, object? focus)
+    private void Apply(List<object> selected, object? current, object? anchor, object? focus)
     {
-        bool changed = selected.Count != _selected.Count || !IsSame(current, Current);
-        if (!changed)
-        {
-            foreach (object item in selected)
-            {
-                if (!_selected.Contains(item))
-                {
-                    changed = true;
-                    break;
-                }
-            }
-        }
-
         _selected.Clear();
         foreach (object item in selected)
         {
@@ -377,7 +375,6 @@ internal sealed class SelectionState
         Current = current;
         Anchor = anchor;
         Focus = focus;
-        return changed;
     }
 
     private int IndexOf(IReadOnlyList<object> view, object item)

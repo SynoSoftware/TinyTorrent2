@@ -1,10 +1,16 @@
 # TableView and application ownership — independent proposal
 
-Proposal for comparison, 2026-10-04. This document does not change the active
-contracts or authorize a code migration. It was developed from the current
-library and the old application, independently of the other session's proposal.
-Examples marked proposed describe the intended interface, not compiling examples
-against today's library.
+Implementation status, 2026-10-04: the generic keys/comparers, single schema row
+type, initial state, selection notifications, synchronous event rules and live
+text API have been adopted in code and the [authoritative contract](../lib/TableView/docs/tableview-contract.md).
+Their implementation has not yet been built or run. This document retains the
+independent design rationale; broader adoption and readiness criteria below are
+not a claim that every proposed behavior is implemented.
+
+Originally prepared for comparison on 2026-10-04, independently of the other
+session's design. The contract linked above is the implementation authority.
+Examples below retain the proposed design context; they have not been verified
+by compilation.
 
 ## Recommendation
 
@@ -712,9 +718,12 @@ including corrections to that earlier review.
 | Does removing nullable sentinels authorize changing null ordering? | No. Preserve the host's intended ordering with a comparer. |
 | Did concurrent source renames invalidate the draft's “current” names? | Yes. Reconciled to the reviewed baseline's `ReorderRequested`, `Before`, `CanReorder`, `FitColumns` and `ShowsFitButton`; no compatibility aliases. |
 
-Earlier review rounds passed their revised drafts. This additional round is
-checking the corrected identity and compound-event rules, caller clarity, and
-the distinction between demonstrated requirements and integration judgments.
+Earlier review rounds passed their revised drafts. Three independent reviewers
+also passed this revision for caller clarity, edge-case correctness and evidence
+for its scope, with no remaining concrete design blockers. They checked the
+corrected identity and compound-event rules and the distinction between
+demonstrated requirements and integration judgments. Absence of a current caller
+does not establish that a capability is unnecessary.
 
 The document's local links, code fences and proposed names were checked as well.
 This is a reviewed proposal, not proof of a completed implementation; section 7
@@ -734,6 +743,5 @@ defines the evidence limits.
   [implementation findings](../lib/TableView/docs/tableview-implementation.md),
   [target architecture](architecture.md) and [naming policy](naming.md).
 
-The implementation map contains stale paths after recent moves; the source links
-above name the files inspected for this proposal. Existing gap reports are review
-leads, not fresh runtime verification.
+The implementation map and source links identify the current owners. Remaining
+gap reports are review leads, not fresh runtime verification.

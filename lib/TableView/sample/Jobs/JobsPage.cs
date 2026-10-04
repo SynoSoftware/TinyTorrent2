@@ -43,12 +43,17 @@ public sealed partial class JobsPage : Page
             .CanInteract(row => !row.IsPending)
             .Sort(IndexColumn, row => row.Index)
             .Sort(NameColumn, row => row.Name)
-            .Sort(StateColumn, row => (int)row.State)
+            .Sort(StateColumn, row => row.State)
             .Sort(ProgressColumn, row => row.Progress)
             .Sort(ThroughputColumn, row => row.ActiveRate)
             .Sort(WorkersColumn, row => row.WorkersBusy)
             .Sort(YieldColumn, row => row.Yield)
-            .Sort(RemainingColumn, row => row.Remaining?.TotalSeconds ?? double.MaxValue)
+            .Sort(RemainingColumn, row => row.Remaining, Comparer<TimeSpan?>.Create((left, right) =>
+            {
+                if (!left.HasValue) return right.HasValue ? 1 : 0;
+                if (!right.HasValue) return -1;
+                return left.Value.CompareTo(right.Value);
+            }))
             .Sort(SubmittedColumn, row => row.SubmittedText)
             .Sort(FinishedColumn, row => row.FinishedOrder);
 

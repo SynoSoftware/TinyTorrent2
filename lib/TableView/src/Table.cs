@@ -94,6 +94,15 @@ public sealed partial class Table : Control
     {
         get
         {
+            if (!_schemaCaptured && _pendingLayout is not null)
+            {
+                ColumnLayout pending = CopyLayout(_pendingLayout);
+                return _hasPendingSort ? pending with
+                {
+                    SortColumnId = _pendingSort?.Column.Id,
+                    SortDirection = _pendingSort?.Direction ?? SortDirection.Ascending,
+                } : pending;
+            }
             List<string> order = new();
             Dictionary<string, bool> visibility = new(StringComparer.Ordinal);
             Dictionary<string, double> widths = new(StringComparer.Ordinal);
@@ -131,7 +140,9 @@ public sealed partial class Table : Control
                 }
             }
 
-            return new ColumnLayout(order, visibility, widths, _sortColumn?.Id, _sortDirection);
+            Sort? sort = Sort;
+            return new ColumnLayout(order, visibility, widths, sort?.Column.Id,
+                sort?.Direction ?? SortDirection.Ascending);
         }
 
         set
@@ -140,18 +151,26 @@ public sealed partial class Table : Control
 
             if (!_schemaCaptured)
             {
-                _pendingLayout = value;
+                _pendingLayout = CopyLayout(value);
+                _pendingSort = null;
+                _hasPendingSort = false;
                 return;
             }
 
             // A restored sort changes the private view. Schema capture rebuilds it itself, so only
             // the post-load path needs this, and only when the effective sort actually moved.
-            if (ApplyLayoutCore(value))
+            if (ApplyLayoutCore(value, out IReadOnlyList<object> order))
             {
-                RebuildView();
+                RebuildView(preparedOrder: order);
             }
         }
     }
+
+    private static ColumnLayout CopyLayout(ColumnLayout value) => new(
+        value.Order?.ToArray() ?? Array.Empty<string>(),
+        value.Visibility is null ? new Dictionary<string, bool>() : new Dictionary<string, bool>(value.Visibility),
+        value.Widths is null ? new Dictionary<string, double>() : new Dictionary<string, double>(value.Widths),
+        value.SortColumnId, value.SortDirection);
 
     protected override void OnApplyTemplate()
     {
@@ -216,16 +235,13 @@ public sealed partial class Table : Control
         Geometry.Invalidated -= OnLayoutInvalidated;
     }
 
-    /// <summary>
-    /// Leaving the tree, which for the last table in an application is the window closing. Until
-    /// this existed the settle timer was stopped only when the control was re-templated, so a table
-    /// whose sort was still settling went on ticking into a torn-down XAML core and the tick failed
-    /// inside the hosted list. Reloading is ordinary — a tab or a navigation frame does it — so
-    /// this only pauses the settle; <see cref="OnLoaded"/> lets it run again.
-    /// </summary>
+    /// <summary>Suspend external notifications and visual work while retaining logical state.</summary>
     private void OnUnloaded(object sender, RoutedEventArgs e)
     {
         _detached = true;
+        _source.Suspend();
+        if (_itemsView is not null) _itemsView.ItemsSource = null;
+        foreach (Column column in Columns) column.TextChanged -= OnColumnTextChanged;
         _settleDue?.Stop();
         if (!CancelCommittedGesture())
         {
@@ -235,7 +251,15 @@ public sealed partial class Table : Control
 
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
+        _source.Resume();
         _detached = false;
+        if (_itemsView is not null) _itemsView.ItemsSource = _view;
+        foreach (Column column in Columns)
+        {
+            column.TextChanged -= OnColumnTextChanged;
+            column.TextChanged += OnColumnTextChanged;
+        }
+        RefreshText();
 
         if (_schemaCaptured)
         {
@@ -265,8 +289,9 @@ public sealed partial class Table : Control
         _schemaCaptured = true;
         Columns.CollectionChanged += OnColumnsMutatedAfterCapture;
 
-        // Identity is setup-only. Anything selected before this point was bucketed by reference.
+        // Install identity before resolving the pending initial selection.
         _identity.KeySelector = ItemKey;
+        _identity.KeyComparer = KeyComparer;
         _selection.RehashIdentity();
 
         Geometry.SetOrder(_resolved);
@@ -275,9 +300,18 @@ public sealed partial class Table : Control
         {
             ColumnLayout pending = _pendingLayout;
             _pendingLayout = null;
-            ApplyLayoutCore(pending);
+            ApplyLayoutCore(pending, out _, prepare: false);
         }
 
+        if (_hasPendingSort)
+        {
+            if (_pendingSort is Sort requested && !Enum.IsDefined(requested.Direction))
+                throw ConfigurationError("The initial sort direction is invalid.");
+            _sortColumn = _pendingSort is Sort sort ? RequireSortable(sort.Column) : null;
+            _sortDirection = _pendingSort?.Direction ?? SortDirection.Ascending;
+            _pendingSort = null;
+            _hasPendingSort = false;
+        }
         UpdateHorizontalRange();
         RebuildView();
     }
@@ -376,8 +410,13 @@ public sealed partial class Table : Control
     // ------------------------------------------------------- layout persistence
 
     /// <returns>True when the restored sort is not the one that was already in force.</returns>
-    private bool ApplyLayoutCore(ColumnLayout state)
+    private bool ApplyLayoutCore(ColumnLayout state, out IReadOnlyList<object> view, bool prepare = true)
     {
+        var previous = _resolved.Select(column => (Column: column,
+            Width: column.WidthOverride, Visibility: column.VisibilityOverride)).ToArray();
+        ResolvedColumn? previousSort = _sortColumn;
+        SortDirection previousDirection = _sortDirection;
+        DateTimeOffset previousSettled = _orderSettledAt;
         Dictionary<string, ResolvedColumn> byId = new(StringComparer.Ordinal);
         foreach (ResolvedColumn column in _resolved)
         {
@@ -461,6 +500,23 @@ public sealed partial class Table : Control
         EnsureOneVisibleColumn(ordered);
 
         bool sortChanged = RestoreSort(state, byId);
+        try
+        {
+            ValidateRows(_source.Snapshot);
+            view = prepare ? SortedSnapshot(_source.Snapshot, _sortColumn, _sortDirection) : _source.Snapshot;
+        }
+        catch
+        {
+            foreach (var entry in previous)
+            {
+                entry.Column.WidthOverride = entry.Width;
+                entry.Column.VisibilityOverride = entry.Visibility;
+            }
+            _sortColumn = previousSort;
+            _sortDirection = previousDirection;
+            _orderSettledAt = previousSettled;
+            throw;
+        }
 
         // SetOrder republishes the geometry, which re-applies each header cell's sort indicator.
         Geometry.SetOrder(ordered);
@@ -500,7 +556,7 @@ public sealed partial class Table : Control
 
     private void SetItemsSource(IEnumerable? source) => _source.SetSource(source);
 
-    private void OnSnapshotChanged(object? sender, EventArgs e) => RebuildView();
+    private void OnSnapshotChanged(object? sender, IReadOnlyList<object> snapshot) => RebuildView(snapshot);
 
     // ---------------------------------------------------- horizontal offset
 

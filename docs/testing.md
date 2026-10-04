@@ -53,8 +53,9 @@ Failures worth watching:
 - Loss of the user's data or downloads: saved state that does not survive a
   restart, a destructive action that reaches another torrent's files, a late
   write that resurrects a removed torrent.
-- The pipe contract: malformed or interrupted messages, checked through a small
-  set of byte fixtures that both codecs read. Not a test for every field or enum.
+- The pipe contract: malformed, interrupted, or oversized messages, checked
+  through a small set of sample frames that both sides read. Not a test for
+  every field or enum.
 - An invariant, pinned once. One test of the rule beats twelve rows of examples.
 - A defect already paid for, that a plausible simplification would bring back.
   The selected-row cue that measured 1.08:1 against its 3:1 requirement is one.
@@ -161,10 +162,12 @@ For the milestone checks:
   open, and peaks during a representative operation.
 - Record resident working set and private committed memory separately. Identify
   mapped/file-cache effects and avoid double-counting shared pages.
-- Include throughput, CPU, UI startup, and release package size with required
-  DLLs and runtimes. Size is secondary to correct, useful transfer behavior.
+- Include throughput, CPU, the time from Open to a usable window, and release
+  package size with required DLLs and runtimes. Size is secondary to correct,
+  useful transfer behavior.
 - Check that repeated UI open/close and language switching do not accumulate
-  retained state. Closing WinUI releases its process and UI-only snapshots/history.
+  retained state. Closing WinUI releases its process and UI-only snapshots; the
+  engine's speed history stays within its bound.
 
 Use the same machine and comparable conditions. Prefer repeatable local input
 over a volatile public swarm for transfer comparison. Synthetic rows can exercise

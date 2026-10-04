@@ -46,7 +46,12 @@ public sealed partial class Table
 
     private readonly ItemIdentity _identity = new();
 
-    private Selection? _selectionState;
+    private Selection _publishedSelection = Selection.Empty;
+    private Selection? _pendingSelection;
+    private object? _schema;
+    private Type? _rowType;
+    private Func<object, object, bool>? _sameValue;
+    private ListViewSelectionMode _selectionMode = ListViewSelectionMode.Extended;
 
     /// <summary>Set while the table is writing the hosted list's selection, to stop re-entry.</summary>
     private bool _syncingContainers;
@@ -56,8 +61,8 @@ public sealed partial class Table
 
     /// <summary>
     /// Raised once after any completed selection or current-item change, including the ones caused
-    /// by <see cref="SetSelection"/> and by source reconciliation. Never raised for a rehydration
-    /// or a reorder that leaves the logical packet unchanged.
+    /// by assignment and source reconciliation. Replacement instances and packet order changes
+    /// also notify, so observers always receive the exposed rows.
     /// </summary>
     public event EventHandler<Selection>? SelectionChanged;
 
@@ -87,7 +92,16 @@ public sealed partial class Table
     internal event EventHandler? RowVisualsChanged;
 
     /// <summary>Setup-only. Default <see cref="ListViewSelectionMode.Extended"/>.</summary>
-    public ListViewSelectionMode SelectionMode { get; set; } = ListViewSelectionMode.Extended;
+    public ListViewSelectionMode SelectionMode
+    {
+        get => _selectionMode;
+        set
+        {
+            RequireSetup();
+            if (!Enum.IsDefined(value)) throw new ArgumentOutOfRangeException(nameof(value));
+            _selectionMode = value;
+        }
+    }
 
     /// <summary>
     /// State the row type once, and hand over the identity selector, the interaction predicate and
@@ -96,20 +110,32 @@ public sealed partial class Table
     /// </summary>
     public Schema<TRow> Schema<TRow>()
     {
-        if (_schemaCaptured)
+        RequireSetup();
+        if (_schema is Schema<TRow> existing) return existing;
+        if (_schema is not null) throw ConfigurationError("A table has one schema row type.");
+        _rowType = typeof(TRow);
+        if (_rowType.IsValueType)
         {
-            throw ConfigurationError(
-                "The schema is captured at the first Loaded. Call Schema<TRow>() before then.");
+            _sameValue = (left, right) => EqualityComparer<TRow>.Default.Equals((TRow)left, (TRow)right);
         }
+        Schema<TRow> schema = new(this);
+        _schema = schema;
+        return schema;
+    }
 
-        return new Schema<TRow>(this);
+    internal void RequireSetup()
+    {
+        if (_schemaCaptured)
+            throw ConfigurationError("The schema is fixed at first Loaded.");
     }
 
     /// <summary>
-    /// A stable ordinal key per item, from <see cref="Schema{TRow}"/>. Without one identity is
+    /// A stable key per item, from <see cref="Schema{TRow}"/>. Without one identity is
     /// object reference.
     /// </summary>
-    internal Func<object, string>? ItemKey { get; set; }
+    internal Func<object, object>? ItemKey { get; set; }
+
+    internal IEqualityComparer<object> KeyComparer { get; set; } = EqualityComparer<object>.Default;
 
     /// <summary>
     /// Which items the user may act on, from <see cref="Schema{TRow}"/>. Null means all of them.
@@ -133,14 +159,20 @@ public sealed partial class Table
     /// </remarks>
     public Selection Selection
     {
-        get => _selectionState ??= new Selection(BuildSelectedPacket(), _selection.Current);
+        get => _pendingSelection ?? _publishedSelection;
         set
         {
             ArgumentNullException.ThrowIfNull(value);
 
+            if (!_schemaCaptured)
+            {
+                _pendingSelection = value;
+                return;
+            }
             SyncSelectionPolicy();
             CancelGesture();
-            CommitSelection(_selection.SetSelection(value.Items, value.Current, View));
+            _selection.SetSelection(value.Items, value.Current, View);
+            CommitSelection();
         }
     }
 
@@ -212,7 +244,8 @@ public sealed partial class Table
     {
         if (d is Table table && !(bool)e.NewValue && table._gesture == RowGesture.Marquee)
         {
-            table.CommitSelection(table.RestoreSelectionBeforeMarquee());
+            table.RestoreSelectionBeforeMarquee();
+            table.CommitSelection();
         }
     }
 
@@ -265,7 +298,7 @@ public sealed partial class Table
     /// becomes the selection. Both make the row current, focused, and the next range anchor, so a
     /// context request on an already-selected row still reports the moved current item.
     /// </summary>
-    private bool SelectForContext(object item) => _selection.SetSelection(
+    private void SelectForContext(object item) => _selection.SetSelection(
         _selection.IsSelected(item) ? SelectedItems : new[] { item }, item, View);
 
     /// <summary>
@@ -284,8 +317,32 @@ public sealed partial class Table
     /// same" — and the observable result is settled below, not by the collection notifications:
     /// selection is re-applied from the table's own model, and at most one event is raised.
     /// </summary>
-    private void RebuildView()
+    private void RebuildView(IReadOnlyList<object>? snapshot = null, IReadOnlyList<object>? preparedOrder = null)
     {
+        snapshot ??= _source.Snapshot;
+        if (!_schemaCaptured)
+        {
+            _source.Accept(snapshot);
+            return;
+        }
+        IReadOnlyList<object> order;
+        if (preparedOrder is null)
+        {
+            ValidateRows(snapshot);
+            order = ViewOrder(snapshot);
+        }
+        else
+        {
+            order = preparedOrder;
+            _orderSettledAt = DateTimeOffset.UtcNow;
+        }
+        _source.Accept(snapshot);
+        if (_detached)
+        {
+            _view.Reconcile(order, Array.Empty<int>());
+            ReconcileSelection(FocusState.Unfocused);
+            return;
+        }
         // Section 5.3 cancels a live gesture for a view-changing update. The test is whether the
         // view actually changed, not whether the source published: the original host published about once
         // a second and cancelling on each one made both gestures unusable, a marquee dying on the
@@ -293,7 +350,6 @@ public sealed partial class Table
         // cancelled here at all — the rectangle has not moved, so what it covers is re-derived
         // over the new view below. A row drag is, but only once the order beneath it moved, which
         // is the moment its destination stopped meaning what the user aimed at.
-        ValidateItemKeys(_source.Snapshot);
 
         // Capture how the rows hold focus, not merely that they do, and capture it before the view
         // changes. Once the focused row's container is gone the framework has already rescued
@@ -319,7 +375,7 @@ public sealed partial class Table
                 _itemsView.SelectionMode = ListViewSelectionMode.None;
             }
 
-            viewMoved = _view.Reconcile(ViewOrder(), RealizedIndices());
+            viewMoved = _view.Reconcile(order, RealizedIndices());
         }
         finally
         {
@@ -344,34 +400,22 @@ public sealed partial class Table
             _itemsView?.ItemsPanelRoot?.InvalidateMeasure();
         }
 
-        ReconcileSelection(rowFocus);
         UpdateStateLayer();
+        ReconcileSelection(rowFocus);
     }
 
-    /// <summary>
-    /// Section 5.3: a null, empty, or duplicate configured key is a source-contract error, so the
-    /// snapshot is checked before anything reconciles against it.
-    /// </summary>
-    private void ValidateItemKeys(IReadOnlyList<object> snapshot)
+    private void ValidateRows(IReadOnlyList<object> snapshot)
     {
-        if (ItemKey is not { } key)
-        {
-            return;
-        }
-
-        HashSet<string> seen = new(StringComparer.Ordinal);
+        HashSet<object> seen = new(_identity);
         foreach (object item in snapshot)
         {
-            string value = key(item);
-            if (string.IsNullOrEmpty(value))
-            {
-                throw ConfigurationError("The schema key selector returned a null or empty key.");
-            }
-
-            if (!seen.Add(value))
-            {
-                throw ConfigurationError($"The schema key selector returned the duplicate key '{value}'.");
-            }
+            if (_rowType is not null && !_rowType.IsInstanceOfType(item))
+                throw ConfigurationError($"The source contains a row outside {_rowType}.");
+            if (ItemKey is not null && ItemKey(item) is null)
+                throw ConfigurationError("The schema key selector returned null.");
+            if (!seen.Add(item))
+                throw ConfigurationError("The source contains duplicate row identities.");
+            CanInteract?.Invoke(item);
         }
     }
 
@@ -384,15 +428,23 @@ public sealed partial class Table
     {
         SyncSelectionPolicy();
 
-        bool changed = _selection.Reconcile(View);
+        if (_pendingSelection is Selection pending)
+        {
+            _pendingSelection = null;
+            _selection.SetSelection(pending.Items, pending.Current, View);
+        }
+        else
+        {
+            _selection.Reconcile(View);
+        }
         if (_gesture == RowGesture.Marquee)
         {
             _marquee.Refresh();
-            changed |= _selection.SetMarqueeSelection(MarqueeItems(), View);
+            _selection.SetMarqueeSelection(MarqueeItems(), View);
         }
 
-        CommitSelection(changed);
-        RestoreRowFocus(rowFocus);
+        if (!_detached) RestoreRowFocus(rowFocus);
+        CommitSelection();
     }
 
     // ------------------------------------------------------------------ commit
@@ -405,19 +457,50 @@ public sealed partial class Table
     }
 
     /// <summary>
-    /// One exit point for every selection change: invalidate the packet, push the authoritative
-    /// state to the hosted list and the row visuals, then raise at most one event.
+    /// Publish after compound model updates, so observers see only the final packet
+    /// and current item.
     /// </summary>
-    private void CommitSelection(bool changed)
+    private Selection CommitSelection()
     {
-        _selectionState = null;
-        ApplySelectionToContainers();
-        RowVisualsChanged?.Invoke(this, EventArgs.Empty);
-
-        if (changed)
+        Selection next = new(BuildSelectedPacket(), _selection.Current);
+        bool changed = !SameSelection(_publishedSelection, next);
+        _publishedSelection = next;
+        if (!_detached)
         {
-            SelectionChanged?.Invoke(this, Selection);
+            ApplySelectionToContainers();
+            RowVisualsChanged?.Invoke(this, EventArgs.Empty);
         }
+        if (changed) SelectionChanged?.Invoke(this, next);
+        return next;
+    }
+
+    private bool SameSelection(Selection left, Selection right)
+    {
+        if (left.Items.Count != right.Items.Count || !SameItem(left.Current, right.Current))
+        {
+            return false;
+        }
+        for (int index = 0; index < left.Items.Count; index++)
+        {
+            if (!SameItem(left.Items[index], right.Items[index]))
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private bool SameItem(object? left, object? right)
+    {
+        if (ReferenceEquals(left, right))
+        {
+            return true;
+        }
+        if (left is null || right is null || !_identity.Equals(left, right))
+        {
+            return false;
+        }
+        return _sameValue is not null && _sameValue(left, right);
     }
 
     private IReadOnlyList<object> BuildSelectedPacket()
@@ -459,7 +542,7 @@ public sealed partial class Table
     /// </summary>
     private void ApplySelectionToContainers()
     {
-        if (_itemsView is null || _syncingContainers)
+        if (_detached || _itemsView is null || _syncingContainers)
         {
             return;
         }

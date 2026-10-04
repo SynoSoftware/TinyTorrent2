@@ -271,6 +271,7 @@ public sealed partial class CellsPanel : Panel
         {
             if (cell.Column is Column column)
             {
+                cell.RefreshText(_owner?.Strings ?? Strings.English);
                 cell.SetSort(_owner?.SortDirectionOf(column));
             }
 

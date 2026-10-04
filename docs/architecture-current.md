@@ -127,16 +127,12 @@ splitting or merging them merely to change file count would not improve depth.
 
 ## Existing gaps and evidence limits
 
-Known contract gaps include
-[live localisation](../lib/TableView/docs/tableview-implementation.md#known-localisation-gap)
-and the [source-lifetime, keyboard, and automation issues](../lib/TableView/docs/tableview-implementation.md#other-known-integration-gaps)
-recorded in the implementation map.
-[Strings](../lib/TableView/src/Resources/Strings.cs) reads the library's embedded
-[English text](../lib/TableView/src/Resources/en.json) once.
-[Column.DisplayName](../lib/TableView/src/Column.cs) has no change
-notification, and generated headers copy presentation text when built. The
-language selection and refresh path are not present. Embedded English does not
-establish live language switching.
+The [implementation map](../lib/TableView/docs/tableview-implementation.md) records
+remaining keyboard, automation and RTL work. [Strings](../lib/TableView/src/Strings.cs)
+now prepares immutable embedded catalogues with fallback; live column text and
+`Table.Strings` refresh existing presentation. Source subscriptions suspend on
+unload and resume on reload. These API changes have source-review evidence only:
+compilation, a live language switch and source-lifetime behavior remain unverified.
 
 The test project contains control and input checks, not engine, persistence, or
 pipe verification. Its existence is not a claim that the suite currently passes.

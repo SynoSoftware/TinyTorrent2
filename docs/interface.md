@@ -187,25 +187,75 @@ Language selection retains its immediate, in-place behavior.
 ### Main window
 
 The torrent table is the primary workspace, with an optional inspector and
-focused Add and Preferences tasks. Filtering belongs to the page; TableView owns
-its generic interaction. Domain actions from toolbar, menu, and keyboard use the
-same command owner. Remove keeps data by default; delete-data is an explicit,
-distinct decision.
+focused Add and Preferences tasks. Filtering belongs to the page: a status
+filter (All, Downloading, Seeding, Completed, Paused, Error), a tracker filter
+derived from each torrent's tracker hosts, and a text filter. As in qBittorrent,
+Completed includes finished torrents that are paused, and Paused includes them
+too, so the person finds such a torrent under either. TableView owns its
+generic interaction. Domain actions from toolbar, context
+menu, and keyboard use the same command owner.
 
-Before deleting files, confirm once with the affected torrent names or count,
-the file scope, a specific action such as Delete files, and a safe Cancel action.
-Use standard [ContentDialog buttons](https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/dialogs-and-flyouts/dialogs).
+The table starts with Name, Size, Progress, Status, Down speed, Up speed, ETA,
+Ratio, Seeds/Peers, and Added; the person can hide, show, and reorder them.
+
+Torrent commands are Pause, Resume, Force start, Open, Open folder, Copy magnet
+link, Copy info hash, Move, Verify, Remove, and Delete files. Open hands the file
+of a single-file torrent, or the folder of a multi-file torrent, to Windows as
+Explorer does, only on the person's request. Double-click and Enter on a row
+open the inspector. Pause all and Resume
+all are in the window and the tray. Exit is in the window as well as the tray.
+
+Dropping torrent files or magnet text on the window, or pasting them with Ctrl+V
+while the table has focus, opens Add with those sources. An empty list says how
+to add a torrent. A status bar shows total download and upload speed, the
+alternative speed toggle, whether incoming connections arrive or the selected
+network interface is absent, and Update available when a newer release exists.
+
+Shortcuts match qBittorrent's, so people who move from it keep their habits.
+TinyTorrent has no Print, Save, or Refresh command, so Ctrl+P, Ctrl+S, and
+Ctrl+R serve torrent actions as they do there. Torrent shortcuts act while the
+table has focus; an editor keeps its own keys.
+
+| Key | Action |
+| --- | --- |
+| Ctrl+O | Add a torrent file |
+| Ctrl+Shift+O | Add a magnet link |
+| Ctrl+V | Add the pasted magnet link or torrent file |
+| Ctrl+F, Ctrl+E | Text filter |
+| Ctrl+A | Select all torrents |
+| Enter | Open the inspector, as double-click does |
+| Ctrl+S | Resume |
+| Ctrl+P | Pause |
+| Ctrl+M | Force start |
+| Ctrl+R | Verify |
+| Ctrl+Shift+S | Resume all |
+| Ctrl+Shift+P | Pause all |
+| Ctrl++ / Ctrl+- | Move up / down in the queue |
+| Ctrl+Shift++ / Ctrl+Shift+- | Move to the top / bottom of the queue |
+| Delete | Remove |
+| Shift+Delete | Delete files |
+| Alt+O | Preferences |
+| Ctrl+W | Close the window |
+| Ctrl+Q | Exit |
+
+Remove keeps data; delete-data is an explicit, distinct decision. Each confirms
+once with the affected torrent names or count, a specific action such as Remove
+or Delete files, and a safe Cancel action. Remove confirms because a removed
+torrent cannot be restored without its torrent file or magnet link. Delete files
+also states the file scope, that deletion is permanent, and that files other
+torrents use are kept. Deletion bypasses the Recycle Bin, as in qBittorrent,
+because people delete a torrent's files to free disk space. The dialog
+opens with focus on Cancel, so Enter cannot delete data by accident. Use
+standard [ContentDialog buttons](https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/dialogs-and-flyouts/dialogs).
 Routine pause, resume, and applied settings need no confirmation.
 
 Retain recognizable identity and last-known read-only values on disconnect, mark
 them stale, and disable writes until the engine is available. Pending operations
 and failures remain visible without exposing internal protocol machinery.
 Reconnection preserves presentation state according to the protocol contract.
-When an unresolved operation's outcome is no longer available, show what is
-known and what the user can do next; do not leave a permanent busy state or infer
-success from a missing torrent row. Unfinished file recovery remains visible
-even after the corresponding outcome record expires. Normal expiry of an already
-reported outcome record requires no prompt or warning.
+After reconnecting, show the confirmed list; do not leave a permanent busy state.
+A missing row means the torrent was removed, not that its files were deleted; a
+deletion failure arrives as a notification.
 
 ### Add
 
@@ -219,12 +269,24 @@ Show preview progress immediately, keep cancellation available while acquiring
 metadata, and expose file choices when metadata is ready. The engine supplies
 that metadata; the UI does not parse torrents or impose an old client's
 file-choices-only-after-add limitation. Unknown metadata is an explicit state,
-never an invented file list or silently started payload transfer.
+never an invented file list or silently started payload transfer. Add is
+available before magnet metadata arrives, so a slow swarm does not hold the
+person in the form; the torrent then wants every file, and file choices move to
+the inspector's Files view.
+
+Several sources added together, by multi-selection in the picker, by opening
+several files from Explorer, or by one drop, share one form: their names and
+sizes, one destination, Start paused, and Add all. A source already in the
+list is marked Already added, with the offer to merge its trackers. Sources that
+arrive while the form is open join it. File choices for each torrent move to the Files view.
+Thirty torrents are one form, not thirty. As in qBittorrent, the form has a
+Never show again check box, which turns off the Show the Add form preference
+where the person meets the form.
 
 Search within files changes visibility, not wanted choices. Bulk selection has
 an explicit scope. Keep file identity and selected bytes clear; when a known list
 has no wanted files, explain why Add is unavailable. The destination starts from
-the engine default and remains changeable through a native picker. A failed
+the default download folder, initially Windows' Downloads known folder, and remains changeable through a native picker. A failed
 free-space check must not be presented as proof of an invalid folder.
 
 Keep one form with a reachable native footer. A long body scrolls; the virtualized
@@ -234,20 +296,17 @@ another page or state model solely to accommodate a short window.
 Commit captures source and choices once, indicates pending work, and does not
 promise that Cancel can undo an accepted command. A confirmed addition reveals
 the torrent. A duplicate preserves the existing torrent's saved choices and data
-and offers a path to it. A rejected choice returns to the relevant field; an
-uncertain outcome follows the protocol's reconciliation rules.
+and offers a path to it; when the new source lists trackers the existing torrent
+lacks, it offers to add them. A rejected choice returns to the relevant field;
+an uncertain outcome follows the protocol's reconciliation rules.
 
-If payload paths are already used by another torrent, identify that torrent and
-offer a distinct destination or a way to open the existing torrent. If the
-overlap is discovered after accepting a magnet, show the new addition as unable
-to start, with Change destination and Remove actions; removal here keeps files.
-Do not describe it as a duplicate unless its content identity is a duplicate.
-
-If the user wants to replace an older torrent, the existing torrent's Remove
-action keeps its files for a subsequent addition to verify and reuse. Explain
-that path without silently removing the old torrent. The initial release has no
-automatic Replace action; closing Add or refusing an overlap preserves the
-existing torrent.
+A new torrent may use files another torrent already uses, such as the same
+content from a second tracker; the [shared-files policy](engine.md#shared-files)
+allows it, and verification reuses the files. Pieces that do not match are
+downloaded again over those files, so the form names the torrents that already
+use files at the chosen destination before Add. To replace an older torrent, the
+person removes it, keeping its files, and adds the new one; the initial release
+has no automatic Replace action.
 
 ### Preferences
 
@@ -263,10 +322,16 @@ and scrolling handle smaller windows. Do not show an engine field dump. Disk
 caching remains [automatic engine policy](engine.md#disk-write-caching), not a
 Preferences choice.
 
-Include port mapping and listen port, completion notifications, and preventing
-idle sleep while downloading on mains power. Each uses the existing settings
-path. Downloads and updates opens the release page; no background-check setting
-is needed for the selected [update model](architecture.md#installation-and-updates).
+Include, grouped by task: the default download folder and Show the Add form;
+global and alternative speed limits; queue limits for active downloads and
+seeds; seeding ratio and time limits; connection limits; the network interface,
+port mapping, and listen port; completion notifications; preventing idle sleep
+while downloading on mains power, and also while seeding; Check for updates,
+following the [update model](architecture.md#installation-and-updates); and
+language. Each uses the existing settings path. Reaching a seeding limit pauses
+the torrent, as in qBittorrent; nothing is removed without a request. The sleep switch names its
+mains-power condition, so a laptop that sleeps on battery does not surprise
+its owner.
 
 Preferences offers one Start when I sign in switch and an Open torrents with
 TinyTorrent action covering `.torrent` files and magnet links. These call the
@@ -286,8 +351,7 @@ changes need neither a confirmation dialog nor a technical explanation.
 
 General, Files, Peers, Trackers, Speed, and Pieces answer different questions;
 request data only for the visible view. Preserve useful data coverage and choose
-each layout for its task.
-The Pieces map's required behavior is described below.
+each layout for its task. The Pieces view is the [Pieces map](#pieces-map).
 
 Apply individual choices and explicit file commands through the same commit
 rules. When a coherent edit needs a draft, keep one active editor bound to the
@@ -299,20 +363,73 @@ Move makes its scope clear: moving a dedicated torrent folder includes companion
 files such as subtitles. A shared download directory is never silently moved as
 one torrent's folder. Show source and destination, preserve choices on failure,
 and give an actionable explanation for a collision or an unsafe scope, following
-[engine relocation](engine.md#removal-and-relocation).
+[engine relocation](engine.md#removal-and-relocation). When other torrents use
+the files, name them and offer to move them together.
 
-Speed history is bounded and collected only while observed; unknown gaps are
-not interpolated into invented history. Provide current/peak text alongside a
-chart. Pieces uses one lean raster path and one keyboard focus group, with block
-navigation and accessible range/composition facts, rather than a visual element
-per piece. Distinguish local possession, verification, connected-peer availability,
-and unknown state according to actual engine facts.
+The Speed view shows the [engine's session-wide speed history](engine.md#state-and-work),
+whichever torrent is selected, as qBittorrent's does. It continues while WinUI
+is closed, so reopening shows what happened meanwhile. Offer the last five
+minutes and the last 24 hours. Unknown gaps, such as the time before an engine
+restart, are not interpolated into invented history. Provide current/peak text
+alongside a chart.
 
 One page owner allocates table and inspector space. Remember an explicit split
 adjustment within current usable bounds; the splitter is keyboard-adjustable and
 reports its range. If both panes cannot show their essential content, use the
 same inspector in a single-pane presentation with Back. Preserve selection and
 the requested split; do not hide an inspector while continuing its detail work.
+
+### Pieces map
+
+The Pieces map answers two questions: how far the download has come, and whether
+it can finish. It states the answer in words, because a grid of colours alone
+leaves the user to work out the conclusion. Square size, the drawing of squares
+that cover several pieces, the rare limit, and the colours follow the previous
+TinyTorrent map; change them only when the
+[implementation review](#implementation-review) shows a better choice in use.
+
+- **States.** A piece is *verified* when the engine has checked it, and
+  *downloading* while it is being received. A missing piece is *unavailable*
+  when no connected peer has it. It is *rare* when the connected peers that have
+  it number at most 15 % of those that have the torrent's best-available piece,
+  rounded up and never less than one, because a fixed peer count means something
+  different in a large swarm and a small one. Otherwise it is *common*. While no
+  peer is connected, availability is unknown, so missing pieces are *missing*,
+  never unavailable.
+- **Status.** Above the map, one sentence gives the conclusion: Complete, Waiting
+  for metadata, No peers connected, All missing pieces are available, or the
+  number of unavailable pieces and the files they belong to. Naming the files
+  lets the user skip them and let the rest finish.
+- **Legend.** Under the status, one row shows each state with its swatch and its
+  count, then the piece count and piece size. The counts are the legend, so the
+  two cannot disagree. The row wraps when the panel is narrow.
+- **Squares.** Squares keep one readable size and sit in groups, so the eye
+  keeps its place. They never shrink: when the torrent has more pieces than fit,
+  each square covers an equal, contiguous range of pieces. The map is centred
+  and aligned to the top. In a
+  right-to-left language the first piece is at the top right, as a progress bar
+  starts at the right.
+- **Squares that cover several pieces** show the state most of their pieces
+  have; on a tie the worse state wins, in the order unavailable, rare, common,
+  missing, downloading, verified. A square that holds more than one state gets a
+  small triangle in its top-right corner, so the user knows its colour does not
+  describe every piece.
+- **Drawing.** Use Fluent theme colours. A downloading square shows how much
+  of it has arrived, so progress moves while the user watches. Fill, hatching,
+  and border keep every state readable without colour.
+- **Pointer and keyboard.** The map is one focus stop. Pointing at a square, or
+  moving to it with the arrow keys, Home, or End, shows a tooltip with its piece
+  numbers, the files they belong to, the count of each state, and, for a single
+  missing piece, how many connected peers have it. The same text is the map's
+  UI Automation value, and Ctrl+C copies it.
+- **Drawing cost.** Draw the squares into one bitmap and redraw only when the
+  data changes, because one element per square is too slow at thousands of
+  pieces.
+- **Data.** While the Pieces map is visible, the engine sends the verified
+  pieces, the connected-peer count for each piece, and the pieces being
+  downloaded with their received share. Each time the map opens, it also sends where each file starts in the piece
+  sequence. Nothing is sent while the map is hidden, because availability is one
+  number per piece and a large torrent has tens of thousands of pieces.
 
 ## Implementation review
 
