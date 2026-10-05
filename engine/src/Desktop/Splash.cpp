@@ -1,99 +1,48 @@
 #include "Desktop/Splash.h"
 #include "Resources.h"
 #include <algorithm>
+#include <dwmapi.h>
+#include <uxtheme.h>
 
 namespace tt::desktop
 {
 namespace
 {
 constexpr wchar_t windowClass[] = L"TinyTorrent.Startup";
+constexpr UINT_PTR showTimer = 1;
+constexpr UINT_PTR closeTimer = 2;
+constexpr UINT showDelay = 1000;
+constexpr UINT minimumDwell = 1000;
 
-// The buttons take the standard dialog IDs, so IsDialogMessage sends Enter to
-// the first and Escape to the second.
-constexpr int firstId = IDOK;
-constexpr int secondId = IDCANCEL;
-constexpr int textId = secondId + 1;
-constexpr int iconId = textId + 1;
-
-// Layout in pixels at 96 DPI.
+// Layout in effective pixels.
 constexpr SIZE openingSize{350, 170};
-constexpr SIZE failureSize{440, 240};
-constexpr int buttonWidth = 82;
-constexpr int buttonHeight = 28;
-constexpr int buttonGap = 10;
-constexpr int buttonRight = 20;
-constexpr int buttonBottom = 14;
-constexpr int buttonArea = 46;
-constexpr int textInset = 16;
-constexpr int textTop = 12;
 constexpr int iconSize = 48;
 constexpr int iconGap = 12;
+constexpr int textInset = 16;
 
 int Scale(int value, UINT dpi)
 {
     return MulDiv(value, dpi, USER_DEFAULT_SCREEN_DPI);
 }
 
-// The choices on the first and second buttons.
-struct Choices
+bool Preference(wchar_t const* name)
 {
-    SplashChoice first;
-    SplashChoice second;
-};
-
-Choices Offered(SplashFailure failure)
-{
-    switch (failure)
-    {
-    case SplashFailure::Launch:
-    case SplashFailure::Startup:
-        return {SplashChoice::Retry, SplashChoice::Close};
-    case SplashFailure::Save:
-        return {SplashChoice::Retry, SplashChoice::ExitAnyway};
-    case SplashFailure::FilesBusy:
-        return {SplashChoice::Wait, SplashChoice::Cancel};
-    case SplashFailure::Unresponsive:
-        return {SplashChoice::ExitAnyway, SplashChoice::Cancel};
-    }
-    return {SplashChoice::Retry, SplashChoice::Close};
-}
-
-char const* ToString(SplashChoice choice)
-{
-    switch (choice)
-    {
-    case SplashChoice::Retry: return "retry";
-    case SplashChoice::Close: return "close";
-    case SplashChoice::Cancel: return "cancel";
-    case SplashChoice::ExitAnyway: return "exit_anyway";
-    case SplashChoice::Wait: return "wait";
-    }
-    return "";
+    DWORD value = 1;
+    DWORD size = sizeof(value);
+    auto status = RegGetValueW(HKEY_CURRENT_USER,
+        L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize", name,
+        RRF_RT_REG_DWORD, nullptr, &value, &size);
+    return status != ERROR_SUCCESS || value != 0;
 }
 }
 
-char const* ToString(SplashFailure failure)
+Splash::Splash(Strings const& strings) : strings_(strings)
 {
-    switch (failure)
-    {
-    case SplashFailure::Launch: return "launch";
-    case SplashFailure::Startup: return "startup";
-    case SplashFailure::Save: return "save";
-    case SplashFailure::FilesBusy: return "files_busy";
-    case SplashFailure::Unresponsive: return "unresponsive";
-    }
-    return "";
-}
-
-Splash::Splash(Strings const& strings, std::function<bool()> windowRunning, Choose choose)
-    : strings_(strings), windowRunning_(std::move(windowRunning)), choose_(std::move(choose))
-{
-    auto module = GetModuleHandleW(nullptr);
     WNDCLASSW type{};
     type.lpfnWndProc = Procedure;
-    type.hInstance = module;
-    type.hIcon = LoadIconW(module, MAKEINTRESOURCEW(IDI_TINYTORRENT));
-    type.hbrBackground = GetSysColorBrush(COLOR_WINDOW);
+    type.hInstance = GetModuleHandleW(nullptr);
+    type.hIcon = LoadIconW(type.hInstance, MAKEINTRESOURCEW(IDI_TINYTORRENT));
+    type.hCursor = LoadCursorW(nullptr, IDC_ARROW);
     type.lpszClassName = windowClass;
     RegisterClassW(&type);
 }
@@ -101,108 +50,54 @@ Splash::Splash(Strings const& strings, std::function<bool()> windowRunning, Choo
 Splash::~Splash()
 {
     Close();
-    if (font_)
-    {
-        DeleteObject(font_);
-    }
 }
 
-// Retry for a window that failed to open starts a new window process, so it
-// waits until the previous one has exited. Every other first choice is
-// always available.
-bool Splash::CanChooseFirst() const
+void Splash::Show()
 {
-    auto opening = failure_ == SplashFailure::Launch || failure_ == SplashFailure::Startup;
-    return !opening || !windowRunning_();
-}
-
-// The window's Close and Escape choose the second button, except Exit anyway,
-// which can lose changes, so only a click on its button chooses it.
-bool Splash::CanDismiss() const
-{
-    return failure_ && Offered(*failure_).second != SplashChoice::ExitAnyway;
-}
-
-bool Splash::PreTranslate(MSG& message)
-{
-    if (!window_)
+    if (window_)
     {
-        return false;
+        KillTimer(window_, closeTimer);
+        return;
     }
-    // IsDialogMessage turns Escape into a click on the Close button.
-    bool escape = message.message == WM_KEYDOWN && message.wParam == VK_ESCAPE &&
-        (message.hwnd == window_ || IsChild(window_, message.hwnd));
-    if (escape && !CanDismiss())
-    {
-        return true;
-    }
-    return IsDialogMessageW(window_, &message);
-}
-
-void Splash::Show(std::optional<SplashFailure> failure, std::wstring detail)
-{
-    failure_ = failure;
-    detail_ = std::move(detail);
-    if (!window_)
-    {
-        Create();
-    }
-    auto firstButton = GetDlgItem(window_, firstId);
-    auto secondButton = GetDlgItem(window_, secondId);
-    if (failure_)
-    {
-        auto choices = Offered(*failure_);
-        SetWindowTextW(firstButton, strings_.Text("dialog", ToString(choices.first)).c_str());
-        SetWindowTextW(secondButton, strings_.Text("dialog", ToString(choices.second)).c_str());
-    }
-    ShowWindow(firstButton, failure_ ? SW_SHOW : SW_HIDE);
-    ShowWindow(secondButton, failure_ ? SW_SHOW : SW_HIDE);
-    ShowWindow(GetDlgItem(window_, iconId), failure_ ? SW_HIDE : SW_SHOW);
-    EnableWindow(firstButton, CanChooseFirst());
-    auto text = failure_ ? strings_.Text("error", ToString(*failure_)) : strings_.Text("startup", "opening");
-    if (!detail_.empty())
-    {
-        text += L"\n" + detail_;
-    }
-    SetWindowTextW(GetDlgItem(window_, textId), text.c_str());
-    auto dpi = GetDpiForWindow(window_);
-    auto size = failure_ ? failureSize : openingSize;
-    SetWindowPos(window_, nullptr, 0, 0, Scale(size.cx, dpi), Scale(size.cy, dpi),
-        SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
-    SendMessageW(window_, WM_SIZE, 0, 0);
-    InvalidateRect(window_, nullptr, TRUE);
-    if (failure_)
-    {
-        SetForegroundWindow(window_);
-    }
-}
-
-void Splash::Create()
-{
-    auto module = GetModuleHandleW(nullptr);
     POINT point{};
     GetCursorPos(&point);
     MONITORINFO monitor{sizeof(monitor)};
     GetMonitorInfoW(MonitorFromPoint(point, MONITOR_DEFAULTTONEAREST), &monitor);
-    window_ = CreateWindowExW(WS_EX_TOOLWINDOW, windowClass, productName, WS_POPUP | WS_BORDER,
-        point.x, point.y, openingSize.cx, openingSize.cy, nullptr, nullptr, module, this);
+    // Retain the frame styles for DWM rounding; WM_NCCALCSIZE removes their chrome.
+    window_ = CreateWindowExW(WS_EX_TOOLWINDOW, windowClass, productName,
+        WS_POPUP | WS_CAPTION | WS_THICKFRAME, point.x, point.y, openingSize.cx, openingSize.cy,
+        nullptr, nullptr, GetModuleHandleW(nullptr), this);
+    if (!window_)
+    {
+        return;
+    }
     auto dpi = GetDpiForWindow(window_);
     auto width = Scale(openingSize.cx, dpi);
     auto height = Scale(openingSize.cy, dpi);
     auto const& work = monitor.rcWork;
-    SetWindowPos(window_, HWND_TOP, work.left + (work.right - work.left - width) / 2,
-        work.top + (work.bottom - work.top - height) / 2, width, height, SWP_NOACTIVATE);
-    auto control = [&](wchar_t const* type, DWORD style, int id)
+    SetWindowPos(window_, nullptr, work.left + (work.right - work.left - width) / 2,
+        work.top + (work.bottom - work.top - height) / 2, width, height,
+        SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+    ApplyDpi(dpi, nullptr);
+    SetTimer(window_, showTimer, showDelay, nullptr);
+}
+
+void Splash::Finish()
+{
+    if (!window_)
     {
-        auto menu = reinterpret_cast<HMENU>(static_cast<INT_PTR>(id));
-        CreateWindowW(type, L"", WS_CHILD | style, 0, 0, 0, 0, window_, menu, module, nullptr);
-    };
-    control(L"BUTTON", WS_TABSTOP | BS_DEFPUSHBUTTON, firstId);
-    control(L"BUTTON", WS_TABSTOP | BS_PUSHBUTTON, secondId);
-    control(L"STATIC", WS_VISIBLE | SS_CENTER | SS_NOPREFIX, textId);
-    control(L"STATIC", SS_ICON | SS_CENTERIMAGE, iconId);
-    SendMessageW(window_, WM_DPICHANGED, dpi, 0);
-    ShowWindow(window_, SW_SHOWNOACTIVATE);
+        return;
+    }
+    KillTimer(window_, showTimer);
+    auto elapsed = GetTickCount64() - shownAt_;
+    if (!shownAt_ || elapsed >= minimumDwell)
+    {
+        Close();
+        return;
+    }
+    // Keep a just-shown splash behind the ready window without delaying that window.
+    SetWindowPos(window_, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+    SetTimer(window_, closeTimer, static_cast<UINT>(minimumDwell - elapsed), nullptr);
 }
 
 void Splash::Close()
@@ -211,22 +106,133 @@ void Splash::Close()
     {
         DestroyWindow(window_);
     }
-}
-
-void Splash::Update()
-{
-    if (window_ && failure_)
+    if (font_)
     {
-        EnableWindow(GetDlgItem(window_, firstId), CanChooseFirst());
+        DeleteObject(font_);
+        font_ = nullptr;
     }
+    if (buffered_)
+    {
+        BufferedPaintUnInit();
+        buffered_ = false;
+    }
+    shownAt_ = 0;
 }
 
 void Splash::Translate()
 {
     if (window_)
     {
-        Show(failure_, detail_);
+        auto text = strings_.Text("startup", "opening");
+        SetWindowTextW(window_, text.c_str());
+        InvalidateRect(window_, nullptr, FALSE);
     }
+}
+
+void Splash::ApplyTheme()
+{
+    HIGHCONTRASTW contrast{sizeof(contrast)};
+    SystemParametersInfoW(SPI_GETHIGHCONTRAST, sizeof(contrast), &contrast, 0);
+    bool highContrast = (contrast.dwFlags & HCF_HIGHCONTRASTON) != 0;
+    foreground_ = GetSysColor(COLOR_WINDOWTEXT);
+    background_ = GetSysColor(COLOR_WINDOW);
+    BOOL dark = !highContrast && !Preference(L"AppsUseLightTheme");
+    if (!highContrast)
+    {
+        foreground_ = dark ? RGB(255, 255, 255) : RGB(0, 0, 0);
+        background_ = dark ? RGB(32, 32, 32) : RGB(243, 243, 243);
+    }
+    DwmSetWindowAttribute(window_, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark, sizeof(dark));
+    auto corners = DWMWCP_ROUND;
+    DwmSetWindowAttribute(window_, DWMWA_WINDOW_CORNER_PREFERENCE, &corners, sizeof(corners));
+    auto backdrop = !highContrast && buffered_ && Preference(L"EnableTransparency") ?
+        DWMSBT_TRANSIENTWINDOW : DWMSBT_NONE;
+    acrylic_ = SUCCEEDED(DwmSetWindowAttribute(window_, DWMWA_SYSTEMBACKDROP_TYPE,
+        &backdrop, sizeof(backdrop))) && backdrop != DWMSBT_NONE;
+    MARGINS margins = acrylic_ ? MARGINS{-1, -1, -1, -1} : MARGINS{};
+    if (FAILED(DwmExtendFrameIntoClientArea(window_, &margins)))
+    {
+        acrylic_ = false;
+    }
+    InvalidateRect(window_, nullptr, FALSE);
+}
+
+void Splash::ApplyDpi(UINT dpi, RECT const* bounds)
+{
+    NONCLIENTMETRICSW metrics{sizeof(metrics)};
+    SystemParametersInfoForDpi(SPI_GETNONCLIENTMETRICS, sizeof(metrics), &metrics, 0, dpi);
+    if (font_)
+    {
+        DeleteObject(font_);
+    }
+    font_ = CreateFontIndirectW(&metrics.lfMessageFont);
+    if (bounds)
+    {
+        SetWindowPos(window_, nullptr, bounds->left, bounds->top, bounds->right - bounds->left,
+            bounds->bottom - bounds->top, SWP_NOZORDER | SWP_NOACTIVATE);
+    }
+    InvalidateRect(window_, nullptr, FALSE);
+}
+
+void Splash::Paint(HWND window)
+{
+    PAINTSTRUCT paint{};
+    auto device = BeginPaint(window, &paint);
+    RECT bounds{};
+    GetClientRect(window, &bounds);
+    BP_PAINTPARAMS parameters{sizeof(parameters)};
+    parameters.dwFlags = BPPF_ERASE;
+    HDC bufferDevice = nullptr;
+    auto buffer = BeginBufferedPaint(device, &bounds, BPBF_TOPDOWNDIB, &parameters, &bufferDevice);
+    auto target = buffer ? bufferDevice : device;
+    auto theme = OpenThemeData(window, L"CompositedWindow::Window");
+    if (!acrylic_ || !buffer || !theme)
+    {
+        SetDCBrushColor(target, background_);
+        FillRect(target, &bounds, static_cast<HBRUSH>(GetStockObject(DC_BRUSH)));
+        if (buffer)
+        {
+            BufferedPaintSetAlpha(buffer, nullptr, 255);
+        }
+    }
+    auto previous = SelectObject(target, font_);
+    auto dpi = GetDpiForWindow(window);
+    auto text = strings_.Text("startup", "opening");
+    RECT measured{0, 0, bounds.right - Scale(2 * textInset, dpi), 0};
+    DrawTextW(target, text.c_str(), -1, &measured, DT_CALCRECT | DT_WORDBREAK | DT_NOPREFIX);
+    auto size = Scale(iconSize, dpi);
+    auto gap = Scale(iconGap, dpi);
+    auto top = std::max<LONG>(0, (bounds.bottom - size - gap - measured.bottom) / 2);
+    auto icon = LoadImageW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDI_TINYTORRENT),
+        IMAGE_ICON, size, size, LR_SHARED);
+    DrawIconEx(target, (bounds.right - size) / 2, top, static_cast<HICON>(icon),
+        size, size, 0, nullptr, DI_NORMAL);
+    RECT textBounds{Scale(textInset, dpi), top + size + gap,
+        bounds.right - Scale(textInset, dpi), bounds.bottom};
+    if (theme && buffer)
+    {
+        DTTOPTS options{sizeof(options)};
+        options.dwFlags = DTT_COMPOSITED | DTT_TEXTCOLOR;
+        options.crText = foreground_;
+        DrawThemeTextEx(theme, target, 0, 0, text.c_str(), -1,
+            DT_CENTER | DT_WORDBREAK | DT_NOPREFIX, &textBounds, &options);
+    }
+    else
+    {
+        SetTextColor(target, foreground_);
+        SetBkMode(target, TRANSPARENT);
+        DrawTextW(target, text.c_str(), -1, &textBounds, DT_CENTER | DT_WORDBREAK | DT_NOPREFIX);
+    }
+    SelectObject(target, previous);
+    if (theme)
+    {
+        CloseThemeData(theme);
+    }
+    if (buffer)
+    {
+        EndBufferedPaint(buffer, TRUE);
+    }
+    EndPaint(window, &paint);
 }
 
 LRESULT CALLBACK Splash::Procedure(HWND window, UINT message, WPARAM first, LPARAM second)
@@ -238,128 +244,52 @@ LRESULT CALLBACK Splash::Procedure(HWND window, UINT message, WPARAM first, LPAR
         owner->window_ = window;
         SetWindowLongPtrW(window, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(owner));
     }
-    if (!owner)
-    {
-        return DefWindowProcW(window, message, first, second);
-    }
-    return owner->Handle(window, message, first, second);
+    return owner ? owner->Handle(window, message, first, second) :
+        DefWindowProcW(window, message, first, second);
 }
 
 LRESULT Splash::Handle(HWND window, UINT message, WPARAM first, LPARAM second)
 {
-    if (message == WM_NCDESTROY)
+    switch (message)
     {
+    case WM_TIMER:
+        if (first == closeTimer)
+        {
+            Close();
+        }
+        else if (first == showTimer)
+        {
+            KillTimer(window, showTimer);
+            buffered_ = SUCCEEDED(BufferedPaintInit());
+            ApplyTheme();
+            Translate();
+            shownAt_ = GetTickCount64();
+            ShowWindow(window, SW_SHOW);
+        }
+        return 0;
+    case WM_NCCALCSIZE:
+        return 0;
+    case WM_NCHITTEST:
+        return HTCLIENT;
+    case WM_CLOSE:
+    case WM_ERASEBKGND:
+        return 0;
+    case WM_PAINT:
+        Paint(window);
+        return 0;
+    case WM_DPICHANGED:
+        ApplyDpi(LOWORD(first), reinterpret_cast<RECT const*>(second));
+        return 0;
+    case WM_SETTINGCHANGE:
+    case WM_SYSCOLORCHANGE:
+    case WM_THEMECHANGED:
+    case WM_DWMCOMPOSITIONCHANGED:
+        ApplyTheme();
+        return 0;
+    case WM_NCDESTROY:
         window_ = nullptr;
-    }
-    if (message == WM_DPICHANGED)
-    {
-        auto dpi = first ? LOWORD(first) : GetDpiForWindow(window);
-        ApplyDpi(window, dpi, reinterpret_cast<RECT const*>(second));
-        return 0;
-    }
-    if (message == WM_SIZE)
-    {
-        Arrange(window);
-        return 0;
-    }
-    if (message == WM_COMMAND && (LOWORD(first) == firstId || LOWORD(first) == secondId))
-    {
-        auto button = LOWORD(first);
-        if (!failure_ || !IsWindowEnabled(GetDlgItem(window, button)))
-        {
-            return 0;
-        }
-        auto failure = *failure_;
-        auto choices = Offered(failure);
-        Close();
-        choose_(failure, button == firstId ? choices.first : choices.second);
-        return 0;
-    }
-    if (message == WM_CLOSE)
-    {
-        if (CanDismiss())
-        {
-            SendMessageW(window, WM_COMMAND, secondId, 0);
-        }
-        return 0;
-    }
-    if (message == WM_CTLCOLORSTATIC)
-    {
-        auto device = reinterpret_cast<HDC>(first);
-        SetTextColor(device, GetSysColor(COLOR_WINDOWTEXT));
-        SetBkColor(device, GetSysColor(COLOR_WINDOW));
-        return reinterpret_cast<LRESULT>(GetSysColorBrush(COLOR_WINDOW));
-    }
-    if (message == WM_SETTINGCHANGE || message == WM_SYSCOLORCHANGE)
-    {
-        InvalidateRect(window, nullptr, TRUE);
+        break;
     }
     return DefWindowProcW(window, message, first, second);
-}
-
-// Recreates the font and icon for the new DPI. `bounds` is the size Windows
-// suggests, or null when the window is new.
-void Splash::ApplyDpi(HWND window, UINT dpi, RECT const* bounds)
-{
-    NONCLIENTMETRICSW metrics{sizeof(metrics)};
-    SystemParametersInfoForDpi(SPI_GETNONCLIENTMETRICS, sizeof(metrics), &metrics, 0, dpi);
-    if (font_)
-    {
-        DeleteObject(font_);
-    }
-    font_ = CreateFontIndirectW(&metrics.lfMessageFont);
-    if (bounds)
-    {
-        SetWindowPos(window, nullptr, bounds->left, bounds->top, bounds->right - bounds->left,
-            bounds->bottom - bounds->top, SWP_NOZORDER | SWP_NOACTIVATE);
-    }
-    for (int id : {firstId, secondId, textId})
-    {
-        SendMessageW(GetDlgItem(window, id), WM_SETFONT, reinterpret_cast<WPARAM>(font_), TRUE);
-    }
-    auto icon = LoadImageW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDI_TINYTORRENT), IMAGE_ICON,
-        Scale(iconSize, dpi), Scale(iconSize, dpi), LR_SHARED);
-    SendMessageW(GetDlgItem(window, iconId), STM_SETICON, reinterpret_cast<WPARAM>(icon), 0);
-    SendMessageW(window, WM_SIZE, 0, 0);
-}
-
-// Places the buttons in the bottom-right corner and centres the text, with the
-// icon above it while the window is opening.
-void Splash::Arrange(HWND window)
-{
-    RECT bounds{};
-    GetClientRect(window, &bounds);
-    auto dpi = GetDpiForWindow(window);
-    auto top = bounds.bottom - Scale(buttonBottom + buttonHeight, dpi);
-    auto firstLeft = bounds.right - Scale(buttonRight + 2 * buttonWidth + buttonGap, dpi);
-    auto secondLeft = bounds.right - Scale(buttonRight + buttonWidth, dpi);
-    SIZE button{Scale(buttonWidth, dpi), Scale(buttonHeight, dpi)};
-    SetWindowPos(GetDlgItem(window, firstId), nullptr, firstLeft, top, button.cx, button.cy, SWP_NOZORDER);
-    SetWindowPos(GetDlgItem(window, secondId), nullptr, secondLeft, top, button.cx, button.cy, SWP_NOZORDER);
-    auto status = GetDlgItem(window, textId);
-    if (!status)
-    {
-        return;
-    }
-    std::wstring text(GetWindowTextLengthW(status) + 1, L'\0');
-    GetWindowTextW(status, text.data(), static_cast<int>(text.size()));
-    auto width = bounds.right - Scale(2 * textInset, dpi);
-    RECT measured{0, 0, width, 0};
-    auto device = GetDC(window);
-    auto font = SelectObject(device, font_);
-    DrawTextW(device, text.c_str(), -1, &measured, DT_CALCRECT | DT_WORDBREAK | DT_NOPREFIX);
-    SelectObject(device, font);
-    ReleaseDC(window, device);
-    auto height = bounds.bottom - (failure_ ? Scale(buttonArea, dpi) : 0);
-    auto icon = failure_ ? 0 : Scale(iconSize + iconGap, dpi);
-    auto y = std::max<LONG>(Scale(textTop, dpi), (height - measured.bottom - icon) / 2);
-    if (icon)
-    {
-        SetWindowPos(GetDlgItem(window, iconId), nullptr, (bounds.right - Scale(iconSize, dpi)) / 2, y,
-            Scale(iconSize, dpi), Scale(iconSize, dpi), SWP_NOZORDER);
-    }
-    y += icon;
-    auto textHeight = std::min<LONG>(measured.bottom, height - y);
-    SetWindowPos(status, nullptr, Scale(textInset, dpi), y, width, textHeight, SWP_NOZORDER);
 }
 }

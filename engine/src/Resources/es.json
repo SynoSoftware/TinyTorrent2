@@ -21,13 +21,6 @@
     "mib": "{0} MiB/s",
     "gib": "{0} GiB/s"
   },
-  "dialog": {
-    "retry": "Reintentar",
-    "close": "Cerrar",
-    "cancel": "Cancelar",
-    "exit_anyway": "Salir de todas formas",
-    "wait": "Esperar"
-  },
   "notification": {
     "completed": "{0} terminó de descargarse.",
     "added": "Se añadió {0}.",
@@ -46,11 +39,10 @@
     "start": "TinyTorrent no pudo iniciarse.",
     "source": "No se pudo añadir el torrent.",
     "ownership": "TinyTorrent no puede abrir sus datos guardados. Otra sesión de Windows puede estar utilizando esta carpeta:",
-    "launch": "TinyTorrent no pudo abrir su ventana. Las descargas continúan. Reintenta para volver a abrirla.",
-    "startup": "La ventana de TinyTorrent no se abrió. Las descargas continúan. Puedes reintentar cuando termine el proceso de la ventana.",
-    "save": "No se pudo guardar el último punto de control. Reintenta o sal de todas formas y pierde los cambios desde el último guardado correcto.",
-    "files_busy": "Un traslado o una eliminación de archivos sigue en curso. Espera para salir cuando termine o cancela la salida.",
+    "launch": "No se pudo abrir la ventana. Las descargas continúan. Selecciona Mostrar ventana en la bandeja para reintentar.",
+    "startup": "La ventana no se abrió. Las descargas continúan. Selecciona Mostrar ventana en la bandeja para reintentar.",
+    "save": "TinyTorrent no pudo guardar y sigue abierto. Selecciona Salir en la bandeja para reintentar.",
     "pause": "No se pudo guardar el ajuste de pausa de las transferencias.",
-    "unresponsive": "La ventana no responde. ¿Salir de todas formas y descartar los datos sin guardar?"
+    "unresponsive": "La ventana no respondió a Salir. No se descartó nada. Inténtalo de nuevo cuando responda."
   }
 }

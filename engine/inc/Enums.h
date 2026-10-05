@@ -191,24 +191,6 @@ enum class NoticeKind
     Aggregate
 };
 
-enum class SplashFailure
-{
-    Launch,
-    Startup,
-    Save,
-    FilesBusy,
-    Unresponsive
-};
-
-enum class SplashChoice
-{
-    Retry,
-    Close,
-    Cancel,
-    ExitAnyway,
-    Wait
-};
-
 // Tray menu item IDs. TrackPopupMenu returns 0 when the person chooses
 // nothing, so no item uses it.
 enum class TrayItem
@@ -222,6 +204,13 @@ enum class TrayItem
 
 namespace desktop
 {
+enum class TrayClick
+{
+    Idle,
+    Waiting,
+    Double
+};
+
 enum class CloseState
 {
     Waiting,

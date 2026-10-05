@@ -380,7 +380,11 @@ a separator, and Exit. The first status row shows aggregate download and upload
 speed; the second shows active and queued counts. While the session is paused,
 the second row is Paused with the torrent count, and Resume Transfers replaces
 Pause Transfers. The pause command uses the saved session pause above and keeps
-each torrent's own choice. Double-click opens the application. The menu has at
+each torrent's own choice. A single left-click shows this same lightweight menu;
+it never opens WinUI. Wait for Windows' double-click interval before showing it,
+so a double-click opens the application once without first opening the menu.
+Right-click shows the menu immediately; keyboard activation runs its default
+Show window command. The menu has at
 most two status rows and three commands; no secondary actions belong there, so
 its immediate status and controls remain readable at a glance. The engine owns this
 tray. Its status text uses the normal menu text color rather than a disabled
@@ -390,23 +394,29 @@ Windows behavior. The engine owns the
 splash and native startup failure feedback; product dialogs belong to
 WinUI.
 
-The splash is a compact, captionless native surface with the application icon and short localised
-status, readable in light, dark, and contrast themes. Load no UI framework for
-it. Show it only while
-opening WinUI, avoiding a flash for an already-ready window; close it when the
-product window is visible or a bounded wait expires. Sign-in with WinUI closed
-shows no splash.
+The splash is a compact, rounded, captionless native acrylic surface with the
+application icon and short localised status. It has no buttons or recovery
+choices: the tray owns Open and Exit. Follow Windows light/dark mode before the
+first frame and while visible, with a readable solid fallback when transparency
+is disabled, contrast mode is active, or the backdrop is unavailable. Windows
+also uses its solid fallback when the splash is inactive. Load no UI framework
+for it.
 
-Closing the splash must not hide a failed Open. On process-creation failure or
-unexpected exit before window readiness, show a localised native error dialog
-with a useful reason, Retry, and Close. Keep it independent of the WinUI runtime.
+Wait one second before showing the splash, cancelling it if WinUI is ready first,
+so a fast launch does not flash another window. Once shown, retain it for at least
+one second to avoid a blink; a ready product window takes precedence immediately,
+with the splash behind it until that interval ends. Failure or Exit closes it
+immediately. Sign-in with WinUI closed shows no splash.
+
+On process-creation failure or unexpected exit before window readiness, close
+the splash and report the reason through the existing tray notification path.
+The tray's Show window retries opening; there is no second recovery dialog.
 A launched WinUI that hands off to an existing window and exits is not a launch
 failure. If readiness times out while the process is still alive, report that it
 has not opened; a timeout does not authorize another launch.
-Retry becomes available after failure or confirmed exit and reuses the existing
-activation handling, without resubmitting an addition whose outcome is unknown.
-Closing this feedback leaves existing transfers running. A late ready window
-resolves the startup feedback rather than leaving a stale failure visible.
+Opening again reuses the existing activation handling and process checks,
+without resubmitting an addition whose outcome is unknown. Existing transfers
+continue after a failed Open. A late ready window ends the splash wait.
 
 ### Windows registration
 
@@ -463,8 +473,8 @@ continue.
 Exit is in the tray menu and in the window. It first closes the window by the
 same rules as Close: a prompt appears only for actual unfinished input, and
 Cancel in that prompt cancels Exit. If a move or file deletion is running, Exit
-asks whether to exit when it finishes or to cancel Exit, because stopping it
-midway leaves files in two places. Then:
+waits for it to finish without a second prompt, because stopping it midway leaves
+files in two places. Then:
 
 1. Stop accepting new commands and settle accepted state changes and writes.
 2. Pause the session and await transfer/disk quiescence without changing each
@@ -483,8 +493,9 @@ and preserves the window. Open during Exit is refused as stopping rather than
 acknowledged and discarded. Reopening a disconnected but living UI retains its
 process and starts the same bounded readiness wait used for a new window.
 
-If the final save fails, report it with Retry and Exit anyway; exiting anyway
-loses only the changes since the last successful checkpoint.
+If the final save fails, report it through the tray and keep the engine alive.
+Choosing Exit again retries the same shutdown operation. Do not discard unsaved
+state automatically or offer recovery buttons on the splash.
 
 Keep the owner pumping messages while asynchronous shutdown work settles. Never
 join a worker that still needs the owner to process its completion; final joins
@@ -497,8 +508,9 @@ In the pinned [implementation](https://github.com/arvidn/libtorrent/blob/v2.1.2/
 `save_resume_data(flush_disk_cache)` does not wait for file-release completion
 before posting resume data. Its name is not a power-loss durability guarantee.
 
-A hung UI cannot block exit forever; report it and let the user choose whether
-to discard any unfinished input. Windows logoff/shutdown uses a bounded persistence path
+A hung UI ends the close wait with a tray notification and cancels that Exit
+attempt, preserving unfinished input. The tray can request Exit again when the
+window responds. Windows logoff/shutdown uses a bounded persistence path
 that does not depend on an interactive confirmation. Abrupt termination may lose
 changes since the last successful checkpoint; do not promise zero loss.
 

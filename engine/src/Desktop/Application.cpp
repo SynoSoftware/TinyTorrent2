@@ -15,6 +15,7 @@ constexpr UINT dispatch = WM_APP + 1;
 constexpr UINT tray = WM_APP + 2;
 constexpr UINT wake = WM_APP + 3;
 constexpr UINT_PTR tickTimer = 1;
+constexpr UINT_PTR trayTimer = 2;
 
 constexpr std::pair<std::string_view, Command> commands[] = {
     {"registration", Command::Registration},
@@ -35,8 +36,7 @@ constexpr std::pair<std::string_view, CloseState> closeStates[] = {
 
 // Durations in milliseconds, as GetTickCount64 counts.
 constexpr UINT tickInterval = 1000;
-// How long the window may take to open or to close before the splash window
-// reports it.
+// How long the window may take to open or to close before reporting a failure.
 constexpr ULONGLONG windowTimeout = 30'000;
 // How long session end waits for the final save before the process ends.
 constexpr ULONGLONG sessionEndTimeout = 4000;
@@ -164,8 +164,7 @@ void SetRelaunch(DWORD process)
 
 Application::Application(std::filesystem::path directory, std::wstring sid, bool headless)
     : headless_(headless),
-      splash_(strings_, [this] { return IsWindowRunning(); },
-          [this](SplashFailure failure, SplashChoice choice) { Resolve(failure, choice); }),
+      splash_(strings_),
       power_(strings_)
 {
     auto module = GetModuleHandleW(nullptr);
@@ -248,10 +247,6 @@ int Application::Run(bool background, std::vector<std::string> sources)
     MSG message{};
     while (GetMessageW(&message, nullptr, 0, 0) > 0)
     {
-        if (splash_.PreTranslate(message))
-        {
-            continue;
-        }
         TranslateMessage(&message);
         DispatchMessageW(&message);
     }
@@ -298,7 +293,19 @@ LRESULT Application::Handle(UINT message, WPARAM first, LPARAM second)
         OnTray(first, second);
         return 0;
     case WM_TIMER:
-        OnTimer();
+        if (first == tickTimer)
+        {
+            OnTimer();
+        }
+        else if (first == trayTimer)
+        {
+            KillTimer(window_.get(), trayTimer);
+            if (trayClick_ == TrayClick::Waiting)
+            {
+                trayClick_ = TrayClick::Idle;
+                ShowMenu(trayPoint_);
+            }
+        }
         return 0;
     case WM_MEASUREITEM:
         return tray_->Measure(*reinterpret_cast<MEASUREITEMSTRUCT*>(second));
@@ -316,6 +323,8 @@ LRESULT Application::Handle(UINT message, WPARAM first, LPARAM second)
     }
     if (message == taskbarCreated_)
     {
+        KillTimer(window_.get(), trayTimer);
+        trayClick_ = TrayClick::Idle;
         tray_->Add();
         Refresh();
         return 0;
@@ -326,27 +335,41 @@ LRESULT Application::Handle(UINT message, WPARAM first, LPARAM second)
 void Application::OnTray(WPARAM first, LPARAM second)
 {
     auto notification = LOWORD(second);
-    if (notification == NIN_SELECT || notification == NIN_KEYSELECT || notification == WM_LBUTTONDBLCLK)
+    if (notification == WM_LBUTTONDOWN)
     {
+        KillTimer(window_.get(), trayTimer);
+        trayClick_ = TrayClick::Idle;
+    }
+    else if (notification == NIN_SELECT)
+    {
+        if (trayClick_ == TrayClick::Double)
+        {
+            trayClick_ = TrayClick::Idle;
+            return;
+        }
+        trayPoint_ = {static_cast<short>(LOWORD(first)), static_cast<short>(HIWORD(first))};
+        trayClick_ = TrayClick::Waiting;
+        // The first release may belong to a double-click; do not open a menu under its second click.
+        SetTimer(window_.get(), trayTimer, GetDoubleClickTime(), nullptr);
+    }
+    else if (notification == WM_LBUTTONDBLCLK)
+    {
+        KillTimer(window_.get(), trayTimer);
+        trayClick_ = TrayClick::Double;
         Open();
     }
-    else if (notification == WM_RBUTTONUP || notification == WM_CONTEXTMENU)
+    else if (notification == NIN_KEYSELECT)
     {
-        Refresh();
+        KillTimer(window_.get(), trayTimer);
+        trayClick_ = TrayClick::Idle;
+        Open();
+    }
+    else if (notification == WM_CONTEXTMENU)
+    {
+        KillTimer(window_.get(), trayTimer);
+        trayClick_ = TrayClick::Idle;
         POINT point{static_cast<short>(LOWORD(first)), static_cast<short>(HIWORD(first))};
-        auto item = tray_->ShowMenu(point);
-        if (item == TrayItem::Open)
-        {
-            Open();
-        }
-        else if (item == TrayItem::Pause)
-        {
-            Pause();
-        }
-        else if (item == TrayItem::Exit)
-        {
-            Exit();
-        }
+        ShowMenu(point);
     }
     else if (notification == NIN_BALLOONUSERCLICK)
     {
@@ -372,6 +395,24 @@ void Application::OnTray(WPARAM first, LPARAM second)
     }
 }
 
+void Application::ShowMenu(POINT point)
+{
+    Refresh();
+    auto item = tray_->ShowMenu(point);
+    if (item == TrayItem::Open)
+    {
+        Open();
+    }
+    else if (item == TrayItem::Pause)
+    {
+        Pause();
+    }
+    else if (item == TrayItem::Exit)
+    {
+        Exit();
+    }
+}
+
 void Application::OnTimer()
 {
     Tick();
@@ -389,7 +430,8 @@ void Application::OnTimer()
             {
                 waitingSince_ = 0;
                 reopen_ = false;
-                ShowSplash(SplashFailure::Startup, std::to_wstring(code));
+                splash_.Close();
+                ShowError("startup", std::to_wstring(code));
             }
             else if (reopen_)
             {
@@ -403,7 +445,8 @@ void Application::OnTimer()
         reopen_ = false;
         if (!exiting_)
         {
-            ShowSplash(SplashFailure::Startup);
+            splash_.Close();
+            ShowError("startup");
         }
         else if (headless_)
         {
@@ -411,10 +454,10 @@ void Application::OnTimer()
         }
         else
         {
-            ShowSplash(SplashFailure::Unresponsive);
+            CancelExit();
+            ShowError("unresponsive");
         }
     }
-    splash_.Update();
 }
 
 void Application::Dispatch(Pipe::Client client, Json request, Reply reply)
@@ -547,7 +590,7 @@ void Application::OnReady(Pipe::Client const& client, Reply const& reply)
     }
     waitingSince_ = 0;
     reopen_ = false;
-    splash_.Close();
+    splash_.Finish();
     reply(Success());
     if (!offered_.empty())
     {
@@ -712,7 +755,10 @@ bool Application::Open()
         if (!waitingSince_)
         {
             waitingSince_ = GetTickCount64();
-            ShowSplash();
+            if (!headless_)
+            {
+                splash_.Show();
+            }
         }
         return true;
     }
@@ -725,15 +771,20 @@ bool Application::Open()
     if (!CreateProcessW(executable.c_str(), arguments.data(), nullptr, nullptr, FALSE, 0, nullptr,
         executable.parent_path().c_str(), &startup, &process))
     {
+        auto error = GetLastError();
         waitingSince_ = 0;
-        ShowSplash(SplashFailure::Launch, executable.wstring() + L"\n" + std::to_wstring(GetLastError()));
+        splash_.Close();
+        ShowError("launch", executable.wstring() + L"\n" + std::to_wstring(error));
         return true;
     }
     CloseHandle(process.hThread);
     process_.reset(process.hProcess);
     AllowSetForegroundWindow(process.dwProcessId);
     waitingSince_ = GetTickCount64();
-    ShowSplash();
+    if (!headless_)
+    {
+        splash_.Show();
+    }
     return true;
 }
 
@@ -744,11 +795,21 @@ bool Application::IsWindowRunning() const
 
 void Application::Exit()
 {
-    if (exiting_ || engine_->IsStopping())
+    if (saving_)
+    {
+        return;
+    }
+    if (engine_->IsStopping())
+    {
+        Shutdown();
+        return;
+    }
+    if (exiting_)
     {
         return;
     }
     exiting_ = true;
+    splash_.Close();
     Refresh();
     if (ui_)
     {
@@ -766,21 +827,6 @@ void Application::Exit()
 }
 
 void Application::Shutdown()
-{
-    if (saving_)
-    {
-        return;
-    }
-    if (!ending_ && !headless_ && engine_->Activity().filesBusy)
-    {
-        waitingSince_ = 0;
-        ShowSplash(SplashFailure::FilesBusy);
-        return;
-    }
-    BeginShutdown();
-}
-
-void Application::BeginShutdown()
 {
     if (saving_)
     {
@@ -806,7 +852,7 @@ void Application::BeginShutdown()
         }
         else
         {
-            ShowSplash(SplashFailure::Save, Wide(*failure));
+            ShowError("save", Wide(*failure));
         }
     });
 }
@@ -910,74 +956,6 @@ void Application::Pause()
         }
         Refresh();
     });
-}
-
-void Application::ShowSplash(std::optional<SplashFailure> failure, std::wstring detail)
-{
-    if (!headless_)
-    {
-        splash_.Show(failure, std::move(detail));
-    }
-    else if (failure)
-    {
-        ShowError(ToString(*failure), detail);
-    }
-}
-
-void Application::Resolve(SplashFailure failure, SplashChoice choice)
-{
-    switch (failure)
-    {
-    case SplashFailure::Launch:
-    case SplashFailure::Startup:
-        if (choice == SplashChoice::Retry)
-        {
-            Open();
-        }
-        else
-        {
-            reopen_ = false;
-        }
-        break;
-    case SplashFailure::Save:
-        if (choice == SplashChoice::Retry)
-        {
-            Shutdown();
-        }
-        else
-        {
-            PostQuitMessage(1);
-        }
-        break;
-    case SplashFailure::FilesBusy:
-        if (choice == SplashChoice::Wait)
-        {
-            BeginShutdown();
-        }
-        else
-        {
-            CancelExit();
-            Open();
-        }
-        break;
-    case SplashFailure::Unresponsive:
-        if (choice == SplashChoice::ExitAnyway)
-        {
-            auto process = process_ ? GetProcessId(process_.get()) : 0;
-            auto handle = process ? OpenProcess(PROCESS_TERMINATE, FALSE, process) : nullptr;
-            if (handle)
-            {
-                TerminateProcess(handle, 1);
-                CloseHandle(handle);
-            }
-            Shutdown();
-        }
-        else
-        {
-            CancelExit();
-        }
-        break;
-    }
 }
 
 bool Application::ValidSources(std::vector<std::string> const& sources)
@@ -1114,6 +1092,6 @@ void Application::ShowError(std::string const& key, std::wstring detail)
         OutputDebugStringW(message.c_str());
         return;
     }
-    MessageBoxW(window_.get(), message.c_str(), productName, MB_OK | MB_ICONERROR);
+    tray_->Queue({.kind = NoticeKind::Error, .name = Utf8(productName), .detail = Utf8(message)}, false);
 }
 }

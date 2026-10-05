@@ -21,13 +21,6 @@
     "mib": "{0} MiB/s",
     "gib": "{0} GiB/s"
   },
-  "dialog": {
-    "retry": "Retry",
-    "close": "Close",
-    "cancel": "Cancel",
-    "exit_anyway": "Exit anyway",
-    "wait": "Wait"
-  },
   "notification": {
     "completed": "{0} finished downloading.",
     "added": "Added {0}.",
@@ -46,11 +39,10 @@
     "start": "TinyTorrent could not start.",
     "source": "The torrent could not be added.",
     "ownership": "TinyTorrent cannot open its saved data. Another Windows logon may already be using this folder:",
-    "launch": "TinyTorrent could not start its window. Downloads continue. Retry to open it again.",
-    "startup": "The TinyTorrent window did not open. Downloads continue. Retry is available after the window process exits.",
-    "save": "The final checkpoint could not be saved. Retry, or exit anyway and lose changes since the last successful save.",
-    "files_busy": "A file move or deletion is still running. Wait to exit when it finishes, or cancel Exit.",
+    "launch": "The window could not start. Downloads continue. Choose Show window in the tray to retry.",
+    "startup": "The window did not open. Downloads continue. Choose Show window in the tray to try again.",
+    "save": "TinyTorrent could not save and remains running. Choose Exit in the tray to retry.",
     "pause": "The transfer pause setting could not be saved.",
-    "unresponsive": "The window is not responding. Exit anyway and discard unfinished input?"
+    "unresponsive": "The window did not respond to Exit. Nothing was discarded. Try Exit again when the window responds."
   }
 }

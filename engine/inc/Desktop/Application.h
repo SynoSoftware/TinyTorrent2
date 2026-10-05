@@ -26,6 +26,7 @@ private:
     static LRESULT CALLBACK Procedure(HWND window, UINT message, WPARAM first, LPARAM second);
     LRESULT Handle(UINT message, WPARAM first, LPARAM second);
     void OnTray(WPARAM first, LPARAM second);
+    void ShowMenu(POINT point);
     void OnTimer();
     void Dispatch(Pipe::Client client, Json request, Reply reply);
     void Receive(Pipe::Client const& client, Json const& request, Reply const& reply);
@@ -43,14 +44,11 @@ private:
     bool IsWindowRunning() const;
     void Exit();
     void Shutdown();
-    void BeginShutdown();
     void CancelExit();
     void EndSession();
     void Tick();
     void Refresh();
     void Pause();
-    void ShowSplash(std::optional<SplashFailure> failure = {}, std::wstring detail = {});
-    void Resolve(SplashFailure failure, SplashChoice choice);
     Json Activate(std::vector<std::string> sources);
     void AddSources();
     void FinishSource(Outcome const& outcome, Added const& added);
@@ -67,6 +65,8 @@ private:
     bool noticeSaving_ = false;
     unsigned sequence_ = 0;
     ULONGLONG waitingSince_ = 0;
+    TrayClick trayClick_ = TrayClick::Idle;
+    POINT trayPoint_{};
     UINT taskbarCreated_ = RegisterWindowMessageW(L"TaskbarCreated");
     Activity activity_;
     Strings strings_;
