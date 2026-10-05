@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Globalization;
 using System.Net.NetworkInformation;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
@@ -53,11 +54,11 @@ public sealed partial class PreferencesForm : UserControl
     {
         _refreshing = true;
         Languages.SelectedItem = Model.Language == "es" ? Spanish : English;
-        Theme.Content = Model.ThemeText;
-        AutomationProperties.SetName(Theme, Model.ThemeText);
+        Theme.SelectedItem = Model.Theme switch { "light" => LightTheme, "dark" => DarkTheme, _ => SystemTheme };
         foreach (ComboBoxItem item in Interfaces.Items)
             if (Equals(item.Tag, Model.Interface.Input)) Interfaces.SelectedItem = item;
         _refreshing = false;
+        RefreshWeekAppearance();
         if (_editor != Model.Draft)
         {
             _editor = Model.Draft;
@@ -99,6 +100,7 @@ public sealed partial class PreferencesForm : UserControl
         Label(OpenDefaults, "open_defaults");
         Label(Unregister, "remove_handler");
         Label(AddPeriod, "add_period");
+        Label(SpeedLimits, "speed");
         Label(SavePeriod, "save_period");
         Label(CancelPeriod, "cancel", "add");
         PeriodTitle.Text = Model.Text.Get("preferences", "period_title");
@@ -112,6 +114,9 @@ public sealed partial class PreferencesForm : UserControl
         Label(AlternativeMode, "alternative");
         Label(PausedMode, "paused");
         ScheduleHint.Text = Model.Text.Get("preferences", "schedule_hint");
+        WeekTitle.Text = Model.Text.Get("preferences", "weekly_schedule");
+        PeriodsTitle.Text = Model.Text.Get("preferences", "periods");
+        EmptyPeriods.Text = Model.Text.Get("preferences", "empty_periods");
         NormalLegend.Text = Model.Text.Get("preferences", "normal");
         AlternativeLegend.Text = Model.Text.Get("preferences", "alternative");
         PausedLegend.Text = Model.Text.Get("preferences", "paused");
@@ -120,8 +125,12 @@ public sealed partial class PreferencesForm : UserControl
         English.Content = Model.Text.Get("preferences", "english");
         Spanish.Content = Model.Text.Get("preferences", "spanish");
         Languages.SelectedItem = Model.Language == "es" ? Spanish : English;
-        Theme.Content = Model.ThemeText;
-        AutomationProperties.SetName(Theme, Model.ThemeText);
+        Theme.Header = Model.Text.Get("preferences", "theme");
+        AutomationProperties.SetName(Theme, (string)Theme.Header);
+        Label(SystemTheme, "system_theme");
+        Label(LightTheme, "light_theme");
+        Label(DarkTheme, "dark_theme");
+        Theme.SelectedItem = Model.Theme switch { "light" => LightTheme, "dark" => DarkTheme, _ => SystemTheme };
         foreach (ComboBoxItem item in Interfaces.Items)
             if (Equals(item.Tag, string.Empty)) item.Content = Model.Text.Get("preferences", "any_interface");
         if (_unavailableInterface is { } unavailable)
@@ -158,44 +167,63 @@ public sealed partial class PreferencesForm : UserControl
 
     private void RefreshWeek()
     {
-        Week.Children.Clear();
         for (var day = 0; day < 7; day++)
         {
-            var row = new Grid { ColumnSpacing = 8, RowSpacing = 4 };
-            row.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            row.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Auto) });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            var label = new TextBlock { Text = Model.Day(day), VerticalAlignment = VerticalAlignment.Center, MinWidth = 90 };
-            row.Children.Add(label);
-            var timeline = new Grid { Height = 24 };
+            if (Week.Children.Count <= day)
+            {
+                var row = new Grid { ColumnSpacing = 8 };
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(56) });
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                row.Children.Add((TextBlock)((DataTemplate)Resources["PreferencesDayTemplate"]).LoadContent());
+                var track = new Grid();
+                Grid.SetColumn(track, 1);
+                row.Children.Add(track);
+                Week.Children.Add(row);
+            }
+            var current = (Grid)Week.Children[day];
+            var label = (TextBlock)current.Children[0];
+            label.Text = Model.ShortDay(day);
+            var timeline = (Grid)current.Children[1];
             var ranges = Model.Ranges(day).ToArray();
-            var descriptions = ranges.Select(Model.Describe).ToArray();
-            var summary = string.Join("; ", descriptions);
+            if (!timeline.Children.Cast<FrameworkElement>().Select(element => element.Tag).SequenceEqual(ranges))
+            {
+                timeline.Children.Clear();
+                timeline.ColumnDefinitions.Clear();
+                foreach (var range in ranges)
+                {
+                    timeline.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(range.End - range.Start, GridUnitType.Star) });
+                    var template = (DataTemplate)Resources[range.Period is null ? "PreferencesNormalTemplate" : "PreferencesPeriodTemplate"];
+                    var segment = (FrameworkElement)template.LoadContent();
+                    segment.Tag = range;
+                    if (segment is Button button) button.Command = range.Period?.Edit;
+                    Grid.SetColumn(segment, timeline.Children.Count);
+                    timeline.Children.Add(segment);
+                }
+            }
             for (var index = 0; index < ranges.Length; index++)
             {
                 var range = ranges[index];
-                timeline.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(range.End - range.Start, GridUnitType.Star) });
-                var template = (DataTemplate)Resources[range.Mode switch
-                {
-                    ScheduleMode.Paused => "PreferencesPausedTemplate",
-                    ScheduleMode.Alternative => "PreferencesAlternativeTemplate",
-                    _ => "PreferencesNormalTemplate"
-                }];
-                var bar = (Border)template.LoadContent();
-                Grid.SetColumn(bar, index);
-                timeline.Children.Add(bar);
+                var segment = (FrameworkElement)timeline.Children[index];
+                var caption = segment is Button button ? (TextBlock)button.Content : (TextBlock)((Border)segment).Child;
+                caption.Text = Model.FormatMode(range.Mode);
+                var description = Model.Text.Format("preferences", "day_schedule", Model.Day(day), Model.Describe(range));
+                AutomationProperties.SetName(segment is Button ? segment : caption, description);
+                ToolTipService.SetToolTip(segment, description);
             }
+            var summary = string.Join("; ", ranges.Select(Model.Describe));
             AutomationProperties.SetName(label, Model.Text.Format("preferences", "day_schedule", Model.Day(day), summary));
-            Grid.SetColumn(timeline, 1);
-            row.Children.Add(timeline);
-            var details = (TextBlock)((DataTemplate)Resources["PreferencesDayFactsTemplate"]).LoadContent();
-            details.Text = summary;
-            Grid.SetRow(details, 1);
-            Grid.SetColumn(details, 1);
-            row.Children.Add(details);
-            Week.Children.Add(row);
         }
+        for (var index = 0; index < HourRuler.Children.Count; index++)
+            ((TextBlock)HourRuler.Children[index]).Text = (index * 3).ToString("00", CultureInfo.CurrentCulture);
+        RefreshWeekAppearance();
+    }
+
+    private void RefreshWeekAppearance()
+    {
+        foreach (Grid row in Week.Children)
+            foreach (var button in ((Grid)row.Children[1]).Children.OfType<Button>())
+                button.Style = (Style)Resources[!Model.Schedule.IsOn ? "PreferencesInactiveStyle" :
+                    ((ScheduleRange)button.Tag).Mode == ScheduleMode.Paused ? "PreferencesPausedStyle" : "PreferencesAlternativeStyle"];
     }
 
     private void OnCategory(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
@@ -256,8 +284,13 @@ public sealed partial class PreferencesForm : UserControl
     {
         if (!_refreshing && Languages.SelectedItem is ComboBoxItem { Tag: string language }) Model.SelectLanguage(language);
     }
-    private void OnTheme(object sender, RoutedEventArgs args) => Model.SwitchTheme.Execute(null);
+    private async void OnTheme(object sender, SelectionChangedEventArgs args)
+    {
+        if (!_refreshing && Model.CanSelectTheme && Theme.SelectedItem is ComboBoxItem { Tag: string theme }) await Model.SelectTheme(theme);
+    }
     private void OnDestination(object sender, RoutedEventArgs args) => DestinationRequested?.Invoke(this, EventArgs.Empty);
+    private void OnSpeedLimits(object sender, RoutedEventArgs args) => Navigate(new(PreferenceSection.Transfers, "download_limit"));
+    public static Visibility Empty(bool hasPeriods) => hasPeriods ? Visibility.Collapsed : Visibility.Visible;
     public static int PausedIndex(bool paused) => paused ? 1 : 0;
     private void OnPeriodMode(object sender, SelectionChangedEventArgs args)
     {

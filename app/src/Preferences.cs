@@ -50,6 +50,8 @@ public sealed class Preferences : INotifyPropertyChanged
     public bool CanRegister => CanEdit && !_registering;
     public bool CanSchedule => CanEdit && !_savingSchedule;
     public bool IsEditing => _draft is not null;
+    public bool HasPeriods => Periods.Count > 0;
+    public string WeekStatus => Text.Get("preferences", HasPeriods ? "periods_saved" : "no_periods");
     public bool HasScheduleError => _scheduleError is not null || _invalidPeriod;
     public string ScheduleMessage => _invalidPeriod ? Text.Get("preferences", "invalid_period") :
         _scheduleError is null ? string.Empty : _owner.FormatError(_scheduleError);
@@ -85,8 +87,9 @@ public sealed class Preferences : INotifyPropertyChanged
     public bool CanSelectLanguage => _owner.SwitchLanguage.CanExecute(null);
     public string OnText => Text.Get("preferences", "on");
     public string OffText => Text.Get("preferences", "off");
-    public string ThemeText => Text.Get("chrome", _owner.IsDark ? "light" : "dark");
-    public ICommand SwitchTheme => _owner.SwitchTheme;
+    public string Theme => _owner.Theme;
+    public bool CanSelectTheme => _owner.SwitchTheme.CanExecute(null);
+    public Task SelectTheme(string theme) => _owner.SelectTheme(theme);
 
     public event PropertyChangedEventHandler? PropertyChanged;
     public event EventHandler? TextChanged;
@@ -319,7 +322,6 @@ public sealed class Preferences : INotifyPropertyChanged
 
     internal IEnumerable<ScheduleRange> Ranges(int day)
     {
-        if (!Schedule.IsOn) { yield return new ScheduleRange(0, 1440, ScheduleMode.Normal); yield break; }
         var boundaries = new SortedSet<int> { 0, 1440 };
         foreach (var period in Periods)
         {
@@ -334,22 +336,24 @@ public sealed class Preferences : INotifyPropertyChanged
             var active = Periods.Where(period => period.End > period.Start
                 ? period.Days.Contains(day) && minute >= period.Start && minute < period.End
                 : period.Days.Contains(day) && minute >= period.Start || period.Days.Contains((day + 6) % 7) && minute < period.End);
-            var mode = ScheduleMode.Normal;
-            if (active.Any(period => period.Mode == ScheduleMode.Paused)) mode = ScheduleMode.Paused;
-            else if (active.Any()) mode = ScheduleMode.Alternative;
-            if (previous?.Mode == mode) previous = previous with { End = points[index + 1] };
+            var period = active.FirstOrDefault(period => period.Mode == ScheduleMode.Paused) ?? active.FirstOrDefault();
+            var mode = period?.Mode ?? ScheduleMode.Normal;
+            if (previous is not null && previous.Period == period) previous = previous with { End = points[index + 1] };
             else
             {
                 if (previous is not null) yield return previous;
-                previous = new ScheduleRange(points[index], points[index + 1], mode);
+                previous = new ScheduleRange(points[index], points[index + 1], mode, period);
             }
         }
         if (previous is not null) yield return previous;
     }
 
     internal string Day(int index) => Text.Get("preferences", new[] { "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday" }[index]);
+    internal string ShortDay(int index) => Text.Get("preferences", new[] { "monday_short", "tuesday_short", "wednesday_short", "thursday_short", "friday_short", "saturday_short", "sunday_short" }[index]);
     internal string FormatMode(ScheduleMode mode) => Text.Get("preferences", mode.ToString().ToLowerInvariant());
-    internal string Describe(ScheduleRange range) => Text.Format("preferences", "range", Time(range.Start), Time(range.End), FormatMode(range.Mode));
+    internal string Describe(ScheduleRange range) => range.Start == 0 && range.End == 1440
+        ? Text.Format("preferences", "range_all_day", FormatMode(range.Mode))
+        : Text.Format("preferences", "range", Time(range.Start), Time(range.End), FormatMode(range.Mode));
     internal static string Time(int minutes) => DateTime.Today.AddMinutes(minutes).ToString("t", CultureInfo.CurrentCulture);
 }
 
@@ -510,4 +514,4 @@ public sealed class DayChoice(Preferences owner, int index, bool isChecked) : IN
     internal void Refresh() => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
 }
 
-internal sealed record ScheduleRange(int Start, int End, ScheduleMode Mode);
+internal sealed record ScheduleRange(int Start, int End, ScheduleMode Mode, SchedulePeriod? Period);

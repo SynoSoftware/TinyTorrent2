@@ -3,7 +3,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:local="using:Syno.TinyTorrent">
     <Grid MinWidth="480" MaxWidth="816" RowSpacing="12">
-        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="200" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
         <Grid ColumnSpacing="8">
             <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
             <ProgressRing Width="16" Height="16" IsActive="{x:Bind Model.Draft.GettingMetadata, Mode=OneWay}" Visibility="{x:Bind Model.Draft.GettingMetadata, Mode=OneWay}" />
@@ -12,12 +12,14 @@
             <Button x:Name="Magnet" Grid.Column="3" Command="{x:Bind Model.AddMagnet}" />
         </Grid>
         <Grid Grid.Row="1" ColumnSpacing="8" Visibility="{x:Bind Model.Draft.EditingMagnet, Mode=OneWay}">
+            <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
             <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
             <TextBox x:Name="MagnetInput" Text="{x:Bind Model.Draft.Magnet, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{x:Bind Model.Draft.CanEdit, Mode=OneWay}" />
             <Button x:Name="Paste" Grid.Column="1" VerticalAlignment="Bottom" IsEnabled="{x:Bind Model.Draft.CanEdit, Mode=OneWay}" Click="OnPaste" />
             <Button x:Name="Preview" Grid.Column="2" VerticalAlignment="Bottom" IsEnabled="{x:Bind Model.Draft.CanEdit, Mode=OneWay}" Click="OnPreview" />
+            <InfoBar Grid.Row="1" Grid.ColumnSpan="3" IsClosable="False" Severity="Error" IsOpen="{x:Bind Model.Draft.HasMagnetError, Mode=OneWay}" Visibility="{x:Bind Model.Draft.HasMagnetError, Mode=OneWay}" Message="{x:Bind Model.Draft.MagnetMessage, Mode=OneWay}" />
         </Grid>
-        <Grid Grid.Row="2">
+        <Grid Grid.Row="2" Height="200" Visibility="{x:Bind Model.Draft.HasSources, Mode=OneWay}">
             <ListView ItemsSource="{x:Bind Model.Draft.Sources}" SelectionMode="None" IsEnabled="{x:Bind Model.Draft.CanEdit, Mode=OneWay}" Visibility="{x:Bind local:AddForm.SourcesVisibility(Model.Draft.HasFiles), Mode=OneWay}">
                 <ListView.ItemTemplate>
                     <DataTemplate x:DataType="local:AddSource">

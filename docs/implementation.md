@@ -1302,3 +1302,111 @@ renames files using Windows replacement; a reply acknowledges saved membership
 only after the replacement succeeds. Checkpoints run every 30 seconds, retaining
 failed-save work for retry. This bounds crash loss of transfer progress without
 turning a transfer tick into a disk write.
+
+## WinUI review corrections
+
+The requested whole-app source review found five actionable failures: F2 missed
+the focused TreeViewItem's priority control; tracker editing left its covered
+table in keyboard navigation; feedback at the minimum window size could clip the
+inspector; Add cancellation could erase a newly acknowledged activation; and a
+second UI launch swallowed Open refusals and transport errors. The corrections
+use the existing row container, visibility and size owners, release only the
+cancelled batch before awaiting preview cancellation, and share greeting/outcome
+parsing between ordinary and forwarding connections. A fresh adversarial source
+review found no additional issue in that six-file diff. Compilation exposed a
+WinUI generated-binding error in implicit bool-function-to-Visibility conversion;
+using the existing Visibility-returning function fixed it. The isolated Release
+app build passed. These source and compiler checks do not establish runtime
+focus, forwarding failure presentation, or corrected minimum-window geometry.
+
+Five roles considered forwarding failure in sequence. The Windows engineer
+keeps one workspace. The everyday user requires visible failure instead of a
+launch that silently disappears. The accessibility reviewer chooses the native
+error dialog's keyboard and system rendering. The maintainer keeps one wire
+outcome parser. The product owner chooses the small native bootstrap dialog,
+because no WinUI workspace exists in the forwarding process and the engine must
+keep running independently.
+
+The running-app reviewer observed Preferences at 1026 by 673 logical pixels:
+Transfers began around x272 and General around x289, wasting the left quarter
+and clipping the General Browse action at the right edge. Evidence is in
+`artifacts/evidence/RunningUiReview-20261004-01`. Add's single-torrent preview and
+invalid-source state were also captured. Desktop activity from another review
+prevented dependable input coverage; populated tables, Inspector, other sizes,
+themes, languages and recovery states were not established. A separate runtime
+review corroborated Settings allocation in issue 78 and reported invalid-magnet
+recovery in 79 and ambiguous all-day schedule text in 80. Its caption and footer
+comments on issues 41 and 48, and theme comment on 24, remain advisory and must be
+checked against the owner's explicit caption requirements. Ordinary horizontal
+scroll clipping is not a separator or a TableView padding defect.
+
+The owner then stopped shared-desktop automation. That restriction applies to
+review agents as well as the orchestrator: subsequent work uses source and
+isolated compilation, with no launch, capture, resize or input on the desktop.
+
+Four roles considered the requested in-app capture path, in sequence. The
+reviewer uses the automation tree for most facts and pixels for actual visual
+questions. The Windows engineer chooses RenderTargetBitmap for owned XAML and
+separately rendered popup children, with Microsoft's documented capture limits.
+The everyday user requires an opt-in action that neither activates nor takes
+over the screen. The product owner keeps it a review diagnostic with no menu or
+automatic capture. Setting TINYTORRENT_CAPTURE_DIRECTORY to an absolute directory
+enables Ctrl+Shift+F12; PNGs and a JSON manifest record scene dimensions and elapsed
+time. Native chrome, system dialogs and desktop acrylic remain outside that
+capture's scope. Runtime capture correctness and speed remain unmeasured while
+desktop interaction is stopped.
+
+Four roles considered the NavigationView ruling in sequence. The everyday user
+wants visible, familiar destinations instead of a logo that becomes a menu. The
+Fluent designer chooses the native 48-pixel compact rail: it keeps destination
+icons visible without the extra header height of the minimal pane. The keyboard
+reviewer keeps native composite focus
+and restores selection when Keep editing refuses navigation. The product owner
+keeps Torrents primary, Settings and About secondary, with the existing caption
+actions, single acrylic surface and shared commands. The owner's latest ruling
+supersedes the approved prototype's application-menu gesture.
+
+Four roles considered restoring the schedule in sequence. The everyday user
+needs the saved week before its definitions, even while scheduling is off. The
+Fluent designer uses a bounded native card, hour ruler and Grid star columns
+weighted by minutes, rather than text summaries or fixed pixel widths. The
+keyboard user gets native Buttons, full day/time/mode names and the existing
+period commands; translation preserves the focused timeline control. The
+product owner retains all saved definitions and existing Add, Edit, Remove and
+speed-limit owners, without sample periods or new engine semantics. Normal gaps
+remain read-only. The view now includes the legend, period hierarchy and actions;
+all-day descriptions use one formatter. Appearance now offers the native system,
+light and dark choices through the existing theme owner.
+
+Four roles considered the advisory layout and recovery findings in sequence.
+The desktop user needs visible actions within the Settings viewport. The Fluent
+designer anchors all categories to the same bounded left edge and groups limits
+with rates, separately from errors. The keyboard user keeps rejected magnet text
+editable, with local feedback and focus, rather than disturbing the valid preview.
+The product owner collapses the empty Add preview allocation and empty status
+messages, retaining populated preview bounds and the requested caption commands.
+These correct issues 78, 79 and 83 and the actionable part of 48 in source; 24
+and 80 are covered by the theme selector and all-day formatter. Issue 85's old
+application menu is removed by NavigationView. Issue 84's unsupported engine
+settings remain unfinished integration work, not evidence of implemented choices.
+No new runtime verification has been performed under the desktop restriction.
+
+The settled adversarial source review found that a URI-only magnet guard still
+accepted malformed torrent identities, clearing their editable input before the
+engine refused them. The fix asks the existing engine preview owner first, then
+publishes the accepted source; failures retain the input and the valid preview.
+Preview acquisition and same-content merging stay shared. Four roles chose this
+in sequence: the everyday user keeps recoverable input; the libtorrent engineer
+keeps one validity authority; the desktop engineer keeps pending controls and
+cancelled previews scoped to their draft; the product owner avoids a second
+magnet parser. The reviewer also removed two obsolete application-menu clauses
+and caught the focus correction checking the ScrollViewer wrapper instead of
+the existing AddForm reference. That path now uses the form reference.
+
+The final scoped source review has no remaining concrete findings. The isolated
+Release app build passed without warnings; English and Spanish preference keys
+and format placeholders match. The required Everything folder query stalled and
+was stopped; the equivalent filesystem traversal found no stray output folders.
+No app or engine was launched, and no suite or desktop interaction was run.
+Rendered layout, proportional timeline geometry, contrast, focus restoration,
+live language/theme behavior and capture timing remain runtime evidence gaps.

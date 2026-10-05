@@ -19,9 +19,17 @@ public partial class App : Application
         catch (AbandonedMutexException) { owned = true; }
         if (!owned)
         {
-            await PipeClient.ForwardOpen();
-            _instance.Dispose();
-            Exit();
+            try
+            {
+                var text = await Task.Run(() => new Strings());
+                try { await PipeClient.ForwardOpen(text); }
+                catch (Exception error)
+                {
+                    var message = error is CommandFailure ? error.Message : text.Error("unknown", error.Message);
+                    MessageBoxW(IntPtr.Zero, message, text.Get("window", "title"), 0x10);
+                }
+            }
+            finally { _instance.Dispose(); Exit(); }
             return;
         }
 
@@ -38,4 +46,7 @@ public partial class App : Application
 
     [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
     private static extern int SetCurrentProcessExplicitAppUserModelID(string appId);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
+    private static extern int MessageBoxW(IntPtr owner, string text, string caption, uint type);
 }

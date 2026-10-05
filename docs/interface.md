@@ -56,6 +56,19 @@ drawer, caption search, vertical inspector sections and Preferences composition.
 Implement them with native WinUI controls and the existing TableView and command
 owners. Prototype sample data and browser code are not production architecture.
 
+The owner's later ruling replaces the application menu behind the caption logo
+with a native NavigationView. Its compact left rail shows destination icons and
+opens their labels on demand, with
+Torrents as the main destination and Settings and About as secondary destinations.
+The SVG stays a logo; it does not change into a menu icon on hover. Keep the
+existing caption actions and continuous acrylic. Navigation uses the same draft
+guards and restores the current destination when a change is refused.
+
+A second UI launch forwards Open to the existing application. Check its outcome
+before exiting. If forwarding fails before a WinUI window exists, a native
+Windows error dialog explains the failure; it does not create a second workspace
+or block the engine.
+
 Use standard WinUI controls and documented Windows patterns for their semantics,
 input, focus, automation, sizing, and states. Compose them before creating or
 retemplating a control. A custom control must solve a concrete need and preserve
@@ -268,8 +281,8 @@ there is one filter owner. The drawer starts closed so the table keeps its full
 width until the person asks to filter. Status and progress remain visible and
 sortable in the table. Tracker information
 belongs in the selected torrent's inspector. TableView owns generic interaction.
-The application menu contains Torrents, Settings, About, a separator and Exit,
-matching the approved prototype. About shows the product identity and running
+NavigationView exposes Torrents, Settings and About. Exit remains in the caption
+and existing command paths. About shows the product identity and running
 version on the same acrylic surface. Add commands remain in the caption and
 global search; session commands remain in search, shortcuts and the tray. This
 keeps navigation small without taking away a command's established path.
@@ -289,12 +302,9 @@ native MenuFlyout behavior, because command menus should respond as Windows user
 expect.
 
 Preferences keeps the caption identity and shows its page name in place of
-torrent commands. Clicking TinyTorrent or choosing Torrents in the application
-menu returns to the table, preserving selection and the inspector. This avoids
-a separate return row consuming content space. The caption logo reveals the
-application menu glyph on hover and keyboard focus, following Forge's chosen
-interaction; omit the flip when animations are disabled so the affordance stays
-clear without motion.
+torrent commands. Clicking TinyTorrent or choosing Torrents in NavigationView
+returns to the table, preserving selection and the inspector. The caption logo
+stays a passive product identity; navigation uses the native pane and its toggle.
 
 The table starts with Name, Size, Progress, Status, Down speed, Up speed, ETA,
 Ratio, Seeds/Peers, and Added; the person can hide, show, and reorder them.
@@ -493,12 +503,25 @@ battery does not surprise its owner.
 
 Scheduler presents one weekly overview with normal limits, alternative limits,
 and paused periods, because separate schedules obscure their combined effect.
+Time runs left to right beneath a 00–24 hour ruler; each day has one row, and
+segments occupy widths proportional to their duration. The bounded Weekly
+schedule group places its state and switch together, followed by the timeline,
+legend, saved Periods with Edit and Remove, and Speed limits and Add period.
+Switching the schedule off preserves the saved geometry and mode labels, so the
+person can understand what enabling it will do. Scheduled segments edit their
+original period through the same command as Edit; normal gaps are read-only.
+Full-day descriptions say All day rather than midnight to midnight.
 Each period has start days, start/end times, and a choice of alternative limits
 or pause, edited with native checkboxes, TimePicker controls, and radio buttons.
 Normal limits apply outside periods; pause takes precedence on overlap. Overnight
 periods end on the following day. The schedule is disabled by default and repeats
 in local time. Its engine owner preserves individually paused torrents and manual
 Pause all, so a scheduled boundary cannot undo the person's explicit pause.
+
+Appearance offers Follow Windows, Light, and Dark through the existing theme
+owner. The caption's quick light/dark action remains available. All categories
+share one viewport-constrained, left-aligned content column, so a change of
+category cannot move the form or push its actions outside the viewport.
 
 Preferences offers one Start when I sign in switch and an Open torrents with
 TinyTorrent action covering `.torrent` files and magnet links. These call the

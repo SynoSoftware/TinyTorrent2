@@ -29,7 +29,7 @@ public sealed partial class MainWindow
         PageCaption.Visibility = torrents ? Visibility.Collapsed : Visibility.Visible;
         HomeButton.Visibility = Caption.ActualWidth >= 880 ? Visibility.Visible : Visibility.Collapsed;
         FilterCaption.Visibility = Caption.ActualWidth >= 1000 ? Visibility.Visible : Visibility.Collapsed;
-        var exclusions = new FrameworkElement[] { AppMenu, HomeButton, FilterButton, Search, CaptionActions }
+        var exclusions = new FrameworkElement[] { HomeButton, FilterButton, Search, CaptionActions }
             .Where(control => control.Visibility == Visibility.Visible && control.ActualWidth > 0)
             .Select(control => control.TransformToVisual(Caption).TransformBounds(new Rect(0, 0, control.ActualWidth, control.ActualHeight)))
             .OrderBy(bounds => bounds.Left);
@@ -94,7 +94,13 @@ public sealed partial class MainWindow
         Title = Model.Text.Get("window", "title");
         CaptionText.Text = Title;
         NameButton(AddButton, Model.Text.Get("window", "add"));
-        NameButton(AppMenu, Model.Text.Get("commands", "menu"));
+        TorrentsPage.Content = Model.Text.Get("window", "torrents");
+        SettingsPage.Content = Model.Text.Get("finding", "settings");
+        AboutPage.Content = Model.Text.Get("about", "title");
+        foreach (var page in new[] { TorrentsPage, SettingsPage, AboutPage })
+            AutomationProperties.SetName(page, (string)page.Content);
+        AutomationProperties.SetName(Navigation, Model.Text.Get("commands", "menu"));
+        UpdateNavigation();
         NameButton(MagnetButton, Model.Text.Get("commands", "add_magnet"));
         NameButton(OverflowButton, Model.Text.Get("commands", "selection"));
         NameButton(PauseButton, Model.Text.Get("window", "pause"));

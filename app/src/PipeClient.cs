@@ -104,9 +104,7 @@ internal sealed class PipeClient : IDisposable
                     catch (Exception error) { launchFailure = error; throw; }
                     throw;
                 }
-                var hello = await Read(pipe, token);
-                if (hello.GetProperty("type").GetString() != "hello" || hello.GetProperty("version").GetInt32() != 1)
-                    throw new InvalidDataException(_strings.Get("connection", "version"));
+                var hello = await ReadGreeting(pipe, _strings, token);
                 _ = hello.GetProperty("session_id").GetString() ?? throw new InvalidDataException();
                 _enginePath = hello.TryGetProperty("engine_path", out var engine) ? engine.GetString() : _enginePath;
                 _dataDirectory = hello.TryGetProperty("data_directory", out var directory) ? directory.GetString() : _dataDirectory;
@@ -189,13 +187,7 @@ internal sealed class PipeClient : IDisposable
             _awaitingId = requestId;
             await Write(pipe, fields, token);
             var reply = await _reply.Task.WaitAsync(TimeSpan.FromSeconds(15), token);
-            if (!reply.GetProperty("ok").GetBoolean())
-            {
-                var error = reply.GetProperty("error");
-                throw new CommandFailure(error.GetProperty("code").GetString()!,
-                    error.TryGetProperty("detail", out var detail) ? detail.GetString() : null, _strings, command.Name);
-            }
-            var data = reply.TryGetProperty("data", out var value) ? value : default;
+            var data = ReadOutcome(reply, _strings, command.Name);
             if (command.Name == "snapshot") Snapshot?.Invoke(data);
             command.Completion.TrySetResult(data);
         }
@@ -237,18 +229,46 @@ internal sealed class PipeClient : IDisposable
     private static NamedPipeClientStream CreatePipe() => new(".", "TinyTorrent." + LogonSid,
         PipeDirection.InOut, PipeOptions.Asynchronous, TokenImpersonationLevel.Identification);
 
-    internal static async Task ForwardOpen()
+    private static JsonElement ReadOutcome(JsonElement reply, Strings strings, string command)
+    {
+        if (!reply.GetProperty("ok").GetBoolean())
+        {
+            var error = reply.GetProperty("error");
+            throw new CommandFailure(error.GetProperty("code").GetString()!,
+                error.TryGetProperty("detail", out var detail) ? detail.GetString() : null, strings, command);
+        }
+        return reply.TryGetProperty("data", out var value) ? value : default;
+    }
+
+    private static async Task<JsonElement> ReadGreeting(Stream pipe, Strings strings, CancellationToken token)
+    {
+        var hello = await Read(pipe, token);
+        if (hello.GetProperty("type").GetString() != "hello" || hello.GetProperty("version").GetInt32() != 1)
+            throw new InvalidDataException(strings.Get("connection", "version"));
+        return hello;
+    }
+
+    internal static async Task ForwardOpen(Strings strings)
     {
         try
         {
             using var pipe = CreatePipe();
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(3));
             await pipe.ConnectAsync(timeout.Token);
-            await Read(pipe, timeout.Token);
+            await ReadGreeting(pipe, strings, timeout.Token);
             await Write(pipe, new { request_id = 1, command = "open" }, timeout.Token);
-            await Read(pipe, timeout.Token);
+            while (true)
+            {
+                var reply = await Read(pipe, timeout.Token);
+                if (!reply.TryGetProperty("request_id", out var id) || id.GetInt64() != 1) continue;
+                ReadOutcome(reply, strings, "open");
+                return;
+            }
         }
-        catch (Exception error) when (error is IOException or OperationCanceledException or TimeoutException) { }
+        catch (Exception error) when (error is OperationCanceledException or TimeoutException)
+        {
+            throw new IOException(strings.Get("connection", "unavailable"), error);
+        }
     }
 
     internal void LaunchEngine()

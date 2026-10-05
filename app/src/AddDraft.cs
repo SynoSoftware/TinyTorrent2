@@ -21,9 +21,13 @@ public sealed class AddDraft : INotifyPropertyChanged
     private bool _preparing;
     public bool IsSubmitting { get; private set; }
     public ObservableCollection<AddSource> Sources { get; } = [];
+    public bool HasSources => Sources.Count > 0;
     public FileSelection Files => Sources.Count == 1 ? Sources[0].Files : _emptyFiles;
     private string _magnet = string.Empty;
-    public string Magnet { get => _magnet; set { _magnet = value; Refresh(); } }
+    private Exception? _magnetFailure;
+    public string Magnet { get => _magnet; set { _magnet = value; _magnetFailure = null; Refresh(); } }
+    public bool HasMagnetError => _magnetFailure is not null;
+    public string MagnetMessage => _magnetFailure is null ? string.Empty : _owner.FormatError(_magnetFailure);
     public bool EditingMagnet { get; internal set; }
     public string Source => string.Join(Environment.NewLine, Sources.Select(source => source.Source));
     public string Destination
@@ -45,7 +49,7 @@ public sealed class AddDraft : INotifyPropertyChanged
     public bool HasError => Message.Length > 0;
     public InfoBarSeverity Severity => InfoBarSeverity.Error;
     public bool CanEdit => _owner.CanEdit && !_preparing;
-    public bool CanSubmit => CanEdit && (Sources.Count > 0 || !string.IsNullOrWhiteSpace(Magnet)) && !string.IsNullOrWhiteSpace(_destination) &&
+    public bool CanSubmit => CanEdit && !HasMagnetError && (Sources.Count > 0 || !string.IsNullOrWhiteSpace(Magnet)) && !string.IsNullOrWhiteSpace(_destination) &&
         Sources.All(source => source.PreviewId is not null || source.Failure is not null || source.Uncertain) &&
         Sources.All(source => !source.MetadataReady || source.SharedDestination == _destination) &&
         Sources.All(source => !source.MetadataReady || source.Duplicate.Length > 0 || source.Files.HasWanted) &&
@@ -66,20 +70,59 @@ public sealed class AddDraft : INotifyPropertyChanged
     {
         foreach (var source in sources.Where(source => !string.IsNullOrWhiteSpace(source)))
             if (!Sources.Any(existing => existing.Inputs.Contains(source, StringComparer.Ordinal)))
-            {
-                var addition = new AddSource(source, _strings, this);
-                addition.Files.Changed += (_, _) => Refresh();
-                Sources.Add(addition);
-            }
+                Own(new AddSource(source, _strings, this));
         Refresh();
+    }
+
+    private void Own(AddSource source)
+    {
+        source.Files.Changed += (_, _) => Refresh();
+        Sources.Add(source);
     }
 
     public async Task PrepareMagnet()
     {
         if (!CanEdit || string.IsNullOrWhiteSpace(Magnet)) return;
-        Own([Magnet.Trim()]);
-        Magnet = string.Empty;
+        if (!await AcceptMagnet()) return;
         await PrepareAll();
+    }
+
+    private async Task<bool> AcceptMagnet()
+    {
+        var input = Magnet;
+        var value = input.Trim();
+        if (value.Length == 0) return true;
+        _preparing = true;
+        _magnetFailure = null;
+        Refresh();
+        try
+        {
+            if (!Uri.TryCreate(value, UriKind.Absolute, out var address) || address.Scheme != "magnet")
+                throw new CommandFailure("invalid_source", null, _strings, "preview");
+            var source = new AddSource(value, _strings, this);
+            var destination = _destination;
+            var preview = await PreviewSource(source, destination);
+            if (Magnet != input || !_owner.IsAddOpen)
+            {
+                var id = preview.GetProperty("preview_id").GetString();
+                if (!Sources.Any(existing => existing.PreviewId == id))
+                    await _client.Send("cancel_preview", new { preview_id = id });
+                return false;
+            }
+            ApplyPreview(source, preview, destination);
+            Magnet = string.Empty;
+            return true;
+        }
+        catch (Exception error)
+        {
+            if (Magnet == input)
+            {
+                _magnetFailure = error;
+                _owner.Announce(MagnetMessage);
+            }
+            return false;
+        }
+        finally { _preparing = false; Refresh(); }
     }
 
     internal async Task PrepareAll()
@@ -102,37 +145,43 @@ public sealed class AddDraft : INotifyPropertyChanged
         try
         {
             var destination = _destination;
-            var preview = await _client.Send("preview", new { source = source.Source, destination });
-            foreach (var input in source.Inputs.Skip(1))
-                preview = await _client.Send("preview", new { source = input, destination });
+            var preview = await PreviewSource(source, destination);
             if (!Sources.Contains(source))
             {
                 await _client.Send("cancel_preview", new { preview_id = preview.GetProperty("preview_id").GetString() });
                 return;
             }
-            source.Apply(preview, destination);
-            var existing = Sources.FirstOrDefault(existing => existing != source && existing.PreviewId == source.PreviewId);
-            if (existing is not null)
-            {
-                existing.Inputs.AddRange(source.Inputs.Where(input => !existing.Inputs.Contains(input, StringComparer.Ordinal)));
-                existing.Apply(preview, destination);
-                Sources.Remove(source);
-                Refresh();
-                return;
-            }
+            ApplyPreview(source, preview, destination);
         }
         catch (Exception error) { source.Failure = error; }
         source.Refresh();
         Refresh();
     }
 
+    private async Task<JsonElement> PreviewSource(AddSource source, string destination)
+    {
+        var preview = await _client.Send("preview", new { source = source.Source, destination });
+        foreach (var input in source.Inputs.Skip(1))
+            preview = await _client.Send("preview", new { source = input, destination });
+        return preview;
+    }
+
+    private void ApplyPreview(AddSource source, JsonElement preview, string destination)
+    {
+        source.Apply(preview, destination);
+        var existing = Sources.FirstOrDefault(existing => existing != source && existing.PreviewId == source.PreviewId);
+        if (existing is not null)
+        {
+            existing.Inputs.AddRange(source.Inputs.Where(input => !existing.Inputs.Contains(input, StringComparer.Ordinal)));
+            existing.Apply(preview, destination);
+            Sources.Remove(source);
+        }
+        else if (!Sources.Contains(source)) Own(source);
+    }
+
     public async Task<bool> Submit()
     {
-        if (!string.IsNullOrWhiteSpace(Magnet))
-        {
-            Own([Magnet.Trim()]);
-            Magnet = string.Empty;
-        }
+        if (!CanEdit || !await AcceptMagnet()) return false;
         if (!CanEdit || Sources.Count == 0 || string.IsNullOrWhiteSpace(_destination) || (HasFiles && !Files.HasWanted)) return false;
         IsSubmitting = true;
         _owner.Busy(true);
@@ -264,12 +313,13 @@ public sealed class AddDraft : INotifyPropertyChanged
     {
         StopPolling();
         _owner.Busy(true);
+        var cancelled = Sources.ToArray();
+        Clear();
         try
         {
-            foreach (var source in Sources.ToArray())
+            foreach (var source in cancelled)
                 if (source.PreviewId is not null && _owner.IsConnected)
                     await _client.Send("cancel_preview", new { preview_id = source.PreviewId });
-            Clear();
         }
         finally { _owner.Busy(false); }
     }

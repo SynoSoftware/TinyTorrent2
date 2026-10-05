@@ -35,6 +35,7 @@ public sealed partial class MainWindow : Window
     {
         Model = new MainViewModel(strings, DispatcherQueue);
         InitializeComponent();
+        ConfigureCapture();
         Filters.ItemsSource = Model.Filters;
         Split.ValueChanged += (_, value) => { _splitHeight = value; UpdateInspectorSize(); };
         TorrentWorkspace.SizeChanged += (_, _) => UpdateInspectorSize();
@@ -283,7 +284,11 @@ public sealed partial class MainWindow : Window
     {
         args.Cancel = true;
         var deferral = args.GetDeferral();
-        try { args.Cancel = !await Model.Draft.Submit(); }
+        try
+        {
+            args.Cancel = !await Model.Draft.Submit();
+            if (args.Cancel) _form?.FocusMagnetError();
+        }
         finally
         {
             deferral.Complete();

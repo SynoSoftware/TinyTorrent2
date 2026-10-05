@@ -24,15 +24,10 @@
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition x:Name="RightInset" Width="0" />
             </Grid.ColumnDefinitions>
-            <Button x:Name="AppMenu" Grid.Column="1" Width="32" Margin="8,0" Style="{StaticResource TinyTorrentCaptionButtonStyle}" Click="OnMenu" PointerEntered="OnLogoEntered" PointerExited="OnLogoExited" GotFocus="OnLogoFocus" LostFocus="OnLogoFocus">
-            <Grid>
-            <Image x:Name="CaptionLogo" Width="{ThemeResource TinyTorrentCaptionHeight}"
-                Height="{ThemeResource TinyTorrentCaptionHeight}">
+            <Image Grid.Column="1" Width="{ThemeResource TinyTorrentCaptionHeight}" Margin="8,0"
+                Height="{ThemeResource TinyTorrentCaptionHeight}" AutomationProperties.AccessibilityView="Raw">
                 <Image.Source><SvgImageSource UriSource="ms-appx:///Assets/tinyTorrent.svg" /></Image.Source>
             </Image>
-            <FontIcon x:Name="MenuGlyph" FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Menu}" FontSize="16" Visibility="Collapsed" />
-            </Grid>
-            </Button>
             <Button x:Name="HomeButton" Grid.Column="2" Style="{StaticResource TinyTorrentCaptionButtonStyle}" Width="Auto" Padding="8,0" Click="OnTorrents">
             <TextBlock x:Name="CaptionText" Margin="8,0" VerticalAlignment="Center"
                 FontSize="20" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
@@ -60,7 +55,24 @@
                 <Button x:Name="ExitButton" Style="{StaticResource TinyTorrentCaptionButtonStyle}" Command="{x:Bind Model.Exit}" />
             </StackPanel>
         </Grid>
-        <SplitView x:Name="Workspace" Grid.Row="1" DisplayMode="Inline" OpenPaneLength="196" IsPaneOpen="{x:Bind Model.IsFilterOpen, Mode=TwoWay}" PaneBackground="Transparent" Background="Transparent">
+        <NavigationView x:Name="Navigation" Grid.Row="1" PaneDisplayMode="LeftCompact" IsPaneOpen="False" OpenPaneLength="200" AlwaysShowHeader="False"
+            IsBackButtonVisible="Collapsed" IsTitleBarAutoPaddingEnabled="False" IsSettingsVisible="False"
+            Background="Transparent" SelectionChanged="OnNavigation">
+            <NavigationView.MenuItems>
+                <NavigationViewItem x:Name="TorrentsPage">
+                    <NavigationViewItem.Icon><FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.List}" /></NavigationViewItem.Icon>
+                </NavigationViewItem>
+            </NavigationView.MenuItems>
+            <NavigationView.FooterMenuItems>
+                <NavigationViewItem x:Name="SettingsPage">
+                    <NavigationViewItem.Icon><FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Settings}" /></NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem x:Name="AboutPage">
+                    <NavigationViewItem.Icon><FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Info}" /></NavigationViewItem.Icon>
+                </NavigationViewItem>
+            </NavigationView.FooterMenuItems>
+            <Grid>
+        <SplitView x:Name="Workspace" DisplayMode="Inline" OpenPaneLength="196" IsPaneOpen="{x:Bind Model.IsFilterOpen, Mode=TwoWay}" PaneBackground="Transparent" Background="Transparent">
             <SplitView.Pane>
                 <Grid RowSpacing="8" Padding="8,8,8,0">
                     <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
@@ -148,8 +160,8 @@
         </Grid>
             </Grid>
         </SplitView>
-        <ContentControl x:Name="PreferencesContent" Grid.Row="1" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" Visibility="Collapsed" />
-        <ScrollViewer x:Name="AboutContent" Grid.Row="1" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
+        <ContentControl x:Name="PreferencesContent" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" Visibility="Collapsed" />
+        <ScrollViewer x:Name="AboutContent" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
             <StackPanel Padding="32" Spacing="8">
                 <Image Width="64" Height="64" Margin="0,0,0,8" HorizontalAlignment="Left" AutomationProperties.AccessibilityView="Raw">
                     <Image.Source><SvgImageSource UriSource="ms-appx:///Assets/tinyTorrent.svg" /></Image.Source>
@@ -159,17 +171,19 @@
                 <TextBlock Text="{x:Bind Model.VersionText, Mode=OneWay}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
             </StackPanel>
         </ScrollViewer>
+            </Grid>
+        </NavigationView>
         <StackPanel Grid.Row="2" Margin="16,8,16,12" Spacing="4">
-            <InfoBar x:Name="Feedback" IsClosable="False" Severity="{x:Bind Model.Severity, Mode=OneWay}" Message="{x:Bind Model.Message, Mode=OneWay}" IsOpen="{x:Bind Model.HasFeedback, Mode=OneWay}">
+            <InfoBar x:Name="Feedback" IsClosable="False" Severity="{x:Bind Model.Severity, Mode=OneWay}" Message="{x:Bind Model.Message, Mode=OneWay}" IsOpen="{x:Bind Model.HasFeedback, Mode=OneWay}" Visibility="{x:Bind Model.HasFeedback, Mode=OneWay}">
                 <InfoBar.ActionButton><Button AutomationProperties.AutomationId="Restart" Content="{x:Bind Model.RestartText, Mode=OneWay}" Command="{x:Bind Model.Restart}" Visibility="{x:Bind Model.CanRestart, Mode=OneWay}" /></InfoBar.ActionButton>
             </InfoBar>
-            <TextBlock x:Name="TorrentError" TextWrapping="Wrap" Text="{x:Bind Model.TorrentError, Mode=OneWay}" />
+            <TextBlock x:Name="TorrentError" TextWrapping="Wrap" Text="{x:Bind Model.TorrentError, Mode=OneWay}" Visibility="{x:Bind Model.HasTorrentError, Mode=OneWay}" />
             <Button Content="{x:Bind Model.UpdateText, Mode=OneWay}" Command="{x:Bind Model.OpenUpdate}" Visibility="{x:Bind Model.HasUpdate, Mode=OneWay}" />
             <Grid ColumnSpacing="12">
-                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                 <TextBlock x:Name="Rates" Text="{x:Bind Model.Rates, Mode=OneWay}" VerticalAlignment="Center" TextWrapping="Wrap" />
                 <ToggleButton x:Name="Alternative" Grid.Column="1" IsChecked="{x:Bind Model.AlternativeLimits, Mode=TwoWay}" IsEnabled="{x:Bind Model.CanEdit, Mode=OneWay}"><TextBlock x:Name="AlternativeText" MaxWidth="160" TextWrapping="Wrap" /></ToggleButton>
-                <ToggleButton Grid.Column="2" Content="{x:Bind Model.ErrorCount, Mode=OneWay}" IsChecked="{x:Bind Model.ErrorsOnly, Mode=TwoWay}" />
+                <ToggleButton Grid.Column="2" Margin="12,0,0,0" Content="{x:Bind Model.ErrorCount, Mode=OneWay}" IsChecked="{x:Bind Model.ErrorsOnly, Mode=TwoWay}" />
                 <TextBlock Grid.Column="3" Text="{x:Bind Model.Incoming, Mode=OneWay}" VerticalAlignment="Center" TextWrapping="Wrap" TextAlignment="Right" />
             </Grid>
         </StackPanel>

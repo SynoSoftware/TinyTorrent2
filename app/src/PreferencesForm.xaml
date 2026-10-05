@@ -3,18 +3,31 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:local="using:Syno.TinyTorrent">
     <UserControl.Resources>
+        <DataTemplate x:Key="PreferencesDayTemplate">
+            <TextBlock VerticalAlignment="Center" Style="{StaticResource CaptionTextBlockStyle}" />
+        </DataTemplate>
         <DataTemplate x:Key="PreferencesNormalTemplate">
-            <Border BorderThickness="1" BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}" Background="{ThemeResource ControlFillColorSecondaryBrush}" />
+            <Border MinHeight="32" Padding="4,0" BorderThickness="1" BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}" Background="{ThemeResource ControlFillColorSecondaryBrush}">
+                <TextBlock TextTrimming="CharacterEllipsis" VerticalAlignment="Center" TextAlignment="Center" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            </Border>
         </DataTemplate>
-        <DataTemplate x:Key="PreferencesAlternativeTemplate">
-            <Border BorderThickness="1" BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}" Background="{ThemeResource AccentFillColorDefaultBrush}" />
+        <DataTemplate x:Key="PreferencesPeriodTemplate">
+            <Button MinWidth="0" MinHeight="32" Padding="4,0" CornerRadius="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                <TextBlock TextTrimming="CharacterEllipsis" TextAlignment="Center" Style="{StaticResource CaptionTextBlockStyle}" />
+            </Button>
         </DataTemplate>
-        <DataTemplate x:Key="PreferencesPausedTemplate">
-            <Border BorderThickness="1" BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}" Background="{ThemeResource SystemFillColorCautionBrush}" />
-        </DataTemplate>
-        <DataTemplate x:Key="PreferencesDayFactsTemplate">
-            <TextBlock TextWrapping="Wrap" IsTextSelectionEnabled="True" Style="{StaticResource CaptionTextBlockStyle}" />
-        </DataTemplate>
+        <Style x:Key="PreferencesAlternativeStyle" TargetType="Button">
+            <Setter Property="Background" Value="{ThemeResource AccentFillColorDefaultBrush}" />
+            <Setter Property="Foreground" Value="{ThemeResource TextOnAccentFillColorPrimaryBrush}" />
+        </Style>
+        <Style x:Key="PreferencesPausedStyle" TargetType="Button">
+            <Setter Property="Background" Value="{ThemeResource SystemFillColorCautionBrush}" />
+            <Setter Property="Foreground" Value="{ThemeResource TextFillColorPrimaryBrush}" />
+        </Style>
+        <Style x:Key="PreferencesInactiveStyle" TargetType="Button">
+            <Setter Property="Background" Value="{ThemeResource ControlFillColorTransparentBrush}" />
+            <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+        </Style>
     </UserControl.Resources>
     <NavigationView x:Name="Categories" Background="Transparent" PaneDisplayMode="Top" IsBackButtonVisible="Collapsed"
         IsSettingsVisible="False" IsPaneToggleButtonVisible="False" SelectionChanged="OnCategory"
@@ -33,8 +46,8 @@
                     Visibility="{x:Bind Model.CanRestart, Mode=OneWay}" AutomationProperties.AutomationId="PreferencesRestart" />
                 <ProgressRing Width="16" Height="16" IsActive="{x:Bind Model.IsPending, Mode=OneWay}" Visibility="{x:Bind Model.IsPending, Mode=OneWay}" />
             </StackPanel>
-            <ScrollViewer x:Name="Body" Grid.Row="1" HorizontalScrollMode="Disabled" HorizontalScrollBarVisibility="Disabled">
-                <Grid MaxWidth="880" HorizontalAlignment="Stretch">
+            <ScrollViewer x:Name="Body" Grid.Row="1" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Top" HorizontalScrollMode="Disabled" HorizontalScrollBarVisibility="Disabled">
+                <Grid MaxWidth="880" HorizontalAlignment="Left">
                     <StackPanel x:Name="General" Spacing="24">
                         <StackPanel Spacing="12">
                             <TextBlock x:Name="AddingTitle" Style="{StaticResource SubtitleTextBlockStyle}" AutomationProperties.HeadingLevel="Level2" />
@@ -154,21 +167,58 @@
                             <InfoBar IsClosable="False" Severity="{x:Bind Model.Connections.Severity, Mode=OneWay}" IsOpen="{x:Bind Model.Connections.HasFeedback, Mode=OneWay}" Message="{x:Bind Model.Connections.Message, Mode=OneWay}" />
                         </StackPanel>
                     </StackPanel>
-                    <Grid x:Name="Schedule" RowSpacing="12" Visibility="Collapsed">
+                    <Border x:Name="Schedule" Padding="16" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="{ThemeResource ControlCornerRadius}" Visibility="Collapsed">
+                    <Grid RowSpacing="16">
                         <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
-                        <ToggleSwitch OnContent="{x:Bind Model.OnText, Mode=OneWay}" OffContent="{x:Bind Model.OffText, Mode=OneWay}" Header="{x:Bind Model.Schedule.Label, Mode=OneWay}" Tag="{x:Bind Model.Schedule}" IsOn="{x:Bind Model.Schedule.IsOn, Mode=OneWay}"
+                        <Grid ColumnSpacing="16">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <StackPanel Spacing="4">
+                                <TextBlock x:Name="WeekTitle" Style="{StaticResource SubtitleTextBlockStyle}" AutomationProperties.HeadingLevel="Level2" TextWrapping="Wrap" />
+                                <TextBlock Text="{x:Bind Model.WeekStatus, Mode=OneWay}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap" />
+                            </StackPanel>
+                        <ToggleSwitch Grid.Column="1" VerticalAlignment="Center" OnContent="{x:Bind Model.OnText, Mode=OneWay}" OffContent="{x:Bind Model.OffText, Mode=OneWay}" Tag="{x:Bind Model.Schedule}" IsOn="{x:Bind Model.Schedule.IsOn, Mode=OneWay}"
                             IsEnabled="{x:Bind Model.Schedule.CanEdit, Mode=OneWay}" Toggled="OnToggle" AutomationProperties.Name="{x:Bind Model.Schedule.Label, Mode=OneWay}" AutomationProperties.AutomationId="ScheduleEnabled" />
+                        </Grid>
                         <InfoBar Grid.Row="1" IsClosable="False" Severity="{x:Bind Model.Schedule.Severity, Mode=OneWay}" IsOpen="{x:Bind Model.Schedule.HasFeedback, Mode=OneWay}" Message="{x:Bind Model.Schedule.Message, Mode=OneWay}" />
                         <StackPanel Grid.Row="2" Spacing="8">
-                            <TextBlock x:Name="ScheduleHint" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
+                            <Grid x:Name="HourRuler" Margin="64,0,0,0" AutomationProperties.AccessibilityView="Raw">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                <TextBlock Text="00" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                <TextBlock Grid.Column="1" Text="03" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                <TextBlock Grid.Column="2" Text="06" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                <TextBlock Grid.Column="3" Text="09" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                <TextBlock Grid.Column="4" Text="12" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                <TextBlock Grid.Column="5" Text="15" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                <TextBlock Grid.Column="6" Text="18" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                <TextBlock Grid.Column="7" Text="21" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                <TextBlock Grid.Column="7" Text="24" HorizontalAlignment="Right" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            </Grid>
                             <StackPanel x:Name="Week" Spacing="6" />
-                            <StackPanel Orientation="Horizontal" Spacing="16">
-                                <StackPanel Orientation="Horizontal" Spacing="4"><Border Width="12" Height="12" Background="{ThemeResource ControlFillColorSecondaryBrush}" BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}" BorderThickness="1" /><TextBlock x:Name="NormalLegend" /></StackPanel>
-                                <StackPanel Orientation="Horizontal" Spacing="4"><Border Width="12" Height="12" Background="{ThemeResource AccentFillColorDefaultBrush}" /><TextBlock x:Name="AlternativeLegend" /></StackPanel>
-                                <StackPanel Orientation="Horizontal" Spacing="4"><Border Width="12" Height="12" Background="{ThemeResource SystemFillColorCautionBrush}" /><TextBlock x:Name="PausedLegend" /></StackPanel>
-                            </StackPanel>
+                            <Grid ColumnSpacing="12" Margin="0,8,0,0">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                <Grid ColumnSpacing="4">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                    <Border Width="12" Height="12" VerticalAlignment="Center" Background="{ThemeResource ControlFillColorSecondaryBrush}" BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}" BorderThickness="1" />
+                                    <TextBlock x:Name="NormalLegend" Grid.Column="1" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap" />
+                                </Grid>
+                                <Grid Grid.Column="1" ColumnSpacing="4">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                    <Border Width="12" Height="12" VerticalAlignment="Center" Background="{ThemeResource AccentFillColorDefaultBrush}" />
+                                    <TextBlock x:Name="AlternativeLegend" Grid.Column="1" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap" />
+                                </Grid>
+                                <Grid Grid.Column="2" ColumnSpacing="4">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                    <Border Width="12" Height="12" VerticalAlignment="Center" Background="{ThemeResource SystemFillColorCautionBrush}" />
+                                    <TextBlock x:Name="PausedLegend" Grid.Column="1" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap" />
+                                </Grid>
+                            </Grid>
+                            <TextBlock x:Name="ScheduleHint" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap" />
                         </StackPanel>
-                        <ItemsRepeater Grid.Row="3" ItemsSource="{x:Bind Model.Periods}">
+                        <StackPanel Grid.Row="3" Spacing="8">
+                        <Border Height="1" Background="{ThemeResource DividerStrokeColorDefaultBrush}" Margin="0,0,0,8" />
+                        <TextBlock x:Name="PeriodsTitle" Style="{StaticResource BodyStrongTextBlockStyle}" AutomationProperties.HeadingLevel="Level3" />
+                        <TextBlock x:Name="EmptyPeriods" Visibility="{x:Bind local:PreferencesForm.Empty(Model.HasPeriods), Mode=OneWay}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
+                        <ItemsRepeater ItemsSource="{x:Bind Model.Periods}">
                             <ItemsRepeater.ItemTemplate>
                                 <DataTemplate x:DataType="local:SchedulePeriod">
                                     <Grid Padding="0,8" ColumnSpacing="8">
@@ -180,7 +230,11 @@
                                 </DataTemplate>
                             </ItemsRepeater.ItemTemplate>
                         </ItemsRepeater>
-                        <Button x:Name="AddPeriod" Grid.Row="4" Command="{x:Bind Model.AddPeriod}" HorizontalAlignment="Left" AutomationProperties.AutomationId="AddPeriod" />
+                        </StackPanel>
+                        <StackPanel Grid.Row="4" Orientation="Horizontal" Spacing="8">
+                            <Button x:Name="SpeedLimits" Click="OnSpeedLimits" AutomationProperties.AutomationId="ScheduleSpeedLimits" />
+                            <Button x:Name="AddPeriod" Command="{x:Bind Model.AddPeriod}" AutomationProperties.AutomationId="AddPeriod" />
+                        </StackPanel>
                         <InfoBar Grid.Row="5" IsClosable="False" Severity="Error" IsOpen="{x:Bind Model.HasScheduleError, Mode=OneWay}" Message="{x:Bind Model.ScheduleMessage, Mode=OneWay}" />
                         <StackPanel x:Name="PeriodEditor" Grid.Row="6" Spacing="12" Visibility="{x:Bind Model.IsEditing, Mode=OneWay}">
                             <TextBlock x:Name="PeriodTitle" Style="{StaticResource SubtitleTextBlockStyle}" AutomationProperties.HeadingLevel="Level2" />
@@ -208,11 +262,18 @@
                             </StackPanel>
                         </StackPanel>
                     </Grid>
+                    </Border>
                     <StackPanel x:Name="Appearance" Spacing="24" Visibility="Collapsed">
                         <ComboBox x:Name="Languages" SelectionChanged="OnLanguage" HorizontalAlignment="Left" IsEnabled="{x:Bind Model.CanSelectLanguage, Mode=OneWay}" AutomationProperties.AutomationId="Language">
                             <ComboBox.Items><ComboBoxItem x:Name="English" Tag="en" AutomationProperties.AutomationId="EnglishLanguage" /><ComboBoxItem x:Name="Spanish" Tag="es" AutomationProperties.AutomationId="SpanishLanguage" /></ComboBox.Items>
                         </ComboBox>
-                        <Button x:Name="Theme" Click="OnTheme" IsEnabled="{x:Bind Model.CanEdit, Mode=OneWay}" HorizontalAlignment="Left" AutomationProperties.AutomationId="Theme" />
+                        <ComboBox x:Name="Theme" SelectionChanged="OnTheme" IsEnabled="{x:Bind Model.CanSelectTheme, Mode=OneWay}" HorizontalAlignment="Left" AutomationProperties.AutomationId="Theme">
+                            <ComboBox.Items>
+                                <ComboBoxItem x:Name="SystemTheme" Tag="system" />
+                                <ComboBoxItem x:Name="LightTheme" Tag="light" />
+                                <ComboBoxItem x:Name="DarkTheme" Tag="dark" />
+                            </ComboBox.Items>
+                        </ComboBox>
                     </StackPanel>
                 </Grid>
             </ScrollViewer>

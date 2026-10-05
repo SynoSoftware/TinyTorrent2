@@ -152,6 +152,16 @@ Report the relevant checks performed, their outcome, and any material gap.
 Distinguish source review, compilation, automated behavior checks, and manual
 observation. None should be described as stronger evidence than it provides.
 
+For UI reviews, use the automation tree for controls, state, bounds and focus;
+capture pixels only when they establish a visual finding. A review launch may
+set `TINYTORRENT_CAPTURE_DIRECTORY` to an absolute evidence directory and use
+Ctrl+Shift+F12 to save the current XAML scene and open popup visuals, plus capture
+time and dimensions. This opt-in diagnostic performs no automatic capture and
+does not add a product command. Its images exclude native window chrome, system
+dialogs and desktop acrylic, so those still require a desktop capture. Do not
+drive or capture the shared desktop while the owner needs it; source and build
+work continue independently.
+
 ## Resource checks
 
 Clear ownership, bounded retention, on-demand UI, and sensible upstream defaults

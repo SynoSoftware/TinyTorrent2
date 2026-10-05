@@ -45,7 +45,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     public ObservableCollection<Torrent> Torrents { get; } = [];
     public AddDraft Draft { get; }
     public Preferences Preferences { get; }
-    public string Theme { get; private set; } = "default";
+    public string Theme { get; private set; } = "system";
     public bool IsConnected => _connected;
     internal double DownloadRate => _downloadRate;
     internal double UploadRate => _uploadRate;
@@ -113,6 +113,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         }
     }
     public bool HasFeedback => Message.Length > 0;
+    public bool HasTorrentError => TorrentError.Length > 0;
     public InfoBarSeverity Severity => _error is not null || _connected && _storageFailed ?
         InfoBarSeverity.Error : InfoBarSeverity.Warning;
 
@@ -416,10 +417,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         TextChanged?.Invoke(this, EventArgs.Empty);
     }
 
-    private async Task ChangeTheme()
+    private Task ChangeTheme() => SelectTheme(_dark ? "light" : "dark");
+
+    public async Task SelectTheme(string theme)
     {
         if (!_connected || _settingsPending) return;
-        var theme = _dark ? "light" : "dark";
+        if (theme == Theme) return;
         _settingsPending = true;
         Refresh();
         try

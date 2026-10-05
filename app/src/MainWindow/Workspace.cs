@@ -11,6 +11,7 @@ public sealed partial class MainWindow
 {
     private PreferencesForm? _preferencesForm;
     private bool _refreshingFilters;
+    private bool _refreshingNavigation;
     private bool _selecting;
     private double _splitHeight = 360;
     private Syno.TableView.Selection _selection = new([], null);
@@ -28,6 +29,33 @@ public sealed partial class MainWindow
     }
 
     private void OnTorrents(object sender, RoutedEventArgs args) { if (!HasDialog) Run(Model.ShowTorrents); }
+
+    private async void OnNavigation(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
+    {
+        if (_refreshingNavigation || args.SelectedItem is not NavigationViewItem page) return;
+        try
+        {
+            if (page == TorrentsPage) await ShowTorrents();
+            else if (page == SettingsPage) await ShowPreferences(new(PreferenceSection.General));
+            else if (page == AboutPage) await ShowAbout();
+        }
+        finally { UpdateNavigation(); }
+    }
+
+    private void UpdateNavigation()
+    {
+        _refreshingNavigation = true;
+        try
+        {
+            Navigation.SelectedItem = Model.Page switch
+            {
+                WindowPage.Torrents => TorrentsPage,
+                WindowPage.Preferences => SettingsPage,
+                _ => AboutPage
+            };
+        }
+        finally { _refreshingNavigation = false; }
+    }
 
     private async Task<bool> ShowTorrents()
     {
@@ -52,7 +80,7 @@ public sealed partial class MainWindow
 
     private async Task ShowAbout()
     {
-        if (await Navigate(WindowPage.About)) AppMenu.Focus(FocusState.Programmatic);
+        if (await Navigate(WindowPage.About)) AboutPage.Focus(FocusState.Programmatic);
     }
 
     private async Task ShowPreferences(PreferenceTarget target)
@@ -73,6 +101,7 @@ public sealed partial class MainWindow
         PreferencesContent.Visibility = Model.Page == WindowPage.Preferences ? Visibility.Visible : Visibility.Collapsed;
         AboutContent.Visibility = Model.Page == WindowPage.About ? Visibility.Visible : Visibility.Collapsed;
         FilterButton.Visibility = Workspace.Visibility;
+        UpdateNavigation();
         UpdateChrome();
     }
 
@@ -167,9 +196,10 @@ public sealed partial class MainWindow
             if (_placement?.Inspector is { } layout) form.Layout = layout;
             InspectorContent.Content = form;
         }
-        var maximum = Math.Max(300, TorrentWorkspace.ActualHeight - 126);
-        Split.SetBounds(300, maximum, _splitHeight);
-        InspectorRow.Height = new GridLength(Math.Clamp(_splitHeight, 300, maximum));
+        var maximum = Math.Max(0, TorrentWorkspace.ActualHeight - 126);
+        var minimum = Math.Min(300, maximum);
+        Split.SetBounds(minimum, maximum, _splitHeight);
+        InspectorRow.Height = new GridLength(Math.Clamp(_splitHeight, minimum, maximum));
     }
 
     private async Task PickPreferenceFolder()

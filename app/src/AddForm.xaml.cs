@@ -56,5 +56,11 @@ public sealed partial class AddForm : UserControl
     private async void OnPreview(object sender, RoutedEventArgs args)
     {
         await Model.Draft.PrepareMagnet();
+        FocusMagnetError();
+    }
+
+    internal void FocusMagnetError()
+    {
+        if (Model.Draft.HasMagnetError) MagnetInput.Focus(FocusState.Programmatic);
     }
 }

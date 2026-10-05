@@ -39,11 +39,15 @@ public sealed partial class FileBrowser : UserControl
         var element = FocusManager.GetFocusedElement(XamlRoot) as DependencyObject;
         while (element is not null && !ReferenceEquals(element, sender))
         {
-            if (element is Grid row && row.Children.OfType<ComboBox>().FirstOrDefault() is { IsEnabled: true } priority)
+            if (element is ComboBox) return;
+            if (element is TreeViewItem item)
             {
-                priority.Focus(FocusState.Keyboard);
-                priority.IsDropDownOpen = true;
-                args.Handled = true;
+                if (item.Content is Grid row && row.Children.OfType<ComboBox>().FirstOrDefault() is { IsEnabled: true } priority)
+                {
+                    priority.Focus(FocusState.Keyboard);
+                    priority.IsDropDownOpen = true;
+                    args.Handled = true;
+                }
                 return;
             }
             element = VisualTreeHelper.GetParent(element);

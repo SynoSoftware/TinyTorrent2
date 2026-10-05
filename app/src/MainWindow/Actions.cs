@@ -18,17 +18,7 @@ public sealed partial class MainWindow
     private ContentDialog? _removeDialog;
     private TaskCompletionSource? _removeClosed;
     private bool HasDialog => _addDialog is not null || _limitsDialog is not null || _removeDialog is not null || _closePrompt is not null;
-    private bool _logoHovered;
 
-    private void OnLogoEntered(object sender, PointerRoutedEventArgs args) { _logoHovered = true; RefreshLogo(); }
-    private void OnLogoExited(object sender, PointerRoutedEventArgs args) { _logoHovered = false; RefreshLogo(); }
-    private void OnLogoFocus(object sender, RoutedEventArgs args) => RefreshLogo();
-    private void RefreshLogo()
-    {
-        var menu = _logoHovered || AppMenu.FocusState != FocusState.Unfocused;
-        CaptionLogo.Visibility = menu ? Visibility.Collapsed : Visibility.Visible;
-        MenuGlyph.Visibility = menu ? Visibility.Visible : Visibility.Collapsed;
-    }
     private void OnQueueKey(object sender, KeyRoutedEventArgs args)
     {
         // VirtualKey omits the Windows OEM plus and minus codes.
@@ -42,17 +32,6 @@ public sealed partial class MainWindow
         if (!command.CanExecute(null)) return;
         command.Execute(null);
         args.Handled = true;
-    }
-
-    private void OnMenu(object sender, RoutedEventArgs args)
-    {
-        var menu = new MenuFlyout();
-        menu.Items.Add(new MenuFlyoutItem { Text = Model.Text.Get("window", "torrents"), Command = Model.ShowTorrents });
-        menu.Items.Add(new MenuFlyoutItem { Text = Model.Text.Get("finding", "settings"), Command = Model.ShowPreferences });
-        menu.Items.Add(new MenuFlyoutItem { Text = Model.Text.Get("about", "title"), Command = Model.ShowAbout });
-        menu.Items.Add(new MenuFlyoutSeparator());
-        Menu(menu, "exit", Model.Exit);
-        menu.ShowAt(AppMenu);
     }
 
     private void OnOverflow(object sender, RoutedEventArgs args) => ShowSelectionMenu(OverflowButton, null, false);

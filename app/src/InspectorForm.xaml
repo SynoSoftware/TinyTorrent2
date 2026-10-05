@@ -64,8 +64,8 @@
                 </table:Table>
                 <Grid x:Name="Trackers" Visibility="Collapsed" RowSpacing="8">
                     <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
-                    <StackPanel Orientation="Horizontal" Spacing="8"><Button x:Name="EditTrackers" Command="{x:Bind Model.EditTrackers}" /><Button x:Name="Reannounce" Command="{x:Bind Model.Reannounce}" /></StackPanel>
-                    <table:Table x:Name="TrackerTable" Grid.Row="1" ShowsFitButton="True" ItemsSource="{x:Bind Model.Trackers, Mode=OneWay}">
+                    <StackPanel Orientation="Horizontal" Spacing="8" Visibility="{x:Bind local:InspectorForm.Hidden(Model.IsEditingTrackers), Mode=OneWay}"><Button x:Name="EditTrackers" Command="{x:Bind Model.EditTrackers}" /><Button x:Name="Reannounce" Command="{x:Bind Model.Reannounce}" /></StackPanel>
+                    <table:Table x:Name="TrackerTable" Grid.Row="1" ShowsFitButton="True" ItemsSource="{x:Bind Model.Trackers, Mode=OneWay}" Visibility="{x:Bind local:InspectorForm.Hidden(Model.IsEditingTrackers), Mode=OneWay}">
                         <table:Table.EmptyContent><TextBlock x:Name="NoTrackers" HorizontalAlignment="Center" VerticalAlignment="Center" TextWrapping="Wrap" /></table:Table.EmptyContent>
                         <table:Table.Columns>
                             <table:Column x:Name="UrlColumn" Id="url" Width="320" CanHide="False"><table:Column.CellTemplate><DataTemplate x:DataType="local:Tracker"><TextBlock Text="{x:Bind Url}" VerticalAlignment="Center" FlowDirection="LeftToRight" TextTrimming="CharacterEllipsis" /></DataTemplate></table:Column.CellTemplate></table:Column>
