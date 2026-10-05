@@ -100,7 +100,9 @@ consistent copy; transfer telemetry is sampled, not a promise to freeze every
 swarm at one instant.
 
 While WinUI is connected, refresh the summary once a second, as other clients do,
-and after each command. Allow at most one refresh in flight. Use stable torrent
+and after each command. Allow at most one refresh in flight. Commands go before
+refresh and detail reads, and each view keeps at most one unsent read: a newer
+read replaces it, and a closed or changed view withdraws it. Use stable torrent
 identity to preserve UI selection, focus, and drafts across refresh/reconnect.
 If the torrent was removed, recover focus predictably and mark its draft target
 unavailable; never attach that draft to a re-added torrent with the same hashes.

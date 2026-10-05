@@ -17,9 +17,12 @@ public sealed class AddDraft : INotifyPropertyChanged
     private bool _neverShow;
     private Exception? _failure;
     private CancellationTokenSource? _polling;
+    private Task _poller = Task.CompletedTask;
+    private Task _pass = Task.CompletedTask;
     private readonly FileSelection _emptyFiles;
     private bool _preparing;
     public bool IsSubmitting { get; private set; }
+    internal bool IsPending => _preparing || IsSubmitting;
     public ObservableCollection<AddSource> Sources { get; } = [];
     public bool HasSources => Sources.Count > 0;
     public FileSelection Files => Sources.Count == 1 ? Sources[0].Files : _emptyFiles;
@@ -48,7 +51,7 @@ public sealed class AddDraft : INotifyPropertyChanged
         HasFiles && !Files.HasWanted ? _strings.Get("add", "no_files") : string.Empty;
     public bool HasError => Message.Length > 0;
     public InfoBarSeverity Severity => InfoBarSeverity.Error;
-    public bool CanEdit => _owner.CanEdit && !_preparing;
+    public bool CanEdit => _owner.CanEdit && !IsPending;
     public bool CanSubmit => CanEdit && !HasMagnetError && (Sources.Count > 0 || !string.IsNullOrWhiteSpace(Magnet)) && !string.IsNullOrWhiteSpace(_destination) &&
         Sources.All(source => source.PreviewId is not null || source.Failure is not null || source.Uncertain) &&
         Sources.All(source => !source.MetadataReady || source.SharedDestination == _destination) &&
@@ -104,9 +107,7 @@ public sealed class AddDraft : INotifyPropertyChanged
             var preview = await PreviewSource(source, destination);
             if (Magnet != input || !_owner.IsAddOpen)
             {
-                var id = preview.GetProperty("preview_id").GetString();
-                if (!Sources.Any(existing => existing.PreviewId == id))
-                    await _client.Send("cancel_preview", new { preview_id = id });
+                await Release(preview.GetProperty("preview_id").GetString()!);
                 return false;
             }
             ApplyPreview(source, preview, destination);
@@ -127,11 +128,12 @@ public sealed class AddDraft : INotifyPropertyChanged
 
     internal async Task PrepareAll()
     {
-        if (!_owner.CanEdit || _preparing) return;
+        if (!CanEdit) return;
         _preparing = true;
         Refresh();
         try
         {
+            await _pass;
             foreach (var source in Sources.Where(source => source.PreviewId is null).ToArray())
                 await Acquire(source);
             _failure = null;
@@ -148,7 +150,7 @@ public sealed class AddDraft : INotifyPropertyChanged
             var preview = await PreviewSource(source, destination);
             if (!Sources.Contains(source))
             {
-                await _client.Send("cancel_preview", new { preview_id = preview.GetProperty("preview_id").GetString() });
+                await Release(preview.GetProperty("preview_id").GetString()!);
                 return;
             }
             ApplyPreview(source, preview, destination);
@@ -184,21 +186,20 @@ public sealed class AddDraft : INotifyPropertyChanged
         if (!CanEdit || !await AcceptMagnet()) return false;
         if (!CanEdit || Sources.Count == 0 || string.IsNullOrWhiteSpace(_destination) || (HasFiles && !Files.HasWanted)) return false;
         IsSubmitting = true;
-        _owner.Busy(true);
-        StopPolling();
-        var captured = Sources.ToArray();
+        Refresh();
         var destination = _destination;
         var paused = _paused;
         try
         {
+            await _pass;
+            var captured = Sources.ToArray();
             if (_neverShow) await _owner.SaveSettings(new { show_add = false });
             foreach (var source in captured)
             {
                 if (source.Uncertain && _owner.Find(source.Hashes) is { } existing)
                 {
                     Sources.Remove(source);
-                    try { await _owner.Reveal(existing.TorrentId); }
-                    catch (Exception error) { _owner.Report(error); }
+                    _owner.Reveal(existing.TorrentId);
                     continue;
                 }
                 if (source.PreviewId is null) await Acquire(source);
@@ -207,10 +208,9 @@ public sealed class AddDraft : INotifyPropertyChanged
                 {
                     if (source.Merge)
                         await _client.Send("merge_trackers", new { preview_id = source.PreviewId, torrent_id = source.Duplicate });
-                    await _client.Send("cancel_preview", new { preview_id = source.PreviewId });
                     Sources.Remove(source);
-                    try { await _owner.Reveal(source.Duplicate); }
-                    catch (Exception error) { _owner.Report(error); }
+                    await Release(source.PreviewId);
+                    _owner.Reveal(source.Duplicate);
                     continue;
                 }
                 var previewId = source.PreviewId;
@@ -238,8 +238,7 @@ public sealed class AddDraft : INotifyPropertyChanged
                 }
                 Sources.Remove(source);
                 _owner.ClearError();
-                try { await _owner.Reveal(addition.GetProperty("torrent_id").GetString()!); }
-                catch (Exception error) { _owner.Report(error); }
+                _owner.Reveal(addition.GetProperty("torrent_id").GetString()!);
             }
             if (Sources.Count > 0)
             {
@@ -254,89 +253,95 @@ public sealed class AddDraft : INotifyPropertyChanged
         catch (Exception error) { _failure = error; _owner.Announce(_owner.FormatError(error)); return false; }
         finally
         {
-            _owner.Busy(false);
             IsSubmitting = false;
             Refresh();
-            if (_owner.IsAddOpen) StartPolling();
         }
     }
 
     internal void StartPolling()
     {
-        StopPolling();
+        if (_polling is not null) return;
         _polling = new CancellationTokenSource();
-        _ = Poll(_polling.Token);
+        _poller = Poll(_poller, _polling);
     }
 
     internal void StopPolling()
     {
         _polling?.Cancel();
-        _polling?.Dispose();
         _polling = null;
+        _client.Withdraw(Consumer.Draft);
     }
 
-    private async Task Poll(CancellationToken token)
+    // Starts after the previous poller ends, so two never overlap. Each pass
+    // stops once other draft work begins, and that work awaits the pass.
+    private async Task Poll(Task previous, CancellationTokenSource stop)
     {
+        using var _ = stop;
+        await previous;
         using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
         try
         {
-            while (await timer.WaitForNextTickAsync(token))
+            while (await timer.WaitForNextTickAsync(stop.Token))
             {
-                if (!_owner.IsAddOpen || !_owner.IsConnected || _owner.IsBusy || _owner.IsPicking || _preparing) continue;
-                foreach (var source in Sources.ToArray())
-                {
-                    if (token.IsCancellationRequested) return;
-                    if (_owner.IsBusy || _owner.IsPicking) break;
-                    if (source.PreviewId is null)
-                    {
-                        if (!source.Uncertain) await Acquire(source);
-                        continue;
-                    }
-                    if (source.MetadataReady && source.SharedDestination == _destination) continue;
-                    try
-                    {
-                        var destination = _destination;
-                        var preview = await _client.Send("preview_detail", new { preview_id = source.PreviewId, destination });
-                        if (token.IsCancellationRequested || !Sources.Contains(source)) return;
-                        source.Apply(preview, destination);
-                    }
-                    catch (Exception error) { source.Failure = error; source.Refresh(); }
-                }
-                Refresh();
+                if (!CanEdit) continue;
+                _pass = Pass(stop.Token);
+                await _pass;
             }
         }
         catch (OperationCanceledException) { }
         catch (Exception error) { _failure = error; Refresh(); }
     }
 
+    private async Task Pass(CancellationToken token)
+    {
+        foreach (var source in Sources.ToArray())
+        {
+            if (token.IsCancellationRequested || !CanEdit) return;
+            if (source.PreviewId is null)
+            {
+                if (!source.Uncertain) await Acquire(source);
+                continue;
+            }
+            if (source.MetadataReady && source.SharedDestination == _destination) continue;
+            try
+            {
+                var destination = _destination;
+                var preview = await _client.Read(Consumer.Draft, "preview_detail", new { preview_id = source.PreviewId, destination });
+                if (token.IsCancellationRequested) return;
+                if (Sources.Contains(source)) source.Apply(preview, destination);
+            }
+            catch (OperationCanceledException) when (token.IsCancellationRequested) { return; }
+            catch (Exception error) { source.Failure = error; source.Refresh(); }
+        }
+        Refresh();
+    }
+
     public async Task Cancel()
     {
-        StopPolling();
-        _owner.Busy(true);
         var cancelled = Sources.ToArray();
         Clear();
-        try
-        {
-            foreach (var source in cancelled)
-                if (source.PreviewId is not null && _owner.IsConnected)
-                    await _client.Send("cancel_preview", new { preview_id = source.PreviewId });
-        }
-        finally { _owner.Busy(false); }
+        foreach (var source in cancelled)
+            if (source.PreviewId is { } previewId) await Release(previewId);
     }
 
     internal async Task Remove(AddSource source)
     {
         if (!CanEdit) return;
-        _owner.Busy(true);
-        try
-        {
-            if (source.PreviewId is not null && _owner.IsConnected)
-                await _client.Send("cancel_preview", new { preview_id = source.PreviewId });
-            Sources.Remove(source);
-            _failure = null;
-        }
-        catch (Exception error) { _failure = error; }
-        finally { _owner.Busy(false); }
+        Sources.Remove(source);
+        _failure = null;
+        Refresh();
+        if (source.PreviewId is not { } previewId) return;
+        try { await Release(previewId); }
+        catch (Exception error) { _failure = error; Refresh(); }
+    }
+
+    // The engine reuses a preview for content the connection already
+    // previews, so a preview stays open while any source still uses it. An
+    // acquisition that finishes after its source left releases its preview here.
+    private async Task Release(string previewId)
+    {
+        if (!_owner.IsConnected || Sources.Any(source => source.PreviewId == previewId)) return;
+        await _client.Send("cancel_preview", new { preview_id = previewId });
     }
 
     internal void UseDefault(string destination)

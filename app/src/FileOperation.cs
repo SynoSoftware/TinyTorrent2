@@ -115,8 +115,7 @@ public sealed class FileOperation : INotifyPropertyChanged
             }
             _failure = null;
             Cancel();
-            try { await client.Send("snapshot"); }
-            catch (Exception error) { owner.Report(error); }
+            owner.RequestSnapshot();
             return true;
         }
         catch (Exception error) { _failure = error; return false; }

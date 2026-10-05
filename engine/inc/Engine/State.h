@@ -126,6 +126,8 @@ public:
     std::filesystem::path directory;
     Store store;
     Store payload;
+    // Reads preview sources, which can block on a slow share.
+    Store sources;
     Log diagnostics{store, directory};
     Changes changes{store, directory / L"settings.json", diagnostics};
     std::function<void()> wake;
@@ -152,6 +154,8 @@ public:
     std::string startupError;
     std::function<void(std::optional<std::string> failure)> shutdown;
     std::chrono::steady_clock::time_point checkpointAt = std::chrono::steady_clock::now();
+    // The torrent CheckpointUnsaved chose last; the next choice starts after it.
+    std::string checkpointCursor;
     std::chrono::steady_clock::time_point statusAt{};
     std::optional<ScheduleMode> scheduledMode;
     bool bypassesScheduledPause = false;
@@ -209,6 +213,7 @@ public:
     using Resumes = std::map<std::string, lt::add_torrent_params>;
 
     State(std::filesystem::path path, std::function<void()> notification);
+    ~State();
     static std::string Identity();
     static bool Contains(std::vector<std::string> const& values, std::string const& value);
     void Start(Document const& saved, Resumes& resumes);

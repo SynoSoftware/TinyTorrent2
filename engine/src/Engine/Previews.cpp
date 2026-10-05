@@ -157,7 +157,7 @@ void Engine::State::Inspect(std::string source, std::string connection,
     auto preview = std::make_shared<Preview>();
     preview->identity = Identity();
     preview->connection = std::move(connection);
-    store.Run([preview, source]
+    sources.Run([preview, source]
     {
         if (IsMagnet(source))
         {

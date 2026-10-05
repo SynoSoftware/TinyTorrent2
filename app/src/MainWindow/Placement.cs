@@ -33,7 +33,7 @@ public sealed partial class MainWindow
         {
             var input = await File.ReadAllTextAsync(_placementPath);
             var placement = JsonSerializer.Deserialize<Placement>(input);
-            if (placement is null || _closing || _allowClose) return;
+            if (placement is null || Model.IsClosing || _allowClose) return;
             _placement = placement;
             if (placement.Width > 0 && placement.Height > 0 && double.IsFinite(placement.Scale) && placement.Scale > 0)
             {

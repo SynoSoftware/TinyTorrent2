@@ -91,47 +91,47 @@ public sealed partial class MainViewModel
         }
     }
 
+    // The engine keeps offered sources until sources_received, so sources the
+    // window has not taken when closing begins stay with the engine.
     private async Task ReceiveSources()
     {
         _sourcesPending = true;
-        if (_receivingSources || !_ready || !_connected) return;
+        if (_receivingSources || !_ready || !_connected || _closing) return;
         _receivingSources = true;
         try
         {
-            while (_ready && _connected)
+            while (_sourcesPending && _ready && _connected && !_closing)
             {
                 _sourcesPending = false;
                 var pending = await _client.Send("pending_sources");
-                var activations = pending.GetProperty("activations").EnumerateArray().ToArray();
-                foreach (var activation in activations)
-                    Draft.Own(activation.GetProperty("sources").EnumerateArray().Select(source => source.GetString()!));
-                if (activations.Length == 0)
+                if (_closing)
                 {
-                    if (_sourcesPending) continue;
+                    _sourcesPending = true;
                     return;
                 }
+                var activations = pending.GetProperty("activations").EnumerateArray().ToArray();
+                if (activations.Length == 0) continue;
+                foreach (var activation in activations)
+                    Draft.Own(activation.GetProperty("sources").EnumerateArray().Select(source => source.GetString()!));
                 await _client.Send("sources_received", new { activation_ids = activations.Select(activation => activation.GetProperty("activation_id").GetString()).ToArray() });
                 await AddOwnedSources();
             }
         }
         catch (Exception error) { Report(error); }
-        finally { _receivingSources = false; }
+        finally { _receivingSources = false; Refresh(); }
     }
 
     internal async Task SaveSettings(object changes)
     {
         await _client.Send("settings", new { changes });
-        try { await _client.Send("snapshot"); }
-        catch (Exception error) { Report(error); }
+        RequestSnapshot();
     }
 
     private async Task SaveAlternative(bool enabled)
     {
         if (!CanEdit) return;
-        Busy(true);
         try { await SaveSettings(new { alternative_limits = enabled }); Accepted("window", "alternative"); ClearError(); }
         catch (Exception error) { Report(error); }
-        finally { Busy(false); }
     }
 
     public async Task<IReadOnlyDictionary<string, int>> SaveLimits(IReadOnlyDictionary<string, double> values)
@@ -144,15 +144,10 @@ public sealed partial class MainViewModel
                 throw new CommandFailure("invalid_limits", null, Text);
             changes[name] = checked((int)Math.Round(value * 1024));
         }
-        Busy(true);
-        try
-        {
-            await SaveSettings(changes);
-            Accepted("commands", "limits");
-            ClearError();
-            return changes;
-        }
-        finally { Busy(false); }
+        await SaveSettings(changes);
+        Accepted("commands", "limits");
+        ClearError();
+        return changes;
     }
 
     private Task Queue(string direction) => Queue(new { torrent_ids = _selected.Select(torrent => torrent.TorrentId).ToArray(), direction });
@@ -165,35 +160,29 @@ public sealed partial class MainViewModel
     private async Task Queue(object arguments)
     {
         if (!CanEdit) return;
-        Busy(true);
         try
         {
             await _client.Send("queue", arguments);
             Accepted("outcomes", "queue");
             ClearError();
-            await _client.Send("snapshot");
+            RequestSnapshot();
         }
         catch (Exception error) { Report(error); }
-        finally { Busy(false); }
     }
 
     private async Task SessionPause(bool paused)
     {
         if (!CanEdit) return;
-        Busy(true);
-        try { await _client.Send("session_pause", new { paused }); Accepted("commands", paused ? "pause_all" : "resume_all"); ClearError(); await _client.Send("snapshot"); }
+        try { await _client.Send("session_pause", new { paused }); Accepted("commands", paused ? "pause_all" : "resume_all"); ClearError(); RequestSnapshot(); }
         catch (Exception error) { Report(error); }
-        finally { Busy(false); }
     }
 
     public async Task RemoveTorrents(IEnumerable<Torrent> torrents)
     {
         if (!CanEdit) return;
         var identities = torrents.Select(torrent => torrent.TorrentId).ToArray();
-        Busy(true);
-        try { await _client.Send("remove", new { torrent_ids = identities }); Accepted("commands", "remove"); ClearError(); await _client.Send("snapshot"); }
+        try { await _client.Send("remove", new { torrent_ids = identities }); Accepted("commands", "remove"); ClearError(); RequestSnapshot(); }
         catch (Exception error) { Report(error); }
-        finally { Busy(false); }
     }
 
     private async Task<JsonElement> Detail(Torrent torrent) =>

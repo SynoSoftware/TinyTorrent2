@@ -5,7 +5,6 @@ using System.IO.Pipes;
 using System.Runtime.InteropServices;
 using System.Security.Principal;
 using System.Text.Json;
-using System.Threading.Channels;
 using Microsoft.Win32.SafeHandles;
 
 namespace Syno.TinyTorrent;
@@ -13,16 +12,19 @@ namespace Syno.TinyTorrent;
 internal sealed class PipeClient : IDisposable
 {
     private const int MaximumFrame = 16 * 1024 * 1024;
+    private const int CommandLimit = 32;
     private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(15);
     private readonly Strings _strings;
     private readonly object _gate = new();
     private readonly CancellationTokenSource _lifetime = new();
-    private readonly Channel<Command> _commands = Channel.CreateBounded<Command>(32);
+    private readonly Queue<Command> _commands = new();
+    // At most one unsent read per consumer, oldest first, so consumers take turns.
+    private readonly List<Command> _reads = [];
+    private readonly SemaphoreSlim _queued = new(0);
     private Task? _pump;
     private TaskCompletionSource<JsonElement>? _reply;
     private long _requestId;
     private long _awaitingId;
-    private int _refreshPending;
     private bool _connected;
     private bool _disposed;
     private bool _hasConnected;
@@ -90,10 +92,57 @@ internal sealed class PipeClient : IDisposable
         {
             if (_disposed || !_connected)
                 return Task.FromException<JsonElement>(new IOException(_strings.Get("connection", "unavailable")));
+            if (_commands.Count >= CommandLimit)
+                return Task.FromException<JsonElement>(new IOException(_strings.Get("connection", "overload")));
             var command = new Command(name, arguments);
-            if (!_commands.Writer.TryWrite(command))
-                command.Completion.SetException(new IOException(_strings.Get("connection", "overload")));
+            _commands.Enqueue(command);
+            _queued.Release();
             return command.Completion.Task;
+        }
+    }
+
+    // A read that only refreshes a view. It waits behind commands, and a newer
+    // read from the same consumer replaces it until it is sent; both callers
+    // then receive the newer outcome.
+    internal Task<JsonElement> Read(Consumer consumer, string name, object? arguments = null)
+    {
+        lock (_gate)
+        {
+            if (_disposed || !_connected)
+                return Task.FromException<JsonElement>(new IOException(_strings.Get("connection", "unavailable")));
+            if (_reads.Find(read => read.Consumer == consumer) is { } pending)
+            {
+                pending.Replace(name, arguments);
+                return pending.Completion.Task;
+            }
+            var command = new Command(name, arguments, consumer);
+            _reads.Add(command);
+            _queued.Release();
+            return command.Completion.Task;
+        }
+    }
+
+    // Cancels the consumer's unsent read. A read already sent completes, and
+    // its consumer ignores the outcome.
+    internal void Withdraw(Consumer consumer)
+    {
+        lock (_gate)
+        {
+            if (_reads.Find(read => read.Consumer == consumer) is not { } pending) return;
+            _reads.Remove(pending);
+            pending.Completion.TrySetCanceled();
+        }
+    }
+
+    private Command? Next()
+    {
+        lock (_gate)
+        {
+            if (_commands.TryDequeue(out var command)) return command;
+            if (_reads.Count == 0) return null;
+            var read = _reads[0];
+            _reads.RemoveAt(0);
+            return read;
         }
     }
 
@@ -150,7 +199,6 @@ internal sealed class PipeClient : IDisposable
         {
             _lifetime.Cancel();
             Disconnect();
-            _commands.Writer.TryComplete();
             await refresh;
         }
     }
@@ -162,22 +210,12 @@ internal sealed class PipeClient : IDisposable
         try
         {
             await Execute(pipe, new Command("snapshot", null), connection.Token);
-            while (!connection.IsCancellationRequested)
+            while (true)
             {
-                var waiting = _commands.Reader.WaitToReadAsync(connection.Token).AsTask();
-                if (await Task.WhenAny(waiting, receive) == receive)
-                    await receive;
-                if (!await waiting) break;
-                while (_commands.Reader.TryRead(out var command))
-                {
-                    if (command.Optional && _commands.Reader.Count > 0)
-                    {
-                        Interlocked.Exchange(ref _refreshPending, 0);
-                        command.Completion.TrySetResult(default);
-                        continue;
-                    }
-                    await Execute(pipe, command, connection.Token);
-                }
+                while (Next() is { } command) await Execute(pipe, command, connection.Token);
+                var queued = _queued.WaitAsync(connection.Token);
+                if (await Task.WhenAny(queued, receive) == receive) await receive;
+                await queued;
             }
         }
         finally
@@ -193,29 +231,25 @@ internal sealed class PipeClient : IDisposable
         lock (_gate)
         {
             _connected = false;
-            while (_commands.Reader.TryRead(out var command))
+            foreach (var command in _commands.Concat(_reads))
             {
                 if (error is null) command.Completion.TrySetCanceled(_lifetime.Token);
                 else command.Completion.TrySetException(new IOException(_strings.Get("connection", "unavailable"), error));
             }
-            Interlocked.Exchange(ref _refreshPending, 0);
+            _commands.Clear();
+            _reads.Clear();
         }
     }
 
+    // Each refresh waits for the previous one, so a slow engine is not asked
+    // again until it has answered.
     private async Task Refresh(PeriodicTimer timer, CancellationToken token)
     {
+        Task refresh = Task.CompletedTask;
         try
         {
             while (await timer.WaitForNextTickAsync(token))
-            {
-                lock (_gate)
-                {
-                    if (_disposed || !_connected || _commands.Reader.Count != 0 || Interlocked.CompareExchange(ref _refreshPending, 1, 0) != 0)
-                        continue;
-                    var refresh = new Command("snapshot", null, true);
-                    if (!_commands.Writer.TryWrite(refresh)) Interlocked.Exchange(ref _refreshPending, 0);
-                }
-            }
+                if (refresh.IsCompleted) refresh = Read(Consumer.Summary, "snapshot");
         }
         catch (OperationCanceledException) { }
     }
@@ -256,11 +290,7 @@ internal sealed class PipeClient : IDisposable
             command.Completion.TrySetException(error);
             throw;
         }
-        finally
-        {
-            _reply = null;
-            if (command.Name == "snapshot") Interlocked.Exchange(ref _refreshPending, 0);
-        }
+        finally { _reply = null; }
     }
 
     private async Task Receive(NamedPipeClientStream pipe, CancellationToken token)
@@ -389,7 +419,6 @@ internal sealed class PipeClient : IDisposable
             if (_disposed) return;
             _disposed = true;
             _connected = false;
-            _commands.Writer.TryComplete();
             _lifetime.Cancel();
         }
         Disconnect();
@@ -406,12 +435,18 @@ internal sealed class PipeClient : IDisposable
         finally { _lifetime.Dispose(); }
     }
 
-    private sealed class Command(string name, object? arguments, bool optional = false)
+    private sealed class Command(string name, object? arguments, Consumer? consumer = null)
     {
-        internal string Name { get; } = name;
-        internal object? Arguments { get; } = arguments;
-        internal bool Optional { get; } = optional;
+        internal string Name { get; private set; } = name;
+        internal object? Arguments { get; private set; } = arguments;
+        internal Consumer? Consumer { get; } = consumer;
         internal TaskCompletionSource<JsonElement> Completion { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        internal void Replace(string name, object? arguments)
+        {
+            Name = name;
+            Arguments = arguments;
+        }
     }
 }
 

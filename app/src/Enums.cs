@@ -7,6 +7,13 @@ public enum WindowPage
     About
 }
 
+public enum Consumer
+{
+    Summary,
+    Inspector,
+    Draft
+}
+
 public enum FileAction
 {
     Move,

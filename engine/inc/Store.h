@@ -26,6 +26,7 @@ public:
         std::function<void(StorageOutcome)> completion);
     void Drain();
     bool IsIdle() const;
+    void Abandon();
     static std::string Read(std::filesystem::path const& path);
 
 private:
@@ -41,6 +42,7 @@ private:
     };
     mutable std::mutex mutex_;
     std::condition_variable ready_;
+    std::condition_variable idle_;
     std::deque<Job> jobs_;
     std::deque<Completed> completed_;
     bool stopping_ = false;

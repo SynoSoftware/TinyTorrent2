@@ -45,6 +45,7 @@ Store::Store(std::function<void()> wake) : wake_(std::move(wake)), worker_([this
             completed_.push_back({std::move(job.completion), std::move(outcome)});
             working_ = false;
         }
+        idle_.notify_all();
         if (wake_)
         {
             wake_();
@@ -146,6 +147,22 @@ bool Store::IsIdle() const
 {
     std::lock_guard lock(mutex_);
     return jobs_.empty() && completed_.empty() && !working_;
+}
+
+// Drops queued work and ends the running job's blocking file I/O, so a slow
+// source cannot delay destruction. No completion runs afterwards.
+void Store::Abandon()
+{
+    std::unique_lock lock(mutex_);
+    jobs_.clear();
+    // CancelSynchronousIo ends only the call in progress, and the job may
+    // start another, so repeat it until the job returns.
+    while (working_)
+    {
+        CancelSynchronousIo(worker_.native_handle());
+        idle_.wait_for(lock, std::chrono::milliseconds(10));
+    }
+    completed_.clear();
 }
 
 std::string Store::Read(std::filesystem::path const& path)

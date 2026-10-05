@@ -35,7 +35,7 @@ lt::info_hash_t SavedHashes(std::vector<std::string> const& hashes)
 }
 
 Engine::State::State(std::filesystem::path path, std::function<void()> notification) :
-    directory(std::move(path)), store(notification), payload(notification), wake(std::move(notification)),
+    directory(std::move(path)), store(notification), payload(notification), sources(notification), wake(std::move(notification)),
     language(settings.language)
 {
     // Without a saved document the engine starts from the default settings.
@@ -385,10 +385,16 @@ void Engine::State::RecordHashes(Torrent& torrent)
     }
 }
 
+Engine::State::~State()
+{
+    sources.Abandon();
+}
+
 void Engine::State::Tick()
 {
     store.Drain();
     payload.Drain();
+    sources.Drain();
     if (session)
     {
         std::vector<lt::alert*> alerts;

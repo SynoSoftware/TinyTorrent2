@@ -70,7 +70,7 @@ public sealed class Inspector : INotifyPropertyChanged
     public bool IsDay
     {
         get => _day;
-        set { if (_day == value) return; _day = value; _context++; History = []; Refresh(); _ = Read(); }
+        set { if (_day == value) return; _day = value; Invalidate(); History = []; Refresh(); _ = Read(); }
     }
     public ICommand EditTrackers { get; }
     public ICommand SaveTrackers { get; }
@@ -112,7 +112,7 @@ public sealed class Inspector : INotifyPropertyChanged
         if (HasDraft || _pending) return false;
         Clear();
         _target = target;
-        _context++;
+        Invalidate();
         Refresh();
         _ = Read();
         return true;
@@ -122,7 +122,7 @@ public sealed class Inspector : INotifyPropertyChanged
     {
         if (HasDraft || _pending) return false;
         _target = null;
-        _context++;
+        Invalidate();
         Clear();
         Refresh();
         return true;
@@ -132,7 +132,7 @@ public sealed class Inspector : INotifyPropertyChanged
     {
         if (_section == section) return;
         _section = section;
-        _context++;
+        Invalidate();
         _readFailure = null;
         if (section != InspectorSection.Peers) Peers = [];
         if (section != InspectorSection.Speed) History = [];
@@ -146,7 +146,7 @@ public sealed class Inspector : INotifyPropertyChanged
         if (_session != session)
         {
             _session = session;
-            _context++;
+            Invalidate();
             _readFailure = null;
         }
         Refresh();
@@ -155,7 +155,7 @@ public sealed class Inspector : INotifyPropertyChanged
 
     internal void Disconnect()
     {
-        _context++;
+        Invalidate();
         Refresh();
     }
 
@@ -163,7 +163,7 @@ public sealed class Inspector : INotifyPropertyChanged
     {
         if (_visible == visible) return;
         _visible = visible;
-        _context++;
+        Invalidate();
         if (!visible) { Peers = []; History = []; Pieces = null; }
         Refresh();
         if (visible) _ = Read();
@@ -179,8 +179,8 @@ public sealed class Inspector : INotifyPropertyChanged
         Refresh();
         try
         {
-            var reply = section == InspectorSection.Speed ? await _client.Send("history", new { range = _day ? "day" : "five_minutes" }) :
-                await _client.Send("torrent", new { torrent_id = target.TorrentId, view = section.ToString().ToLowerInvariant(),
+            var reply = section == InspectorSection.Speed ? await _client.Read(Consumer.Inspector, "history", new { range = _day ? "day" : "five_minutes" }) :
+                await _client.Read(Consumer.Inspector, "torrent", new { torrent_id = target.TorrentId, view = section.ToString().ToLowerInvariant(),
                     include_files = section == InspectorSection.Pieces && Pieces is not { MetadataReady: true } });
             if (context != _context || !_visible || !IsAvailable) return;
             switch (section)
@@ -208,6 +208,13 @@ public sealed class Inspector : INotifyPropertyChanged
             Refresh();
             if (context != _context && _visible && IsOpen && IsAvailable) _ = Read();
         }
+    }
+
+    // A read for the old context is stale, so an unsent one is withdrawn.
+    private void Invalidate()
+    {
+        _context++;
+        _client.Withdraw(Consumer.Inspector);
     }
 
     private void ApplyGeneral(JsonElement reply)
@@ -277,7 +284,7 @@ public sealed class Inspector : INotifyPropertyChanged
 
     private async Task Apply(string command, object arguments, Action? confirmed = null)
     {
-        _context++;
+        Invalidate();
         _pending = true;
         _editFailure = null;
         Refresh();

@@ -35,16 +35,22 @@ void Engine::State::CheckpointUnsaved()
     auto now = std::chrono::steady_clock::now();
     auto outstanding = std::count_if(torrents.begin(), torrents.end(),
         [](auto const& entry) { return entry.second.checkpointPhase != CheckpointPhase::Idle; });
-    for (auto& [id, torrent] : torrents)
+    // Starting after the last choice lets every eligible torrent get a slot,
+    // even while earlier torrents become unsaved again faster than they save.
+    auto entry = torrents.upper_bound(checkpointCursor);
+    for (std::size_t visited = 0; visited < torrents.size() && outstanding < checkpointLimit; ++visited)
     {
-        if (outstanding == checkpointLimit)
+        if (entry == torrents.end())
         {
-            return;
+            entry = torrents.begin();
         }
+        auto& [id, torrent] = *entry;
+        ++entry;
         if (torrent.unsaved && torrent.checkpointPhase == CheckpointPhase::Idle && now >= torrent.retryAt)
         {
             torrent.Checkpoint(stopping);
             ++outstanding;
+            checkpointCursor = id;
         }
     }
 }

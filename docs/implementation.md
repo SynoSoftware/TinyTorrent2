@@ -860,8 +860,11 @@ continue once it settles, rather than silently cancelling. The storage engineer
 keeps the submitted edit alive through its reply; the Windows engineer waits on
 the existing presentation notification while native dialogs and the owner keep
 pumping; the product owner prompts only if unfinished choices remain afterward.
-The same close path now waits for the window's busy work or picker to settle and
-then applies its existing draft protection. The native owner retains its hung-UI
+The same close path first stops new operations, then waits for the work each
+owner already accepted (an addition, a source receipt, an edit) or the picker
+to settle, and then applies its existing draft protection. Unrelated commands
+stay available while an addition runs; each owner blocks only the actions that
+conflict with its own pending work. The native owner retains its hung-UI
 deadline instead of inventing another window timer.
 
 For idle checkpoints, the heavy seeder avoids rewriting unchanged metadata just
@@ -1289,6 +1292,8 @@ duplicate torrent identity when present. Add returns torrent_id after storage
 commit with duplicate:false, or the existing torrent_id with duplicate:true.
 File preview parses
 metadata without creating a payload handle; destination is applied at Add.
+Another instance of the storage worker reads and parses preview sources, so a
+slow share cannot hold up metadata commits; destruction cancels its blocked read.
 Snapshot contains session_id, torrents, settings, language_saved, download_rate,
 upload_rate, all_paused, has_incoming, stopping, loading, storage_failed, and startup_error.
 Torrent rows contain torrent_id, name,
@@ -1303,7 +1308,9 @@ snapshots. Input sources are bounded to 32 KiB and retained previews/parses to
 256. `activate_sources` forwards sources, preserving relative-path meaning at
 the launching process. `pending_sources` returns activations with activation_id
 and sources; `sources_received` acknowledges activation_ids after the UI owns
-them. The engine retains each accepted batch until that acknowledgement.
+them. The engine retains each accepted batch until that acknowledgement. A
+window that has begun closing takes no more sources, so they stay with the
+engine.
 
 Persistence uses format 1 settings.json with authoritative membership and user
 intent, plus per-identity libtorrent resume files. The ordered writer atomically

@@ -95,13 +95,13 @@ public sealed partial class MainWindow
         {
             _removeDialog = null;
             _removeClosed.TrySetResult();
-            if (!_closing && (Model.Draft.Sources.Count > 0 || Model.Draft.EditingMagnet)) _ = ShowAdd();
+            if (!Model.IsClosing && (Model.Draft.Sources.Count > 0 || Model.Draft.EditingMagnet)) _ = ShowAdd();
         }
     }
 
     private async Task ShowFiles(Torrent[] torrents, FileAction action, bool initialize = true)
     {
-        if (HasDialog || _closing) return;
+        if (HasDialog || Model.IsClosing) return;
         if (initialize) Model.Files.Begin(torrents, action);
         var form = new FileForm(Model);
         form.DestinationRequested += async (_, _) =>
@@ -123,7 +123,7 @@ public sealed partial class MainWindow
             try { args.Cancel = !await Model.Files.Submit(); }
             finally { deferral.Complete(); }
         };
-        dialog.Closing += (_, args) => { if ((Model.Files.IsPending || Model.IsPicking) && !_closing) args.Cancel = true; };
+        dialog.Closing += (_, args) => { if ((Model.Files.IsPending || Model.IsPicking) && !Model.IsClosing) args.Cancel = true; };
         _filesDialog = dialog;
         _filesForm = form;
         _filesClosed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -139,9 +139,9 @@ public sealed partial class MainWindow
             body.Content = null;
             _filesDialog = null;
             _filesForm = null;
-            if (!_closing) Model.Files.Cancel();
+            if (!Model.IsClosing) Model.Files.Cancel();
             _filesClosed.TrySetResult();
-            if (!_closing && (Model.Draft.Sources.Count > 0 || Model.Draft.EditingMagnet)) _ = ShowAdd();
+            if (!Model.IsClosing && (Model.Draft.Sources.Count > 0 || Model.Draft.EditingMagnet)) _ = ShowAdd();
         }
     }
 
@@ -160,7 +160,7 @@ public sealed partial class MainWindow
                 if (TextEditor.Find(editor) is { } input)
                     input.TextChanged += (_, _) => { if (editor.IsEnabled) choice.Input = input.Text; };
             };
-            editor.SetBinding(Control.IsEnabledProperty, new Binding { Source = Model, Path = new PropertyPath(nameof(MainViewModel.CanEdit)), Mode = BindingMode.OneWay });
+            editor.SetBinding(Control.IsEnabledProperty, new Binding { Source = Model.Speed, Path = new PropertyPath(nameof(SpeedLimits.CanApply)), Mode = BindingMode.OneWay });
             body.Children.Add(editor);
         }
         body.Children.Add(new TextBlock { Text = Model.Text.Get("limits", "units"), TextWrapping = TextWrapping.Wrap });
@@ -178,7 +178,7 @@ public sealed partial class MainWindow
         var dialog = new ContentDialog { XamlRoot = Root.XamlRoot, RequestedTheme = Root.ActualTheme, FlowDirection = Root.FlowDirection,
             Title = Model.Text.Get("commands", "limits"), Content = body, PrimaryButtonText = Model.Text.Get("limits", "apply"),
             CloseButtonText = Model.Text.Get("add", "cancel"), DefaultButton = ContentDialogButton.Primary };
-        dialog.SetBinding(ContentDialog.IsPrimaryButtonEnabledProperty, new Binding { Source = Model, Path = new PropertyPath(nameof(MainViewModel.CanEdit)), Mode = BindingMode.OneWay });
+        dialog.SetBinding(ContentDialog.IsPrimaryButtonEnabledProperty, new Binding { Source = Model.Speed, Path = new PropertyPath(nameof(SpeedLimits.CanApply)), Mode = BindingMode.OneWay });
         dialog.PrimaryButtonClick += async (_, args) =>
         {
             args.Cancel = true;
@@ -186,7 +186,7 @@ public sealed partial class MainWindow
             try { args.Cancel = !await Model.Speed.Apply(); }
             finally { deferral.Complete(); }
         };
-        dialog.Closing += (_, args) => { if (Model.IsBusy && !_closing) args.Cancel = true; };
+        dialog.Closing += (_, args) => { if (Model.Speed.IsPending && !Model.IsClosing) args.Cancel = true; };
         _limitsDialog = dialog;
         _limitsClosed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         try { await dialog.ShowAsync(); }
@@ -195,8 +195,8 @@ public sealed partial class MainWindow
         {
             _limitsDialog = null;
             _limitsClosed.TrySetResult();
-            if (!_closing) Model.Speed.Begin();
-            if (!_closing && (Model.Draft.Sources.Count > 0 || Model.Draft.EditingMagnet)) _ = ShowAdd();
+            if (!Model.IsClosing) Model.Speed.Begin();
+            if (!Model.IsClosing && (Model.Draft.Sources.Count > 0 || Model.Draft.EditingMagnet)) _ = ShowAdd();
         }
     }
 

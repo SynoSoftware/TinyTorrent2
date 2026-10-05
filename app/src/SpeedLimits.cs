@@ -11,6 +11,8 @@ public sealed class SpeedLimits(MainViewModel owner) : INotifyPropertyChanged
     public bool HasChanges => Choices.Any(choice => choice.Input != choice.Original);
     public string Message => _failure is null ? string.Empty : owner.FormatError(_failure);
     public bool HasError => _failure is not null;
+    public bool IsPending { get; private set; }
+    public bool CanApply => owner.CanEdit && !IsPending;
     public event PropertyChangedEventHandler? PropertyChanged;
 
     internal void Begin()
@@ -22,6 +24,9 @@ public sealed class SpeedLimits(MainViewModel owner) : INotifyPropertyChanged
 
     public async Task<bool> Apply()
     {
+        if (!CanApply) return false;
+        IsPending = true;
+        Refresh();
         try
         {
             var values = new Dictionary<string, double>();
@@ -36,7 +41,8 @@ public sealed class SpeedLimits(MainViewModel owner) : INotifyPropertyChanged
             Begin();
             return true;
         }
-        catch (Exception error) { _failure = error; Refresh(); return false; }
+        catch (Exception error) { _failure = error; return false; }
+        finally { IsPending = false; Refresh(); }
     }
 
     internal void Refresh() => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));

@@ -36,7 +36,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     private bool _ready;
     private bool _writable;
     private bool _closed;
-    private bool _busy;
+    private bool _closing;
     private bool _picking;
     private bool _addOpen;
     private bool _dark;
@@ -52,12 +52,13 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     public bool IsLoading => _loading || !_connected;
     public bool IsStorageFailed => _storageFailed;
     public bool IsEmptyVisible => !_storageFailed;
-    public bool IsBusy => _busy;
-    public bool CanClose => !_busy && !_settingsPending && !_picking && !Inspector.IsPending && !Preferences.IsPending && !Files.IsPending;
+    public bool IsClosing => _closing;
+    public bool CanClose => !_settingsPending && !_picking && !_receivingSources && !Draft.IsPending && !Speed.IsPending &&
+        !Inspector.IsPending && !Preferences.IsPending && !Files.IsPending;
     public bool CanExit => _connected && CanClose;
     public string? DataDirectory => _client.DataDirectory;
     public bool HasDraft => Draft.HasChanges || Speed.HasChanges || Inspector.HasDraft || Preferences.HasDraft || Files.HasDraft;
-    public bool CanEdit => _writable && !_busy && !_picking;
+    public bool CanEdit => _writable && !_picking && !_closing;
     public bool IsPicking
     {
         get => _picking;
@@ -141,6 +142,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         Inspector = new Inspector(this, _client);
         Preferences = new Preferences(this, _client);
         Filters = Enum.GetValues<TorrentFilter>().Select(filter => new FilterChoice(this, filter)).ToArray();
+        Draft.PropertyChanged += OnTaskChanged;
+        Speed.PropertyChanged += OnTaskChanged;
         Inspector.PropertyChanged += OnTaskChanged;
         Preferences.PropertyChanged += OnTaskChanged;
         Files.PropertyChanged += OnTaskChanged;
@@ -332,16 +335,14 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     {
         if (!CanEdit || _selected.Length == 0) return;
         var identities = _selected.Select(row => row.TorrentId).ToArray();
-        Busy(true);
         try
         {
             await _client.Send(command, new { torrent_ids = identities });
             Accepted("commands", command);
             _error = null;
-            await _client.Send("snapshot");
+            RequestSnapshot();
         }
         catch (Exception error) { Report(error); }
-        finally { Busy(false); }
     }
 
     private async Task ExitEngine()
@@ -445,6 +446,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         finally { _settingsPending = false; Refresh(); }
     }
 
+    // Requests queued before this one reach the engine first, so a command that
+    // sends one request needs no wait before the window closes.
     public async Task Close(bool engineExit)
     {
         if (_connected)
@@ -497,17 +500,37 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
 
     internal string FormatError(Exception error) => error is CommandFailure ? error.Message : Text.Error("unknown", error.Message);
 
-    internal void Busy(bool value) { _busy = value; Refresh(); }
+    // Stops new operations while the window closes. Accepted work still
+    // finishes, and CanClose reports when it has.
+    internal bool BeginClose()
+    {
+        if (_closing) return false;
+        _closing = true;
+        Refresh();
+        return true;
+    }
 
-    internal async Task Reveal(string torrentId)
+    internal void EndClose()
+    {
+        _closing = false;
+        Refresh();
+        if (_sourcesPending) _ = ReceiveSources();
+    }
+
+    internal void Reveal(string torrentId)
     {
         Search = string.Empty;
         ErrorsOnly = false;
         Filter = TorrentFilter.All;
         _revealId = torrentId;
         _error = null;
-        await _client.Send("snapshot");
+        RequestSnapshot();
     }
+
+    // Shows a command's effect without waiting for the next periodic refresh.
+    // The command has already succeeded, so a failed refresh reports nothing;
+    // a lost connection reports itself.
+    internal void RequestSnapshot() => _ = _client.Read(Consumer.Summary, "snapshot");
 
     internal void ClearError() { _error = null; Refresh(); }
 
@@ -518,6 +541,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         foreach (var choice in Filters) choice.Refresh();
         Changed(string.Empty);
         Draft.Refresh();
+        Speed.Refresh();
         Inspector.Refresh();
         Preferences.Refresh();
         Files.Refresh();

@@ -70,14 +70,14 @@ public sealed partial class MainWindow
 
     private async Task<bool> Navigate(WindowPage page)
     {
-        if (HasDialog || _closing || _allowClose) return false;
+        if (HasDialog || Model.IsClosing || _allowClose) return false;
         if (Model.Page == WindowPage.Preferences && page != WindowPage.Preferences && Model.Preferences.IsPending) return false;
         if (Model.Page == WindowPage.Preferences && page != WindowPage.Preferences && Model.Preferences.HasDraft)
         {
             if (!await ConfirmDiscard()) return false;
             Model.Preferences.CancelDraft();
         }
-        if (_closing) return false;
+        if (Model.IsClosing) return false;
         Model.Page = page;
         return true;
     }
@@ -182,7 +182,7 @@ public sealed partial class MainWindow
 
     private async void OnSearchSubmitted(AutoSuggestBox sender, AutoSuggestBoxQuerySubmittedEventArgs args)
     {
-        if (HasDialog || _closing) return;
+        if (HasDialog || Model.IsClosing) return;
         var suggestion = args.ChosenSuggestion as Suggestion ?? Model.FindSuggestions(args.QueryText).FirstOrDefault(value => value.IsEnabled);
         if (suggestion is null || !suggestion.IsEnabled) return;
         if (suggestion.Scope == SuggestionScope.Navigation && !await ShowTorrents()) return;

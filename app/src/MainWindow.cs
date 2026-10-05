@@ -27,7 +27,6 @@ public sealed partial class MainWindow : Window
     private AddForm? _form;
     private TaskCompletionSource? _dialogClosed;
     private bool _allowClose;
-    private bool _closing;
     private bool _engineExit;
     private bool _loaded;
 
@@ -99,7 +98,7 @@ public sealed partial class MainWindow : Window
         Model.ActivateRequested += async (_, _) =>
         {
             if (IsCaptureReview) { await Model.Activated(false); return; }
-            if (_closing) { await Model.Activated(false); return; }
+            if (Model.IsClosing) { await Model.Activated(false); return; }
             if (AppWindow.Presenter is OverlappedPresenter { State: OverlappedPresenterState.Minimized } presenter)
                 presenter.Restore();
             Activate();
@@ -213,7 +212,7 @@ public sealed partial class MainWindow : Window
 
     private async Task ShowAdd()
     {
-        if (HasDialog) return;
+        if (HasDialog || Model.IsClosing) return;
         _form = new AddForm(Model);
         _form.FilesRequested += async (_, _) => await PickSources();
         _form.DestinationRequested += async (_, _) => await PickDestination();
@@ -230,7 +229,7 @@ public sealed partial class MainWindow : Window
         Bind(dialog, ContentDialog.PrimaryButtonTextProperty, nameof(AddDraft.SubmitText));
         _dialogClosed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         dialog.PrimaryButtonClick += OnSubmit;
-        dialog.Closing += (_, args) => { if ((Model.Draft.IsSubmitting || Model.IsPicking) && !_closing) args.Cancel = true; };
+        dialog.Closing += (_, args) => { if ((Model.Draft.IsSubmitting || Model.IsPicking) && !Model.IsClosing) args.Cancel = true; };
         var completed = false;
         try { await dialog.ShowAsync(); completed = true; }
         catch (Exception error) { Model.Report(error); }
@@ -242,7 +241,7 @@ public sealed partial class MainWindow : Window
             Model.IsAddOpen = false;
             _dialogClosed.TrySetResult();
         }
-        if (!_closing && completed)
+        if (!Model.IsClosing && completed)
         {
             try { await Model.Draft.Cancel(); }
             catch (Exception error) { Model.Report(error); }
@@ -251,7 +250,7 @@ public sealed partial class MainWindow : Window
 
     private async Task PickSources()
     {
-        if (Model.IsBusy || Model.IsPicking) return;
+        if (!Model.CanEdit) return;
         Model.IsPicking = true;
         try
         {
@@ -274,7 +273,7 @@ public sealed partial class MainWindow : Window
 
     private async Task<string?> PickFolder()
     {
-        if (Model.IsBusy || Model.IsPicking) return null;
+        if (!Model.CanEdit) return null;
         Model.IsPicking = true;
         try
         {
@@ -314,12 +313,11 @@ public sealed partial class MainWindow : Window
     private async Task CloseWindow(bool engineExit)
     {
         _engineExit |= engineExit;
-        if (_closing)
+        if (!Model.BeginClose())
         {
             if (engineExit && (_closePrompt is not null || Model.IsPicking)) await Model.DeferClose();
             return;
         }
-        _closing = true;
         var wasOpen = false;
         var hadLimits = false;
         var hadFiles = false;
@@ -382,8 +380,8 @@ public sealed partial class MainWindow : Window
         }
         finally
         {
-            _closing = false;
             _engineExit = false;
+            if (!_allowClose) Model.EndClose();
             if (keepDraft)
             {
                 await Model.Activated(true);
