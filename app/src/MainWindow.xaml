@@ -50,14 +50,13 @@
                 <Button x:Name="PauseButton" Style="{StaticResource TinyTorrentCaptionButtonStyle}" Command="{x:Bind Model.Pause}" />
                 <Button x:Name="ResumeButton" Style="{StaticResource TinyTorrentCaptionButtonStyle}" Command="{x:Bind Model.Resume}" />
                 <Button x:Name="OverflowButton" Style="{StaticResource TinyTorrentCaptionButtonStyle}" IsEnabled="{x:Bind Model.HasSelection, Mode=OneWay}" Click="OnOverflow" />
-                <Button x:Name="LanguageButton" Style="{StaticResource TinyTorrentCaptionButtonStyle}" Command="{x:Bind Model.SwitchLanguage}" />
-                <Button x:Name="ThemeButton" Style="{StaticResource TinyTorrentCaptionButtonStyle}" Command="{x:Bind Model.SwitchTheme}" />
-                <Button x:Name="ExitButton" Style="{StaticResource TinyTorrentCaptionButtonStyle}" Command="{x:Bind Model.Exit}" />
+                <Button x:Name="LanguageButton" Margin="12,0,0,0" Style="{StaticResource TinyTorrentCaptionButtonStyle}" Command="{x:Bind Model.SwitchLanguage}" />
+                <Button x:Name="ThemeButton" Margin="0,0,12,0" Style="{StaticResource TinyTorrentCaptionButtonStyle}" Command="{x:Bind Model.SwitchTheme}" />
             </StackPanel>
         </Grid>
         <NavigationView x:Name="Navigation" Grid.Row="1" PaneDisplayMode="LeftCompact" IsPaneOpen="False" OpenPaneLength="200" AlwaysShowHeader="False"
             IsBackButtonVisible="Collapsed" IsTitleBarAutoPaddingEnabled="False" IsSettingsVisible="False"
-            Background="Transparent" SelectionChanged="OnNavigation">
+            Background="Transparent" SelectionChanged="OnNavigation" ItemInvoked="OnNavigationInvoked">
             <NavigationView.MenuItems>
                 <NavigationViewItem x:Name="TorrentsPage">
                     <NavigationViewItem.Icon><FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.List}" /></NavigationViewItem.Icon>
@@ -69,6 +68,10 @@
                 </NavigationViewItem>
                 <NavigationViewItem x:Name="AboutPage">
                     <NavigationViewItem.Icon><FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Info}" /></NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItemSeparator />
+                <NavigationViewItem x:Name="ExitItem" SelectsOnInvoked="False" IsEnabled="{x:Bind Model.CanExit, Mode=OneWay}">
+                    <NavigationViewItem.Icon><FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Power}" /></NavigationViewItem.Icon>
                 </NavigationViewItem>
             </NavigationView.FooterMenuItems>
             <Grid>

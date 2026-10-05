@@ -346,6 +346,15 @@ preference is off. A newer release shows Update available in the window, which
 opens the release page; installing it is the person's action. There is no silent
 update, resident updater, or check while the window is closed.
 
+WinUI stores the last attempt and known release version in `updates.json`
+beside its window layout. The check uses the project's public latest-release
+API, without credentials, with an eight-second limit. Cache the attempt before
+requesting, including an unsuccessful attempt, so reopening an offline window
+does not repeat the request within 24 hours. Unavailable releases and network
+failures do not interrupt torrent work. Turning the preference off or closing
+WinUI cancels a pending request. The update command opens only the project's
+release page, never a download URL supplied in a reply.
+
 Sign public release artifacts; validate installation, upgrade, and uninstall
 with the chosen prerequisites before publication. A future winget listing can
 reference this same installer without becoming a Store dependency.

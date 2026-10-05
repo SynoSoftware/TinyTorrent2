@@ -412,8 +412,10 @@ public sealed class SchedulePeriod : INotifyPropertyChanged
     public int Start { get; }
     public int End { get; }
     public ScheduleMode Mode { get; }
-    public string Description => _owner.Text.Format("preferences", End <= Start ? "period_overnight" : "period", string.Join(", ", Days.Select(_owner.Day)),
-        Preferences.Time(Start), Preferences.Time(End), _owner.FormatMode(Mode));
+    public string Description => Start == 0 && End == 0
+        ? _owner.Text.Format("preferences", "period_all_day", string.Join(", ", Days.Select(_owner.Day)), _owner.FormatMode(Mode))
+        : _owner.Text.Format("preferences", End <= Start ? "period_overnight" : "period", string.Join(", ", Days.Select(_owner.Day)),
+            Preferences.Time(Start), Preferences.Time(End), _owner.FormatMode(Mode));
     public string EditText => _owner.Text.Get("preferences", "edit");
     public string RemoveText => _owner.Text.Get("preferences", "remove");
     public string EditName => _owner.Text.Format("preferences", "edit_period", Description);

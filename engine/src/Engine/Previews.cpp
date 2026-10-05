@@ -1,30 +1,17 @@
 #include "Engine/State.h"
-#include <Windows.h>
 #include <libtorrent/load_torrent.hpp>
 #include <libtorrent/magnet_uri.hpp>
 #include <libtorrent/torrent_info.hpp>
 #include <algorithm>
 #include <cstring>
 
-namespace tiny
+namespace tt
 {
 namespace
 {
-constexpr std::string_view magnetScheme = "magnet:";
 // Bounds the previews that wait for a choice, so that a burst of requests
 // cannot grow memory without limit.
 constexpr std::size_t previewLimit = 256;
-}
-
-std::filesystem::path Engine::State::FullPath(std::filesystem::path const& path)
-{
-    return std::filesystem::absolute(path).lexically_normal();
-}
-
-// Windows compares file names without case.
-bool Engine::State::PathBefore(std::filesystem::path const& left, std::filesystem::path const& right)
-{
-    return CompareStringOrdinal(left.c_str(), -1, right.c_str(), -1, TRUE) == CSTR_LESS_THAN;
 }
 
 // The torrents in the list that already use a file this content would use
@@ -37,13 +24,7 @@ std::vector<std::string> Engine::State::SharedFiles(std::shared_ptr<lt::torrent_
     {
         return names;
     }
-    std::filesystem::path target = Wide(destination);
-    std::vector<std::filesystem::path> wanted;
-    for (auto const& path : Paths(*metadata))
-    {
-        wanted.push_back(FullPath(target / path));
-    }
-    std::sort(wanted.begin(), wanted.end(), PathBefore);
+    auto wanted = FilePaths(*metadata, destination);
     for (auto const& [id, torrent] : torrents)
     {
         auto other = torrent.handle.torrent_file();
@@ -62,8 +43,17 @@ std::vector<std::string> Engine::State::SharedFiles(std::shared_ptr<lt::torrent_
     }
     if (HoldsFiles(metadata, destination))
     {
-        if (deletion) names.push_back(deletion->names);
-        else for (auto const& id : relocation->ids) names.push_back(torrents.at(id).Name());
+        if (deletion)
+        {
+            names.push_back(deletion->names);
+        }
+        else
+        {
+            for (auto const& id : relocation->ids)
+            {
+                names.push_back(torrents.at(id).Name());
+            }
+        }
     }
     return names;
 }
@@ -128,44 +118,48 @@ void Engine::State::Merge(Preview& existing, Preview const& source)
     UpdatePreview(existing);
 }
 
+// Whether the previewed content is already in the list and the preview has
+// trackers that torrent lacks.
+bool Engine::State::CanMerge(Preview const& preview) const
+{
+    auto duplicate = Duplicate(preview.InfoHashes());
+    return !duplicate.empty() &&
+        !Missing(preview.params.trackers, Urls(torrents.at(duplicate).handle.trackers())).empty();
+}
+
 Json Engine::State::Describe(Preview const& preview, std::string const& destination) const
 {
     auto const& params = preview.params;
     auto hashes = preview.InfoHashes();
     auto duplicate = Duplicate(hashes);
-    bool merge = !duplicate.empty() &&
-        !Missing(params.trackers, Urls(torrents.at(duplicate).handle.trackers())).empty();
     return {{"preview_id", preview.identity},
-        {"name", tiny::Name(params.ti ? params.ti->name() : params.name, Hashes(hashes))},
+        {"name", tt::Name(params.ti ? params.ti->name() : params.name, Hashes(hashes))},
         {"size", params.ti ? params.ti->total_size() : 0}, {"files", Files(params.ti)},
         {"duplicate", duplicate}, {"hashes", Hashes(hashes)}, {"trackers", params.trackers},
-        {"merge_available", merge}, {"metadata_ready", bool(params.ti)},
+        {"merge_available", CanMerge(preview)}, {"metadata_ready", bool(params.ti)},
         {"error", preview.error}, {"shared_with", SharedFiles(params.ti, destination)}};
 }
 
-void Engine::State::Inspect(std::string source, std::string connection, std::string destination, Reply reply)
+void Engine::State::Inspect(std::string source, std::string connection,
+    std::function<void(Outcome, Preview*)> done)
 {
     if (previews.size() + parsing.size() >= previewLimit)
     {
-        reply(Failure("overloaded"));
+        done({ErrorCode::Overloaded}, nullptr);
         return;
     }
     if (!IsSource(source))
     {
-        reply(Failure("invalid_source"));
+        done({ErrorCode::InvalidSource}, nullptr);
         return;
     }
-    // URI schemes ignore case.
-    if (_strnicmp(source.c_str(), magnetScheme.data(), magnetScheme.size()) == 0)
-    {
-        source.replace(0, magnetScheme.size(), magnetScheme);
-    }
+    NormaliseMagnet(source);
     auto preview = std::make_shared<Preview>();
     preview->identity = Identity();
     preview->connection = std::move(connection);
     store.Run([preview, source]
     {
-        if (source.starts_with(magnetScheme))
+        if (IsMagnet(source))
         {
             preview->params = lt::parse_magnet_uri(source);
         }
@@ -175,7 +169,7 @@ void Engine::State::Inspect(std::string source, std::string connection, std::str
             preview->params = lt::load_torrent_buffer(
                 lt::span<char const>(bytes.data(), bytes.size()));
         }
-    }, [this, preview, destination = std::move(destination), reply](StorageOutcome outcome)
+    }, [this, preview, done](StorageOutcome outcome)
     {
         std::erase(parsing, preview);
         if (preview->cancelled)
@@ -184,12 +178,12 @@ void Engine::State::Inspect(std::string source, std::string connection, std::str
         }
         if (stopping)
         {
-            reply(Failure("stopping"));
+            done({ErrorCode::Stopping}, nullptr);
             return;
         }
         if (!outcome.succeeded)
         {
-            reply(Failure("invalid_source", outcome.detail));
+            done({ErrorCode::InvalidSource, outcome.detail}, nullptr);
             return;
         }
         preview->params.info_hashes = preview->InfoHashes();
@@ -199,7 +193,7 @@ void Engine::State::Inspect(std::string source, std::string connection, std::str
             if (existing.connection == preview->connection && Overlaps(Hashes(existing.InfoHashes()), hashes))
             {
                 Merge(existing, *preview);
-                reply(Success(Describe(existing, destination)));
+                done({}, &existing);
                 return;
             }
         }
@@ -212,12 +206,11 @@ void Engine::State::Inspect(std::string source, std::string connection, std::str
             preview->handle = session->add_torrent(preview->params, error);
             if (error)
             {
-                reply(Failure("preview_failed", error.message()));
+                done({ErrorCode::PreviewFailed, error.message()}, nullptr);
                 return;
             }
         }
-        previews.emplace(preview->identity, *preview);
-        reply(Success(Describe(*preview, destination)));
+        done({}, &previews.emplace(preview->identity, *preview).first->second);
     });
     parsing.push_back(preview);
 }

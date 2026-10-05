@@ -77,13 +77,16 @@ public sealed partial class MainViewModel
     {
         var desired = Torrents.Where(torrent => torrent.Name.Contains(_search, StringComparison.CurrentCultureIgnoreCase) &&
             Matches(torrent, Filter)).OrderBy(torrent => torrent.QueueOrder).ToArray();
-        foreach (var torrent in VisibleTorrents.Where(torrent => !desired.Contains(torrent)).ToArray()) VisibleTorrents.Remove(torrent);
+        var desiredSet = desired.ToHashSet();
+        foreach (var torrent in VisibleTorrents.Where(torrent => !desiredSet.Contains(torrent)).ToArray()) VisibleTorrents.Remove(torrent);
+        var visibleSet = VisibleTorrents.ToHashSet();
         foreach (var torrent in desired)
-            if (!VisibleTorrents.Contains(torrent)) VisibleTorrents.Add(torrent);
+            if (!visibleSet.Contains(torrent)) VisibleTorrents.Add(torrent);
         for (var index = 0; index < desired.Length; index++)
         {
+            if (ReferenceEquals(VisibleTorrents[index], desired[index])) continue;
             var current = VisibleTorrents.IndexOf(desired[index]);
-            if (current != index) VisibleTorrents.Move(current, index);
+            VisibleTorrents.Move(current, index);
         }
         if (Inspector.Target is { } target && !Torrents.Contains(target)) CloseInspector();
     }
@@ -98,7 +101,7 @@ public sealed partial class MainViewModel
 
     private Task Jump(string torrentId)
     {
-        if (!_identities.TryGetValue(torrentId, out var torrent)) return Task.CompletedTask;
+        if (!_byId.TryGetValue(torrentId, out var torrent)) return Task.CompletedTask;
         ClearFinding();
         RevealRequested?.Invoke(this, torrent);
         return Task.CompletedTask;
@@ -125,7 +128,7 @@ public sealed partial class MainViewModel
         var torrents = Torrents.Where(torrent => MatchesQuery(torrent.Name + " " + torrent.Status))
             .Take(30 - actions.Length).Select(torrent => new Suggestion(torrent.Name,
                 Text.Format("finding", "torrent_detail", torrent.SizeText, torrent.Status), SuggestionScope.Torrent,
-                new Command(() => Jump(torrent.TorrentId), () => _identities.ContainsKey(torrent.TorrentId))));
+                new Command(() => Jump(torrent.TorrentId), () => _byId.ContainsKey(torrent.TorrentId))));
         return [.. torrents, .. actions];
     }
 
@@ -148,6 +151,7 @@ public sealed partial class MainViewModel
         foreach (var (key, command) in new (string, ICommand)[]
         {
             ("pause", Pause), ("resume", Resume), ("force", Force), ("verify", Verify), ("remove", Remove),
+            ("move", MoveFiles), ("delete_files", DeleteFiles),
             ("open", Open), ("open_folder", OpenFolder), ("copy_magnet", CopyMagnet), ("copy_hash", CopyHash),
             ("properties", Properties), ("up", Up), ("down", Down), ("top", Top), ("bottom", Bottom)
         })

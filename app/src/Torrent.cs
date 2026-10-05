@@ -10,6 +10,8 @@ public sealed class Torrent(string torrentId, Strings strings) : INotifyProperty
     public string TorrentId { get; } = torrentId;
     public string Name { get; private set; } = string.Empty;
     public string SavePath { get; private set; } = string.Empty;
+    public bool IsMoving { get; private set; }
+    public string MoveDestination { get; private set; } = string.Empty;
     public long Size { get; private set; }
     public long Downloaded { get; private set; }
     public long Uploaded { get; private set; }
@@ -26,7 +28,7 @@ public sealed class Torrent(string torrentId, Strings strings) : INotifyProperty
     public string Status => strings.Status(StatusCode);
     public bool IsPaused => StatusCode is "paused" or "all_paused";
     public bool IsError => StatusCode == "error";
-    public bool IsProgressNormal => !IsPaused && !IsError;
+    public bool IsProgressNormal => !IsPaused && !IsError && !IsMoving;
     public string StatusGlyph => StatusCode switch
     {
         "downloading" => Syno.Lucide.ArrowDownToLine,
@@ -34,6 +36,7 @@ public sealed class Torrent(string torrentId, Strings strings) : INotifyProperty
         "paused" or "all_paused" => Syno.Lucide.Pause,
         "completed" => Syno.Lucide.CircleCheck,
         "checking" => Syno.Lucide.RefreshCw,
+        "moving" => Syno.Lucide.Folder,
         "metadata" => Syno.Lucide.Hourglass,
         "queued" => Syno.Lucide.Clock,
         "error" => Syno.Lucide.CircleAlert,
@@ -42,10 +45,10 @@ public sealed class Torrent(string torrentId, Strings strings) : INotifyProperty
     public double DownloadRate { get; private set; }
     public double UploadRate { get; private set; }
     public string ErrorCode { get; private set; } = string.Empty;
-    public string Detail { get; private set; } = string.Empty;
-    public string ErrorText => ErrorCode.Length == 0 ? string.Empty : strings.Error(ErrorCode, Detail);
+    public string ErrorDetail { get; private set; } = string.Empty;
+    public string ErrorText => ErrorCode.Length == 0 ? string.Empty : strings.Error(ErrorCode, ErrorDetail);
     public string SizeText => strings.Bytes(Size);
-    public string ProgressText => Progress.ToString("P1", CultureInfo.CurrentCulture);
+    public string ProgressText => IsMoving ? "—" : Progress.ToString("P1", CultureInfo.CurrentCulture);
     public string DownloadText => _connected ? strings.Format("units", "rate", strings.Bytes(DownloadRate)) : "—";
     public string UploadText => _connected ? strings.Format("units", "rate", strings.Bytes(UploadRate)) : "—";
     public string EtaText => !_connected || DownloadRate <= 0 || Remaining <= 0 ? "—" :
@@ -69,6 +72,8 @@ public sealed class Torrent(string torrentId, Strings strings) : INotifyProperty
         _connected = true;
         Name = row.GetProperty("name").GetString()!;
         SavePath = row.GetProperty("save_path").GetString()!;
+        IsMoving = row.GetProperty("moving").GetBoolean();
+        MoveDestination = row.GetProperty("move_destination").GetString()!;
         Size = row.GetProperty("size").GetInt64();
         Downloaded = row.GetProperty("downloaded").GetInt64();
         Uploaded = row.GetProperty("uploaded").GetInt64();
@@ -82,7 +87,7 @@ public sealed class Torrent(string torrentId, Strings strings) : INotifyProperty
         DownloadRate = row.GetProperty("download_rate").GetDouble();
         UploadRate = row.GetProperty("upload_rate").GetDouble();
         ErrorCode = row.GetProperty("error").GetString()!;
-        Detail = row.GetProperty("detail").GetString()!;
+        ErrorDetail = row.GetProperty("detail").GetString()!;
         RefreshText();
     }
 }

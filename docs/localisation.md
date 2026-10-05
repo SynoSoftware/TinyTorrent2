@@ -86,7 +86,9 @@ records the implementation and the remaining runtime verification.
 
 The engine owns the selected BCP-47 language tag in its preferences,
 because tray text must work with WinUI closed. First use matches the Windows
-language against shipped catalogues, falling back to English. Preserve an explicit
+language against shipped catalogues, falling back to English. The engine's
+`Strings` owns its list of shipped catalogues and how a tag matches one;
+preference validation asks it instead of keeping a second list. Preserve an explicit
 selection across UI and engine restarts. Show languages by their own names so a
 user can recover from an unfamiliar selection.
 

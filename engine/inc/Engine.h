@@ -3,6 +3,7 @@
 #include "Enums.h"
 #include <nlohmann/json.hpp>
 #include <cstdint>
+#include <cstring>
 #include <filesystem>
 #include <functional>
 #include <memory>
@@ -12,7 +13,7 @@
 #include <utility>
 #include <vector>
 
-namespace tiny
+namespace tt
 {
 using Json = nlohmann::json;
 using Reply = std::function<void(Json)>;
@@ -22,11 +23,57 @@ constexpr wchar_t productName[] = L"TinyTorrent";
 // engine and the window as one application.
 constexpr wchar_t appId[] = L"Syno.TinyTorrent";
 
+// Command-line options of the engine executable. The parser and every command
+// that Windows runs later use these names.
+namespace option
+{
+constexpr wchar_t literal[] = L"--";
+constexpr wchar_t headless[] = L"--headless";
+constexpr wchar_t background[] = L"--background";
+constexpr wchar_t registration[] = L"--registration";
+constexpr wchar_t data[] = L"--data";
+}
+
+constexpr std::string_view magnetScheme = "magnet:";
+
+// URI schemes ignore case, so a source is a magnet link whatever the case of
+// its scheme.
+inline bool IsMagnet(std::string_view source)
+{
+    return source.size() >= magnetScheme.size() &&
+        _strnicmp(source.data(), magnetScheme.data(), magnetScheme.size()) == 0;
+}
+
+// Writes the scheme of a magnet link in lower case, the form that the engine
+// compares.
+inline void NormaliseMagnet(std::string& source)
+{
+    if (IsMagnet(source))
+    {
+        source.replace(0, magnetScheme.size(), magnetScheme);
+    }
+}
+
 struct Notice
 {
     NoticeKind kind;
     std::string name;
     std::string detail;
+    std::string torrentId;
+};
+
+// The completion or failure of an operation. A failure has its error code
+// and, when known, its cause.
+struct Outcome
+{
+    std::optional<ErrorCode> error;
+    std::string detail;
+};
+
+// What an addition did, and the torrent it added or found in the list.
+struct Added
+{
+    AdditionKind kind = AdditionKind::New;
     std::string torrentId;
 };
 
@@ -62,14 +109,18 @@ public:
     Engine(Engine const&) = delete;
     Engine& operator=(Engine const&) = delete;
 
-    void Execute(Json const& request, Reply reply);
+    void Execute(Json const& request, std::string const& connection, Reply reply);
     void Tick();
     void Disconnect(std::string const& connection);
     // The completion receives nothing when the final save succeeded, and
     // otherwise its cause, which is empty when the cause is unknown.
     void Shutdown(std::function<void(std::optional<std::string> failure)> completion);
+    void PauseSession(bool paused, std::function<void(Outcome)> done);
+    void RecordBackgroundNotice(std::function<void(Outcome)> done);
+    // Adds a source to the default destination with the default file choices.
+    void Add(std::string const& source, std::function<void(Outcome, Added)> done);
     Json Snapshot() const;
-    tiny::Activity Activity() const;
+    tt::Activity Activity() const;
     std::vector<Notice> TakeNotices();
     std::string Name(std::string const& torrentId) const;
     std::string Folder(std::string const& torrentId) const;
@@ -77,8 +128,9 @@ public:
     bool IsStopping() const;
     bool IsLoading() const;
     bool HasStorageFailure() const;
+    std::string StartupError() const;
+    std::string SessionId() const;
     bool ShowsAdd() const;
-    std::string DefaultDestination() const;
 
 private:
     class State;
@@ -104,5 +156,7 @@ std::wstring Wide(std::string const& value);
 std::wstring Executable();
 char const* ToString(NoticeKind kind);
 Json Success(Json data = Json::object());
-Json Failure(std::string code, std::string detail = {});
+Json Failure(ErrorCode code, std::string detail = {});
+// A request refused because of a torrent's problem reports that problem.
+Json Failure(ProblemKind kind, std::string detail = {});
 }

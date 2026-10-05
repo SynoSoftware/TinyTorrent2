@@ -61,7 +61,10 @@ with a native NavigationView. Its compact left rail shows destination icons and
 opens their labels on demand, with
 Torrents as the main destination and Settings and About as secondary destinations.
 The SVG stays a logo; it does not change into a menu icon on hover. Keep the
-existing caption actions and continuous acrylic. Navigation uses the same draft
+transfer actions and live language/theme controls in the caption, with spacing
+between those groups and the native window controls. Exit is a non-selecting
+command below the secondary navigation destinations; it retains the existing
+pending-work and draft guards. Keep continuous acrylic. Navigation uses the same draft
 guards and restores the current destination when a change is refused.
 
 A second UI launch forwards Open to the existing application. Check its outcome
@@ -281,8 +284,9 @@ there is one filter owner. The drawer starts closed so the table keeps its full
 width until the person asks to filter. Status and progress remain visible and
 sortable in the table. Tracker information
 belongs in the selected torrent's inspector. TableView owns generic interaction.
-NavigationView exposes Torrents, Settings and About. Exit remains in the caption
-and existing command paths. About shows the product identity and running
+NavigationView exposes Torrents, Settings and About, with Exit as a separate
+non-selecting footer command. Existing keyboard and search paths still invoke
+the same Exit command. About shows the product identity and running
 version on the same acrylic surface. Add commands remain in the caption and
 global search; session commands remain in search, shortcuts and the tray. This
 keeps navigation small without taking away a command's established path.
@@ -316,7 +320,7 @@ before a seed means the end of the download queue. This keeps queue actions
 meaningful instead of suggesting a seed priority that libtorrent does not use.
 
 Torrent commands are Pause, Resume, Force start, Open, Open folder, Copy magnet
-link, Copy info hash, Move, Verify, Remove, and Delete files. Open hands the file
+link, Copy info hash, Move files, Verify, Remove, and Delete files. Open hands the file
 of a single-file torrent, or the folder of a multi-file torrent, to Windows as
 Explorer does, only on the person's request. Double-click and Enter on a row
 open the inspector; Properties in the torrent context menu does the same. The
@@ -561,12 +565,30 @@ torrent identity; protect only its unfinished input when changing context or
 closing. An untouched inspector and an already-applied change never trigger a
 save prompt. A removed target cannot receive a write.
 
-Move moves the torrent's own files; other files in its folder stay. Show the
+Files permits Select none on an existing torrent. It changes wanted choices
+without removing the torrent or its downloaded files; Add still requires at
+least one wanted file, because a new download otherwise has no useful work.
+
+Move files moves the torrent's own files; other files in its folder stay. Show the
 folder the files will be in, so choosing the torrent's own folder instead of
 the folder that contains it is visible before the move. Preserve choices on
-failure. When files are already at the destination, offer Use the files there,
+failure. When files are already at the destination, offer Use files there,
 following [engine relocation](engine.md#removal-and-relocation). When other
 torrents use the files, name them and offer to move them together.
+
+Move files and Delete files are available from selection actions, the row context
+menu and command search. Shift+Delete opens Delete files; Delete still opens
+Remove, which keeps downloaded files. Delete files names the torrents and their
+source folders, warns that deletion is permanent, and lists outside torrents
+whose shared files will be kept. Cancel remains its default button.
+
+Move files shows the current source folders, the chosen destination parent and
+the resulting content folders. Include shared torrents is an explicit choice;
+the engine rechecks the scope when the command executes. Use files there is a
+separate explicit choice with a warning that verification downloads mismatched
+pieces over those files. A refusal keeps the destination and choices. Accepted
+work appears as Moving files without a file-copy percentage; row errors direct
+the person to reopen Move files and choose the folder holding the files.
 
 The Speed view shows the [engine's session-wide speed history](engine.md#state-and-work),
 whichever torrent is selected, and its heading says All torrents, so nobody

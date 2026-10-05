@@ -3,7 +3,6 @@ using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
-using Windows.Storage.Pickers;
 
 namespace Syno.TinyTorrent;
 
@@ -29,6 +28,11 @@ public sealed partial class MainWindow
     }
 
     private void OnTorrents(object sender, RoutedEventArgs args) { if (!HasDialog) Run(Model.ShowTorrents); }
+
+    private void OnNavigationInvoked(NavigationView sender, NavigationViewItemInvokedEventArgs args)
+    {
+        if (args.InvokedItemContainer == ExitItem) Run(Model.Exit);
+    }
 
     private async void OnNavigation(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
     {
@@ -205,19 +209,13 @@ public sealed partial class MainWindow
     private async Task PickPreferenceFolder()
     {
         if (!Model.Preferences.Destination.CanEdit || Model.IsPicking) return;
-        Model.IsPicking = true;
         try
         {
-            var picker = new FolderPicker();
-            picker.FileTypeFilter.Add("*");
-            WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(this));
-            var folder = await picker.PickSingleFolderAsync();
-            Model.IsPicking = false;
+            var folder = await PickFolder();
             if (folder is null) return;
-            Model.Preferences.Destination.Input = folder.Path;
+            Model.Preferences.Destination.Input = folder;
             await Model.Preferences.Commit(Model.Preferences.Destination);
         }
         catch (Exception error) { Model.Report(error); }
-        finally { Model.IsPicking = false; }
     }
 }

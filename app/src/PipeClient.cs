@@ -13,14 +13,18 @@ namespace Syno.TinyTorrent;
 internal sealed class PipeClient : IDisposable
 {
     private const int MaximumFrame = 16 * 1024 * 1024;
+    private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(15);
     private readonly Strings _strings;
+    private readonly object _gate = new();
     private readonly CancellationTokenSource _lifetime = new();
     private readonly Channel<Command> _commands = Channel.CreateBounded<Command>(32);
+    private Task? _pump;
     private TaskCompletionSource<JsonElement>? _reply;
     private long _requestId;
     private long _awaitingId;
     private int _refreshPending;
-    private volatile bool _connected;
+    private bool _connected;
+    private bool _disposed;
     private bool _hasConnected;
     private string? _enginePath;
     private string? _dataDirectory;
@@ -71,16 +75,26 @@ internal sealed class PipeClient : IDisposable
 
     internal PipeClient(Strings strings) => _strings = strings;
 
-    internal void Start() => _ = Task.Run(Run);
+    internal void Start()
+    {
+        lock (_gate)
+        {
+            if (_disposed || _pump is not null) return;
+            _pump = Task.Run(Run);
+        }
+    }
 
     internal Task<JsonElement> Send(string name, object? arguments = null)
     {
-        if (!_connected)
-            return Task.FromException<JsonElement>(new IOException(_strings.Get("connection", "unavailable")));
-        var command = new Command(name, arguments);
-        if (!_commands.Writer.TryWrite(command))
-            command.Completion.SetException(new IOException(_strings.Get("connection", "overload")));
-        return command.Completion.Task;
+        lock (_gate)
+        {
+            if (_disposed || !_connected)
+                return Task.FromException<JsonElement>(new IOException(_strings.Get("connection", "unavailable")));
+            var command = new Command(name, arguments);
+            if (!_commands.Writer.TryWrite(command))
+                command.Completion.SetException(new IOException(_strings.Get("connection", "overload")));
+            return command.Completion.Task;
+        }
     }
 
     private async Task Run()
@@ -90,72 +104,101 @@ internal sealed class PipeClient : IDisposable
         string? lastFailure = null;
         var token = _lifetime.Token;
         using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
-        _ = Refresh(timer, token);
-        while (!token.IsCancellationRequested)
+        var refresh = Refresh(timer, token);
+        try
         {
-            using var pipe = CreatePipe();
-            try
+            while (!token.IsCancellationRequested)
             {
-                try { await pipe.ConnectAsync(1000, token); }
-                catch (TimeoutException) when (!launched && !_hasConnected)
-                {
-                    launched = true;
-                    try { LaunchEngine(); }
-                    catch (Exception error) { launchFailure = error; throw; }
-                    throw;
-                }
-                var hello = await ReadGreeting(pipe, _strings, token);
-                _ = hello.GetProperty("session_id").GetString() ?? throw new InvalidDataException();
-                _enginePath = hello.TryGetProperty("engine_path", out var engine) ? engine.GetString() : _enginePath;
-                _dataDirectory = hello.TryGetProperty("data_directory", out var directory) ? directory.GetString() : _dataDirectory;
-                _hasConnected = true;
-                _connected = true;
-                launchFailure = null;
-                lastFailure = null;
-                using var connection = CancellationTokenSource.CreateLinkedTokenSource(token);
-                var receive = Receive(pipe, connection.Token);
+                using var pipe = CreatePipe();
                 try
                 {
-                    await Execute(pipe, new Command("snapshot", null), connection.Token);
-                    while (!connection.IsCancellationRequested)
+                    try { await pipe.ConnectAsync(1000, token); }
+                    catch (TimeoutException) when (!launched && !_hasConnected)
                     {
-                        var waiting = _commands.Reader.WaitToReadAsync(connection.Token).AsTask();
-                        if (await Task.WhenAny(waiting, receive) == receive)
-                            await receive;
-                        if (!await waiting) break;
-                        while (_commands.Reader.TryRead(out var command))
-                        {
-                            if (command.Optional && _commands.Reader.Count > 0)
-                            {
-                                Interlocked.Exchange(ref _refreshPending, 0);
-                                command.Completion.TrySetResult(default);
-                                continue;
-                            }
-                            await Execute(pipe, command, connection.Token);
-                        }
+                        launched = true;
+                        try { LaunchEngine(); }
+                        catch (Exception error) { launchFailure = error; throw; }
+                        throw;
                     }
+                    var hello = await ReadGreeting(pipe, _strings, token);
+                    _ = hello.GetProperty("session_id").GetString() ?? throw new InvalidDataException();
+                    _enginePath = hello.TryGetProperty("engine_path", out var engine) ? engine.GetString() : _enginePath;
+                    _dataDirectory = hello.TryGetProperty("data_directory", out var directory) ? directory.GetString() : _dataDirectory;
+                    _hasConnected = true;
+                    lock (_gate)
+                    {
+                        token.ThrowIfCancellationRequested();
+                        _connected = true;
+                    }
+                    launchFailure = null;
+                    lastFailure = null;
+                    await RunConnection(pipe, token);
                 }
-                finally
+                catch (Exception error) when (!token.IsCancellationRequested)
                 {
-                    connection.Cancel();
-                    pipe.Dispose();
-                    try { await receive; } catch (Exception) when (connection.IsCancellationRequested) { }
+                    Disconnect(error);
+                    var message = error is TimeoutException ? launchFailure?.Message ?? _strings.Get("window", "disconnected") : error.Message;
+                    if (message != lastFailure) Disconnected?.Invoke(message);
+                    lastFailure = message;
+                    try { await Task.Delay(1000, token); } catch (OperationCanceledException) { }
+                }
+                catch (OperationCanceledException) when (token.IsCancellationRequested) { break; }
+                catch (IOException) when (token.IsCancellationRequested) { break; }
+            }
+        }
+        finally
+        {
+            _lifetime.Cancel();
+            Disconnect();
+            _commands.Writer.TryComplete();
+            await refresh;
+        }
+    }
+
+    private async Task RunConnection(NamedPipeClientStream pipe, CancellationToken token)
+    {
+        using var connection = CancellationTokenSource.CreateLinkedTokenSource(token);
+        var receive = Receive(pipe, connection.Token);
+        try
+        {
+            await Execute(pipe, new Command("snapshot", null), connection.Token);
+            while (!connection.IsCancellationRequested)
+            {
+                var waiting = _commands.Reader.WaitToReadAsync(connection.Token).AsTask();
+                if (await Task.WhenAny(waiting, receive) == receive)
+                    await receive;
+                if (!await waiting) break;
+                while (_commands.Reader.TryRead(out var command))
+                {
+                    if (command.Optional && _commands.Reader.Count > 0)
+                    {
+                        Interlocked.Exchange(ref _refreshPending, 0);
+                        command.Completion.TrySetResult(default);
+                        continue;
+                    }
+                    await Execute(pipe, command, connection.Token);
                 }
             }
-            catch (Exception error) when (!token.IsCancellationRequested)
+        }
+        finally
+        {
+            connection.Cancel();
+            pipe.Dispose();
+            try { await receive; } catch (Exception) when (connection.IsCancellationRequested) { }
+        }
+    }
+
+    private void Disconnect(Exception? error = null)
+    {
+        lock (_gate)
+        {
+            _connected = false;
+            while (_commands.Reader.TryRead(out var command))
             {
-                _connected = false;
-                _reply?.TrySetException(error);
-                while (_commands.Reader.TryRead(out var command))
-                    command.Completion.TrySetException(new IOException(_strings.Get("connection", "uncertain"), error));
-                Interlocked.Exchange(ref _refreshPending, 0);
-                var message = error is TimeoutException ? launchFailure?.Message ?? _strings.Get("window", "disconnected") : error.Message;
-                if (message != lastFailure) Disconnected?.Invoke(message);
-                lastFailure = message;
-                try { await Task.Delay(1000, token); } catch (OperationCanceledException) { }
+                if (error is null) command.Completion.TrySetCanceled(_lifetime.Token);
+                else command.Completion.TrySetException(new IOException(_strings.Get("connection", "unavailable"), error));
             }
-            catch (OperationCanceledException) when (token.IsCancellationRequested) { break; }
-            catch (IOException) when (token.IsCancellationRequested) { break; }
+            Interlocked.Exchange(ref _refreshPending, 0);
         }
     }
 
@@ -165,10 +208,13 @@ internal sealed class PipeClient : IDisposable
         {
             while (await timer.WaitForNextTickAsync(token))
             {
-                if (!_connected || _commands.Reader.Count != 0 || Interlocked.CompareExchange(ref _refreshPending, 1, 0) != 0)
-                    continue;
-                var refresh = new Command("snapshot", null, true);
-                if (!_commands.Writer.TryWrite(refresh)) Interlocked.Exchange(ref _refreshPending, 0);
+                lock (_gate)
+                {
+                    if (_disposed || !_connected || _commands.Reader.Count != 0 || Interlocked.CompareExchange(ref _refreshPending, 1, 0) != 0)
+                        continue;
+                    var refresh = new Command("snapshot", null, true);
+                    if (!_commands.Writer.TryWrite(refresh)) Interlocked.Exchange(ref _refreshPending, 0);
+                }
             }
         }
         catch (OperationCanceledException) { }
@@ -176,6 +222,8 @@ internal sealed class PipeClient : IDisposable
 
     private async Task Execute(NamedPipeClientStream pipe, Command command, CancellationToken token)
     {
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
+        deadline.CancelAfter(RequestTimeout);
         try
         {
             var requestId = Interlocked.Increment(ref _requestId);
@@ -185,13 +233,24 @@ internal sealed class PipeClient : IDisposable
             fields["command"] = JsonSerializer.SerializeToElement(command.Name);
             _reply = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
             _awaitingId = requestId;
-            await Write(pipe, fields, token);
-            var reply = await _reply.Task.WaitAsync(TimeSpan.FromSeconds(15), token);
+            await Write(pipe, fields, deadline.Token);
+            var reply = await _reply.Task.WaitAsync(deadline.Token);
             var data = ReadOutcome(reply, _strings, command.Name);
             if (command.Name == "snapshot") Snapshot?.Invoke(data);
             command.Completion.TrySetResult(data);
         }
         catch (CommandFailure error) { command.Completion.TrySetException(error); }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            command.Completion.TrySetCanceled(token);
+            throw;
+        }
+        catch (OperationCanceledException error) when (deadline.IsCancellationRequested)
+        {
+            var failure = new TimeoutException(_strings.Get("connection", "uncertain"), error);
+            command.Completion.TrySetException(failure);
+            throw failure;
+        }
         catch (Exception error)
         {
             command.Completion.TrySetException(error);
@@ -242,10 +301,19 @@ internal sealed class PipeClient : IDisposable
 
     private static async Task<JsonElement> ReadGreeting(Stream pipe, Strings strings, CancellationToken token)
     {
-        var hello = await Read(pipe, token);
-        if (hello.GetProperty("type").GetString() != "hello" || hello.GetProperty("version").GetInt32() != 1)
-            throw new InvalidDataException(strings.Get("connection", "version"));
-        return hello;
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
+        deadline.CancelAfter(RequestTimeout);
+        try
+        {
+            var hello = await Read(pipe, deadline.Token);
+            if (hello.GetProperty("type").GetString() != "hello" || hello.GetProperty("version").GetInt32() != 1)
+                throw new InvalidDataException(strings.Get("connection", "version"));
+            return hello;
+        }
+        catch (OperationCanceledException error) when (!token.IsCancellationRequested)
+        {
+            throw new TimeoutException(strings.Get("connection", "unavailable"), error);
+        }
     }
 
     internal static async Task ForwardOpen(Strings strings)
@@ -285,20 +353,10 @@ internal sealed class PipeClient : IDisposable
             Process.Start(start);
             return;
         }
+        // The engine from the same build is always beside the window.
         var adjacent = Path.Combine(AppContext.BaseDirectory, "Engine.exe");
-        if (File.Exists(adjacent))
-        {
-            Process.Start(new ProcessStartInfo(adjacent, "--background") { UseShellExecute = false, CreateNoWindow = true });
-            return;
-        }
-        for (var folder = new DirectoryInfo(AppContext.BaseDirectory); folder is not null; folder = folder.Parent)
-        {
-            var path = Path.Combine(folder.FullName, "artifacts", "bin", "Engine", "Release", "Engine.exe");
-            if (!File.Exists(path)) continue;
-            Process.Start(new ProcessStartInfo(path, "--background") { UseShellExecute = false, CreateNoWindow = true });
-            return;
-        }
-        throw new FileNotFoundException(_strings.Get("connection", "missing"));
+        if (!File.Exists(adjacent)) throw new FileNotFoundException(_strings.Get("connection", "missing"));
+        Process.Start(new ProcessStartInfo(adjacent, "--background") { UseShellExecute = false, CreateNoWindow = true });
     }
 
     private static async Task<JsonElement> Read(Stream pipe, CancellationToken token)
@@ -326,10 +384,26 @@ internal sealed class PipeClient : IDisposable
 
     public void Dispose()
     {
-        _connected = false;
-        _lifetime.Cancel();
-        _commands.Writer.TryComplete();
-        _lifetime.Dispose();
+        lock (_gate)
+        {
+            if (_disposed) return;
+            _disposed = true;
+            _connected = false;
+            _commands.Writer.TryComplete();
+            _lifetime.Cancel();
+        }
+        Disconnect();
+        _ = Stop();
+    }
+
+    private async Task Stop()
+    {
+        try
+        {
+            if (_pump is { } pump) await pump.ConfigureAwait(false);
+        }
+        catch (Exception error) { Debug.WriteLine($"Pipe client stopped: {error.Message}"); }
+        finally { _lifetime.Dispose(); }
     }
 
     private sealed class Command(string name, object? arguments, bool optional = false)

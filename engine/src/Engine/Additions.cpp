@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <chrono>
 
-namespace tiny
+namespace tt
 {
 // Writes no payload until ApplyIntent applies the saved file choices.
 void Engine::State::Guard(lt::add_torrent_params& params)
@@ -28,10 +28,7 @@ std::optional<std::vector<lt::download_priority_t>> Engine::State::Priorities(
     auto const& files = metadata->layout();
     if (chosen.empty())
     {
-        for (auto index : files.file_range())
-        {
-            chosen.push_back(DefaultPriority(files, index));
-        }
+        chosen = DefaultPriorities(files);
     }
     if (chosen.size() != static_cast<std::size_t>(files.num_files()))
     {
@@ -64,30 +61,30 @@ bool Engine::State::IsChoice(lt::download_priority_t priority)
 // Starts adding the previewed content. The preview ends here, and its
 // guarded torrent, if any, becomes the new torrent.
 void Engine::State::Add(Preview& preview, std::string const& destination,
-    std::vector<lt::download_priority_t> priorities, bool paused, Reply reply)
+    std::vector<lt::download_priority_t> priorities, bool paused, std::function<void(Outcome, Added)> done)
 {
     UpdatePreview(preview);
     if (FilesBusy())
     {
-        reply(Failure("files_busy"));
+        done({ErrorCode::FilesBusy}, {});
         return;
     }
     auto duplicate = Duplicate(preview.InfoHashes());
     if (!duplicate.empty())
     {
-        reply(Success({{"torrent_id", duplicate}, {"duplicate", true}}));
+        done({}, {AdditionKind::Duplicate, duplicate});
         return;
     }
     if (!IsAbsolute(destination))
     {
-        reply(Failure("invalid_destination"));
+        done({ErrorCode::InvalidDestination}, {});
         return;
     }
     auto chosen = Priorities(std::move(priorities), preview.params.ti);
     if (!chosen || (preview.params.ti && std::none_of(chosen->begin(), chosen->end(),
         [](auto priority) { return priority != lt::dont_download; })))
     {
-        reply(Failure("invalid_priorities"));
+        done({ErrorCode::InvalidPriorities}, {});
         return;
     }
     Addition addition;
@@ -101,7 +98,7 @@ void Engine::State::Add(Preview& preview, std::string const& destination,
     addition.facts.added = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
     addition.facts.priorities = std::move(*chosen);
     addition.facts.hashes = Hashes(preview.InfoHashes());
-    addition.reply = std::move(reply);
+    addition.done = std::move(done);
     auto& pending = additions.emplace(addition.identity, std::move(addition)).first->second;
     if (preview.handle.is_valid())
     {
@@ -118,6 +115,33 @@ void Engine::State::Add(Preview& preview, std::string const& destination,
     previews.erase(previews.find(preview.identity));
 }
 
+// Previews and adds a source as the window does when the person accepts the
+// defaults. The source has its own connection, so its preview merges with no
+// other and ends with the addition.
+void Engine::State::AddSource(std::string source, std::function<void(Outcome, Added)> done)
+{
+    auto connection = Identity();
+    auto finish = [this, connection, done](Outcome outcome, Added added)
+    {
+        Disconnect(connection);
+        done(std::move(outcome), std::move(added));
+    };
+    Inspect(std::move(source), connection, [this, finish](Outcome outcome, Preview* preview)
+    {
+        if (outcome.error)
+        {
+            finish(std::move(outcome), {});
+            return;
+        }
+        if (CanMerge(*preview))
+        {
+            finish({}, {AdditionKind::Mergeable, Duplicate(preview->InfoHashes())});
+            return;
+        }
+        Add(*preview, settings.destination, {}, false, finish);
+    });
+}
+
 // Writes the resume file before membership lists the torrent, because
 // startup fails when a listed torrent has no resume file.
 void Engine::State::SaveAddition(std::string id, lt::torrent_handle handle)
@@ -132,12 +156,12 @@ void Engine::State::SaveAddition(std::string id, lt::torrent_handle handle)
         if (!outcome.succeeded)
         {
             diagnostics.Write("add", id, "storage_failed");
-            Abandon(id, Failure("storage_failed", outcome.detail));
+            Abandon(id, {ErrorCode::StorageFailed, outcome.detail});
             return;
         }
         if (!changes.Queue([this, id] { CommitAddition(id); }))
         {
-            Abandon(id, Failure("overloaded"));
+            Abandon(id, {ErrorCode::Overloaded});
         }
     });
 }
@@ -151,7 +175,7 @@ void Engine::State::CommitAddition(std::string const& id)
     {
         if (!outcome.succeeded)
         {
-            Abandon(id, Failure("storage_failed", outcome.detail));
+            Abandon(id, {ErrorCode::StorageFailed, outcome.detail});
             return;
         }
         auto found = additions.find(id);
@@ -159,18 +183,18 @@ void Engine::State::CommitAddition(std::string const& id)
         queueOrder.push_back(id);
         torrent.ApplyIntent();
         diagnostics.Write("add", id, "saved");
-        auto reply = std::move(found->second.reply);
+        auto done = std::move(found->second.done);
         additions.erase(found);
-        reply(Success({{"torrent_id", id}, {"duplicate", false}}));
+        done({}, {AdditionKind::New, id});
     });
 }
 
 // Ends an addition that will not be saved: removes its torrent and
-// replies why.
-void Engine::State::Abandon(std::string id, Json response)
+// reports why.
+void Engine::State::Abandon(std::string id, Outcome outcome, Added added)
 {
     auto found = additions.find(id);
-    auto reply = std::move(found->second.reply);
+    auto done = std::move(found->second.done);
     if (found->second.handle.is_valid())
     {
         session->remove_torrent(found->second.handle);
@@ -189,7 +213,7 @@ void Engine::State::Abandon(std::string id, Json response)
         });
     }
     additions.erase(found);
-    reply(std::move(response));
+    done(std::move(outcome), std::move(added));
 }
 
 std::string Engine::State::MovingAddition(lt::torrent_handle const& handle) const
@@ -202,6 +226,52 @@ std::string Engine::State::MovingAddition(lt::torrent_handle const& handle) cons
         }
     }
     return {};
+}
+
+// After libtorrent dropped alerts: saves each addition whose torrent was
+// added or moved, and abandons the others.
+void Engine::State::RecoverAdditions()
+{
+    auto live = session->get_torrents();
+    std::vector<std::string> lost;
+    for (auto& [id, addition] : additions)
+    {
+        if (addition.phase == AdditionPhase::Saving)
+        {
+            continue;
+        }
+        if (addition.phase == AdditionPhase::Moving)
+        {
+            // The move finished when the torrent already saves to its destination.
+            if (addition.handle.is_valid() &&
+                SameFolder(addition.handle.status().save_path, addition.params.save_path))
+            {
+                SaveAddition(id, addition.handle);
+            }
+            else
+            {
+                lost.push_back(id);
+            }
+            continue;
+        }
+        // An accepted torrent keeps the address of the addition that created
+        // it, and a later addition can reuse that address.
+        auto found = std::find_if(live.begin(), live.end(),
+            [this, &addition](lt::torrent_handle const& handle)
+            { return handle.userdata().get<Addition>() == &addition && !Find(handle); });
+        if (found != live.end())
+        {
+            SaveAddition(id, *found);
+        }
+        else
+        {
+            lost.push_back(id);
+        }
+    }
+    for (auto const& id : lost)
+    {
+        Abandon(id, {ErrorCode::RecoveryRequired});
+    }
 }
 
 void Engine::State::On(lt::add_torrent_alert const& alert)
@@ -223,8 +293,14 @@ void Engine::State::On(lt::add_torrent_alert const& alert)
         return;
     }
     auto duplicate = Duplicate(alert.params.info_hashes);
-    Abandon(found->first, duplicate.empty() ? Failure("add_failed", alert.error.message()) :
-        Success({{"torrent_id", duplicate}, {"duplicate", true}}));
+    if (duplicate.empty())
+    {
+        Abandon(found->first, {ErrorCode::AddFailed, alert.error.message()});
+    }
+    else
+    {
+        Abandon(found->first, {}, {AdditionKind::Duplicate, duplicate});
+    }
 }
 
 void Engine::State::On(lt::storage_moved_alert const& alert)
@@ -253,7 +329,7 @@ void Engine::State::On(lt::storage_moved_failed_alert const& alert)
     auto id = MovingAddition(alert.handle);
     if (!id.empty())
     {
-        Abandon(id, Failure("add_failed", alert.error.message()));
+        Abandon(id, {ErrorCode::AddFailed, alert.error.message()});
     }
 }
 }

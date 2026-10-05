@@ -5,13 +5,13 @@
 #include <climits>
 #include <set>
 
-namespace tiny
+namespace tt
 {
 void Engine::State::Edit(std::string const& id, Json const& choices, Reply reply)
 {
     if (!choices.is_object() || choices.empty())
     {
-        reply(Failure("invalid_request"));
+        reply(Failure(ErrorCode::InvalidRequest));
         return;
     }
     std::map<int, lt::download_priority_t> priorities;
@@ -24,16 +24,17 @@ void Engine::State::Edit(std::string const& id, Json const& choices, Reply reply
             {
                 if (!entry.is_object() || !entry.contains("index") || !entry.contains("priority") ||
                     !entry["index"].is_number_integer() || entry["index"] < 0 || entry["index"] > INT_MAX ||
-                    !entry["priority"].is_number_integer() || entry["priority"] < 0 || entry["priority"] > 7)
+                    !entry["priority"].is_number_integer() || entry["priority"] < 0 ||
+                    entry["priority"] > static_cast<std::uint8_t>(lt::top_priority))
                 {
-                    reply(Failure("invalid_priorities"));
+                    reply(Failure(ErrorCode::InvalidPriorities));
                     return;
                 }
                 auto index = entry["index"].get<int>();
                 auto priority = lt::download_priority_t(entry["priority"].get<std::uint8_t>());
                 if (!IsChoice(priority) || !priorities.emplace(index, priority).second)
                 {
-                    reply(Failure("invalid_priorities"));
+                    reply(Failure(ErrorCode::InvalidPriorities));
                     return;
                 }
             }
@@ -48,7 +49,7 @@ void Engine::State::Edit(std::string const& id, Json const& choices, Reply reply
                     !entry.contains("tier") || !entry["tier"].is_number_integer() ||
                     entry["tier"] < 0 || entry["tier"] > 255)
                 {
-                    reply(Failure("invalid_trackers"));
+                    reply(Failure(ErrorCode::InvalidTrackers));
                     return;
                 }
                 auto url = entry["url"].get<std::string>();
@@ -57,10 +58,13 @@ void Engine::State::Edit(std::string const& id, Json const& choices, Reply reply
                     !lt::aux::string_begins_no_case("udp://", url)) ||
                     !lt::aux::is_valid_tracker_url(url))
                 {
-                    reply(Failure("invalid_trackers"));
+                    reply(Failure(ErrorCode::InvalidTrackers));
                     return;
                 }
-                if (!urls.insert(url).second) continue;
+                if (!urls.insert(url).second)
+                {
+                    continue;
+                }
                 trackers->emplace_back(url);
                 trackers->back().tier = entry["tier"].get<std::uint8_t>();
             }
@@ -69,7 +73,7 @@ void Engine::State::Edit(std::string const& id, Json const& choices, Reply reply
         }
         else
         {
-            reply(Failure("invalid_request"));
+            reply(Failure(ErrorCode::InvalidRequest));
             return;
         }
     }
@@ -80,7 +84,7 @@ void Engine::State::Edit(std::string const& id, Json const& choices, Reply reply
         auto& torrent = torrents.at(id);
         if (!priorities.empty() && torrent.priorityReply)
         {
-            reply(Failure("overloaded"));
+            reply(Failure(ErrorCode::Overloaded));
             return;
         }
         auto facts = torrent.facts;
@@ -89,21 +93,18 @@ void Engine::State::Edit(std::string const& id, Json const& choices, Reply reply
             auto metadata = torrent.handle.torrent_file();
             if (!metadata)
             {
-                reply(Failure("metadata_unavailable"));
+                reply(Failure(ErrorCode::MetadataUnavailable));
                 return;
             }
             if (facts.priorities.empty())
             {
-                for (auto index : metadata->layout().file_range())
-                {
-                    facts.priorities.push_back(DefaultPriority(metadata->layout(), index));
-                }
+                facts.priorities = DefaultPriorities(metadata->layout());
             }
             for (auto const& [index, priority] : priorities)
             {
                 if (index >= metadata->num_files())
                 {
-                    reply(Failure("invalid_priorities"));
+                    reply(Failure(ErrorCode::InvalidPriorities));
                     return;
                 }
                 facts.priorities[index] = priority;
@@ -111,12 +112,15 @@ void Engine::State::Edit(std::string const& id, Json const& choices, Reply reply
             auto chosen = Priorities(facts.priorities, metadata);
             if (!chosen)
             {
-                reply(Failure("invalid_priorities"));
+                reply(Failure(ErrorCode::InvalidPriorities));
                 return;
             }
             facts.priorities = std::move(*chosen);
         }
-        if (trackers) facts.trackers = trackers;
+        if (trackers)
+        {
+            facts.trackers = trackers;
+        }
         auto apply = [this, id, facts, priorities, trackers, reply]
         {
             auto& torrent = torrents.at(id);
@@ -151,8 +155,14 @@ void Engine::State::Edit(std::string const& id, Json const& choices, Reply reply
         document.torrents.at(id) = facts;
         changes.Commit(document.ToJson(), [apply, reply](StorageOutcome outcome)
         {
-            if (outcome.succeeded) apply();
-            else reply(Failure("storage_failed", outcome.detail));
+            if (outcome.succeeded)
+            {
+                apply();
+            }
+            else
+            {
+                reply(Failure(ErrorCode::StorageFailed, outcome.detail));
+            }
         });
     });
 }
@@ -169,57 +179,5 @@ void Engine::State::CompletePriorities(Torrent& torrent)
     }
     torrent.unsaved = true;
     std::exchange(torrent.priorityReply, nullptr)(Success());
-}
-
-void Engine::State::SampleHistory()
-{
-    auto time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-    auto activity = Activity();
-    SpeedSample sample{time, double(activity.downloadRate), double(activity.uploadRate)};
-    if (!seconds.empty() && time <= seconds.back().time)
-    {
-        seconds.clear();
-        minutes.clear();
-    }
-    if (minuteCount && (time <= minute.time || time - minute.time > 2))
-    {
-        minute = {};
-        minuteCount = 0;
-    }
-    if (minuteCount && time / 60 != minute.time / 60)
-    {
-        minutes.push_back({minute.time, minute.download / minuteCount, minute.upload / minuteCount});
-        minute = {};
-        minuteCount = 0;
-    }
-    minute.time = time;
-    minute.download += sample.download;
-    minute.upload += sample.upload;
-    ++minuteCount;
-    seconds.push_back(sample);
-    while (!seconds.empty() && (seconds.size() > 300 || seconds.front().time <= time - 300))
-    {
-        seconds.pop_front();
-    }
-    while (!minutes.empty() && (minutes.size() > 1439 || minutes.front().time <= time - 86400))
-    {
-        minutes.pop_front();
-    }
-}
-
-Json Engine::State::History(bool day) const
-{
-    Json samples = Json::array();
-    auto append = [&samples](SpeedSample const& sample)
-    {
-        samples.push_back({{"time", sample.time}, {"download_rate", sample.download},
-            {"upload_rate", sample.upload}});
-    };
-    for (auto const& sample : day ? minutes : seconds) append(sample);
-    if (day && minuteCount)
-    {
-        append({minute.time, minute.download / minuteCount, minute.upload / minuteCount});
-    }
-    return {{"session_id", sessionId}, {"samples", std::move(samples)}};
 }
 }

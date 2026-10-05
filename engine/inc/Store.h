@@ -8,7 +8,7 @@
 #include <string>
 #include <thread>
 
-namespace tiny
+namespace tt
 {
 struct StorageOutcome
 {

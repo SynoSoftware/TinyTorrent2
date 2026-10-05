@@ -2,13 +2,16 @@
 #include "Engine.h"
 #include <vector>
 
-namespace tiny
+namespace tt
 {
 class Strings
 {
 public:
     explicit Strings(std::string language = DefaultLanguage());
     static std::string DefaultLanguage();
+    // Whether `language` names a shipped catalogue exactly, as a saved
+    // language preference must.
+    static bool Supports(std::string_view language);
     std::string const& Language() const { return language_; }
     std::wstring Text(std::string const& group, std::string const& key) const;
     std::wstring Format(std::string const& group, std::string const& key,

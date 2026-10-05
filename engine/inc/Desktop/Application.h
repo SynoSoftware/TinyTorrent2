@@ -1,4 +1,5 @@
 #pragma once
+#include "Owned.h"
 #include "Pipe.h"
 #include "Registration.h"
 #include "Strings.h"
@@ -7,13 +8,13 @@
 #include "Desktop/Tray.h"
 #include <optional>
 
-namespace tiny::desktop
+namespace tt::desktop
 {
 class Application
 {
 public:
     Application(std::filesystem::path directory, std::wstring sid, bool headless);
-    ~Application();
+    ~Application() = default;
     int Run(bool background, std::vector<std::string> sources = {});
     static bool ValidSources(std::vector<std::string> const& sources);
 private:
@@ -43,6 +44,7 @@ private:
     void Exit();
     void Shutdown();
     void BeginShutdown();
+    void CancelExit();
     void EndSession();
     void Tick();
     void Refresh();
@@ -51,13 +53,9 @@ private:
     void Resolve(SplashFailure failure, SplashChoice choice);
     Json Activate(std::vector<std::string> sources);
     void AddSources();
-    void FinishSource(Json const& response);
+    void FinishSource(Outcome const& outcome, Added const& added);
     void Notify(Notice notice);
     void ShowError(std::string const& key, std::wstring detail = {});
-    HWND window_ = nullptr;
-    HWND broadcast_ = nullptr;
-    HANDLE ownership_ = INVALID_HANDLE_VALUE;
-    HANDLE process_ = nullptr;
     bool headless_;
     bool exiting_ = false;
     bool ticking_ = false;
@@ -70,19 +68,26 @@ private:
     unsigned sequence_ = 0;
     ULONGLONG waitingSince_ = 0;
     UINT taskbarCreated_ = RegisterWindowMessageW(L"TaskbarCreated");
-    HPOWERNOTIFY powerNotification_ = nullptr;
     Activity activity_;
     Strings strings_;
     Splash splash_;
     PowerRequest power_;
-    std::unique_ptr<Tray> tray_;
-    std::unique_ptr<Engine> engine_;
-    std::unique_ptr<Pipe> pipe_;
     Registration registration_;
     Pipe::Client ui_;
-    std::deque<Activation> waiting_;
-    std::deque<Activation> activations_;
+    std::deque<Activation> incoming_;
+    std::deque<Activation> offered_;
     std::mutex mutex_;
-    std::deque<std::function<void()>> pending_;
+    std::deque<std::function<void()>> requests_;
+    // Members are released in reverse order, so the last one goes first: the
+    // pipe, whose dispatch uses mutex_ and requests_, then the engine, then the
+    // tray and the windows that they use.
+    OwnedHandle ownership_;
+    OwnedWindow window_;
+    OwnedWindow broadcast_;
+    std::unique_ptr<Tray> tray_;
+    OwnedHandle process_;
+    std::unique_ptr<Engine> engine_;
+    std::unique_ptr<Pipe> pipe_;
+    OwnedNotification powerNotification_;
 };
 }

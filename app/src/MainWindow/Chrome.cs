@@ -97,7 +97,8 @@ public sealed partial class MainWindow
         TorrentsPage.Content = Model.Text.Get("window", "torrents");
         SettingsPage.Content = Model.Text.Get("finding", "settings");
         AboutPage.Content = Model.Text.Get("about", "title");
-        foreach (var page in new[] { TorrentsPage, SettingsPage, AboutPage })
+        ExitItem.Content = Model.Text.Get("window", "exit");
+        foreach (var page in new[] { TorrentsPage, SettingsPage, AboutPage, ExitItem })
             AutomationProperties.SetName(page, (string)page.Content);
         AutomationProperties.SetName(Navigation, Model.Text.Get("commands", "menu"));
         UpdateNavigation();
@@ -105,7 +106,6 @@ public sealed partial class MainWindow
         NameButton(OverflowButton, Model.Text.Get("commands", "selection"));
         NameButton(PauseButton, Model.Text.Get("window", "pause"));
         NameButton(ResumeButton, Model.Text.Get("window", "resume"));
-        NameButton(ExitButton, Model.Text.Get("window", "exit"));
         NameButton(LanguageButton, Model.Text.Get("chrome", Model.Text.Language == "es" ? "english" : "spanish"));
         LanguageButton.Content = new TextBlock { Text = Model.Text.Language.ToUpperInvariant(), FontSize = 12 };
         RefreshTheme();
@@ -137,6 +137,13 @@ public sealed partial class MainWindow
         Root.FlowDirection = Model.Text.IsRightToLeft ? FlowDirection.RightToLeft : FlowDirection.LeftToRight;
         RefreshDialogs();
         _form?.RefreshText();
+        _filesForm?.RefreshText();
+        if (_filesDialog is { } files)
+        {
+            files.Title = Model.Files.Title;
+            files.PrimaryButtonText = Model.Files.Title;
+            files.CloseButtonText = Model.Text.Get("add", "cancel");
+        }
         if (_limitsDialog?.Content is StackPanel limits)
         {
             _limitsDialog.Title = Model.Text.Get("commands", "limits");
@@ -171,7 +178,7 @@ public sealed partial class MainWindow
 
     private void RefreshDialogs()
     {
-        ContentDialog?[] dialogs = [_addDialog, _closePrompt, _limitsDialog, _removeDialog];
+        ContentDialog?[] dialogs = [_addDialog, _closePrompt, _limitsDialog, _removeDialog, _filesDialog];
         foreach (var dialog in dialogs)
         {
             if (dialog is null) continue;

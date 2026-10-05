@@ -6,11 +6,36 @@
 #include <condition_variable>
 #include <deque>
 #include <mutex>
+#include <sddl.h>
+#include <stdexcept>
 #include <thread>
 #include <vector>
 
-namespace tiny
+namespace tt
 {
+// Security attributes that grant full access to the logon session `sid` and
+// to no one else. They stay valid for the lifetime of this object.
+class Security
+{
+public:
+    explicit Security(std::wstring const& sid)
+    {
+        auto acl = L"D:P(A;;GA;;;" + sid + L")";
+        if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(acl.c_str(), SDDL_REVISION_1,
+            &attributes_.lpSecurityDescriptor, nullptr))
+        {
+            throw std::runtime_error("Cannot create the security descriptor.");
+        }
+    }
+    ~Security() { LocalFree(attributes_.lpSecurityDescriptor); }
+    Security(Security const&) = delete;
+    Security& operator=(Security const&) = delete;
+    SECURITY_ATTRIBUTES& Attributes() { return attributes_; }
+
+private:
+    SECURITY_ATTRIBUTES attributes_{sizeof(SECURITY_ATTRIBUTES), nullptr, FALSE};
+};
+
 class Pipe
 {
 public:

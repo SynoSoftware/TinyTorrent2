@@ -2,7 +2,7 @@
 #include <libtorrent/write_resume_data.hpp>
 #include <algorithm>
 
-namespace tiny
+namespace tt
 {
 namespace
 {
@@ -108,30 +108,54 @@ void Engine::State::SaveCheckpoint(Torrent& torrent, lt::add_torrent_params para
         }
         torrent.savedUploaded = uploaded;
         torrent.checkpointError.reset();
-        if (!torrent.facts.verifyFiles || seeded) return;
+        if (!torrent.facts.verifyFiles || seeded)
+        {
+            return;
+        }
         if (!changes.Queue([this, id, path, pieces]
         {
             auto found = torrents.find(id);
-            if (found == torrents.end()) return;
+            if (found == torrents.end())
+            {
+                return;
+            }
             auto& torrent = found->second;
             if (!torrent.facts.verifyFiles || torrent.moving || !torrent.facts.moveDestination.empty() ||
-                !SamePath(FullPath(Wide(path)), FullPath(Wide(torrent.facts.savePath)))) return;
+                !SameFolder(path, torrent.facts.savePath))
+            {
+                return;
+            }
             auto current = torrent.handle.status(lt::torrent_handle::query_pieces);
             if (current.state == lt::torrent_status::checking_files ||
-                current.state == lt::torrent_status::checking_resume_data) return;
+                current.state == lt::torrent_status::checking_resume_data)
+            {
+                return;
+            }
             for (int index = 0; index < pieces.size(); ++index)
             {
                 auto piece = lt::piece_index_t(index);
-                if (pieces[piece] && (index >= current.pieces.size() || !current.pieces[piece])) return;
+                if (pieces[piece] && (index >= current.pieces.size() || !current.pieces[piece]))
+                {
+                    return;
+                }
             }
             auto document = Saved();
             document.torrents.at(id).verifyFiles = false;
             changes.Commit(document.ToJson(), [this, id](StorageOutcome saved)
             {
-                if (saved.succeeded) torrents.at(id).facts.verifyFiles = false;
-                else diagnostics.Write("move", id, "verification_checkpoint_failed");
+                if (saved.succeeded)
+                {
+                    torrents.at(id).facts.verifyFiles = false;
+                }
+                else
+                {
+                    diagnostics.Write("move", id, "verification_checkpoint_failed");
+                }
             });
-        })) diagnostics.Write("move", id, "verification_checkpoint_overloaded");
+        }))
+        {
+            diagnostics.Write("move", id, "verification_checkpoint_overloaded");
+        }
     };
     WriteResume(id, std::move(params), std::move(completion));
 }

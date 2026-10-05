@@ -1,7 +1,7 @@
 #include "Pipe.h"
 #include <stdexcept>
 
-namespace tiny
+namespace tt
 {
 namespace
 {
@@ -240,7 +240,6 @@ void Pipe::Serve(HANDLE handle)
             {
                 break;
             }
-            request["connection_id"] = client->connectionId;
             bool occupied;
             {
                 std::lock_guard lock(client->mutex);
@@ -289,7 +288,7 @@ void Pipe::Deliver(Client client, HANDLE handle)
         auto bytes = message.dump(-1, ' ', false, Json::error_handler_t::replace);
         if (bytes.size() > messageLimit)
         {
-            auto refusal = Failure("response_too_large");
+            auto refusal = Failure(ErrorCode::ResponseTooLarge);
             refusal["request_id"] = message.value("request_id", Json());
             bytes = refusal.dump();
         }

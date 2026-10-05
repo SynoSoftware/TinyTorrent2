@@ -72,6 +72,7 @@ public sealed partial class PiecesMap : UserControl
             foreach (var kind in Enum.GetValues<PieceKind>())
                 labels[(int)kind].Text = text.Format("pieces", "count", text.Get("pieces", kind.ToString().ToLowerInvariant()), _states.Count(state => state == kind));
             PieceCount.Text = text.FormatCount("pieces", "size", data?.Count ?? 0, text.Bytes(data?.PieceSize ?? 0));
+            MeasureLegend();
             AutomationProperties.SetName(this, text.Get("inspector", "pieces"));
             Select(_selected, _tooltip.IsOpen);
         }
@@ -80,6 +81,7 @@ public sealed partial class PiecesMap : UserControl
 
     private void OnLoaded(object sender, RoutedEventArgs args)
     {
+        MeasureLegend();
         _root = XamlRoot;
         _tooltip.XamlRoot = _root;
         _root.Changed += OnRoot;
@@ -96,6 +98,21 @@ public sealed partial class PiecesMap : UserControl
     }
     private void OnRoot(XamlRoot sender, XamlRootChangedEventArgs args) => QueueDraw();
     private void OnSize(object sender, SizeChangedEventArgs args) => QueueDraw();
+
+    private void MeasureLegend()
+    {
+        if (Legend.ItemsPanelRoot is not WrapGrid panel) return;
+        var width = 0.0;
+        var height = 0.0;
+        foreach (FrameworkElement item in Legend.Items)
+        {
+            item.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            width = Math.Max(width, item.DesiredSize.Width);
+            height = Math.Max(height, item.DesiredSize.Height);
+        }
+        panel.ItemWidth = Math.Ceiling(width);
+        panel.ItemHeight = Math.Ceiling(height);
+    }
 
     private void QueueDraw()
     {

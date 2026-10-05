@@ -1,6 +1,6 @@
 #pragma once
 
-namespace tiny
+namespace tt
 {
 enum class Command
 {
@@ -79,6 +79,15 @@ enum class DeletionPhase
     Unknown
 };
 
+enum class AdditionKind
+{
+    New,
+    Duplicate,
+    // The content is already in the list and the source has trackers that
+    // torrent lacks. Nothing changes, so the person chooses whether to merge.
+    Mergeable
+};
+
 // Where a torrent's checkpoint is: waiting for libtorrent's resume data, or
 // writing that data to the resume file.
 enum class CheckpointPhase
@@ -135,6 +144,38 @@ enum class ProblemKind
     StorageFailed,
     StorageOverloaded,
     CheckpointFailed
+};
+
+// The error code of a failed reply. The window reads these words, so
+// renaming one changes the protocol.
+enum class ErrorCode
+{
+    InvalidRequest,
+    UnknownCommand,
+    InvalidSource,
+    InvalidSources,
+    InvalidDestination,
+    InvalidPriorities,
+    InvalidTrackers,
+    InvalidTargets,
+    ResponseTooLarge,
+    UiConnected,
+    Starting,
+    Stopping,
+    Unavailable,
+    Overloaded,
+    StorageFailed,
+    RecoveryRequired,
+    FilesBusy,
+    SharedFiles,
+    DestinationConflict,
+    DestinationInUse,
+    MetadataUnavailable,
+    PreviewExpired,
+    PreviewFailed,
+    TorrentRemoved,
+    AddFailed,
+    RegistrationFailed
 };
 
 enum class NoticeKind

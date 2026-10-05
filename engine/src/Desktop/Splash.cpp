@@ -2,7 +2,7 @@
 #include "Resources.h"
 #include <algorithm>
 
-namespace tiny::desktop
+namespace tt::desktop
 {
 namespace
 {
@@ -12,8 +12,8 @@ constexpr wchar_t windowClass[] = L"TinyTorrent.Startup";
 // the first and Escape to the second.
 constexpr int firstId = IDOK;
 constexpr int secondId = IDCANCEL;
-constexpr int textId = 3;
-constexpr int iconId = 4;
+constexpr int textId = secondId + 1;
+constexpr int iconId = textId + 1;
 
 // Layout in pixels at 96 DPI.
 constexpr SIZE openingSize{350, 170};
@@ -108,11 +108,12 @@ Splash::~Splash()
 }
 
 // Retry for a window that failed to open starts a new window process, so it
-// waits until the previous one has exited.
-bool Splash::CanRetry() const
+// waits until the previous one has exited. Every other first choice is
+// always available.
+bool Splash::CanChooseFirst() const
 {
-    return failure_ == SplashFailure::Save || failure_ == SplashFailure::FilesBusy ||
-        failure_ == SplashFailure::Unresponsive || !windowRunning_();
+    auto opening = failure_ == SplashFailure::Launch || failure_ == SplashFailure::Startup;
+    return !opening || !windowRunning_();
 }
 
 // The window's Close and Escape choose the second button, except Exit anyway,
@@ -157,7 +158,7 @@ void Splash::Show(std::optional<SplashFailure> failure, std::wstring detail)
     ShowWindow(firstButton, failure_ ? SW_SHOW : SW_HIDE);
     ShowWindow(secondButton, failure_ ? SW_SHOW : SW_HIDE);
     ShowWindow(GetDlgItem(window_, iconId), failure_ ? SW_HIDE : SW_SHOW);
-    EnableWindow(firstButton, CanRetry());
+    EnableWindow(firstButton, CanChooseFirst());
     auto text = failure_ ? strings_.Text("error", ToString(*failure_)) : strings_.Text("startup", "opening");
     if (!detail_.empty())
     {
@@ -216,7 +217,7 @@ void Splash::Update()
 {
     if (window_ && failure_)
     {
-        EnableWindow(GetDlgItem(window_, firstId), CanRetry());
+        EnableWindow(GetDlgItem(window_, firstId), CanChooseFirst());
     }
 }
 

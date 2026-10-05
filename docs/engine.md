@@ -202,6 +202,11 @@ Refuse an unknown newer store format without rewriting it. Any required migratio
 belongs to this persistence owner and must preserve a recoverable last good state
 before changing existing data.
 
+A setting's key in `settings.json` is file format, and the settings command and
+reply use the same key. Renaming a key therefore needs a migration. Without one,
+loading does not find the saved value under the new key, and the setting returns
+to its default for every user.
+
 An unreadable resume file affects only its own torrent. Startup adds that
 torrent again from the hashes `settings.json` saved, as a magnet link: it
 fetches the metadata from peers and checks the files already on disk, so no

@@ -6,7 +6,7 @@
 #include <algorithm>
 #include <stdexcept>
 
-namespace tiny
+namespace tt
 {
 namespace
 {
@@ -79,6 +79,16 @@ std::string Name(std::string name, std::vector<std::string> const& hashes)
 lt::download_priority_t DefaultPriority(lt::file_storage const& files, lt::file_index_t index)
 {
     return files.pad_file_at(index) ? lt::dont_download : lt::default_priority;
+}
+
+std::vector<lt::download_priority_t> DefaultPriorities(lt::file_storage const& files)
+{
+    std::vector<lt::download_priority_t> priorities;
+    for (auto index : files.file_range())
+    {
+        priorities.push_back(DefaultPriority(files, index));
+    }
+    return priorities;
 }
 
 Json Files(std::shared_ptr<lt::torrent_info const> const& metadata)
@@ -202,12 +212,12 @@ std::vector<lt::download_priority_t> ReadPriorities(Json const& values)
 
 std::string Torrent::Name() const
 {
-    return tiny::Name(status.name, Hashes());
+    return tt::Name(status.name, Hashes());
 }
 
 std::vector<std::string> Torrent::Hashes() const
 {
-    auto hashes = tiny::Hashes(status.info_hashes);
+    auto hashes = tt::Hashes(status.info_hashes);
     for (auto const& hash : facts.hashes)
     {
         if (std::find(hashes.begin(), hashes.end(), hash) == hashes.end())
@@ -246,7 +256,10 @@ std::string Torrent::Folder() const
 // stops there.
 std::optional<Problem> Torrent::Error() const
 {
-    if (moveError) return moveError;
+    if (moveError)
+    {
+        return moveError;
+    }
     if (!moving && !facts.moveDestination.empty())
     {
         return Problem{ProblemKind::MoveInterrupted, facts.moveDestination};
@@ -282,7 +295,10 @@ std::optional<Problem> Torrent::Diagnose() const
 
 Status Torrent::Classify(bool allPaused) const
 {
-    if (moving) return Status::Moving;
+    if (moving)
+    {
+        return Status::Moving;
+    }
     if (Error())
     {
         return Status::Error;
@@ -324,6 +340,12 @@ bool Torrent::IsChanged() const
     return status.all_time_upload != savedUploaded || bool(status.need_save_resume_data & dirty);
 }
 
+void Torrent::Update(lt::torrent_status latest)
+{
+    receivedPayload |= latest.total_payload_download > status.total_payload_download;
+    status = std::move(latest);
+}
+
 Json Torrent::Describe() const
 {
     auto data = facts.ToJson();
@@ -336,136 +358,174 @@ Json Torrent::Describe() const
     return data;
 }
 
-Json Torrent::Describe(TorrentView view, bool includeFiles) const
+namespace
 {
-    Json data = {{"torrent_id", identity}, {"metadata_ready", status.has_metadata}};
-    if (view == TorrentView::Peers)
+Json DescribePeers(lt::torrent_handle const& handle)
+{
+    std::vector<lt::peer_info> infos;
+    handle.get_peer_info(infos);
+    Json data;
+    data["peers"] = Json::array();
+    for (auto const& peer : infos)
     {
-        std::vector<lt::peer_info> peers;
-        handle.get_peer_info(peers);
-        data["peers"] = Json::array();
-        for (auto const& peer : peers)
+        std::string address;
+        auto transport = bool(peer.flags & lt::peer_info::utp_socket) ? "utp" : "tcp";
+        if (bool(peer.flags & lt::peer_info::i2p_socket))
         {
-            std::string address;
-            auto transport = bool(peer.flags & lt::peer_info::utp_socket) ? "utp" : "tcp";
-            if (bool(peer.flags & lt::peer_info::i2p_socket))
-            {
-                transport = "i2p";
+            transport = "i2p";
 #if TORRENT_USE_I2P
-                address = lt::aux::to_hex(peer.i2p_destination().to_string());
+            address = lt::aux::to_hex(peer.i2p_destination().to_string());
 #endif
-            }
-            else
-            {
-                auto endpoint = peer.remote_endpoint();
-                address = endpoint.address().to_string();
-                address = (endpoint.address().is_v6() ? "[" + address + "]" : address) +
-                    ":" + std::to_string(endpoint.port());
-            }
-            if (bool(peer.connection_type & (lt::peer_info::web_seed | lt::peer_info::http_seed)))
-            {
-                transport = bool(peer.flags & lt::peer_info::ssl_socket) ? "https" : "http";
-            }
-            data["peers"].push_back({{"endpoint", address}, {"client", peer.client},
-                {"transport", transport},
-                {"incoming", !bool(peer.flags & lt::peer_info::outgoing_connection)},
-                {"encrypted", bool(peer.flags & (lt::peer_info::rc4_encrypted |
-                    lt::peer_info::plaintext_encrypted | lt::peer_info::ssl_socket))},
-                {"progress", peer.progress_ppm / 1'000'000.0},
-                {"download_rate", peer.payload_down_speed}, {"upload_rate", peer.payload_up_speed},
-                {"downloaded", peer.total_download}, {"uploaded", peer.total_upload}});
         }
-        return data;
-    }
-    if (view == TorrentView::Trackers)
-    {
-        data["trackers"] = Json::array();
-        auto now = lt::clock_type::now();
-        auto wall = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-        auto hashes = handle.info_hashes();
-        for (auto const& tracker : handle.trackers())
+        else
         {
-            bool enabled = tracker.endpoints.empty();
-            bool updating = false;
-            bool working = false;
-            bool failed = false;
-            int seeds = -1, leechers = -1, downloaded = -1;
-            std::int64_t next = 0;
-            std::string message;
-            for (auto const& endpoint : tracker.endpoints)
+            auto endpoint = peer.remote_endpoint();
+            address = endpoint.address().to_string();
+            address = (endpoint.address().is_v6() ? "[" + address + "]" : address) +
+                ":" + std::to_string(endpoint.port());
+        }
+        if (bool(peer.connection_type & (lt::peer_info::web_seed | lt::peer_info::http_seed)))
+        {
+            transport = bool(peer.flags & lt::peer_info::ssl_socket) ? "https" : "http";
+        }
+        data["peers"].push_back({{"endpoint", address}, {"client", peer.client},
+            {"transport", transport},
+            {"incoming", !bool(peer.flags & lt::peer_info::outgoing_connection)},
+            {"encrypted", bool(peer.flags & (lt::peer_info::rc4_encrypted |
+                lt::peer_info::plaintext_encrypted | lt::peer_info::ssl_socket))},
+            {"progress", peer.progress_ppm / 1'000'000.0},
+            {"download_rate", peer.payload_down_speed}, {"upload_rate", peer.payload_up_speed},
+            {"downloaded", peer.total_download}, {"uploaded", peer.total_upload}});
+    }
+    return data;
+}
+
+// One tracker's row. `now` and `wall` are the same moment on libtorrent's
+// clock and the system clock, read once for the whole list.
+Json DescribeTracker(lt::announce_entry const& tracker, lt::info_hash_t const& hashes,
+    lt::time_point now, std::time_t wall)
+{
+    bool enabled = tracker.endpoints.empty();
+    bool updating = false;
+    bool working = false;
+    bool failed = false;
+    int seeds = -1;
+    int leechers = -1;
+    int downloaded = -1;
+    std::int64_t next = 0;
+    std::string message;
+    for (auto const& endpoint : tracker.endpoints)
+    {
+        if (!endpoint.enabled)
+        {
+            continue;
+        }
+        for (auto version : {lt::protocol_version::V1, lt::protocol_version::V2})
+        {
+            if (!hashes.has(version))
             {
-                if (!endpoint.enabled) continue;
-                for (auto version : {lt::protocol_version::V1, lt::protocol_version::V2})
+                continue;
+            }
+            auto const& state = endpoint.info_hashes[version];
+            auto usable = tracker.fail_limit == 0 || state.fails < tracker.fail_limit;
+            enabled |= usable;
+            updating |= usable && state.updating;
+            working |= usable && state.start_sent && !state.last_error && state.fails == 0;
+            failed |= bool(state.last_error) || state.fails > 0;
+            seeds = std::max(seeds, state.scrape_complete);
+            leechers = std::max(leechers, state.scrape_incomplete);
+            downloaded = std::max(downloaded, state.scrape_downloaded);
+            if (usable && state.next_announce != (lt::time_point32::min)())
+            {
+                auto time = wall + std::max<std::int64_t>(0,
+                    std::chrono::duration_cast<std::chrono::seconds>(
+                        std::max(state.next_announce, state.min_announce) - now).count());
+                if (next == 0 || time < next)
                 {
-                    if (!hashes.has(version)) continue;
-                    auto const& state = endpoint.info_hashes[version];
-                    auto usable = tracker.fail_limit == 0 || state.fails < tracker.fail_limit;
-                    enabled |= usable;
-                    updating |= usable && state.updating;
-                    working |= usable && state.start_sent && !state.last_error && state.fails == 0;
-                    failed |= bool(state.last_error) || state.fails > 0;
-                    seeds = std::max(seeds, state.scrape_complete);
-                    leechers = std::max(leechers, state.scrape_incomplete);
-                    downloaded = std::max(downloaded, state.scrape_downloaded);
-                    if (usable && state.next_announce != (lt::time_point32::min)())
-                    {
-                        auto time = wall + std::max<std::int64_t>(0,
-                            std::chrono::duration_cast<std::chrono::seconds>(
-                                std::max(state.next_announce, state.min_announce) - now).count());
-                        if (next == 0 || time < next) next = time;
-                    }
-                    if (!state.message.empty()) message = state.message;
-                    else if (state.last_error) message = state.last_error.message();
+                    next = time;
                 }
             }
-            auto state = !enabled ? "disabled" : updating ? "announcing" :
-                working ? "working" : failed ? "error" : "waiting";
-            data["trackers"].push_back({{"url", tracker.url}, {"tier", tracker.tier},
-                {"status", state}, {"seeds", seeds}, {"leechers", leechers},
-                {"downloaded", downloaded}, {"next_announce", next}, {"message", message}});
-        }
-        return data;
-    }
-    auto metadata = handle.torrent_file();
-    data["metadata_ready"] = bool(metadata);
-    if (view == TorrentView::General)
-    {
-        auto name = Name();
-        data["name"] = name;
-        data["folder"] = Folder();
-        data["hashes"] = Hashes();
-        data["comment"] = comment;
-        data["creator"] = creator;
-        data["created"] = created;
-        data["piece_size"] = metadata ? metadata->piece_length() : 0;
-        data["private"] = metadata ? Json(metadata->priv()) : Json();
-        lt::add_torrent_params magnet;
-        magnet.ti = metadata;
-        magnet.info_hashes = metadata ? metadata->info_hashes() : handle.info_hashes();
-        magnet.name = name;
-        magnet.trackers = Urls(handle.trackers());
-        data["magnet"] = lt::make_magnet_uri(magnet);
-        return data;
-    }
-    if (view == TorrentView::Files)
-    {
-        data["files"] = Files(metadata);
-        if (!metadata) return data;
-        auto priorities = handle.get_file_priorities();
-        auto progress = handle.file_progress();
-        for (auto& file : data["files"])
-        {
-            auto index = file.at("index").get<size_t>();
-            file["downloaded"] = index < progress.size() ? progress[index] : 0;
-            if (index < priorities.size())
+            if (!state.message.empty())
             {
-                file["priority"] = static_cast<std::uint8_t>(priorities[index]);
+                message = state.message;
+            }
+            else if (state.last_error)
+            {
+                message = state.last_error.message();
             }
         }
+    }
+    auto state = !enabled ? "disabled" : updating ? "announcing" :
+        working ? "working" : failed ? "error" : "waiting";
+    return {{"url", tracker.url}, {"tier", tracker.tier}, {"status", state}, {"seeds", seeds},
+        {"leechers", leechers}, {"downloaded", downloaded}, {"next_announce", next},
+        {"message", message}};
+}
+
+Json DescribeTrackers(lt::torrent_handle const& handle)
+{
+    Json data;
+    data["trackers"] = Json::array();
+    auto now = lt::clock_type::now();
+    auto wall = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+    auto hashes = handle.info_hashes();
+    for (auto const& tracker : handle.trackers())
+    {
+        data["trackers"].push_back(DescribeTracker(tracker, hashes, now, wall));
+    }
+    return data;
+}
+
+Json DescribeGeneral(Torrent const& torrent, std::shared_ptr<lt::torrent_info const> const& metadata)
+{
+    auto name = torrent.Name();
+    Json data;
+    data["name"] = name;
+    data["folder"] = torrent.Folder();
+    data["hashes"] = torrent.Hashes();
+    data["comment"] = torrent.comment;
+    data["creator"] = torrent.creator;
+    data["created"] = torrent.created;
+    data["piece_size"] = metadata ? metadata->piece_length() : 0;
+    data["private"] = metadata ? Json(metadata->priv()) : Json();
+    lt::add_torrent_params magnet;
+    magnet.ti = metadata;
+    magnet.info_hashes = metadata ? metadata->info_hashes() : torrent.handle.info_hashes();
+    magnet.name = name;
+    magnet.trackers = Urls(torrent.handle.trackers());
+    data["magnet"] = lt::make_magnet_uri(magnet);
+    return data;
+}
+
+Json DescribeFiles(lt::torrent_handle const& handle,
+    std::shared_ptr<lt::torrent_info const> const& metadata)
+{
+    Json data;
+    data["files"] = Files(metadata);
+    if (!metadata)
+    {
         return data;
     }
+    auto priorities = handle.get_file_priorities();
+    auto progress = handle.file_progress();
+    for (auto& file : data["files"])
+    {
+        auto index = file.at("index").get<size_t>();
+        file["downloaded"] = index < progress.size() ? progress[index] : 0;
+        if (index < priorities.size())
+        {
+            file["priority"] = static_cast<std::uint8_t>(priorities[index]);
+        }
+    }
+    return data;
+}
+
+Json DescribePieces(lt::torrent_handle const& handle,
+    std::shared_ptr<lt::torrent_info const> const& metadata, bool includeFiles)
+{
     auto current = handle.status(lt::torrent_handle::query_pieces);
     auto count = metadata ? metadata->num_pieces() : 0;
+    Json data;
     data["piece_size"] = metadata ? metadata->piece_length() : 0;
     data["peers"] = current.num_peers;
     data["verified"] = Json::array();
@@ -475,7 +535,10 @@ Json Torrent::Describe(TorrentView view, bool includeFiles) const
             (index < current.pieces.size() && current.pieces[lt::piece_index_t(index)]));
     }
     std::vector<int> availability;
-    if (metadata) handle.piece_availability(availability);
+    if (metadata)
+    {
+        handle.piece_availability(availability);
+    }
     availability.resize(count, 0);
     data["availability"] = std::move(availability);
     data["downloading"] = Json::array();
@@ -503,7 +566,10 @@ Json Torrent::Describe(TorrentView view, bool includeFiles) const
             auto const& files = metadata->layout();
             for (auto index : files.file_range())
             {
-                if (files.pad_file_at(index)) continue;
+                if (files.pad_file_at(index))
+                {
+                    continue;
+                }
                 auto first = files.file_offset(index) / metadata->piece_length();
                 auto end = files.file_size(index) == 0 ? first :
                     (files.file_offset(index) + files.file_size(index) + metadata->piece_length() - 1) /
@@ -512,6 +578,32 @@ Json Torrent::Describe(TorrentView view, bool includeFiles) const
                     {"first_piece", first}, {"end_piece", end}});
             }
         }
+    }
+    return data;
+}
+}
+
+Json Torrent::Describe(TorrentView view, bool includeFiles) const
+{
+    auto metadata = handle.torrent_file();
+    Json data = {{"torrent_id", identity}, {"metadata_ready", bool(metadata)}};
+    switch (view)
+    {
+    case TorrentView::Peers:
+        data.update(DescribePeers(handle));
+        break;
+    case TorrentView::Trackers:
+        data.update(DescribeTrackers(handle));
+        break;
+    case TorrentView::General:
+        data.update(DescribeGeneral(*this, metadata));
+        break;
+    case TorrentView::Files:
+        data.update(DescribeFiles(handle, metadata));
+        break;
+    case TorrentView::Pieces:
+        data.update(DescribePieces(handle, metadata, includeFiles));
+        break;
     }
     return data;
 }
@@ -545,10 +637,7 @@ void Torrent::ApplyIntent()
     auto priorities = facts.priorities;
     if (priorities.empty() && metadata)
     {
-        for (auto index : metadata->layout().file_range())
-        {
-            priorities.push_back(DefaultPriority(metadata->layout(), index));
-        }
+        priorities = DefaultPriorities(metadata->layout());
     }
     handle.prioritize_files(priorities);
     if (facts.intent == Intent::Paused)

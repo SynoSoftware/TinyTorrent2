@@ -7,6 +7,12 @@ public enum WindowPage
     About
 }
 
+public enum FileAction
+{
+    Move,
+    Delete
+}
+
 public enum TorrentFilter
 {
     All,

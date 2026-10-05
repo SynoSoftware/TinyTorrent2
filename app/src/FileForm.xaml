@@ -1,0 +1,42 @@
+<UserControl x:Class="Syno.TinyTorrent.FileForm"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <StackPanel Spacing="12" MaxWidth="560">
+        <TextBlock Text="{x:Bind Model.Files.Instruction, Mode=OneWay}" TextWrapping="Wrap" />
+        <TextBlock x:Name="CurrentLabel" Style="{StaticResource BodyStrongTextBlockStyle}" />
+        <TextBlock Text="{x:Bind Model.Files.Locations, Mode=OneWay}" TextWrapping="Wrap" IsTextSelectionEnabled="True" FlowDirection="LeftToRight" />
+        <StackPanel Spacing="8" Visibility="{x:Bind Model.Files.HasShared, Mode=OneWay}">
+            <TextBlock Text="{x:Bind Model.Files.SharedText, Mode=OneWay}" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+            <CheckBox x:Name="IncludeShared" AutomationProperties.AutomationId="IncludeShared"
+                IsChecked="{x:Bind Model.Files.IncludeShared, Mode=TwoWay}"
+                Visibility="{x:Bind Model.Files.IsMove, Mode=OneWay}" IsEnabled="{x:Bind Model.Files.CanRefresh, Mode=OneWay}" />
+            <TextBlock Text="{x:Bind Model.Files.KeptText, Mode=OneWay}" TextWrapping="Wrap" />
+        </StackPanel>
+        <StackPanel Spacing="8" Visibility="{x:Bind Model.Files.IsMove, Mode=OneWay}">
+            <Grid ColumnSpacing="8">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                <TextBox x:Name="Destination" AutomationProperties.AutomationId="MoveDestination" IsReadOnly="True"
+                    Text="{x:Bind Model.Files.Destination, Mode=OneWay}" FlowDirection="LeftToRight" />
+                <Button x:Name="Browse" AutomationProperties.AutomationId="MoveBrowse" Grid.Column="1" VerticalAlignment="Bottom"
+                    IsEnabled="{x:Bind Model.Files.CanRefresh, Mode=OneWay}" Click="OnDestination" />
+            </Grid>
+            <TextBlock x:Name="ResultLabel" Style="{StaticResource BodyStrongTextBlockStyle}" />
+            <TextBlock Text="{x:Bind Model.Files.ResultingFolders, Mode=OneWay}" TextWrapping="Wrap" IsTextSelectionEnabled="True" FlowDirection="LeftToRight" />
+            <CheckBox x:Name="UseExisting" AutomationProperties.AutomationId="UseExisting"
+                IsChecked="{x:Bind Model.Files.UseExisting, Mode=TwoWay}" IsEnabled="{x:Bind Model.Files.CanRefresh, Mode=OneWay}" />
+            <TextBlock x:Name="ExistingWarning" TextWrapping="Wrap" Visibility="{x:Bind Model.Files.UseExisting, Mode=OneWay}" />
+        </StackPanel>
+        <ProgressRing Width="20" Height="20" HorizontalAlignment="Left"
+            IsActive="{x:Bind Model.Files.IsPending, Mode=OneWay}" Visibility="{x:Bind Model.Files.IsPending, Mode=OneWay}" />
+        <InfoBar IsClosable="False" Severity="Error" IsOpen="{x:Bind Model.Files.HasError, Mode=OneWay}"
+            Visibility="{x:Bind Model.Files.HasError, Mode=OneWay}" Message="{x:Bind Model.Files.Message, Mode=OneWay}" />
+        <Button x:Name="Refresh" AutomationProperties.AutomationId="RefreshFileScope" Click="OnRefresh"
+            Visibility="{x:Bind Model.Files.HasError, Mode=OneWay}" IsEnabled="{x:Bind Model.Files.CanRefresh, Mode=OneWay}" />
+        <InfoBar IsClosable="False" Severity="Error" IsOpen="{x:Bind Model.CanRestart, Mode=OneWay}"
+            Visibility="{x:Bind Model.CanRestart, Mode=OneWay}" Message="{x:Bind Model.Message, Mode=OneWay}">
+            <InfoBar.ActionButton>
+                <Button AutomationProperties.AutomationId="FileRestart" Content="{x:Bind Model.RestartText, Mode=OneWay}" Command="{x:Bind Model.Restart}" />
+            </InfoBar.ActionButton>
+        </InfoBar>
+    </StackPanel>
+</UserControl>

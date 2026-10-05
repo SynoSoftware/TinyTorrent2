@@ -17,7 +17,10 @@ public sealed partial class MainWindow
     private TaskCompletionSource? _limitsClosed;
     private ContentDialog? _removeDialog;
     private TaskCompletionSource? _removeClosed;
-    private bool HasDialog => _addDialog is not null || _limitsDialog is not null || _removeDialog is not null || _closePrompt is not null;
+    private ContentDialog? _filesDialog;
+    private FileForm? _filesForm;
+    private TaskCompletionSource? _filesClosed;
+    private bool HasDialog => _addDialog is not null || _limitsDialog is not null || _removeDialog is not null || _filesDialog is not null || _closePrompt is not null;
 
     private void OnQueueKey(object sender, KeyRoutedEventArgs args)
     {
@@ -53,6 +56,7 @@ public sealed partial class MainWindow
         Menu(menu, "copy_magnet", Model.CopyMagnet);
         Menu(menu, "copy_hash", Model.CopyHash);
         Menu(menu, "verify", Model.Verify);
+        Menu(menu, "move", Model.MoveFiles);
         menu.Items.Add(new MenuFlyoutSeparator());
         Menu(menu, "up", Model.Up);
         Menu(menu, "down", Model.Down);
@@ -60,6 +64,7 @@ public sealed partial class MainWindow
         Menu(menu, "bottom", Model.Bottom);
         menu.Items.Add(new MenuFlyoutSeparator());
         Menu(menu, "remove", Model.Remove);
+        Menu(menu, "delete_files", Model.DeleteFiles);
         if (row && !Model.HasInspector) Menu(menu, "properties", Model.Properties);
         if (position is { } point) menu.ShowAt(target, point); else menu.ShowAt(target);
     }
@@ -94,6 +99,52 @@ public sealed partial class MainWindow
         }
     }
 
+    private async Task ShowFiles(Torrent[] torrents, FileAction action, bool initialize = true)
+    {
+        if (HasDialog || _closing) return;
+        if (initialize) Model.Files.Begin(torrents, action);
+        var form = new FileForm(Model);
+        form.DestinationRequested += async (_, _) =>
+        {
+            var folder = await PickFolder();
+            if (folder is not null) Model.Files.Destination = folder;
+        };
+        var body = new ScrollViewer { Content = form, Width = Math.Min(560, Root.ActualWidth - 80),
+            MaxHeight = Math.Max(220, Root.ActualHeight - 180), VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+        var dialog = new ContentDialog { XamlRoot = Root.XamlRoot, Content = body,
+            DefaultButton = action == FileAction.Delete ? ContentDialogButton.Close : ContentDialogButton.Primary };
+        dialog.Resources["ContentDialogMaxWidth"] = 608d;
+        dialog.SetBinding(ContentDialog.IsPrimaryButtonEnabledProperty, new Binding { Source = Model.Files,
+            Path = new PropertyPath(nameof(FileOperation.CanSubmit)), Mode = BindingMode.OneWay });
+        dialog.PrimaryButtonClick += async (_, args) =>
+        {
+            args.Cancel = true;
+            var deferral = args.GetDeferral();
+            try { args.Cancel = !await Model.Files.Submit(); }
+            finally { deferral.Complete(); }
+        };
+        dialog.Closing += (_, args) => { if ((Model.Files.IsPending || Model.IsPicking) && !_closing) args.Cancel = true; };
+        _filesDialog = dialog;
+        _filesForm = form;
+        _filesClosed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        RefreshText();
+        try
+        {
+            if (initialize) _ = Model.Files.RefreshScope();
+            await dialog.ShowAsync();
+        }
+        catch (Exception error) { Model.Report(error); }
+        finally
+        {
+            body.Content = null;
+            _filesDialog = null;
+            _filesForm = null;
+            if (!_closing) Model.Files.Cancel();
+            _filesClosed.TrySetResult();
+            if (!_closing && (Model.Draft.Sources.Count > 0 || Model.Draft.EditingMagnet)) _ = ShowAdd();
+        }
+    }
+
     private async Task ShowLimits(bool initialize = true)
     {
         if (HasDialog) return;
@@ -102,8 +153,13 @@ public sealed partial class MainWindow
         foreach (var choice in Model.Speed.Choices)
         {
             var editor = new NumberBox { DataContext = choice, Header = Model.Text.Get("limits", choice.Name), Minimum = 0,
-                Maximum = int.MaxValue / 1024.0, SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Compact };
-            editor.SetBinding(NumberBox.ValueProperty, new Binding { Source = choice, Path = new PropertyPath(nameof(LimitChoice.Value)), Mode = BindingMode.TwoWay });
+                Maximum = int.MaxValue / 1024.0, ValidationMode = NumberBoxValidationMode.Disabled,
+                Text = choice.Input, SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Compact };
+            editor.Loaded += (_, _) =>
+            {
+                if (TextEditor.Find(editor) is { } input)
+                    input.TextChanged += (_, _) => { if (editor.IsEnabled) choice.Input = input.Text; };
+            };
             editor.SetBinding(Control.IsEnabledProperty, new Binding { Source = Model, Path = new PropertyPath(nameof(MainViewModel.CanEdit)), Mode = BindingMode.OneWay });
             body.Children.Add(editor);
         }

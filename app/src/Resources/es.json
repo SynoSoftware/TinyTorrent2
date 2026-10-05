@@ -27,11 +27,20 @@
     "discard_action": "Descartar", "keep": "Seguir editando", "remove_source": "Quitar fuente", "all_files": "Seleccionar todos los archivos",
     "sources": "{0} fuentes", "more_files": "Añadir archivos…", "magnet": "Enlace magnet", "paste": "Pegar", "review": "Obtener metadatos", "metadata": "Obteniendo metadatos…", "already_added": "Ya añadido", "merge": "Combinar nuevos rastreadores", "shared": "Otros torrents usan archivos en esta carpeta: {0}", "never_show": "No volver a mostrar", "no_files": "Selecciona al menos un archivo para añadir este torrent."
   },
-  "status": { "unknown": "Desconocido", "downloading": "Descargando", "seeding": "Compartiendo", "paused": "En pausa", "all_paused": "Todos en pausa", "checking": "Comprobando", "queued": "En cola", "error": "Error", "completed": "Completado", "metadata": "Obteniendo metadatos" },
+  "status": { "unknown": "Desconocido", "downloading": "Descargando", "seeding": "Compartiendo", "paused": "En pausa", "all_paused": "Todos en pausa", "checking": "Comprobando", "queued": "En cola", "error": "Error", "completed": "Completado", "metadata": "Obteniendo metadatos", "moving": "Moviendo archivos" },
   "units": { "bytes": "{0:N0} B", "kib": "{0:N1} KiB", "mib": "{0:N1} MiB", "gib": "{0:N1} GiB", "tib": "{0:N1} TiB", "rate": "{0}/s",
     "eta": "{0} min", "peers": "{0} / {1}"
   },
   "errors": {
+    "files_busy": "Los archivos están ocupados. Espera a que termine la operación de archivos o la adición actual y vuelve a intentarlo.",
+    "shared_files": "Otros torrents usan estos archivos. Actualiza la lista e inclúyelos en el traslado.",
+    "destination_conflict": "Distintos archivos de origen ocuparían el mismo destino. Elige otra carpeta o mueve estos torrents por separado.",
+    "destination_in_use": "Otro torrent usa archivos en este destino. Elige otra carpeta para conservar sus archivos.",
+    "destination_exists": "Ya hay archivos en el destino. Abre Mover archivos y elige Usar los archivos de allí para verificarlos y usarlos.",
+    "move_failed": "No se pudieron mover los archivos. Abre Mover archivos, elige la carpeta que contiene ahora los archivos y elige Usar los archivos de allí.",
+    "move_interrupted": "El traslado se interrumpió. Abre Mover archivos, elige la carpeta que contiene ahora los archivos y elige Usar los archivos de allí.",
+    "move_uncertain": "No se pudo confirmar el traslado. Sal de TinyTorrent y vuelve a abrirlo antes de usar Mover archivos para recuperar la carpeta real. Si al salir se indica que una operación sigue sin resolverse, elige Salir de todas formas.",
+    "recovery_required": "No se pudo confirmar la operación. Comprueba el estado actual del torrent antes de volver a intentarlo.",
     "registration_failed": "Windows no pudo cambiar el registro de inicio o de gestión de archivos de TinyTorrent.",
     "invalid_trackers": "Introduce una URL de rastreador HTTP, HTTPS o UDP por línea.",
     "unknown": "No se pudo completar la operación.", "detail": "{0}\n{1}", "torrent": "{0}: {1}",
@@ -44,8 +53,8 @@
     "invalid_limits": "Introduce un límite de velocidad entre 0 y 2.097.151 KiB/s.", "preview_expired": "Esta vista previa ha caducado. Pulsa Añadir para obtenerla de nuevo con tus opciones.",
     "invalid_priorities": "Selecciona al menos un archivo y una prioridad válida.", "metadata_unavailable": "Los metadatos aún no están disponibles.", "alias_conflict": "Este torrent entra en conflicto con otra descarga. Revisa el torrent existente antes de añadirlo.", "preview_failed": "No se pudieron obtener los metadatos del torrent. Vuelve a intentarlo."
   },
-  "connection": { "restart": "Reiniciar", "version": "Las versiones del motor y de la ventana no coinciden. Instala una versión completa de TinyTorrent.", "unavailable": "El motor no está disponible.", "overload": "Hay demasiadas órdenes pendientes. Vuelve a intentarlo en unos instantes.", "uncertain": "Se perdió la conexión. Reconectando para confirmar el estado actual.", "missing": "No se encontró Engine.exe junto a la aplicación ni en la salida de compilación." },
-  "commands": { "menu": "Menú de la aplicación", "selection": "Acciones de selección", "add_file": "Añadir archivo torrent…", "add_magnet": "Añadir enlace magnet…", "pause": "Pausar", "resume": "Reanudar", "force": "Forzar inicio", "verify": "Verificar", "remove": "Eliminar", "open": "Abrir", "open_folder": "Abrir carpeta", "copy_magnet": "Copiar enlace magnet", "copy_hash": "Copiar hash", "properties": "Propiedades", "up": "Subir", "down": "Bajar", "top": "Mover al principio", "bottom": "Mover al final", "pause_all": "Pausar todos", "resume_all": "Reanudar todos", "limits": "Límites de velocidad…", "exit": "Salir" },
+  "connection": { "restart": "Reiniciar", "version": "Las versiones del motor y de la ventana no coinciden. Instala una versión completa de TinyTorrent.", "unavailable": "El motor no está disponible.", "overload": "Hay demasiadas órdenes pendientes. Vuelve a intentarlo en unos instantes.", "uncertain": "Se perdió la conexión. Reconectando para confirmar el estado actual.", "missing": "No se encontró Engine.exe junto a la aplicación." },
+  "commands": { "menu": "Menú de la aplicación", "selection": "Acciones de selección", "add_file": "Añadir archivo torrent…", "add_magnet": "Añadir enlace magnet…", "pause": "Pausar", "resume": "Reanudar", "force": "Forzar inicio", "verify": "Verificar", "remove": "Eliminar", "move": "Mover archivos", "delete_files": "Borrar archivos", "open": "Abrir", "open_folder": "Abrir carpeta", "copy_magnet": "Copiar enlace magnet", "copy_hash": "Copiar hash", "properties": "Propiedades", "up": "Subir", "down": "Bajar", "top": "Mover al principio", "bottom": "Mover al final", "pause_all": "Pausar todos", "resume_all": "Reanudar todos", "limits": "Límites de velocidad…", "exit": "Salir" },
   "files": { "name": "Archivo", "priority": "Prioridad", "summary": "{0} de {1} archivos · {2}", "search": "Buscar un archivo", "all_matching": "Seleccionar coincidencias", "none_matching": "Deseleccionar coincidencias", "unchanged": "Dejar sin cambios", "skip": "No descargar", "low": "Baja", "normal": "Normal", "high": "Alta" },
   "outcomes": { "accepted": "{0}: solicitud aceptada.", "queue": "Orden de la cola" },
   "inspector": {
@@ -53,7 +62,8 @@
     "general": "General", "files": "Archivos", "peers": "Pares", "trackers": "Rastreadores", "speed": "Velocidad", "pieces": "Piezas",
     "sections": "Propiedades del torrent", "created": "Creado", "creator": "Creado por", "piece_size": "Tamaño de pieza",
     "privacy": "Privacidad", "private": "Torrent privado", "public": "Torrent público", "comment": "Comentario", "hashes": "Hashes de información",
-    "retry": "Actualizar detalles", "retry_files": "Reintentar selección de archivos"
+    "retry": "Actualizar detalles", "retry_files": "Reintentar selección de archivos",
+    "removed": "Este torrent se ha eliminado. Tu edición sin terminar se conserva aquí, pero no se puede guardar. Cancela la edición para cerrar estas propiedades."
   },
   "peers": {
     "endpoint": "Dirección", "client": "Cliente", "connection_label": "Conexión", "uploaded": "Subido",
@@ -76,6 +86,21 @@
     "count": "{0}: {1:N0}", "size_one": "{0:N0} pieza · {1} por pieza", "size_other": "{0:N0} piezas · {1} por pieza", "range": "Piezas {0:N0}–{1:N0}", "unknown": "Disponibilidad de pares desconocida", "copies": "Pares conectados con esta pieza: {0:N0}"
   },
   "remove": { "title": "¿Eliminar torrents?", "detail": "¿Eliminar estos torrents de TinyTorrent? Se conservarán los archivos descargados.\n\n{0}" },
+  "file_operation": {
+    "move_detail": "Mueve los archivos de estos torrents. Los demás archivos de sus carpetas permanecen donde están.",
+    "delete_detail": "Borra permanentemente los archivos de estos torrents y elimina los torrents de TinyTorrent. Los archivos borrados no van a la Papelera de reciclaje.",
+    "current": "Torrents y carpetas actuales",
+    "destination": "Carpeta principal de destino",
+    "resulting": "Los archivos estarán en",
+    "move_shared": "Estos otros torrents comparten los archivos y deben moverse juntos:\n{0}",
+    "delete_shared": "Se conservarán los archivos que usan estos otros torrents:\n{0}",
+    "include_shared": "Incluir estos torrents en el traslado",
+    "use_existing": "Usar los archivos de allí",
+    "existing_warning": "Usa y verifica los archivos del destino en lugar de mover los archivos de origen. Las piezas que no coincidan se descargarán de nuevo sobre los archivos del destino.",
+    "refresh": "Actualizar ubicaciones",
+    "kept_one": "Se conservará {0:N0} archivo compartido.",
+    "kept_other": "Se conservarán {0:N0} archivos compartidos."
+  },
   "preferences": {
     "general": "General",
     "transfers": "Transferencias",
@@ -142,6 +167,7 @@
     "edit": "Editar",
     "remove": "Quitar",
     "period": "{0} · {1}–{2} · {3}",
+    "period_all_day": "{0} · Todo el día · {1}",
     "period_overnight": "{0} · {1}–{2} del día siguiente · {3}",
     "edit_period": "Editar período: {0}",
     "remove_period": "Quitar período: {0}",

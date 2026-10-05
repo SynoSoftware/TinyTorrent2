@@ -2,7 +2,7 @@
 #include "Strings.h"
 #include <windows.h>
 
-namespace tiny::desktop
+namespace tt::desktop
 {
 // Keeps Windows awake while torrents transfer on AC power, as the settings
 // allow.

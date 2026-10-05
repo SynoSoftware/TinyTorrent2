@@ -6,17 +6,24 @@
 #include <cctype>
 #include <climits>
 
-namespace tiny
+namespace tt
 {
 namespace
 {
+// GetAdaptersAddresses documents 15 KB as a first buffer that rarely needs to
+// grow. When it asks for more, the buffer grows up to adapterLimit.
+constexpr ULONG adapterBuffer = 15 * 1024;
+constexpr ULONG adapterLimit = 1024 * 1024;
+// A schedule period starts and ends at a minute of the day.
+constexpr int dayMinutes = 24 * 60;
+
 bool InterfaceAvailable(std::string const& name)
 {
     if (name.empty())
     {
         return true;
     }
-    ULONG size = 15 * 1024;
+    ULONG size = adapterBuffer;
     std::vector<char> buffer(size);
     auto read = [&]
     {
@@ -25,7 +32,7 @@ bool InterfaceAvailable(std::string const& name)
             reinterpret_cast<IP_ADAPTER_ADDRESSES*>(buffer.data()), &size);
     };
     auto outcome = read();
-    if (outcome == ERROR_BUFFER_OVERFLOW && size <= 1024 * 1024)
+    if (outcome == ERROR_BUFFER_OVERFLOW && size <= adapterLimit)
     {
         buffer.resize(size);
         outcome = read();
@@ -45,6 +52,8 @@ bool InterfaceAvailable(std::string const& name)
     return false;
 }
 
+// Windows names an adapter by its GUID in upper case, and libtorrent matches
+// that name exactly.
 std::string AdapterName(std::string name)
 {
     std::transform(name.begin(), name.end(), name.begin(),
@@ -60,7 +69,8 @@ bool Engine::State::Settings::Period::Contains(int day, int minute) const
     {
         return startsToday && minute >= start && minute < end;
     }
-    auto startedYesterday = std::find(days.begin(), days.end(), (day + 6) % 7) != days.end();
+    auto yesterday = (day + 6) % 7;
+    auto startedYesterday = std::find(days.begin(), days.end(), yesterday) != days.end();
     return (startsToday && minute >= start) || (startedYesterday && minute < end);
 }
 
@@ -80,7 +90,7 @@ std::optional<Engine::State::Settings::Period> Engine::State::Settings::Period::
     for (auto key : {"start", "end"})
     {
         if (!value.contains(key) || !value.at(key).is_number_integer() ||
-            value.at(key) < 0 || value.at(key) >= 1440)
+            value.at(key) < 0 || value.at(key) >= dayMinutes)
         {
             return std::nullopt;
         }
@@ -114,9 +124,11 @@ ScheduleMode Engine::State::ScheduledMode() const
     SYSTEMTIME time;
     GetLocalTime(&time);
     auto mode = ScheduleMode::Normal;
+    // Windows counts days from Sunday, and the schedule from Monday.
+    auto day = (time.wDayOfWeek + 6) % 7;
     for (auto const& period : settings.schedule)
     {
-        if (!period.Contains((time.wDayOfWeek + 6) % 7, time.wHour * 60 + time.wMinute))
+        if (!period.Contains(day, time.wHour * 60 + time.wMinute))
         {
             continue;
         }
@@ -163,7 +175,7 @@ void Engine::State::RefreshPolicy(bool configure)
     }
     auto paused = IsPaused();
     auto alternative = UsesAlternative();
-    bool networkChanged = appliedInterface != listen;
+    bool networkChanged = appliedListen != listen;
     if (!configure && !networkChanged && appliedPause == paused && appliedAlternative == alternative)
     {
         return;
@@ -199,7 +211,7 @@ void Engine::State::RefreshPolicy(bool configure)
     {
         session->resume();
     }
-    appliedInterface = std::move(listen);
+    appliedListen = std::move(listen);
     appliedPause = paused;
     appliedAlternative = alternative;
 }

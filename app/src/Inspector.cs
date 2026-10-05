@@ -36,8 +36,9 @@ public sealed class Inspector : INotifyPropertyChanged
     public bool IsPending => _pending;
     public bool IsLoading => _fetching;
     public bool HasDraft => !_pending && (_fileChanges.Count > 0 || _editingTrackers && _trackerInput != _trackerOriginal);
-    public bool HasError => _readFailure is not null || _editFailure is not null;
-    public string Message => _editFailure is { } edit ? _owner.FormatError(edit) :
+    private bool IsRemoved => _owner.IsConnected && _target is not null && !_owner.Torrents.Contains(_target);
+    public bool HasError => IsRemoved || _readFailure is not null || _editFailure is not null;
+    public string Message => IsRemoved ? Text.Get("inspector", "removed") : _editFailure is { } edit ? _owner.FormatError(edit) :
         _readFailure is { } read ? _owner.FormatError(read) : string.Empty;
     public FileSelection Files { get; }
     public IReadOnlyList<Peer> Peers { get; private set; } = [];

@@ -4,6 +4,7 @@
   </Configurations>
   <Project Path="engine/src/Engine.vcxproj" Id="537aa260-fea5-49ac-a79e-e79bf6ae966b" />
   <Project Path="app/src/TinyTorrent.csproj">
+    <BuildDependency Project="engine/src/Engine.vcxproj" />
     <Platform Solution="*|x64" Project="x64" />
   </Project>
   <Folder Name="/lib/">

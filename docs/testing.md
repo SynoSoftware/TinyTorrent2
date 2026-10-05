@@ -157,14 +157,31 @@ Distinguish source review, compilation, automated behavior checks, and manual
 observation. None should be described as stronger evidence than it provides.
 
 For UI reviews, use the automation tree for controls, state, bounds and focus;
-capture pixels only when they establish a visual finding. A review launch may
-set `TINYTORRENT_CAPTURE_DIRECTORY` to an absolute evidence directory and use
+capture pixels when they establish a visual finding. A review launch may set
+`TINYTORRENT_CAPTURE_DIRECTORY` to an absolute evidence directory and use
 Ctrl+Shift+F12 to save the current XAML scene and open popup visuals, plus capture
-time and dimensions. This opt-in diagnostic performs no automatic capture and
-does not add a product command. Its images exclude native window chrome, system
-dialogs and desktop acrylic, so those still require a desktop capture. Do not
-drive or capture the shared desktop while the owner needs it; source and build
-work continue independently.
+time and dimensions. With `TINYTORRENT_CAPTURE_REVIEW=1` and an absolute
+`TINYTORRENT_CAPTURE_STORE` identifying a disposable engine store, the same
+diagnostic visits the real pages and cancels their dialogs automatically. It
+uses a window outside the desktop, does not activate it, saves images and XAML
+control bounds, and closes itself. A connected store mismatch stops the review
+before changes. A second review window exits without activating an existing
+application. Normal launches perform no automatic capture.
+Use `TINYTORRENT_CAPTURE_REVIEW=smoke` to rerun the recovery journeys and settings
+viewports without repeating the full themes-and-sizes batch.
+
+First review functionality and recovery through the existing owners. Then use
+the images to examine hierarchy, spacing, alignment, typography, grouping,
+surfaces, color, state, and responsive layout against relevant Windows and
+Fluent guidance. A sequential roleplay of representative human users is an
+additional usability smoke test: check discoverability, task completion and
+avoidable friction. It is reasoning, not runtime evidence, and native WinUI
+design principles take precedence when preferences conflict. Record both the
+judgment and the actual evidence; neither replaces the other.
+
+XAML images exclude native window chrome, system dialogs and desktop acrylic.
+Record those limitations rather than claiming a full desktop capture. Do not
+drive or capture the shared desktop while the owner needs it.
 
 ## Resource checks
 

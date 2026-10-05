@@ -77,6 +77,11 @@ do not define this product.
   projects, interfaces, or processes.
 - Touch only what the request requires. Match the existing style and remove only
   orphans created by the change. Keep unrelated cleanup out of the diff.
+- Do not report or change line endings on disk. Files there mix CRLF and LF
+  because Windows editors and tools write CRLF, and `.gitattributes` converts
+  every text file to LF on commit, so the mix never reaches a diff or history.
+  A line-ending change that does show in `git diff` is a defect in that
+  conversion: report it.
 - Prefer explicit state and legal transitions over combinations of flags.
 - Store facts and decisions; derive display values and other computed state
   when read. A stored derived value is a second answer that can drift, so keep

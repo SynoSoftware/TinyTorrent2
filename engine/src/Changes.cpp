@@ -1,6 +1,6 @@
 #include "Changes.h"
 
-namespace tiny
+namespace tt
 {
 namespace
 {
@@ -54,7 +54,7 @@ void Changes::Commit(Json document, Reply reply, std::function<Json()> apply)
     Commit(std::move(document),
         [reply = std::move(reply), apply = std::move(apply)](StorageOutcome outcome)
     {
-        reply(outcome.succeeded ? apply() : Failure("storage_failed", outcome.detail));
+        reply(outcome.succeeded ? apply() : Failure(ErrorCode::StorageFailed, outcome.detail));
     });
 }
 

@@ -19,6 +19,7 @@ public partial class App : Application
         catch (AbandonedMutexException) { owned = true; }
         if (!owned)
         {
+            if (MainWindow.IsCaptureReview) { _instance.Dispose(); Exit(); return; }
             try
             {
                 var text = await Task.Run(() => new Strings());
@@ -41,7 +42,8 @@ public partial class App : Application
             _instance.Dispose();
             Exit();
         };
-        _window.Activate();
+        if (MainWindow.IsCaptureReview) _window.ShowCaptureReview();
+        else _window.Activate();
     }
 
     [DllImport("shell32.dll", CharSet = CharSet.Unicode)]

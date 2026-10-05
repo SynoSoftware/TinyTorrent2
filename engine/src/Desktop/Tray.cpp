@@ -4,7 +4,7 @@
 #include <filesystem>
 #include <shellapi.h>
 
-namespace tiny::desktop
+namespace tt::desktop
 {
 namespace
 {
@@ -230,7 +230,8 @@ std::wstring Tray::Rate(std::int64_t bytes) const
     wchar_t decimal[8];
     wchar_t const* locale = LOCALE_NAME_USER_DEFAULT;
     GetLocaleInfoEx(locale, LOCALE_SDECIMAL, decimal, static_cast<int>(std::size(decimal)));
-    NUMBERFMTW format{unit ? 1U : 0U, 1, 0, decimal, const_cast<LPWSTR>(L""), 1};
+    NUMBERFMTW format{.NumDigits = unit ? 1U : 0U, .LeadingZero = 1, .Grouping = 0,
+        .lpDecimalSep = decimal, .lpThousandSep = const_cast<LPWSTR>(L""), .NegativeOrder = 1};
     wchar_t formatted[64];
     if (GetNumberFormatEx(locale, 0, number, &format, formatted, static_cast<int>(std::size(formatted))))
     {
@@ -363,7 +364,7 @@ std::wstring Tray::Failures(Notice const& first, unsigned count) const
     auto name = Wide(first.name);
     if (first.kind == NoticeKind::AddFailed)
     {
-        name = name.starts_with(L"magnet:") ? strings_.Text("notification", "magnet") :
+        name = IsMagnet(first.name) ? strings_.Text("notification", "magnet") :
             std::filesystem::path(name).filename().wstring();
     }
     auto detail = Wide(first.detail);

@@ -4,12 +4,14 @@
 #include <fstream>
 #include <stdexcept>
 
-namespace tiny
+namespace tt
 {
 namespace
 {
 constexpr std::size_t jobLimit = 64;
-constexpr std::streamoff readLimit = 16 * 1024 * 1024;
+// The largest file Store reads. Writes keep to it too, so every file written
+// can be read back.
+constexpr std::streamoff fileLimit = 16 * 1024 * 1024;
 }
 
 Store::Store(std::function<void()> wake) : wake_(std::move(wake)), worker_([this]
@@ -95,7 +97,7 @@ void Store::Write(std::filesystem::path path, std::function<std::string()> encod
     {
         auto bytes = encode();
         // A refused write keeps the previous file, which startup can still read.
-        if (bytes.size() > static_cast<std::size_t>(readLimit))
+        if (bytes.size() > static_cast<std::size_t>(fileLimit))
         {
             throw std::runtime_error("File exceeds limit");
         }
@@ -154,7 +156,7 @@ std::string Store::Read(std::filesystem::path const& path)
         throw std::runtime_error("Cannot read " + Utf8(path.wstring()));
     }
     auto size = stream.tellg();
-    if (size < 0 || size > readLimit)
+    if (size < 0 || size > fileLimit)
     {
         throw std::runtime_error("File exceeds limit");
     }

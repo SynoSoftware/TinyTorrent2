@@ -12,7 +12,10 @@ public sealed partial class MainViewModel
     public SpeedLimits Speed { get; }
     public bool AllPaused { get; private set; }
     public bool HasIncoming { get; private set; }
-    public string Incoming => Text.Get("window", HasIncoming ? "incoming" : "no_incoming");
+    public string MissingInterface { get; private set; } = string.Empty;
+    private bool _alternativeLimits;
+    public string Incoming => MissingInterface.Length > 0 ? Text.Format("preferences", "unavailable_interface", MissingInterface) :
+        Text.Get("window", HasIncoming ? "incoming" : "no_incoming");
     public string SelectionText => Text.Format("window", "selected", _selected.Length);
     public string ErrorCount => Text.Format("window", "errors", Torrents.Count(torrent => torrent.ErrorCode.Length > 0));
     public bool HasSelection => _selected.Length > 0;
@@ -26,7 +29,7 @@ public sealed partial class MainViewModel
     public bool ShowAdd => Setting("show_add", true);
     public bool AlternativeLimits
     {
-        get => Setting("alternative_limits", false);
+        get => _alternativeLimits;
         set { if (value != AlternativeLimits) _ = SaveAlternative(value); }
     }
     public Inspector Inspector { get; }
@@ -35,6 +38,9 @@ public sealed partial class MainViewModel
     public ICommand Force { get; }
     public ICommand Verify { get; }
     public ICommand Remove { get; }
+    public ICommand MoveFiles { get; }
+    public ICommand DeleteFiles { get; }
+    public FileOperation Files { get; }
     public ICommand Up { get; }
     public ICommand Down { get; }
     public ICommand Top { get; }
@@ -50,6 +56,8 @@ public sealed partial class MainViewModel
     public event EventHandler? LimitsRequested;
     public event EventHandler? FilesRequested;
     public event EventHandler<Torrent[]>? RemoveRequested;
+    public event EventHandler<Torrent[]>? MoveRequested;
+    public event EventHandler<Torrent[]>? DeleteRequested;
     public event EventHandler<string>? OpenRequested;
     public event EventHandler<string>? CopyRequested;
 

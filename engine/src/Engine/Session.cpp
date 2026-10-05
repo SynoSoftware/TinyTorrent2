@@ -6,7 +6,7 @@
 #include <libtorrent/settings_pack.hpp>
 #include <algorithm>
 
-namespace tiny
+namespace tt
 {
 namespace
 {
@@ -122,7 +122,7 @@ void Engine::State::Start(Document const& saved, Resumes& resumes)
         if (auto found = resumes.find(id); found != resumes.end())
         {
             params = std::move(found->second);
-            if (facts.verifyFiles || !SamePath(FullPath(Wide(params.save_path)), FullPath(Wide(facts.savePath))))
+            if (facts.verifyFiles || !SameFolder(params.save_path, facts.savePath))
             {
                 params.have_pieces.clear();
                 params.verified_pieces.clear();
@@ -232,9 +232,9 @@ bool Engine::State::Overlaps(std::vector<std::string> const& hashes, std::vector
         [&others](std::string const& hash) { return Contains(others, hash); });
 }
 
-tiny::Activity Engine::State::Activity() const
+tt::Activity Engine::State::Activity() const
 {
-    tiny::Activity activity;
+    tt::Activity activity;
     for (auto const& [id, torrent] : torrents)
     {
         activity.downloadRate += torrent.status.download_payload_rate;
@@ -331,6 +331,12 @@ void Engine::State::Notify(NoticeKind kind, std::string name, std::string detail
     }
     notices.push_back(
         {.kind = kind, .name = std::move(name), .detail = std::move(detail), .torrentId = std::move(id)});
+}
+
+void Engine::State::RecordHashes(Torrent& torrent, lt::info_hash_t const& hashes)
+{
+    torrent.status.info_hashes = hashes;
+    RecordHashes(torrent);
 }
 
 // Saves every hash the torrent is known by, so that a later addition of

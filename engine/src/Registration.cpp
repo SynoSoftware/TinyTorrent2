@@ -5,7 +5,7 @@
 #include <shellapi.h>
 #include <stdexcept>
 
-namespace tiny
+namespace tt
 {
 namespace
 {
@@ -33,9 +33,9 @@ std::wstring Key(wchar_t const* progId)
     return L"Software\\Classes\\" + std::wstring(progId);
 }
 
-std::wstring OpenCommand() { return L"\"" + Executable() + L"\" -- \"%1\""; }
+std::wstring OpenCommand() { return L"\"" + Executable() + L"\" " + option::literal + L" \"%1\""; }
 std::wstring Icon() { return L"\"" + Executable() + L"\",0"; }
-std::wstring Launch() { return L"\"" + Executable() + L"\" --background"; }
+std::wstring Launch() { return L"\"" + Executable() + L"\" " + option::background; }
 
 std::wstring Read(std::wstring const& key, wchar_t const* name = nullptr)
 {
@@ -199,7 +199,7 @@ Json Registration::Execute(std::string const& name) const
     auto operation = Parse(operations, name);
     if (!operation)
     {
-        return Failure("invalid_request", "Unknown registration operation.");
+        return Failure(ErrorCode::InvalidRequest, "Unknown registration operation.");
     }
     try
     {
@@ -243,7 +243,7 @@ Json Registration::Execute(std::string const& name) const
     }
     catch (std::exception const& error)
     {
-        auto reply = Failure("registration_failed", error.what());
+        auto reply = Failure(ErrorCode::RegistrationFailed, error.what());
         reply["data"] = Observe();
         return reply;
     }

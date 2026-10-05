@@ -4,7 +4,7 @@
 #include <windows.h>
 #include <optional>
 
-namespace tiny::desktop
+namespace tt::desktop
 {
 // Shows that the product window is opening or, with two choices, why it could
 // not open or exit. The owner decides what each choice does.
@@ -29,7 +29,7 @@ private:
     void Create();
     void ApplyDpi(HWND window, UINT dpi, RECT const* bounds);
     void Arrange(HWND window);
-    bool CanRetry() const;
+    bool CanChooseFirst() const;
     bool CanDismiss() const;
     Strings const& strings_;
     std::function<bool()> windowRunning_;

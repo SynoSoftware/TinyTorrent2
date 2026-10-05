@@ -50,12 +50,12 @@ std::wstring LogonSid()
 
 int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
 {
-    HANDLE mutex = nullptr;
+    tt::OwnedHandle mutex;
     bool headless = false;
     try
     {
         SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
-        if (FAILED(SetCurrentProcessExplicitAppUserModelID(tiny::appId)))
+        if (FAILED(SetCurrentProcessExplicitAppUserModelID(tt::appId)))
         {
             throw std::runtime_error("Cannot set the application's Windows identity.");
         }
@@ -69,33 +69,33 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
         for (int index = 1; index < count; ++index)
         {
             std::wstring argument(arguments[index]);
-            if (!literal && argument == L"--")
+            if (!literal && argument == tt::option::literal)
             {
                 literal = true;
             }
-            else if (!literal && argument == L"--headless")
+            else if (!literal && argument == tt::option::headless)
             {
                 headless = true;
             }
-            else if (!literal && argument == L"--background")
+            else if (!literal && argument == tt::option::background)
             {
                 background = true;
             }
-            else if (!literal && argument == L"--registration")
+            else if (!literal && argument == tt::option::registration)
             {
                 if (++index == count)
                 {
                     throw std::runtime_error("The --registration option needs an operation.");
                 }
-                registration = tiny::Utf8(arguments[index]);
+                registration = tt::Utf8(arguments[index]);
                 if (registration.empty())
                 {
                     throw std::runtime_error("The --registration option needs an operation.");
                 }
             }
-            else if (!literal && argument == L"--data")
+            else if (!literal && argument == tt::option::data)
             {
-                if (++index == count || std::wstring(arguments[index]) == L"--")
+                if (++index == count || std::wstring(arguments[index]) == tt::option::literal)
                 {
                     throw std::runtime_error("The --data option needs a folder.");
                 }
@@ -103,16 +103,13 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
             }
             else
             {
-                if (argument.size() >= 7 &&
-                    CompareStringOrdinal(argument.c_str(), 7, L"magnet:", 7, TRUE) == CSTR_EQUAL)
+                auto source = tt::Utf8(argument);
+                tt::NormaliseMagnet(source);
+                if (!argument.empty() && !tt::IsMagnet(source))
                 {
-                    argument.replace(0, 7, L"magnet:");
+                    source = tt::Utf8(std::filesystem::absolute(std::filesystem::path(argument)).wstring());
                 }
-                if (!argument.empty() && !argument.starts_with(L"magnet:"))
-                {
-                    argument = std::filesystem::absolute(std::filesystem::path(argument)).wstring();
-                }
-                sources.push_back(tiny::Utf8(argument));
+                sources.push_back(std::move(source));
             }
         }
         LocalFree(arguments);
@@ -120,7 +117,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
         {
             throw std::runtime_error("Registration operations cannot include torrent sources.");
         }
-        if (!sources.empty() && !tiny::desktop::Application::ValidSources(sources))
+        if (!sources.empty() && !tt::desktop::Application::ValidSources(sources))
         {
             throw std::runtime_error("Torrent sources exceed the supported count or length.");
         }
@@ -131,43 +128,36 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
             {
                 throw std::runtime_error("Cannot locate the local application data folder.");
             }
-            directory = std::filesystem::path(local) / tiny::productName;
+            directory = std::filesystem::path(local) / tt::productName;
             CoTaskMemFree(local);
         }
         auto sid = LogonSid();
-        PSECURITY_DESCRIPTOR descriptor = nullptr;
-        auto acl = L"D:P(A;;GA;;;" + sid + L")";
-        if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(acl.c_str(), SDDL_REVISION_1,
-            &descriptor, nullptr))
         {
-            throw std::runtime_error("Cannot secure engine instance ownership.");
+            tt::Security security(sid);
+            mutex.reset(CreateMutexW(&security.Attributes(), FALSE, (L"Local\\TinyTorrent.Engine." + sid).c_str()));
         }
-        SECURITY_ATTRIBUTES security{sizeof(security), descriptor, FALSE};
-        mutex = CreateMutexW(&security, FALSE, (L"Local\\TinyTorrent.Engine." + sid).c_str());
-        LocalFree(descriptor);
         if (!mutex)
         {
             throw std::runtime_error("Cannot claim engine instance ownership.");
         }
-        auto acquired = WaitForSingleObject(mutex, 0);
+        auto acquired = WaitForSingleObject(mutex.get(), 0);
         if (acquired == WAIT_TIMEOUT)
         {
             bool forwarded = true;
             if (!registration.empty())
             {
                 forwarded =
-                    tiny::Pipe::Forward(sid, {{"command", "registration"}, {"operation", registration}});
+                    tt::Pipe::Forward(sid, {{"command", "registration"}, {"operation", registration}});
             }
             else if (!sources.empty())
             {
-                forwarded = tiny::Pipe::Forward(sid, {{"command", "activate_sources"}, {"sources", sources}});
+                forwarded = tt::Pipe::Forward(sid, {{"command", "activate_sources"}, {"sources", sources}});
             }
             else if (!background && !headless)
             {
-                forwarded = tiny::Pipe::Forward(sid);
+                forwarded = tt::Pipe::Forward(sid);
             }
-            CloseHandle(mutex);
-            mutex = nullptr;
+            mutex.reset();
             if (!forwarded)
             {
                 throw std::runtime_error("The running engine could not accept the activation request.");
@@ -181,7 +171,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
         int result;
         if (!registration.empty())
         {
-            auto response = tiny::Registration().Execute(registration);
+            auto response = tt::Registration().Execute(registration);
             result = response.value("ok", false) ? 0 : 1;
             if (result)
             {
@@ -190,11 +180,10 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
         }
         else
         {
-            tiny::desktop::Application application(directory, sid, headless);
+            tt::desktop::Application application(directory, sid, headless);
             result = application.Run(background, std::move(sources));
         }
-        ReleaseMutex(mutex);
-        CloseHandle(mutex);
+        ReleaseMutex(mutex.get());
         return result;
     }
     catch (std::exception const& error)
@@ -205,12 +194,8 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
         }
         else
         {
-            auto message = tiny::Strings().Text("error", "start") + L"\n\n" + tiny::Wide(error.what());
-            MessageBoxW(nullptr, message.c_str(), tiny::productName, MB_OK | MB_ICONERROR);
-        }
-        if (mutex)
-        {
-            CloseHandle(mutex);
+            auto message = tt::Strings().Text("error", "start") + L"\n\n" + tt::Wide(error.what());
+            MessageBoxW(nullptr, message.c_str(), tt::productName, MB_OK | MB_ICONERROR);
         }
         return 1;
     }

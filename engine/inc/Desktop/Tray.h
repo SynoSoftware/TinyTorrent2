@@ -5,7 +5,7 @@
 #include <oleacc.h>
 #include <optional>
 
-namespace tiny::desktop
+namespace tt::desktop
 {
 // The notification-area icon: its tooltip, its menu and its balloon
 // notifications.

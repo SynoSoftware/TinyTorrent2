@@ -7,7 +7,7 @@
 #include <filesystem>
 #include <functional>
 
-namespace tiny
+namespace tt
 {
 // Edits to the saved document run one at a time, in order. A change that
 // commits holds the queue until its write completes, so the next change

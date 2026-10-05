@@ -1231,7 +1231,12 @@ checks use its normal-process endpoint or the equivalent filesystem traversal.
 The concurrent dependency checkout produced `3rdParty/tools/perl/bin` and
 `3rdParty/boost/tools/boostlook/doc/bin`; these are downloaded input directories,
 not recursive WinUI output. They were reported and left intact. The owner is
-replacing vcpkg in another thread; that work remains outside this UI pass.
+replacing vcpkg in another thread; that work remains outside this UI pass. The
+owner gave up on vcpkg because Visual Studio's vcpkg integration deleted every
+installed library in the middle of an ordinary build and compiled Boost,
+OpenSSL and libtorrent again, after an unrelated tool change altered its
+package fingerprint. [Third-party dependencies](architecture.md#third-party-dependencies)
+records the ruling and the arrangement that replaced vcpkg.
 
 ## Wire representation
 
@@ -1241,8 +1246,9 @@ client first receives `{type:"hello",version:1,session_id:"...",engine_path:"...
 same engine/store for explicit Restart. Requests are
 `{request_id:integer,command:string,...}`. Replies repeat `request_id` and have
 `ok:boolean`, either `data` or `error:{code:string,detail:string}`. Native control
-notifications are `{type:"activate"}`, `{type:"close"}`, and `{type:"sources"}`. A request's
-`connection_id` is set by the engine pipe adapter, never trusted from the wire.
+notifications are `{type:"activate"}`, `{type:"close"}`, and `{type:"sources"}`. The pipe
+passes the engine each request's connection beside the request, so no request field
+can claim another connection's previews.
 
 Commands are `snapshot`, `preview` (source, destination), `preview_detail`
 (preview_id, destination), `add` (preview_id, destination, paused, optional
@@ -1251,7 +1257,8 @@ torrent_id), `torrent` (torrent_id), `pause`, `resume`, `force`, `verify`, and
 `remove` (torrent_ids), `queue` (torrent_ids with direction: up/down/top/bottom,
 or before_torrent_id: string/null for a row drop; null means end),
 `session_pause` (paused), `settings` (changes), `open`, `ready`,
-`ui_closed`, `activate_reply` (available boolean), `close_reply` (cancelled boolean), and `exit`. Activation acknowledgement lets Open wait through an
+`ui_closed`, `activate_reply` (available boolean), `close_reply` (state:
+waiting/closing/cancelled), and `exit`. Activation acknowledgement lets Open wait through an
 old window's close path without losing the request. Current settings changes accept language (`en`, `es`)
 and theme (`system`, `light`, `dark`); unknown fields or values are refused. A
 settings acknowledgement confirms the same durable replacement as membership.
@@ -1260,9 +1267,11 @@ Settings also accept `default_destination` (absolute path), `show_add` and
 `alternative_download_limit`, `alternative_upload_limit` (bytes per second,
 integer 0 through INT_MAX; 0 means unlimited). Alternative limits initially use
 10 KiB/s in each direction. Settings also accept `notifications_enabled`,
-`prevent_sleep`, `prevent_sleep_seeding` and `background_notice_shown` (booleans).
+`prevent_sleep` and `prevent_sleep_seeding` (booleans).
 Session pause is persisted as `all_paused` through
-its command and preserves individual torrent intent.
+its command and preserves individual torrent intent. The desktop host records
+`background_notice_shown` through its own engine call; the settings command
+refuses it.
 `registration` takes an `operation` string: `observe`, `register_handlers`,
 `unregister_handlers`, `enable_startup`, `disable_startup`, `open_defaults`, or
 `open_startup`. Its data contains `handlers_registered`, `startup_enabled`,
@@ -1410,3 +1419,550 @@ was stopped; the equivalent filesystem traversal found no stray output folders.
 No app or engine was launched, and no suite or desktop interaction was run.
 Rendered layout, proportional timeline geometry, contrast, focus restoration,
 live language/theme behavior and capture timing remain runtime evidence gaps.
+
+## Background integration after the engine refactor
+
+The owner completed the engine refactor while continuing its polish. A fresh
+milestone-3 adversarial source review found two Open failures: the command replied
+with success during Exit although Open did nothing; and a disconnected, living
+UI process bypassed the readiness timeout after its deadline had been cleared.
+Open now returns whether it accepted the request, and that existing process gets
+a bounded readiness wait without a second launch.
+
+Four roles chose these corrections in sequence. The everyday user requires a
+window or a visible refusal. The Windows engineer keeps one process and one
+readiness deadline owner. The heavy seeder preserves coordinated Exit instead of
+reviving the window during final saving. The product owner uses the existing Open
+operation and stopping outcome rather than retaining another activation queue.
+
+Source inspection also confirmed advisory issue 38: waiting more than 30 seconds
+at an unfinished-input prompt falsely reports an unresponsive UI. Four roles
+answered in sequence. The everyday user needs time to decide. The accessibility
+reviewer needs time to read the prompt without a second failure surface. The
+Windows engineer distinguishes the acknowledged human wait from unacknowledged
+startup or unfinished closure. The product owner reuses close_reply with three
+explicit states and adds no heartbeat. Waiting suspends that deadline; continuing
+closure restores it; Cancel or a failed preparation cancels Exit. Overlap with an
+already open Close prompt sends the same waiting acknowledgement.
+
+Current runtime evidence still predates the refactor. These corrections are not
+milestone completion evidence until their current integration is checked. Shared
+desktop interaction remains stopped; no current engine or UI has been launched.
+
+The second review caught a retained Open during ordinary window teardown: a
+clean process exit left its readiness deadline set, blocking the replacement.
+That clean exit now clears the deadline only for the retained Open, which then
+uses the existing launch owner. The focused re-review has no remaining finding.
+The isolated Release engine and app builds passed. After the final native build,
+Everything reported that its IPC server was unavailable; the equivalent folder
+traversal found no generated folders outside artifacts and 3rdParty.
+
+## Details integration while desktop checks are deferred
+
+Four roles considered sequencing in order. The desktop owner needs the screen
+left alone. The implementation engineer can finish command support without
+opening a window. The reviewer keeps compilation and source review distinct from
+runtime evidence. The product owner chooses useful integration work over an
+idle wait. Milestone 3's source corrections are settled; its current runtime gate
+and completion commit remain deferred. Preparing milestone 4 does not declare
+milestone 3 complete or replace its missing evidence.
+
+Four roles considered schedule overrides in order. The everyday user expects
+Resume Transfers and the alternative-limits switch to act when used. The heavy
+seeder expects the next scheduled boundary to restore automatic policy. The
+libtorrent engineer keeps one session pause and rate owner, separate from
+individual torrent intent. The product owner chooses temporary manual overrides
+for the current schedule mode, cleared at the next mode change. Manual Pause all
+always wins; an absent selected adapter cannot be bypassed. Saved periods and
+normal/alternative rates remain unchanged by these temporary overrides.
+
+Four roles considered seeding limits in order. The everyday user expects a
+reached ratio or seeding-time limit to pause, never remove files. The heavy seeder
+expects explicit Resume to continue that seed. The libtorrent engineer notes
+that upstream seed limits demote queue priority rather than establish this stop
+policy. The product owner chooses the existing durable Pause intent and one saved
+per-torrent exemption for explicit Resume/Force of completed content. The ratio
+uses uploaded bytes divided by the greater of downloaded bytes and verified
+bytes, so existing seeds have a meaningful denominator. Zero disables either
+limit; time counts actual seeding, not time spent paused. Editing the global
+limits does not silently revoke a seed's explicit exemption.
+
+Settings now persist the UI's queue, connection, seeding, network, update-check
+and weekly-period choices through the existing document queue. Periods carry
+Monday-zero days, start/end minutes and paused/alternative mode, with at most
+128 definitions. Zero queue/connection limits mean unlimited. The summary's
+top-level all_paused and alternative_limits describe effective policy; the
+settings object retains manual choices. missing_interface identifies an absent
+selected adapter. The existing UI status and rate-pair toggle use these effective
+facts; tray status stays at two rows and three commands, with the adapter reason
+in its tooltip. Selection of an unavailable adapter is retained and blocks the
+session rather than falling back. Availability is reconciled once a second;
+changed binding pauses old connections before the new settings apply.
+
+The independent adversarial source review found three defects. Saved adapter
+policy arrived after libtorrent started its default unrestricted listeners and
+port discovery; construction now starts with no listeners or port mapping before
+the sole policy owner applies saved choices. The seeding-time check used the
+all-files counter; it now uses finished_duration for completed selected content,
+which also excludes paused time. Saved midnight-to-midnight period definitions
+and their accessible action names lacked All day; they now use the shared
+catalogue description, while non-midnight overnight spans keep explicit times.
+The re-review found no remaining concrete issue in the corrected paths.
+
+The first combined native build exposed three metadata accessors omitted by the
+selected ABI. General now reads the actual add_torrent_params annotations; the
+Inspector integration section records their existing resume-data owner. The
+corrected isolated Release engine and app builds both passed without warnings.
+English/Spanish keys and placeholders passed. No application was launched.
+The mandatory Everything query reported no available IPC server; a filesystem
+traversal found no stray bin, obj, bin-fl or TestResults folders outside the two
+declared output/dependency roots.
+
+Two focused scenarios are prepared in engine/tests/Checks.ps1, with an optional
+EnginePath for the isolated candidate. SettingsPolicy watches saved periods and
+preferences, manual overrides preserving individual pause intent, and refusing
+to resume through an absent adapter. CommittedFiles watches older checkpoints
+defeating saved file choices, Select none removing membership, tracker tiers
+being lost, or an explicit empty tracker choice restoring original trackers.
+The existing checks cover none of these new state transitions. Both scenarios
+retain the fixture's ownership check before sending any command. Only PowerShell
+syntax was checked; neither scenario was executed under the desktop restriction.
+
+Remaining milestone-4 evidence includes actual transfer outcomes under adapter
+switching and limits, failed edits and restart, background-history use, and the
+live inspector/language/RTL journey. The schedule's new native presentation
+also still needs its rendered review. No milestone completion is claimed by
+these source and compilation checks, and Move and delete files remains next.
+
+## Inspector engine integration
+
+`torrent` accepts `view`: `general`, `files`, `peers`, `trackers`, or `pieces`.
+Each reply identifies `session_id` and `torrent_id` and collects only that view.
+The older request without `view` retains its General/Files shape, including URL
+strings in its saved `trackers` field, for existing action and check consumers.
+
+General supplies `folder`, `magnet`, `hashes`, metadata `comment`, `creator`,
+`created` (Unix seconds), `piece_size` (bytes), and `private` (null until metadata).
+Files supplies `metadata_ready` and indexed `files`, with relative `path`, byte
+`size`, `padding`, effective `priority`, and actual byte `downloaded` values.
+Peers supplies `peers`: endpoint, client, transport, incoming/encrypted facts,
+progress from 0 to 1, payload `download_rate`/`upload_rate` in bytes per second,
+and payload `downloaded`/`uploaded` byte counters.
+
+Trackers supplies URL/tier rows with status, scrape `seeds`, `leechers`, and
+`downloaded` counts (-1 when unknown), `next_announce` in Unix seconds (0 when
+unscheduled), and the raw tracker message/error. Four roles considered combining
+libtorrent's endpoint and v1/v2 state in order. The everyday user needs a working
+tracker to stay working when another route fails. The network operator needs
+actual failures retained as diagnostic data. The libtorrent reviewer avoids
+adding duplicate scrape counts for several announces to one swarm. The product
+owner keeps the existing one-row-per-URL view: announcing takes precedence,
+then any working route, then error, waiting, or disabled when no route is usable.
+Scrape counts use the greatest reported value; the next time is the earliest
+usable route's time, respecting its minimum announce interval.
+
+Pieces supplies `metadata_ready`, `piece_size`, connected `peers`, a complete
+`verified` bit list, corresponding `availability` counts, and indexed
+`downloading` fractions from libtorrent's outstanding block data. `include_files`
+adds relative paths with zero-based `first_piece` and exclusive `end_piece` only
+when requested. Routine summary updates still omit piece bitfields.
+
+`edit` carries `torrent_id` and intended `changes`: indexed `priorities` entries
+(`index`, `priority`) and/or the complete intended `trackers` list (`url`, `tier`).
+The canonical priorities remain 0/1/4/7; metadata and indexes are validated when
+the queued edit executes, and the existing priority owner keeps padding at zero.
+Four roles considered Select none in order. The everyday user expects the Files
+command to work. The seeder keeps existing downloaded content and membership.
+The libtorrent engineer supports an all-zero wanted selection without deletion.
+The product owner keeps the one-wanted requirement at Add, where it gives the
+new download useful work, and permits Select none in committed file edits.
+
+Edits save choices through the existing document queue before applying them.
+Priorities are built from those saved choices, so an earlier disk operation
+cannot overwrite a later field choice. A priority reply completes only after
+the effective vector matches; disk failure reports failure and Files still
+shows actual progress/priorities. Saved intent remains available for retry.
+Dropped alerts reconcile against the effective vector or report recovery
+required. Exit drains accepted priority work before its final checkpoint, with
+the existing 30-second bound rather than waiting forever for a missing outcome.
+Restart supplies document priorities before addition and clears older resume
+piece priorities, so an earlier checkpoint cannot defeat a committed selection.
+
+Tracker URLs use libtorrent's validation for HTTP, HTTPS, and UDP; duplicate
+URLs keep their first tier, and tiers are 0 through 255. Saved tracker choices
+retain URL and tier. A missing choice retains resume defaults; an explicit empty
+choice remains empty after restart. Existing saved URL strings read as tier 0.
+`reannounce` calls libtorrent's existing operation and respects its interval and
+paused-state rules.
+
+`history` accepts `range`: `five_minutes` or `day`, returning `session_id` and
+`samples` with Unix `time` and payload download/upload rates in bytes per second.
+The state owner's existing one-second maintenance records all accepted torrents
+while the window is closed. It retains at most 300 second samples and 1,440
+averaged minute samples, including the current minute. Gaps discard an unfinished
+minute rather than inventing its missing samples; a backward clock change starts
+a new chronology. Nothing is saved, so engine restart starts empty.
+
+Pinned libtorrent headers and their implementation supplied the field and
+completion evidence. No application was launched and no test was executed for
+this integration. The combined target build and adversarial review remain the
+next checks; desktop behavior and real transfers remain deferred evidence.
+
+The first combined native compile found that ABI 4 removes the old
+`torrent_info` comment, creator, and creation-date accessors. Four roles chose
+the correction in order. The everyday user needs the original torrent-file
+annotations after restart. The libtorrent engineer identifies
+`add_torrent_params` as their supported parser/resume representation; BEP9
+magnet metadata contains only the info dictionary. The maintainer keeps one saved
+representation in resume data, without adding application settings or a parser.
+The product owner initializes the accepted torrent's annotation facts from its
+initial/restored params. The existing resume writer retains those facts in every
+checkpoint, including annotations learned when a guarded magnet preview gained
+a torrent file that its existing handle received only as an info dictionary.
+General reads those facts. Dependency ABI and headers stay unchanged; the
+corrected target still requires the coordinated compile and review.
+
+### File-operation decisions
+
+Four interested roles considered partially overlapping cross-seeds in series.
+The heavy seeder needs all shared torrents moved together, including torrents
+that also have distinct files. The libtorrent engineer uses its asynchronous
+move and verification operations instead of copying payload on the engine loop.
+The Windows engineer checks destination collisions and retains path holds until
+disk completion, including deletion after membership has gone. The maintainer
+keeps one active payload operation and reuses the existing worker implementation
+for selective deletion, so slow payload work does not block metadata commits.
+Common sense selects a union destination preflight and sequential libtorrent
+moves, retaining group files already moved and verifying all members. A group
+with two different source files mapping to one destination is refused.
+
+Four roles then considered unknown magnet paths. The everyday user prefers a
+clear retryable Files busy or Metadata unavailable message to damaged downloads.
+The seeder cannot approve deleting files whose other owners are still unknown.
+The libtorrent engineer cannot learn a magnet's file paths before metadata.
+The product owner avoids a speculative ownership system: one active operation
+temporarily refuses new confirmations and waits for unresolved outside metadata.
+These choices protect real files without altering ordinary shared-file addition.
+
+### Move and delete integration while desktop checks remain deferred
+
+The native engine now implements `file_scope`, `move`, and `delete_files` through
+the existing durable command owner. Remove retains files. The WinUI selection
+menu, row menu, and command search expose the new operations; Shift+Delete opens
+the explicit permanent-delete confirmation with Cancel as default. Move shows
+current and resulting content folders, can include the outside shared group, and
+offers explicit Use files there with its verification warning. Native controls,
+the existing folder picker owner, and the existing MVVM command paths are reused.
+No TableView source changed. Moving hides download progress instead of inventing
+a file-copy percentage; libtorrent does not supply that percentage.
+
+One payload operation reserves its source and destination before an asynchronous
+commit. A separate instance of the existing storage worker performs destination
+preflight and selective deletion so payload work cannot block metadata commits.
+Deletion first removes membership durably, then libtorrent removes private part
+data; only the unshared payload union is deleted. Empty content subfolders are
+removed, while the chosen save root and unrelated files stay. Failure remains a
+notification and diagnostic even with the main window visible and completion
+notifications disabled. A crash does not repeat removed payload work.
+
+Relocation uses pinned libtorrent disk operations, with saved intent preserved.
+All group recovery markers remain until every member has a known disk outcome
+and the final group document commits. A changed or explicitly reused destination
+also keeps a saved verification requirement until a safe destination checkpoint
+commits. Startup invalidates old checkpoint piece claims before adding the
+torrent when that verification is still required, including same-path recovery.
+Unknown dropped-alert outcomes retain their path holds and report recovery;
+Exit can report that uncertainty rather than silently replaying work.
+
+The fresh Astra file-safety review found four concrete defects and a recovery
+follow-up, all corrected in source:
+
+- An Add could start between acceptance and the marker/membership commit. Path
+  reservation now precedes that write and is released if it fails.
+- A failed destination preflight left a held collision destination eligible for
+  deletion. A known no-op preflight clears its new marker through the writer;
+  deletion refuses an unresolved move. Held paths do not establish ownership.
+- Clearing markers per member let a later libtorrent group rollback leave an
+  earlier member resumable in the wrong folder. Only the final group commit
+  clears them. The pinned `dont_replace` rollback supplied the failing scenario.
+- A stale complete checkpoint could trust same-sized wrong destination bytes
+  after a crash. Saved verification invalidates old claims on startup, and only
+  a durably written, currently checked destination checkpoint clears it.
+- An ordinary retry could overwrite or clear an older interrupted marker.
+  Recovery now requires explicit Use files there before a new move choice.
+
+The separate fresh Astra dialog review found four concrete problems, all fixed:
+missing actionable recovery text, a false unresponsive warning while Exit waits
+for the native folder picker, protocol JSON displayed on changed shared scope,
+and source-sharing guidance incorrectly used for destination sharing. English
+and Spanish name the recovery steps; human picker waiting sends the typed close
+acknowledgement; shared scope remains a readable list; destination use names its
+outside torrent and asks for another folder. Both reviewers' scoped rereviews
+returned no remaining concrete source finding.
+
+The final isolated Release engine and WinUI builds passed after those fixes.
+The matching engine executable is copied beside the isolated WinUI output at
+`artifacts/checks/ui-review-build/TinyTorrent.exe`; its SHA-256 matches the native
+build. This pair is ready for later review without replacing a running copy.
+An existing engine must first exit through its normal command, since the same
+logon endpoint intentionally never starts a second engine. The pair was not run.
+The compiled native target uses the owner's current refactor and pinned
+`3rdParty` binaries. The EN/ES catalogues have matching keys and placeholders,
+`git diff --check` is clean, and the expanded PowerShell check parses. No product,
+engine, transfer host, native picker, or desktop interaction was launched. The
+Everything query returned IPC-not-found; an equivalent filesystem walk excluding
+`artifacts`, `3rdParty`, and reparse points found no stray output folders.
+
+The prepared `FilesSafety` check earns its place by watching destructive outcomes
+existing Remove-keeping-files coverage cannot catch: deletion of an outside
+shared file, replacing a collision file, deletion reaching that collision after
+a no-op move, an incomplete cross-seeded group, and replay or destruction from
+an unresolved saved move marker. Its tiny private torrents share one payload
+but have distinct info hashes. It also checks unrelated content stays and saved
+removal survives restart. This is source-prepared evidence only: it was not run.
+Its injected marker is not a measured crash during disk work. Real crash tests,
+partial-overlap failure, cross-volume moves, dropped alerts, destination recovery,
+native dialogs, keyboard/focus, language switching, contrast, and text scaling
+remain runtime gaps. The earlier Background and Details runtime gates also stay
+open; none of these source reviews substitutes for them or marks a milestone
+complete. Distribution remains excluded.
+
+### Recovery feedback distinctions
+
+The completion audit found that the file dialog correction had made the shared
+`recovery_required` text specific to Move files. Dropped-alert priority edits
+and additions also return that code, so their failures wrongly suggested moving
+payload. An active move with an unknown outcome also disables Move files, making
+the same instruction unavailable until the engine exits and reopens.
+
+Five roles considered the correction in series. The everyday user needs the
+message to describe the failed operation, without suggesting unrelated file work.
+The keyboard user cannot follow a disabled command and needs the available Exit
+path first. The libtorrent engineer keeps unknown disk outcomes and their path
+holds intact; clearer feedback must not release or replay the operation. The
+maintainer uses the existing Move interrupted code for a saved interrupted marker
+and one distinct typed problem for an active uncertain move. The product owner
+chooses those distinctions over a recovery wizard or another state owner.
+
+The general code now asks the person to check current torrent state before
+retrying. A saved interrupted move returns `move_interrupted` for an ordinary
+retry or deletion, retaining its existing explicit folder-recovery instructions.
+An active uncertain move carries `move_uncertain`, whose EN/ES text explains Exit,
+reopening, and explicit Exit anyway when the unresolved operation prevents normal
+shutdown. No disk, pause, checkpoint, or recovery transition changed.
+FilesSafety's two refusal assertions name the specific interrupted-move code;
+their destructive outcomes and expected refusal remain unchanged. No text test
+was added. The focused scenarios and actual recovery UI remain unexecuted.
+
+The affected native Release build passed, and the isolated WinUI build was
+refreshed so its embedded messages match the engine codes. The copied engine's
+hash matches the native output. Both projects' EN/ES catalogues parse, have
+unique and matching keys, and retain matching placeholders. Checks.ps1 parses;
+no scenario ran. The prescribed Everything query again reported unavailable
+IPC, while the fallback traversal found no stray output folders. No application
+was launched. This routing correction has a local source review; the milestone's
+final adversarial and runtime gates remain open.
+
+## Advisory follow-up on 2026-10-05
+
+The supplied engine and desktop review reports were compared with current source
+and GitHub issue bodies and closing comments. Issues 49, 59, 64, 67–77, 81 and
+82 are closed: sixteen issues, with source fixes present. Their closing comments
+describe compilation, not executed engine checks. No issue was changed by this
+triage. A default-output link failure is not a successful build; the subsequent
+isolated engine and WinUI builds recorded above did link successfully.
+
+The highest-priority remaining behavior is completion readiness. The pinned
+libtorrent 2.1.2 implementation posts `torrent_finished_alert` before queuing
+the disk release that later posts `cache_flushed_alert`. TinyTorrent's finished
+handler immediately sends the completion notice, while `Torrent::Classify` and
+the row's `complete` field also accept libtorrent's finished state. There is no
+cache-flushed handler. Delaying only the balloon would therefore leave the row
+and callers observing premature completion. The existing SelectedTransfer check
+hashes the wanted payload immediately after reported completion and should keep
+that assertion. The supplied three-of-five failures and 0.5–1.8 second delays
+were not independently reproduced here; source ordering supports investigating
+the failure, not claiming those measurements as this pass's evidence. A flush
+alert can also result from manual flushing or removal, so it cannot unconditionally
+declare a newly completed download.
+
+Five interested parties considered the remaining work in series. The everyday
+user wants Completed and the completion notice to mean the file is ready to use.
+The libtorrent engineer requires the disk acknowledgement to correspond to the
+completed payload, and rejects a sleep or weaker hash assertion. The Windows
+designer preserves the requested LabForms caption styling and live language/theme
+controls while separating transfer commands from application commands. The
+maintainer treats the three residual structural issues as separate work rather
+than expanding a completion fix into another engine rewrite. The product owner
+prioritizes the observable completion defect, then caption composition, then
+focused verification of source fixes already present. That order avoids paying
+again for code already corrected without excusing a real readiness failure.
+
+Issue 41 still has a concrete source concern: the caption's uninterrupted action
+row includes transfer commands, language, theme and Exit. Keep the owner's
+LabForms appearance requirement; do not restore the superseded application menu
+or drop the live preference controls. Correct the grouping in that existing
+surface. Other advisory UI findings have source corrections: shared settings
+allocation (78), preference transport and engine support (84), footer proximity
+and empty feedback (48), invalid-magnet preservation (79), empty Add allocation
+(83), All day (80), and Follow Windows (24). NavigationView supersedes the menu
+reported in 85. Their current rendered and interaction evidence still matters;
+an open issue alone does not establish an unfixed source defect.
+
+Issues 16, 17 and 61 remain open with narrowed structural scope. The desktop
+lifecycle still uses interacting flags; Engine.h still hosts low-level shared
+helpers; three desktop operations still enter the engine through wire JSON.
+No new failing lifecycle scenario was established by this triage. These deserve
+separate, bounded changes when their ownership benefit justifies them, rather
+than blocking the functional work solely because the issues remain open.
+
+The owner then authorized computer use to capture images. Neither a product nor
+an engine was running at the new check. The matching isolated candidate was
+launched with a disposable store under
+`artifacts/evidence/advisory-triage-20261005/store`. Its empty main window was
+captured at 1026 × 673, with a TableView header, centered empty state, native
+NavigationView, related footer rates/limits, and Exit beside language/theme.
+No populated transfer, settings page, contrast, or scaling result follows from
+that capture. Settings navigation failed because the computer-use helper twice
+reported a PickerHost window over its target point, including after activation;
+input attempts stopped. This is an automation limitation, not proof that Settings
+fails. Normal Exit was sent only after verifying the pipe server PID matched the
+review-owned engine. Both candidate processes closed. No personal store was used,
+no source fix or new test was made, and no GitHub issue was closed here.
+
+The prescribed Everything query returned IPC-not-found. The fallback traversal,
+excluding artifacts, compiled dependencies and reparse points, found no stray
+output folders. The current root instructions do not prohibit that fallback;
+its result remains distinct from a successful Everything query. Diff whitespace
+checks passed. The earlier desktop restriction is relaxed for image capture;
+destructive tests and the remaining milestone journeys were not run in this pass.
+
+## Background completion corrections on 2026-10-05
+
+The subsequent source audit reopened issues 49 and 67, so the preceding issue
+closure count records the earlier observation, not their current disposition.
+The other engine pass added disk-flush acknowledgement for downloaded content;
+this pass retained that work and corrected recovery when the finish alert itself
+is dropped. Effective finished state reconstructs the pending completion, and
+an explicit flush obtains a new acknowledgement. Rechecks retain their existing
+no-download-notice behavior. The row and notice share disk readiness.
+
+Five interested parties considered the remaining choices in series. The everyday
+user needs Completed to mean a usable file and Cancel Exit to keep working. The
+libtorrent engineer requires acknowledgement of disk work and retention of
+resume data whose generation already cleared dirty flags. The Windows engineer
+distinguishes a broken pipe from a closed process and keeps the bounded readiness
+wait. The keyboard user needs ordinary Wait/Cancel behavior without destructive
+Escape defaults. The maintainer prefers the existing state, storage and splash
+owners over a scheduler, counters or a second dialog framework. These answers
+select one checkpoint write per torrent with its newest pending result retained,
+the existing splash for Wait/Cancel during file work, and retained process
+coordination after a disconnect during Exit. Headless and Windows session-end
+shutdown keep their noninteractive behavior.
+
+The caption's Exit command moved to a nonselecting NavigationView footer item.
+Its pointer gesture and Ctrl+Q use the existing MVVM command, including task,
+picker and connection guards. Language and theme retain native caption styling,
+with spacing separating those preferences from transfer and window commands.
+No TableView API or source changed.
+
+A fresh Astra reviewer found four concrete issues: lost finished alerts bypassed
+disk readiness; Exit treated a disconnected living UI as closed; file work had
+no Wait/Cancel choice; and the interface still described caption Exit. All four
+were corrected. Its scoped re-review also examined checkpoint coalescing and
+reported no remaining source finding. Runtime evidence remains a separate gate.
+
+The isolated WinUI Release build passed with zero warnings/errors. Its initial
+attempt used a stale TableView reference assembly and failed on CanReorder;
+ProduceReferenceAssembly=false selected the matching existing output assembly
+without rebuilding the library. The settled native Release build passed in
+57.86 seconds with zero warnings/errors. Enums.h and engine headers changed, so
+their native consumers recompiled; only the existing engine target ran and no
+dependency compiled. The earlier checkpoint build had compiled fourteen header
+consumers in 81.60 seconds. Build logs are under artifacts/checks/engine-review
+and artifacts/checks/ui-review-build. The adjacent candidate engine matches the
+new native output, SHA-256
+68AA3BDFE6FE57566D3630ED2F9538ED4CDC1F688F482E15B82B4495BDE23FE3.
+
+CheckpointRetry passed against that binary in
+artifacts/evidence/CheckpointRetry-a11cf6af-78d0-4745-bbd1-aae4e5539e5d:
+the forced failed checkpoint became visible, recovered after the obstruction
+was removed, and preserved identity and running intent after restart. This
+checks retained failed-save recovery; it does not inject two overlapping alerts.
+Serialization of those writes is established by the reviewed owner sequence.
+
+## Functional review and user smoke test — 2026-10-05
+
+The owner requires functionality and common sense to be checked before visual
+polish, with sequential human-user roleplay as an additional smoke test. Native
+WinUI principles prevail over persona preferences. The question is which
+friction deserves correction before polishing the adopted pages.
+
+New user: adding a torrent should start with the file picker; the preview must
+explain destination and files. Invalid magnet text must remain editable beside
+its error. A schedule needs real periods along a time axis, and opening an edit
+must reveal it immediately.
+
+Frequent downloader: apply speed limits together, keep rejected text for
+correction, and show whether a change succeeded. Quietly replacing an invalid
+entry with an old value makes the outcome impossible to trust.
+
+Heavy seeder: separate session pause from individual choices, keep queued and
+active status understandable, and identify session-wide speed history. Saved
+schedule periods must remain visible while the schedule is off.
+
+Keyboard user: focus should follow the task into an opened editor and return
+to its invoker. Native navigation and dialogs should retain their keyboard
+behavior. Dense captions should not turn every command into an equal-looking
+group, and hidden controls must not become extra stops.
+
+User managing shared files: removal and deleting files must remain distinct;
+show scope before destructive work. If the torrent being edited disappears,
+explain why Save is unavailable while preserving the unfinished text and Cancel.
+
+WinUI designer: use native controls, stable content allocation, readable
+hierarchy and semantic theme brushes. Keep the schedule's time geometry rather
+than substituting text summaries. Persona requests for extra controls do not
+override native behavior or justify expanding this small product.
+
+Decision: fix silent invalid-input replacement and unavailable-target feedback
+at their existing MVVM owners, and retain the real timeline. The period editor
+brings its heading into view; day choices wrap before labels overlap. These
+changes remove concrete task failures before margins or colors are adjusted.
+The roleplay is a smoke test of the journeys, not proof that users were studied.
+
+A fresh Sol functionality audit covered Main, Add, all five Preferences sections,
+all six inspector sections, Limits, Remove, Move and Delete. It found the two
+input/target failures above. Both are corrected in SpeedLimits and Inspector;
+runtime confirmation is recorded separately. It found existing commands and
+cancellation coherent, with no automatic destructive retry. No TableView source
+or API changed.
+
+The review capture runs the actual views in an off-desktop, nonactivating window
+against a named disposable store. It saves pixels and control bounds and closes
+itself. It never uses desktop input. Native chrome and desktop acrylic remain
+outside RenderTargetBitmap evidence.
+
+## Handover checkpoint — 2026-10-05
+
+The owner asked to finish the pending task and stop for another project. The
+unattended recovery smoke passed in 12,156 ms, retaining rejected speed-limit and
+magnet text and an unavailable torrent's inspector draft with Save disabled and
+Cancel enabled. Evidence is
+artifacts/evidence/UiSelfCapture-e494957a-cdea-4359-b498-7bdd65569b6a/captures/review.json.
+Its thirteen saved scenes include all Settings sections and the corrected Pieces
+legend. Earlier failed limit-input runs are superseded by this specific passing
+journey, not by a widened assertion or timeout.
+
+The integrated app Release/x64 build passed with zero warnings/errors in 112.55
+seconds. It includes the coordinated PipeClient deadline/admission corrections;
+their connection-fault behavior still needs focused runtime evidence. Only the
+app compiled, using existing TableView/dependency outputs. No full suite or new
+adversarial review was run during this final checkpoint.
+
+The prescribed Everything stray-folder check returned exit 0 and no paths after
+the smoke run; a separate traversal also found no stray output folders. All
+launched processes closed, and the final process check found no app or engine.
+Milestones 3–5 remain incomplete and uncommitted. Resume from
+[handover.md](handover.md), which records the pending closing/source-admission
+question, completion gates and the cheapest next evidence.

@@ -8,12 +8,12 @@
         </DataTemplate>
         <DataTemplate x:Key="PreferencesNormalTemplate">
             <Border MinHeight="32" Padding="4,0" BorderThickness="1" BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}" Background="{ThemeResource ControlFillColorSecondaryBrush}">
-                <TextBlock TextTrimming="CharacterEllipsis" VerticalAlignment="Center" TextAlignment="Center" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                <TextBlock TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" VerticalAlignment="Center" TextAlignment="Center" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
             </Border>
         </DataTemplate>
         <DataTemplate x:Key="PreferencesPeriodTemplate">
             <Button MinWidth="0" MinHeight="32" Padding="4,0" CornerRadius="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
-                <TextBlock TextTrimming="CharacterEllipsis" TextAlignment="Center" Style="{StaticResource CaptionTextBlockStyle}" />
+                <TextBlock TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" TextAlignment="Center" Style="{StaticResource CaptionTextBlockStyle}" />
             </Button>
         </DataTemplate>
         <Style x:Key="PreferencesAlternativeStyle" TargetType="Button">
@@ -241,7 +241,7 @@
                             <TextBlock x:Name="DaysTitle" />
                             <ContentControl IsEnabled="{x:Bind Model.CanSchedule, Mode=OneWay}">
                             <ItemsRepeater ItemsSource="{x:Bind Model.Draft.Days, Mode=OneWay}">
-                                <ItemsRepeater.Layout><UniformGridLayout Orientation="Horizontal" MinItemWidth="100" MinItemHeight="32" MaximumRowsOrColumns="7" /></ItemsRepeater.Layout>
+                                <ItemsRepeater.Layout><UniformGridLayout Orientation="Horizontal" MinItemWidth="136" MinItemHeight="32" MaximumRowsOrColumns="7" /></ItemsRepeater.Layout>
                                 <ItemsRepeater.ItemTemplate>
                                     <DataTemplate x:DataType="local:DayChoice">
                                         <CheckBox Content="{x:Bind Label, Mode=OneWay}" IsChecked="{x:Bind IsChecked, Mode=TwoWay}"

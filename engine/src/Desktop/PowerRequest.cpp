@@ -1,6 +1,6 @@
 #include "Desktop/PowerRequest.h"
 
-namespace tiny::desktop
+namespace tt::desktop
 {
 PowerRequest::PowerRequest(Strings const& strings) : strings_(strings) {}
 

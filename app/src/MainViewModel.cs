@@ -11,7 +11,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
 {
     private readonly PipeClient _client;
     private readonly DispatcherQueue _dispatcher;
-    private readonly Dictionary<string, Torrent> _identities = [];
+    private readonly Dictionary<string, Torrent> _byId = [];
     private readonly object _snapshotGate = new();
     private JsonElement? _latest;
     private bool _applyQueued;
@@ -53,9 +53,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     public bool IsStorageFailed => _storageFailed;
     public bool IsEmptyVisible => !_storageFailed;
     public bool IsBusy => _busy;
-    public bool CanClose => !_busy && !_settingsPending && !_picking && !Inspector.IsPending && !Preferences.IsPending;
+    public bool CanClose => !_busy && !_settingsPending && !_picking && !Inspector.IsPending && !Preferences.IsPending && !Files.IsPending;
+    public bool CanExit => _connected && CanClose;
     public string? DataDirectory => _client.DataDirectory;
-    public bool HasDraft => Draft.HasChanges || Speed.HasChanges || Inspector.HasDraft || Preferences.HasDraft;
+    public bool HasDraft => Draft.HasChanges || Speed.HasChanges || Inspector.HasDraft || Preferences.HasDraft || Files.HasDraft;
     public bool CanEdit => _writable && !_busy && !_picking;
     public bool IsPicking
     {
@@ -136,11 +137,13 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         _client = new PipeClient(strings);
         Draft = new AddDraft(this, _client, strings);
         Speed = new SpeedLimits(this);
+        Files = new FileOperation(this, _client);
         Inspector = new Inspector(this, _client);
         Preferences = new Preferences(this, _client);
         Filters = Enum.GetValues<TorrentFilter>().Select(filter => new FilterChoice(this, filter)).ToArray();
         Inspector.PropertyChanged += OnTaskChanged;
         Preferences.PropertyChanged += OnTaskChanged;
+        Files.PropertyChanged += OnTaskChanged;
         Restart = new Command(() =>
         {
             try { _client.LaunchEngine(); ClearError(); }
@@ -149,9 +152,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         }, () => CanRestart);
         Add = new Command(() => { FilesRequested?.Invoke(this, EventArgs.Empty); return Task.CompletedTask; },
             () => CanEdit && !_addOpen);
-        Pause = new Command(() => Transfer("pause"), () => CanEdit && _selected.Length > 0);
-        Resume = new Command(() => Transfer("resume"), () => CanEdit && _selected.Length > 0);
-        Exit = new Command(ExitEngine, () => _connected && CanClose);
+        Pause = new Command(() => ActOnSelection("pause"), () => CanEdit && _selected.Length > 0);
+        Resume = new Command(() => ActOnSelection("resume"), () => CanEdit && _selected.Length > 0);
+        Exit = new Command(ExitEngine, () => CanExit);
         SwitchLanguage = new Command(() => { SelectLanguage(_requestedLanguage == "es" ? "en" : "es"); return Task.CompletedTask; },
             () => _connected && (!_settingsPending || _changingLanguage));
         SwitchTheme = new Command(ChangeTheme, () => _connected && !_settingsPending);
@@ -162,9 +165,13 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             AddRequested?.Invoke(this, EventArgs.Empty);
             return Task.CompletedTask;
         }, () => CanEdit);
-        Force = new Command(() => Transfer("force"), () => CanEdit && _selected.Length > 0);
-        Verify = new Command(() => Transfer("verify"), () => CanEdit && _selected.Length > 0);
+        Force = new Command(() => ActOnSelection("force"), () => CanEdit && _selected.Length > 0);
+        Verify = new Command(() => ActOnSelection("verify"), () => CanEdit && _selected.Length > 0);
         Remove = new Command(() => { RemoveRequested?.Invoke(this, _selected.ToArray()); return Task.CompletedTask; }, () => CanEdit && _selected.Length > 0);
+        MoveFiles = new Command(() => { MoveRequested?.Invoke(this, _selected.ToArray()); return Task.CompletedTask; },
+            () => CanEdit && _selected.Length > 0 && _selected.All(torrent => !torrent.IsMoving));
+        DeleteFiles = new Command(() => { DeleteRequested?.Invoke(this, _selected.ToArray()); return Task.CompletedTask; },
+            () => CanEdit && _selected.Length > 0 && _selected.All(torrent => !torrent.IsMoving));
         Up = new Command(() => Queue("up"), () => CanMove);
         Down = new Command(() => Queue("down"), () => CanMove);
         Top = new Command(() => Queue("top"), () => CanMove);
@@ -249,6 +256,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         Preferences.Apply(settings);
         AllPaused = snapshot.GetProperty("all_paused").GetBoolean();
         HasIncoming = snapshot.GetProperty("has_incoming").GetBoolean();
+        MissingInterface = snapshot.TryGetProperty("missing_interface", out var missing) ? missing.GetString() ?? string.Empty : string.Empty;
+        _alternativeLimits = snapshot.TryGetProperty("alternative_limits", out var alternative) ? alternative.GetBoolean() : Setting("alternative_limits", false);
         if (settings.TryGetProperty("theme", out var theme)) Theme = theme.GetString()!;
         if (!_settingsPending && settings.TryGetProperty("language", out var language) &&
             language.GetString() is { } tag && tag != _requestedLanguage)
@@ -259,10 +268,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         {
             var torrentId = item.GetProperty("torrent_id").GetString()!;
             present.Add(torrentId);
-            if (!_identities.TryGetValue(torrentId, out var torrent))
+            if (!_byId.TryGetValue(torrentId, out var torrent))
             {
                 torrent = new Torrent(torrentId, Text);
-                _identities.Add(torrentId, torrent);
+                _byId.Add(torrentId, torrent);
                 Torrents.Add(torrent);
             }
             queueChanged |= torrent.Queue != item.GetProperty("queue").GetInt32();
@@ -271,7 +280,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         foreach (var torrent in Torrents.Where(row => !present.Contains(row.TorrentId)).ToArray())
         {
             Torrents.Remove(torrent);
-            _identities.Remove(torrent.TorrentId);
+            _byId.Remove(torrent.TorrentId);
         }
         _selected = _selected.Where(row => present.Contains(row.TorrentId)).ToArray();
         if (_current is not null && !present.Contains(_current.TorrentId)) _current = null;
@@ -285,7 +294,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         Refresh();
         Inspector.Observe(sessionId);
         SnapshotApplied?.Invoke(this, queueChanged);
-        if (_revealId is not null && _identities.TryGetValue(_revealId, out var revealed))
+        if (_revealId is not null && _byId.TryGetValue(_revealId, out var revealed))
         {
             _revealId = null;
             RevealRequested?.Invoke(this, revealed);
@@ -319,7 +328,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         });
     }
 
-    private async Task Transfer(string command)
+    private async Task ActOnSelection(string command)
     {
         if (!CanEdit || _selected.Length == 0) return;
         var identities = _selected.Select(row => row.TorrentId).ToArray();
@@ -337,7 +346,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
 
     private async Task ExitEngine()
     {
-        if (!_connected || !CanClose) return;
+        if (!CanExit) return;
         try { await _client.Send("exit"); }
         catch (Exception error) { Report(error); }
     }
@@ -413,6 +422,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         Speed.Refresh();
         Inspector.RefreshText();
         Preferences.RefreshText();
+        Files.Refresh();
         Refresh();
         TextChanged?.Invoke(this, EventArgs.Empty);
     }
@@ -438,12 +448,21 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     public async Task Close(bool engineExit)
     {
         if (_connected)
-            await _client.Send(engineExit ? "close_reply" : "ui_closed", new { cancelled = false });
+            await _client.Send(engineExit ? "close_reply" : "ui_closed", new { state = "closing" });
     }
 
     public async Task CancelClose()
     {
-        if (_connected) await _client.Send("close_reply", new { cancelled = true });
+        if (_connected) await _client.Send("close_reply", new { state = "cancelled" });
+    }
+
+    public async Task DeferClose()
+    {
+        try
+        {
+            if (_connected) await _client.Send("close_reply", new { state = "waiting" });
+        }
+        catch (Exception error) { Report(error); }
     }
 
     internal async Task Activated(bool available)
@@ -458,6 +477,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         Speed.Begin();
         Inspector.CancelDraft();
         Preferences.CancelDraft();
+        Files.Cancel();
     }
 
     public void Report(Exception error)
@@ -500,7 +520,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         Draft.Refresh();
         Inspector.Refresh();
         Preferences.Refresh();
-        foreach (Command command in new[] { Add, AddMagnet, Pause, Resume, Force, Verify, Remove,
+        Files.Refresh();
+        foreach (Command command in new[] { Add, AddMagnet, Pause, Resume, Force, Verify, Remove, MoveFiles, DeleteFiles,
             Up, Down, Top, Bottom, PauseAll, ResumeAll, Open, OpenFolder, CopyMagnet, CopyHash,
             Properties, Limits, ClearFilters, ShowPreferences, ShowTorrents, ShowAbout, OpenUpdate, Exit, SwitchLanguage, SwitchTheme, Restart }) command.Refresh();
     }
@@ -514,6 +535,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             ((Command)OpenUpdate).Refresh();
         }
         Changed(nameof(CanClose));
+        Changed(nameof(CanExit));
         Changed(nameof(HasDraft));
         Changed(nameof(HasInspector));
         ((Command)Exit).Refresh();

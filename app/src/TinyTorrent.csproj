@@ -23,5 +23,9 @@
     <EmbeddedResource Include="Resources\*.json" LogicalName="%(Filename)%(Extension)" />
     <Content Include="..\..\resources\TinyTorrent.ico" Link="Assets\TinyTorrent.ico" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\..\resources\tinyTorrent.svg" Link="Assets\tinyTorrent.svg" CopyToOutputDirectory="PreserveNewest" />
+    <!-- The window and the engine each start only the other executable beside
+         them, so the window's output holds the engine from the same configuration.
+         TinyTorrent.slnx builds the engine first. -->
+    <None Include="$(ArtifactsPath)\bin\Engine\$(Configuration)\Engine.exe" Link="Engine.exe" CopyToOutputDirectory="PreserveNewest" Visible="false" />
   </ItemGroup>
 </Project>

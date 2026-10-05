@@ -1,7 +1,7 @@
 #include "Engine/State.h"
 #include <algorithm>
 
-namespace tiny
+namespace tt
 {
 // libtorrent queues only torrents that still download; the others have
 // position -1.
@@ -57,14 +57,14 @@ void Engine::State::Queue(std::vector<std::string> const& ids, QueueMove move, s
     {
         if (!IsQueued(torrents.at(id).handle.queue_position()))
         {
-            reply(Failure("invalid_targets"));
+            reply(Failure(ErrorCode::InvalidTargets));
             return;
         }
     }
     bool unknownTarget = !before.empty() && !torrents.contains(before);
     if (move == QueueMove::Before && (unknownTarget || Contains(ids, before)))
     {
-        reply(Failure("invalid_targets"));
+        reply(Failure(ErrorCode::InvalidTargets));
         return;
     }
     auto order = Reorder(CurrentQueue(), ids, move, before);

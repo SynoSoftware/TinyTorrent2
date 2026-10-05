@@ -18,7 +18,7 @@
 #include <string>
 #include <vector>
 
-namespace tiny
+namespace tt
 {
 // The engine's state and behavior. Engine.cpp holds the public API, and each
 // source file in src/Engine holds one responsibility.
@@ -47,7 +47,7 @@ public:
         std::string identity;
         lt::add_torrent_params params;
         Facts facts;
-        Reply reply;
+        std::function<void(Outcome, Added)> done;
         lt::torrent_handle handle;
         AdditionPhase phase = AdditionPhase::Adding;
     };
@@ -144,7 +144,8 @@ public:
     bool stopping = false;
     ExitStep exitStep = ExitStep::Draining;
     std::vector<lt::torrent_handle> pausing;
-    std::chrono::steady_clock::time_point pauseAt{};
+    // When the current exit step started to wait.
+    std::optional<std::chrono::steady_clock::time_point> stepStarted;
     // Set during Exit when the final save cannot complete: its cause, or
     // empty when the cause is unknown.
     std::optional<std::string> saveFailure;
@@ -156,7 +157,7 @@ public:
     bool bypassesScheduledPause = false;
     std::optional<bool> alternativeOverride;
     bool interfaceMissing = false;
-    std::string appliedInterface;
+    std::string appliedListen;
     std::optional<bool> appliedPause;
     std::optional<bool> appliedAlternative;
     std::vector<std::string> limitingSeeds;
@@ -171,6 +172,17 @@ public:
     SpeedSample minute;
     int minuteCount = 0;
 
+    // What a file operation on the selected torrents reaches. Both path lists
+    // are sorted by PathBefore.
+    struct Scope
+    {
+        // Outside torrents that share files with the selection, directly or
+        // through another of them.
+        std::vector<std::string> shared;
+        std::vector<std::filesystem::path> files;
+        // The selection's files that an outside torrent also uses.
+        std::vector<std::filesystem::path> kept;
+    };
     struct Relocation
     {
         std::vector<std::string> ids;
@@ -209,11 +221,12 @@ public:
         lt::add_torrent_params const& params);
     void Notify(NoticeKind kind, Torrent const& torrent, std::string detail = {});
     void Notify(NoticeKind kind, std::string name, std::string detail, std::string id = {});
-    tiny::Activity Activity() const;
+    tt::Activity Activity() const;
     Json Snapshot() const;
     std::string Duplicate(lt::info_hash_t const& hashes, std::string const& excluded = {}) const;
     static bool Overlaps(std::vector<std::string> const& hashes, std::vector<std::string> const& others);
     void RecordHashes(Torrent& torrent);
+    void RecordHashes(Torrent& torrent, lt::info_hash_t const& hashes);
 
     static Settings Defaults();
     void RefreshPolicy(bool configure = false);
@@ -224,12 +237,14 @@ public:
     bool ReachedSeedLimit(Torrent const& torrent) const;
     void Configure(Json const& choices, Reply reply);
     static bool IsAbsolute(std::string const& path);
-    void PauseSession(bool paused, Reply reply);
+    void PauseSession(bool paused, std::function<void(Outcome)> done);
+    void RecordBackgroundNotice(std::function<void(Outcome)> done);
 
     void UpdatePreview(Preview& preview);
     void Merge(Preview& existing, Preview const& source);
+    bool CanMerge(Preview const& preview) const;
     Json Describe(Preview const& preview, std::string const& destination) const;
-    void Inspect(std::string source, std::string connection, std::string destination, Reply reply);
+    void Inspect(std::string source, std::string connection, std::function<void(Outcome, Preview*)> done);
     Preview* FindPreview(std::string const& id, std::string const& connection);
     void Discard(std::function<bool(Preview const&)> const& matches);
     void Disconnect(std::string const& connection);
@@ -237,34 +252,41 @@ public:
         std::string const& destination) const;
     static std::vector<std::string> Missing(std::vector<std::string> const& urls,
         std::vector<std::string> known);
-    static std::filesystem::path FullPath(std::filesystem::path const& path);
-    static bool PathBefore(std::filesystem::path const& left, std::filesystem::path const& right);
-    static bool SamePath(std::filesystem::path const& left, std::filesystem::path const& right);
     void On(lt::metadata_failed_alert const& alert);
 
     void Add(Preview& preview, std::string const& destination,
-        std::vector<lt::download_priority_t> priorities, bool paused, Reply reply);
+        std::vector<lt::download_priority_t> priorities, bool paused, std::function<void(Outcome, Added)> done);
+    void AddSource(std::string source, std::function<void(Outcome, Added)> done);
     static void Guard(lt::add_torrent_params& params);
     static std::optional<std::vector<lt::download_priority_t>> Priorities(
         std::vector<lt::download_priority_t> chosen, std::shared_ptr<lt::torrent_info const> const& metadata);
     static bool IsChoice(lt::download_priority_t priority);
     void SaveAddition(std::string id, lt::torrent_handle handle);
     void CommitAddition(std::string const& id);
-    void Abandon(std::string id, Json response);
+    void Abandon(std::string id, Outcome outcome, Added added = {});
     std::string MovingAddition(lt::torrent_handle const& handle) const;
+    void RecoverAdditions();
     void On(lt::add_torrent_alert const& alert);
     void On(lt::storage_moved_alert const& alert);
     void On(lt::storage_moved_failed_alert const& alert);
 
-    void Execute(Json const& request, Reply reply);
+    std::optional<ErrorCode> Refusal() const;
+    void Execute(Json const& request, std::string const& connection, Reply reply);
     void MergeTrackers(Preview& preview, std::string const& id, Reply reply);
     void Act(std::vector<std::string> ids, Reply reply, Action action);
     void Verify(std::vector<std::string> const& ids, Reply reply);
     void Remove(std::vector<std::string> const& ids, Reply reply, bool deleteData = false);
+    static std::filesystem::path FullPath(std::filesystem::path const& path);
+    static bool PathBefore(std::filesystem::path const& left, std::filesystem::path const& right);
+    static bool SamePath(std::filesystem::path const& left, std::filesystem::path const& right);
+    static bool SameFolder(std::string const& left, std::string const& right);
     bool FilesBusy() const;
+    static std::vector<std::filesystem::path> FilePaths(lt::torrent_info const& metadata,
+        std::string const& folder);
     std::vector<std::filesystem::path> FilePaths(Torrent const& torrent,
         std::string const& destination = {}) const;
-    Json FileScope(std::vector<std::string> const& ids) const;
+    Scope FileScope(std::vector<std::string> const& ids) const;
+    Json Describe(std::vector<std::string> const& ids, Scope const& scope) const;
     bool FilesReady(std::vector<std::string> const& ids, Reply const& reply) const;
     void Move(std::vector<std::string> const& ids, std::string const& destination,
         bool useExisting, Reply reply);
@@ -273,6 +295,7 @@ public:
     void ContinueDeletion();
     void On(lt::torrent_deleted_alert const& alert);
     void On(lt::torrent_delete_failed_alert const& alert);
+    void RecoverFiles();
     bool HoldsFiles(std::shared_ptr<lt::torrent_info const> const& metadata,
         std::string const& destination) const;
     void SetIntent(std::vector<std::string> const& ids, Intent intent, Reply reply);

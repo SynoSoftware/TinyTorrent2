@@ -64,7 +64,11 @@ public sealed partial class PreferencesForm : UserControl
             _editor = Model.Draft;
             DispatcherQueue.TryEnqueue(() =>
             {
-                if (Model.IsEditing) StartTime.Focus(FocusState.Programmatic);
+                if (Model.IsEditing)
+                {
+                    PeriodTitle.StartBringIntoView(new BringIntoViewOptions { VerticalAlignmentRatio = 0, AnimationDesired = false });
+                    StartTime.Focus(FocusState.Programmatic);
+                }
                 else AddPeriod.Focus(FocusState.Programmatic);
             });
         }
@@ -299,7 +303,7 @@ public sealed partial class PreferencesForm : UserControl
 
     private void OnNumberLoaded(object sender, RoutedEventArgs args)
     {
-        if (sender is NumberBox { Tag: Preference field } number && Editor(number) is { } editor && _editors.Add(editor))
+        if (sender is NumberBox { Tag: Preference field } number && TextEditor.Find(number) is { } editor && _editors.Add(editor))
         {
             Watch(editor);
             editor.TextChanged += (_, _) => { if (number.IsEnabled) field.Input = editor.Text; };
@@ -312,17 +316,9 @@ public sealed partial class PreferencesForm : UserControl
         editor.TextCompositionEnded += (_, _) => _composing.Remove(editor);
     }
 
-    private static TextBox? Editor(DependencyObject element)
-    {
-        if (element is TextBox editor) return editor;
-        for (var index = 0; index < VisualTreeHelper.GetChildrenCount(element); index++)
-            if (Editor(VisualTreeHelper.GetChild(element, index)) is { } child) return child;
-        return null;
-    }
-
     private async void OnFieldKey(object sender, KeyRoutedEventArgs args)
     {
-        if (sender is not Control { Tag: Preference field } control || Editor(control) is not { } editor || _composing.Contains(editor)) return;
+        if (sender is not Control { Tag: Preference field } control || TextEditor.Find(control) is not { } editor || _composing.Contains(editor)) return;
         if (args.Key == VirtualKey.Escape)
         {
             args.Handled = true;
@@ -339,7 +335,7 @@ public sealed partial class PreferencesForm : UserControl
 
     private async void OnFieldDeparture(object sender, RoutedEventArgs args)
     {
-        if (sender is not Control { Tag: Preference field } control || Editor(control) is not { } editor || _composing.Contains(editor)) return;
+        if (sender is not Control { Tag: Preference field } control || TextEditor.Find(control) is not { } editor || _composing.Contains(editor)) return;
         var focused = FocusManager.GetFocusedElement(XamlRoot) as DependencyObject;
         if (focused == Browse || focused == CancelPeriod) return;
         for (var current = focused; current is not null; current = VisualTreeHelper.GetParent(current))

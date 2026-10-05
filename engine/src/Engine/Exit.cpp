@@ -1,11 +1,12 @@
 #include "Engine/State.h"
 
-namespace tiny
+namespace tt
 {
 namespace
 {
-// Exit waits this long for every torrent to pause.
-constexpr auto pauseTimeout = std::chrono::seconds(30);
+// Exit gives each step this long: file priority edits to complete, then
+// every torrent to pause.
+constexpr auto stepTimeout = std::chrono::seconds(30);
 }
 
 void Engine::State::Shutdown(std::function<void(std::optional<std::string> failure)> completion)
@@ -29,7 +30,7 @@ void Engine::State::Shutdown(std::function<void(std::optional<std::string> failu
         }
     }
     stopping = true;
-    pauseAt = {};
+    stepStarted.reset();
     Discard([](Preview const&) { return true; });
     diagnostics.Write("shutdown", "", "requested");
     shutdown = std::move(completion);
@@ -60,34 +61,43 @@ void Engine::State::Stop()
     {
         bool unknown = (relocation && relocation->phase == RelocationPhase::Unknown) ||
             (deletion && deletion->phase == DeletionPhase::Unknown);
-        if (!unknown) return;
+        if (!unknown)
+        {
+            return;
+        }
         saveFailure.emplace();
         Finish();
         return;
     }
     if (exitStep == ExitStep::Draining)
     {
-        if (pauseAt == std::chrono::steady_clock::time_point{})
+        if (!stepStarted)
         {
-            pauseAt = std::chrono::steady_clock::now();
+            stepStarted = std::chrono::steady_clock::now();
         }
         bool pending = false;
         for (auto& [id, torrent] : torrents)
         {
             CompletePriorities(torrent);
-            if (!torrent.priorityReply) continue;
-            if (std::chrono::steady_clock::now() - pauseAt < pauseTimeout)
+            if (!torrent.priorityReply)
+            {
+                continue;
+            }
+            if (std::chrono::steady_clock::now() - *stepStarted < stepTimeout)
             {
                 pending = true;
                 continue;
             }
-            std::exchange(torrent.priorityReply, nullptr)(Failure("recovery_required"));
+            std::exchange(torrent.priorityReply, nullptr)(Failure(ErrorCode::RecoveryRequired));
             saveFailure.emplace();
             diagnostics.Write("edit", id, "recovery_required");
         }
-        if (pending) return;
+        if (pending)
+        {
+            return;
+        }
         exitStep = ExitStep::Pausing;
-        pauseAt = std::chrono::steady_clock::now();
+        stepStarted = std::chrono::steady_clock::now();
         if (!session->is_paused())
         {
             for (auto const& [id, torrent] : torrents)
@@ -104,7 +114,7 @@ void Engine::State::Stop()
     {
         if (!pausing.empty())
         {
-            if (std::chrono::steady_clock::now() - pauseAt < pauseTimeout)
+            if (std::chrono::steady_clock::now() - *stepStarted < stepTimeout)
             {
                 return;
             }

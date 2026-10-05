@@ -1,8 +1,7 @@
 #include "Engine/State.h"
 #include <libtorrent/torrent_info.hpp>
-#include <algorithm>
 
-namespace tiny
+namespace tt
 {
 namespace
 {
@@ -102,9 +101,7 @@ void Engine::State::On(lt::state_update_alert const& alert)
     {
         if (auto torrent = Find(status.handle))
         {
-            torrent->receivedPayload |=
-                status.total_payload_download > torrent->status.total_payload_download;
-            torrent->status = status;
+            torrent->Update(status);
             auto problem = torrent->Error();
             auto error = problem ? problem->detail : std::string();
             if (!error.empty() && error != torrent->notifiedError)
@@ -130,9 +127,7 @@ void Engine::State::On(lt::torrent_finished_alert const& alert)
 
 void Engine::State::AwaitCompletion(Torrent& torrent)
 {
-    auto status = torrent.handle.status(lt::torrent_handle::query_name);
-    torrent.receivedPayload |= status.total_payload_download > torrent.status.total_payload_download;
-    torrent.status = std::move(status);
+    torrent.Update(torrent.handle.status(lt::torrent_handle::query_name));
     if (torrent.status.is_finished && torrent.receivedPayload)
     {
         torrent.receivedPayload = false;
@@ -175,8 +170,7 @@ void Engine::State::On(lt::torrent_conflict_alert const& alert)
     {
         if (auto torrent = Find(handle))
         {
-            torrent->status.info_hashes = alert.metadata->info_hashes();
-            RecordHashes(*torrent);
+            RecordHashes(*torrent, alert.metadata->info_hashes());
             if (released)
             {
                 handle.clear_error();
@@ -203,8 +197,7 @@ void Engine::State::On(lt::metadata_received_alert const& alert)
     if (auto torrent = Find(alert.handle))
     {
         torrent->ApplyIntent();
-        torrent->status.info_hashes = alert.handle.info_hashes();
-        RecordHashes(*torrent);
+        RecordHashes(*torrent, alert.handle.info_hashes());
     }
 }
 
@@ -223,7 +216,7 @@ void Engine::State::On(lt::file_error_alert const& alert)
         torrent->diskError = alert.error.message();
         if (torrent->priorityReply)
         {
-            std::exchange(torrent->priorityReply, nullptr)(Failure("torrent_error", torrent->diskError));
+            std::exchange(torrent->priorityReply, nullptr)(Failure(ProblemKind::TorrentError, torrent->diskError));
         }
         diagnostics.Write("file", torrent->identity, Code(alert.error));
     }
@@ -235,35 +228,7 @@ void Engine::State::On(lt::file_error_alert const& alert)
 // write already belongs to Store, which still completes it.
 void Engine::State::On(lt::alerts_dropped_alert const&)
 {
-    if (relocation && relocation->phase == RelocationPhase::Moving)
-    {
-        auto& torrent = torrents.at(relocation->ids.at(relocation->current));
-        if (!SamePath(FullPath(Wide(torrent.facts.savePath)), FullPath(Wide(relocation->destination))) &&
-            SamePath(FullPath(Wide(torrent.handle.status().save_path)), FullPath(Wide(relocation->destination))))
-            FinishMove(torrent.handle, std::nullopt);
-        else
-        {
-            relocation->phase = RelocationPhase::Unknown;
-            torrent.moveError = Problem{ProblemKind::MoveUncertain, {}};
-            Notify(NoticeKind::Error, torrent);
-        }
-    }
-    if (relocation && !relocation->waiting.empty() &&
-        (relocation->phase == RelocationPhase::Preparing || relocation->phase == RelocationPhase::Waiting))
-    {
-        relocation->phase = RelocationPhase::Unknown;
-        for (auto const& id : relocation->ids)
-        {
-            auto& torrent = torrents.at(id);
-            torrent.moveError = Problem{ProblemKind::MoveUncertain, {}};
-            Notify(NoticeKind::Error, torrent);
-        }
-    }
-    if (deletion && !deletion->waiting.empty())
-    {
-        deletion->phase = DeletionPhase::Unknown;
-        Notify(NoticeKind::DeleteFailed, deletion->names, {});
-    }
+    RecoverFiles();
     if (stopping && !pausing.empty())
     {
         saveFailure.emplace();
@@ -275,7 +240,7 @@ void Engine::State::On(lt::alerts_dropped_alert const&)
         CompletePriorities(torrent);
         if (torrent.priorityReply)
         {
-            std::exchange(torrent.priorityReply, nullptr)(Failure("recovery_required"));
+            std::exchange(torrent.priorityReply, nullptr)(Failure(ErrorCode::RecoveryRequired));
         }
         if (torrent.checkpointPhase == CheckpointPhase::Requested)
         {
@@ -292,50 +257,9 @@ void Engine::State::On(lt::alerts_dropped_alert const&)
         {
             torrent.ApplyIntent();
         }
-        torrent.status.info_hashes = torrent.handle.info_hashes();
-        RecordHashes(torrent);
+        RecordHashes(torrent, torrent.handle.info_hashes());
     }
-    auto live = session->get_torrents();
-    std::vector<std::string> lost;
-    for (auto& [id, addition] : additions)
-    {
-        if (addition.phase == AdditionPhase::Saving)
-        {
-            continue;
-        }
-        if (addition.phase == AdditionPhase::Moving)
-        {
-            // The move finished when the torrent already saves to its destination.
-            if (addition.handle.is_valid() &&
-                FullPath(Wide(addition.handle.status().save_path)) ==
-                    FullPath(Wide(addition.params.save_path)))
-            {
-                SaveAddition(id, addition.handle);
-            }
-            else
-            {
-                lost.push_back(id);
-            }
-            continue;
-        }
-        // An accepted torrent keeps the address of the addition that created
-        // it, and a later addition can reuse that address.
-        auto found = std::find_if(live.begin(), live.end(),
-            [this, &addition](lt::torrent_handle const& handle)
-            { return handle.userdata().get<Addition>() == &addition && !Find(handle); });
-        if (found != live.end())
-        {
-            SaveAddition(id, *found);
-        }
-        else
-        {
-            lost.push_back(id);
-        }
-    }
-    for (auto const& id : lost)
-    {
-        Abandon(id, Failure("recovery_required"));
-    }
+    RecoverAdditions();
     diagnostics.Write("alerts", "", "dropped");
 }
 }

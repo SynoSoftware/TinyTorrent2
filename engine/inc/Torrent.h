@@ -12,7 +12,7 @@
 #include <string>
 #include <vector>
 
-namespace tiny
+namespace tt
 {
 struct Problem
 {
@@ -83,6 +83,8 @@ struct Torrent
     std::optional<Problem> Diagnose() const;
     Status Classify(bool allPaused) const;
     bool IsChanged() const;
+    // Takes the newest status, and remembers when it shows new payload.
+    void Update(lt::torrent_status latest);
     Json Describe() const;
     Json Describe(TorrentView view, bool includeFiles) const;
     Json Row(bool allPaused) const;
@@ -95,6 +97,7 @@ struct Torrent
 std::vector<std::string> Hashes(lt::info_hash_t const& hashes);
 std::string Name(std::string name, std::vector<std::string> const& hashes);
 lt::download_priority_t DefaultPriority(lt::file_storage const& files, lt::file_index_t index);
+std::vector<lt::download_priority_t> DefaultPriorities(lt::file_storage const& files);
 Json Files(std::shared_ptr<lt::torrent_info const> const& metadata);
 std::vector<std::filesystem::path> Paths(lt::torrent_info const& metadata);
 std::vector<std::string> Urls(std::vector<lt::announce_entry> const& trackers);

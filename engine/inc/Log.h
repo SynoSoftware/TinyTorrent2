@@ -5,7 +5,7 @@
 #include <filesystem>
 #include <string>
 
-namespace tiny
+namespace tt
 {
 // engine.log in the data folder. Lines wait in memory until Flush hands them
 // to the store thread, which appends them.

@@ -2,10 +2,16 @@
 #include "Resources.h"
 #include <windows.h>
 
-namespace tiny
+namespace tt
 {
 namespace
 {
+// The shipped catalogues by language tag. English holds every message, and
+// another catalogue replaces the messages it translates.
+constexpr std::pair<std::string_view, WORD> catalogues[] = {
+    {"en", IDR_ENGLISH_TEXT},
+    {"es", IDR_SPANISH_TEXT}};
+
 Json Catalogue(WORD resource)
 {
     auto module = GetModuleHandleW(nullptr);
@@ -14,14 +20,22 @@ Json Catalogue(WORD resource)
     auto bytes = static_cast<char const*>(LockResource(loaded));
     return Json::parse(std::string_view(bytes, SizeofResource(module, found)), nullptr, false);
 }
+
+// A language tag such as `es-MX` asks for the catalogue that its primary
+// subtag, `es`, names.
+std::string_view Primary(std::string_view tag)
+{
+    return tag.substr(0, tag.find('-'));
+}
 }
 
 Strings::Strings(std::string language)
     : language_(std::move(language)), catalogue_(Catalogue(IDR_ENGLISH_TEXT))
 {
-    if (language_ == "es" || language_.starts_with("es-"))
+    auto resource = Parse(catalogues, Primary(language_));
+    if (resource && *resource != IDR_ENGLISH_TEXT)
     {
-        auto translated = Catalogue(IDR_SPANISH_TEXT);
+        auto translated = Catalogue(*resource);
         if (translated.is_object())
         {
             catalogue_.merge_patch(translated);
@@ -33,7 +47,16 @@ Strings::Strings(std::string language)
 // catalogues and falls back to English.
 std::string Strings::DefaultLanguage()
 {
-    return PRIMARYLANGID(GetUserDefaultUILanguage()) == LANG_SPANISH ? "es" : "en";
+    wchar_t name[LOCALE_NAME_MAX_LENGTH] = {};
+    LCIDToLocaleName(GetUserDefaultUILanguage(), name, LOCALE_NAME_MAX_LENGTH, LOCALE_ALLOW_NEUTRAL_NAMES);
+    auto tag = Utf8(name);
+    auto primary = std::string(Primary(tag));
+    return Supports(primary) ? primary : "en";
+}
+
+bool Strings::Supports(std::string_view language)
+{
+    return Parse(catalogues, language).has_value();
 }
 
 std::wstring Strings::Text(std::string const& group, std::string const& key) const

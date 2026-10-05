@@ -5,7 +5,7 @@
     <Grid RowSpacing="8">
         <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
         <TextBlock x:Name="Summary" TextWrapping="Wrap" />
-        <ItemsControl Grid.Row="1" IsTabStop="False">
+        <ItemsControl x:Name="Legend" Grid.Row="1" IsTabStop="False">
             <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapGrid Orientation="Horizontal" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
             <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,16,4"><Border x:Name="VerifiedSwatch" Width="16" Height="16" Background="{ThemeResource SystemFillColorSuccessBrush}" /><TextBlock x:Name="VerifiedLabel" /></StackPanel>
             <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,16,4"><Border x:Name="DownloadingSwatch" Width="16" Height="16" BorderThickness="1" BorderBrush="{ThemeResource TextFillColorPrimaryBrush}" Background="{ThemeResource AccentFillColorDefaultBrush}"><Border Width="7" HorizontalAlignment="Right" Background="{ThemeResource ControlAltFillColorSecondaryBrush}" /></Border><TextBlock x:Name="DownloadingLabel" /></StackPanel>

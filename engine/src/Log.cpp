@@ -3,7 +3,7 @@
 #include <cstdio>
 #include <fstream>
 
-namespace tiny
+namespace tt
 {
 namespace
 {

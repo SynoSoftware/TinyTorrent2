@@ -98,6 +98,7 @@
     <ClCompile Include="Engine\Settings.cpp" />
     <ClCompile Include="Engine\Policy.cpp" />
     <ClCompile Include="Engine\Details.cpp" />
+    <ClCompile Include="Engine\History.cpp" />
     <ClCompile Include="Engine\Files.cpp" />
     <ClCompile Include="Engine\Previews.cpp" />
     <ClCompile Include="Engine\Additions.cpp" />
