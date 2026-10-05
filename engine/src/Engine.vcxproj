@@ -44,31 +44,35 @@
     <IntDir>$(ArtifactsPath)\obj\$(MSBuildProjectName)\$(Configuration)\</IntDir>
   </PropertyGroup>
 
-  <PropertyGroup Label="Vcpkg">
-    <VcpkgEnableManifest>true</VcpkgEnableManifest>
-    <!-- Static libraries and, with RuntimeLibrary below, the static C runtime: the engine is one
-         executable with no dependency DLLs beside it. -->
-    <VcpkgUseStatic>true</VcpkgUseStatic>
-    <!-- Keep vcpkg's output in artifacts, with one copy of each download. By default Visual
-         Studio's read-only vcpkg leaves every build tree behind, saves a zip of every built
-         library in a per-user cache (one more set for each dependency change), and downloads its
-         tools into the per-user profile. A packaged app sees its own private copy of that
-         profile folder, so the same files were downloaded twice. -->
-    <VcpkgInstalledDir>$(ArtifactsPath)\vcpkg_installed\</VcpkgInstalledDir>
-    <VcpkgAdditionalInstallOptions>--clean-after-build --binarysource=clear "--downloads-root=$(ArtifactsPath)\vcpkg_downloads"</VcpkgAdditionalInstallOptions>
+  <!-- The dependencies that Dependencies.ps1 builds into 3rdParty: static libraries and, with
+       RuntimeLibrary below, the static C runtime, so the engine is one executable with no
+       dependency DLLs beside it. -->
+  <PropertyGroup>
+    <ThirdPartyPath>$(MSBuildThisFileDirectory)..\..\3rdParty\</ThirdPartyPath>
   </PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <AdditionalIncludeDirectories>$(ThirdPartyPath)$(Configuration)\include;$(ThirdPartyPath)boost;$(ThirdPartyPath)json\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <AdditionalLibraryDirectories>$(ThirdPartyPath)$(Configuration)\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>torrent-rasterbar.lib;libssl.lib;libcrypto.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <!-- libtorrent's Debug build prints assertion backtraces through dbghelp. -->
+      <AdditionalDependencies Condition="'$(Configuration)'=='Debug'">dbghelp.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
 
   <ItemDefinitionGroup>
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <!-- libtorrent's public compile definitions, as vcpkg built the library. vcpkg's MSBuild
-           integration passes include paths and libraries only, so they are repeated here. They
-           must equal INTERFACE_COMPILE_DEFINITIONS in the installed
-           share\LibtorrentRasterbar\LibtorrentRasterbarTargets.cmake; a difference changes
-           libtorrent's types under the engine. Recheck them when vcpkg.json changes. -->
-      <PreprocessorDefinitions>NOMINMAX;WIN32_LEAN_AND_MEAN;BOOST_ALL_NO_LIB;BOOST_SYSTEM_USE_UTF8;_SCL_SECURE_NO_DEPRECATE;_CRT_SECURE_NO_DEPRECATE;_SILENCE_CXX17_ALLOCATOR_VOID_DEPRECATION_WARNING;TORRENT_ABI_VERSION=100;TORRENT_USE_RTC=0;TORRENT_USE_OPENSSL;TORRENT_USE_LIBCRYPTO;TORRENT_SSL_PEERS;OPENSSL_NO_SSL2;OPENSSL_NO_SSL3;OPENSSL_NO_TLS1;OPENSSL_NO_TLS1_1;OPENSSL_NO_DTLS1;BOOST_ASIO_NO_DEPRECATED;BOOST_ASIO_HAS_STD_CHRONO;BOOST_ASIO_ENABLE_CANCELIO;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <AdditionalIncludeDirectories>$(MSBuildThisFileDirectory)..\inc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>NOMINMAX;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
+    <ResourceCompile>
+      <AdditionalIncludeDirectories>$(MSBuildThisFileDirectory)..\inc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ResourceCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <AdditionalDependencies>advapi32.lib;shell32.lib;user32.lib;ole32.lib;uuid.lib;crypt32.lib;iphlpapi.lib;propsys.lib;%(AdditionalDependencies)</AdditionalDependencies>
@@ -78,7 +82,6 @@
     <ClCompile>
       <Optimization>Disabled</Optimization>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
-      <PreprocessorDefinitions>TORRENT_USE_ASSERTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'">
@@ -91,20 +94,62 @@
   <ItemGroup>
     <ClCompile Include="Main.cpp" />
     <ClCompile Include="Engine.cpp" />
+    <ClCompile Include="Engine\Session.cpp" />
+    <ClCompile Include="Engine\Settings.cpp" />
+    <ClCompile Include="Engine\Policy.cpp" />
+    <ClCompile Include="Engine\Details.cpp" />
+    <ClCompile Include="Engine\Files.cpp" />
+    <ClCompile Include="Engine\Previews.cpp" />
+    <ClCompile Include="Engine\Additions.cpp" />
+    <ClCompile Include="Engine\Commands.cpp" />
+    <ClCompile Include="Engine\Queue.cpp" />
+    <ClCompile Include="Engine\Checkpoints.cpp" />
+    <ClCompile Include="Engine\Exit.cpp" />
+    <ClCompile Include="Engine\Alerts.cpp" />
+    <ClCompile Include="Changes.cpp" />
+    <ClCompile Include="Log.cpp" />
+    <ClCompile Include="Torrent.cpp" />
     <ClCompile Include="Store.cpp" />
-    <ClCompile Include="Desktop.cpp" />
+    <ClCompile Include="Strings.cpp" />
     <ClCompile Include="Registration.cpp" />
     <ClCompile Include="Pipe.cpp" />
+    <ClCompile Include="Desktop\Application.cpp" />
+    <ClCompile Include="Desktop\PowerRequest.cpp" />
+    <ClCompile Include="Desktop\Splash.cpp" />
+    <ClCompile Include="Desktop\Tray.cpp" />
     <ResourceCompile Include="Resources.rc" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="vcpkg.json" />
+    <None Include="Dependencies.ps1" />
   </ItemGroup>
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
-  <ImportGroup Label="ExtensionTargets">
-    <!-- The vcpkg that Visual Studio installs. Imported here so the build needs neither a
-         user-wide "vcpkg integrate install" nor a vcpkg clone in the repository. -->
-    <Import Project="$(VCInstallDir)vcpkg\scripts\buildsystems\msbuild\vcpkg.targets" />
-  </ImportGroup>
+  <ImportGroup Label="ExtensionTargets" />
+
+  <!-- A build never starts Dependencies.ps1, so a build after 3rdParty was moved or removed
+       stops here instead of downloading and compiling every dependency again. The repository
+       owner runs the script. Design-time builds skip the check, so the project still opens in
+       Visual Studio without 3rdParty. -->
+  <Target Name="Dependencies" Condition="!Exists('$(ThirdPartyPath)complete') And '$(DesignTimeBuild)' != 'true'">
+    <Error Text="3rdParty has no complete installation. A build never creates it: the repository owner runs engine\src\Dependencies.ps1." />
+  </Target>
+
+  <!-- libtorrent's public compile definitions, as its build in 3rdParty exported them. A
+       definition that differs from the library's changes libtorrent's types under the engine
+       and corrupts memory at runtime with no build error. IntelliSense reads them through
+       GetClCommandLines. -->
+  <Target Name="LibtorrentDefinitions" DependsOnTargets="Dependencies" BeforeTargets="ClCompile;GetClCommandLines">
+    <ReadLinesFromFile File="$(ThirdPartyPath)$(Configuration)\libtorrent.definitions">
+      <Output TaskParameter="Lines" ItemName="LibtorrentDefinition" />
+    </ReadLinesFromFile>
+    <Error Condition="'@(LibtorrentDefinition)' == '' And '$(DesignTimeBuild)' != 'true'" Text="$(ThirdPartyPath)$(Configuration)\libtorrent.definitions is missing. A build never creates it: the repository owner runs engine\src\Dependencies.ps1." />
+    <PropertyGroup>
+      <LibtorrentDefinitions>@(LibtorrentDefinition)</LibtorrentDefinitions>
+    </PropertyGroup>
+    <ItemGroup>
+      <ClCompile>
+        <PreprocessorDefinitions>$(LibtorrentDefinitions);%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      </ClCompile>
+    </ItemGroup>
+  </Target>
 </Project>

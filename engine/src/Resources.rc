@@ -1,8 +1,9 @@
 #include <windows.h>
-1 RCDATA "Resources/en.json"
-2 ICON "../../resources/TinyTorrent.ico"
-3 RCDATA "Resources/es.json"
+#include "Resources.h"
+IDR_ENGLISH_TEXT RCDATA "Resources/en.json"
+IDI_TINYTORRENT ICON "../../resources/TinyTorrent.ico"
+IDR_SPANISH_TEXT RCDATA "Resources/es.json"
 STRINGTABLE
 BEGIN
-    4 "TinyTorrent"
+    IDS_PRODUCT_NAME "TinyTorrent"
 END

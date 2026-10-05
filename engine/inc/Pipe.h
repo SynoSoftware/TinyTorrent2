@@ -16,30 +16,38 @@ class Pipe
 public:
     struct Connection
     {
-        HANDLE handle = INVALID_HANDLE_VALUE;
+        // Read when the client connects, because the pipe instance serves
+        // other clients after this one disconnects.
+        ULONG process = 0;
         HANDLE cancel = CreateEventW(nullptr, TRUE, FALSE, nullptr);
-        std::string connection_id;
+        std::string connectionId;
         std::mutex mutex;
         std::condition_variable changed;
         std::deque<Json> output;
         bool closed = false;
         bool dispatched = false;
-        Json request_id;
+        Json requestId;
         ~Connection() { CloseHandle(cancel); }
         void Send(Json message);
     };
+    // The protocol version that the hello message announces.
+    static constexpr int version = 1;
     using Client = std::shared_ptr<Connection>;
-    using Dispatch = std::function<void(Client, Json)>;
+    // Receives each request with the reply that answers it, and a null request
+    // with no reply when the client disconnects.
+    using Dispatch = std::function<void(Client, Json, Reply)>;
 
-    Pipe(std::wstring name, SECURITY_ATTRIBUTES& security, Json hello, Dispatch dispatch);
+    Pipe(std::wstring const& sid, SECURITY_ATTRIBUTES& security, Json hello, Dispatch dispatch);
     ~Pipe();
     Pipe(Pipe const&) = delete;
     Pipe& operator=(Pipe const&) = delete;
     void Stop();
-    static bool Forward(std::wstring const& name, Json request = {{"command", "open"}});
+    static bool Forward(std::wstring const& sid, Json request = {{"command", "open"}});
 
 private:
+    static std::wstring Name(std::wstring const& sid);
     void Serve(HANDLE handle);
+    void Deliver(Client client, HANDLE handle);
     Json hello_;
     Dispatch dispatch_;
     std::atomic<bool> stopping_ = false;

@@ -7,13 +7,12 @@
 #include <mutex>
 #include <string>
 #include <thread>
-#include <vector>
 
 namespace tiny
 {
 struct StorageOutcome
 {
-    bool saved = false;
+    bool succeeded = false;
     std::string detail;
 };
 
@@ -37,7 +36,7 @@ private:
     };
     struct Completed
     {
-        std::function<void(StorageOutcome)> callback;
+        std::function<void(StorageOutcome)> completion;
         StorageOutcome outcome;
     };
     mutable std::mutex mutex_;

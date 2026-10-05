@@ -25,7 +25,9 @@ cannot interleave. A close request for Exit runs asynchronously, outside the
 request slot and receive loop, so committed edits are sent and unfinished input
 can be prompted before the window closes. A clean UI closes without prompting;
 the [interface](interface.md#committing-edits) owns that behavior. A UI whose
-user keeps unfinished input replies that Exit is cancelled; the engine's
+user keeps unfinished input replies that Exit is cancelled. The same close reply
+distinguishes waiting for the person from continuing closure, so an unanswered
+draft prompt cannot trigger an unresponsive-window warning. The engine's
 [shutdown sequence](engine.md#closing-and-shutdown) owns the rest. Do not add
 another transport or event bus.
 
@@ -121,6 +123,32 @@ accumulate behind a disconnected client. Speed history is engine state with its
 own [bound](engine.md#state-and-work), not data kept for a client, so it continues. Do not add field-level
 patches, replay logs, or another cache authority to avoid modest summary copies.
 Measure a real payload problem before replacing this design.
+
+## File-operation callers
+
+`file_scope` reads `torrent_ids` and returns `torrents`, the transitive outside
+`shared` group, and `kept_files`. Each entry carries its durable `torrent_id`,
+`name`, `save_path`, and actual content `folder`. This is a review aid; Move and
+Delete recheck their scope when they execute.
+
+`move` reads `torrent_ids`, the destination parent folder, and the optional
+explicit `use_existing` choice. It replies after the recovery marker commits,
+without occupying the pipe while files move. Rows carry `moving` and
+`move_destination`; completion clears the group markers and failures remain
+visible on the torrents. Source sharing and destination use by an outside
+torrent have distinct refusals, so each offers an action that can resolve it.
+An interrupted saved move refuses an ordinary move or deletion with
+`move_interrupted`. An active move whose disk outcome cannot be established
+shows `move_uncertain`; its path holds remain, so recovery first requires a
+normal Exit or explicit Exit anyway and reopening. `recovery_required` remains
+the general unconfirmed-operation code for other commands, so file-specific
+instructions cannot misdirect an Add or priority edit.
+
+`delete_files` reads `torrent_ids`, commits removal, and replies with
+`kept_files`. Payload deletion then continues without the removed rows; failures
+are notified and logged. An unresolved move refuses deletion until explicit
+recovery establishes the real folder. Cancellation or disconnect cannot undo
+accepted file work, and reconnect never repeats an uncertain destructive command.
 
 ## Isolation
 

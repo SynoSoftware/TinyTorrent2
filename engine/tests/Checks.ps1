@@ -1,14 +1,23 @@
 param(
     [Parameter(Mandatory)]
-    [ValidateSet('Frames', 'FailedCommit', 'CheckpointRetry', 'Restart', 'DiskError', 'PreviewGuard', 'RemoveKeepFiles', 'QueueOrder', 'SelectedTransfer', 'MagnetDownload')]
+    [ValidateSet('Frames', 'FailedCommit', 'CheckpointRetry', 'Restart', 'DiskError', 'PreviewGuard', 'RemoveKeepFiles', 'QueueOrder', 'SelectedTransfer', 'MagnetDownload', 'SettingsPolicy', 'CommittedFiles', 'FilesSafety')]
     [string] $Check,
     [Parameter(Mandatory)]
-    [string] $TorrentFile
+    [string] $TorrentFile,
+    [string] $EnginePath,
+    [switch] $Transfer
 )
 
 $ErrorActionPreference = 'Stop'
+# These checks start the Transfer peer and download real payload, which takes
+# minutes of the owner's machine, so they run only when the owner asks.
+$transferChecks = 'MagnetDownload', 'SelectedTransfer', 'DiskError', 'PreviewGuard', 'RemoveKeepFiles'
+if ($Check -in $transferChecks -and -not $Transfer) {
+    throw "$Check runs a real transfer. Run it only when the owner asks, with -Transfer."
+}
 $repository = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $executable = Join-Path $repository 'artifacts/bin/Engine/Release/Engine.exe'
+if ($EnginePath) { $executable = [IO.Path]::GetFullPath($EnginePath) }
 $directory = Join-Path $repository ('artifacts/evidence/' + $Check + '-' + [guid]::NewGuid())
 $null = New-Item -ItemType Directory -Path $directory
 $payload = Join-Path $directory 'payload'
@@ -151,6 +160,179 @@ function Payload-Hash([string] $path) {
 try {
     $initial = Start-Engine
     switch ($Check) {
+        'FilesSafety' {
+            $reply = Send-Command @{ command = 'session_pause'; paused = $true }
+            Assert $reply.ok 'The file-safety session could not pause'
+            $content = [Text.Encoding]::ASCII.GetBytes(('x' * 2048))
+            $digest = [Security.Cryptography.SHA1]::HashData($content)
+            $fixtures = @(16384, 32768) | ForEach-Object {
+                $fixture = Join-Path $directory ("shared-$_.torrent")
+                $prefix = [Text.Encoding]::ASCII.GetBytes("d4:infod6:lengthi2048e4:name10:shared.bin12:piece lengthi$($_)e6:pieces20:")
+                $suffix = [Text.Encoding]::ASCII.GetBytes('7:privatei1eee')
+                [IO.File]::WriteAllBytes($fixture, [byte[]]($prefix + $digest + $suffix))
+                $fixture
+            }
+            $sourceFile = Join-Path $payload 'shared.bin'
+            $unrelated = Join-Path $payload 'keep.txt'
+            [IO.File]::WriteAllBytes($sourceFile, $content)
+            [IO.File]::WriteAllBytes($unrelated, [Text.Encoding]::ASCII.GetBytes('keep'))
+            $originalHash = Payload-Hash $sourceFile
+            $identities = @()
+            foreach ($fixture in $fixtures) {
+                $preview = Send-Command @{ command = 'preview'; source = $fixture; destination = $payload }
+                Assert $preview.ok 'The shared-file fixture did not preview'
+                $reply = Send-Command @{ command = 'add'; preview_id = $preview.data.preview_id; destination = $payload; paused = $true }
+                Assert ($reply.ok -and -not $reply.data.duplicate) 'Distinct shared-file torrents were merged or refused'
+                $identities += $reply.data.torrent_id
+            }
+            $scope = Send-Command @{ command = 'file_scope'; torrent_ids = @($identities[0]) }
+            Assert ($scope.ok -and $scope.data.shared.Count -eq 1 -and $scope.data.kept_files -eq 1) 'The outside shared-file owner was not reported'
+            $destination = Join-Path $directory 'moved'
+            $reply = Send-Command @{ command = 'move'; torrent_ids = @($identities[0]); destination = $destination }
+            Assert (-not $reply.ok -and $reply.error.code -eq 'shared_files') 'A partial scope moved another torrent file'
+            $reply = Send-Command @{ command = 'delete_files'; torrent_ids = @($identities[0]) }
+            Assert ($reply.ok -and $reply.data.kept_files -eq 1) 'Deletion did not report its outside-shared file'
+            Stop-Engine
+            $snapshot = Start-Engine
+            Assert ($snapshot.torrents.Count -eq 1 -and (Payload-Hash $sourceFile) -eq $originalHash) 'Deleting one shared torrent damaged its surviving owner or restored membership'
+
+            $collision = Join-Path $directory 'collision'
+            $null = New-Item -ItemType Directory -Path $collision
+            $collisionFile = Join-Path $collision 'shared.bin'
+            [IO.File]::WriteAllBytes($collisionFile, [Text.Encoding]::ASCII.GetBytes(('z' * 2048)))
+            $collisionHash = Payload-Hash $collisionFile
+            $remaining = $identities[1]
+            $reply = Send-Command @{ command = 'move'; torrent_ids = @($remaining); destination = $collision }
+            Assert $reply.ok 'Collision preflight was not accepted'
+            $until = [DateTime]::UtcNow.AddSeconds(15)
+            do {
+                Start-Sleep -Milliseconds 100
+                $row = (Send-Command @{ command = 'snapshot' }).data.torrents[0]
+            } while (($row.moving -or $row.error -ne 'destination_exists') -and [DateTime]::UtcNow -lt $until)
+            Assert (-not $row.moving -and $row.error -eq 'destination_exists' -and -not $row.move_destination) 'Collision did not finish safely without an interrupted marker'
+            Assert ((Payload-Hash $sourceFile) -eq $originalHash -and (Payload-Hash $collisionFile) -eq $collisionHash) 'A destination collision replaced existing bytes'
+            $reply = Send-Command @{ command = 'delete_files'; torrent_ids = @($remaining) }
+            Assert $reply.ok 'A failed no-op move prevented deletion of its original files'
+            Stop-Engine
+            $snapshot = Start-Engine
+            Assert ($snapshot.torrents.Count -eq 0 -and -not (Test-Path -LiteralPath $sourceFile) -and (Payload-Hash $collisionFile) -eq $collisionHash) 'Deletion after a collision reached the unrelated destination or restored membership'
+
+            [IO.File]::WriteAllBytes($sourceFile, $content)
+            $identities = @()
+            foreach ($fixture in $fixtures) {
+                $preview = Send-Command @{ command = 'preview'; source = $fixture; destination = $payload }
+                $reply = Send-Command @{ command = 'add'; preview_id = $preview.data.preview_id; destination = $payload; paused = $true }
+                Assert $reply.ok 'The group-move fixture could not be re-added'
+                $identities += $reply.data.torrent_id
+            }
+            $reply = Send-Command @{ command = 'move'; torrent_ids = $identities; destination = $destination }
+            Assert $reply.ok 'The complete shared group could not move'
+            $until = [DateTime]::UtcNow.AddSeconds(15)
+            do {
+                Start-Sleep -Milliseconds 100
+                $rows = (Send-Command @{ command = 'snapshot' }).data.torrents
+            } while (@($rows | Where-Object { $_.moving -or $_.move_destination }).Count -gt 0 -and [DateTime]::UtcNow -lt $until)
+            $movedFile = Join-Path $destination 'shared.bin'
+            Assert (@($rows | Where-Object { $_.save_path -ne $destination -or $_.moving -or $_.move_destination }).Count -eq 0 -and (Payload-Hash $movedFile) -eq $originalHash) 'The cross-seeded group did not establish one destination'
+            Assert (-not (Test-Path -LiteralPath $sourceFile) -and (Test-Path -LiteralPath $unrelated)) 'Move affected unrelated files or left its payload behind'
+            Stop-Engine
+            $settingsFile = Join-Path $directory 'settings.json'
+            $saved = [IO.File]::ReadAllText($settingsFile) | ConvertFrom-Json
+            foreach ($torrent in $saved.torrents) { $torrent.move_destination = $collision }
+            [IO.File]::WriteAllBytes($settingsFile, [Text.Encoding]::UTF8.GetBytes(($saved | ConvertTo-Json -Depth 30 -Compress)))
+            $snapshot = Start-Engine
+            Assert (@($snapshot.torrents | Where-Object error -ne 'move_interrupted').Count -eq 0) 'An interrupted move resumed as ordinary transfer state'
+            $reply = Send-Command @{ command = 'move'; torrent_ids = $identities; destination = $destination }
+            Assert (-not $reply.ok -and $reply.error.code -eq 'move_interrupted') 'An ordinary retry erased the unresolved move destination'
+            $reply = Send-Command @{ command = 'delete_files'; torrent_ids = $identities }
+            Assert (-not $reply.ok -and $reply.error.code -eq 'move_interrupted') 'Delete treated an uncertain held destination as owned payload'
+            $reply = Send-Command @{ command = 'move'; torrent_ids = $identities; destination = $destination; use_existing = $true }
+            Assert $reply.ok 'Explicit recovery could not use the files at their known folder'
+            $until = [DateTime]::UtcNow.AddSeconds(15)
+            do {
+                Start-Sleep -Milliseconds 100
+                $rows = (Send-Command @{ command = 'snapshot' }).data.torrents
+            } while (@($rows | Where-Object { $_.moving -or $_.move_destination }).Count -gt 0 -and [DateTime]::UtcNow -lt $until)
+            Assert (@($rows | Where-Object { $_.moving -or $_.move_destination }).Count -eq 0) 'Explicit move recovery never completed'
+            $reply = Send-Command @{ command = 'delete_files'; torrent_ids = $identities }
+            Assert ($reply.ok -and $reply.data.kept_files -eq 0) 'The whole shared group could not delete its payload'
+            Stop-Engine
+            $snapshot = Start-Engine
+            Assert ($snapshot.torrents.Count -eq 0 -and -not (Test-Path -LiteralPath $movedFile) -and (Payload-Hash $collisionFile) -eq $collisionHash -and (Test-Path -LiteralPath $unrelated)) 'Group deletion restored membership or damaged unrelated files'
+        }
+        'CommittedFiles' {
+            $reply = Send-Command @{ command = 'session_pause'; paused = $true }
+            Assert $reply.ok 'The file-edit fixture session could not pause'
+            $previewId = Preview
+            $reply = Send-Command @{ command = 'add'; preview_id = $previewId; destination = $payload; paused = $true }
+            Assert $reply.ok 'The file-edit fixture could not be added'
+            $torrentId = $reply.data.torrent_id
+            $files = (Send-Command @{ command = 'torrent'; torrent_id = $torrentId; view = 'files' }).data.files
+            $wanted = $files | Where-Object { -not $_.padding } | Select-Object -First 1
+            Assert ($null -ne $wanted) 'The file-edit fixture has no payload files'
+            $reply = Send-Command @{ command = 'edit'; torrent_id = $torrentId; changes = @{ priorities = @(@{ index = $wanted.index; priority = 7 }); trackers = @(@{ url = 'http://127.0.0.1:1/announce'; tier = 3 }) } }
+            Assert $reply.ok 'A committed priority and tracker edit was refused'
+            Stop-Engine
+            $null = Start-Engine
+            $files = (Send-Command @{ command = 'torrent'; torrent_id = $torrentId; view = 'files' }).data.files
+            Assert (($files | Where-Object index -eq $wanted.index).priority -eq 7) 'An older checkpoint defeated a committed priority at restart'
+            $trackers = (Send-Command @{ command = 'torrent'; torrent_id = $torrentId; view = 'trackers' }).data.trackers
+            Assert ($trackers.Count -eq 1 -and $trackers[0].url -eq 'http://127.0.0.1:1/announce' -and $trackers[0].tier -eq 3) 'A saved tracker choice lost its URL or tier'
+            $choices = @($files | ForEach-Object { @{ index = $_.index; priority = 0 } })
+            $reply = Send-Command @{ command = 'edit'; torrent_id = $torrentId; changes = @{ priorities = $choices; trackers = @() } }
+            Assert $reply.ok 'Select none or clearing the tracker list was refused'
+            Stop-Engine
+            $snapshot = Start-Engine
+            Assert ($snapshot.torrents.Count -eq 1 -and $snapshot.torrents[0].torrent_id -eq $torrentId) 'Select none removed the accepted torrent'
+            $files = (Send-Command @{ command = 'torrent'; torrent_id = $torrentId; view = 'files' }).data.files
+            Assert (@($files | Where-Object priority -ne 0).Count -eq 0) 'Select none did not survive restart'
+            $trackers = (Send-Command @{ command = 'torrent'; torrent_id = $torrentId; view = 'trackers' }).data.trackers
+            Assert (@($trackers).Count -eq 0) 'An explicit empty tracker list restored the original trackers'
+        }
+        'SettingsPolicy' {
+            $previewId = Preview
+            $reply = Send-Command @{ command = 'add'; preview_id = $previewId; destination = $payload; paused = $true }
+            Assert $reply.ok 'Settings policy fixture addition failed'
+            $torrentId = $reply.data.torrent_id
+            $period = @{ days = @(0, 1, 2, 3, 4, 5, 6); start = 0; end = 0; mode = 'paused' }
+            $reply = Send-Command @{ command = 'settings'; changes = @{ schedule_enabled = $true; schedule = @($period); check_for_updates = $false; active_downloads = 1; port_mapping = $false } }
+            Assert $reply.ok 'The weekly schedule could not be committed'
+            $snapshot = (Send-Command @{ command = 'snapshot' }).data
+            Assert $snapshot.all_paused 'An all-day paused period did not pause the session'
+            $reply = Send-Command @{ command = 'session_pause'; paused = $false }
+            Assert $reply.ok 'Explicit session resume was refused during a scheduled pause'
+            $snapshot = (Send-Command @{ command = 'snapshot' }).data
+            Assert (-not $snapshot.all_paused) 'Explicit resume did not override the current scheduled pause'
+            Assert ($snapshot.torrents[0].paused -and $snapshot.torrents[0].torrent_id -eq $torrentId) 'Schedule resume changed individual pause intent'
+            $period.mode = 'alternative'
+            $reply = Send-Command @{ command = 'settings'; changes = @{ schedule = @($period) } }
+            Assert $reply.ok 'An alternative period could not replace the paused period'
+            $snapshot = (Send-Command @{ command = 'snapshot' }).data
+            Assert $snapshot.alternative_limits 'An alternative period did not select its rate pair'
+            $reply = Send-Command @{ command = 'settings'; changes = @{ alternative_limits = $false } }
+            Assert $reply.ok 'An already-saved manual rate choice was refused'
+            $snapshot = (Send-Command @{ command = 'snapshot' }).data
+            Assert (-not $snapshot.alternative_limits) 'An explicit normal-rate choice did not override the scheduled pair'
+            Stop-Engine
+            $snapshot = Start-Engine
+            Assert ($snapshot.settings.schedule.Count -eq 1 -and $snapshot.settings.schedule[0].mode -eq 'alternative') 'A committed weekly period was lost at restart'
+            Assert ($snapshot.settings.active_downloads -eq 1 -and -not $snapshot.settings.check_for_updates -and -not $snapshot.settings.port_mapping) 'Committed preferences were lost at restart'
+            Assert ($snapshot.alternative_limits -and $snapshot.torrents[0].paused) 'Restart replayed a temporary override or lost individual pause intent'
+            $missing = '{00000000-0000-0000-0000-000000000000}'
+            $reply = Send-Command @{ command = 'settings'; changes = @{ network_interface = $missing } }
+            Assert $reply.ok 'An unavailable saved adapter choice was refused'
+            $snapshot = (Send-Command @{ command = 'snapshot' }).data
+            Assert ($snapshot.all_paused -and $snapshot.missing_interface -eq $missing) 'An unavailable selected adapter did not block the session'
+            $reply = Send-Command @{ command = 'session_pause'; paused = $false }
+            Assert $reply.ok 'Resume could not preserve the adapter block'
+            $snapshot = (Send-Command @{ command = 'snapshot' }).data
+            Assert $snapshot.all_paused 'Manual resume bypassed an unavailable selected adapter'
+            $reply = Send-Command @{ command = 'settings'; changes = @{ network_interface = ''; schedule_enabled = $false } }
+            Assert $reply.ok 'The saved adapter block could not be cleared'
+            $snapshot = (Send-Command @{ command = 'snapshot' }).data
+            Assert (-not $snapshot.all_paused -and -not $snapshot.alternative_limits) 'Disabling the schedule lost the saved normal-rate choice'
+            Assert $snapshot.torrents[0].paused 'Returning to ordinary policy resumed an individually paused torrent'
+        }
         'CheckpointRetry' {
             $previewId = Preview
             $reply = Send-Command @{command='add';preview_id=$previewId;destination=$payload;paused=$true}
@@ -395,6 +577,11 @@ try {
             Assert $snapshot.data.torrents[0].paused 'Session resume changed an individually stopped torrent'
             $reply = Send-Command @{ command = 'resume'; torrent_ids = @($torrentId) }
             Assert $reply.ok 'Restored torrent could not resume'
+            Stop-Engine
+            [IO.File]::WriteAllText((Join-Path $directory ($torrentId + '.resume')), 'damaged')
+            $snapshot = Start-Engine
+            Assert (@($snapshot.torrents).Count -eq 1 -and $snapshot.torrents[0].torrent_id -eq $torrentId) `
+                'A damaged resume file lost its torrent'
         }
         'DiskError' {
             $collision = Join-Path $payload 'transfer.bin'

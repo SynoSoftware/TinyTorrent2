@@ -91,13 +91,29 @@ do not define this product.
   claims cannot happen.
 - Read the final diff. Every new file, type, state, dependency, and branch must
   answer a concrete requirement.
-- Build affected native targets when compilation evidence is needed. Launch
-  applications and desktop test hosts only when explicitly requested. Close
-  what you launched and report what was verified and any material gaps.
+- Never run `engine\src\Dependencies.ps1`, and never delete, move, rename or
+  rebuild anything in `3rdParty/`. The owner compiles the dependencies once,
+  because building them again takes over an hour of the owner's machine. When
+  a build reports that `3rdParty/` is incomplete, stop and report it.
+- Build affected native targets when compilation evidence is needed. Make all
+  the edits first and build once, because each build holds the owner's
+  machine. Launch applications and desktop test hosts only when explicitly
+  requested. Close what you launched and report what was verified and any
+  material gaps.
+- After every build, compare the files it compiled, which the build log lists,
+  with what you changed. A source edit recompiles that file; a header edit
+  recompiles the files that include it. When a build compiles more than that,
+  or takes longer than its file count explains, find the cause and fix the
+  build before building again, because every later build pays the same cost.
 - After every build or test run, check that it did not start a recursive copy.
   All generated output belongs in `artifacts/`, so this command, run from the
   repository root, must print nothing:
-  `& "C:\Program Files\Everything\es.exe" -path $PWD /ad "wfn:bin|wfn:obj|wfn:bin-fl|wfn:TestResults" "!*\artifacts\*"`.
+  `& "C:\Program Files\Everything\es.exe" -path $PWD /ad "wfn:bin|wfn:obj|wfn:bin-fl|wfn:TestResults" "!*\artifacts\*" "!*\3rdParty\*"`.
+  The one exception is `3rdParty/`, the compiled dependencies, which stays
+  outside `artifacts/` so cleaning build output never forces a dependency
+  rebuild ([third-party dependencies](docs/architecture.md#third-party-dependencies)).
+  The check skips it because its checkouts and tools contain their own `bin`
+  folders, which this repository's builds do not write.
   A result is a defect: report it and find the output path that caused it
   before continuing. Do not delete the folder and move on.
 

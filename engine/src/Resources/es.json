@@ -7,6 +7,7 @@
     "pause": "Pausar transferencias",
     "resume": "Reanudar transferencias",
     "open": "Mostrar ventana",
+    "missing_interface": "Interfaz de red no disponible: {0}",
     "exit": "Salir",
     "background": "Las transferencias continúan en el área de notificación. Selecciona Salir en el menú de TinyTorrent para detenerlas."
   },
@@ -24,14 +25,18 @@
     "retry": "Reintentar",
     "close": "Cerrar",
     "cancel": "Cancelar",
-    "exit_anyway": "Salir de todas formas"
+    "exit_anyway": "Salir de todas formas",
+    "wait": "Esperar"
   },
   "notification": {
     "completed": "{0} terminó de descargarse.",
     "added": "Se añadió {0}.",
+    "duplicate": "{0} ya está en la lista.",
+    "magnet": "Enlace magnet",
     "error": "{0} necesita atención.",
     "aggregate": "{0} actualizaciones de transferencias.",
     "add_failed": "No se pudo añadir {0}.",
+    "delete_failed": "No se pudieron eliminar todos los archivos de {0}.",
     "failures": "Errores de transferencias: {0}. {1}: {2}"
   },
   "power": {
@@ -44,6 +49,7 @@
     "launch": "TinyTorrent no pudo abrir su ventana. Las descargas continúan. Reintenta para volver a abrirla.",
     "startup": "La ventana de TinyTorrent no se abrió. Las descargas continúan. Puedes reintentar cuando termine el proceso de la ventana.",
     "save": "No se pudo guardar el último punto de control. Reintenta o sal de todas formas y pierde los cambios desde el último guardado correcto.",
+    "files_busy": "Un traslado o una eliminación de archivos sigue en curso. Espera para salir cuando termine o cancela la salida.",
     "pause": "No se pudo guardar el ajuste de pausa de las transferencias.",
     "unresponsive": "La ventana no responde. ¿Salir de todas formas y descartar los datos sin guardar?"
   }

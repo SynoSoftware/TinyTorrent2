@@ -7,6 +7,7 @@
     "pause": "Pause Transfers",
     "resume": "Resume Transfers",
     "open": "Show window",
+    "missing_interface": "Network interface unavailable: {0}",
     "exit": "Exit",
     "background": "Transfers continue in the notification area. Choose Exit from the TinyTorrent menu to stop."
   },
@@ -24,14 +25,18 @@
     "retry": "Retry",
     "close": "Close",
     "cancel": "Cancel",
-    "exit_anyway": "Exit anyway"
+    "exit_anyway": "Exit anyway",
+    "wait": "Wait"
   },
   "notification": {
     "completed": "{0} finished downloading.",
     "added": "Added {0}.",
+    "duplicate": "{0} is already in the list.",
+    "magnet": "Magnet link",
     "error": "{0} needs attention.",
     "aggregate": "{0} transfer updates.",
     "add_failed": "{0} could not be added.",
+    "delete_failed": "Files for {0} could not be fully deleted.",
     "failures": "Transfer errors: {0}. {1}: {2}"
   },
   "power": {
@@ -44,6 +49,7 @@
     "launch": "TinyTorrent could not start its window. Downloads continue. Retry to open it again.",
     "startup": "The TinyTorrent window did not open. Downloads continue. Retry is available after the window process exits.",
     "save": "The final checkpoint could not be saved. Retry, or exit anyway and lose changes since the last successful save.",
+    "files_busy": "A file move or deletion is still running. Wait to exit when it finishes, or cancel Exit.",
     "pause": "The transfer pause setting could not be saved.",
     "unresponsive": "The window is not responding. Exit anyway and discard unfinished input?"
   }

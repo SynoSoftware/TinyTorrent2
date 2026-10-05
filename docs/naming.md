@@ -129,7 +129,8 @@ or file length: those splits scatter one decision across files that must change 
 lives with its owner. Add no dumping-ground file such as `Utils.cs`, `Common.cs` or
 `TableHelper.cs`, and no folder by kind such as `Helpers/`, `Models/` or `Converters/`; each
 separates code from the decision it serves. The fixed `Themes/` and `Resources/` folders below and
-the package folders `Assets/` and `Properties/` are the only folders by kind. Extension methods
+the package folders `Assets/` and `Properties/` are the only folders by kind, apart from the
+native engine's `engine/inc/`, which holds its headers by the repository owner's ruling. Extension methods
 stay technical and hold no product rule.
 
 A filename follows the type it holds. A type split across files keeps `Table.cs`, and a folder

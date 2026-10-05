@@ -3,6 +3,7 @@ bin/
 obj/
 bin-fl/
 artifacts/
+3rdParty/
 TestResults/
 *.user
 *.log
@@ -12,3 +13,4 @@ TestResults/
 .vs/
 .idea/
 *.suo
+/3rdParty.old

@@ -39,6 +39,10 @@ A full suite is a deliberate integration or release check, or an explicit user
 request. It is not the default completion gate for each bug fix. A known relevant
 failure still needs resolution; postponing broad coverage does not excuse it.
 
+The engine checks that start the Transfer peer download real payload and take
+minutes, so they run only when the owner asks for them. `engine/tests/Checks.ps1`
+refuses them without `-Transfer`.
+
 ## What earns a test
 
 **Owner ruling: high-return tests only.** Tests are not the safety net here;

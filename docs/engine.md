@@ -72,6 +72,17 @@ rows, tray counts and power policy. This avoids synchronous per-torrent queries
 on every tray or window refresh. A new or restored torrent gets one initial
 status; metadata and file details remain on demand.
 
+Completed means that received payload is ready on disk. After libtorrent reports
+the download finished, keep its completion pending until `cache_flushed_alert`;
+the row and completion notice share that acknowledgement. Rechecks do not create
+download notices. Dropped-alert recovery queries effective finished state and
+requests a fresh flush acknowledgement rather than inferring disk readiness.
+
+Each torrent has one checkpoint write in flight. If newer resume data arrives
+during it, retain the newest result and write it next. Generating resume data
+clears libtorrent's dirty flags, so requesting it again cannot replace retaining
+that result. The torrent stays checkpointing until these writes have settled.
+
 The engine records the session's total download and upload rate once a second,
 also while WinUI is closed, so the Speed view shows what happened while the
 window was closed. Keep the last five minutes at one sample a second for a live
@@ -103,6 +114,11 @@ that work is pending. Apply dependent edits in accepted order without rebuilding
 them from stale effective values. An earlier resume checkpoint cannot establish
 that newer choices were applied and saved. On partial failure report the actual
 state and operation failure; do not promise rollback.
+
+File edits accept the same priorities as addition, with padding always unwanted,
+but may make every file unwanted. A torrent already in the list can keep its
+content and seed while the person changes its selection; only addition needs at
+least one wanted file to give the new download useful work.
 
 ## Addition and identity
 
@@ -186,6 +202,12 @@ Refuse an unknown newer store format without rewriting it. Any required migratio
 belongs to this persistence owner and must preserve a recoverable last good state
 before changing existing data.
 
+An unreadable resume file affects only its own torrent. Startup adds that
+torrent again from the hashes `settings.json` saved, as a magnet link: it
+fetches the metadata from peers and checks the files already on disk, so no
+downloaded data is lost. An unreadable `settings.json` still refuses the whole
+store, because it is the list of torrents.
+
 - Checkpoint dirty transfer state periodically; recovery cannot depend on a
   successful final shutdown.
 - Order writes so a late save cannot resurrect a removed torrent or replace newer
@@ -261,12 +283,44 @@ instead of moving them, so a person who moved the files or whose drive letter
 changed gets the torrent back without downloading it again. Pieces that do not
 match are downloaded again over those files.
 
+One payload operation runs at a time. Its source and destination paths stay held
+until disk work has a known outcome. Add confirmations wait by reporting Files
+busy, including magnets whose paths are still unknown. A file operation also
+waits for pending additions and outside torrents still acquiring metadata: an
+unknown path cannot establish that destructive work is safe. Other torrents and
+settings remain usable.
+
+For a group with partially overlapping file lists, check the whole destination
+before moving anything. The first member uses `fail_if_exist`; later members
+whose files are already moved by that group use `reset_save_path`. A member with
+both shared and distinct files uses `dont_replace` after checking its distinct
+destination paths. This preserves the already moved group files while moving
+its remaining files. Every member is verified before its saved intent resumes.
+Two distinct source files cannot map to one destination path. An external
+program creating a destination during a move retains the existing documented
+race; no second file transaction or rollback mechanism is added.
+
 Before a move starts, save its destination with the torrent and clear it when
-the move ends. After a crash during a move, that saved destination keeps the
+the entire selected group's move ends. Reserve its paths before that commit,
+so an addition cannot enter while the write is pending. If no disk move began,
+a failed destination preflight clears the newly staged markers through the
+same writer. An existing interrupted marker requires explicit Use the files
+there; an ordinary retry cannot replace or clear that unresolved choice. Delete
+files also refuses until this recovery establishes the actual folder, because a
+held destination is not proof that existing files there belong to the torrent.
+After a crash during a move, that saved destination keeps the
 torrent paused with a Move interrupted error, so it does not download again
 into the old folder. Moving it to the folder that holds the files offers Use the
 files there, and verification establishes what is there. The user's running or
 paused intent does not change, and the move is neither rolled back nor repeated.
+
+A completed relocation requires verification after restart until a safe
+destination checkpoint has committed. Restoring discards old piece claims and
+seed mode when that verification is pending or the checkpoint names an older
+path. Clear this requirement only after the saved destination checkpoint claims
+no pieces that the current checked torrent lacks, and checking has ended. This
+also covers Use the files there in the same folder: matching names and sizes do
+not establish that the bytes match the torrent.
 
 ## Startup and activation
 
@@ -417,6 +471,13 @@ midway leaves files in two places. Then:
 4. Destroy/join libtorrent, close the pipe and tray, then release data-directory
    ownership last.
 
+An active draft prompt is not an unresponsive window. WinUI acknowledges when
+Exit is waiting for that choice; the window timeout pauses for the person and
+resumes when closing continues. A failed window-close preparation cancels Exit
+and preserves the window. Open during Exit is refused as stopping rather than
+acknowledged and discarded. Reopening a disconnected but living UI retains its
+process and starts the same bounded readiness wait used for a new window.
+
 If the final save fails, report it with Retry and Exit anyway; exiting anyway
 loses only the changes since the last successful checkpoint.
 
@@ -477,6 +538,22 @@ class defaults. This makes the displayed limits apply to local transfers too.
 The deliberately small tray menu contains only its immediate session
 controls.
 
+Weekly periods repeat in local time with Monday numbered zero. Equal start and
+end times span a full day beginning at that time; an earlier end spans midnight.
+Pause wins over alternative limits on overlap. Manual Pause all remains saved
+and authoritative. Explicit Resume during a scheduled pause bypasses that pause
+until the next schedule-mode change; an explicit rate-pair choice similarly
+overrides the current mode until that boundary. An absent selected adapter still
+blocks transfers. These temporary schedule overrides are not saved or replayed
+after restart.
+
+Queue limits start at libtorrent's defaults: three downloads, five seeds and
+200 connections. Zero means unlimited in these controls. Ratio and seeding-time
+limits start disabled; reaching either pauses through the saved intent owner.
+The ratio denominator is the greater of downloaded and verified bytes; seeding
+time excludes paused time. Explicit Resume or Force of completed content saves a
+per-torrent exemption, so it does not pause again immediately or after restart.
+
 ## Notifications and sleep
 
 Completion notifications are enabled by default and use the existing tray's
@@ -484,7 +561,9 @@ Completion notifications are enabled by default and use the existing tray's
 path. Respect Windows notification suppression and quiet time; delivery is best
 effort and needs no WinUI process or new notification runtime. Notify when the
 currently wanted files finish downloading, not when an existing seed is restored
-or rechecked. Coalesce a burst of completions instead of flooding the desktop.
+or rechecked. A torrent shows as complete, and is notified, only after libtorrent
+has written the finished data to disk, so a file opened from the notification is
+whole. Coalesce a burst of completions instead of flooding the desktop.
 Clicking a single completion opens its current folder; a combined notification
 opens the application. Never execute a downloaded file. Keep only bounded pending
 notification context, identified by durable torrent identity rather than a stale

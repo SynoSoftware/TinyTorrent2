@@ -18,7 +18,7 @@ milestones remain work in progress.
 
 | Existing project | Role | Project dependency |
 | --- | --- | --- |
-| [Engine](../engine/src/Engine.vcxproj) | Native transfer state, persistence, pipe, tray, splash and lifetime. | libtorrent and native dependencies through vcpkg; no WinUI or .NET. |
+| [Engine](../engine/src/Engine.vcxproj) | Native transfer state, persistence, pipe, tray, splash and lifetime. | libtorrent and native dependencies from `3rdParty/`; no WinUI or .NET. |
 | [TinyTorrent](../app/src/TinyTorrent.csproj) | On-demand product window and display/draft state. | TableView, WinUI and .NET; one pipe to Engine. |
 | [TableView](../lib/TableView/src/TableView.csproj) | Reusable `Table` control, templates, and English text. | WinUI and Lucide; no torrent application dependency. |
 | [Lucide](../lib/Lucide/src/Lucide.csproj) | Lucide icon font and glyph names. | WinUI. |
@@ -77,17 +77,16 @@ product release targets.
 [Directory.Build.props](../Directory.Build.props) owns the `artifacts/` root and
 the managed output layout. It excludes generated folders from source inputs so
 repeated XAML builds cannot consume their own output. The
-[native project](../engine/src/Engine.vcxproj) uses that same root for its output,
-intermediates, and vcpkg libraries and downloads. Relocating vcpkg's registry
-cache also needs `X_VCPKG_REGISTRIES_CACHE` to point to
-`artifacts\vcpkg_registries`; the project does not set that user environment value.
+[native project](../engine/src/Engine.vcxproj) uses that same root for its output
+and intermediates.
 
-The native project selects the toolchain and static linking and imports Visual
-Studio's vcpkg integration. Its [manifest](../engine/src/vcpkg.json) pins the
-dependency baseline and disables libtorrent's default features to exclude
-WebTorrent. Native compile definitions live in the project and must match the
-package's exported definitions because they affect libtorrent's ABI. The build
-files own these choices; a separate build system is not needed for engine work.
+The native project selects the toolchain and static linking, and includes and
+links the libraries in `3rdParty/` that [Dependencies.ps1](../engine/src/Dependencies.ps1)
+builds, as [third-party dependencies](architecture.md#third-party-dependencies)
+describes. It never starts that script; without a complete installation in
+`3rdParty/` the build fails. It reads libtorrent's compile definitions from the libtorrent build,
+because they affect libtorrent's ABI. The build files own these choices; a
+separate build system is not needed for engine work.
 
 ## Sample and host responsibilities
 

@@ -187,11 +187,13 @@ path.
 | Location | Purpose |
 | --- | --- |
 | `engine/src/` | Existing native project and libtorrent session check; extend it for the First usable download milestone. |
+| `engine/inc/` | The native project's headers. Includes name a header from this root, such as `Engine/State.h`. |
 | `app/` | Product instructions exist; add the WinUI host for the First usable download milestone. |
 | `lib/TableView/` | Existing reusable control library and the only TableView: the library in `src/`, focused verification in `tests/`, and a demonstration host in `sample/`. |
 | `lib/Lucide/` | The Lucide icon font and its glyph names, for any WinUI project. |
 | `resources/` | Product branding: the application icon and logo. |
 | `artifacts/` | Generated output, kept outside source inputs to prevent recursive copies. Current routing is described in [build integration](architecture-current.md#build-integration). |
+| `3rdParty/` | The engine's dependencies, compiled once; not in git. See [third-party dependencies](#third-party-dependencies). |
 
 Use [TinyTorrent.slnx](../TinyTorrent.slnx) and its existing MSBuild projects.
 The sample and tests reference [TableView.csproj](../lib/TableView/src/TableView.csproj),
@@ -225,12 +227,13 @@ Retain libtorrent and the networking/crypto dependencies needed for torrent
 interoperability. Removing application HTTP/RPC does not remove HTTPS trackers,
 web seeds, incoming peer connections, TCP/uTP, or useful discovery.
 
-The [native project](../engine/src/Engine.vcxproj) and
-[vcpkg manifest](../engine/src/vcpkg.json) now define the toolchain, x64 target,
-dependency baseline, static linking, and feature selection. Extend that build
+The [native project](../engine/src/Engine.vcxproj) defines the toolchain, x64
+target and static linking, and [Dependencies.ps1](../engine/src/Dependencies.ps1)
+pins the dependency versions and feature selection, as
+[third-party dependencies](#third-party-dependencies) describes. Extend that build
 for engine implementation. When updating dependencies, check the latest stable
 [upstream release](https://github.com/arvidn/libtorrent/releases/latest)
-independently of `../TinyTorrent`, pin the selected baseline and feature set,
+independently of `../TinyTorrent`, pin the selected version and feature set,
 and recheck version-sensitive engine assumptions. Pinning keeps builds reproducible.
 The automatic disk policy is recorded in [engine settings](engine.md#disk-write-caching).
 Runtime packages need a concrete job; test frameworks and build tools stay out
@@ -241,6 +244,54 @@ transfer buffers or peer activity. Bound queues and retained data at their exist
 owners. Each worker has identifiable blocking work and an idle wait. DLLs, shared
 runtime installations, and single-file bundles do not by themselves prove lower
 running memory.
+
+### Third-party dependencies
+
+vcpkg is no longer acceptable, by the owner's ruling. Visual Studio's vcpkg
+integration runs `vcpkg install` on every build. When any input to its package
+fingerprint changes, such as the compiler, CMake, PowerShell or a port script, it
+deletes every installed library and compiles Boost, OpenSSL and libtorrent again
+in the middle of an ordinary build. This happened and destroyed the installed
+libraries.
+
+The engine's dependencies are therefore git checkouts at pinned tags. They are
+compiled once and are never downloaded or compiled again until someone changes a
+pin. [Dependencies.ps1](../engine/src/Dependencies.ps1) owns the pins and creates
+`3rdParty/` at the repository root:
+
+- the checkouts of libtorrent, OpenSSL, Boost (headers only) and nlohmann/json;
+- `tools/`: Strawberry Perl and NASM, which OpenSSL's build needs and Visual Studio
+  does not include, downloaded from their official sources and checked against a
+  pinned SHA-256;
+- `Release/` and `Debug/`: the static libraries and headers the engine links, and
+  libtorrent's exported compile definitions.
+
+Git ignores `3rdParty/`. It is outside `artifacts/`, so cleaning build output never
+forces the dependencies to be compiled again. Only the repository owner runs the
+script; a build never starts it. When `3rdParty/` holds no complete installation,
+the engine build fails and names the script, so a build after `3rdParty/` was moved
+or removed cannot download and compile everything again. Run on a complete
+installation without `-Update`, the script does nothing. An ordinary build never
+downloads or compiles a dependency, even after a compiler, CMake or Visual Studio
+update. The libraries are compiled without `/GL`, because a library compiled with
+`/GL` refuses to link after a compiler update and a library compiled without it
+links with every later compiler.
+
+The engine takes libtorrent's compile definitions from the libtorrent build in
+`3rdParty/` instead of keeping its own list. A definition that differs from the
+library's changes libtorrent's types under the engine and corrupts memory at
+runtime with no build error.
+
+To change a pinned version:
+
+1. Change the tag, the build options, or a tool's URL and SHA-256 in
+   `Dependencies.ps1`.
+2. Run `powershell -ExecutionPolicy Bypass -File engine\src\Dependencies.ps1 -Update`.
+   It fetches the new version and rebuilds that library and every library built
+   against it. The other dependencies stay as they are.
+3. Build the engine and recheck version-sensitive engine assumptions.
+
+To rebuild everything deliberately, delete `3rdParty/` and run the script.
 
 ## Installation and updates
 

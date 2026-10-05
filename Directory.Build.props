@@ -3,8 +3,9 @@
   <!--
     Everything the build generates goes under artifacts/ at the repository root, outside every
     project folder, so no project's default globs can read it back as source. .NET projects put
-    bin and obj there through UseArtifactsOutput; Engine.vcxproj puts its output and vcpkg's
-    libraries and downloads there through ArtifactsPath.
+    bin and obj there through UseArtifactsOutput; Engine.vcxproj puts its output there through
+    ArtifactsPath. The engine's dependencies live in 3rdParty/ instead, so that cleaning
+    artifacts/ never forces them to be downloaded and compiled again.
   -->
   <PropertyGroup>
     <ArtifactsPath>$(MSBuildThisFileDirectory)artifacts</ArtifactsPath>
