@@ -1,0 +1,411 @@
+# Implementation handover — 2026-10-05
+
+Work stopped at the owner's request to move to another project. The pending app
+recovery smoke check finished and passed. The five-milestone implementation is
+still incomplete: milestones 1–2 have completion commits; milestones 3–5 have
+substantial implementation and evidence but remain open. Distribution is outside
+scope.
+
+Read this file first on resuming, then the relevant contract and the evidence
+ledger in [morning-report.md](morning-report.md). The fuller decision and reviewer
+history is [implementation.md](implementation.md). Older runs are historical
+evidence; they do not prove the entire current shared diff.
+
+## Prime directives for the next executing agent
+
+**Efficiency and common sense govern execution. The plan is a map.** Use it to
+understand the destination, dependencies and promises to users. Choose the route
+that produces a useful, native Fluent 2 application with the least unnecessary
+work. A plan can be wrong; making it exhaustive or perfectly correct is not a
+prerequisite for finishing the product.
+
+Preserve explicit owner rulings, scope and data-safety requirements. When a plan
+step adds cost without protecting a relevant user outcome, adapt the procedure
+and record the reason briefly with the work. Do not start another plan-repair
+project. Before each task, ask what user-visible result it advances, whether the
+code is intended to stay, and what smallest evidence will establish success.
+
+The HTML prototype is useful and imperfect. It demonstrates ideas using browser
+layout, input, scrolling and focus behavior. Preserve useful information and task
+relationships; use judgment to improve weaknesses and translate them into native
+Windows behavior. Pixel matching, copying CSS geometry or making WinUI behave
+like HTML is not the goal. A comfortable, coherent Fluent 2 experience is.
+
+## Coding standard and goal
+
+The owner's standard applies to work already underway and to deferred issues:
+
+> My goal is easy-to-read, low-bloat code, not preservation of the current
+> structure. Refactor when it materially simplifies the code, removes
+> duplication, clarifies ownership, or makes responsibilities easier to
+> understand. Avoid abstraction or function splitting only when it adds
+> indirection, ceremony, or navigation cost. Do not preserve bad code merely
+> because fixing it counts as a redesign. Apply that judgment to the work
+> already underway and to the deferred issues.
+
+**Minimum cleverness, not zero smartness.** Intelligent design and useful
+abstractions are welcome. Avoid clever machinery that silently owns more
+behavior than its name or scope suggests. An abstraction should make its
+responsibility, effects and ownership easier to understand; it should not require
+the reader to discover hidden policy. Earlier wording about smartness must not
+be interpreted as a prohibition on abstraction or thoughtful design.
+
+Judge the resulting code by how easily a reader can understand an operation and
+its owner. A useful extraction or responsibility split earns its place through
+that improvement. Preserve other contributors' ongoing changes while making
+deliberate, coordinated improvements; preserving their work does not require
+freezing the surrounding structure.
+
+## Goal to set in Codex when execution resumes
+
+Use this objective for the executing agent's Codex goal. Resume an existing
+unfinished goal where applicable rather than starting competing goals. This
+handover records the objective; it does not resume the paused implementation.
+
+> Finish TinyTorrent2's first five implementation milestones and deliver a
+> functional, coherent, polished native WinUI 3 application with a Fluent 2
+> experience. Preserve the completed download and everyday-action work; finish
+> Background and desktop behavior, Details and preferences, and Move and delete
+> files in order. Preserve ongoing changes, MVVM and TableView's public API;
+> keep one authority for each command and decision. Pursue easy-to-read,
+> low-bloat code with minimum cleverness: use intelligent design and useful
+> abstractions whose names and scope make their behavior clear. Refactor current
+> and deferred work when it materially
+> simplifies code, removes duplication, clarifies ownership or responsibilities.
+> Avoid abstractions and function splits that add indirection, ceremony or
+> navigation cost; do not preserve bad structure merely to avoid a redesign.
+> Use the HTML prototype as an imperfect design reference,
+> adapting useful information and interactions to native Windows behavior.
+> Apply efficiency and common sense as prime directives: use the plan as a map,
+> finish coherent changes before expensive review, and obtain proportionate
+> evidence for real user failures. Complete the relevant functional, visual,
+> keyboard, accessibility and persistence journeys; resolve concrete findings
+> from the required settled milestone reviews. Commit each remaining milestone
+> when its completion evidence is satisfied. Update docs/morning-report.md and
+> docs/handover.md with results, commits, measurements and honest limitations.
+> Close every process launched for verification. Exclude Distribution, dependency
+> rebuilds and a separate project to perfect the plan.
+
+The desired result is an application people can comfortably understand and use,
+not merely compiled XAML or a pixel copy of the prototype. Task completion,
+recovery, readable state, intentional grouping, native interaction and sensible
+behavior at realistic window sizes are acceptance criteria. A required outcome
+without evidence remains unfinished; state that plainly instead of substituting
+a clean source review. Stop when this objective is achieved, or when the owner
+explicitly pauses it again.
+
+## Checkout and candidate
+
+The shared checkout is `main`. The owner moved it there; this pass did not switch
+branches. Inspect `git status` and preserve uncommitted work, including concurrent
+engine edits. Account for ownership before staging a milestone commit.
+
+Start the verified candidate without elevation:
+
+`C:\SynoSoftware\TinyTorrent2\artifacts\checks\ui-review-build\TinyTorrent.exe`
+
+Keep its adjacent engine, managed assemblies and runtime files together. The
+adjacent engine SHA-256 is
+`68AA3BDFE6FE57566D3630ED2F9538ED4CDC1F688F482E15B82B4495BDE23FE3`.
+Concurrent native source edits may postdate that binary. A running engine owns
+the logon-scoped endpoint; another data directory alone does not isolate a test.
+
+All processes launched by this pass are closed. The final process check found
+no `TinyTorrent.exe` or `Engine.exe`. No desktop automation remains active.
+
+## Plan status
+
+| Milestone | Status | Next completion gate |
+| --- | --- | --- |
+| First usable download | Completed previously, `e0a5a92` | Historical journeys and first resource measurements are recorded. |
+| Everyday torrent actions | Completed previously, `6afbf65` | Historical evidence is recorded, with stated physical Explorer/drop and accessibility gaps. |
+| Background and desktop behavior | Working-tree implementation; no completion commit | Current Open/Close/Exit/restart and protected input; notifications and sleep with WinUI closed; source acknowledgement during Close. |
+| Details and preferences | Working-tree implementation; no completion commit | Adopted-surface acceptance, failed edits, live language/focus/RTL and closed-window speed history. |
+| Move and delete files | Engine safety checks passed; UI implemented and compiled; no completion commit | Actual UI submissions with disposable payloads, relevant failures and a real interrupted move. |
+
+Finish and commit the remaining milestones in order. Use the requested fresh
+adversarial review when each implementation is stable, and fix its concrete
+findings before the completion commit. Existing scoped reviews do not establish
+acceptance of the entire current diff.
+
+## Pending task finished
+
+The final unattended recovery run passed in **12,156 ms**:
+
+- Invalid speed-limit input remained `abc`; Apply showed an error and kept the
+  dialog open. Two previous failed runs exposed the NumberBox/text connection.
+  Removing its Text binding and reading its native editor through the existing
+  owner resolved that failure.
+- Invalid magnet input stayed editable with its error.
+- Removing a torrent with an open tracker draft retained the draft, explained
+  the unavailable target, disabled Save and left Cancel available.
+
+Evidence:
+`artifacts/evidence/UiSelfCapture-e494957a-cdea-4359-b498-7bdd65569b6a/captures/review.json`.
+That run saved 13 scenes: all five Settings sections, overflowing sections at
+their bottom, Pieces and recovery states. The Pieces image confirms its legend
+labels and counts fit after measuring the native WrapGrid cells. Schedule labels
+now stay on one line rather than splitting short segments into uneven rows.
+Further visual acceptance remains open.
+
+The latest app Release/x64 build passed with zero warnings/errors in **112.55 s**,
+including the coordinated PipeClient changes. Log:
+`artifacts/checks/ui-review-build/integrated-app-build.log`.
+Only the app compiled; TableView and dependencies supplied existing outputs.
+No full test suite ran for these changes.
+
+After this smoke run, the prescribed Everything stray-folder query returned
+exit 0 and no paths. A separate traversal also found no stray output folders.
+Earlier IPC failures remain historical limitations.
+
+Five focused engine checks already passed: CheckpointRetry, SelectedTransfer,
+SettingsPolicy, CommittedFiles and FilesSafety. Their exact evidence directories
+and limits are in the morning report. SelectedTransfer checked the wanted payload
+immediately on reported completion. FilesSafety injects an interrupted move
+marker; it does not crash a moving process.
+
+## Why the WinUI interface fell short of the prototype
+
+The implementation failed to produce a coherent native experience from the
+useful design ideas. I treated functional coverage and native control selection
+as more complete evidence than they were, and accepted screens before their composition
+and interactions had been compared properly with the prototype. The owner had
+to identify basic visual and usability problems repeatedly. Finding those
+problems should have been part of implementation, not work left to the owner.
+
+The recorded defects support these causes:
+
+- **Information structure was lost during translation.** The clearest example
+  is the original schedule: proportional periods, an hour ruler, feature state,
+  legend and editing actions became seven gray bars with textual summaries.
+  That removed the ability to understand the week at a glance. Better margins
+  could not repair the lost meaning; the native layout needed to represent time.
+- **Pages were assembled as controls rather than composed as tasks.** Settings
+  categories had shifting left edges and poorly allocated content width; Browse
+  clipped at an ordinary window size. Caption commands formed an equal-weight
+  cluster, and status actions were separated from the information they controlled.
+  Empty preview and feedback regions consumed space without conveying anything.
+  Individually valid WinUI controls did not make these arrangements coherent.
+- **Visual acceptance came too late.** Builds and source reviews established
+  compilation, ownership and some behavior, but could not establish balance,
+  readable density, alignment, clipping or a convincing shared surface. We spent
+  too long checking source while obvious rendered defects remained. Native
+  control defaults were accepted without enough inspection of the resulting page.
+- **The work was fragmented and the review loop was excessive.** Engine work,
+  advisory issues, source reviews, intermediate corrections and verification
+  infrastructure repeatedly displaced finishing a coherent UI slice. Reviewing
+  code that was still changing generated more work without proving the final
+  screen. I should have narrowed and coordinated the work sooner rather than
+  allowing hours of activity to stand in for a finished interface.
+- **Desktop verification was inefficient and disruptive.** Repeated external
+  navigation and screenshots occupied the owner's computer. Unattended in-app
+  capture arrived late, after that approach had already cost time and trust.
+  Early captures also caught animations or omitted dialog popup images, so their
+  limitations needed resolving before drawing visual conclusions.
+
+The prototype was better in the compared states because its hierarchy, grouping
+and spatial relationships were designed together. Its schedule makes time visible; its
+settings constrain content width and separate feature heading, status,
+visualization, definitions and actions. Consistent alignment and spacing let
+the eye identify what belongs together and what to do next. Those decisions
+provide most of the improvement; reproducing a palette or adding decoration
+does not recover them. This does not make every prototype decision correct or
+suitable for a native desktop application.
+
+The prototype also permits faster visual iteration and does not carry the full
+engine, persistence and recovery obligations of the running application. That
+explains part of the implementation cost, but does not excuse dropping its
+design. MVVM, TableView and native WinUI controls can preserve the same meaning.
+The remaining work is to compose them deliberately and verify actual states.
+
+Some concrete regressions have now been corrected: the real timeline is back,
+Settings allocation changed, NavigationView replaced the application context
+menu, Exit moved to its footer, and input recovery passed. These corrections
+do not establish that the current app matches the prototype's overall quality.
+Complete visual acceptance remains open.
+
+On resuming, finish one representative task and its shared layout rules before
+expanding corrections across pages. Compare it with the approved prototype for
+information and interactions, then judge its native rendering for functionality,
+hierarchy, grouping, spacing, typography, theme and keyboard behavior at realistic
+sizes. Reuse the existing command owners and capture evidence. Extend successful
+patterns to related pages; review the settled result rather than repeatedly
+auditing temporary code. The implementation agent owns identifying these defects
+and showing their correction without requiring the owner to find them first.
+
+## Using the WinUI skills and Fluent 2 effectively
+
+Use [winui-design](C:/Users/user/.codex/skills/winui-design/SKILL.md) before
+choosing a layout or writing changed XAML. Start with the person's task, the
+information needed to complete it, and the grouping and command hierarchy.
+Choose familiar native controls and consult a focused Gallery/sample lookup
+when the pattern is unfamiliar. Keep the existing shell and TableView where
+they serve the task. A sample is evidence about a pattern, not a reason to add
+packages, build another framework or reproduce its whole application.
+
+For this app, that means stable Settings content allocation, stronger spacing
+between groups than within them, readable typography, purposeful theme brushes,
+clear focus and error states, and resizing that keeps commands reachable. A
+schedule needs proportional time geometry, but its editing, focus and dialogs
+should feel native. Browser-style hover actions, simulated controls or identical
+HTML dimensions should not displace better Windows behavior.
+
+Apply Fluent 2 as design reasoning. Its [principles](https://fluent2.microsoft.design/design-principles)
+emphasize platform familiarity, focus and inclusion. Its
+[layout guidance](https://fluent2.microsoft.design/layout) explains how proximity,
+space and alignment communicate relationships, and explicitly allows judgment
+when uniform spacers break a pattern.
+
+| Design question | What to inspect in TinyTorrent |
+| --- | --- |
+| Is the next action apparent? | Separate transfer commands, preferences and window controls; keep contextual actions near their target. |
+| Does space express relationships? | Align related labels and fields, constrain Settings reading width, separate feature groups and collapse absent content. |
+| Do surfaces and type convey hierarchy? | Use the requested unified caption/content backdrop, deliberate content grouping and native text styles; avoid decoration that competes with the torrent list. |
+| Can people read and operate it? | Check state labels, focus, contrast, keyboard routes, accessible names and text expansion; color alone must not explain a state. |
+
+Use spacing conventions to establish rhythm, then judge the composition. The
+dense torrent table and an explanatory Settings form have different needs.
+Identical numeric margins everywhere would not make them equally usable.
+Choose the smallest effective resize or reflow change, consistent with
+[Windows responsive layout guidance](https://learn.microsoft.com/en-us/windows/apps/design/layout/responsive-design).
+
+Use [winui-code-review](C:/Users/user/.codex/skills/winui-code-review/SKILL.md)
+on the settled, affected code after compilation. Check MVVM ownership, shared
+command paths, bindings that actually update, draft retention, collection
+identity, hidden-view work, disposal, keyboard semantics, theme resources and
+localization. Tie findings to a concrete failure and correct their existing
+owner. This is where a stale binding or blocking UI call can be caught; it cannot
+establish visual balance or prove what happens when a real NumberBox loses focus.
+
+Use the skills' intent with repository context. TinyTorrent already has its
+command/notification infrastructure, JSON text catalogues and TableView. Replacing
+them with Toolkit attributes, resw files or a sample ListView merely to satisfy
+a generic checklist creates migration work and competing implementations.
+Likewise, adding every available AutomationId or analyzer is not a substitute
+for meaningful accessible names and reachable keyboard actions. Apply relevant
+checks; keep existing authorities and validate the user outcome.
+
+## What should have happened during the last 23 hours
+
+The necessary engine and data-integrity work was real. The failure was also in
+how I ordered work and judged progress: too many partially finished surfaces,
+too much repeated source checking, and too little early acceptance of a native
+page that somebody could comfortably use. There is no complete timing ledger
+to assign percentages; the concrete waste is recorded in repeated review rounds,
+build coordination, interrupted desktop inspection and corrections prompted by
+the owner.
+
+The schedule should have been treated as a functional information design from
+the start. Settings should have had one stable layout established at a realistic
+small window before all categories were expanded. Caption and status grouping
+should have been judged as a whole, rather than declaring each individual button
+acceptable. These decisions would have prevented rework rather than discovering
+it through later reviews.
+
+Builds needed to follow a coherent set of edits, and failure checks needed to
+target the changed behavior. Reviews of temporary code, repeated broad reading
+and speculative issue expansion delayed the visible result. Advisory findings
+needed triage by current user impact and evidence, not automatic promotion into
+more architecture. A required milestone review belongs at its stable completion
+gate; it should not become a continuous loop while the implementation moves.
+
+The external screen procedure should have been replaced sooner once it proved
+slow and intrusive. The later capture batch produced 121 scenes in about 51
+seconds, and the final focused recovery run took about 12 seconds. Those results
+show that obtaining bounded evidence did not require occupying the desktop for
+hours. The capture feature itself should stay a small verification aid; extending
+it into another automation product would repeat the same mistake.
+
+### A better working procedure
+
+1. **Choose one meaningful result.** State the task and the failure to remove.
+   Check functionality and common sense before polishing it. Read the relevant
+   owner and contract, using the handover to avoid rediscovering completed work.
+2. **Decide the native composition.** Use winui-design and the relevant Fluent
+   principles. Keep useful prototype ideas, improve weak ones and choose native
+   behavior. For a judgment call, use the requested sequential user roleplay
+   briefly, then decide; do not turn it into more agents or speculative features.
+3. **Make the coherent change.** Keep shared command paths and clear ownership.
+   Refactor when it materially improves readability or responsibility boundaries.
+   Fix repeated layout problems at their shared owner and local problems locally.
+   Finish planned replacement before hardening or reviewing that code.
+4. **Obtain proportionate evidence.** Build the changed target once when needed.
+   Check the specific functional failure through the real owner/control. Inspect
+   existing images or capture the changed state at relevant sizes. Expand testing
+   only when a changed risk or observed failure warrants it.
+5. **Judge the actual result.** Examine task completion, grouping, alignment,
+   density, surfaces, type, focus and feedback together. Fix the highest-impact
+   defect first. One representative page must work before copying its pattern.
+   Do not wait for the owner to point out obvious visual failures.
+6. **Review and finish.** Use winui-code-review on the settled diff and the
+   required fresh reviewer at the milestone gate. Re-review actual corrections
+   without reopening unchanged code. Commit meaningful completed work, record
+   evidence and material gaps, and move on.
+
+These are decision aids, not another rigid checklist. If a step no longer earns
+its cost, choose a better route while retaining the required outcome and honest
+evidence. Improvement means delivering the usable application sooner with fewer
+rewrites, not producing a more elaborate plan or a longer review report.
+
+## Implementation to retain
+
+- MVVM owns product state and commands. Torrent, peer and tracker tables use
+  TableView's public API. No TableView source changed in this pass.
+- The prototype informs information and interactions; native Fluent 2 design and
+  common sense guide the adaptation. The schedule has a proportional timeline,
+  ruler, saved periods, legend, segment editing and period actions.
+- NavigationView owns app navigation and footer Exit. Language and theme remain
+  caption commands without flags. Caption and content intend one acrylic surface;
+  XAML render capture cannot prove native chrome or desktop acrylic.
+- Engine checkpoint writes are serialized per torrent, retaining the newest
+  pending result. Completion waits for disk readiness. Exit retains process
+  coordination after UI disconnect and offers Wait/Cancel for file work. Scoped
+  Astra re-review passed for these corrections.
+- SpeedLimits validates raw input before saving. Inspector retains an unavailable
+  torrent's draft. TextEditor supplies one native editor lookup for direct callers.
+- Finding avoids repeated membership scans and unnecessary IndexOf calls on
+  unchanged torrent projections (#105). It compiled; no large-list measurement
+  is claimed.
+- The coordinated PipeClient pass addresses greeting/command deadlines and
+  shutdown/admission (#101, #102 and part of #103). It compiled in the integrated
+  build. Silent-peer, reconnect and disposal fault scenarios still need focused
+  runtime evidence. Optional-read scheduling remains advisory.
+
+## Resume sequence
+
+1. Inspect the shared diff and concurrent work. Apply the coding standard above
+   to current work and deferred issues: simplify bad structure where the benefit
+   is material, preserve ongoing edits, and keep each decision at one clear owner.
+2. Resolve possible acknowledged-source loss during Close (#13).
+   `MainViewModel/Actions.cs:ReceiveSources` can own and acknowledge incoming
+   sources while `MainWindow.CloseWindow` finishes its last draft check.
+   `_receivingSources` is absent from CanClose. No correction or reproduction was
+   completed. Coordinate admission with closing at existing owners and retain
+   unacknowledged sources at the engine.
+3. Finish milestone 3's affected lifecycle evidence, then its settled review and
+   commit. Avoid global power changes or driving an unrelated live engine.
+4. Examine existing capture images before adjusting layouts. The larger batch
+   has 121 scenes at three sizes in Light/Dark plus Spanish Schedule under
+   `artifacts/evidence/UiSelfCapture-c11d60b6-5d6f-45f7-bb91-b1f865579d09/captures`.
+   Its later recovery smoke failed before the fix. Some early frames caught native
+   animations; current captures record pixel stability. Open popup images for
+   dialogs: window.png alone can show only the underlying page.
+5. Finish milestone 4's functional/visual evidence, then review and commit.
+   Native chrome/acrylic, Narrator, High Contrast, text scaling, RTL, populated
+   peers/trackers and active-transfer views remain incompletely verified.
+6. Finish milestone 5's actual UI submissions and relevant recovery evidence,
+   then review and commit. Update the morning report with completion commits and
+   honest remaining limitations.
+
+Self-capture lives in `app/src/MainWindow/Capture.cs`; its opt-in environment
+variables and limits are documented in [testing.md](testing.md). The local
+fixture launcher is `V:\temp\TinyTorrentRunCapture.ps1`. It refuses a pre-existing
+engine, starts the matching candidate, checks the connected store and closes its
+own processes. It depends on recorded fixture files and is a local verification
+aid, not a distribution entry point.
+
+Before each task, choose the smallest direct path to evidence. Finish coherent
+changes before expensive review. Use focused checks for specific likely failures
+and existing images for visual review. Reserve broad suites for stable code they
+actually cover. Sequential user roleplay checks friction; native WinUI principles
+take precedence. Avoid hardening code the next agreed change will replace.
