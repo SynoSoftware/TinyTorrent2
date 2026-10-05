@@ -28,6 +28,8 @@ constexpr char checksUpdates[] = "check_for_updates";
 constexpr char scheduleEnabled[] = "schedule_enabled";
 constexpr char schedule[] = "schedule";
 constexpr char showsAdd[] = "show_add";
+constexpr char showsSplash[] = "show_splash";
+constexpr char startsInTray[] = "start_in_tray";
 constexpr char allPaused[] = "all_paused";
 constexpr char downloadLimit[] = "download_limit";
 constexpr char uploadLimit[] = "upload_limit";
@@ -79,6 +81,8 @@ Json Engine::State::Settings::ToJson() const
         {setting::scheduleEnabled, scheduleEnabled},
         {setting::schedule, std::move(periods)},
         {setting::showsAdd, showsAdd},
+        {setting::showsSplash, showsSplash},
+        {setting::startsInTray, startsInTray},
         {setting::allPaused, allPaused},
         {setting::downloadLimit, limits.download},
         {setting::uploadLimit, limits.upload},
@@ -117,6 +121,8 @@ void Engine::State::Settings::Read(Json const& saved)
         schedule.push_back(std::move(*period));
     }
     showsAdd = saved.value(setting::showsAdd, showsAdd);
+    showsSplash = saved.value(setting::showsSplash, showsSplash);
+    startsInTray = saved.value(setting::startsInTray, startsInTray);
     allPaused = saved.value(setting::allPaused, allPaused);
     limits.download = saved.value(setting::downloadLimit, limits.download);
     limits.upload = saved.value(setting::uploadLimit, limits.upload);
@@ -150,6 +156,14 @@ std::optional<Engine::State::Settings> Engine::State::Settings::With(Json const&
         else if (key == setting::showsAdd && value.is_boolean())
         {
             next.showsAdd = value;
+        }
+        else if (key == setting::showsSplash && value.is_boolean())
+        {
+            next.showsSplash = value;
+        }
+        else if (key == setting::startsInTray && value.is_boolean())
+        {
+            next.startsInTray = value;
         }
         else if (key == setting::portMapping && value.is_boolean())
         {

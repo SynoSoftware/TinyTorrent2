@@ -44,7 +44,7 @@ the tray menu, keep the appearance Windows gives them.
 The owner selected the LabForms caption button template, dimensions and chrome
 tint. These caption resources are an explicit visual exception because the app
 actions must look like the adjacent Windows caption buttons. Keep native focus
-visuals and automation. The caption logo uses the canonical SVG so it remains
+visuals and automation. The logo uses the canonical SVG so it remains
 sharp at different display scales; Windows shell icons use the canonical ICO.
 
 Use the native platform's expression of Fluent. Web component APIs and examples
@@ -60,7 +60,10 @@ The owner's later ruling replaces the application menu behind the caption logo
 with a native NavigationView. Its compact left rail shows destination icons and
 opens their labels on demand, with
 Torrents as the main destination and Settings and About as secondary destinations.
-The SVG stays a logo; it does not change into a menu icon on hover. Keep the
+The navigation pane is the window's left column from top to bottom; the caption,
+workspace and status area form the right column. The pane's own toggle stands in
+the caption row and shows the logo, which turns about its vertical axis into the
+menu glyph while the pointer is over it, so it shows what a click does. Keep the
 transfer actions and live language/theme controls in the caption, with spacing
 between those groups and the native window controls. Exit is a non-selecting
 command below the secondary navigation destinations; it retains the existing
@@ -307,8 +310,8 @@ expect.
 
 Preferences keeps the caption identity and shows its page name in place of
 torrent commands. Clicking TinyTorrent or choosing Torrents in NavigationView
-returns to the table, preserving selection and the inspector. The caption logo
-stays a passive product identity; navigation uses the native pane and its toggle.
+returns to the table, preserving selection and the inspector. The logo at the
+top of the navigation column is the native pane toggle.
 
 The table starts with Name, Size, Progress, Status, Down speed, Up speed, ETA,
 Ratio, Seeds/Peers, and Added; the person can hide, show, and reorder them.
@@ -523,7 +526,11 @@ in local time. Its engine owner preserves individually paused torrents and manua
 Pause all, so a scheduled boundary cannot undo the person's explicit pause.
 
 Appearance offers Follow Windows, Light, and Dark through the existing theme
-owner. The caption's quick light/dark action remains available. All categories
+owner, and a Show the splash screen while opening switch, on by default, for a
+person who opens TinyTorrent often and finds the splash in the way. A Start in
+the notification area switch, off by default, makes starting TinyTorrent start
+only the engine in the tray; opening TinyTorrent while it runs still shows the
+window. The caption's quick light/dark action remains available. All categories
 share one viewport-constrained, left-aligned content column, so a change of
 category cannot move the form or push its actions outside the viewport.
 

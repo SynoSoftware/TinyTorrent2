@@ -193,6 +193,8 @@
     "system_theme": "Use Windows setting",
     "light_theme": "Light",
     "dark_theme": "Dark",
+    "show_splash": "Show the splash screen while opening",
+    "start_in_tray": "Start in the notification area",
     "english": "English",
     "spanish": "Español"
   },

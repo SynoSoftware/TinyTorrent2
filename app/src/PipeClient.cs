@@ -28,7 +28,6 @@ internal sealed class PipeClient : IDisposable
     private bool _connected;
     private bool _disposed;
     private bool _hasConnected;
-    private string? _enginePath;
     private string? _dataDirectory;
     internal string? DataDirectory => _dataDirectory;
 
@@ -171,7 +170,6 @@ internal sealed class PipeClient : IDisposable
                     }
                     var hello = await ReadGreeting(pipe, _strings, token);
                     _ = hello.GetProperty("session_id").GetString() ?? throw new InvalidDataException();
-                    _enginePath = hello.TryGetProperty("engine_path", out var engine) ? engine.GetString() : _enginePath;
                     _dataDirectory = hello.TryGetProperty("data_directory", out var directory) ? directory.GetString() : _dataDirectory;
                     _hasConnected = true;
                     lock (_gate)
@@ -186,7 +184,8 @@ internal sealed class PipeClient : IDisposable
                 catch (Exception error) when (!token.IsCancellationRequested)
                 {
                     Disconnect(error);
-                    var message = error is TimeoutException ? launchFailure?.Message ?? _strings.Get("window", "disconnected") : error.Message;
+                    // A timeout adds nothing to the window's own disconnected message.
+                    var message = error is TimeoutException ? launchFailure?.Message ?? string.Empty : error.Message;
                     if (message != lastFailure) Disconnected?.Invoke(message);
                     lastFailure = message;
                     try { await Task.Delay(1000, token); } catch (OperationCanceledException) { }
@@ -369,24 +368,21 @@ internal sealed class PipeClient : IDisposable
         }
     }
 
+    // Starts the engine from the same build, which is always beside the window,
+    // rather than a path a pipe peer reported. A restart keeps the store the
+    // engine last reported.
     internal void LaunchEngine()
     {
-        if (_enginePath is not null)
-        {
-            var start = new ProcessStartInfo(_enginePath) { UseShellExecute = false, CreateNoWindow = true };
-            start.ArgumentList.Add("--background");
-            if (_dataDirectory is not null)
-            {
-                start.ArgumentList.Add("--data");
-                start.ArgumentList.Add(_dataDirectory);
-            }
-            Process.Start(start);
-            return;
-        }
-        // The engine from the same build is always beside the window.
         var adjacent = Path.Combine(AppContext.BaseDirectory, "Engine.exe");
         if (!File.Exists(adjacent)) throw new FileNotFoundException(_strings.Get("connection", "missing"));
-        Process.Start(new ProcessStartInfo(adjacent, "--background") { UseShellExecute = false, CreateNoWindow = true });
+        var start = new ProcessStartInfo(adjacent) { UseShellExecute = false, CreateNoWindow = true };
+        start.ArgumentList.Add("--background");
+        if (_dataDirectory is not null)
+        {
+            start.ArgumentList.Add("--data");
+            start.ArgumentList.Add(_dataDirectory);
+        }
+        Process.Start(start);
     }
 
     private static async Task<JsonElement> Read(Stream pipe, CancellationToken token)

@@ -125,12 +125,16 @@ public:
     std::string Name(std::string const& torrentId) const;
     std::string Folder(std::string const& torrentId) const;
     std::string Language() const;
+    std::string Theme() const;
     bool IsStopping() const;
     bool IsLoading() const;
     bool HasStorageFailure() const;
     std::string StartupError() const;
     std::string SessionId() const;
     bool ShowsAdd() const;
+    bool HasSettings() const;
+    bool ShowsSplash() const;
+    bool StartsInTray() const;
 
 private:
     class State;

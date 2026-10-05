@@ -1,6 +1,7 @@
 #include "Desktop/Splash.h"
 #include "Resources.h"
 #include <algorithm>
+#include <utility>
 #include <dwmapi.h>
 #include <uxtheme.h>
 
@@ -10,9 +11,15 @@ namespace
 {
 constexpr wchar_t windowClass[] = L"TinyTorrent.Startup";
 constexpr UINT_PTR showTimer = 1;
-constexpr UINT_PTR closeTimer = 2;
-constexpr UINT showDelay = 1000;
+constexpr UINT_PTR dwellTimer = 2;
+// A cold launch waits for the engine to load, so its splash shows at once; a
+// warm window that is ready within the delay appears without one.
+constexpr UINT coldDelay = 0;
+constexpr UINT warmDelay = 400;
 constexpr UINT minimumDwell = 1000;
+// The blur shows through a layer of the theme's background at this opacity, so
+// the text keeps its contrast in either theme.
+constexpr BYTE tintOpacity = 0x99;
 
 // Layout in effective pixels.
 constexpr SIZE openingSize{350, 170};
@@ -34,6 +41,42 @@ bool Preference(wchar_t const* name)
         RRF_RT_REG_DWORD, nullptr, &value, &size);
     return status != ERROR_SUCCESS || value != 0;
 }
+
+// The blur of the original TinyTorrent splash. User32 exports
+// SetWindowCompositionAttribute without documenting it; the documented DWM
+// system backdrop left this inactive splash a flat fill.
+struct AccentPolicy
+{
+    DWORD state;
+    DWORD flags;
+    DWORD color;
+    DWORD animation;
+};
+
+struct CompositionData
+{
+    int attribute;
+    void* data;
+    SIZE_T size;
+};
+
+constexpr DWORD accentDisabled = 0;
+constexpr DWORD accentBlur = 3;
+constexpr int accentAttribute = 19;
+
+bool SetBlur(HWND window, bool enabled)
+{
+    using Setter = BOOL(WINAPI*)(HWND, CompositionData*);
+    auto set = reinterpret_cast<Setter>(
+        GetProcAddress(GetModuleHandleW(L"user32.dll"), "SetWindowCompositionAttribute"));
+    if (!set)
+    {
+        return false;
+    }
+    AccentPolicy policy{enabled ? accentBlur : accentDisabled, 0, 0xCCFFFFFF, 0};
+    CompositionData data{accentAttribute, &policy, sizeof(policy)};
+    return set(window, &data) != FALSE;
+}
 }
 
 Splash::Splash(Strings const& strings) : strings_(strings)
@@ -52,11 +95,10 @@ Splash::~Splash()
     Close();
 }
 
-void Splash::Show()
+void Splash::Show(Launch launch)
 {
     if (window_)
     {
-        KillTimer(window_, closeTimer);
         return;
     }
     POINT point{};
@@ -79,25 +121,28 @@ void Splash::Show()
         work.top + (work.bottom - work.top - height) / 2, width, height,
         SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
     ApplyDpi(dpi, nullptr);
-    SetTimer(window_, showTimer, showDelay, nullptr);
+    SetTimer(window_, showTimer, launch == Launch::Cold ? coldDelay : warmDelay, nullptr);
 }
 
-void Splash::Finish()
+// The product window is drawn and waits to appear. A splash not yet on screen
+// never appears. One on screen is seen for its minimum time before `show` lets
+// the window appear, and stays until the window has appeared over it.
+void Splash::Finish(std::function<void()> show)
 {
-    if (!window_)
-    {
-        return;
-    }
-    KillTimer(window_, showTimer);
-    auto elapsed = GetTickCount64() - shownAt_;
-    if (!shownAt_ || elapsed >= minimumDwell)
+    if (!shownAt_)
     {
         Close();
+        show();
         return;
     }
-    // Keep a just-shown splash behind the ready window without delaying that window.
-    SetWindowPos(window_, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-    SetTimer(window_, closeTimer, static_cast<UINT>(minimumDwell - elapsed), nullptr);
+    auto elapsed = GetTickCount64() - shownAt_;
+    if (elapsed >= minimumDwell)
+    {
+        show();
+        return;
+    }
+    show_ = std::move(show);
+    SetTimer(window_, dwellTimer, static_cast<UINT>(minimumDwell - elapsed), nullptr);
 }
 
 void Splash::Close()
@@ -117,6 +162,7 @@ void Splash::Close()
         buffered_ = false;
     }
     shownAt_ = 0;
+    show_ = nullptr;
 }
 
 void Splash::Translate()
@@ -129,6 +175,20 @@ void Splash::Translate()
     }
 }
 
+// The splash follows the app's theme choice, like the window that replaces it.
+void Splash::SetTheme(std::string theme)
+{
+    if (theme == theme_)
+    {
+        return;
+    }
+    theme_ = std::move(theme);
+    if (shownAt_)
+    {
+        ApplyTheme();
+    }
+}
+
 void Splash::ApplyTheme()
 {
     HIGHCONTRASTW contrast{sizeof(contrast)};
@@ -136,7 +196,8 @@ void Splash::ApplyTheme()
     bool highContrast = (contrast.dwFlags & HCF_HIGHCONTRASTON) != 0;
     foreground_ = GetSysColor(COLOR_WINDOWTEXT);
     background_ = GetSysColor(COLOR_WINDOW);
-    BOOL dark = !highContrast && !Preference(L"AppsUseLightTheme");
+    BOOL dark = !highContrast &&
+        (theme_ == "dark" || (theme_ != "light" && !Preference(L"AppsUseLightTheme")));
     if (!highContrast)
     {
         foreground_ = dark ? RGB(255, 255, 255) : RGB(0, 0, 0);
@@ -145,15 +206,10 @@ void Splash::ApplyTheme()
     DwmSetWindowAttribute(window_, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark, sizeof(dark));
     auto corners = DWMWCP_ROUND;
     DwmSetWindowAttribute(window_, DWMWA_WINDOW_CORNER_PREFERENCE, &corners, sizeof(corners));
-    auto backdrop = !highContrast && buffered_ && Preference(L"EnableTransparency") ?
-        DWMSBT_TRANSIENTWINDOW : DWMSBT_NONE;
-    acrylic_ = SUCCEEDED(DwmSetWindowAttribute(window_, DWMWA_SYSTEMBACKDROP_TYPE,
-        &backdrop, sizeof(backdrop))) && backdrop != DWMSBT_NONE;
-    MARGINS margins = acrylic_ ? MARGINS{-1, -1, -1, -1} : MARGINS{};
-    if (FAILED(DwmExtendFrameIntoClientArea(window_, &margins)))
-    {
-        acrylic_ = false;
-    }
+    auto backdrop = DWMSBT_NONE;
+    DwmSetWindowAttribute(window_, DWMWA_SYSTEMBACKDROP_TYPE, &backdrop, sizeof(backdrop));
+    auto blur = !highContrast && buffered_ && Preference(L"EnableTransparency");
+    acrylic_ = SetBlur(window_, blur) && blur;
     InvalidateRect(window_, nullptr, FALSE);
 }
 
@@ -194,6 +250,15 @@ void Splash::Paint(HWND window)
         {
             BufferedPaintSetAlpha(buffer, nullptr, 255);
         }
+    }
+    else
+    {
+        // The window surface holds premultiplied colour.
+        auto scale = [](BYTE channel) { return static_cast<BYTE>(channel * tintOpacity / 255); };
+        SetDCBrushColor(target, RGB(scale(GetRValue(background_)), scale(GetGValue(background_)),
+            scale(GetBValue(background_))));
+        FillRect(target, &bounds, static_cast<HBRUSH>(GetStockObject(DC_BRUSH)));
+        BufferedPaintSetAlpha(buffer, nullptr, tintOpacity);
     }
     auto previous = SelectObject(target, font_);
     auto dpi = GetDpiForWindow(window);
@@ -253,9 +318,10 @@ LRESULT Splash::Handle(HWND window, UINT message, WPARAM first, LPARAM second)
     switch (message)
     {
     case WM_TIMER:
-        if (first == closeTimer)
+        if (first == dwellTimer)
         {
-            Close();
+            KillTimer(window, dwellTimer);
+            std::exchange(show_, nullptr)();
         }
         else if (first == showTimer)
         {

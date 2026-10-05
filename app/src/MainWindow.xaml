@@ -8,58 +8,107 @@
     <Grid x:Name="Root" Loaded="OnLoaded" AllowDrop="True" Background="{ThemeResource TinyTorrentChromeBrush}" DragOver="OnDragOver" Drop="OnDrop">
         <Grid.Resources>
             <SolidColorBrush x:Key="NavigationViewContentBackground" Color="Transparent" />
+            <!-- The toggle row matches the caption row, so the logo stands in the
+                 title bar at the top of the navigation column. -->
+            <Thickness x:Key="NavigationViewButtonHolderGridMargin">0</Thickness>
+            <!-- The pane toggle shows the logo, which turns into the menu glyph
+                 while the pointer is over it. PlaneProjection also draws a face
+                 from behind, so each face turns only until it is edge-on and is
+                 hidden there. -->
+            <Style x:Key="BrandToggle" TargetType="Button">
+                <Setter Property="MinHeight" Value="{ThemeResource TinyTorrentCaptionHeight}" />
+                <Setter Property="HorizontalAlignment" Value="Center" />
+                <Setter Property="VerticalAlignment" Value="Top" />
+                <Setter Property="Background" Value="{ThemeResource NavigationViewItemBackground}" />
+                <Setter Property="Foreground" Value="{ThemeResource NavigationViewItemForeground}" />
+                <Setter Property="CornerRadius" Value="{ThemeResource ControlCornerRadius}" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Button">
+                            <Grid x:Name="LayoutRoot" Width="{TemplateBinding MinWidth}" Height="{TemplateBinding MinHeight}" Background="{TemplateBinding Background}" CornerRadius="{TemplateBinding CornerRadius}">
+                                <VisualStateManager.VisualStateGroups>
+                                    <VisualStateGroup x:Name="CommonStates">
+                                        <VisualStateGroup.Transitions>
+                                            <VisualTransition From="Normal">
+                                                <Storyboard>
+                                                    <DoubleAnimationUsingKeyFrames Storyboard.TargetName="LogoTurn" Storyboard.TargetProperty="RotationY">
+                                                        <DiscreteDoubleKeyFrame KeyTime="0:0:0" Value="0" />
+                                                        <EasingDoubleKeyFrame KeyTime="0:0:0.11" Value="90"><EasingDoubleKeyFrame.EasingFunction><CubicEase EasingMode="EaseIn" /></EasingDoubleKeyFrame.EasingFunction></EasingDoubleKeyFrame>
+                                                    </DoubleAnimationUsingKeyFrames>
+                                                    <DoubleAnimationUsingKeyFrames Storyboard.TargetName="BrandLogo" Storyboard.TargetProperty="Opacity">
+                                                        <DiscreteDoubleKeyFrame KeyTime="0:0:0" Value="1" />
+                                                        <DiscreteDoubleKeyFrame KeyTime="0:0:0.11" Value="0" />
+                                                    </DoubleAnimationUsingKeyFrames>
+                                                    <DoubleAnimationUsingKeyFrames Storyboard.TargetName="BrandMenu" Storyboard.TargetProperty="Opacity">
+                                                        <DiscreteDoubleKeyFrame KeyTime="0:0:0" Value="0" />
+                                                        <DiscreteDoubleKeyFrame KeyTime="0:0:0.11" Value="1" />
+                                                    </DoubleAnimationUsingKeyFrames>
+                                                    <DoubleAnimationUsingKeyFrames Storyboard.TargetName="MenuTurn" Storyboard.TargetProperty="RotationY">
+                                                        <DiscreteDoubleKeyFrame KeyTime="0:0:0" Value="-90" />
+                                                        <EasingDoubleKeyFrame KeyTime="0:0:0.22" Value="0"><EasingDoubleKeyFrame.EasingFunction><CubicEase EasingMode="EaseOut" /></EasingDoubleKeyFrame.EasingFunction></EasingDoubleKeyFrame>
+                                                    </DoubleAnimationUsingKeyFrames>
+                                                </Storyboard>
+                                            </VisualTransition>
+                                            <VisualTransition To="Normal">
+                                                <Storyboard>
+                                                    <DoubleAnimationUsingKeyFrames Storyboard.TargetName="MenuTurn" Storyboard.TargetProperty="RotationY">
+                                                        <DiscreteDoubleKeyFrame KeyTime="0:0:0" Value="0" />
+                                                        <EasingDoubleKeyFrame KeyTime="0:0:0.11" Value="-90"><EasingDoubleKeyFrame.EasingFunction><CubicEase EasingMode="EaseIn" /></EasingDoubleKeyFrame.EasingFunction></EasingDoubleKeyFrame>
+                                                    </DoubleAnimationUsingKeyFrames>
+                                                    <DoubleAnimationUsingKeyFrames Storyboard.TargetName="BrandMenu" Storyboard.TargetProperty="Opacity">
+                                                        <DiscreteDoubleKeyFrame KeyTime="0:0:0" Value="1" />
+                                                        <DiscreteDoubleKeyFrame KeyTime="0:0:0.11" Value="0" />
+                                                    </DoubleAnimationUsingKeyFrames>
+                                                    <DoubleAnimationUsingKeyFrames Storyboard.TargetName="BrandLogo" Storyboard.TargetProperty="Opacity">
+                                                        <DiscreteDoubleKeyFrame KeyTime="0:0:0" Value="0" />
+                                                        <DiscreteDoubleKeyFrame KeyTime="0:0:0.11" Value="1" />
+                                                    </DoubleAnimationUsingKeyFrames>
+                                                    <DoubleAnimationUsingKeyFrames Storyboard.TargetName="LogoTurn" Storyboard.TargetProperty="RotationY">
+                                                        <DiscreteDoubleKeyFrame KeyTime="0:0:0" Value="90" />
+                                                        <EasingDoubleKeyFrame KeyTime="0:0:0.22" Value="0"><EasingDoubleKeyFrame.EasingFunction><CubicEase EasingMode="EaseOut" /></EasingDoubleKeyFrame.EasingFunction></EasingDoubleKeyFrame>
+                                                    </DoubleAnimationUsingKeyFrames>
+                                                </Storyboard>
+                                            </VisualTransition>
+                                        </VisualStateGroup.Transitions>
+                                        <VisualState x:Name="Normal" />
+                                        <VisualState x:Name="PointerOver">
+                                            <VisualState.Setters>
+                                                <Setter Target="LayoutRoot.Background" Value="{ThemeResource NavigationViewButtonBackgroundPointerOver}" />
+                                                <Setter Target="BrandMenu.Foreground" Value="{ThemeResource NavigationViewButtonForegroundPointerOver}" />
+                                                <Setter Target="BrandLogo.Opacity" Value="0" />
+                                                <Setter Target="BrandMenu.Opacity" Value="1" />
+                                            </VisualState.Setters>
+                                        </VisualState>
+                                        <VisualState x:Name="Pressed">
+                                            <VisualState.Setters>
+                                                <Setter Target="LayoutRoot.Background" Value="{ThemeResource NavigationViewButtonBackgroundPressed}" />
+                                                <Setter Target="BrandMenu.Foreground" Value="{ThemeResource NavigationViewButtonForegroundPressed}" />
+                                                <Setter Target="BrandLogo.Opacity" Value="0" />
+                                                <Setter Target="BrandMenu.Opacity" Value="1" />
+                                            </VisualState.Setters>
+                                        </VisualState>
+                                        <VisualState x:Name="Disabled" />
+                                    </VisualStateGroup>
+                                </VisualStateManager.VisualStateGroups>
+                                <Image x:Name="BrandLogo" Width="{ThemeResource TinyTorrentCaptionHeight}" Height="{ThemeResource TinyTorrentCaptionHeight}" AutomationProperties.AccessibilityView="Raw">
+                                    <Image.Source><SvgImageSource UriSource="ms-appx:///Assets/tinyTorrent.svg" /></Image.Source>
+                                    <Image.Projection><PlaneProjection x:Name="LogoTurn" /></Image.Projection>
+                                </Image>
+                                <FontIcon x:Name="BrandMenu" FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Menu}" FontSize="16" Foreground="{TemplateBinding Foreground}" Opacity="0" AutomationProperties.AccessibilityView="Raw">
+                                    <FontIcon.Projection><PlaneProjection x:Name="MenuTurn" /></FontIcon.Projection>
+                                </FontIcon>
+                            </Grid>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
         </Grid.Resources>
-        <Grid.RowDefinitions>
-            <RowDefinition Height="{ThemeResource TinyTorrentCaptionHeight}" />
-            <RowDefinition Height="*" />
-            <RowDefinition Height="Auto" />
-        </Grid.RowDefinitions>
-        <Grid x:Name="Caption" Background="Transparent" FlowDirection="LeftToRight">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition x:Name="LeftInset" Width="0" />
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition x:Name="RightInset" Width="0" />
-            </Grid.ColumnDefinitions>
-            <Image Grid.Column="1" Width="{ThemeResource TinyTorrentCaptionHeight}" Margin="8,0"
-                Height="{ThemeResource TinyTorrentCaptionHeight}" AutomationProperties.AccessibilityView="Raw">
-                <Image.Source><SvgImageSource UriSource="ms-appx:///Assets/tinyTorrent.svg" /></Image.Source>
-            </Image>
-            <Button x:Name="HomeButton" Grid.Column="2" Style="{StaticResource TinyTorrentCaptionButtonStyle}" Width="Auto" Padding="8,0" Click="OnTorrents">
-            <TextBlock x:Name="CaptionText" Margin="8,0" VerticalAlignment="Center"
-                FontSize="20" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
-                Foreground="{ThemeResource TextFillColorPrimaryBrush}" />
-            </Button>
-            <ToggleButton x:Name="FilterButton" Grid.Column="3" MinWidth="46" Height="32" Padding="8,0" CornerRadius="0"
-                Background="Transparent" BorderThickness="0" IsChecked="{x:Bind Model.IsFilterOpen, Mode=TwoWay}">
-                <StackPanel Orientation="Horizontal" Spacing="8"><FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Funnel}" FontSize="16" /><TextBlock x:Name="FilterCaption" Text="{x:Bind Model.FilterLabel, Mode=OneWay}" VerticalAlignment="Center" /></StackPanel>
-            </ToggleButton>
-            <Grid x:Name="SearchArea" Grid.Column="4" Margin="16,0" VerticalAlignment="Center">
-                <AutoSuggestBox x:Name="Search" MaxWidth="320" MinWidth="160" HorizontalAlignment="Stretch" Text="{x:Bind Model.Query, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                    QueryIcon="Find" TextMemberPath="Label" TextChanged="OnSearchChanged" QuerySubmitted="OnSearchSubmitted" GotFocus="OnSearchFocus">
-                    <AutoSuggestBox.ItemTemplate><DataTemplate x:DataType="local:Suggestion"><StackPanel Spacing="2" Margin="0,4"><TextBlock Text="{x:Bind Label}" TextWrapping="Wrap" /><TextBlock Text="{x:Bind Detail}" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" /></StackPanel></DataTemplate></AutoSuggestBox.ItemTemplate>
-                </AutoSuggestBox>
-            </Grid>
-            <StackPanel x:Name="CaptionActions" Grid.Column="5" Orientation="Horizontal">
-                <TextBlock x:Name="PageCaption" Text="{x:Bind Model.PageTitle, Mode=OneWay}" Margin="12,0" VerticalAlignment="Center" Style="{StaticResource BodyStrongTextBlockStyle}" Visibility="Collapsed" />
-                <Button x:Name="AddButton" Style="{StaticResource TinyTorrentCaptionButtonStyle}" Command="{x:Bind Model.Add}" />
-                <Button x:Name="MagnetButton" Style="{StaticResource TinyTorrentCaptionButtonStyle}" Command="{x:Bind Model.AddMagnet}" />
-                <Button x:Name="PauseButton" Style="{StaticResource TinyTorrentCaptionButtonStyle}" Command="{x:Bind Model.Pause}" />
-                <Button x:Name="ResumeButton" Style="{StaticResource TinyTorrentCaptionButtonStyle}" Command="{x:Bind Model.Resume}" />
-                <Button x:Name="OverflowButton" Style="{StaticResource TinyTorrentCaptionButtonStyle}" IsEnabled="{x:Bind Model.HasSelection, Mode=OneWay}" Click="OnOverflow" />
-                <Button x:Name="LanguageButton" Margin="12,0,0,0" Style="{StaticResource TinyTorrentCaptionButtonStyle}" Command="{x:Bind Model.SwitchLanguage}" />
-                <Button x:Name="ThemeButton" Margin="0,0,12,0" Style="{StaticResource TinyTorrentCaptionButtonStyle}" Command="{x:Bind Model.SwitchTheme}" />
-            </StackPanel>
-        </Grid>
-        <NavigationView x:Name="Navigation" Grid.Row="1" PaneDisplayMode="LeftCompact" IsPaneOpen="False" OpenPaneLength="200" AlwaysShowHeader="False"
-            IsBackButtonVisible="Collapsed" IsTitleBarAutoPaddingEnabled="False" IsSettingsVisible="False"
+        <NavigationView x:Name="Navigation" PaneDisplayMode="LeftCompact" IsPaneOpen="False" OpenPaneLength="200" AlwaysShowHeader="False"
+            IsBackButtonVisible="Collapsed" IsTitleBarAutoPaddingEnabled="False" IsSettingsVisible="False" PaneToggleButtonStyle="{StaticResource BrandToggle}"
             Background="Transparent" SelectionChanged="OnNavigation" ItemInvoked="OnNavigationInvoked">
             <NavigationView.MenuItems>
                 <NavigationViewItem x:Name="TorrentsPage">
-                    <NavigationViewItem.Icon><FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.List}" /></NavigationViewItem.Icon>
+                    <NavigationViewItem.Icon><FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.ArrowDownUp}" /></NavigationViewItem.Icon>
                 </NavigationViewItem>
             </NavigationView.MenuItems>
             <NavigationView.FooterMenuItems>
@@ -75,6 +124,47 @@
                 </NavigationViewItem>
             </NavigationView.FooterMenuItems>
             <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="{ThemeResource TinyTorrentCaptionHeight}" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <Grid x:Name="Caption" Background="Transparent" FlowDirection="LeftToRight">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition x:Name="LeftInset" Width="0" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition x:Name="RightInset" Width="0" />
+            </Grid.ColumnDefinitions>
+            <Button x:Name="HomeButton" Grid.Column="1" Style="{StaticResource TinyTorrentCaptionButtonStyle}" Width="Auto" Padding="8,0" Click="OnTorrents">
+            <TextBlock x:Name="CaptionText" Margin="8,0" VerticalAlignment="Center"
+                FontSize="20" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
+                Foreground="{ThemeResource TextFillColorPrimaryBrush}" />
+            </Button>
+            <ToggleButton x:Name="FilterButton" Grid.Column="2" MinWidth="46" Height="32" Padding="8,0" CornerRadius="0"
+                Background="Transparent" BorderThickness="0" IsChecked="{x:Bind Model.IsFilterOpen, Mode=TwoWay}">
+                <StackPanel Orientation="Horizontal" Spacing="8"><FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Funnel}" FontSize="16" /><TextBlock x:Name="FilterCaption" Text="{x:Bind Model.FilterLabel, Mode=OneWay}" VerticalAlignment="Center" /></StackPanel>
+            </ToggleButton>
+            <Grid x:Name="SearchArea" Grid.Column="3" Margin="16,0" VerticalAlignment="Center">
+                <AutoSuggestBox x:Name="Search" MaxWidth="320" MinWidth="160" HorizontalAlignment="Stretch" Text="{x:Bind Model.Query, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                    QueryIcon="Find" TextMemberPath="Label" TextChanged="OnSearchChanged" QuerySubmitted="OnSearchSubmitted" GotFocus="OnSearchFocus">
+                    <AutoSuggestBox.ItemTemplate><DataTemplate x:DataType="local:Suggestion"><StackPanel Spacing="2" Margin="0,4"><TextBlock Text="{x:Bind Label}" TextWrapping="Wrap" /><TextBlock Text="{x:Bind Detail}" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" /></StackPanel></DataTemplate></AutoSuggestBox.ItemTemplate>
+                </AutoSuggestBox>
+            </Grid>
+            <StackPanel x:Name="CaptionActions" Grid.Column="4" Orientation="Horizontal">
+                <TextBlock x:Name="PageCaption" Text="{x:Bind Model.PageTitle, Mode=OneWay}" Margin="12,0" VerticalAlignment="Center" Style="{StaticResource BodyStrongTextBlockStyle}" Visibility="Collapsed" />
+                <Button x:Name="AddButton" Style="{StaticResource TinyTorrentCaptionButtonStyle}" Command="{x:Bind Model.Add}" />
+                <Button x:Name="MagnetButton" Style="{StaticResource TinyTorrentCaptionButtonStyle}" Command="{x:Bind Model.AddMagnet}" />
+                <Button x:Name="PauseButton" Style="{StaticResource TinyTorrentCaptionButtonStyle}" Command="{x:Bind Model.Pause}" />
+                <Button x:Name="ResumeButton" Style="{StaticResource TinyTorrentCaptionButtonStyle}" Command="{x:Bind Model.Resume}" />
+                <Button x:Name="OverflowButton" Style="{StaticResource TinyTorrentCaptionButtonStyle}" IsEnabled="{x:Bind Model.HasSelection, Mode=OneWay}" Click="OnOverflow" />
+                <Button x:Name="LanguageButton" Margin="12,0,0,0" Style="{StaticResource TinyTorrentCaptionButtonStyle}" Command="{x:Bind Model.SwitchLanguage}" />
+                <Button x:Name="ThemeButton" Margin="0,0,12,0" Style="{StaticResource TinyTorrentCaptionButtonStyle}" Command="{x:Bind Model.SwitchTheme}" />
+            </StackPanel>
+        </Grid>
+            <Grid Grid.Row="1">
         <SplitView x:Name="Workspace" DisplayMode="Inline" OpenPaneLength="196" IsPaneOpen="{x:Bind Model.IsFilterOpen, Mode=TwoWay}" PaneBackground="Transparent" Background="Transparent">
             <SplitView.Pane>
                 <Grid RowSpacing="8" Padding="8,8,8,0">
@@ -175,7 +265,6 @@
             </StackPanel>
         </ScrollViewer>
             </Grid>
-        </NavigationView>
         <StackPanel Grid.Row="2" Margin="16,8,16,12" Spacing="4">
             <InfoBar x:Name="Feedback" IsClosable="False" Severity="{x:Bind Model.Severity, Mode=OneWay}" Message="{x:Bind Model.Message, Mode=OneWay}" IsOpen="{x:Bind Model.HasFeedback, Mode=OneWay}" Visibility="{x:Bind Model.HasFeedback, Mode=OneWay}">
                 <InfoBar.ActionButton><Button AutomationProperties.AutomationId="Restart" Content="{x:Bind Model.RestartText, Mode=OneWay}" Command="{x:Bind Model.Restart}" Visibility="{x:Bind Model.CanRestart, Mode=OneWay}" /></InfoBar.ActionButton>
@@ -190,5 +279,7 @@
                 <TextBlock Grid.Column="3" Text="{x:Bind Model.Incoming, Mode=OneWay}" VerticalAlignment="Center" TextWrapping="Wrap" TextAlignment="Right" />
             </Grid>
         </StackPanel>
+            </Grid>
+        </NavigationView>
     </Grid>
 </Window>

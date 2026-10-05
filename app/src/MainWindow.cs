@@ -97,6 +97,8 @@ public sealed partial class MainWindow : Window
         };
         Model.ActivateRequested += async (_, _) =>
         {
+            // A window still waiting to appear answers when it appears.
+            if (_cloaked) return;
             if (IsCaptureReview) { await Model.Activated(false); return; }
             if (Model.IsClosing) { await Model.Activated(false); return; }
             if (AppWindow.Presenter is OverlappedPresenter { State: OverlappedPresenterState.Minimized } presenter)
@@ -106,6 +108,7 @@ public sealed partial class MainWindow : Window
             await Model.Activated(true);
             if (Model.Page == WindowPage.Preferences) await Model.Preferences.ObserveRegistration();
         };
+        Model.ShowRequested += async (_, _) => await ShowWhenReady();
         Model.CloseRequested += async (_, engineExit) => await CloseWindow(engineExit);
         RefreshText();
         Torrents.Schema<Torrent>().Key(row => row.TorrentId).CanReorder(row => row.Queue >= 0)
@@ -126,6 +129,7 @@ public sealed partial class MainWindow : Window
         UpdateMinimum(scale);
         AppWindow.Resize(new SizeInt32((int)(1040 * scale), (int)(680 * scale)));
         RememberBounds();
+        if (!IsCaptureReview) SetCloak(true);
         AppWindow.Closing += OnClosing;
         Closed += (_, _) => Model.Dispose();
         AddShortcut(new() { Key = VirtualKey.O, Modifiers = VirtualKeyModifiers.Control }, () => Run(Model.Add), AddButton);
@@ -167,7 +171,8 @@ public sealed partial class MainWindow : Window
     private void OnModelChanged(object? sender, PropertyChangedEventArgs args)
     {
         if (args.PropertyName == nameof(MainViewModel.Page)) UpdatePage();
-        if (!IsCaptureReview && _placementPath is null && Model.DataDirectory is { } directory) _placementRead = RestorePlacement(directory);
+        StartPlacement();
+        if (Model.CanRestart) Reveal();
         if (string.IsNullOrEmpty(args.PropertyName) || args.PropertyName == nameof(MainViewModel.Theme))
             Root.RequestedTheme = Model.Theme switch { "light" => ElementTheme.Light, "dark" => ElementTheme.Dark, _ => ElementTheme.Default };
         if (string.IsNullOrEmpty(args.PropertyName) || args.PropertyName == nameof(MainViewModel.IsLoading))
@@ -398,4 +403,7 @@ public sealed partial class MainWindow : Window
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool SetForegroundWindow(nint window);
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(nint window, int attribute, ref int value, int size);
 }

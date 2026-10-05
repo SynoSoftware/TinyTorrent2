@@ -48,6 +48,7 @@ private:
     void EndSession();
     void Tick();
     void Refresh();
+    void ShowSplash();
     void Pause();
     Json Activate(std::vector<std::string> sources);
     void AddSources();
@@ -59,12 +60,17 @@ private:
     bool ticking_ = false;
     bool adding_ = false;
     bool reopen_ = false;
+    // A plain start opens the window once startup has read whether the person
+    // chose to start in the tray.
+    bool pendingStart_ = false;
     bool ending_ = false;
     std::optional<bool> endSaved_;
     bool saving_ = false;
     bool noticeSaving_ = false;
     unsigned sequence_ = 0;
     ULONGLONG waitingSince_ = 0;
+    // Cold when the current wait for a window began while the engine loaded.
+    Launch launch_ = Launch::Warm;
     TrayClick trayClick_ = TrayClick::Idle;
     POINT trayPoint_{};
     UINT taskbarCreated_ = RegisterWindowMessageW(L"TaskbarCreated");

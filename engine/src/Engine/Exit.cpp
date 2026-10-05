@@ -47,7 +47,7 @@ void Engine::State::Stop()
     }
     if (!session)
     {
-        if (!loading && store.IsIdle() && diagnostics.IsFlushed())
+        if (startup == Startup::Ready && store.IsIdle() && diagnostics.IsFlushed())
         {
             Finish();
         }

@@ -274,6 +274,16 @@
                                 <ComboBoxItem x:Name="DarkTheme" Tag="dark" />
                             </ComboBox.Items>
                         </ComboBox>
+                        <StackPanel Spacing="12">
+                            <ToggleSwitch OnContent="{x:Bind Model.OnText, Mode=OneWay}" OffContent="{x:Bind Model.OffText, Mode=OneWay}" Header="{x:Bind Model.ShowSplash.Label, Mode=OneWay}" Tag="{x:Bind Model.ShowSplash}" IsOn="{x:Bind Model.ShowSplash.IsOn, Mode=OneWay}"
+                                IsEnabled="{x:Bind Model.ShowSplash.CanEdit, Mode=OneWay}" Toggled="OnToggle" AutomationProperties.Name="{x:Bind Model.ShowSplash.Label, Mode=OneWay}" AutomationProperties.AutomationId="ShowSplash" />
+                            <InfoBar IsClosable="False" Severity="{x:Bind Model.ShowSplash.Severity, Mode=OneWay}" IsOpen="{x:Bind Model.ShowSplash.HasFeedback, Mode=OneWay}" Message="{x:Bind Model.ShowSplash.Message, Mode=OneWay}" />
+                        </StackPanel>
+                        <StackPanel Spacing="12">
+                            <ToggleSwitch OnContent="{x:Bind Model.OnText, Mode=OneWay}" OffContent="{x:Bind Model.OffText, Mode=OneWay}" Header="{x:Bind Model.StartInTray.Label, Mode=OneWay}" Tag="{x:Bind Model.StartInTray}" IsOn="{x:Bind Model.StartInTray.IsOn, Mode=OneWay}"
+                                IsEnabled="{x:Bind Model.StartInTray.CanEdit, Mode=OneWay}" Toggled="OnToggle" AutomationProperties.Name="{x:Bind Model.StartInTray.Label, Mode=OneWay}" AutomationProperties.AutomationId="StartInTray" />
+                            <InfoBar IsClosable="False" Severity="{x:Bind Model.StartInTray.Severity, Mode=OneWay}" IsOpen="{x:Bind Model.StartInTray.HasFeedback, Mode=OneWay}" Message="{x:Bind Model.StartInTray.Message, Mode=OneWay}" />
+                        </StackPanel>
                     </StackPanel>
                 </Grid>
             </ScrollViewer>

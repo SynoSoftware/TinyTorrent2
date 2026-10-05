@@ -24,6 +24,8 @@ public sealed class Preferences : INotifyPropertyChanged
     public Strings Text => _owner.Text;
     public Preference Destination { get; }
     public Preference ShowAdd { get; }
+    public Preference ShowSplash { get; }
+    public Preference StartInTray { get; }
     public Preference Download { get; }
     public Preference Upload { get; }
     public Preference AlternativeDownload { get; }
@@ -101,6 +103,8 @@ public sealed class Preferences : INotifyPropertyChanged
         _client = client;
         Destination = new(this, "default_destination");
         ShowAdd = new(this, "show_add");
+        ShowSplash = new(this, "show_splash");
+        StartInTray = new(this, "start_in_tray");
         Download = new(this, "download_limit");
         Upload = new(this, "upload_limit");
         AlternativeDownload = new(this, "alternative_download_limit");
@@ -120,7 +124,7 @@ public sealed class Preferences : INotifyPropertyChanged
         Schedule = new(this, "schedule_enabled");
         Fields = [Destination, ShowAdd, Download, Upload, AlternativeDownload, AlternativeUpload,
             Downloads, Seeds, Connections, Ratio, SeedingMinutes, Interface, PortMapping, Port,
-            Notifications, PreventSleep, SeedingSleep, Updates, Schedule];
+            Notifications, PreventSleep, SeedingSleep, Updates, Schedule, ShowSplash, StartInTray];
         AddPeriod = new Command(() => { Edit(null); return Task.CompletedTask; }, () => CanSchedule && !IsEditing);
         SavePeriod = new Command(CommitPeriod, () => CanSchedule && IsEditing);
         CancelPeriod = new Command(() => { CancelPeriodDraft(); return Task.CompletedTask; }, () => IsEditing && !_savingSchedule);

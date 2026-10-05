@@ -56,7 +56,7 @@ std::optional<ErrorCode> Engine::State::Refusal() const
     {
         return ErrorCode::Stopping;
     }
-    if (loading)
+    if (startup != Startup::Ready)
     {
         return ErrorCode::Starting;
     }

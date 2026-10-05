@@ -185,6 +185,7 @@ std::string Engine::Folder(std::string const& torrentId) const
     return found == state_->torrents.end() ? std::string() : found->second.Folder();
 }
 std::string Engine::Language() const { return state_->language; }
+std::string Engine::Theme() const { return state_->settings.theme; }
 
 // Windows paths are at most 32,767 characters, and a NUL would cut a path
 // short at the file system.
@@ -194,9 +195,13 @@ bool Engine::IsSource(std::string const& source)
 }
 
 bool Engine::IsStopping() const { return state_->stopping; }
-bool Engine::IsLoading() const { return state_->loading; }
+bool Engine::IsLoading() const { return state_->startup != Startup::Ready; }
 bool Engine::HasStorageFailure() const { return !state_->startupError.empty(); }
 std::string Engine::StartupError() const { return state_->startupError; }
 std::string Engine::SessionId() const { return state_->sessionId; }
 bool Engine::ShowsAdd() const { return state_->settings.showsAdd; }
+
+bool Engine::HasSettings() const { return state_->startup != Startup::Settings; }
+bool Engine::ShowsSplash() const { return state_->settings.showsSplash; }
+bool Engine::StartsInTray() const { return state_->settings.startsInTray; }
 }

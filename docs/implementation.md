@@ -1245,8 +1245,9 @@ records the ruling and the arrangement that replaced vcpkg.
 
 Protocol version 1 uses a four-byte little-endian UTF-8 JSON frame length,
 bounded to 16 MiB. The endpoint is `TinyTorrent.<logon SID>`; each connecting
-client first receives `{type:"hello",version:1,session_id:"...",engine_path:"...",data_directory:"..."}`. The two paths are absolute and preserve the
-same engine/store for explicit Restart. Requests are
+client first receives `{type:"hello",version:1,session_id:"...",data_directory:"..."}`. The absolute data directory
+keeps the same store for explicit Restart, which starts the engine beside the
+window rather than a path a pipe peer reports. Requests are
 `{request_id:integer,command:string,...}`. Replies repeat `request_id` and have
 `ok:boolean`, either `data` or `error:{code:string,detail:string}`. Native control
 notifications are `{type:"activate"}`, `{type:"close"}`, and `{type:"sources"}`. The pipe

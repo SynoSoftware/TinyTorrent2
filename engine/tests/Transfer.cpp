@@ -32,28 +32,32 @@ int main(int argc, char** argv)
         auto destination = directory / (isLeecher ? "leecher" : "download");
         std::filesystem::create_directories(seed);
         std::filesystem::create_directories(destination);
-        auto payload = seed / (multiple ? "selection/skip.bin" : "transfer.bin");
-        std::filesystem::create_directories(payload.parent_path());
-        std::ofstream content(payload, std::ios::binary | std::ios::trunc);
-        content.exceptions(std::ios::badbit | std::ios::failbit);
-        std::string block(65536, '\0');
-        for (int index = 0; index < (multiple ? 512 : 1024); ++index)
-        {
-            for (size_t offset = 0; offset < block.size(); ++offset)
-                block[offset] = static_cast<char>((offset * 37 + index * 19) & 255);
-            content.write(block.data(), block.size());
-        }
-        content.close();
-        if (multiple)
-            std::filesystem::copy_file(payload, seed / "selection/wanted.bin",
-                std::filesystem::copy_options::overwrite_existing);
-
+        // Each run writes the payload twice, once here and once in the engine's
+        // download, so it is as small as the checks allow. The wanted file
+        // outlasts the two ten-second rate measurements of SelectedTransfer.
+        // The skipped file is exactly one piece, so no piece spans both files.
+        constexpr std::int64_t piece = 256 * 1024;
         std::vector<lt::create_file_entry> files = multiple ?
-            std::vector<lt::create_file_entry>{{"selection/skip.bin", 32 * 1024 * 1024},
-                {"selection/wanted.bin", 32 * 1024 * 1024}} :
-            std::vector<lt::create_file_entry>{{"transfer.bin", 64 * 1024 * 1024}};
-        lt::create_torrent creator(files,
-            256 * 1024, lt::create_torrent::v1_only);
+            std::vector<lt::create_file_entry>{{"selection/skip.bin", piece},
+                {"selection/wanted.bin", 64 * piece}} :
+            std::vector<lt::create_file_entry>{{"transfer.bin", 16 * piece}};
+        std::int64_t total = 0;
+        std::string block(65536, '\0');
+        for (auto const& file : files)
+        {
+            auto path = seed / file.filename;
+            std::filesystem::create_directories(path.parent_path());
+            std::ofstream content(path, std::ios::binary | std::ios::trunc);
+            content.exceptions(std::ios::badbit | std::ios::failbit);
+            for (std::int64_t index = 0; index < file.size / std::int64_t(block.size()); ++index)
+            {
+                for (size_t offset = 0; offset < block.size(); ++offset)
+                    block[offset] = static_cast<char>((offset * 37 + index * 19) & 255);
+                content.write(block.data(), block.size());
+            }
+            total += file.size;
+        }
+        lt::create_torrent creator(files, piece, lt::create_torrent::v1_only);
         lt::set_piece_hashes(creator, seed.string());
         auto bytes = creator.generate_buf();
         auto torrent = directory / "transfer.torrent";
@@ -92,7 +96,7 @@ int main(int argc, char** argv)
         lt::tcp::endpoint peer(lt::make_address("127.0.0.1"), static_cast<unsigned short>(port));
         std::cout << "ready\ntorrent=" << torrent.string()
             << "\ndestination=" << destination.string()
-            << "\nbytes=67108864\nproduct_port=" << port << std::endl;
+            << "\nbytes=" << total << "\nproduct_port=" << port << std::endl;
         while (!std::filesystem::exists(directory / "stop"))
         {
             auto status = handle.status();

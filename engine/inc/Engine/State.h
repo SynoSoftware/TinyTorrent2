@@ -76,7 +76,7 @@ public:
 
         std::string destination;
         std::string language;
-        // Only the window acts on the theme.
+        // Only the window and the splash act on the theme.
         std::string theme = "system";
         bool portMapping = true;
         int listenPort = 6881;
@@ -90,6 +90,8 @@ public:
         bool scheduleEnabled = false;
         std::vector<Period> schedule;
         bool showsAdd = true;
+        bool showsSplash = true;
+        bool startsInTray = false;
         bool allPaused = false;
         Limits limits;
         Limits alternative{10 * 1024, 10 * 1024};
@@ -142,7 +144,7 @@ public:
     std::map<std::string, Preview> previews;
     std::map<std::string, Addition> additions;
     std::vector<std::shared_ptr<Preview>> parsing;
-    bool loading = true;
+    Startup startup = Startup::Settings;
     bool stopping = false;
     ExitStep exitStep = ExitStep::Draining;
     std::vector<lt::torrent_handle> pausing;

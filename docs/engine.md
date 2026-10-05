@@ -330,7 +330,9 @@ not establish that the bytes match the torrent.
 ## Startup and activation
 
 Opening TinyTorrent starts or activates the engine and opens WinUI. Optional
-start-at-sign-in starts the engine with WinUI closed. Simultaneous launches
+start-at-sign-in starts the engine with WinUI closed, and so does every start
+when the person chose to start in the notification area. That choice is known
+once startup has read the settings, so a start opens WinUI only then. Simultaneous launches
 resolve to one owner; subsequent launches forward their activation and exit only
 after ownership of that request has been accepted or rejection reported.
 
@@ -394,19 +396,34 @@ Windows behavior. The engine owns the
 splash and native startup failure feedback; product dialogs belong to
 WinUI.
 
-The splash is a compact, rounded, captionless native acrylic surface with the
+The splash is a compact, rounded, captionless native blurred surface with the
 application icon and short localised status. It has no buttons or recovery
-choices: the tray owns Open and Exit. Follow Windows light/dark mode before the
-first frame and while visible, with a readable solid fallback when transparency
-is disabled, contrast mode is active, or the backdrop is unavailable. Windows
-also uses its solid fallback when the splash is inactive. Load no UI framework
-for it.
+choices: the tray owns Open and Exit. It follows the app's theme choice, which
+resolves Follow Windows to the Windows light/dark mode, with a readable solid
+fallback when transparency is disabled, contrast mode is active, or the blur is
+unavailable. The blur is the accent blur of the original TinyTorrent splash; the
+documented DWM system backdrop left the inactive splash a flat fill. Load no UI
+framework for it.
 
-Wait one second before showing the splash, cancelling it if WinUI is ready first,
-so a fast launch does not flash another window. Once shown, retain it for at least
-one second to avoid a blink; a ready product window takes precedence immediately,
-with the splash behind it until that interval ends. Failure or Exit closes it
-immediately. Sign-in with WinUI closed shows no splash.
+The window alone decides that it is ready. It stays cloaked until its first
+complete usable frame has rendered: its saved place, theme and language, and a
+deliberate loading or content state. Then it sends `ready`; it does not wait for
+later data such as statistics, and a failed placement or language load falls
+back to the defaults. Startup reads `settings.json` before the resume files, so
+the engine knows the saved choices early. The window still sees `loading` until
+the transfers have loaded, so a large library delays a cold start's first frame;
+showing the window earlier needs a protocol state for loaded settings.
+
+The engine owns only the splash timing, and shows a splash only while it waits
+for a window to appear and the Show the splash screen preference allows it. A
+cold launch, where the engine still loads, shows the splash at once. A warm
+launch waits briefly and shows no splash if `ready` comes first. A splash on
+screen stays for a minimum time: the engine answers `ready` only then, the
+window appears, and the window's activate reply closes the splash, so the window
+always appears over it. `coldDelay`, `warmDelay` and `minimumDwell` in the
+splash source hold the durations. Failure or Exit closes the splash immediately,
+and a window whose connection fails appears at once with that failure. Sign-in
+with WinUI closed shows no splash.
 
 On process-creation failure or unexpected exit before window readiness, close
 the splash and report the reason through the existing tray notification path.

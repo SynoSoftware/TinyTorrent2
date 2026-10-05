@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text.Json;
 using Microsoft.UI.Windowing;
+using Microsoft.UI.Xaml.Media;
 using Windows.Graphics;
 
 namespace Syno.TinyTorrent;
@@ -12,6 +13,61 @@ public sealed partial class MainWindow
     private Placement? _placement;
     private RectInt32 _normalBounds;
     private double _normalScale = 1;
+    // The window stays cloaked until its first complete usable frame, in its
+    // saved place, theme and language, has rendered; it never appears empty or
+    // jumps into position. A failed connection shows it at once, with the
+    // failure.
+    private bool _cloaked;
+    private const int CloakAttribute = 13;
+
+    private void SetCloak(bool cloaked)
+    {
+        var value = cloaked ? 1 : 0;
+        var result = DwmSetWindowAttribute(WinRT.Interop.WindowNative.GetWindowHandle(this), CloakAttribute, ref value, sizeof(int));
+        _cloaked = cloaked && result == 0;
+    }
+
+    private async Task ShowWhenReady()
+    {
+        StartPlacement();
+        // A failed restore or language load still shows the window, with the
+        // defaults, rather than keeping the splash waiting.
+        if (_placementRead is { } reading) await Task.WhenAny(reading);
+        await Task.WhenAny(Model.LanguageLoad);
+        await Rendered();
+        var ready = await Model.Ready();
+        Reveal();
+        if (!ready) return;
+        // The window is on screen, so the engine closes its splash.
+        if (!IsCaptureReview) await Model.Activated(true);
+        await Model.ReceiveSources();
+    }
+
+    private void Reveal()
+    {
+        if (!_cloaked) return;
+        SetCloak(false);
+        Activate();
+        SetForegroundWindow(WinRT.Interop.WindowNative.GetWindowHandle(this));
+    }
+
+    private static Task Rendered()
+    {
+        var rendered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        EventHandler<object>? handler = null;
+        handler = (_, _) =>
+        {
+            CompositionTarget.Rendering -= handler;
+            rendered.TrySetResult();
+        };
+        CompositionTarget.Rendering += handler;
+        return rendered.Task;
+    }
+
+    private void StartPlacement()
+    {
+        if (!IsCaptureReview && _placementPath is null && Model.DataDirectory is { } directory) _placementRead = RestorePlacement(directory);
+    }
 
     private void OnWindowChanged(AppWindow sender, AppWindowChangedEventArgs args)
     {

@@ -93,7 +93,7 @@ public sealed partial class MainViewModel
 
     // The engine keeps offered sources until sources_received, so sources the
     // window has not taken when closing begins stay with the engine.
-    private async Task ReceiveSources()
+    internal async Task ReceiveSources()
     {
         _sourcesPending = true;
         if (_receivingSources || !_ready || !_connected || _closing) return;

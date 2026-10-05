@@ -104,6 +104,15 @@ enum class ExitStep
     Saving
 };
 
+// Startup reads the settings before the transfers, so the splash and the
+// window know the saved choices while the transfers still load.
+enum class Startup
+{
+    Settings,
+    Transfers,
+    Ready
+};
+
 // What the person last asked a torrent to do. A resumed torrent waits in
 // the download queue; a forced one ignores it.
 enum class Intent
@@ -204,6 +213,14 @@ enum class TrayItem
 
 namespace desktop
 {
+// Cold when Open started with this engine, which must load first; warm when
+// the engine was already running.
+enum class Launch
+{
+    Cold,
+    Warm
+};
+
 enum class TrayClick
 {
     Idle,

@@ -42,7 +42,7 @@ Engine::State::State(std::filesystem::path path, std::function<void()> notificat
     auto saved = std::make_shared<Document>();
     saved->settings = settings;
     auto resumes = std::make_shared<Resumes>();
-    store.Run([this, saved, resumes]
+    store.Run([this, saved]
     {
         std::filesystem::create_directories(directory);
         auto file = directory / L"settings.json";
@@ -51,6 +51,23 @@ Engine::State::State(std::filesystem::path path, std::function<void()> notificat
             return;
         }
         saved->Read(Json::parse(Store::Read(file)));
+    }, [this, saved](StorageOutcome outcome)
+    {
+        if (!outcome.succeeded)
+        {
+            startupError = outcome.detail;
+            startup = Startup::Ready;
+            diagnostics.Write("startup", "", "storage_failed");
+            return;
+        }
+        settings = saved->settings;
+        language = settings.language;
+        startup = Startup::Transfers;
+    });
+    // The store runs this after the settings job and completes it after
+    // that job's completion.
+    store.Run([this, saved, resumes]
+    {
         for (auto const& [id, facts] : saved->torrents)
         {
             try
@@ -65,10 +82,14 @@ Engine::State::State(std::filesystem::path path, std::function<void()> notificat
         }
     }, [this, saved, resumes](StorageOutcome outcome)
     {
+        if (startup == Startup::Ready)
+        {
+            return;
+        }
         if (!outcome.succeeded)
         {
             startupError = outcome.detail;
-            loading = false;
+            startup = Startup::Ready;
             diagnostics.Write("startup", "", "storage_failed");
             return;
         }
@@ -95,8 +116,6 @@ bool Engine::State::Contains(std::vector<std::string> const& values, std::string
 
 void Engine::State::Start(Document const& saved, Resumes& resumes)
 {
-    settings = saved.settings;
-    language = settings.language;
     lt::settings_pack pack;
     pack.set_str(lt::settings_pack::listen_interfaces, "");
     pack.set_bool(lt::settings_pack::enable_upnp, false);
@@ -163,7 +182,7 @@ void Engine::State::Start(Document const& saved, Resumes& resumes)
     {
         torrent.ApplyIntent();
     }
-    loading = false;
+    startup = Startup::Ready;
     diagnostics.Write("startup", "", "ready");
 }
 
@@ -294,7 +313,7 @@ Json Engine::State::Snapshot() const
         {"alternative_limits", UsesAlternative()},
         {"missing_interface", activity.missingInterface},
         {"has_incoming", activity.hasIncoming},
-        {"stopping", stopping}, {"loading", loading}, {"storage_failed", !startupError.empty()},
+        {"stopping", stopping}, {"loading", startup != Startup::Ready}, {"storage_failed", !startupError.empty()},
         {"startup_error", startupError}};
 }
 

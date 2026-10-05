@@ -208,7 +208,6 @@ Application::Application(std::filesystem::path directory, std::wstring sid, bool
         {"type", "hello"},
         {"version", Pipe::version},
         {"session_id", engine_->SessionId()},
-        {"engine_path", Utf8(Executable())},
         {"data_directory", Utf8(data)}};
     {
         Security security(sid);
@@ -240,9 +239,9 @@ int Application::Run(bool background, std::vector<std::string> sources)
             return 1;
         }
     }
-    else if (!background && !headless_)
+    else
     {
-        Open();
+        pendingStart_ = !background && !headless_;
     }
     MSG message{};
     while (GetMessageW(&message, nullptr, 0, 0) > 0)
@@ -570,7 +569,7 @@ void Application::Receive(Pipe::Client const& client, Json const& request, Reply
     }
 }
 
-// The window has started and takes over from the splash window.
+// The window has drawn its first state and waits to appear.
 void Application::OnReady(Pipe::Client const& client, Reply const& reply)
 {
     if (ui_ && ui_ != client)
@@ -590,17 +589,29 @@ void Application::OnReady(Pipe::Client const& client, Reply const& reply)
     }
     waitingSince_ = 0;
     reopen_ = false;
-    splash_.Finish();
-    reply(Success());
-    if (!offered_.empty())
+    // The reply lets the drawn window appear, and its activate reply closes
+    // the splash.
+    splash_.Finish([this, client, reply]
     {
-        ui_->Send(Json{{"type", "sources"}});
-    }
-    if (exiting_)
-    {
-        ui_->Send(Json{{"type", "close"}});
-        waitingSince_ = GetTickCount64();
-    }
+        if (client->process)
+        {
+            AllowSetForegroundWindow(client->process);
+        }
+        reply(Success());
+        if (ui_ != client)
+        {
+            return;
+        }
+        if (!offered_.empty())
+        {
+            ui_->Send(Json{{"type", "sources"}});
+        }
+        if (exiting_)
+        {
+            ui_->Send(Json{{"type", "close"}});
+            waitingSince_ = GetTickCount64();
+        }
+    });
 }
 
 void Application::OnClosed(Reply const& reply)
@@ -708,6 +719,7 @@ void Application::ForgetWindow()
 {
     ui_.reset();
     waitingSince_ = 0;
+    splash_.Close();
     if (exiting_)
     {
         Shutdown();
@@ -755,10 +767,8 @@ bool Application::Open()
         if (!waitingSince_)
         {
             waitingSince_ = GetTickCount64();
-            if (!headless_)
-            {
-                splash_.Show();
-            }
+            launch_ = engine_->IsLoading() ? Launch::Cold : Launch::Warm;
+            ShowSplash();
         }
         return true;
     }
@@ -781,10 +791,8 @@ bool Application::Open()
     process_.reset(process.hProcess);
     AllowSetForegroundWindow(process.dwProcessId);
     waitingSince_ = GetTickCount64();
-    if (!headless_)
-    {
-        splash_.Show();
-    }
+    launch_ = engine_->IsLoading() ? Launch::Cold : Launch::Warm;
+    ShowSplash();
     return true;
 }
 
@@ -904,6 +912,14 @@ void Application::Tick()
     engine_->Tick();
     Refresh();
     AddSources();
+    if (pendingStart_ && engine_->HasSettings())
+    {
+        pendingStart_ = false;
+        if (!engine_->StartsInTray())
+        {
+            Open();
+        }
+    }
     if (reopen_ && !waitingSince_ && !ui_ && !IsWindowRunning())
     {
         reopen_ = false;
@@ -924,14 +940,16 @@ void Application::CancelExit()
     Refresh();
 }
 
-// Brings the tray, the power request and the text language in line with the
-// engine and with Exit.
+// Brings the tray, the power request, the splash theme and the text language
+// in line with the engine and with Exit.
 void Application::Refresh()
 {
     activity_ = engine_->Activity();
     bool loading = engine_->IsLoading();
     tray_->Update(activity_, loading, !loading && !engine_->HasStorageFailure() && !exiting_);
     power_.Update(activity_, exiting_ || engine_->IsStopping());
+    splash_.SetTheme(engine_->Theme());
+    ShowSplash();
     auto language = engine_->Language();
     if (language == strings_.Language())
     {
@@ -941,6 +959,19 @@ void Application::Refresh()
     tray_->Translate();
     splash_.Translate();
     power_.Translate();
+}
+
+// The splash covers the wait for a window to appear when the saved choice
+// allows it. Before startup has read the settings that choice is unknown, and
+// Refresh asks again once they are read.
+void Application::ShowSplash()
+{
+    if (!waitingSince_ || ui_ || exiting_ || headless_ || !engine_->HasSettings() ||
+        !engine_->ShowsSplash())
+    {
+        return;
+    }
+    splash_.Show(launch_);
 }
 
 void Application::Pause()

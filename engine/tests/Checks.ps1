@@ -384,12 +384,12 @@ try {
             do {
                 Assert (-not $peer.HasExited) 'Magnet seed failed'
                 $snapshot = Send-Command @{ command = 'snapshot' }
-                if ($snapshot.data.torrents[0].complete -and $snapshot.data.torrents[0].size -eq 67108864) { break }
+                if ($snapshot.data.torrents[0].complete -and $snapshot.data.torrents[0].size -eq 4194304) { break }
                 [Threading.Thread]::Sleep(100)
             } while ([DateTime]::UtcNow -lt $until)
             $torrent = $snapshot.data.torrents[0]
             $snapshot.data | ConvertTo-Json -Depth 20 | Out-File -LiteralPath (Join-Path $directory 'magnet-snapshot.json') -Encoding utf8
-            Assert ($torrent.complete -and $torrent.save_path -eq $payload -and $torrent.size -eq 67108864) 'Confirmed unknown magnet did not complete all wanted payload in its chosen destination'
+            Assert ($torrent.complete -and $torrent.save_path -eq $payload -and $torrent.size -eq 4194304) 'Confirmed unknown magnet did not complete all wanted payload in its chosen destination'
             $file = Join-Path $payload 'transfer.bin'
             $seedHash = Payload-Hash (Join-Path $peerDirectory 'seed/transfer.bin')
             Assert ((Payload-Hash $file) -eq $seedHash) 'Confirmed magnet payload differs from its seed'
@@ -744,4 +744,9 @@ finally {
         }
     }
     if ($script:pipe) { $script:pipe.Dispose() }
+    # A run keeps only its logs and reports. Its payload, peer seed and engine
+    # state are worthless once the check has ended.
+    Get-ChildItem -LiteralPath $directory |
+        Where-Object { $_.PSIsContainer -or $_.Extension -notin '.log', '.json' } |
+        Remove-Item -Recurse -Force -ErrorAction Continue
 }

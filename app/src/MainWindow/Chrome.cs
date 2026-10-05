@@ -33,16 +33,17 @@ public sealed partial class MainWindow
             .Where(control => control.Visibility == Visibility.Visible && control.ActualWidth > 0)
             .Select(control => control.TransformToVisual(Caption).TransformBounds(new Rect(0, 0, control.ActualWidth, control.ActualHeight)))
             .OrderBy(bounds => bounds.Left);
+        var origin = Caption.TransformToVisual(null).TransformPoint(default).X;
         var rectangles = new List<RectInt32>();
         var start = left;
         foreach (var bounds in exclusions)
         {
-            if (bounds.Left > start) rectangles.Add(new RectInt32((int)Math.Ceiling(start * scale), 0,
+            if (bounds.Left > start) rectangles.Add(new RectInt32((int)Math.Ceiling((origin + start) * scale), 0,
                 (int)Math.Floor((bounds.Left - start) * scale), (int)Math.Round(Caption.ActualHeight * scale)));
             start = Math.Max(start, bounds.Right);
         }
         var end = Caption.ActualWidth - RightInset.Width.Value;
-        if (end > start) rectangles.Add(new RectInt32((int)Math.Ceiling(start * scale), 0,
+        if (end > start) rectangles.Add(new RectInt32((int)Math.Ceiling((origin + start) * scale), 0,
             (int)Math.Floor((end - start) * scale), (int)Math.Round(Caption.ActualHeight * scale)));
         AppWindow.TitleBar.SetDragRectangles(rectangles.ToArray());
     }

@@ -28,6 +28,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     private bool _changingLanguage;
     private string _requestedLanguage = "en";
     private int _languageRevision;
+    private Task _languageLoad = Task.CompletedTask;
     private string? _revealId;
     private string _sessionId = string.Empty;
     private bool _connected;
@@ -125,6 +126,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     public event EventHandler<Torrent>? RevealRequested;
     public event EventHandler? AddRequested;
     public event EventHandler? ActivateRequested;
+    public event EventHandler? ShowRequested;
     public event EventHandler<bool>? CloseRequested;
     public event EventHandler<string>? AnnouncementRequested;
     public ICommand Restart { get; }
@@ -244,14 +246,14 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         _storageFailed = snapshot.TryGetProperty("storage_failed", out var storage) && storage.GetBoolean();
         _startupError = snapshot.TryGetProperty("startup_error", out var detail) ? detail.GetString() : null;
         _writable = !_loading && !_storageFailed && !snapshot.GetProperty("stopping").GetBoolean();
-        if (!_ready && !_loading)
-        {
-            _ready = true;
-            _ = ReportReady();
-        }
+        // The first state the window can show: the saved settings, or the
+        // storage failure that replaces them.
+        var first = !_ready && !_loading;
+        _ready |= first;
         if (_loading || _storageFailed)
         {
             Refresh();
+            if (first) ShowRequested?.Invoke(this, EventArgs.Empty);
             return;
         }
         var settings = snapshot.GetProperty("settings");
@@ -264,7 +266,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         if (settings.TryGetProperty("theme", out var theme)) Theme = theme.GetString()!;
         if (!_settingsPending && settings.TryGetProperty("language", out var language) &&
             language.GetString() is { } tag && tag != _requestedLanguage)
-            _ = LoadLanguage(tag);
+            _languageLoad = LoadLanguage(tag);
         var present = new HashSet<string>();
         var queueChanged = false;
         foreach (var item in snapshot.GetProperty("torrents").EnumerateArray())
@@ -295,6 +297,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         _downloadRate = snapshot.GetProperty("download_rate").GetDouble();
         _uploadRate = snapshot.GetProperty("upload_rate").GetDouble();
         Refresh();
+        if (first) ShowRequested?.Invoke(this, EventArgs.Empty);
         Inspector.Observe(sessionId);
         SnapshotApplied?.Invoke(this, queueChanged);
         if (_revealId is not null && _byId.TryGetValue(_revealId, out var revealed))
@@ -304,10 +307,16 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         }
     }
 
-    private async Task ReportReady()
+    // The saved language, which the window needs before it appears.
+    internal Task LanguageLoad => _languageLoad;
+
+    // Reports that the window has rendered its first complete frame. The engine
+    // answers when the window may appear, after a splash on screen has stayed
+    // for its minimum time.
+    internal async Task<bool> Ready()
     {
-        try { await _client.Send("ready"); await ReceiveSources(); }
-        catch (Exception error) { Report(error); }
+        try { await _client.Send("ready"); return true; }
+        catch (Exception error) { Report(error); return false; }
     }
 
     private void QueueSnapshot(JsonElement snapshot)

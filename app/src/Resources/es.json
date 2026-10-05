@@ -193,6 +193,8 @@
     "system_theme": "Usar la configuración de Windows",
     "light_theme": "Claro",
     "dark_theme": "Oscuro",
+    "show_splash": "Mostrar la pantalla de inicio al abrir",
+    "start_in_tray": "Iniciar en la bandeja",
     "english": "English",
     "spanish": "Español"
   },
