@@ -6,6 +6,8 @@ using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media;
+using Windows.Foundation;
 using Windows.System;
 using Windows.UI.Core;
 
@@ -57,6 +59,8 @@ public sealed partial class Table : Control
         _source.SnapshotChanged += OnSnapshotChanged;
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
+        GotFocus += OnElementGotFocus;
+        BringIntoViewRequested += OnBringIntoViewRequested;
     }
 
     /// <summary>
@@ -621,6 +625,41 @@ public sealed partial class Table : Control
         if (_horizontalScrollBar is not null)
         {
             _horizontalScrollBar.Value = clamped;
+        }
+    }
+
+    private void OnElementGotFocus(object sender, RoutedEventArgs e)
+    {
+        if (e.OriginalSource is FrameworkElement target)
+        {
+            RevealElement(target, new Rect(0, 0, target.ActualWidth, target.ActualHeight));
+        }
+    }
+
+    private void OnBringIntoViewRequested(UIElement sender, BringIntoViewRequestedEventArgs e)
+    {
+        if (e.TargetElement is FrameworkElement target) RevealElement(target, e.TargetRect);
+    }
+
+    private void RevealElement(FrameworkElement target, Rect rectangle)
+    {
+        DependencyObject child = target;
+        for (DependencyObject? parent = VisualTreeHelper.GetParent(child); parent is not null;
+            child = parent, parent = VisualTreeHelper.GetParent(parent))
+        {
+            if (parent is not CellsPanel panel) continue;
+            if (Body.Row.FindOwner(panel) != this || child is not UIElement cell) return;
+            int index = panel.Children.IndexOf(cell);
+            if (index < 0) return;
+
+            Rect bounds = target.TransformToVisual(cell).TransformBounds(rectangle);
+            double left = Geometry.VisibleColumns[index].Offset + bounds.X;
+            double right = left + bounds.Width;
+            double viewport = _itemsView?.ActualWidth ?? 0;
+            double offset = Geometry.HorizontalOffset;
+            if (left < offset || bounds.Width > viewport) SetHorizontalOffset(left);
+            else if (right > offset + viewport) SetHorizontalOffset(right - viewport);
+            return;
         }
     }
 

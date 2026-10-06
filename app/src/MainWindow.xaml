@@ -101,7 +101,7 @@
                                 <ProgressBar Minimum="0" Maximum="1" Height="4" Value="{x:Bind Progress, Mode=OneWay}" Visibility="{x:Bind IsProgressNormal, Mode=OneWay}" AutomationProperties.AccessibilityView="Raw" />
                                 <ProgressBar Minimum="0" Maximum="1" Height="4" Value="{x:Bind Progress, Mode=OneWay}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Visibility="{x:Bind IsPaused, Mode=OneWay}" AutomationProperties.AccessibilityView="Raw" />
                                 <ProgressBar Minimum="0" Maximum="1" Height="4" Value="{x:Bind Progress, Mode=OneWay}" Foreground="{ThemeResource SystemFillColorCriticalBrush}" Visibility="{x:Bind IsError, Mode=OneWay}" AutomationProperties.AccessibilityView="Raw" />
-                                <TextBlock Grid.Row="1" Text="{x:Bind ProgressText, Mode=OneWay}" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                <TextBlock Grid.Row="1" Text="{x:Bind ProgressText, Mode=OneWay}" Style="{StaticResource CaptionTextBlockStyle}" />
                             </Grid>
                         </DataTemplate>
                     </table:Column.CellTemplate>
@@ -111,7 +111,7 @@
                         <DataTemplate x:DataType="models:Torrent">
                             <Grid VerticalAlignment="Center" ColumnSpacing="6">
                                 <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind StatusGlyph, Mode=OneWay}" FontSize="14" Foreground="{ThemeResource TextFillColorSecondaryBrush}" AutomationProperties.AccessibilityView="Raw" />
+                                <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind StatusGlyph, Mode=OneWay}" FontSize="14" AutomationProperties.AccessibilityView="Raw" />
                                 <TextBlock Grid.Column="1" Text="{x:Bind Status, Mode=OneWay}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
                             </Grid>
                         </DataTemplate>

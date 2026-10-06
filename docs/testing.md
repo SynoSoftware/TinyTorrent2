@@ -186,6 +186,9 @@ engine, not a simulated connection failure.
 One short-window case also invokes Preview with invalid input and a fixture
 magnet to inspect the error and preview areas. It does not submit a torrent or
 run unrelated journeys.
+The English 1040-wide case also captures caption hover, pressed and disabled
+visual states in Light and Dark through WinUI's state manager. This checks the
+custom template's appearance, not pointer input or OS High Contrast rendering.
 Use `TINYTORRENT_CAPTURE_REVIEW=shell` for the title-bar menus, narrow layouts,
 themes, selection commands, secondary pages and retained filter state.
 Use `TINYTORRENT_CAPTURE_REVIEW=preferences-layout` for General Settings and
@@ -208,7 +211,9 @@ refusal.
 Use `TINYTORRENT_CAPTURE_REVIEW=library` only with the disposable library
 launcher's `library-capture.json` manifest. It checks native filter and named
 torrent selection with 300 real paused torrents, then captures the populated
-workspace, filter drawer and multi-file inspector. No live traffic is implied.
+workspace, filter drawer and multi-file inspector. Native focus also reveals the
+last header in both flow directions without changing vertical scroll. This does
+not deliver physical arrow/End keys. No live traffic is implied.
 Use `TINYTORRENT_CAPTURE_REVIEW=traffic` only with the disposable loopback
 launcher's `traffic-capture.json` manifest. It captures the active workspace,
 General, populated Peers, mixed Pieces and nonzero Speed history across the

@@ -2,6 +2,20 @@
 
 ## Current continuation — 2026-10-06
 
+The TableView keyboard/header and caption contrast corrections are settled.
+One app build passes, the complete 300-torrent library capture passes, and native
+focus reveals the last header in LTR/RTL without moving the rows. Bounded source
+and visual reviews report no counted correction defect. The Add/layout run saved
+both passing Light/Dark caption previews but exceeded its launcher bound before
+finishing the full matrix; do not describe that run as a complete pass. Exact
+evidence and limits are at the top of [morning-report.md](morning-report.md).
+Preserve the owner's uncommitted inspector, file-list, table-header and search
+work. Actual OS High Contrast, physical input and native desktop evidence remain
+open, as does whole-product release acceptance. Do not repeat engine checks for
+these UI changes or rerun the broad capture simply for a green report.
+
+## Previous continuation — 2026-10-06
+
 The current 300-torrent library journey passes, including native filter/search
 submission, selection reveal, multi-file inspector and unchanged fixture bytes.
 Its old provider exception did not recur; no workaround was introduced. A fresh

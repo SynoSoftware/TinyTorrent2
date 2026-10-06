@@ -3,6 +3,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Automation.Provider;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Syno.TinyTorrent.Models;
 using Windows.Graphics;
@@ -100,6 +101,39 @@ public sealed partial class MainWindow
         Search.IsSuggestionListOpen = false;
         Search.Text = string.Empty;
         Model.IsFilterOpen = false;
+
+        var originalFlow = Torrents.FlowDirection;
+        var originalHorizontal = Torrents.HorizontalOffset;
+        var originalVertical = Torrents.VerticalOffset;
+        try
+        {
+            foreach (var flow in new[] { FlowDirection.LeftToRight, FlowDirection.RightToLeft })
+            {
+                Torrents.FlowDirection = flow;
+                Torrents.ScrollTo(0, originalVertical);
+                ThemeButton.Focus(FocusState.Programmatic);
+                await CaptureLayout();
+                var header = CaptureElements(Torrents).OfType<Syno.TableView.Header.Cell>().Last();
+                if (!header.Focus(FocusState.Keyboard))
+                    throw new InvalidOperationException("The last table header did not accept native focus.");
+                await CaptureLayout();
+                var bounds = header.TransformToVisual(Torrents).TransformBounds(
+                    new Windows.Foundation.Rect(0, 0, header.ActualWidth, header.ActualHeight));
+                if (!ReferenceEquals(FocusManager.GetFocusedElement(Root.XamlRoot), header) || Torrents.HorizontalOffset <= 0 ||
+                    bounds.Left < -0.5 || bounds.Right > Torrents.ActualWidth + 0.5 || Math.Abs(Torrents.VerticalOffset - originalVertical) > 0.5)
+                    throw new InvalidOperationException("Focusing the last table header did not reveal it without moving the rows.");
+                outcomes.Add(new { journey = "last header focus reveal", flow = flow.ToString(), offset = Torrents.HorizontalOffset,
+                    visible = true, verticalRetained = true, scope = "Native programmatic focus; no keyboard delivery." });
+                await CapturePage("library-last-header-" + flow.ToString().ToLowerInvariant());
+            }
+        }
+        finally
+        {
+            Torrents.FlowDirection = originalFlow;
+            Torrents.ScrollTo(originalHorizontal, originalVertical);
+            ThemeButton.Focus(FocusState.Programmatic);
+            await CaptureLayout();
+        }
 
         async Task Matrix(string name, Torrent anchor)
         {

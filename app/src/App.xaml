@@ -12,14 +12,26 @@
                 <ResourceDictionary x:Key="Light">
                     <SolidColorBrush x:Key="TinyTorrentChromeBrush" Color="#66FFFFFF" />
                     <SolidColorBrush x:Key="TinyTorrentCaptionHoverBrush" Color="#FFE5E5E5" />
+                    <StaticResource x:Key="TinyTorrentCaptionActiveForegroundBrush" ResourceKey="TextFillColorSecondaryBrush" />
+                    <StaticResource x:Key="TinyTorrentCaptionPressedBrush" ResourceKey="SubtleFillColorSecondaryBrush" />
+                    <StaticResource x:Key="TinyTorrentCaptionDisabledForegroundBrush" ResourceKey="TextFillColorSecondaryBrush" />
+                    <x:Double x:Key="TinyTorrentCaptionDisabledOpacity">0.4</x:Double>
                 </ResourceDictionary>
                 <ResourceDictionary x:Key="Dark">
                     <SolidColorBrush x:Key="TinyTorrentChromeBrush" Color="#66213844" />
                     <SolidColorBrush x:Key="TinyTorrentCaptionHoverBrush" Color="#FF191919" />
+                    <StaticResource x:Key="TinyTorrentCaptionActiveForegroundBrush" ResourceKey="TextFillColorSecondaryBrush" />
+                    <StaticResource x:Key="TinyTorrentCaptionPressedBrush" ResourceKey="SubtleFillColorSecondaryBrush" />
+                    <StaticResource x:Key="TinyTorrentCaptionDisabledForegroundBrush" ResourceKey="TextFillColorSecondaryBrush" />
+                    <x:Double x:Key="TinyTorrentCaptionDisabledOpacity">0.4</x:Double>
                 </ResourceDictionary>
                 <ResourceDictionary x:Key="HighContrast">
                     <SolidColorBrush x:Key="TinyTorrentChromeBrush" Color="{ThemeResource SystemColorWindowColor}" />
                     <SolidColorBrush x:Key="TinyTorrentCaptionHoverBrush" Color="{ThemeResource SystemColorHighlightColor}" />
+                    <StaticResource x:Key="TinyTorrentCaptionActiveForegroundBrush" ResourceKey="SystemColorHighlightTextColorBrush" />
+                    <StaticResource x:Key="TinyTorrentCaptionPressedBrush" ResourceKey="SystemColorHighlightColorBrush" />
+                    <StaticResource x:Key="TinyTorrentCaptionDisabledForegroundBrush" ResourceKey="SystemColorGrayTextColorBrush" />
+                    <x:Double x:Key="TinyTorrentCaptionDisabledOpacity">1</x:Double>
                 </ResourceDictionary>
             </ResourceDictionary.ThemeDictionaries>
             <x:Double x:Key="TinyTorrentCaptionHeight">48</x:Double>
@@ -42,8 +54,8 @@
                     <Setter.Value>
                         <ControlTemplate TargetType="Button">
                             <Grid x:Name="Root" Background="{TemplateBinding Background}">
-                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
-                                    Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}" />
+                                <ContentPresenter x:Name="Presenter" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                    Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}" Foreground="{TemplateBinding Foreground}" />
                                 <VisualStateManager.VisualStateGroups>
                                     <VisualStateGroup x:Name="CommonStates">
                                         <VisualState x:Name="Normal" />
@@ -52,19 +64,26 @@
                                                 <ObjectAnimationUsingKeyFrames Storyboard.TargetName="Root" Storyboard.TargetProperty="Background">
                                                     <DiscreteObjectKeyFrame KeyTime="0" Value="{ThemeResource TinyTorrentCaptionHoverBrush}" />
                                                 </ObjectAnimationUsingKeyFrames>
+                                                <ObjectAnimationUsingKeyFrames Storyboard.TargetName="Presenter" Storyboard.TargetProperty="Foreground">
+                                                    <DiscreteObjectKeyFrame KeyTime="0" Value="{ThemeResource TinyTorrentCaptionActiveForegroundBrush}" />
+                                                </ObjectAnimationUsingKeyFrames>
                                             </Storyboard>
                                         </VisualState>
                                         <VisualState x:Name="Pressed">
                                             <Storyboard>
                                                 <ObjectAnimationUsingKeyFrames Storyboard.TargetName="Root" Storyboard.TargetProperty="Background">
-                                                    <DiscreteObjectKeyFrame KeyTime="0" Value="{ThemeResource SubtleFillColorSecondaryBrush}" />
+                                                    <DiscreteObjectKeyFrame KeyTime="0" Value="{ThemeResource TinyTorrentCaptionPressedBrush}" />
+                                                </ObjectAnimationUsingKeyFrames>
+                                                <ObjectAnimationUsingKeyFrames Storyboard.TargetName="Presenter" Storyboard.TargetProperty="Foreground">
+                                                    <DiscreteObjectKeyFrame KeyTime="0" Value="{ThemeResource TinyTorrentCaptionActiveForegroundBrush}" />
                                                 </ObjectAnimationUsingKeyFrames>
                                             </Storyboard>
                                         </VisualState>
                                         <VisualState x:Name="Disabled">
-                                            <Storyboard>
-                                                <DoubleAnimation Storyboard.TargetName="Root" Storyboard.TargetProperty="Opacity" To="0.4" Duration="0" />
-                                            </Storyboard>
+                                            <VisualState.Setters>
+                                                <Setter Target="Root.Opacity" Value="{ThemeResource TinyTorrentCaptionDisabledOpacity}" />
+                                                <Setter Target="Presenter.Foreground" Value="{ThemeResource TinyTorrentCaptionDisabledForegroundBrush}" />
+                                            </VisualState.Setters>
                                         </VisualState>
                                     </VisualStateGroup>
                                 </VisualStateManager.VisualStateGroups>

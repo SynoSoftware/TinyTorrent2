@@ -801,6 +801,22 @@ public sealed partial class MainWindow
                     if (addOnly)
                     {
                         await CapturePage(prefix + "header");
+                        if (language == "en" && size.Width == 1040)
+                        {
+                            var states = new[] { (AddButton, "PointerOver"), (MagnetButton, "Pressed"), (ThemeButton, "Disabled") };
+                            try
+                            {
+                                foreach (var (button, state) in states)
+                                    if (!VisualStateManager.GoToState(button, state, false))
+                                        throw new InvalidOperationException("The caption state is unavailable: " + state);
+                                await CaptureUi(prefix + "caption-states");
+                            }
+                            finally
+                            {
+                                foreach (var (button, _) in states)
+                                    VisualStateManager.GoToState(button, button.IsEnabled ? "Normal" : "Disabled", false);
+                            }
+                        }
                         Torrents.Selection = new Syno.TableView.Selection([target], target);
                         await SelectTorrent();
                         Run(Model.Properties);

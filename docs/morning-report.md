@@ -1,5 +1,56 @@
 # Morning report
 
+## Table keyboard and contrast milestone — 2026-10-06
+
+TableView now reveals a focused header or cell through its existing horizontal
+scroll owner while preserving native vertical scrolling. Header menu movement
+follows the visual direction in RTL, and the Fit button uses its measured desired
+width instead of a collapsed control's old arranged width. These are the concrete
+source concerns from advisory #55; no competing navigation implementation was
+introduced.
+
+The custom caption template retains its accepted Light/Dark colors and 48-pixel
+geometry. High Contrast hover/pressed states pair Windows Highlight with
+HighlightText; disabled uses GrayText at full opacity. Main-table progress text
+and status glyphs inherit the row foreground so selection can supply the correct
+contrast color. This addresses the identified #47 source concerns, but actual
+OS High Contrast rendering remains unverified. The owner's inspector card,
+file-list, table-header and search changes are preserved outside this commit.
+
+- One app build, `artifacts/table-accessibility-app.log`: 49.84 seconds, zero
+  warnings/errors. Only TableView and the app compiled (their two WinUI passes);
+  Lucide was reused. No engine or dependency build ran.
+- `artifacts/evidence/LibraryCapture-a1cd25b0-ee02-419f-8edd-a785bc528816`
+  passed all 36 scenes plus the LTR/RTL focus journeys in 56.94 seconds. Both
+  focused last headers became fully visible at horizontal offset 412 without
+  changing vertical scroll. All 300 torrents and 307 payload hashes survived.
+  Native programmatic focus is evidence of reveal behavior, not physical keys.
+- The Add/layout run
+  `artifacts/evidence/UiSelfCapture-40224db4-1b89-4b25-864c-915f7358c2b5`
+  reached its 180-second launcher bound during Spanish Light at 1280 width.
+  It saved 69 capture manifests; six include a frame that did not stabilize
+  within the per-frame bound. This is an incomplete matrix, not a passing run.
+  Both English 1040-wide caption-state previews were saved and reviewed before
+  the timeout. No product exception was observed before the launcher stopped it;
+  the slower rendering has not been explained. Do not rerun the matrix merely
+  to turn this report green. The earlier complete Add evidence remains below.
+- Adversarial source re-review reports zero blocking findings. Independent
+  visual correction review inspected 18 library images and the two caption-state
+  previews, finding zero counted defects. Caption glyphs remain centered and
+  readable with equal button geometry; selected-row percentage and status remain
+  readable in both themes. This is a bounded correction gate, not whole-product
+  release acceptance.
+- Review-owned UI and engine processes are closed. Generated-output scans were
+  empty after each run. No full suite, Transfer peer, external desktop input or
+  change to the owner's Windows contrast theme was performed.
+
+Remaining evidence includes physical keyboard/menu movement, native Fit-button
+interaction, OS High Contrast, Narrator, DPI/text scaling and native caption
+gestures. The full release goal stays open. No new code comments were added;
+the new focus handlers use the platform event names and the existing scroll
+authority. Keep the engine checks from `007dcde`; these UI edits do not invalidate
+them. Add access-key and compact Spanish corrections are committed as `1eaf391`.
+
 ## Populated library and Add accessibility milestone — 2026-10-06
 
 The unresolved library-provider exception did not recur against the current

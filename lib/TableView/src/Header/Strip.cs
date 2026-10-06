@@ -183,9 +183,12 @@ public sealed partial class Strip : Control
             return;
         }
 
+        _fitButton.Visibility = Visibility.Visible;
+        _fitButton.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+
         bool offered = _owner is { ShowsFitButton: true, Geometry: { } layout }
             && _clip.ActualWidth - (layout.TotalWidth - layout.HorizontalOffset)
-                >= _fitButton.ActualWidth;
+                >= _fitButton.DesiredSize.Width;
 
         _fitButton.Visibility = offered ? Visibility.Visible : Visibility.Collapsed;
     }

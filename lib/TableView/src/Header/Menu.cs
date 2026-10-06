@@ -1,3 +1,4 @@
+using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 
@@ -115,17 +116,18 @@ internal static class Menu
 
         if (active is not null)
         {
+            int LeftStep() => owner.FlowDirection == FlowDirection.RightToLeft ? 1 : -1;
             menu.Items.Add(new MenuFlyoutSeparator());
             menu.Items.Add(Item(
                 () => owner.Strings.MoveLeft,
                 Icons.MoveLeft,
-                () => owner.CanMoveColumnBy(active, -1),
-                () => owner.MoveColumnBy(active, -1)));
+                () => owner.CanMoveColumnBy(active, LeftStep()),
+                () => owner.MoveColumnBy(active, LeftStep())));
             menu.Items.Add(Item(
                 () => owner.Strings.MoveRight,
                 Icons.MoveRight,
-                () => owner.CanMoveColumnBy(active, 1),
-                () => owner.MoveColumnBy(active, 1)));
+                () => owner.CanMoveColumnBy(active, -LeftStep()),
+                () => owner.MoveColumnBy(active, -LeftStep())));
         }
 
         // The column list, in this menu rather than in a submenu of it. A submenu is a second popup
