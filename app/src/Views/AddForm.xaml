@@ -41,10 +41,10 @@
                             <StackPanel Spacing="4">
                                 <Grid ColumnSpacing="8">
                                     <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                                    <ComboBox x:Name="Destination" IsEditable="True" HorizontalAlignment="Stretch" ItemsSource="{x:Bind Model.Draft.Folders}"
+                                    <ComboBox x:Name="Destination" AccessKey="{x:Bind Model.Text.Get('add', 'destination_key'), Mode=OneWay}" IsEditable="True" HorizontalAlignment="Stretch" ItemsSource="{x:Bind Model.Draft.Folders}"
                                         Text="{x:Bind Model.Draft.Destination, Mode=OneWay}" IsEnabled="{x:Bind Model.Draft.CanEdit, Mode=OneWay}" Loaded="OnDestinationLoaded"
                                         AutomationProperties.LabeledBy="{x:Bind DestinationLabel}" ToolTipService.ToolTip="{x:Bind Model.Draft.Destination, Mode=OneWay}" />
-                                    <controls:ActionButton Glyph="{x:Bind icons:Lucide.FolderSearch}" ToolTipService.ToolTip="{x:Bind Model.Text.Get('add', 'browse_tip'), Mode=OneWay}" x:Name="Browse" Text="{x:Bind Model.Text.Get('add', 'browse'), Mode=OneWay}" Grid.Column="1" IsEnabled="{x:Bind Model.Draft.CanEdit, Mode=OneWay}" Click="OnDestination" />
+                                    <controls:ActionButton Glyph="{x:Bind icons:Lucide.FolderSearch}" ToolTipService.ToolTip="{x:Bind Model.Text.Get('add', 'browse_tip'), Mode=OneWay}" x:Name="Browse" AccessKey="{x:Bind Model.Text.Get('add', 'browse_key'), Mode=OneWay}" Text="{x:Bind Model.Text.Get('add', 'browse'), Mode=OneWay}" Grid.Column="1" IsEnabled="{x:Bind Model.Draft.CanEdit, Mode=OneWay}" Click="OnDestination" />
                                 </Grid>
                                 <TextBlock Text="{x:Bind Model.Draft.Space, Mode=OneWay}" Style="{StaticResource BodyTextStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" ToolTipService.ToolTip="{x:Bind Model.Draft.Space, Mode=OneWay}"
                                     Visibility="{x:Bind local:AddForm.Hidden(Model.Draft.LacksSpace), Mode=OneWay}" />
@@ -61,13 +61,13 @@
                                 <TextBlock x:Name="OptionsLabel" Text="{x:Bind Model.Text.Get('add', 'options'), Mode=OneWay}" Style="{StaticResource GroupTitleTextStyle}" AutomationProperties.HeadingLevel="Level2" />
                             </StackPanel>
                             <StackPanel>
-                                <CheckBox x:Name="Paused" IsChecked="{x:Bind Model.Draft.Paused, Mode=TwoWay}" IsEnabled="{x:Bind Model.Draft.CanEdit, Mode=OneWay}" AutomationProperties.Name="{x:Bind Model.Text.Get('add', 'paused'), Mode=OneWay}" ToolTipService.ToolTip="{x:Bind Model.Text.Get('add', 'paused'), Mode=OneWay}">
+                                <CheckBox x:Name="Paused" AccessKey="{x:Bind Model.Text.Get('add', 'paused_key'), Mode=OneWay}" IsChecked="{x:Bind Model.Draft.Paused, Mode=TwoWay}" IsEnabled="{x:Bind Model.Draft.CanEdit, Mode=OneWay}" AutomationProperties.Name="{x:Bind Model.Text.Get('add', 'paused'), Mode=OneWay}" ToolTipService.ToolTip="{x:Bind Model.Text.Get('add', 'paused'), Mode=OneWay}">
                                     <TextBlock Text="{x:Bind Model.Text.Get('add', 'paused'), Mode=OneWay}" Style="{StaticResource BodyTextStyle}" />
                                 </CheckBox>
-                                <CheckBox x:Name="Sequential" IsChecked="{x:Bind Model.Draft.Sequential, Mode=TwoWay}" IsEnabled="{x:Bind Model.Draft.CanEdit, Mode=OneWay}" AutomationProperties.Name="{x:Bind Model.Text.Get('commands', 'sequential'), Mode=OneWay}" ToolTipService.ToolTip="{x:Bind Model.Text.Get('commands', 'sequential'), Mode=OneWay}">
+                                <CheckBox x:Name="Sequential" AccessKey="{x:Bind Model.Text.Get('add', 'sequential_key'), Mode=OneWay}" IsChecked="{x:Bind Model.Draft.Sequential, Mode=TwoWay}" IsEnabled="{x:Bind Model.Draft.CanEdit, Mode=OneWay}" AutomationProperties.Name="{x:Bind Model.Text.Get('commands', 'sequential'), Mode=OneWay}" ToolTipService.ToolTip="{x:Bind Model.Text.Get('commands', 'sequential'), Mode=OneWay}">
                                     <TextBlock Text="{x:Bind Model.Text.Get('commands', 'sequential'), Mode=OneWay}" Style="{StaticResource BodyTextStyle}" />
                                 </CheckBox>
-                                <CheckBox x:Name="FirstLast" IsChecked="{x:Bind Model.Draft.FirstLast, Mode=TwoWay}" IsEnabled="{x:Bind Model.Draft.CanEdit, Mode=OneWay}" AutomationProperties.Name="{x:Bind Model.Text.Get('commands', 'first_last'), Mode=OneWay}" ToolTipService.ToolTip="{x:Bind Model.Text.Get('commands', 'first_last'), Mode=OneWay}">
+                                <CheckBox x:Name="FirstLast" AccessKey="{x:Bind Model.Text.Get('add', 'first_last_key'), Mode=OneWay}" IsChecked="{x:Bind Model.Draft.FirstLast, Mode=TwoWay}" IsEnabled="{x:Bind Model.Draft.CanEdit, Mode=OneWay}" AutomationProperties.Name="{x:Bind Model.Text.Get('commands', 'first_last'), Mode=OneWay}" ToolTipService.ToolTip="{x:Bind Model.Text.Get('commands', 'first_last'), Mode=OneWay}">
                                     <TextBlock Text="{x:Bind Model.Text.Get('commands', 'first_last'), Mode=OneWay}" Style="{StaticResource BodyTextStyle}" />
                                 </CheckBox>
                             </StackPanel>
@@ -88,12 +88,12 @@
                             <FontIcon Style="{StaticResource GroupIconStyle}" Glyph="{x:Bind icons:Lucide.Link}" FontFamily="{x:Bind icons:Lucide.Font}" />
                             <TextBlock x:Name="MagnetLabel" Text="{x:Bind Model.Text.Get('add', 'magnet'), Mode=OneWay}" Style="{StaticResource GroupTitleTextStyle}" AutomationProperties.HeadingLevel="Level2" />
                         </StackPanel>
-                        <TextBox x:Name="MagnetInput" Grid.Row="1" TextWrapping="Wrap" AcceptsReturn="False" ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto"
+                        <TextBox x:Name="MagnetInput" AccessKey="{x:Bind Model.Text.Get('add', 'magnet_key'), Mode=OneWay}" Grid.Row="1" TextWrapping="Wrap" AcceptsReturn="False" ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto"
                             Text="{x:Bind Model.Draft.Magnet, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{x:Bind Model.Draft.CanEdit, Mode=OneWay}" AutomationProperties.LabeledBy="{x:Bind MagnetLabel}" />
                         <Grid Grid.Row="2" HorizontalAlignment="Center">
                             <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="{ThemeResource ContentDialogButtonSpacing}" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                            <controls:ActionButton Glyph="{x:Bind icons:Lucide.ClipboardPaste}" ToolTipService.ToolTip="{x:Bind Model.Text.Get('add', 'paste_tip'), Mode=OneWay}" x:Name="Paste" Text="{x:Bind Model.Text.Get('add', 'paste'), Mode=OneWay}" IsEnabled="{x:Bind Model.Draft.CanEdit, Mode=OneWay}" Click="OnPaste" />
-                            <controls:ActionButton Grid.Column="2" Glyph="{x:Bind icons:Lucide.ScanSearch}" ToolTipService.ToolTip="{x:Bind Model.Text.Get('add', 'review_tip'), Mode=OneWay}" x:Name="Preview" Text="{x:Bind Model.Text.Get('add', 'review'), Mode=OneWay}" IsEnabled="{x:Bind Model.Draft.CanEdit, Mode=OneWay}" Click="OnPreview" />
+                            <controls:ActionButton Glyph="{x:Bind icons:Lucide.ClipboardPaste}" ToolTipService.ToolTip="{x:Bind Model.Text.Get('add', 'paste_tip'), Mode=OneWay}" x:Name="Paste" AccessKey="{x:Bind Model.Text.Get('add', 'paste_key'), Mode=OneWay}" Text="{x:Bind Model.Text.Get('add', 'paste'), Mode=OneWay}" IsEnabled="{x:Bind Model.Draft.CanEdit, Mode=OneWay}" Click="OnPaste" />
+                            <controls:ActionButton Grid.Column="2" Glyph="{x:Bind icons:Lucide.ScanSearch}" ToolTipService.ToolTip="{x:Bind Model.Text.Get('add', 'review_tip'), Mode=OneWay}" x:Name="Preview" AccessKey="{x:Bind Model.Text.Get('add', 'review_key'), Mode=OneWay}" Text="{x:Bind Model.Text.Get('add', 'review'), Mode=OneWay}" IsEnabled="{x:Bind Model.Draft.CanEdit, Mode=OneWay}" Click="OnPreview" />
                         </Grid>
                         <InfoBar Grid.Row="3" IsClosable="False" Severity="Error" IsOpen="{x:Bind Model.Draft.HasMagnetError, Mode=OneWay}" Visibility="{x:Bind Model.Draft.HasMagnetError, Mode=OneWay}" Message="{x:Bind Model.Draft.MagnetMessage, Mode=OneWay}" />
                     </Grid>

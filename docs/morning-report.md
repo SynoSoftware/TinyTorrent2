@@ -1,5 +1,57 @@
 # Morning report
 
+## Populated library and Add accessibility milestone — 2026-10-06
+
+The unresolved library-provider exception did not recur against the current
+build. `artifacts/evidence/LibraryCapture-16edd9f0-e7a4-4ddd-a5ba-854b8cf8b6cf`
+passed all 36 scenes and native filtering/search journeys in 18.08 seconds:
+Errors hides the rows without losing membership, search reveals item 300 and
+clears the hiding filter, Paused restores the full library, and the eight-file
+inspector loads. All 300 torrents and 307 payload hashes were preserved. No
+speculative provider workaround was added; this pass does not explain the old
+COM exception or prove physical keyboard behavior.
+
+A fresh reviewer inspected all 37 library images, the earlier twelve search
+result images and six navigation destinations, and compact/wide Add, inspector
+and connection samples. Its one counted finding was the truncated Spanish
+first/last-piece option at minimum width. The correction shortens the shared
+Spanish label to “Priorizar primera y última pieza”; its off wording uses the
+same verb. This preserves the owner's one-line rule, geometry and typography.
+The same reviewer inspected the corrected compact Spanish Light/Dark images
+and found zero remaining counted defects in that correction.
+
+Add now declares eight localized native access keys: destination, Browse,
+paused, sequential, first/last, magnet input, Paste and Preview. They are unique
+within each language and follow the existing catalogue and live-binding owners.
+Enter/Escape retain the dialog's existing Add/Cancel behavior. No custom key
+dispatcher or second command implementation was added. This addresses the Add
+portion of advisory #52; physical Alt delivery is not claimed as verified.
+
+- One app build, `artifacts/add-accessibility-app.log`: 62.46 seconds, zero
+  warnings/errors. The shared build-props change recompiles Lucide and both
+  WinUI passes for TableView and the app; no engine or dependency build ran.
+- `artifacts/evidence/UiSelfCapture-0d08f16f-281a-46e7-9120-46c3c1ce316d`:
+  all twelve Add/layout cases passed in 37.87 seconds, including retained invalid
+  magnet input and visible preview. Minimum widths remain as documented below.
+- `2dc8406` removes commit-derived informational versions and Source Link from
+  local builds, so documentation commits no longer change those compiler inputs.
+  SDK property evaluation confirms both remain enabled with
+  `ContinuousIntegrationBuild=true`. The build's generated versions are `1.0.0`;
+  its obsolete Source Link files were removed by normal incremental cleanup.
+  No extra compilation was run to measure the next-build saving.
+- Review-owned processes closed, generated-output scans were empty, and no full
+  suite, Transfer peer, external desktop input or distribution work ran.
+
+The current GitHub read returned 34 open agent-filed advisories. Open status is
+not a defect verdict: #119's competing editor and #125's queue-settling path
+are already corrected. Two source-backed concerns remain for the next pass:
+#55 still uses a collapsed Fit button's ActualWidth, does not reveal horizontally
+clipped keyboard focus, and maps menu movement without RTL; #47 still has
+background-only caption hover and opacity-only disabled styling in High Contrast.
+Their user-visible runtime impact needs proportionate verification. Preserve the
+owner's pending table-theme and App.xaml changes while correcting them.
+This bounded visual gate is not final whole-product release acceptance.
+
 ## Search and minimum-width evidence checkpoint — 2026-10-06
 
 File lifecycle and client defaults are committed as `007dcde`. The owner's

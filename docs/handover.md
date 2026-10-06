@@ -1,5 +1,24 @@
 # Implementation handover — 2026-10-05
 
+## Current continuation — 2026-10-06
+
+The current 300-torrent library journey passes, including native filter/search
+submission, selection reveal, multi-file inspector and unchanged fixture bytes.
+Its old provider exception did not recur; no workaround was introduced. A fresh
+visual review found one compact Spanish Add label losing meaning. Shorter wording
+resolves it in Light/Dark; correction re-review has zero counted findings.
+Add also gains eight native localized access keys. Physical Alt remains unproven.
+Exact builds, captures and review scope are at the top of
+[morning-report.md](morning-report.md).
+
+`2dc8406` prevents commit-only managed recompilation in local builds while
+retaining CI provenance. Do not rebuild just to measure this change, and do not
+repeat unchanged engine checks. Keep the owner's concurrent UI work intact.
+Next: verify and address the surviving TableView keyboard/header concerns (#55)
+and High Contrast caption-state concern (#47), using current source rather than
+assuming all 34 open agent-filed GitHub issues are valid. Other native desktop
+and accessibility evidence limitations remain. The full release goal is active.
+
 ## Current evidence checkpoint — 2026-10-06
 
 `007dcde` commits the file-lifecycle milestone below. The following offscreen
