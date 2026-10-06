@@ -110,10 +110,8 @@ input system. Keep blocking resource work off the UI thread. Publish a prepared 
 together and retain the current language if preparation fails. Coalesce rapid
 choices so older work or an acknowledgement cannot overwrite the latest selection.
 
-Language is chosen in Preferences or the title bar, and only one UI runs. The
-title-bar control uses a language abbreviation, never a flag: language does not
-identify a country. Both controls use the same preference owner and live refresh
-path so switching stays immediate wherever the person makes the choice. The UI
+Language is chosen in Settings, and only one UI runs. The selector uses the
+existing preference owner and live refresh path so switching stays immediate. The UI
 sends the choice through the ordinary settings command, and the engine updates the tray
 from it; nothing needs to flow back, so there is no language notification and no
 other transport or event bus. Saving runs asynchronously under the [engine persistence contract](engine.md#persistence-and-file-safety):

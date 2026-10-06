@@ -41,34 +41,50 @@ exception with its reason. Lucide icons are the recorded exception for
 iconography. Surfaces that Windows draws, including pickers, system dialogs, and
 the tray menu, keep the appearance Windows gives them.
 
-The owner selected the LabForms caption button template, dimensions and chrome
-tint. These caption resources are an explicit visual exception because the app
-actions must look like the adjacent Windows caption buttons. Keep native focus
-visuals and automation. The logo uses the canonical SVG so it remains
-sharp at different display scales; Windows shell icons use the canonical ICO.
+The logo uses the canonical SVG so it remains sharp at different display scales;
+Windows shell icons use the canonical ICO. Windows owns the caption buttons.
+Application commands use native WinUI controls and their standard states.
+The title-bar theme shortcut keeps the existing custom caption-button style:
+full caption height, square hover surface and caption-button width, so it feels
+part of the window chrome. This is the exception to standard button visuals.
 
 Use the native platform's expression of Fluent. Web component APIs and examples
 do not override WinUI's control semantics or require a second design system.
 
-The approved visual and interaction reference is `app/prototype.html`, variant
+The visual and interaction reference is `app/prototype.html`, variant
 C, commit `8614126` on `main`. Preserve its compact table, collapsible status
 drawer, caption search, vertical inspector sections and Preferences composition.
 Implement them with native WinUI controls and the existing TableView and command
-owners. Prototype sample data and browser code are not production architecture.
+owners. The owner's MenuBar decision below supersedes the prototype's shell
+and navigation. Keep the prototype unchanged; it is a historical reference,
+not an implementation target for those parts. Prototype sample data and browser
+code are not production architecture.
 
-The owner's later ruling replaces the application menu behind the caption logo
-with a native NavigationView. Its compact left rail shows destination icons and
-opens their labels on demand, with
-Torrents as the main destination and Settings and About as secondary destinations.
-The navigation pane is the window's left column from top to bottom; the caption,
-workspace and status area form the right column. The pane's own toggle stands in
-the caption row and shows the logo, which turns about its vertical axis into the
-menu glyph while the pointer is over it, so it shows what a click does. Keep the
-transfer actions and live language/theme controls in the caption, with spacing
-between those groups and the native window controls. Exit is a non-selecting
-command below the secondary navigation destinations; it retains the existing
-pending-work and draft guards. Keep continuous acrylic. Navigation uses the same draft
-guards and restores the current destination when a change is refused.
+**Owner's decision: keep the native WinUI MenuBar.** It is the discoverable home
+for commands and replaces the application navigation pane. Its dropdown commands
+use Lucide icons and separators between distinct action groups; menu headings
+retain native text presentation.
+
+The custom title bar contains one row: app icon, File/Torrent/View/Help MenuBar,
+bounded Search, a light/dark switch, and native caption buttons. Keep the existing
+custom title bar; do not replace it with the WinUI TitleBar control. A 24-pixel
+icon and 32-pixel Search sit within a 48-pixel row so the content has breathing room.
+Inset the icon, separate logical groups, and reserve Windows' caption insets plus
+a command buffer. Search is at most 320 effective pixels wide. The minimum window
+width accommodates the measured menus, a 200-pixel search and the caption buttons,
+including translated labels. Unused title-bar space retains native dragging,
+double-click maximize/restore and the system menu; controls receive client input.
+The app icon is a native system-menu region: left-click or right-click opens
+Windows' Restore/Move/Size/Minimize/Maximize/Close menu, double-click closes the
+window, and Alt+Space opens the same menu. Windows owns these caption semantics;
+the icon does not open an application command menu.
+
+There is no application navigation pane, identity text, command overflow,
+language switch or permanent Add/Pause/Resume/Exit button. Language and theme
+are chosen in Settings; the title-bar light/dark shortcut uses the same theme
+owner. Torrents is the normal workspace; Settings and About
+have a contextual Back button and Alt+Left route to it, with the existing draft
+guards. Keep continuous acrylic.
 
 A second UI launch forwards Open to the existing application. Check its outcome
 before exiting. If forwarding fails before a WinUI window exists, a native
@@ -256,18 +272,15 @@ Language selection retains its immediate, in-place behavior.
 
 ### Main window
 
-The download window extends acrylic content into its title bar, following the
-LabForms title-bar layout and caption-matched button template. Icon-only commands
-sit beside the native minimize, maximize and close buttons, using the same
-32-pixel height, 46-pixel hit width and hover treatment. They retain accessible
-names, keyboard shortcuts and focus cues. A theme button switches Light/Dark in
-place; a language button uses the current language abbreviation, never flags,
-and switches through the same language preference as Preferences. One chrome
-row leaves the torrent table more space and avoids a separate Windows caption
-above the commands. Native dragging, resizing and caption semantics remain.
-The first window has a 720 by 560 effective-pixel minimum, updated for monitor
-DPI. The application name trims within the space left by the commands and
-caption buttons, so enlarging text cannot push those controls out of reach.
+The download window extends acrylic content into its custom title bar.
+The File menu contains Add torrent file, Add magnet link, Settings and Exit.
+Torrent contains the existing selection commands, queue actions, Pause all,
+Resume all and speed limits. Commands retain their selection availability and
+shortcuts. View contains a checkable Filters item; Help contains About.
+Add is available in File and through the existing keyboard and search paths.
+The first window has a 560 effective-pixel minimum height; its minimum width
+keeps the complete title-bar row usable, starting at 720 effective pixels.
+Native dragging, resizing, caption semantics and DPI behavior remain.
 Add torrent file opens the native picker first; cancelling returns to the table
 without a draft. The selected source then opens the Add form for destination,
 Start paused and Add/Cancel, following the Show the Add form preference.
@@ -282,38 +295,33 @@ selection from a command for all torrents.
 
 The Filters toggle opens a collapsible native pane with All, Downloading,
 Seeding, Paused, Queued and Errors choices and live counts. Closing the drawer
-keeps the chosen filter and its caption visible. Downloading includes metadata
+keeps the chosen filter, identified in View > Filters and a status label.
+Escape closes the drawer when focus is inside it. Clear filters lives inside
+the drawer and calls the existing filter owner. Downloading includes metadata
 acquisition, Seeding includes completed torrents and Paused includes session
 pause. The Errors shortcut in the status bar selects the same Errors filter;
 there is one filter owner. The drawer starts closed so the table keeps its full
 width until the person asks to filter. Status and progress remain visible and
 sortable in the table. Tracker information
 belongs in the selected torrent's inspector. TableView owns generic interaction.
-NavigationView exposes Torrents, Settings and About, with Exit as a separate
-non-selecting footer command. Existing keyboard and search paths still invoke
-the same Exit command. About shows the product identity and running
-version on the same acrylic surface. Add commands remain in the caption and
-global search; session commands remain in search, shortcuts and the tray. This
-keeps navigation small without taking away a command's established path.
-The current page belongs to the main view model. Leaving Settings preserves
-pending work and asks before discarding actual unfinished input; the inspector
-keeps its target and draft while another page is visible.
-The three-dot command overflow
-contains secondary actions for the selection, while the row context menu also
-offers the primary selection commands. Both call the same command owner.
-Properties belongs only in the row context menu, for one selected torrent while
-the inspector is closed; omitting it otherwise avoids an action with no effect.
-Disable the three-dot menu when no torrent is selected, so its scope is clear.
-Show the selected count at the top of command overflow; the row context menu names
+Settings opens from File and About from Help. Exit is a File command and keeps
+its existing pending-work and draft guards. Keyboard and search paths invoke
+the same owners. About shows the product identity and running version on the
+same acrylic surface. The current page belongs to the main view model.
+Leaving Settings preserves pending work and asks before discarding actual
+unfinished input; the inspector keeps its target and draft while another page
+is visible. The Torrent menu and row context menu share selection commands.
+Properties is available in Torrent for one selected torrent, and in its row
+context menu while the inspector is closed.
+Show the selected count at the top of Torrent; the row context menu names
 the torrent for a single selection. Clicking
 outside dismisses it; Escape dismisses it and returns focus to its invoker. Use
 native MenuFlyout behavior, because command menus should respond as Windows users
 expect.
 
-Preferences keeps the caption identity and shows its page name in place of
-torrent commands. Clicking TinyTorrent or choosing Torrents in NavigationView
-returns to the table, preserving selection and the inspector. The logo at the
-top of the navigation column is the native pane toggle.
+Settings and About retain the same title-bar layout. Back returns to the table,
+preserving selection and the inspector. Torrent and View menus are disabled while
+a secondary page is visible so commands cannot act on a hidden selection.
 
 The table starts with Name, Size, Progress, Status, Down speed, Up speed, ETA,
 Ratio, Seeds/Peers, and Added; the person can hide, show, and reorder them.
@@ -491,9 +499,10 @@ and scrolling handle smaller windows. Preferences uses a full page with horizont
 category selection and grouped sections, so settings have room without obscuring
 the task. Returning to torrents preserves selection and the inspector view.
 Preferences keeps this LabForms layout independently of the torrent inspector.
-Each setting is one card in the Windows Settings pattern: its name and a short
-description on the left, its control on the right, and its error inside the
-same card, so feedback never moves the rest of the page.
+Each category holds LabForms sections: a borderless card headed by an icon, a
+title and a description. Each setting in a section is one row: its name and a
+short description on the left, its control on the right, and its error in the
+same row, so feedback never moves the rest of the page.
 Put Browse beside the default download path,
 and beside Add's destination, using the native Windows folder picker. Cancelling
 the picker preserves the current path and other unfinished input.
@@ -536,8 +545,8 @@ sign in, a Start in the notification area switch, and a Show the splash screen
 while opening switch. Start in the notification area, off by default, makes
 starting TinyTorrent start only the engine in the tray; opening TinyTorrent
 while it runs still shows the window. The splash switch, on by default, serves
-a person who opens TinyTorrent often and finds the splash in the way. The caption's quick light/dark action remains available. All categories
-share one viewport-constrained, left-aligned content column, so a change of
+a person who opens TinyTorrent often and finds the splash in the way. All categories
+share one viewport-constrained, centred content column, so a change of
 category cannot move the form or push its actions outside the viewport.
 
 Preferences offers one Start when I sign in switch and an Open torrents with

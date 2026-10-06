@@ -20,7 +20,7 @@
                     <SolidColorBrush x:Key="TinyTorrentCaptionHoverBrush" Color="{ThemeResource SystemColorHighlightColor}" />
                 </ResourceDictionary>
             </ResourceDictionary.ThemeDictionaries>
-            <x:Double x:Key="TinyTorrentCaptionHeight">32</x:Double>
+            <x:Double x:Key="TinyTorrentCaptionHeight">48</x:Double>
             <x:Double x:Key="TinyTorrentCaptionButtonWidth">46</x:Double>
             <Style x:Key="TinyTorrentCaptionButtonStyle" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
                 <Setter Property="Width" Value="{ThemeResource TinyTorrentCaptionButtonWidth}" />

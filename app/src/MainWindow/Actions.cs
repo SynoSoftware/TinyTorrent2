@@ -37,40 +37,81 @@ public sealed partial class MainWindow
         args.Handled = true;
     }
 
-    private void OnOverflow(object sender, RoutedEventArgs args) => ShowSelectionMenu(OverflowButton, null, false);
+    private void RefreshMenus()
+    {
+        FileMenu.Title = Model.Text.Get("menus", "file");
+        FileMenu.AccessKey = Model.Text.Get("menus", "file_key");
+        TorrentMenu.Title = Model.Text.Get("menus", "torrent");
+        TorrentMenu.AccessKey = Model.Text.Get("menus", "torrent_key");
+        ViewMenu.Title = Model.Text.Get("menus", "view");
+        ViewMenu.AccessKey = Model.Text.Get("menus", "view_key");
+        HelpMenu.Title = Model.Text.Get("menus", "help");
+        HelpMenu.AccessKey = Model.Text.Get("menus", "help_key");
+        AutomationProperties.SetName(Menus, Model.Text.Get("commands", "menu"));
+        FileMenu.Items.Clear();
+        FileMenu.Items.Add(Menu("add_file", Model.Add, Syno.Lucide.FilePlus, "Ctrl+O"));
+        FileMenu.Items.Add(Menu("add_magnet", Model.AddMagnet, Syno.Lucide.Link, "Ctrl+Shift+O"));
+        FileMenu.Items.Add(new MenuFlyoutSeparator());
+        FileMenu.Items.Add(new MenuFlyoutItem { Text = Model.Text.Get("finding", "settings"),
+            Command = Model.ShowPreferences, Icon = Icon(Syno.Lucide.Settings), KeyboardAcceleratorTextOverride = "Alt+O" });
+        FileMenu.Items.Add(new MenuFlyoutSeparator());
+        FileMenu.Items.Add(Menu("exit", Model.Exit, Syno.Lucide.Power, "Ctrl+Q"));
+        TorrentMenu.Items.Clear();
+        var selection = new MenuFlyoutItem { IsEnabled = false };
+        selection.SetBinding(MenuFlyoutItem.TextProperty, new Binding { Source = Model,
+            Path = new PropertyPath(nameof(MainViewModel.SelectionText)), Mode = BindingMode.OneWay });
+        TorrentMenu.Items.Add(selection);
+        TorrentMenu.Items.Add(new MenuFlyoutSeparator());
+        AddSelection(TorrentMenu.Items, true);
+        TorrentMenu.Items.Add(new MenuFlyoutSeparator());
+        TorrentMenu.Items.Add(Menu("pause_all", Model.PauseAll, Syno.Lucide.Pause, "Ctrl+Shift+P"));
+        TorrentMenu.Items.Add(Menu("resume_all", Model.ResumeAll, Syno.Lucide.Play, "Ctrl+Shift+S"));
+        TorrentMenu.Items.Add(Menu("limits", Model.Limits, Syno.Lucide.Gauge));
+        ClearFiltersButton.Content = Model.Text.Get("window", "clear_filters");
+        HelpMenu.Items.Clear();
+        HelpMenu.Items.Add(new MenuFlyoutItem { Text = Model.Text.Get("about", "title"), Command = Model.ShowAbout, Icon = Icon(Syno.Lucide.Info) });
+    }
 
-    private void ShowSelectionMenu(FrameworkElement target, Point? position, bool row)
+    private void ShowSelectionMenu(FrameworkElement target, Point? position)
     {
         var menu = new MenuFlyout();
-        menu.Items.Add(new MenuFlyoutItem { Text = row && Torrents.Selection.Items.Count == 1 ?
+        menu.Items.Add(new MenuFlyoutItem { Text = Torrents.Selection.Items.Count == 1 ?
             ((Torrent)Torrents.Selection.Items[0]).Name : Model.SelectionText, IsEnabled = false });
         menu.Items.Add(new MenuFlyoutSeparator());
-        if (row)
-        {
-            Menu(menu, "pause", Model.Pause);
-            Menu(menu, "resume", Model.Resume);
-        }
-        Menu(menu, "force", Model.Force);
-        Menu(menu, "open", Model.Open);
-        Menu(menu, "open_folder", Model.OpenFolder);
-        Menu(menu, "copy_magnet", Model.CopyMagnet);
-        Menu(menu, "copy_hash", Model.CopyHash);
-        Menu(menu, "verify", Model.Verify);
-        Menu(menu, "move", Model.MoveFiles);
-        menu.Items.Add(new MenuFlyoutSeparator());
-        Menu(menu, "up", Model.Up);
-        Menu(menu, "down", Model.Down);
-        Menu(menu, "top", Model.Top);
-        Menu(menu, "bottom", Model.Bottom);
-        menu.Items.Add(new MenuFlyoutSeparator());
-        Menu(menu, "remove", Model.Remove);
-        Menu(menu, "delete_files", Model.DeleteFiles);
-        if (row && !Model.HasInspector) Menu(menu, "properties", Model.Properties);
+        AddSelection(menu.Items, !Model.HasInspector);
         if (position is { } point) menu.ShowAt(target, point); else menu.ShowAt(target);
     }
 
-    private void Menu(MenuFlyout menu, string name, ICommand command) =>
-        menu.Items.Add(new MenuFlyoutItem { Text = Model.Text.Get("commands", name), Command = command });
+    private void AddSelection(IList<MenuFlyoutItemBase> items, bool properties)
+    {
+        items.Add(Menu("pause", Model.Pause, Syno.Lucide.Pause, "Ctrl+P"));
+        items.Add(Menu("resume", Model.Resume, Syno.Lucide.Play, "Ctrl+S"));
+        items.Add(Menu("force", Model.Force, Syno.Lucide.Zap, "Ctrl+M"));
+        items.Add(new MenuFlyoutSeparator());
+        items.Add(Menu("open", Model.Open, Syno.Lucide.File));
+        items.Add(Menu("open_folder", Model.OpenFolder, Syno.Lucide.FolderOpen));
+        items.Add(Menu("copy_magnet", Model.CopyMagnet, Syno.Lucide.Link));
+        items.Add(Menu("copy_hash", Model.CopyHash, Syno.Lucide.Hash));
+        if (properties) items.Add(Menu("properties", Model.Properties, Syno.Lucide.Info));
+        items.Add(new MenuFlyoutSeparator());
+        items.Add(Menu("verify", Model.Verify, Syno.Lucide.RefreshCw, "Ctrl+R"));
+        items.Add(Menu("move", Model.MoveFiles, Syno.Lucide.FolderInput));
+        var queue = new MenuFlyoutSubItem { Text = Model.Text.Get("menus", "queue"), Icon = Icon(Syno.Lucide.ListOrdered) };
+        queue.Items.Add(Menu("up", Model.Up, Syno.Lucide.ArrowUp, "Ctrl++"));
+        queue.Items.Add(Menu("down", Model.Down, Syno.Lucide.ArrowDown, "Ctrl+-"));
+        queue.Items.Add(Menu("top", Model.Top, Syno.Lucide.ArrowUpToLine, "Ctrl+Shift++"));
+        queue.Items.Add(Menu("bottom", Model.Bottom, Syno.Lucide.ArrowDownToLine, "Ctrl+Shift+-"));
+        items.Add(queue);
+        items.Add(new MenuFlyoutSeparator());
+        items.Add(Menu("remove", Model.Remove, Syno.Lucide.X, "Delete"));
+        items.Add(Menu("delete_files", Model.DeleteFiles, Syno.Lucide.Trash2, "Shift+Delete"));
+    }
+
+    private MenuFlyoutItem Menu(string name, ICommand command, string glyph, string shortcut = "") =>
+        new() { Text = Model.Text.Get("commands", name), Command = command,
+            Icon = Icon(glyph), KeyboardAcceleratorTextOverride = shortcut };
+
+    private static FontIcon Icon(string glyph) => new() { FontFamily = Syno.Lucide.Font, Glyph = glyph };
 
     private async Task ConfirmRemove(Torrent[] torrents)
     {

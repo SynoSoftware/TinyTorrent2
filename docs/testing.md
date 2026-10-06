@@ -169,6 +169,8 @@ before changes. A second review window exits without activating an existing
 application. Normal launches perform no automatic capture.
 Use `TINYTORRENT_CAPTURE_REVIEW=smoke` to rerun the recovery journeys and settings
 viewports without repeating the full themes-and-sizes batch.
+Use `TINYTORRENT_CAPTURE_REVIEW=shell` for the title-bar menus, narrow layouts,
+themes, selection commands, secondary pages and retained filter state.
 
 First review functionality and recovery through the existing owners. Then use
 the images to examine hierarchy, spacing, alignment, typography, grouping,

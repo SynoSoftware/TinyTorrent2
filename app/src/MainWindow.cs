@@ -21,7 +21,6 @@ public sealed partial class MainWindow : Window
 {
     public MainViewModel Model { get; }
 
-    private readonly FontIcon _themeIcon = new() { FontFamily = Syno.Lucide.Font, FontSize = 16 };
     private ContentDialog? _addDialog;
     private ContentDialog? _closePrompt;
     private AddForm? _form;
@@ -40,20 +39,12 @@ public sealed partial class MainWindow : Window
         TorrentWorkspace.SizeChanged += (_, _) => UpdateInspectorSize();
         FiltersClose.Content = new FontIcon { FontFamily = Syno.Lucide.Font, Glyph = Syno.Lucide.X, FontSize = 16 };
         ExtendsContentIntoTitleBar = true;
-        AppWindow.TitleBar.PreferredHeightOption = TitleBarHeightOption.Standard;
-        SetTitleBar(Caption);
+        AppWindow.TitleBar.PreferredHeightOption = TitleBarHeightOption.Tall;
         AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "TinyTorrent.ico"));
-        AddButton.Content = new FontIcon { FontFamily = Syno.Lucide.Font, Glyph = Syno.Lucide.Plus, FontSize = 16 };
-        PauseButton.Content = new FontIcon { FontFamily = Syno.Lucide.Font, Glyph = Syno.Lucide.Pause, FontSize = 16 };
-        ResumeButton.Content = new FontIcon { FontFamily = Syno.Lucide.Font, Glyph = Syno.Lucide.Play, FontSize = 16 };
-        ThemeButton.Content = _themeIcon;
-        MagnetButton.Content = new FontIcon { FontFamily = Syno.Lucide.Font, Glyph = Syno.Lucide.Link, FontSize = 16 };
-        OverflowButton.Content = new FontIcon { FontFamily = Syno.Lucide.Font, Glyph = Syno.Lucide.Ellipsis, FontSize = 16 };
         Caption.SizeChanged += (_, _) => UpdateChrome();
-        CaptionActions.SizeChanged += (_, _) => UpdateChrome();
+        Menus.SizeChanged += (_, _) => UpdateChrome();
         SearchArea.SizeChanged += (_, _) => UpdateChrome();
-        FilterButton.SizeChanged += (_, _) => UpdateChrome();
-        HomeButton.SizeChanged += (_, _) => UpdateChrome();
+        Search.SizeChanged += (_, _) => UpdateChrome();
         AppWindow.Changed += OnWindowChanged;
         Root.ActualThemeChanged += (_, _) => { UpdateColors(); RefreshDialogs(); };
         Model.PropertyChanged += OnModelChanged;
@@ -123,7 +114,7 @@ public sealed partial class MainWindow : Window
         Torrents.Placeholder = Syno.TableView.Placeholder.Loading;
         Torrents.SelectionChanged += async (_, _) => await SelectTorrent();
         Torrents.ItemInvoked += (_, _) => Run(Model.Properties);
-        Torrents.ItemContextRequested += (_, args) => ShowSelectionMenu(args.Target, args.Position, true);
+        Torrents.ItemContextRequested += (_, args) => ShowSelectionMenu(args.Target, args.Position);
         Torrents.ReorderRequested += async (_, args) => await Model.Reorder(args.Items.Cast<Torrent>(), args.Before as Torrent);
         var scale = GetDpiForWindow(WinRT.Interop.WindowNative.GetWindowHandle(this)) / 96.0;
         UpdateMinimum(scale);
@@ -132,11 +123,11 @@ public sealed partial class MainWindow : Window
         if (!IsCaptureReview) SetCloak(true);
         AppWindow.Closing += OnClosing;
         Closed += (_, _) => Model.Dispose();
-        AddShortcut(new() { Key = VirtualKey.O, Modifiers = VirtualKeyModifiers.Control }, () => Run(Model.Add), AddButton);
+        AddShortcut(new() { Key = VirtualKey.O, Modifiers = VirtualKeyModifiers.Control }, () => Run(Model.Add));
         AddShortcut(new() { Key = VirtualKey.W, Modifiers = VirtualKeyModifiers.Control }, () => _ = CloseWindow(engineExit: false));
-        AddShortcut(new() { Key = VirtualKey.Q, Modifiers = VirtualKeyModifiers.Control }, () => Run(Model.Exit), ExitItem);
-        AddShortcut(new() { Key = VirtualKey.P, Modifiers = VirtualKeyModifiers.Control, ScopeOwner = Torrents }, () => Run(Model.Pause), PauseButton);
-        AddShortcut(new() { Key = VirtualKey.S, Modifiers = VirtualKeyModifiers.Control, ScopeOwner = Torrents }, () => Run(Model.Resume), ResumeButton);
+        AddShortcut(new() { Key = VirtualKey.Q, Modifiers = VirtualKeyModifiers.Control }, () => Run(Model.Exit));
+        AddShortcut(new() { Key = VirtualKey.P, Modifiers = VirtualKeyModifiers.Control, ScopeOwner = Torrents }, () => Run(Model.Pause));
+        AddShortcut(new() { Key = VirtualKey.S, Modifiers = VirtualKeyModifiers.Control, ScopeOwner = Torrents }, () => Run(Model.Resume));
         AddShortcut(new() { Key = VirtualKey.M, Modifiers = VirtualKeyModifiers.Control, ScopeOwner = Torrents }, () => Run(Model.Force));
         AddShortcut(new() { Key = VirtualKey.R, Modifiers = VirtualKeyModifiers.Control, ScopeOwner = Torrents }, () => Run(Model.Verify));
         AddShortcut(new() { Key = VirtualKey.V, Modifiers = VirtualKeyModifiers.Control, ScopeOwner = Torrents }, () => _ = PasteSources());
@@ -144,6 +135,7 @@ public sealed partial class MainWindow : Window
         AddShortcut(new() { Key = VirtualKey.E, Modifiers = VirtualKeyModifiers.Control }, () => Search.Focus(FocusState.Keyboard));
         AddShortcut(new() { Key = VirtualKey.K, Modifiers = VirtualKeyModifiers.Control }, () => Search.Focus(FocusState.Keyboard));
         AddShortcut(new() { Key = VirtualKey.O, Modifiers = VirtualKeyModifiers.Menu }, () => Run(Model.ShowPreferences));
+        AddShortcut(new() { Key = VirtualKey.Left, Modifiers = VirtualKeyModifiers.Menu }, () => Run(Model.ShowTorrents));
         AddShortcut(new() { Key = VirtualKey.O, Modifiers = VirtualKeyModifiers.Control | VirtualKeyModifiers.Shift }, () => Run(Model.AddMagnet));
         AddShortcut(new() { Key = VirtualKey.P, Modifiers = VirtualKeyModifiers.Control | VirtualKeyModifiers.Shift }, () => Run(Model.PauseAll));
         AddShortcut(new() { Key = VirtualKey.S, Modifiers = VirtualKeyModifiers.Control | VirtualKeyModifiers.Shift }, () => Run(Model.ResumeAll));
@@ -183,8 +175,6 @@ public sealed partial class MainWindow : Window
             _refreshingFilters = true;
             Filters.SelectedItem = Filters.Items.OfType<FilterChoice>().FirstOrDefault(choice => choice.Filter == Model.Filter);
             _refreshingFilters = false;
-            AutomationProperties.SetName(FilterButton, Model.FilterLabel);
-            ToolTipService.SetToolTip(FilterButton, Model.FilterLabel);
         }
     }
 

@@ -1,8 +1,8 @@
 using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
+using Windows.System;
 
 namespace Syno.TinyTorrent;
 
@@ -10,7 +10,6 @@ public sealed partial class MainWindow
 {
     private PreferencesForm? _preferencesForm;
     private bool _refreshingFilters;
-    private bool _refreshingNavigation;
     private bool _selecting;
     private double _splitHeight = 360;
     private Syno.TableView.Selection _selection = new([], null);
@@ -26,41 +25,6 @@ public sealed partial class MainWindow
         }
         return false;
     }
-
-    private void OnTorrents(object sender, RoutedEventArgs args) { if (!HasDialog) Run(Model.ShowTorrents); }
-
-    private void OnNavigationInvoked(NavigationView sender, NavigationViewItemInvokedEventArgs args)
-    {
-        if (args.InvokedItemContainer == ExitItem) Run(Model.Exit);
-    }
-
-    private async void OnNavigation(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
-    {
-        if (_refreshingNavigation || args.SelectedItem is not NavigationViewItem page) return;
-        try
-        {
-            if (page == TorrentsPage) await ShowTorrents();
-            else if (page == SettingsPage) await ShowPreferences(new(PreferenceSection.General));
-            else if (page == AboutPage) await ShowAbout();
-        }
-        finally { UpdateNavigation(); }
-    }
-
-    private void UpdateNavigation()
-    {
-        _refreshingNavigation = true;
-        try
-        {
-            Navigation.SelectedItem = Model.Page switch
-            {
-                WindowPage.Torrents => TorrentsPage,
-                WindowPage.Preferences => SettingsPage,
-                _ => AboutPage
-            };
-        }
-        finally { _refreshingNavigation = false; }
-    }
-
     private async Task<bool> ShowTorrents()
     {
         if (!await Navigate(WindowPage.Torrents)) return false;
@@ -84,7 +48,7 @@ public sealed partial class MainWindow
 
     private async Task ShowAbout()
     {
-        if (await Navigate(WindowPage.About)) AboutPage.Focus(FocusState.Programmatic);
+        if (await Navigate(WindowPage.About)) BackButton.Focus(FocusState.Programmatic);
     }
 
     private async Task ShowPreferences(PreferenceTarget target)
@@ -104,9 +68,9 @@ public sealed partial class MainWindow
         Workspace.Visibility = Model.Page == WindowPage.Torrents ? Visibility.Visible : Visibility.Collapsed;
         PreferencesContent.Visibility = Model.Page == WindowPage.Preferences ? Visibility.Visible : Visibility.Collapsed;
         AboutContent.Visibility = Model.Page == WindowPage.About ? Visibility.Visible : Visibility.Collapsed;
-        FilterButton.Visibility = Workspace.Visibility;
-        UpdateNavigation();
-        UpdateChrome();
+        BackButton.Visibility = Model.Page == WindowPage.Torrents ? Visibility.Collapsed : Visibility.Visible;
+        TorrentMenu.IsEnabled = Model.Page == WindowPage.Torrents;
+        ViewMenu.IsEnabled = Model.Page == WindowPage.Torrents;
     }
 
     private async Task SelectTorrent()
@@ -156,10 +120,19 @@ public sealed partial class MainWindow
         finally { _closePrompt = null; _discardDecision = null; }
     }
 
-    private void OnFiltersClose(object sender, RoutedEventArgs args)
+    private void OnFiltersClose(object sender, RoutedEventArgs args) => CloseFilters();
+
+    private void OnFiltersKey(object sender, KeyRoutedEventArgs args)
+    {
+        if (args.Key != VirtualKey.Escape) return;
+        CloseFilters();
+        args.Handled = true;
+    }
+
+    private void CloseFilters()
     {
         Model.IsFilterOpen = false;
-        FilterButton.Focus(FocusState.Programmatic);
+        Torrents.Focus(FocusState.Programmatic);
     }
 
     private void OnFilterChanged(object sender, SelectionChangedEventArgs args)

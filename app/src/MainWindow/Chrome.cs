@@ -1,4 +1,5 @@
 using Microsoft.UI;
+using Microsoft.UI.Input;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
@@ -14,44 +15,35 @@ public sealed partial class MainWindow
     {
         if (Root.XamlRoot is null) return;
         var scale = Root.XamlRoot.RasterizationScale;
-        UpdateMinimum(scale);
-        var left = AppWindow.TitleBar.LeftInset / scale;
-        var right = AppWindow.TitleBar.RightInset / scale;
+        var left = Math.Max(0, AppWindow.TitleBar.LeftInset) / scale;
+        var right = Math.Max(0, AppWindow.TitleBar.RightInset) / scale;
         LeftInset.Width = new GridLength(left);
-        RightInset.Width = new GridLength(right > 0 ? right : 138);
-        if (Caption.ActualHeight <= 0 || CaptionActions.ActualWidth <= 0) return;
-        var torrents = Model.Page == WindowPage.Torrents;
-        var full = Caption.ActualWidth >= 1120 && torrents;
-        foreach (var button in new[] { MagnetButton, PauseButton, ResumeButton })
-            button.Visibility = full ? Visibility.Visible : Visibility.Collapsed;
-        foreach (var button in new[] { AddButton, OverflowButton })
-            button.Visibility = torrents ? Visibility.Visible : Visibility.Collapsed;
-        PageCaption.Visibility = torrents ? Visibility.Collapsed : Visibility.Visible;
-        HomeButton.Visibility = Caption.ActualWidth >= 880 ? Visibility.Visible : Visibility.Collapsed;
-        FilterCaption.Visibility = Caption.ActualWidth >= 1000 ? Visibility.Visible : Visibility.Collapsed;
-        var exclusions = new FrameworkElement[] { HomeButton, FilterButton, Search, CaptionActions }
-            .Where(control => control.Visibility == Visibility.Visible && control.ActualWidth > 0)
-            .Select(control => control.TransformToVisual(Caption).TransformBounds(new Rect(0, 0, control.ActualWidth, control.ActualHeight)))
-            .OrderBy(bounds => bounds.Left);
-        var origin = Caption.TransformToVisual(null).TransformPoint(default).X;
-        var rectangles = new List<RectInt32>();
-        var start = left;
-        foreach (var bounds in exclusions)
-        {
-            if (bounds.Left > start) rectangles.Add(new RectInt32((int)Math.Ceiling((origin + start) * scale), 0,
-                (int)Math.Floor((bounds.Left - start) * scale), (int)Math.Round(Caption.ActualHeight * scale)));
-            start = Math.Max(start, bounds.Right);
-        }
-        var end = Caption.ActualWidth - RightInset.Width.Value;
-        if (end > start) rectangles.Add(new RectInt32((int)Math.Ceiling((origin + start) * scale), 0,
-            (int)Math.Floor((end - start) * scale), (int)Math.Round(Caption.ActualHeight * scale)));
-        AppWindow.TitleBar.SetDragRectangles(rectangles.ToArray());
+        RightInset.Width = new GridLength(right);
+        UpdateMinimum(scale);
+        if (Caption.ActualHeight <= 0) return;
+        var input = InputNonClientPointerSource.GetForWindowId(AppWindow.Id);
+        input.SetRegionRects(NonClientRegionKind.Passthrough,
+            new[] { Menus, (FrameworkElement)Search, ThemeButton }.Select(GetRegion).ToArray());
+        input.SetRegionRects(NonClientRegionKind.Icon, [GetRegion(AppIcon)]);
+    }
+
+    private RectInt32 GetRegion(FrameworkElement control)
+    {
+        var scale = Root.XamlRoot.RasterizationScale;
+        var bounds = control.TransformToVisual(Root).TransformBounds(new Rect(0, 0, control.ActualWidth, control.ActualHeight));
+        var left = (int)Math.Floor(bounds.Left * scale);
+        var top = (int)Math.Floor(bounds.Top * scale);
+        return new RectInt32(left, top, (int)Math.Ceiling(bounds.Right * scale) - left,
+            (int)Math.Ceiling(bounds.Bottom * scale) - top);
     }
 
     private void UpdateMinimum(double scale)
     {
         if (AppWindow.Presenter is not OverlappedPresenter presenter) return;
-        var width = (int)Math.Ceiling(720 * scale);
+        var content = 48 + Menus.ActualWidth + SearchArea.Margin.Left + Search.MinWidth +
+            SearchArea.Margin.Right + ThemeButton.Width + ThemeButton.Margin.Right;
+        var frame = AppWindow.Size.Width - AppWindow.ClientSize.Width;
+        var width = (int)Math.Ceiling(Math.Max(720, content + LeftInset.Width.Value + RightInset.Width.Value) * scale) + frame;
         var height = (int)Math.Ceiling(560 * scale);
         if (presenter.PreferredMinimumWidth != width) presenter.PreferredMinimumWidth = width;
         if (presenter.PreferredMinimumHeight != height) presenter.PreferredMinimumHeight = height;
@@ -78,10 +70,9 @@ public sealed partial class MainWindow
 
     private void RefreshTheme()
     {
-        var dark = Root.ActualTheme == ElementTheme.Dark;
-        Model.IsDark = dark;
-        _themeIcon.Glyph = dark ? Syno.Lucide.Sun : Syno.Lucide.Moon;
-        NameButton(ThemeButton, Model.Text.Get("chrome", dark ? "light" : "dark"));
+        Model.IsDark = Root.ActualTheme == ElementTheme.Dark;
+        ThemeIcon.Glyph = Model.IsDark ? Syno.Lucide.Sun : Syno.Lucide.Moon;
+        NameButton(ThemeButton, Model.Text.Get("chrome", Model.IsDark ? "light" : "dark"));
     }
 
     private static void NameButton(Button button, string text)
@@ -93,23 +84,9 @@ public sealed partial class MainWindow
     private void RefreshText()
     {
         Title = Model.Text.Get("window", "title");
-        CaptionText.Text = Title;
-        NameButton(AddButton, Model.Text.Get("window", "add"));
-        TorrentsPage.Content = Model.Text.Get("window", "torrents");
-        SettingsPage.Content = Model.Text.Get("finding", "settings");
-        AboutPage.Content = Model.Text.Get("about", "title");
-        ExitItem.Content = Model.Text.Get("window", "exit");
-        foreach (var page in new[] { TorrentsPage, SettingsPage, AboutPage, ExitItem })
-            AutomationProperties.SetName(page, (string)page.Content);
-        AutomationProperties.SetName(Navigation, Model.Text.Get("commands", "menu"));
-        UpdateNavigation();
-        NameButton(MagnetButton, Model.Text.Get("commands", "add_magnet"));
-        NameButton(OverflowButton, Model.Text.Get("commands", "selection"));
-        NameButton(PauseButton, Model.Text.Get("window", "pause"));
-        NameButton(ResumeButton, Model.Text.Get("window", "resume"));
-        NameButton(LanguageButton, Model.Text.Get("chrome", Model.Text.Language == "es" ? "english" : "spanish"));
-        LanguageButton.Content = new TextBlock { Text = Model.Text.Language.ToUpperInvariant(), FontSize = 12 };
         RefreshTheme();
+        BackText.Text = Model.Text.Get("menus", "back");
+        RefreshMenus();
         AutomationProperties.SetName(Torrents, Model.Text.Get("window", "torrents"));
         NameColumn.DisplayName = Model.Text.Get("columns", "name");
         SizeColumn.DisplayName = Model.Text.Get("columns", "size");
@@ -127,9 +104,6 @@ public sealed partial class MainWindow
         Search.ItemsSource = Model.FindSuggestions(Search.Text);
         FiltersTitle.Text = Model.Text.Get("filters", "title");
         AutomationProperties.SetName(Filters, Model.Text.Get("filters", "title"));
-        AutomationProperties.SetName(FilterButton, Model.FilterLabel);
-        ToolTipService.SetToolTip(FilterButton, Model.FilterLabel);
-        NameButton(HomeButton, Model.Text.Get("window", "torrents"));
         NameButton(FiltersClose, Model.Text.Get("filters", "close"));
         AutomationProperties.SetName(Split, Model.Text.Get("inspector", "resize"));
         AlternativeText.Text = Model.Text.Get("window", "alternative");

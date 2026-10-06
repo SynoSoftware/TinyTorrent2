@@ -21,15 +21,8 @@ public sealed partial class MainViewModel
             _page = value;
             Inspector.SetVisible(value == WindowPage.Torrents);
             Changed(nameof(Page));
-            Changed(nameof(PageTitle));
         }
     }
-    public string PageTitle => Page switch
-    {
-        WindowPage.Preferences => Text.Get("finding", "settings"),
-        WindowPage.About => Text.Get("about", "title"),
-        _ => string.Empty
-    };
     public string AboutTitle => Text.Get("window", "title");
     public string AboutDescription => Text.Get("about", "description");
     public string VersionText => Text.Format("about", "version", typeof(MainViewModel).Assembly.GetName().Version?.ToString(3) ?? string.Empty);
@@ -53,8 +46,9 @@ public sealed partial class MainViewModel
         set { if (_filterOpen == value) return; _filterOpen = value; Changed(nameof(IsFilterOpen)); }
     }
     public IReadOnlyList<FilterChoice> Filters { get; }
+    public bool HasFilter => Filter != TorrentFilter.All;
     public string FilterLabel => Filter == TorrentFilter.All ? Text.Get("filters", "title") :
-        Text.Format("filters", "count", Text.Get("filters", Filter.ToString().ToLowerInvariant()), VisibleTorrents.Count);
+        Text.Format("filters", "active", Text.Get("filters", Filter.ToString().ToLowerInvariant()), VisibleTorrents.Count);
     public ICommand ShowPreferences { get; }
     public ICommand ShowTorrents { get; }
     public ICommand ShowAbout { get; }

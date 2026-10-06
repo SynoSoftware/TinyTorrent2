@@ -22,7 +22,7 @@ public sealed partial class MainWindow
 {
     private string? _captureDirectory;
     private Task? _capture;
-    internal static bool IsCaptureReview => Environment.GetEnvironmentVariable("TINYTORRENT_CAPTURE_REVIEW") is "1" or "smoke";
+    internal static bool IsCaptureReview => Environment.GetEnvironmentVariable("TINYTORRENT_CAPTURE_REVIEW") is "1" or "smoke" or "shell";
 
     internal void ShowCaptureReview()
     {
@@ -261,6 +261,90 @@ public sealed partial class MainWindow
         await CapturePage("empty-torrents");
     }
 
+    private async Task CaptureShell(Torrent target, List<object> outcomes)
+    {
+        foreach (var theme in new[] { "light", "dark" })
+        {
+            await Model.SelectTheme(theme);
+            await CaptureReady(Model, () => Model.CanClose && Model.Theme == theme);
+            foreach (var width in new[] { 1040, 720 })
+            {
+                var scale = Root.XamlRoot.RasterizationScale;
+                var minimum = ((Microsoft.UI.Windowing.OverlappedPresenter)AppWindow.Presenter).PreferredMinimumWidth ?? 0;
+                AppWindow.Resize(new SizeInt32(Math.Max((int)(width * scale), minimum), (int)(680 * scale)));
+                await CapturePage(theme + "-" + width + "-shell");
+                foreach (var menu in new[] { FileMenu, TorrentMenu, ViewMenu, HelpMenu })
+                {
+                    var peer = FrameworkElementAutomationPeer.CreatePeerForElement(menu);
+                    if (peer.GetPattern(PatternInterface.ExpandCollapse) is not IExpandCollapseProvider expand)
+                        throw new InvalidOperationException("The menu does not expose native expansion.");
+                    expand.Expand();
+                    await CapturePage(theme + "-" + width + "-" + menu.Name);
+                    expand.Collapse();
+                }
+            }
+        }
+        Torrents.Selection = new Syno.TableView.Selection([], null);
+        await SelectTorrent();
+        await CaptureLayout();
+        outcomes.Add(new { command = "pause-empty", enabled = TorrentMenu.Items.OfType<MenuFlyoutItem>()
+            .Single(item => item.Command == Model.Pause).IsEnabled });
+        Torrents.Selection = new Syno.TableView.Selection([target], target);
+        await SelectTorrent();
+        await CaptureLayout();
+        foreach (var command in new[] { Model.Resume, Model.Pause })
+        {
+            var menuPeer = FrameworkElementAutomationPeer.CreatePeerForElement(TorrentMenu);
+            var expand = (IExpandCollapseProvider)menuPeer.GetPattern(PatternInterface.ExpandCollapse);
+            expand.Expand();
+            await CaptureLayout();
+            var item = TorrentMenu.Items.OfType<MenuFlyoutItem>().Single(item => item.Command == command);
+            var peer = FrameworkElementAutomationPeer.CreatePeerForElement(item);
+            if (peer.GetPattern(PatternInterface.Invoke) is not IInvokeProvider invoke)
+                throw new InvalidOperationException("The torrent command cannot be invoked.");
+            invoke.Invoke();
+            await CaptureReady(Model, () => Model.CanEdit && (command == Model.Pause ? target.IsPaused : !target.IsPaused));
+            outcomes.Add(new { command = item.Text, enabled = item.IsEnabled, status = target.StatusCode });
+            expand.Collapse();
+        }
+        Run(Model.ShowPreferences);
+        await CaptureLayout();
+        outcomes.Add(new { command = "settings", page = Model.Page.ToString(), torrentMenu = TorrentMenu.IsEnabled });
+        await CapturePage("shell-settings", _preferencesForm);
+        Run(Model.ShowAbout);
+        await CaptureLayout();
+        outcomes.Add(new { command = "about", page = Model.Page.ToString() });
+        await CapturePage("shell-about");
+        Run(BackButton.Command);
+        await CaptureLayout();
+        outcomes.Add(new { command = "back", page = Model.Page.ToString() });
+        Run(ThemeButton.Command);
+        await CaptureReady(Model, () => Model.CanClose && Model.Theme == "light");
+        await CaptureLayout();
+        outcomes.Add(new { command = "theme", theme = Root.ActualTheme.ToString() });
+        Run(ThemeButton.Command);
+        await CaptureReady(Model, () => Model.CanClose && Model.Theme == "dark");
+        FiltersItem.IsChecked = true;
+        Model.Filter = TorrentFilter.Paused;
+        await CapturePage("shell-filters");
+        outcomes.Add(new { command = "filters", open = Workspace.IsPaneOpen });
+        CloseFilters();
+        await CapturePage("shell-filter-closed");
+        outcomes.Add(new { command = "close-filters", open = Workspace.IsPaneOpen, filter = Model.Filter.ToString() });
+        Search.Text = target.Name;
+        await CaptureLayout();
+        outcomes.Add(new { command = "search", matches = Model.FindSuggestions(Search.Text).Count });
+        await CapturePage("shell-search");
+        Search.Text = string.Empty;
+        Model.SelectLanguage("es");
+        await CaptureReady(Model, () => Model.CanClose && Model.Text.Language == "es");
+        await CaptureLayout();
+        var narrow = ((Microsoft.UI.Windowing.OverlappedPresenter)AppWindow.Presenter).PreferredMinimumWidth ?? 720;
+        AppWindow.Resize(new SizeInt32(narrow, 560));
+        await CapturePage("shell-spanish");
+        await CaptureDialog("shell-add", () => { Run(Model.AddMagnet); return _dialogClosed?.Task ?? Task.CompletedTask; }, () => _addDialog);
+    }
+
     private async Task CaptureReview()
     {
         var clock = Stopwatch.StartNew();
@@ -277,6 +361,11 @@ public sealed partial class MainWindow
                     Path.GetFullPath(Model.DataDirectory ?? string.Empty).TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase))
                 throw new InvalidOperationException("The connected engine does not own the capture store.");
             var target = Model.Torrents.FirstOrDefault() ?? throw new InvalidOperationException("The review store has no torrent.");
+            if (Environment.GetEnvironmentVariable("TINYTORRENT_CAPTURE_REVIEW") == "shell")
+            {
+                await CaptureShell(target, outcomes);
+                return;
+            }
             var themes = Environment.GetEnvironmentVariable("TINYTORRENT_CAPTURE_REVIEW") == "smoke" ? Array.Empty<string>() : ["light", "dark"];
             foreach (var theme in themes)
             {

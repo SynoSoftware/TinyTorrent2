@@ -78,31 +78,30 @@ public sealed partial class PreferencesForm : UserControl
     internal void RefreshText()
     {
         _refreshing = true;
+        PageTitle.Text = Model.Text.Get("finding", "settings");
         Label(GeneralCategory, "general");
         Label(TransfersCategory, "transfers");
         Label(NetworkCategory, "network");
         Label(ScheduleCategory, "schedule");
         Label(AppearanceCategory, "appearance");
         AutomationProperties.SetName(Categories, Model.Text.Get("preferences", "categories"));
-        AddingTitle.Text = Model.Text.Get("preferences", "adding");
-        ShowAddCard.Description = Model.Text.Get("preferences", "show_add_hint");
-        StartupTitle.Text = Model.Text.Get("preferences", "startup");
-        SignInCard.Header = Model.Text.Get("preferences", "start_signin");
-        AutomationProperties.SetName(Startup, SignInCard.Header);
-        TrayCard.Description = Model.Text.Get("preferences", "start_in_tray_hint");
-        DefaultsTitle.Text = Model.Text.Get("preferences", "defaults");
-        DefaultsCard.Header = Model.Text.Get("preferences", "defaults_card");
-        PowerTitle.Text = Model.Text.Get("preferences", "power");
-        SpeedTitle.Text = Model.Text.Get("preferences", "speed");
-        AlternativeTitle.Text = Model.Text.Get("preferences", "alternative");
-        AlternativeHint.Text = Model.Text.Get("preferences", "alternative_hint");
-        QueueTitle.Text = Model.Text.Get("preferences", "queue");
-        SeedingTitle.Text = Model.Text.Get("preferences", "seeding");
-        SeedingHint.Text = Model.Text.Get("preferences", "seeding_hint");
-        PortCard.Description = Model.Text.Get("preferences", "port_hint");
-        MappingCard.Description = Model.Text.Get("preferences", "mapping_hint");
-        InterfaceCard.Description = Model.Text.Get("preferences", "interface_hint");
-        ConnectionsCard.Description = Model.Text.Get("preferences", "connections_hint");
+        Label(DownloadsSection, "adding", "downloads_hint");
+        ShowAddRow.Description = Model.Text.Get("preferences", "show_add_hint");
+        Label(StartupSection, "startup", "startup_hint");
+        SignInRow.Header = Model.Text.Get("preferences", "start_signin");
+        AutomationProperties.SetName(Startup, SignInRow.Header);
+        TrayRow.Description = Model.Text.Get("preferences", "start_in_tray_hint");
+        DefaultsSection.Header = Model.Text.Get("preferences", "defaults");
+        Label(PowerSection, "power", "power_hint");
+        Label(SpeedSection, "speed", "speed_hint");
+        Label(AlternativeSection, "alternative", "alternative_hint");
+        Label(QueueSection, "queue", "queue_hint");
+        Label(SeedingSection, "seeding", "seeding_hint");
+        Label(NetworkSection, "connections", "network_hint");
+        PortRow.Description = Model.Text.Get("preferences", "port_hint");
+        MappingRow.Description = Model.Text.Get("preferences", "mapping_hint");
+        InterfaceRow.Description = Model.Text.Get("preferences", "interface_hint");
+        ConnectionsRow.Description = Model.Text.Get("preferences", "connections_hint");
         Label(Browse, "browse", "add");
         Label(StartupSettings, "startup_settings");
         Label(OpenDefaults, "open_defaults");
@@ -121,20 +120,20 @@ public sealed partial class PreferencesForm : UserControl
         AutomationProperties.SetName(PeriodMode, (string)PeriodMode.Header);
         Label(AlternativeMode, "alternative");
         Label(PausedMode, "paused");
-        ScheduleHint.Text = Model.Text.Get("preferences", "schedule_hint");
-        ScheduleCard.Header = Model.Text.Get("preferences", "weekly_schedule");
+        Label(ScheduleSection, "weekly_schedule", "schedule_hint");
         PeriodsTitle.Text = Model.Text.Get("preferences", "periods");
         EmptyPeriods.Text = Model.Text.Get("preferences", "empty_periods");
         NormalLegend.Text = Model.Text.Get("preferences", "normal");
         AlternativeLegend.Text = Model.Text.Get("preferences", "alternative");
         PausedLegend.Text = Model.Text.Get("preferences", "paused");
-        LanguageCard.Header = Model.Text.Get("preferences", "language");
-        AutomationProperties.SetName(Languages, LanguageCard.Header);
+        Label(AppearanceSection, "appearance", "appearance_hint");
+        LanguageRow.Header = Model.Text.Get("preferences", "language");
+        AutomationProperties.SetName(Languages, LanguageRow.Header);
         English.Content = Model.Text.Get("preferences", "english");
         Spanish.Content = Model.Text.Get("preferences", "spanish");
         Languages.SelectedItem = Model.Language == "es" ? Spanish : English;
-        ThemeCard.Header = Model.Text.Get("preferences", "theme");
-        AutomationProperties.SetName(Theme, ThemeCard.Header);
+        ThemeRow.Header = Model.Text.Get("preferences", "theme");
+        AutomationProperties.SetName(Theme, ThemeRow.Header);
         Label(SystemTheme, "system_theme");
         Label(LightTheme, "light_theme");
         Label(DarkTheme, "dark_theme");
@@ -150,6 +149,18 @@ public sealed partial class PreferencesForm : UserControl
     {
         control.Content = Model.Text.Get(group, key);
         AutomationProperties.SetName(control, (string)control.Content);
+    }
+
+    private void Label(SelectorBarItem item, string key)
+    {
+        item.Text = Model.Text.Get("preferences", key);
+        AutomationProperties.SetName(item, item.Text);
+    }
+
+    private void Label(SettingsSection section, string header, string description)
+    {
+        section.Header = Model.Text.Get("preferences", header);
+        section.Description = Model.Text.Get("preferences", description);
     }
 
     public void RefreshInterfaces()
@@ -234,9 +245,14 @@ public sealed partial class PreferencesForm : UserControl
                     ((ScheduleRange)button.Tag).Mode == ScheduleMode.Paused ? "PreferencesPausedStyle" : "PreferencesAlternativeStyle"];
     }
 
-    private void OnCategory(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
+    // The corner marks overhang the page; the clip keeps them off the navigation
+    // pane and the caption.
+    private void OnRootSize(object sender, SizeChangedEventArgs args) =>
+        Root.Clip = new RectangleGeometry { Rect = new(0, 0, args.NewSize.Width, args.NewSize.Height) };
+
+    private void OnCategory(SelectorBar sender, SelectorBarSelectionChangedEventArgs args)
     {
-        if (args.SelectedItem is not NavigationViewItem item) return;
+        if (sender.SelectedItem is not SelectorBarItem item) return;
         foreach (var panel in new FrameworkElement[] { General, Transfers, Network, Schedule, Appearance })
             panel.Visibility = panel.Name == (string)item.Tag ? Visibility.Visible : Visibility.Collapsed;
         Body.ChangeView(null, 0, null, true);

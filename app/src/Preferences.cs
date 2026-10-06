@@ -86,7 +86,6 @@ public sealed class Preferences : INotifyPropertyChanged
     public bool CanSelectLanguage => _owner.SwitchLanguage.CanExecute(null);
     public string OnText => Text.Get("preferences", "on");
     public string OffText => Text.Get("preferences", "off");
-    public string UnlimitedText => Text.Get("preferences", "unlimited");
     public string Theme => _owner.Theme;
     public bool CanSelectTheme => _owner.SwitchTheme.CanExecute(null);
     public Task SelectTheme(string theme) => _owner.SelectTheme(theme);

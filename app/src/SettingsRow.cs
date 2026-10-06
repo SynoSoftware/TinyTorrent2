@@ -4,16 +4,16 @@ using Microsoft.UI.Xaml.Controls;
 
 namespace Syno.TinyTorrent;
 
-// One row of the Windows Settings card layout: title and description on the left,
-// the control on the right, and an optional full-width detail below them. The
+// One setting inside a SettingsSection: title and description on the left, the
+// control on the right, and an optional full-width detail below them. The
 // implicit style in PreferencesForm.xaml draws it.
-public sealed partial class SettingsCard : ContentControl
+public sealed partial class SettingsRow : ContentControl
 {
     public static readonly DependencyProperty HeaderProperty = Text(nameof(Header));
     public static readonly DependencyProperty DescriptionProperty = Text(nameof(Description));
     public static readonly DependencyProperty ErrorProperty = Text(nameof(Error));
     public static readonly DependencyProperty DetailProperty = DependencyProperty.Register(nameof(Detail), typeof(object),
-        typeof(SettingsCard), new PropertyMetadata(null, (card, _) => ((SettingsCard)card).Update()));
+        typeof(SettingsRow), new PropertyMetadata(null, (row, _) => ((SettingsRow)row).Update()));
 
     public string Header { get => (string)GetValue(HeaderProperty); set => SetValue(HeaderProperty, value); }
     public string Description { get => (string)GetValue(DescriptionProperty); set => SetValue(DescriptionProperty, value); }
@@ -21,7 +21,7 @@ public sealed partial class SettingsCard : ContentControl
     public object? Detail { get => GetValue(DetailProperty); set => SetValue(DetailProperty, value); }
 
     private static DependencyProperty Text(string name) => DependencyProperty.Register(name, typeof(string),
-        typeof(SettingsCard), new PropertyMetadata(string.Empty, (card, _) => ((SettingsCard)card).Update()));
+        typeof(SettingsRow), new PropertyMetadata(string.Empty, (row, _) => ((SettingsRow)row).Update()));
 
     protected override void OnApplyTemplate()
     {
