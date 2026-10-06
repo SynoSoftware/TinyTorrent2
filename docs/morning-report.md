@@ -2,6 +2,95 @@
 
 ## Current continuation — 2026-10-06
 
+### Handoff to architecture work — `c7b9326`
+
+The owner wants the in-flight release corrections finished before continuing
+with `docs/architecture/proposed/`. That bounded batch is committed as `c7b9326`.
+It is a checked starting point for architecture work, not release approval of
+the changing shared checkout. No broader refactor was started in this pass.
+
+- Every Speed limits entry point now opens Settings / Transfers and focuses
+  Download. The competing dialog and its lifetime paths are gone.
+- Ordinary Settings departure awaits saves, applies valid input, restores
+  invalid input, and keeps refused input on Settings. A late acknowledgement
+  preserves newer text. A subsequent explicit commit retains its submitted
+  value without automatically submitting later text. Cancel clears deferred
+  intent; there is no reconnect replay.
+- Explicit editors use Save / Discard / Cancel through their existing save
+  owners. Close admission remains closed while saves settle. Failed Save
+  restores the actual editor and its error/focus. Source review caught and
+  corrected a file retry masking a tracker error, and departure overlooking
+  a field edited while another save was pending.
+- The owner's separate download/upload/paused status fields are included with
+  the footer correction. Below 960 DIP, connection state occupies a second,
+  left-aligned line. This commit retains the custom title bar and accepted
+  Settings composition.
+
+Focused evidence, under `artifacts/evidence/`:
+
+| Evidence | Outcome and limit |
+| --- | --- |
+| `UiSelfCapture-f462bf25-e588-4a0a-af5e-e7bd32cfdf7f` | Search passed in 21,061 ms: native result submission, native MenuBar Limits, Properties from Settings, named editor focus, unavailable commands and reopen handler; 12 localized captures. Physical Ctrl+K delivery remains unverified. |
+| `UiSelfCapture-06a45c16-72ac-4a15-b0fa-39c06253824f` | Nine edit journeys passed in 9,189 ms: valid/invalid/pending departure, newer input, queued explicit commit, pending Cancel, and schedule Save/Discard/Cancel. Original fixture values and periods restored. |
+| `DesktopCapture-2800c8b9-f6ae-4890-9301-7e66688fccba` | Exit Cancel in the 12-state matrix, failed Save retaining magnet input/error/focus, tracker draft across engine restart, and history advancing without UI passed in 28,139 ms, before the final footer correction. |
+| `DesktopCapture-e4111dc7-63cf-4b92-b280-c36ab1e0450a` | Final footer matrix and desktop recovery outcomes passed in 31,880 ms. Fresh correction review closed narrow Spanish clipping with zero remaining counted footer defects. |
+| `LibraryCapture-a31b50ec-1eee-4a3f-abff-603c0ea712a7` | Current rerun stopped before selection: `CreatePeerForElement(Filters)` threw COM `0x8001010E`. The initial capture shows 300 paused torrents; subsequent journeys and matrix did not run. Read-only diagnosis found no concrete production cause. Thread/factory affinity remains unproven. |
+
+The edit diagnostic's first run (`UiSelfCapture-bf651171-f7c8-48a6-8f16-9271f17fdcfa`)
+passed four journeys, then exposed its own asynchronous TextChanged assumption.
+Real Enter copies editor text before Commit. Corrected tightly timed races
+change preference input synchronously before yielding, then verify the native
+display; the other input journeys use native editors. The check still requires
+confirmed 257 beneath later draft 258. No production behavior or expected value
+was weakened. These checks protect lost input, lost navigation and failed-close
+recovery, which the earlier journeys did not exercise.
+
+Footer baselines: `LibraryCapture-b76572c8-d385-4165-ac06-7b9db8abc4d5`
+passed in 19,601 ms with 300 torrents/307 payload files retained;
+`TrafficCapture-d05b13c8-f470-491b-bbe5-84ee2aa47672` passed in 46,353 ms
+with 60 scenes plus 12 General-bottom images and bytes 606,082 to 3,506,076.
+The first adaptive-state attempt did not move the text in this Window.
+`DesktopCapture-7684afad-d116-4a83-8ffa-c19cc388bbab` proved the size-handler
+correction made the second line visible, but fresh review found the last Spanish
+letters clipped. Left alignment resolved that finding in the final evidence.
+
+Parent review applied the requested roles in order: the new user reaches the
+normal Limits destination and sees distinct Save/Discard/Cancel actions; the
+keyboard user retains input and focus after failure; labels and states are
+readable, while Narrator/High Contrast remain unproved; Fluent and UX review
+confirmed the narrow connection message no longer collides or loses letters.
+The fresh reviewer inspected all 12 prompts, failed-Save recovery and selected
+search destinations with no counted finding, then all 12 footer images and the
+four corrected narrow images. These are bounded visual verdicts, not claims
+about uncaptured owner redesigns. Further style changes were not pursued.
+
+App-only builds passed: `edits-close-build.log` (72.65 s) and
+`footer-alignment-build.log` (44.19 s), zero warnings/errors. Intermediate
+`edits-final-build.log` failed on a DLL held by a concurrent Release build;
+`edits-footer-final-build.log` passed in 125.60 s while a separate Debug build
+was active. Successful builds compiled only the app, with two C# and two XAML
+compiler calls. The longer run spent 53.0 s in C# and 65.4 s in XAML, not extra
+native targets or recursive copies; the final run spent 17.5 s and 23.6 s.
+Avoid overlapping builds in this shared checkout. Prescribed output-location
+checks were empty with the correct Windows exclusions. No engine build or full
+suite ran; prior current-engine FilesSafety, CheckpointRetry and payload evidence
+below remains applicable.
+
+All UI/engine processes launched by this pass are closed. Existing windows and
+engines were closed normally under the owner's prior final-check authorization.
+The separate speed demo's state remains in its evidence store; its independently
+launched Transfer peer was not touched.
+
+Concurrent schedule gestures, projection/TableView, graph rendering,
+Add/FileBrowser and inspector presentation, appearance timing, resources and
+architecture-document consolidation remain outside `c7b9326`. The final app
+build includes those working files and existing referenced binaries: it is not
+an isolated build of the commit, or evidence for later edits/unbuilt TableView
+changes. Start architecture work from the current tree and `c7b9326`, inspect
+those changes first, and do not recreate the removed Limits implementation.
+
+### Earlier release continuation
+
 The current release goal is in [handover.md](handover.md#current-goal).
 **Release acceptance is open for the changing shared candidate.** This pass
 fixed the reported Ctrl+K routes and the concrete defects found in populated

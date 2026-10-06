@@ -1,5 +1,62 @@
 # Implementation handover — 2026-10-05
 
+## Current handoff — 2026-10-06
+
+The owner chose to finish the in-flight release corrections, then proceed with
+the selected [architecture](architecture/proposed/README.md). The correction
+batch is committed as **`c7b9326`**. Its focused checks and bounded adversarial
+reviews passed; broader releasability remains unfulfilled. Current evidence and
+gaps are at the top of [morning-report.md](morning-report.md). Do not restart
+general visual polishing before this architecture work.
+
+Already handled: canonical Settings routing for every Speed limits entry point;
+ordinary field departure; later input and explicit commit preservation across
+acknowledgements; Save/Discard/Cancel through existing editor owners; failed
+Exit recovery; narrow footer connection-state clipping. Preserve those behaviors
+while changing ownership. The custom title bar and accepted Settings design
+were not replaced or restyled.
+
+Read the proposed architecture and its delivery/evidence files against current
+source. Historical deletion targets are not all still present. Use separate
+reversible commits for remaining ownership changes:
+
+1. Finish the Settings owner and schedule transaction split: explicit field
+   kinds/sections, authoritative conversion/submission, and removal of duplicate
+   settings readers. Preserve language's immediate publication and the
+   distinction between effective and saved alternative mode. Field
+   acknowledgement/departure fixes are already present; rapid language choice
+   is not new runtime evidence from this pass.
+2. Consolidate remaining modal lifetime/recovery and accepted selection at their
+   chosen owners. Keep complete interaction lifetimes and the early close/source
+   admission gate. Do not add another save path or general framework.
+3. Continue already-started projection, queue and drawing work from the owner's
+   tree. Recheck code before implementing proposal #113, #114 or #125; do not
+   duplicate work that is already there.
+
+The checkout remains `main` and is deliberately **not clean**: concurrent owner
+schedule, table/projection, graph, Add/FileBrowser, inspector, appearance-timing
+and architecture-document edits remain intact. The status-rate fields were
+included with the verified footer correction; other changes were excluded from
+this pass's commit. Preserve the proposed-folder consolidation and historical
+document removals. Review ownership before staging.
+
+Final app build: zero warnings/errors. Search/MenuBar routing, nine focused edit
+journeys and the final 12-state desktop/footer matrix passed. The footer
+correction review has zero remaining counted defects. A new 300-torrent run
+stopped in diagnostic peer creation with COM `0x8001010E`, before selection or
+its matrix; its cause is unproved. Keep the prior library pass as prior evidence,
+not a pass for the changing candidate. Physical keyboard delivery, native
+desktop gestures, Narrator/High Contrast and subsequent owner UI work retain the
+limits in the morning report. No full suite, engine rebuild or Distribution
+work was performed.
+
+All processes launched by this pass are closed. Coordinate the next build/run
+with other work in this checkout: a concurrent Release build caused an
+intermediate-file lock, and separate demos repeatedly owned the engine endpoint.
+Do not force-close unrelated processes.
+
+## Previous release continuation
+
 Work resumed on 2026-10-05 under the current goal below. The first coherent step
 retains the owner's app role folders, verifies the finished schedule, corrects
 clipped short-period labels and fixes a reproduced window-shutdown crash.
@@ -121,9 +178,10 @@ deliberate settings coverage, populated-screen review and an independent release
 review. Search, the 300-torrent paused library and file-name correction now have
 those checks; the live inspector now has a loopback transfer, populated peers,
 mixed pieces and nonzero history across the same matrix, with zero remaining
-counted visual findings after correction. The current release goal remains
-active because concurrent owner edits postdate that candidate. Next, verify
-only the outcomes affected by those settled edits; retain valid prior evidence.
+counted visual findings after correction. Broader release acceptance remains
+open because concurrent owner edits postdate that candidate. The current
+direction is the architecture handoff at the top of this file; retain valid
+prior evidence and verify affected outcomes as that work settles.
 Read the current continuation in the morning report for the files and limits.
 The sections below retain the earlier handover's history.
 
