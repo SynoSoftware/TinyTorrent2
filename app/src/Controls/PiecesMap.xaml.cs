@@ -24,15 +24,14 @@ public sealed partial class PiecesMap : UserControl
     private const int Gap = 4;
     private const int Band = 8;
     private const int Gutter = 6;
-    private readonly ToolTip _tooltip = new();
     private Pieces? _data;
     private Raster? _layout;
     private Strings? _text;
     private string _language = string.Empty;
     private string _value = string.Empty;
-    private int _selected;
+    // A piece rather than a square, so the selection stays on the same pieces when a resize regroups them.
+    private int _selectedPiece = -1;
     private int _pointed = -1;
-    private int _tipped = -1;
     private int _revision;
     private bool _queued;
     private bool _drawing;
@@ -41,11 +40,9 @@ public sealed partial class PiecesMap : UserControl
     public PiecesMap()
     {
         InitializeComponent();
-        _tooltip.PlacementTarget = Drawing;
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
         ActualThemeChanged += (_, _) => QueueDraw();
-        LostFocus += (_, _) => { Selection.Visibility = Visibility.Collapsed; _tooltip.IsOpen = false; };
         RegisterPropertyChangedCallback(FlowDirectionProperty, (_, _) => QueueDraw());
         foreach (var swatch in Swatches())
             swatch.RegisterPropertyChangedCallback(Border.BackgroundProperty, (_, _) => QueueDraw());
@@ -55,19 +52,28 @@ public sealed partial class PiecesMap : UserControl
     private Border[] Swatches() => [UnavailableSwatch, RareSwatch, CommonSwatch, MissingSwatch, DownloadingSwatch, VerifiedSwatch];
     private Run[] Labels() => [UnavailableLabel, RareLabel, CommonLabel, MissingLabel, DownloadingLabel, VerifiedLabel];
     private Run[] Totals() => [UnavailableCount, RareCount, CommonCount, MissingCount, DownloadingCount, VerifiedCount];
+    private FontIcon[] Signs() => [InformationalSign, SuccessSign, WarningSign, ErrorSign];
 
     internal void Show(Pieces? data, Strings text)
     {
         if (_data is null && data is null && _language == text.Language) return;
         var changed = _data is null || data is null || !_data.SameMap(data);
         var languageChanged = _language != text.Language;
-        if (data is null || _data?.Count != data.Count) Clear();
+        if (data is null || _data?.Count != data.Count)
+        {
+            _selectedPiece = -1;
+            Clear();
+        }
         _data = data;
         _text = text;
         _language = text.Language;
         if (changed || languageChanged)
         {
-            Summary.Text = data?.Summary(text) ?? text.Get("pieces", "metadata");
+            var (summary, severity) = data?.Summary(text) ?? (text.Get("pieces", "metadata"), InfoBarSeverity.Informational);
+            Summary.Text = summary;
+            var signs = Signs();
+            for (var index = 0; index < signs.Length; index++)
+                signs[index].Visibility = index == (int)severity ? Visibility.Visible : Visibility.Collapsed;
             var counts = data?.Counts(0, data.Count);
             var labels = Labels();
             var totals = Totals();
@@ -76,7 +82,6 @@ public sealed partial class PiecesMap : UserControl
                 labels[(int)kind].Text = Pieces.Name(text, kind);
                 totals[(int)kind].Text = (counts?[(int)kind] ?? 0).ToString("N0", CultureInfo.CurrentCulture);
             }
-            PieceCount.Text = text.FormatCount("pieces", "size", data?.Count ?? 0, text.Bytes(data?.PieceSize ?? 0));
             MeasureLegend();
             AutomationProperties.SetName(this, text.Get("inspector", "pieces"));
             Refresh();
@@ -88,7 +93,6 @@ public sealed partial class PiecesMap : UserControl
     {
         MeasureLegend();
         _root = XamlRoot;
-        _tooltip.XamlRoot = _root;
         _root.Changed += OnRoot;
         QueueDraw();
     }
@@ -159,7 +163,6 @@ public sealed partial class PiecesMap : UserControl
             Drawing.Width = Bitmap.Width = layout.Width;
             Drawing.Height = Bitmap.Height = layout.Height;
             Bitmap.Source = bitmap;
-            _selected = Math.Min(_selected, layout.Blocks.Length - 1);
             Refresh();
         }
         finally
@@ -178,7 +181,6 @@ public sealed partial class PiecesMap : UserControl
         var rtl = space.IsRightToLeft;
         var maxColumns = 1;
         while (Extent(maxColumns + 1) <= space.Size.Width) maxColumns++;
-        if (maxColumns >= Band) maxColumns = maxColumns / Band * Band;
         var maxRows = 1;
         while (Extent(maxRows + 1) <= space.Size.Height) maxRows++;
         var count = Math.Min(data.Count, maxColumns * maxRows);
@@ -276,28 +278,19 @@ public sealed partial class PiecesMap : UserControl
 
     private void OnPointer(object sender, PointerRoutedEventArgs args)
     {
+        // A gap keeps the last square, so the detail does not flicker while the pointer crosses the map.
         var index = Find(args);
-        PointAt(index);
-        Tip(index);
+        if (index >= 0 && index != _pointed) PointAt(index);
     }
     private void OnPressed(object sender, PointerRoutedEventArgs args)
     {
         Focus(FocusState.Pointer);
         var index = Find(args);
-        if (index >= 0) Select(index);
+        if (index < 0) return;
+        Select(index);
         PointAt(index);
-        Tip(index);
     }
-    private void OnPointerExit(object sender, PointerRoutedEventArgs args)
-    {
-        PointAt(-1);
-        _tooltip.IsOpen = false;
-    }
-    private void OnFocus(object sender, RoutedEventArgs args)
-    {
-        Select(_selected);
-        Tip(_selected);
-    }
+    private void OnPointerExit(object sender, PointerRoutedEventArgs args) => PointAt(-1);
 
     private void OnKey(object sender, KeyRoutedEventArgs args)
     {
@@ -311,19 +304,21 @@ public sealed partial class PiecesMap : UserControl
             return;
         }
         var rtl = FlowDirection == FlowDirection.RightToLeft;
+        var current = Selected();
         int? next = args.Key switch
         {
-            VirtualKey.Left => _selected + (rtl ? 1 : -1),
-            VirtualKey.Right => _selected + (rtl ? -1 : 1),
-            VirtualKey.Up => _selected - layout.Columns,
-            VirtualKey.Down => _selected + layout.Columns,
+            VirtualKey.Left => current + (rtl ? 1 : -1),
+            VirtualKey.Right => current + (rtl ? -1 : 1),
+            VirtualKey.Up => current >= layout.Columns ? current - layout.Columns : current,
+            VirtualKey.Down => current / layout.Columns < (layout.Blocks.Length - 1) / layout.Columns ? current + layout.Columns : current,
             VirtualKey.Home => 0,
             VirtualKey.End => layout.Blocks.Length - 1,
             _ => null
         };
         if (next is not { } index) return;
-        Select(Math.Clamp(index, 0, layout.Blocks.Length - 1));
-        Tip(_selected);
+        Select(current < 0 && args.Key != VirtualKey.End ? 0 : Math.Clamp(index, 0, layout.Blocks.Length - 1));
+        // The key is the latest input, so the detail shows the selection until the pointer moves.
+        PointAt(-1);
         args.Handled = true;
     }
 
@@ -331,65 +326,84 @@ public sealed partial class PiecesMap : UserControl
     {
         _layout = null;
         Bitmap.Source = null;
-        Selection.Visibility = Visibility.Collapsed;
-        PointAt(-1);
-        _tooltip.IsOpen = false;
+        Refresh();
     }
 
     private void Refresh()
     {
-        Select(_selected);
+        ShowCount();
+        ShowSelection();
         PointAt(_pointed);
-        if (_tooltip.IsOpen) Tip(_tipped);
+    }
+
+    private void ShowCount()
+    {
+        if (_text is not { } text) return;
+        if (_data is not { Count: > 0 } data)
+        {
+            PieceCount.Text = string.Empty;
+            return;
+        }
+        var size = text.FormatCount("pieces", "size", data.Count, text.Bytes(data.PieceSize));
+        if (_layout is not { } layout || layout.Blocks.Length == data.Count)
+        {
+            PieceCount.Text = size;
+            return;
+        }
+        var fewest = data.Count / layout.Blocks.Length;
+        var most = (data.Count + layout.Blocks.Length - 1) / layout.Blocks.Length;
+        PieceCount.Text = text.Format("pieces", "detail", size,
+            fewest == most ? text.Format("pieces", "square", most) : text.Format("pieces", "square_range", fewest, most));
     }
 
     private Block? At(int index) =>
         _layout is { } layout && index >= 0 && index < layout.Blocks.Length ? layout.Blocks[index] : null;
 
+    private int Selected() => _selectedPiece < 0 || _layout is not { } layout ? -1 : Array.FindIndex(layout.Blocks, block => block.End > _selectedPiece);
+
     // Clear drops the layout whenever Show drops the data, and the text arrives with the first data.
-    private string Describe(Block block) => _data!.Describe(_text!, block.First, block.End);
+    private (string Range, string Facts) Describe(Block block) => _data!.Describe(_text!, block.First, block.End);
+
+    private string Detail(Block block)
+    {
+        var (range, facts) = Describe(block);
+        return _text!.Format("pieces", "detail", range, facts);
+    }
 
     private void PointAt(int index)
     {
-        if (At(index) is not { } block)
-        {
-            _pointed = -1;
-            Hover.Visibility = Visibility.Collapsed;
-            return;
-        }
-        _pointed = index;
-        Hover.Margin = new Thickness(block.X - 1, block.Y - 1, 0, 0);
-        Hover.Visibility = Visibility.Visible;
-    }
-
-    private void Tip(int index)
-    {
-        if (At(index) is not { } block)
-        {
-            _tooltip.IsOpen = false;
-            return;
-        }
-        _tipped = index;
-        _tooltip.Content = Describe(block);
-        _tooltip.HorizontalOffset = block.X;
-        _tooltip.VerticalOffset = block.Y + Square;
-        _tooltip.IsOpen = true;
+        var block = At(index);
+        _pointed = block is null ? -1 : index;
+        Hover.Visibility = block is null ? Visibility.Collapsed : Visibility.Visible;
+        if (block is not null) Hover.Margin = new Thickness(block.X - 1, block.Y - 1, 0, 0);
+        ShowDetail();
     }
 
     private void Select(int index)
     {
-        var value = Summary.Text;
-        if (At(index) is { } block)
-        {
-            _selected = index;
-            value = Describe(block);
-            Selection.Margin = new Thickness(block.X - 2, block.Y - 2, 0, 0);
-            Selection.Visibility = FocusState != FocusState.Unfocused ? Visibility.Visible : Visibility.Collapsed;
-        }
+        _selectedPiece = At(index)?.First ?? -1;
+        ShowSelection();
+    }
+
+    private void ShowSelection()
+    {
+        var block = At(Selected());
+        Selection.Visibility = block is null ? Visibility.Collapsed : Visibility.Visible;
+        if (block is not null) Selection.Margin = new Thickness(block.X - 2, block.Y - 2, 0, 0);
+        ShowDetail();
+        var value = block is null ? Summary.Text : Detail(block);
         if (_value == value) return;
         var previous = _value;
         _value = value;
         FrameworkElementAutomationPeer.FromElement(this)?.RaisePropertyChangedEvent(ValuePatternIdentifiers.ValueProperty, previous, value);
+    }
+
+    private void ShowDetail()
+    {
+        if (_text is not { } text) return;
+        var block = At(_pointed) ?? At(Selected());
+        Hint.Text = block is null && _layout is not null ? text.Get("pieces", "hint") : string.Empty;
+        (DetailRange.Text, DetailFacts.Text) = block is null ? (string.Empty, string.Empty) : Describe(block);
     }
 
     protected override AutomationPeer OnCreateAutomationPeer() => new MapPeer(this);

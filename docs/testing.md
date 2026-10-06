@@ -159,8 +159,10 @@ Capture journeys are excluded from ordinary builds. Build the app with
 `/p:EnableCapture=true` to include them; its output and intermediates use the
 `_capture` suffix under `artifacts/`, so a diagnostic build cannot replace the
 ordinary product. The option does not launch anything.
-Launch `artifacts/bin/TinyTorrent/debug_win-x64_capture/TinyTorrent.exe`, or
-`release_win-x64_capture` for a Release build, with the `Engine.exe` beside it.
+Launch the window executable in `artifacts/bin/TinyTorrent/debug_win-x64_capture/`,
+or `release_win-x64_capture` for a Release build, with the engine beside it;
+[Directory.Build.props](../Directory.Build.props)
+names both.
 Historical disposable launchers that name
 `release_win-x64` must have both executable paths changed before reuse; capture
 environment variables do not enable diagnostics in an ordinary binary.

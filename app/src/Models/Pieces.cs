@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.UI.Xaml.Controls;
 using Syno.TinyTorrent.Services;
 
 namespace Syno.TinyTorrent.Models;
@@ -64,38 +65,37 @@ public sealed class Pieces
 
     private static string Label(Strings text, PieceKind kind, int count) => text.Format("pieces", "count", Name(text, kind), count);
 
-    internal string Summary(Strings text)
+    internal (string Text, InfoBarSeverity Severity) Summary(Strings text)
     {
-        if (!MetadataReady) return text.Get("pieces", "metadata");
-        if (States.All(state => state == PieceKind.Verified)) return text.Get("pieces", "complete");
-        if (Peers == 0) return text.Get("pieces", "no_peers");
+        if (!MetadataReady) return (text.Get("pieces", "metadata"), InfoBarSeverity.Informational);
+        if (States.All(state => state == PieceKind.Verified)) return (text.Get("pieces", "complete"), InfoBarSeverity.Success);
+        if (Peers == 0) return (text.Get("pieces", "no_peers"), InfoBarSeverity.Warning);
         var unavailable = new int[Count + 1];
         for (var index = 0; index < Count; index++)
             unavailable[index + 1] = unavailable[index] + (States[index] == PieceKind.Unavailable ? 1 : 0);
-        if (unavailable[Count] == 0) return text.Get("pieces", "available");
+        if (unavailable[Count] == 0) return (text.Get("pieces", "available"), InfoBarSeverity.Success);
         var names = Names(text, Files.Where(file => unavailable[file.End] > unavailable[file.First]));
-        return text.FormatCount("pieces", "unavailable_files", unavailable[Count], string.Join(", ", names));
+        return (text.FormatCount("pieces", "unavailable_files", unavailable[Count], string.Join(", ", names)), InfoBarSeverity.Error);
     }
 
-    internal string Describe(Strings text, int first, int end)
+    internal (string Range, string Facts) Describe(Strings text, int first, int end)
     {
         var counts = Counts(first, end);
         var copies = Enumerable.Range(first, end - first)
             .Where(index => States[index] is not (PieceKind.Verified or PieceKind.Downloading))
             .Select(index => Availability[index]).ToArray();
-        var lines = new List<string>
-        {
-            end == first + 1 ? text.Format("pieces", "piece", end) : text.Format("pieces", "range", first + 1, end)
-        };
-        lines.AddRange(Names(text, Files.Where(file => file.First < end && file.End > first)));
-        lines.AddRange(Enum.GetValues<PieceKind>().Reverse().Where(kind => counts[(int)kind] > 0)
-            .Select(kind => Label(text, kind, counts[(int)kind])));
+        var range = end == first + 1 ? text.Format("pieces", "piece", end) : text.Format("pieces", "range", first + 1, end);
+        var parts = new List<string>();
         if (copies.Length > 0)
-            lines.Add(Peers == 0 ? text.Get("pieces", "unknown")
+            parts.Add(Peers == 0 ? text.Get("pieces", "unknown")
                 : end == first + 1 ? text.Format("pieces", "copies", copies[0])
                 : copies.Min() == copies.Max() ? text.Format("pieces", "copies_each", copies[0])
                 : text.Format("pieces", "copies_range", copies.Min(), copies.Max()));
-        return string.Join(Environment.NewLine, lines);
+        parts.Add(string.Join(", ", Enum.GetValues<PieceKind>().Reverse().Where(kind => counts[(int)kind] > 0)
+            .Select(kind => Label(text, kind, counts[(int)kind]))));
+        var files = Names(text, Files.Where(file => file.First < end && file.End > first));
+        if (files.Length > 0) parts.Add(string.Join(", ", files));
+        return (range, parts.Aggregate((line, part) => text.Format("pieces", "detail", line, part)));
     }
 
     private static string[] Names(Strings text, IEnumerable<PieceFile> files)

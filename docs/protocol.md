@@ -55,7 +55,9 @@ current application state. Start with the operations the actual UI needs.
 
 The first message carries the protocol version and an engine-session identity.
 Both executables ship together, so reject a different version with a usable
-error rather than negotiating. The session identity lets a restart invalidate
+error rather than negotiating. Raise the version with every change to a
+message's fields, because developer builds from different commits share one
+engine per user and otherwise fail on a missing field instead of this error. The session identity lets a restart invalidate
 previews and other transient references; durable torrent identities survive a
 restart, and info hashes do not replace them.
 The greeting also gives the engine executable and absolute data-directory paths

@@ -21,8 +21,19 @@
         </ResourceDictionary>
     </UserControl.Resources>
     <Grid RowSpacing="4">
-        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
-        <Grid ColumnSpacing="16">
+        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+        <Grid ColumnSpacing="8">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+            <TextBlock x:Name="Title" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center" />
+            <Button x:Name="Live" Grid.Column="1" Visibility="Collapsed" Click="OnLive" />
+            <SelectorBar x:Name="Ranges" Grid.Column="2" Padding="0" SelectionChanged="OnRange">
+                <SelectorBarItem x:Name="FiveMinutes" />
+                <SelectorBarItem x:Name="Hour" />
+                <SelectorBarItem x:Name="SixHours" />
+                <SelectorBarItem x:Name="Day" />
+            </SelectorBar>
+        </Grid>
+        <Grid Grid.Row="1" ColumnSpacing="16">
             <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
             <Grid ColumnSpacing="8">
                 <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
@@ -35,9 +46,10 @@
                 <TextBlock Grid.Column="1" TextWrapping="Wrap"><Run x:Name="UploadLabel" /><Run Text=" " /><Run x:Name="UploadValue" FontWeight="SemiBold" /><Run Text=" · " Foreground="{ThemeResource TextFillColorSecondaryBrush}" /><Run x:Name="UploadDetail" Foreground="{ThemeResource TextFillColorSecondaryBrush}" /></TextBlock>
             </Grid>
         </Grid>
-        <TextBlock x:Name="Maximum" Grid.Row="1" HorizontalAlignment="Right" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-        <Grid x:Name="Plot" Grid.Row="2" Background="{ThemeResource ControlAltFillColorSecondaryBrush}" SizeChanged="OnSize" FlowDirection="LeftToRight"
-            PointerMoved="OnPointer" PointerPressed="OnPressed" PointerExited="OnPointerExit" PointerCanceled="OnPointerExit" PointerWheelChanged="OnWheel">
+        <TextBlock x:Name="Maximum" Grid.Row="2" HorizontalAlignment="Right" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+        <Grid x:Name="Plot" Grid.Row="3" Background="{ThemeResource ControlAltFillColorSecondaryBrush}" SizeChanged="OnSize" FlowDirection="LeftToRight"
+            PointerPressed="OnPressed" PointerMoved="OnPointer" PointerReleased="OnReleased" PointerCaptureLost="OnReleased"
+            PointerExited="OnPointerExit" PointerCanceled="OnPointerExit" PointerWheelChanged="OnWheel">
             <Grid.RowDefinitions><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /></Grid.RowDefinitions>
             <Border Grid.Row="1" BorderThickness="0,1,0,0" BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}" />
             <Border Grid.Row="2" BorderThickness="0,1,0,0" BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}" />
@@ -53,6 +65,6 @@
             </Canvas>
             <TextBlock x:Name="NoHistory" Grid.RowSpan="4" HorizontalAlignment="Center" VerticalAlignment="Center" TextWrapping="Wrap" Margin="16" />
         </Grid>
-        <Grid x:Name="TickLabels" Grid.Row="3" FlowDirection="LeftToRight" />
+        <Grid x:Name="TickLabels" Grid.Row="4" FlowDirection="LeftToRight" />
     </Grid>
 </UserControl>

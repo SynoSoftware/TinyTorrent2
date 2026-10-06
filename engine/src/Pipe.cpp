@@ -310,7 +310,7 @@ void Pipe::Deliver(Client client, HANDLE handle)
     }
 }
 
-bool Pipe::Forward(std::wstring const& sid, Json request)
+Forwarding Pipe::Forward(std::wstring const& sid, Json request)
 {
     auto name = Name(sid);
     auto deadline = GetTickCount64() + forwardTimeout;
@@ -319,7 +319,7 @@ bool Pipe::Forward(std::wstring const& sid, Json request)
     {
         if (GetTickCount64() >= deadline)
         {
-            return false;
+            return Forwarding::Refused;
         }
         if (WaitNamedPipeW(name.c_str(), connectWait))
         {
@@ -334,8 +334,12 @@ bool Pipe::Forward(std::wstring const& sid, Json request)
     }
     Json hello;
     Io io{handle, nullptr, nullptr, GetTickCount64() + forwardTimeout};
-    bool success = Read(io, hello) && hello.value("version", 0) == version;
-    if (success)
+    auto outcome = Forwarding::Refused;
+    if (Read(io, hello))
+    {
+        outcome = hello.value("version", 0) == version ? Forwarding::Accepted : Forwarding::OtherVersion;
+    }
+    if (outcome == Forwarding::Accepted)
     {
         ULONG process = 0;
         if (GetNamedPipeServerProcessId(handle, &process))
@@ -345,10 +349,11 @@ bool Pipe::Forward(std::wstring const& sid, Json request)
         request["request_id"] = 1;
         auto bytes = request.dump();
         Json reply;
-        success = Write(io, bytes) && Read(io, reply) &&
+        bool accepted = Write(io, bytes) && Read(io, reply) &&
             reply.value("request_id", 0) == 1 && reply.value("ok", false);
+        outcome = accepted ? Forwarding::Accepted : Forwarding::Refused;
     }
     CloseHandle(handle);
-    return success;
+    return outcome;
 }
 }

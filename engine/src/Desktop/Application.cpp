@@ -75,12 +75,10 @@ LRESULT CALLBACK Broadcast(HWND window, UINT message, WPARAM first, LPARAM secon
     return DefWindowProcW(window, message, first, second);
 }
 
-// TinyTorrent.exe beside the engine. A development build finds it in the
-// WinUI project's output under the same bin folder.
 // The window from the same build, which is always beside the engine.
 std::filesystem::path WindowExecutable()
 {
-    return std::filesystem::path(Executable()).parent_path() / L"TinyTorrent.exe";
+    return std::filesystem::path(Executable()).parent_path() / TT_WINDOW_FILE;
 }
 
 HWND FindWinUiWindow(DWORD process)

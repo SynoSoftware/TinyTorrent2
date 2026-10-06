@@ -36,7 +36,6 @@ public sealed partial class InspectorForm : UserControl
         var sections = new[] { GeneralSection, FilesSection, PeersSection, TrackersSection, SpeedSection, PiecesSection };
         for (var index = 0; index < sections.Length; index++) sections[index].Tag = (InspectorSection)index;
         Sections.SelectedItem = sections[(int)model.Section];
-        for (var index = 0; index < Ranges.Items.Count; index++) Ranges.Items[index].Tag = (SpeedRange)index;
         Peers.Schema<Peer>().Key(peer => peer.Endpoint).SortKey(EndpointColumn, peer => peer.Endpoint)
             .SortKey(ClientColumn, peer => peer.Client).SortKey(ConnectionColumn, peer => peer.ConnectionText)
             .SortKey(PeerProgressColumn, peer => peer.Progress).SortKey(PeerDownColumn, peer => peer.DownloadRate)
@@ -58,7 +57,7 @@ public sealed partial class InspectorForm : UserControl
     internal Control Recover()
     {
         Model.Select(Model.IsEditingTrackers ? InspectorSection.Trackers : InspectorSection.Files);
-        return Model.IsEditingTrackers ? TrackerInput : RetryFiles;
+        return Model.IsEditingTrackers ? TrackerInput : Retry;
     }
     public static bool Not(bool value) => !value;
     public static Visibility Hidden(bool value) => value ? Visibility.Collapsed : Visibility.Visible;
@@ -72,10 +71,6 @@ public sealed partial class InspectorForm : UserControl
     {
         if (!_refreshing && sender.SelectedItem is { Tag: InspectorSection section }) Model.Select(section);
     }
-    private void OnRange(SelectorBar sender, SelectorBarSelectionChangedEventArgs args)
-    {
-        if (!_refreshing && sender.SelectedItem is { Tag: SpeedRange range }) Model.Range = range;
-    }
 
     private void Refresh()
     {
@@ -84,7 +79,6 @@ public sealed partial class InspectorForm : UserControl
             views[index].Visibility = index == (int)Model.Section ? Visibility.Visible : Visibility.Collapsed;
         _refreshing = true;
         Sections.SelectedItem = Sections.Items.First(item => Equals(item.Tag, Model.Section));
-        Ranges.SelectedItem = Ranges.Items.First(item => Equals(item.Tag, Model.Range));
         _refreshing = false;
         Map.Show(Model.Pieces, Model.Text);
         if (_editing != Model.IsEditingTrackers)
@@ -133,7 +127,7 @@ public sealed partial class InspectorForm : UserControl
         CompletedColumn.DisplayName = text.Get("trackers", "completed");
         NextColumn.DisplayName = text.Get("trackers", "next");
         MessageColumn.DisplayName = text.Get("trackers", "message");
-        Graph.RefreshText(text);
+        Speed.RefreshText(text);
         _files.RefreshText();
         Peers.RefreshView();
         TrackerTable.RefreshView();

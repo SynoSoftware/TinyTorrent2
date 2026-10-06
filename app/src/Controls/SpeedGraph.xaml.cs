@@ -8,7 +8,6 @@ using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Windows.Foundation;
 using Windows.System;
-using Syno.TinyTorrent.Models;
 using Syno.TinyTorrent.Services;
 using Syno.TinyTorrent.Views;
 
@@ -18,37 +17,110 @@ namespace Syno.TinyTorrent.Controls;
 public sealed partial class SpeedGraph : UserControl
 {
     public static readonly DependencyProperty SamplesProperty = DependencyProperty.Register(nameof(Samples),
-        typeof(IReadOnlyList<SpeedSample>), typeof(SpeedGraph), new PropertyMetadata(Array.Empty<SpeedSample>(), (graph, _) => ((SpeedGraph)graph).Update()));
-    public static readonly DependencyProperty RangeProperty = DependencyProperty.Register(nameof(Range), typeof(SpeedRange),
-        typeof(SpeedGraph), new PropertyMetadata(SpeedRange.FiveMinutes, (graph, _) => ((SpeedGraph)graph).Update()));
+        typeof(IReadOnlyList<SpeedSample>), typeof(SpeedGraph), new PropertyMetadata(Array.Empty<SpeedSample>(), (graph, _) => ((SpeedGraph)graph).OnSamples()));
 
+    // Zoom levels, in seconds. Each view draws 60 averages.
+    private static readonly long[] Lengths = [300, 900, 1800, 3600, 21600, 86400];
+    // Older history has one sample a minute, so a view shorter than this shows
+    // only the present, where per-second samples exist.
+    private const long PastMinimum = 1800;
+    // Samples are at most a minute apart, so a longer pause is unknown time,
+    // such as sleep or an engine restart, and the line breaks there.
+    private const long Gap = 90;
     // One notch of a mouse wheel. A touchpad sends smaller deltas that add up to
-    // it, so one swipe does not race through every range.
+    // it, so one swipe does not race through every zoom level.
     private const int Notch = 120;
+    // The + and - keys of the main keyboard; VirtualKey names only the keypad ones.
+    private const VirtualKey Plus = (VirtualKey)0xBB;
+    private const VirtualKey Minus = (VirtualKey)0xBD;
     private Strings? _text;
+    private long _length = 300;
+    // Where a past view ends; null while the view follows the newest sample.
+    private long? _end;
     private double? _marker;
+    // Where the pointer rests on the plot, so new data keeps the marker under it.
+    private double? _pointer;
+    private Drag? _drag;
     private string _value = string.Empty;
     private int _wheel;
 
-    public SpeedGraph() => InitializeComponent();
+    public SpeedGraph()
+    {
+        InitializeComponent();
+        FiveMinutes.Tag = 300L;
+        Hour.Tag = 3600L;
+        SixHours.Tag = 21600L;
+        Day.Tag = 86400L;
+    }
 
     public IReadOnlyList<SpeedSample> Samples { get => (IReadOnlyList<SpeedSample>)GetValue(SamplesProperty); set => SetValue(SamplesProperty, value); }
-    public SpeedRange Range { get => (SpeedRange)GetValue(RangeProperty); set => SetValue(RangeProperty, value); }
 
-    // The shown range ends at the newest sample.
-    private long Start(Timescale scale) => (Samples.Count == 0 ? DateTimeOffset.Now.ToUnixTimeSeconds() : Samples[^1].Time) - scale.Length;
+    private long Newest => Samples.Count == 0 ? DateTimeOffset.Now.ToUnixTimeSeconds() : Samples[^1].Time;
+    private long End => _end ?? Newest;
+    private long Start => End - _length;
 
     internal void RefreshText(Strings text)
     {
         _text = text;
         AutomationProperties.SetName(this, text.Get("speed", "chart"));
+        Title.Text = text.Get("speed", "all");
+        Live.Content = text.Get("speed", "now");
+        AutomationProperties.SetName(Ranges, text.Get("speed", "range"));
+        FiveMinutes.Text = text.Get("speed", "five_minutes");
+        Hour.Text = text.Get("speed", "hour");
+        SixHours.Text = text.Get("speed", "six_hours");
+        Day.Text = text.Get("speed", "day");
+        foreach (var item in Ranges.Items)
+        {
+            AutomationProperties.SetName(item, item.Text);
+        }
         DownloadLabel.Text = text.Get("speed", "download");
         UploadLabel.Text = text.Get("speed", "upload");
         NoHistory.Text = text.Get("speed", "empty");
         Update();
     }
 
+    // A view stays inside the retained history, and a view that reaches the
+    // newest sample follows it again.
+    private void SetView(long length, double end)
+    {
+        var newest = Newest;
+        var oldest = Samples.Count == 0 ? newest : Samples[0].Time;
+        var clamped = (long)Math.Max(end, oldest + length);
+        long? past = length >= PastMinimum && clamped < newest ? clamped : null;
+        if (length == _length && past == _end)
+        {
+            return;
+        }
+        _length = length;
+        _end = past;
+        Update();
+    }
+
+    // Keeps the anchor time at the same place on the plot.
+    private void Zoom(int direction, double anchor)
+    {
+        var length = Lengths[Math.Clamp(Array.IndexOf(Lengths, _length) + direction, 0, Lengths.Length - 1)];
+        if (_end is not null)
+        {
+            length = Math.Max(length, PastMinimum);
+        }
+        var after = (End - anchor) / _length;
+        SetView(length, anchor + after * length);
+    }
+
+    private void Pan(double seconds) => SetView(_length, End + seconds);
+
     private void OnSize(object sender, SizeChangedEventArgs args) => Update();
+
+    private void OnSamples()
+    {
+        if (_pointer is { } x)
+        {
+            _marker = Nearest(Averages(), TimeAt(x))?.Time;
+        }
+        Update();
+    }
 
     private void Update()
     {
@@ -56,31 +128,34 @@ public sealed partial class SpeedGraph : UserControl
         {
             return;
         }
-        var scale = Timescale.Of(Range);
-        var start = Start(scale);
-        var runs = Bucket(Samples, scale, start);
+        Ranges.SelectedItem = _end is null ? Ranges.Items.FirstOrDefault(item => (long)item.Tag == _length) : null;
+        Live.Visibility = _end is null ? Visibility.Collapsed : Visibility.Visible;
+        // Averages shorter than a minute need seconds to tell them apart.
+        var format = _length < 3600 ? "T" : "t";
+        var runs = Runs();
         var averages = runs.SelectMany(run => run).ToArray();
         var marked = Nearest(averages, _marker);
         var shown = marked ?? averages.LastOrDefault();
         var downloadPeak = averages.Select(average => average.Download).DefaultIfEmpty().Max();
         var uploadPeak = averages.Select(average => average.Upload).DefaultIfEmpty().Max();
         var top = Ceiling(Math.Max(downloadPeak, uploadPeak));
-        var at = marked is null ? null : text.Format("speed", "at", Time(marked.Time, scale.Format));
+        // The legend names the time of any value that is not the present one.
+        var at = shown is not null && (marked is not null || _end is not null) ? text.Format("speed", "at", Time(shown.Time, format)) : null;
         DownloadValue.Text = Rate(text, shown?.Download);
         UploadValue.Text = Rate(text, shown?.Upload);
         DownloadDetail.Text = at ?? text.Format("speed", "peak", Rate(text, downloadPeak));
         UploadDetail.Text = at ?? text.Format("speed", "peak", Rate(text, uploadPeak));
         Maximum.Text = averages.Length == 0 ? string.Empty : Rate(text, top);
         NoHistory.Visibility = averages.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
-        _value = marked is null ? string.Empty : text.Format("speed", "point", Time(marked.Time, scale.Format),
+        _value = marked is null ? string.Empty : text.Format("speed", "point", Time(marked.Time, format),
             Rate(text, marked.Download), Rate(text, marked.Upload));
-        var extent = new Extent(Plot.ActualWidth, Plot.ActualHeight, start, scale.Length, top);
+        var extent = new Extent(Plot.ActualWidth, Plot.ActualHeight, Start, _length, top);
         if (extent.Width <= 0 || extent.Height <= 0)
         {
             return;
         }
         Draw(runs, extent);
-        DrawTicks(extent, scale);
+        DrawTicks(extent);
         DrawMarker(extent, marked);
     }
 
@@ -92,31 +167,29 @@ public sealed partial class SpeedGraph : UserControl
     private static Average? Nearest(Average[] averages, double? time) =>
         time is { } target && averages.Length > 0 ? averages.MinBy(average => Math.Abs(average.Time - target)) : null;
 
-    private Average[] Averages()
-    {
-        var scale = Timescale.Of(Range);
-        return Bucket(Samples, scale, Start(scale)).SelectMany(run => run).ToArray();
-    }
+    private List<List<Average>> Runs() => Bucket(Samples, Start, End, _length / 60);
+
+    private Average[] Averages() => Runs().SelectMany(run => run).ToArray();
 
     // Splits the samples at unknown time, then averages each run in buckets
     // aligned to clock time, so a new sample changes only the newest bucket.
-    private static List<List<Average>> Bucket(IReadOnlyList<SpeedSample> samples, Timescale scale, long start)
+    private static List<List<Average>> Bucket(IReadOnlyList<SpeedSample> samples, long start, long end, long width)
     {
         var runs = new List<List<Average>>();
         var bucket = new List<SpeedSample>();
         SpeedSample? previous = null;
         foreach (var sample in samples)
         {
-            if (sample.Time < start)
+            if (sample.Time < start || sample.Time > end)
             {
                 continue;
             }
-            if (previous is null || sample.Time - previous.Time > scale.Gap)
+            if (previous is null || sample.Time - previous.Time > Gap)
             {
                 Close();
                 runs.Add([]);
             }
-            else if (sample.Time / scale.Bucket != previous.Time / scale.Bucket)
+            else if (sample.Time / width != previous.Time / width)
             {
                 Close();
             }
@@ -186,16 +259,26 @@ public sealed partial class SpeedGraph : UserControl
         UploadLine.Data = upload;
     }
 
-    // Marks round local clock times, such as every hour on the hour. A label
-    // that would touch the previous one is left out; its line stays.
-    private void DrawTicks(Extent extent, Timescale scale)
+    // Marks round local clock times, at most about six per view. A label that
+    // would touch the previous one is left out; its line stays.
+    private void DrawTicks(Extent extent)
     {
+        ReadOnlySpan<long> intervals = [60, 300, 600, 1800, 3600, 10800, 21600];
+        var interval = intervals[^1];
+        foreach (var candidate in intervals)
+        {
+            if (candidate * 6 >= extent.Length)
+            {
+                interval = candidate;
+                break;
+            }
+        }
         var ticks = new GeometryGroup();
         TickLabels.Children.Clear();
         var offset = (long)TimeZoneInfo.Local.GetUtcOffset(DateTimeOffset.FromUnixTimeSeconds(extent.Start)).TotalSeconds;
-        var first = (extent.Start + offset + scale.Tick - 1) / scale.Tick * scale.Tick - offset;
+        var first = (extent.Start + offset + interval - 1) / interval * interval - offset;
         var right = double.NegativeInfinity;
-        for (var time = first; time <= extent.Start + extent.Length; time += scale.Tick)
+        for (var time = first; time <= extent.Start + extent.Length; time += interval)
         {
             var x = extent.At(time, 0).X;
             ticks.Children.Add(new LineGeometry { StartPoint = new Point(x, 0), EndPoint = new Point(x, extent.Height) });
@@ -308,29 +391,95 @@ public sealed partial class SpeedGraph : UserControl
         }
     }
 
+    private double TimeAt(double x) => Start + x / Plot.ActualWidth * _length;
+
+    private void Hover(PointerRoutedEventArgs args)
+    {
+        var x = args.GetCurrentPoint(Plot).Position.X;
+        _pointer = x;
+        Mark(TimeAt(x));
+    }
+
+    private void OnRange(SelectorBar sender, SelectorBarSelectionChangedEventArgs args)
+    {
+        if (sender.SelectedItem is { Tag: long length })
+        {
+            SetView(length, Newest);
+        }
+    }
+
+    private void OnLive(object sender, RoutedEventArgs args) => SetView(_length, Newest);
+
+    private void OnPressed(object sender, PointerRoutedEventArgs args)
+    {
+        Focus(FocusState.Pointer);
+        if (args.GetCurrentPoint(Plot).Properties.IsLeftButtonPressed && Plot.CapturePointer(args.Pointer))
+        {
+            _drag = new Drag(args.GetCurrentPoint(Plot).Position.X, End);
+        }
+        Hover(args);
+    }
+
     private void OnPointer(object sender, PointerRoutedEventArgs args)
     {
         if (Plot.ActualWidth <= 0)
         {
             return;
         }
-        var scale = Timescale.Of(Range);
-        var x = args.GetCurrentPoint(Plot).Position.X;
-        Mark(Start(scale) + x / Plot.ActualWidth * scale.Length);
+        if (_drag is { } drag)
+        {
+            var x = args.GetCurrentPoint(Plot).Position.X;
+            SetView(_length, drag.End + (drag.X - x) / Plot.ActualWidth * _length);
+        }
+        Hover(args);
     }
 
-    private void OnPressed(object sender, PointerRoutedEventArgs args)
+    private void OnReleased(object sender, PointerRoutedEventArgs args)
     {
-        Focus(FocusState.Pointer);
-        OnPointer(sender, args);
+        _drag = null;
+        Plot.ReleasePointerCapture(args.Pointer);
+        var point = args.GetCurrentPoint(Plot).Position;
+        if (point.X < 0 || point.Y < 0 || point.X > Plot.ActualWidth || point.Y > Plot.ActualHeight)
+        {
+            OnPointerExit(sender, args);
+        }
     }
 
     private void OnPointerExit(object sender, PointerRoutedEventArgs args)
     {
+        if (_drag is not null)
+        {
+            return;
+        }
+        _pointer = null;
         if (FocusState != FocusState.Keyboard)
         {
             Mark(null);
         }
+    }
+
+    // Each wheel notch zooms one level around the time under the pointer.
+    private void OnWheel(object sender, PointerRoutedEventArgs args)
+    {
+        var properties = args.GetCurrentPoint(Plot).Properties;
+        if (properties.IsHorizontalMouseWheel || Plot.ActualWidth <= 0)
+        {
+            return;
+        }
+        args.Handled = true;
+        if (Math.Sign(properties.MouseWheelDelta) != Math.Sign(_wheel))
+        {
+            _wheel = 0;
+        }
+        _wheel += properties.MouseWheelDelta;
+        var x = args.GetCurrentPoint(Plot).Position.X;
+        while (Math.Abs(_wheel) >= Notch)
+        {
+            var direction = _wheel > 0 ? -1 : 1;
+            _wheel -= Math.Sign(_wheel) * Notch;
+            Zoom(direction, TimeAt(x));
+        }
+        Hover(args);
     }
 
     private void OnFocus(object sender, RoutedEventArgs args)
@@ -343,57 +492,60 @@ public sealed partial class SpeedGraph : UserControl
 
     private void OnBlur(object sender, RoutedEventArgs args) => Mark(null);
 
+    // The arrow keys move the marker, + and - zoom around it, and Page Up and
+    // Page Down pan half a view, so the keyboard reaches what the pointer does.
     private void OnKey(object sender, KeyRoutedEventArgs args)
     {
-        if (args.Key == VirtualKey.Escape && _marker is not null)
+        if (args.OriginalSource != this)
         {
-            Mark(null);
-            args.Handled = true;
             return;
         }
+        var anchor = _marker ?? End;
+        switch (args.Key)
+        {
+            case VirtualKey.Escape when _marker is not null:
+                Mark(null);
+                break;
+            case VirtualKey.Add or Plus:
+                Zoom(-1, anchor);
+                Mark(anchor);
+                break;
+            case VirtualKey.Subtract or Minus:
+                Zoom(1, anchor);
+                Mark(anchor);
+                break;
+            case VirtualKey.PageUp:
+                Pan(-_length / 2.0);
+                break;
+            case VirtualKey.PageDown:
+                Pan(_length / 2.0);
+                break;
+            case VirtualKey.Left or VirtualKey.Right or VirtualKey.Home or VirtualKey.End:
+                Step(args.Key);
+                break;
+            default:
+                return;
+        }
+        _pointer = null;
+        args.Handled = true;
+    }
+
+    private void Step(VirtualKey key)
+    {
         var averages = Averages();
         if (averages.Length == 0)
         {
             return;
         }
         var index = Nearest(averages, _marker) is { } marked ? Array.IndexOf(averages, marked) : averages.Length - 1;
-        int? next = args.Key switch
+        var next = key switch
         {
             VirtualKey.Left => index - 1,
             VirtualKey.Right => index + 1,
             VirtualKey.Home => 0,
-            VirtualKey.End => averages.Length - 1,
-            _ => null,
+            _ => averages.Length - 1,
         };
-        if (next is { } target)
-        {
-            Mark(averages[Math.Clamp(target, 0, averages.Length - 1)].Time);
-            args.Handled = true;
-        }
-    }
-
-    // The wheel steps through the same ranges as the range buttons: up shows a
-    // shorter range, down a longer one, always ending now.
-    private void OnWheel(object sender, PointerRoutedEventArgs args)
-    {
-        var properties = args.GetCurrentPoint(this).Properties;
-        if (properties.IsHorizontalMouseWheel)
-        {
-            return;
-        }
-        args.Handled = true;
-        if (Math.Sign(properties.MouseWheelDelta) != Math.Sign(_wheel))
-        {
-            _wheel = 0;
-        }
-        _wheel += properties.MouseWheelDelta;
-        while (Math.Abs(_wheel) >= Notch)
-        {
-            var step = _wheel > 0 ? -1 : 1;
-            _wheel -= Math.Sign(_wheel) * Notch;
-            Range = (SpeedRange)Math.Clamp((int)Range + step, (int)SpeedRange.FiveMinutes, (int)SpeedRange.Day);
-        }
-        OnPointer(sender, args);
+        Mark(averages[Math.Clamp(next, 0, averages.Length - 1)].Time);
     }
 
     protected override AutomationPeer OnCreateAutomationPeer() => new GraphPeer(this);
@@ -408,21 +560,11 @@ public sealed partial class SpeedGraph : UserControl
         public void SetValue(string value) => throw new InvalidOperationException();
     }
 
-    private sealed record Timescale(long Length, long Bucket, long Gap, long Tick, string Format)
-    {
-        // The engine samples once a second for five minutes and once a minute
-        // for the day. A longer pause between two samples is unknown time, such
-        // as an engine restart, so the line breaks there.
-        public static Timescale Of(SpeedRange range) => range switch
-        {
-            SpeedRange.FiveMinutes => new(Length: 300, Bucket: 5, Gap: 2, Tick: 60, Format: "T"),
-            SpeedRange.Hour => new(Length: 3600, Bucket: 60, Gap: 90, Tick: 900, Format: "t"),
-            SpeedRange.SixHours => new(Length: 21600, Bucket: 300, Gap: 90, Tick: 3600, Format: "t"),
-            _ => new(Length: 86400, Bucket: 900, Gap: 90, Tick: 21600, Format: "t"),
-        };
-    }
-
     private sealed record Average(double Time, double Download, double Upload);
+
+    // Where a drag started and where the view ended then. Panning from the
+    // start, not from the last move, keeps rounding from adding up.
+    private sealed record Drag(double X, long End);
 
     private sealed record Extent(double Width, double Height, long Start, long Length, double Top)
     {

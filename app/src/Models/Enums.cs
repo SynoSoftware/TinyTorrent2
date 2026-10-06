@@ -63,14 +63,6 @@ public enum InspectorSection
     Pieces
 }
 
-public enum SpeedRange
-{
-    FiveMinutes,
-    Hour,
-    SixHours,
-    Day
-}
-
 public enum PieceKind
 {
     Unavailable,

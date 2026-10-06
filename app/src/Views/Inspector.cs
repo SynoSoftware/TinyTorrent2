@@ -22,7 +22,6 @@ public sealed class Inspector : INotifyPropertyChanged
     private bool _filesLoaded;
     private bool _trackersLoaded;
     private bool _editingTrackers;
-    private SpeedRange _range;
     private bool _visible = true;
     private Exception? _readFailure;
     private Exception? _editFailure;
@@ -80,36 +79,11 @@ public sealed class Inspector : INotifyPropertyChanged
             Refresh();
         }
     }
-    // The engine keeps a five-minute and a day history; the longer ranges all
-    // show part of the day history, so switching among them reads nothing new.
-    public SpeedRange Range
-    {
-        get => _range;
-        set
-        {
-            if (_range == value)
-            {
-                return;
-            }
-            var reload = _range == SpeedRange.FiveMinutes || value == SpeedRange.FiveMinutes;
-            _range = value;
-            if (reload)
-            {
-                Invalidate();
-                History = [];
-            }
-            Refresh();
-            if (reload)
-            {
-                _ = Read();
-            }
-        }
-    }
     public ICommand EditTrackers { get; }
     public ICommand SaveTrackers { get; }
     public ICommand CancelTrackers { get; }
-    public ICommand RetryFiles { get; }
     public ICommand Retry { get; }
+    public string RetryToolTip => Text.Get("inspector", HasFileDraft ? "retry_files_tip" : "retry_tip");
     public ICommand Restart => _owner.Restart;
     public bool CanRestart => _owner.CanRestart;
     public string RestartText => _owner.RestartText;
@@ -132,8 +106,8 @@ public sealed class Inspector : INotifyPropertyChanged
             () => CanEdit && _trackersLoaded && !_editingTrackers);
         SaveTrackers = new Command(CommitTrackers, () => CanEdit && _editingTrackers);
         CancelTrackers = new Command(() => { CancelTrackerDraft(); return Task.CompletedTask; }, () => !_pending && _editingTrackers);
-        RetryFiles = new Command(SaveFiles, () => CanEdit && HasFileDraft);
-        Retry = new Command(Read, () => CanRead && !_fetching);
+        Retry = new Command(() => HasFileDraft ? SaveFiles() : Read(),
+            () => HasFileDraft ? CanEdit : CanRead && !_fetching);
         Reannounce = new Command(() => Apply("reannounce", new { torrent_id = _target!.TorrentId }),
             () => CanEdit && !_editingTrackers);
     }
@@ -215,9 +189,16 @@ public sealed class Inspector : INotifyPropertyChanged
         Refresh();
         try
         {
-            var reply = section == InspectorSection.Speed ? await _client.Read(Consumer.Inspector, "history", new { range = _range == SpeedRange.FiveMinutes ? "five_minutes" : "day" }) :
-                await _client.Read(Consumer.Inspector, "torrent", new { torrent_id = target.TorrentId, view = section.ToString().ToLowerInvariant(),
-                    include_files = section == InspectorSection.Pieces && Pieces is not { MetadataReady: true } });
+            if (section == InspectorSection.Speed)
+            {
+                var history = await ReadHistory();
+                if (context != _context || !_visible || !CanRead) return;
+                History = history;
+                _readFailure = null;
+                return;
+            }
+            var reply = await _client.Read(Consumer.Inspector, "torrent", new { torrent_id = target.TorrentId, view = section.ToString().ToLowerInvariant(),
+                include_files = section == InspectorSection.Pieces && Pieces is not { MetadataReady: true } });
             if (context != _context || !_visible || !CanRead) return;
             switch (section)
             {
@@ -246,11 +227,6 @@ public sealed class Inspector : INotifyPropertyChanged
                     else RowsUpdated?.Invoke(this, InspectorSection.Trackers);
                     _trackersLoaded = true;
                     break;
-                case InspectorSection.Speed:
-                    History = reply.GetProperty("samples").EnumerateArray().Select(sample => new SpeedSample(
-                        sample.GetProperty("time").GetInt64(), sample.GetProperty("download_rate").GetDouble(),
-                        sample.GetProperty("upload_rate").GetDouble())).ToArray();
-                    break;
                 case InspectorSection.Pieces: Pieces = new Pieces(reply, Pieces?.Files ?? []); break;
             }
             _readFailure = null;
@@ -262,6 +238,20 @@ public sealed class Inspector : INotifyPropertyChanged
             Refresh();
             if (context != _context && _visible && IsOpen && CanRead) _ = Read();
         }
+    }
+
+    // The engine keeps the day at one sample a minute and the last five minutes
+    // at one a second; the chart uses the finer samples where both exist.
+    private async Task<SpeedSample[]> ReadHistory()
+    {
+        var day = Samples(await _client.Read(Consumer.Inspector, "history", new { range = "day" }));
+        var recent = Samples(await _client.Read(Consumer.Inspector, "history", new { range = "five_minutes" }));
+        var cut = recent.Length == 0 ? long.MaxValue : recent[0].Time;
+        return [.. day.Where(sample => sample.Time < cut), .. recent];
+
+        static SpeedSample[] Samples(JsonElement reply) => reply.GetProperty("samples").EnumerateArray().Select(sample => new SpeedSample(
+            sample.GetProperty("time").GetInt64(), sample.GetProperty("download_rate").GetDouble(),
+            sample.GetProperty("upload_rate").GetDouble())).ToArray();
     }
 
     // A read for the old context is stale, so an unsent one is withdrawn.
@@ -405,7 +395,7 @@ public sealed class Inspector : INotifyPropertyChanged
     {
         var enabled = CanEdit && _filesLoaded;
         if (Files.IsEnabled != enabled) Files.IsEnabled = enabled;
-        foreach (Command command in new[] { EditTrackers, SaveTrackers, CancelTrackers, RetryFiles, Retry, Reannounce }) command.Refresh();
+        foreach (Command command in new[] { EditTrackers, SaveTrackers, CancelTrackers, Retry, Reannounce }) command.Refresh();
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
     }
 }

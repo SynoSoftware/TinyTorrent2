@@ -17,6 +17,10 @@
     <ProjectGuid>{537AA260-FEA5-49AC-A79E-E79BF6AE966B}</ProjectGuid>
     <RootNamespace>Engine</RootNamespace>
     <WindowsTargetPlatformVersion>10.0.28000.0</WindowsTargetPlatformVersion>
+    <!-- The build records the compiler's own architecture and recompiles every
+         file when it changes, so a 32-bit MSBuild must not pick the 32-bit
+         compiler. -->
+    <PreferredToolArchitecture>x64</PreferredToolArchitecture>
   </PropertyGroup>
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
@@ -42,6 +46,9 @@
   <PropertyGroup>
     <OutDir>$(ArtifactsPath)\bin\$(MSBuildProjectName)\$(Configuration)\</OutDir>
     <IntDir>$(ArtifactsPath)\obj\$(MSBuildProjectName)\$(Configuration)\</IntDir>
+    <!-- Transfer.vcxproj imports this project and keeps its own name. -->
+    <TargetName Condition="'$(MSBuildProjectName)' == 'Engine'">$(EngineTargetName)</TargetName>
+    <VersionDefinitions>TT_VERSION=&quot;$(Version)&quot;;TT_VERSION_MAJOR=$([System.Version]::Parse('$(Version)').Major);TT_VERSION_MINOR=$([System.Version]::Parse('$(Version)').Minor);TT_VERSION_BUILD=$([System.Version]::Parse('$(Version)').Build);TT_VERSION_REVISION=$([System.Math]::Max(0, $([System.Version]::Parse('$(Version)').Revision)))</VersionDefinitions>
   </PropertyGroup>
 
   <!-- The dependencies that Dependencies.ps1 builds into 3rdParty: static libraries and, with
@@ -70,12 +77,13 @@
       <LanguageStandard>stdcpp23</LanguageStandard>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <AdditionalIncludeDirectories>$(MSBuildThisFileDirectory)..\inc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>NOMINMAX;TT_VERSION=&quot;$(Version)&quot;;TT_VERSION_MAJOR=$([System.Version]::Parse('$(Version)').Major);TT_VERSION_MINOR=$([System.Version]::Parse('$(Version)').Minor);TT_VERSION_BUILD=$([System.Version]::Parse('$(Version)').Build);TT_VERSION_REVISION=$([System.Math]::Max(0, $([System.Version]::Parse('$(Version)').Revision)));%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NOMINMAX;$(VersionDefinitions);%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>Precompiled.h</PrecompiledHeaderFile>
       <ForcedIncludeFiles>Precompiled.h;%(ForcedIncludeFiles)</ForcedIncludeFiles>
     </ClCompile>
     <ResourceCompile>
+      <PreprocessorDefinitions>$(VersionDefinitions);%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>$(MSBuildThisFileDirectory)..\inc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ResourceCompile>
     <Link>
@@ -122,7 +130,9 @@
     <ClCompile Include="Strings.cpp" />
     <ClCompile Include="Registration.cpp" />
     <ClCompile Include="Pipe.cpp" />
-    <ClCompile Include="Desktop\Application.cpp" />
+    <ClCompile Include="Desktop\Application.cpp">
+      <PreprocessorDefinitions>TT_WINDOW_FILE=L&quot;$(WindowTargetName).exe&quot;;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
     <ClCompile Include="Desktop\PowerRequest.cpp" />
     <ClCompile Include="Desktop\Splash.cpp" />
     <ClCompile Include="Desktop\Tray.cpp" />

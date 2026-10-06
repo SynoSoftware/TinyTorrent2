@@ -915,17 +915,23 @@ the person to reopen Move files and choose the folder holding the files.
 The Speed view shows the [engine's session-wide speed history](engine.md#state-and-work),
 whichever torrent is selected, and its heading says All torrents, so nobody
 reads it as the selected torrent's speed. It continues while WinUI
-is closed, so reopening shows what happened meanwhile. Offer the last 5
-minutes, 1 hour, 6 hours and 24 hours as always-visible choices. The mouse
-wheel over the chart steps to a shorter or longer
-choice; it is a shortcut, so the choices stay visible. Unknown gaps, such as the
+is closed, so reopening shows what happened meanwhile. Unknown gaps, such as the
 time before an engine restart, are not interpolated into invented history.
 
+The person can look at any time in the retained day. The mouse wheel over the
+chart zooms between 5 minutes and 24 hours around the time under the pointer,
+and dragging pans; + and − zoom and Page Up and Page Down pan from the keyboard.
+A view shorter than 30 minutes shows the present only, because the engine keeps
+one sample a second for just the last five minutes and one a minute before
+that. The 5-minute, 1-hour, 6-hour and 24-hour choices stay visible and show the
+present. A view of the past stays still while new data arrives, and Now returns
+to the present.
+
 The chart shows the trend, not every sample: per-second rates jump with each
-burst from a peer. It draws averages of 5 seconds, 1 minute, 5 minutes and 15
-minutes for the four choices, as a smooth curve that never rises above or falls
-below the averages. Download is a filled area and upload a dashed line, so the
-two differ without colour. Round clock times are marked under the chart.
+burst from a peer. Every view draws 60 averages as a smooth curve that never
+rises above or falls below them. Download is a filled area and upload a dashed
+line, so the two differ without colour. Round clock times are marked under the
+chart.
 
 A one-line legend per direction gives the current average and the peak, so the
 chart keeps its height in a short inspector. The legend and the rounded scale
@@ -957,24 +963,45 @@ outlines, as that map's were; change them only when the
   different in a large swarm and a small one. Otherwise it is *common*. While no
   peer is connected, availability is unknown, so missing pieces are *missing*,
   never unavailable.
-- **Status.** Above the map, one sentence gives the conclusion: Complete, Waiting
-  for metadata, No peers connected, All missing pieces are available, or the
-  number of unavailable pieces and the files they belong to. Naming the files
-  lets the user skip them and let the rest finish. A list of files, here and in
-  the tooltip, names the first three and counts the rest, so a long list cannot
-  push the map out of view or fill the screen; Files lists every file. Under the
-  sentence, in secondary text, are the piece count and piece size.
+- **Status.** Above the map, one sentence gives the conclusion, led by an icon
+  in its InfoBar severity colour so it reads at a glance: Complete, Waiting for
+  metadata, No peers connected, All missing pieces are available, or the number
+  of unavailable pieces and the files they belong to. Naming the files lets the
+  user skip them and let the rest finish. A list of files, here and in the
+  detail line, names the first three and counts the rest, so a long list cannot
+  push the map out of view or fill the screen; Files lists every file. The piece
+  count, the piece size, and how many pieces each square holds follow the
+  sentence on the same line in secondary text, because the inspector is short
+  and every header line costs a row of squares; without that number, a merged
+  square's size is a guess.
 - **Legend.** Under the status, one row shows each state with its swatch, its
   name, and its count in semibold, as the Speed legend shows its values. The
   counts are the legend, so the two cannot disagree. Entries share one width, so
   they line up in columns when the row wraps in a narrow panel.
-- **Squares.** Squares keep one readable size and sit in groups, so the eye
-  keeps its place. They never shrink: when the torrent has more pieces than fit,
-  the squares fill the space under the legend completely, and each covers a
-  contiguous range of pieces that differs from the others by at most one piece.
-  The map starts at the same edge as the status and legend and is aligned to the
-  top. In a right-to-left language the first piece is at the top right, as a
-  progress bar starts at the right.
+- **Detail.** Under the legend, set closer to the map than to the legend so it
+  reads as part of the map, one line describes one square: its piece number or
+  range, how many connected peers have its missing pieces that are not
+  downloading, the count of each state it holds, and the files it belongs to.
+  The peer count is the count for one piece, and the lowest and highest for
+  several, because a merged square's colour cannot show that spread; while no
+  peer is connected, it is unknown. The line shows the square last pointed at
+  while the pointer is over the map, otherwise the selected square, otherwise,
+  while the map shows squares, a hint to point at or select one. A gap between
+  squares keeps the last square, so the text does not flicker while the pointer
+  crosses the map. The details sit in the page rather than in a tooltip, because
+  a tooltip covers the squares beside the pointer and users read square after
+  square. The range is in semibold and the rest in secondary text. The line
+  keeps its height and trims long text at its end, where the files are, so the
+  map never moves while the pointer crosses it.
+- **Squares.** Squares keep one readable size and sit in groups of eight, so the
+  eye keeps its place; the last group across and down may be shorter, so the map
+  fills the width instead of leaving up to seven empty columns. They never
+  shrink: when the torrent has more pieces than fit, the squares fill the space
+  under the detail line completely, and each covers a contiguous range of pieces
+  that differs from the others by at most one piece. The map starts at the same
+  edge as the status and legend and is aligned to the top. In a right-to-left
+  language the first piece is at the top right, as a progress bar starts at the
+  right.
 - **Squares that cover several pieces** show the state most of their pieces
   have; on a tie the worse state wins, in the order unavailable, rare, common,
   missing, downloading, verified. A square that holds more than one state gets a
@@ -992,17 +1019,19 @@ outlines, as that map's were; change them only when the
   its own, because it appears only while common, rare, and unavailable cannot.
   In High Contrast, system colours replace the fills, so every square also gets
   an outline, as Fluent controls do there.
-- **Pointer and keyboard.** The map is one focus stop with one selected square,
-  which the arrow keys, Home, End, and a click move; it shows the focus outline
-  while the map has focus. Pointing at a square gives it a thinner outline
-  without moving the selection, because a pointer passing over the map must not
-  move the keyboard's place. The square last pointed at or selected shows a
-  tooltip with its piece number or range, the files they belong to, the count
-  of each state it holds, and how many connected peers have its missing pieces
-  that are not downloading: the count for one piece, the lowest and highest for
-  several, because a merged square's colour cannot show that spread. While no
-  peer is connected, that count is unknown. The selected square's text is the
-  map's UI Automation value, and Ctrl+C copies it.
+- **Pointer and keyboard.** The map is one focus stop with at most one selected
+  square, which a click and the arrow keys, Home, and End set; the first arrow
+  key selects the first square, and Up and Down stay put at the first and last
+  rows, as a Fluent grid does. The selection stays on the same pieces when a
+  resize regroups the squares; leaving the view or choosing another torrent
+  clears it with the map's data. The selected square keeps its accent outline,
+  as Fluent marks selection, when the map loses focus, because the detail line
+  can still describe it. Pointing at a square gives it a thinner outline without
+  moving the selection, because a pointer passing over the map must not move the
+  keyboard's place. A key press is the latest input, so it shows the selected
+  square until the pointer moves again. The selected square's detail line is the
+  map's UI Automation value, and Ctrl+C copies it; without a selection, the
+  value is the status sentence.
 - **Drawing cost.** Draw the squares into one bitmap and redraw only when the
   data changes, because one element per square is too slow at thousands of
   pieces.

@@ -118,11 +118,10 @@ do not define this product.
   unneeded one holds the owner's machine longer and hides which executable
   carries the current code.
 - Build into the default output, `artifacts/`. While another build is writing
-  it, or an `Engine.exe` or `TinyTorrent.exe` started from it is running, use
-  the lowest-numbered free lane, `artifacts/lanes/2`, then `artifacts/lanes/3`:
+  it, or an engine or window executable started from it is running, use the
+  lowest-numbered free lane, `artifacts/lanes/2`, then `artifacts/lanes/3`:
   pass `/p:ArtifactsPath=<repository>\artifacts\lanes\<n>` to the engine build
-  and then the app build, because the app copies `Engine.exe` from its own
-  lane. Return to the default output once it is free. Every output folder holds
+  and then the app build, because the app copies the engine from its own lane. Return to the default output once it is free. Every output folder holds
   a complete set of executables, and one that is not rebuilt runs old code with
   no sign of it.
 - After every build, compare the files it compiled, which the build log lists,

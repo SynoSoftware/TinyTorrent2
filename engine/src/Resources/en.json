@@ -38,6 +38,7 @@
   },
   "error": {
     "start": "TinyTorrent could not start.",
+    "version": "A different version of TinyTorrent is already running. Choose Exit in the tray, then start TinyTorrent again.",
     "source": "The torrent could not be added.",
     "ownership": "TinyTorrent cannot open its saved data. Another Windows logon may already be using this folder:",
     "launch": "The window could not start. Downloads continue. Choose Show window in the tray to retry.",

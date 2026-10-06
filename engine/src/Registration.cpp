@@ -3,7 +3,12 @@
 #include <shobjidl.h>
 #include <shlobj.h>
 #include <shellapi.h>
+#include <chrono>
+#include <filesystem>
+#include <future>
+#include <memory>
 #include <stdexcept>
+#include <thread>
 
 namespace tt
 {
@@ -18,6 +23,9 @@ constexpr wchar_t run[] = L"Software\\Microsoft\\Windows\\CurrentVersion\\Run";
 constexpr wchar_t torrentClass[] = L"TinyTorrent.Torrent";
 constexpr wchar_t magnetClass[] = L"TinyTorrent.Magnet";
 constexpr wchar_t const* classes[] = {torrentClass, magnetClass};
+// A local identity check takes milliseconds; one that takes longer is waiting
+// for a network share.
+constexpr auto identityWait = std::chrono::milliseconds(250);
 
 constexpr std::pair<std::string_view, RegistrationOperation> operations[] = {
     {"observe", RegistrationOperation::Observe},
@@ -33,9 +41,9 @@ std::wstring Key(wchar_t const* progId)
     return L"Software\\Classes\\" + std::wstring(progId);
 }
 
-std::wstring OpenCommand() { return L"\"" + Executable() + L"\" " + option::literal + L" \"%1\""; }
-std::wstring Icon() { return L"\"" + Executable() + L"\",0"; }
-std::wstring Launch() { return L"\"" + Executable() + L"\" " + option::background; }
+std::wstring OpenCommand(std::wstring const& path = Executable()) { return L"\"" + path + L"\" " + option::literal + L" \"%1\""; }
+std::wstring Icon(std::wstring const& path = Executable()) { return L"\"" + path + L"\",0"; }
+std::wstring Launch(std::wstring const& path = Executable()) { return L"\"" + path + L"\" " + option::background; }
 
 std::wstring Read(std::wstring const& key, wchar_t const* name = nullptr)
 {
@@ -133,31 +141,6 @@ Json IsDefault(wchar_t const* extension, ASSOCIATIONTYPE type, wchar_t const* pr
     return choice.is_null() ? Json() : Json(choice == Utf8(progId));
 }
 
-// Every handler entry is present and names this executable.
-bool HandlersMatch()
-{
-    bool handlers = Read(registered, productName) == capabilities &&
-        Read(capabilities, L"ApplicationName") == productName &&
-        Read(capabilities, L"ApplicationIcon") == Icon() &&
-        Has(Key(magnetClass), L"URL Protocol", REG_SZ) && Read(Key(magnetClass), L"URL Protocol").empty() &&
-        Has(openWith, torrentClass, REG_NONE) &&
-        Read(fileAssociations, L".torrent") == torrentClass &&
-        Read(urlAssociations, L"magnet") == magnetClass;
-    for (auto const* progId : classes)
-    {
-        handlers = handlers && Read(Key(progId) + L"\\shell\\open\\command") == OpenCommand() &&
-            Read(Key(progId) + L"\\DefaultIcon") == Icon();
-    }
-    return handlers;
-}
-
-// The open command of any TinyTorrent handler, whichever copy registered it.
-std::wstring HandlerCommand()
-{
-    auto command = Read(Key(torrentClass) + L"\\shell\\open\\command");
-    return command.empty() ? Read(Key(magnetClass) + L"\\shell\\open\\command") : command;
-}
-
 // The executable a command starts, which every TinyTorrent command quotes.
 std::wstring Target(std::wstring const& command)
 {
@@ -165,11 +148,88 @@ std::wstring Target(std::wstring const& command)
     return command.starts_with(L'"') && end != std::wstring::npos ? command.substr(1, end - 1) : command;
 }
 
+// The command starts this executable file, also through another path to it,
+// such as a junction. Opening a file whose path leads to an offline share
+// waits for the network and would stall the engine, so a network path is
+// compared only as text, and the identity check, which can still meet a link
+// to a share, gives up after identityWait and counts the copy as another one.
+bool IsThis(std::wstring const& command)
+{
+    auto target = Target(command);
+    auto executable = Executable();
+    if (CompareStringOrdinal(target.c_str(), -1, executable.c_str(), -1, TRUE) == CSTR_EQUAL)
+    {
+        return true;
+    }
+    bool remote = target.starts_with(L"\\\\") ||
+        (target.size() >= 3 && target[1] == L':' && GetDriveTypeW(target.substr(0, 3).c_str()) == DRIVE_REMOTE);
+    if (remote)
+    {
+        return false;
+    }
+    auto same = std::make_shared<std::promise<bool>>();
+    auto answer = same->get_future();
+    try
+    {
+        std::thread([same, target, executable]
+        {
+            std::error_code error;
+            same->set_value(std::filesystem::equivalent(target, executable, error));
+        }).detach();
+    }
+    catch (std::system_error const&)
+    {
+        return false;
+    }
+    return answer.wait_for(identityWait) == std::future_status::ready && answer.get();
+}
+
+// A TinyTorrent handler's open command, preferring one that starts another
+// copy, so a mixed registration reports that copy.
+std::wstring HandlerCommand()
+{
+    std::wstring found;
+    for (auto const* progId : classes)
+    {
+        auto command = Read(Key(progId) + L"\\shell\\open\\command");
+        if (!command.empty() && (found.empty() || !IsThis(command)))
+        {
+            found = command;
+        }
+    }
+    return found;
+}
+
+// Every handler entry is present and starts this copy, through the one path
+// the entries share.
+bool HandlersComplete()
+{
+    auto command = HandlerCommand();
+    if (!IsThis(command))
+    {
+        return false;
+    }
+    auto path = Target(command);
+    bool handlers = Read(registered, productName) == capabilities &&
+        Read(capabilities, L"ApplicationName") == productName &&
+        Read(capabilities, L"ApplicationIcon") == Icon(path) &&
+        Has(Key(magnetClass), L"URL Protocol", REG_SZ) && Read(Key(magnetClass), L"URL Protocol").empty() &&
+        Has(openWith, torrentClass, REG_NONE) &&
+        Read(fileAssociations, L".torrent") == torrentClass &&
+        Read(urlAssociations, L"magnet") == magnetClass;
+    for (auto const* progId : classes)
+    {
+        handlers = handlers && Read(Key(progId) + L"\\shell\\open\\command") == OpenCommand(path) &&
+            Read(Key(progId) + L"\\DefaultIcon") == Icon(path);
+    }
+    return handlers;
+}
+
 // Another TinyTorrent copy's entry is still a registration, so it is "other",
 // never "none".
-std::string Owner(std::wstring const& command, bool current)
+std::string Owner(std::wstring const& command)
 {
-    return command.empty() ? "none" : current ? "this" : "other";
+    return command.empty() ? "none" : IsThis(command) ? "this" : "other";
 }
 }
 
@@ -178,9 +238,9 @@ Json Registration::Observe() const
     auto handlers = HandlerCommand();
     auto startup = Read(run, productName);
     return {
-        {"handlers", Owner(handlers, HandlersMatch())},
+        {"handlers", Owner(handlers)},
         {"handlers_target", Utf8(Target(handlers))},
-        {"startup", Owner(startup, startup == Launch())},
+        {"startup", Owner(startup)},
         {"startup_target", Utf8(Target(startup))},
         {"torrent_default", IsDefault(L".torrent", AT_FILEEXTENSION, torrentClass)},
         {"magnet_default", IsDefault(L"magnet", AT_URLPROTOCOL, magnetClass)}
@@ -188,18 +248,21 @@ Json Registration::Observe() const
 }
 
 // Moves TinyTorrent's existing entries to this executable, so they follow the
-// copy the person runs; an entry the person removed stays removed. Observe
+// copy the person runs; an entry the person removed stays removed. The
+// RegisteredApplications value records the handler request: registering
+// writes it last and unregistering removes it first, so a partial failure
+// either way never brings back handlers the person turned off. Observe
 // reports the actual entries, including a partially completed repair.
 void Registration::Repair() const
 {
     try
     {
-        if (!HandlerCommand().empty() && !HandlersMatch())
+        if (Read(registered, productName) == capabilities && !HandlersComplete())
         {
             RegisterHandlers();
         }
         auto startup = Read(run, productName);
-        if (!startup.empty() && startup != Launch())
+        if (!startup.empty() && !(IsThis(startup) && startup == Launch(Target(startup))))
         {
             Write(run, productName, Launch());
         }
@@ -235,12 +298,12 @@ void Registration::RegisterHandlers() const
 
 void Registration::UnregisterHandlers() const
 {
+    Remove(registered, productName);
     for (auto const* progId : classes)
     {
         Check(RegDeleteTreeW(HKEY_CURRENT_USER, Key(progId).c_str()));
     }
     Remove(openWith, torrentClass);
-    Remove(registered, productName);
     Check(RegDeleteTreeW(HKEY_CURRENT_USER, capabilities));
     SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
 }

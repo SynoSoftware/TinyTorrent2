@@ -56,7 +56,7 @@ public:
         void Send(Json message);
     };
     // The protocol version that the hello message announces.
-    static constexpr int version = 1;
+    static constexpr int version = 2;
     using Client = std::shared_ptr<Connection>;
     // Receives each request with the reply that answers it, and a null request
     // with no reply when the client disconnects.
@@ -67,7 +67,7 @@ public:
     Pipe(Pipe const&) = delete;
     Pipe& operator=(Pipe const&) = delete;
     void Stop();
-    static bool Forward(std::wstring const& sid, Json request = {{"command", "open"}});
+    static Forwarding Forward(std::wstring const& sid, Json request = {{"command", "open"}});
 
 private:
     static std::wstring Name(std::wstring const& sid);

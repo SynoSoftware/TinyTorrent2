@@ -222,6 +222,15 @@ enum class TrayItem
     Counts
 };
 
+// How a second launch's request to the running engine ended. A different
+// version is its own outcome, because the person must exit that engine first.
+enum class Forwarding
+{
+    Accepted,
+    Refused,
+    OtherVersion
+};
+
 namespace desktop
 {
 // Cold when Open started with this engine, which must load first; warm when

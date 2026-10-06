@@ -16,7 +16,8 @@ if ($Check -in $transferChecks -and -not $Transfer) {
     throw "$Check runs a real transfer. Run it only when the owner asks, with -Transfer."
 }
 $repository = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
-$executable = Join-Path $repository 'artifacts/bin/Engine/Release/Engine.exe'
+$engineName = ([xml](Get-Content (Join-Path $repository 'Directory.Build.props'))).Project.PropertyGroup.EngineTargetName | Where-Object { $_ }
+$executable = Join-Path $repository "artifacts/bin/Engine/Release/$engineName.exe"
 if ($EnginePath) { $executable = [IO.Path]::GetFullPath($EnginePath) }
 $directory = Join-Path $repository ('artifacts/evidence/' + $Check + '-' + [guid]::NewGuid())
 $null = New-Item -ItemType Directory -Path $directory
@@ -90,7 +91,7 @@ function Connect-Pipe {
         throw 'TinyTorrent is already running. The check refuses to command an engine it did not start.'
     }
     $hello = Read-Frame $stream
-    Assert ($hello.type -eq 'hello' -and $hello.version -eq 1) 'Invalid version handshake'
+    Assert ($hello.type -eq 'hello' -and $hello.version -eq 2) 'Invalid version handshake'
     return $stream
 }
 

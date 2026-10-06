@@ -12,12 +12,16 @@ public sealed partial class SettingsRow : ContentControl
     public static readonly DependencyProperty HeaderProperty = Text(nameof(Header));
     public static readonly DependencyProperty DescriptionProperty = Text(nameof(Description));
     public static readonly DependencyProperty ErrorProperty = Text(nameof(Error));
+    public static readonly DependencyProperty CautionProperty = Text(nameof(Caution));
     public static readonly DependencyProperty DetailProperty = DependencyProperty.Register(nameof(Detail), typeof(object),
-        typeof(SettingsRow), new PropertyMetadata(null, (row, _) => ((SettingsRow)row).Update()));
+        typeof(SettingsRow), new PropertyMetadata(null, (row, args) => ((SettingsRow)row).OnDetail(args.OldValue, args.NewValue)));
+
+    private long _detailVisibility;
 
     public string Header { get => (string)GetValue(HeaderProperty); set => SetValue(HeaderProperty, value); }
     public string Description { get => (string)GetValue(DescriptionProperty); set => SetValue(DescriptionProperty, value); }
     public string Error { get => (string)GetValue(ErrorProperty); set => SetValue(ErrorProperty, value); }
+    public string Caution { get => (string)GetValue(CautionProperty); set => SetValue(CautionProperty, value); }
     public object? Detail { get => GetValue(DetailProperty); set => SetValue(DetailProperty, value); }
 
     private static DependencyProperty Text(string name) => DependencyProperty.Register(name, typeof(string),
@@ -35,13 +39,26 @@ public sealed partial class SettingsRow : ContentControl
         Update();
     }
 
+    // A collapsed detail element still leaves the presenter's margin, so the
+    // presenter follows the element's visibility.
+    private void OnDetail(object? old, object? detail)
+    {
+        if (old is UIElement previous) previous.UnregisterPropertyChangedCallback(VisibilityProperty, _detailVisibility);
+        if (detail is UIElement element) _detailVisibility = element.RegisterPropertyChangedCallback(VisibilityProperty, (_, _) => Update());
+        Update();
+    }
+
     // Empty parts collapse, because an empty TextBlock still takes a line.
     private void Update()
     {
         Show("DescriptionText", Description.Length > 0);
         Show("ErrorText", Error.Length > 0);
-        Show("DetailPresenter", Detail is not null);
-        if (Content is UIElement control) AutomationProperties.SetHelpText(control, Description);
+        Show("CautionText", Caution.Length > 0);
+        Show("DetailPresenter", Detail is not null and not UIElement { Visibility: Visibility.Collapsed });
+        // A screen reader on the control also hears the caution, which says
+        // what the control's state means.
+        if (Content is UIElement control)
+            AutomationProperties.SetHelpText(control, string.Join(" ", new[] { Description, Caution }.Where(text => text.Length > 0)));
     }
 
     private void Show(string part, bool visible)

@@ -121,19 +121,26 @@ int WINAPI wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ PWSTR, _In_ int)
         {
             throw std::runtime_error("Torrent sources exceed the supported count or length.");
         }
-        // An engine with its own store, such as a test's, is not the person's
-        // copy, so only the default store moves the registrations to it.
-        bool personal = directory.empty();
+        std::filesystem::path standard;
+        PWSTR local = nullptr;
+        if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &local)))
+        {
+            standard = std::filesystem::path(local) / tt::productName;
+        }
+        CoTaskMemFree(local);
         if (directory.empty())
         {
-            PWSTR local = nullptr;
-            if (FAILED(SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &local)))
+            if (standard.empty())
             {
                 throw std::runtime_error("Cannot locate the local application data folder.");
             }
-            directory = std::filesystem::path(local) / tt::productName;
-            CoTaskMemFree(local);
+            directory = standard;
         }
+        // An engine with its own store, such as a test's, is not the person's
+        // copy, so only the default store moves the registrations to it. A
+        // restart names the default store explicitly, so compare the folders.
+        std::error_code error;
+        bool personal = directory == standard || std::filesystem::equivalent(directory, standard, error);
         auto sid = LogonSid();
         {
             tt::Security security(sid);
@@ -146,22 +153,26 @@ int WINAPI wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ PWSTR, _In_ int)
         auto acquired = WaitForSingleObject(mutex.get(), 0);
         if (acquired == WAIT_TIMEOUT)
         {
-            bool forwarded = true;
+            auto forwarding = tt::Forwarding::Accepted;
             if (!registration.empty())
             {
-                forwarded =
+                forwarding =
                     tt::Pipe::Forward(sid, {{"command", "registration"}, {"operation", registration}});
             }
             else if (!sources.empty())
             {
-                forwarded = tt::Pipe::Forward(sid, {{"command", "activate_sources"}, {"sources", sources}});
+                forwarding = tt::Pipe::Forward(sid, {{"command", "activate_sources"}, {"sources", sources}});
             }
             else if (!background && !headless)
             {
-                forwarded = tt::Pipe::Forward(sid);
+                forwarding = tt::Pipe::Forward(sid);
             }
             mutex.reset();
-            if (!forwarded)
+            if (forwarding == tt::Forwarding::OtherVersion)
+            {
+                throw std::runtime_error(tt::Utf8(tt::Strings().Text("error", "version")));
+            }
+            if (forwarding == tt::Forwarding::Refused)
             {
                 throw std::runtime_error("The running engine could not accept the activation request.");
             }

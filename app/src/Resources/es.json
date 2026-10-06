@@ -67,7 +67,7 @@
     "invalid_limits": "Introduce un límite de velocidad entre 0 y 2.097.151 KiB/s.", "preview_expired": "Esta vista previa ha caducado. Pulsa Añadir para obtenerla de nuevo con tus opciones.",
     "invalid_priorities": "Selecciona al menos un archivo y una prioridad válida.", "metadata_unavailable": "Los metadatos aún no están disponibles.", "alias_conflict": "Este torrent entra en conflicto con otra descarga. Revisa el torrent existente antes de añadirlo.", "preview_failed": "No se pudieron obtener los metadatos del torrent. Vuelve a intentarlo."
   },
-  "connection": { "restart": "Reiniciar", "version": "Las versiones del motor y de la ventana no coinciden. Instala una versión completa de TinyTorrent.", "unavailable": "El motor no está disponible.", "overload": "Hay demasiadas órdenes pendientes. Vuelve a intentarlo en unos instantes.", "uncertain": "Se perdió la conexión. Reconectando para confirmar el estado actual.", "missing": "No se encontró Engine.exe junto a la aplicación.", "restart_tip": "Reiniciar el motor" },
+  "connection": { "restart": "Reiniciar", "version": "Las versiones del motor y de la ventana no coinciden. Instala una versión completa de TinyTorrent.", "unavailable": "El motor no está disponible.", "overload": "Hay demasiadas órdenes pendientes. Vuelve a intentarlo en unos instantes.", "uncertain": "Se perdió la conexión. Reconectando para confirmar el estado actual.", "missing": "No se encontró {0} junto a la aplicación.", "restart_tip": "Reiniciar el motor" },
   "commands": { "menu": "Menú de la aplicación", "selection": "Acciones de selección", "add_file": "Añadir archivo torrent…", "add_magnet": "Añadir enlace magnet…", "pause": "Pausar", "resume": "Reanudar", "force": "Forzar inicio", "verify": "Verificar", "remove": "Eliminar", "move": "Mover archivos", "delete_files": "Borrar archivos", "open": "Abrir", "open_folder": "Abrir carpeta", "copy_magnet": "Copiar enlace magnet", "copy_hash": "Copiar hash", "properties": "Propiedades", "up": "Subir", "down": "Bajar", "top": "Mover al principio", "bottom": "Mover al final", "pause_all": "Pausar todos", "resume_all": "Reanudar todos", "limits": "Límites de velocidad…", "exit": "Salir", "sequential": "Descargar en orden secuencial", "first_last": "Priorizar primera y última pieza", "sequential_off": "Dejar de descargar en orden secuencial", "first_last_off": "Dejar de priorizar la primera y la última pieza" },
   "files": { "name": "Archivo", "priority": "Prioridad", "summary": "{0} de {1} archivos · {2}", "search": "Buscar un archivo", "all_matching": "Seleccionar o desmarcar todos los archivos coincidentes", "expand_all": "Expandir todo", "collapse_all": "Contraer todo", "unchanged": "Dejar sin cambios", "skip": "No descargar", "low": "Baja", "normal": "Normal", "high": "Alta" },
   "outcomes": { "accepted": "{0}: solicitud aceptada.", "queue": "Orden de la cola" },
@@ -90,7 +90,7 @@
     "edit": "Editar", "save": "Guardar", "reannounce": "Anunciar de nuevo", "hint": "Una URL de rastreador por línea. Una línea en blanco separa los niveles.", "empty": "No hay rastreadores", "edit_tip": "Editar la lista de rastreadores de este torrent", "save_tip": "Aplicar la lista de rastreadores editada", "reannounce_tip": "Pedir pares a todos los rastreadores ahora"
   },
   "speed": {
-    "all": "Todos los torrents", "range": "Intervalo del historial", "five_minutes": "5 minutos", "hour": "1 hora", "six_hours": "6 horas", "day": "24 horas",
+    "all": "Todos los torrents", "range": "Intervalo del historial", "five_minutes": "5 minutos", "hour": "1 hora", "six_hours": "6 horas", "day": "24 horas", "now": "Ahora",
     "download": "Descarga", "upload": "Subida", "peak": "máximo {0}", "at": "a las {0}", "chart": "Gráfico de velocidad",
     "point": "{0}: descarga {1}, subida {2}", "empty": "Aún no hay historial de velocidad"
   },
@@ -98,7 +98,7 @@
     "metadata": "Esperando metadatos", "complete": "Completo", "no_peers": "No hay pares conectados",
     "available": "Todas las piezas que faltan están disponibles", "unavailable_files_one": "{0:N0} pieza no disponible · {1}", "unavailable_files_other": "{0:N0} piezas no disponibles · {1}",
     "verified": "Verificadas", "downloading": "Descargando", "missing": "Faltantes", "common": "Comunes", "rare": "Escasas", "unavailable": "No disponibles",
-    "count": "{0}: {1:N0}", "size_one": "{0:N0} pieza · {1} por pieza", "size_other": "{0:N0} piezas · {1} por pieza", "piece": "Pieza {0:N0}", "range": "Piezas {0:N0}–{1:N0}", "more": "y {0:N0} más", "unknown": "Disponibilidad de pares desconocida", "copies": "Pares conectados con esta pieza: {0:N0}",
+    "count": "{0} {1:N0}", "size_one": "{0:N0} pieza · {1} por pieza", "size_other": "{0:N0} piezas · {1} por pieza", "piece": "Pieza {0:N0}", "range": "Piezas {0:N0}–{1:N0}", "more": "y {0:N0} más", "detail": "{0} · {1}", "square": "{0:N0} por cuadro", "square_range": "{0:N0}–{1:N0} por cuadro", "hint": "Señala o selecciona un cuadro para ver sus piezas", "unknown": "Disponibilidad de pares desconocida", "copies": "Pares conectados con esta pieza: {0:N0}",
     "copies_each": "Pares conectados por pieza: {0:N0}", "copies_range": "Pares conectados por pieza: {0:N0}–{1:N0}"
   },
   "remove": { "title": "¿Eliminar torrents?", "tip": "Quitar los torrents de la lista. Los archivos descargados se quedan en el disco." },

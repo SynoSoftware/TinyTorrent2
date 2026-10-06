@@ -114,6 +114,19 @@ WinUI. It builds as one executable; focused native checks can link the same
 implementation units. Its startup, commands, and shutdown also work without tray
 windows or UI files, so headless checks use the production implementation.
 
+**Owner ruling: the engine is `TinyTorrent.exe` and the WinUI window is
+`TinyTorrentUI.exe`.** The engine is the program people start: shortcuts, file
+and link handlers and start at sign-in launch it, and the firewall asks about
+it, so it carries the product name. A generic name such as `Engine.exe` looks
+like malware in Task Manager and in the firewall prompt. Both files carry the
+full product name, not an abbreviation such as `tt-`, because a person who
+sees an abbreviation cannot tell which product it belongs to. Both report
+"TinyTorrent" as their file description, so Windows shows the product name
+where it would otherwise show the file name.
+[Directory.Build.props](../Directory.Build.props) is the only place that
+defines the two names; projects, code and scripts read them from there, because
+each process starts the other by name and two copies of a name drift apart.
+
 | Responsibility | Sole owner |
 | --- | --- |
 | Swarm and transfer execution, torrent metadata | libtorrent inside the engine |

@@ -1120,11 +1120,12 @@ facts and failed edits. Peer and Tracker rows carry sampled raw facts, with
 regional formatting and live text derived when read. The Files view reuses
 FileBrowser. Peers and Trackers declare public TableView schemas with stable
 endpoint/URL keys and typed sort keys; no library change is required. The tracker
-editor preserves its coherent draft until Save or Cancel. SpeedGraph binds the
-history and a two-way range shared with the range bar and its
-wheel shortcut, averages samples in buckets aligned to clock time, and draws
-monotone cubic native paths with separate figures across unknown time gaps. Its
-marker exposes the marked point as a read-only UI Automation value. PiecesMap uses one BGRA
+editor preserves its coherent draft until Save or Cancel. Inspector merges the
+per-minute day history with the per-second five-minute history. SpeedGraph owns
+its view, a zoom length and either the present or a past end time; it averages
+samples in buckets aligned to clock time and draws monotone cubic native paths
+with separate figures across unknown time gaps. Its marker exposes the marked
+point as a read-only UI Automation value. PiecesMap uses one BGRA
 bitmap, 16-pixel squares, 4-pixel gaps and 6-pixel gutters after each group of
 eight, matching the previous native map. Squares are anti-aliased tiles with the
 theme's control corner radius; their colours, hatch and cross come from the
@@ -1133,10 +1134,10 @@ outline appears only in High Contrast. When pieces outnumber the squares that
 fit, every fitting square is used and each covers a near-equal range. Geometry
 and theme changes invalidate the raster; equal data does not. Grouped squares
 use the documented state tie order, received fill, a mixed-state dot and an
-unavailable dot. Hover
-outlines a square without moving the selected square, which a click and
-Arrow/Home/End move; a read-only UI Automation value and Ctrl+C expose the
-selected square's range facts, the same text its tooltip shows.
+unavailable dot. One fixed, trimmed line under the legend describes the
+hovered square, otherwise the selected one; hover outlines a square without
+moving the selected square, which a click and Arrow/Home/End move. A read-only
+UI Automation value and Ctrl+C expose the selected square's detail line.
 These surfaces are not yet connected to the product or runtime-reviewed.
 
 The owner's latest reference is `app/prototype.html` at `4082f7f`, variant C,
@@ -1304,8 +1305,8 @@ refuses it.
 `startup_target`, `torrent_default` and `magnet_default`. The two registration
 states are `none`, `this` or `other`; an unavailable default query is null.
 A partial failure includes the observed data with the refusal.
-The same operations are available through `Engine.exe --registration OPERATION`
-without starting transfers or WinUI.
+The same operations are available through the engine executable's
+`--registration OPERATION` option without starting transfers or WinUI.
 Snapshot settings contain the live language, with `language_saved` indicating
 whether it matches the saved preference. The store retains only saved settings;
 a failed save leaves the live choice selected and reports the failure.

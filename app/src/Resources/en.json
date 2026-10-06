@@ -67,7 +67,7 @@
     "invalid_limits": "Enter a speed limit between 0 and 2,097,151 KiB/s.", "preview_expired": "This preview expired. Choose Add again to reacquire it with your choices.",
     "invalid_priorities": "Choose at least one file and a valid download priority.", "metadata_unavailable": "Metadata is not available yet.", "alias_conflict": "This torrent conflicts with another download. Review the existing torrent before adding it.", "preview_failed": "Torrent metadata could not be obtained. Try again."
   },
-  "connection": { "restart": "Restart", "version": "The engine and window versions do not match. Install a complete TinyTorrent release.", "unavailable": "The engine is unavailable.", "overload": "Too many commands are pending. Try again shortly.", "uncertain": "The connection was lost. Reconnecting to confirm the current state.", "missing": "Engine.exe was not found beside the application.", "restart_tip": "Restart the engine" },
+  "connection": { "restart": "Restart", "version": "The engine and window versions do not match. Install a complete TinyTorrent release.", "unavailable": "The engine is unavailable.", "overload": "Too many commands are pending. Try again shortly.", "uncertain": "The connection was lost. Reconnecting to confirm the current state.", "missing": "{0} was not found beside the application.", "restart_tip": "Restart the engine" },
   "commands": { "menu": "Application menu", "selection": "Selection actions", "add_file": "Add torrent file…", "add_magnet": "Add magnet link…", "pause": "Pause", "resume": "Resume", "force": "Force start", "verify": "Verify", "remove": "Remove", "move": "Move files", "delete_files": "Delete files", "open": "Open", "open_folder": "Open folder", "copy_magnet": "Copy magnet link", "copy_hash": "Copy info hash", "properties": "Properties", "up": "Move up", "down": "Move down", "top": "Move to top", "bottom": "Move to bottom", "pause_all": "Pause all", "resume_all": "Resume all", "limits": "Speed limits…", "exit": "Exit", "sequential": "Download in sequential order", "first_last": "Download first and last pieces first", "sequential_off": "Stop downloading in sequential order", "first_last_off": "Stop downloading first and last pieces first" },
   "files": { "name": "File", "priority": "Priority", "summary": "{0} of {1} files · {2}", "search": "Find a file", "all_matching": "Select or clear all matching files", "expand_all": "Expand all", "collapse_all": "Collapse all", "unchanged": "Leave unchanged", "skip": "Do not download", "low": "Low", "normal": "Normal", "high": "High" },
   "outcomes": { "accepted": "{0}: request accepted.", "queue": "Queue order" },
@@ -90,7 +90,7 @@
     "edit": "Edit", "save": "Save", "reannounce": "Reannounce", "hint": "One tracker URL per line. A blank line separates tiers.", "empty": "No trackers", "edit_tip": "Edit this torrent's tracker list", "save_tip": "Apply the edited tracker list", "reannounce_tip": "Ask every tracker for peers now"
   },
   "speed": {
-    "all": "All torrents", "range": "History range", "five_minutes": "5 minutes", "hour": "1 hour", "six_hours": "6 hours", "day": "24 hours",
+    "all": "All torrents", "range": "History range", "five_minutes": "5 minutes", "hour": "1 hour", "six_hours": "6 hours", "day": "24 hours", "now": "Now",
     "download": "Download", "upload": "Upload", "peak": "peak {0}", "at": "at {0}", "chart": "Speed chart",
     "point": "{0}: download {1}, upload {2}", "empty": "No speed history yet"
   },
@@ -98,7 +98,7 @@
     "metadata": "Waiting for metadata", "complete": "Complete", "no_peers": "No peers connected",
     "available": "All missing pieces are available", "unavailable_files_one": "{0:N0} piece unavailable · {1}", "unavailable_files_other": "{0:N0} pieces unavailable · {1}",
     "verified": "Verified", "downloading": "Downloading", "missing": "Missing", "common": "Common", "rare": "Rare", "unavailable": "Unavailable",
-    "count": "{0}: {1:N0}", "size_one": "{0:N0} piece · {1} each", "size_other": "{0:N0} pieces · {1} each", "piece": "Piece {0:N0}", "range": "Pieces {0:N0}–{1:N0}", "more": "and {0:N0} more", "unknown": "Peer availability unknown", "copies": "Connected peers with this piece: {0:N0}",
+    "count": "{0} {1:N0}", "size_one": "{0:N0} piece · {1} each", "size_other": "{0:N0} pieces · {1} each", "piece": "Piece {0:N0}", "range": "Pieces {0:N0}–{1:N0}", "more": "and {0:N0} more", "detail": "{0} · {1}", "square": "{0:N0} per square", "square_range": "{0:N0}–{1:N0} per square", "hint": "Point to or select a square to see its pieces", "unknown": "Peer availability unknown", "copies": "Connected peers with this piece: {0:N0}",
     "copies_each": "Connected peers per piece: {0:N0}", "copies_range": "Connected peers per piece: {0:N0}–{1:N0}"
   },
   "remove": { "title": "Remove torrents?", "tip": "Remove the torrents from the list. Downloaded files stay on disk." },

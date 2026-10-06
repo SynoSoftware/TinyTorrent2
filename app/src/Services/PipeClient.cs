@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.Diagnostics;
 using System.ComponentModel;
 using System.IO.Pipes;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Security.Principal;
 using System.Text.Json;
@@ -15,6 +16,9 @@ internal sealed class PipeClient : IDisposable
     private const int MaximumFrame = 16 * 1024 * 1024;
     private const int CommandLimit = 32;
     private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(15);
+    // TinyTorrent.csproj records the engine's file name from the shared build properties.
+    private static readonly string EngineFile = typeof(PipeClient).Assembly
+        .GetCustomAttributes<AssemblyMetadataAttribute>().Single(metadata => metadata.Key == "EngineFile").Value!;
     private readonly Strings _strings;
     private readonly object _gate = new();
     private readonly CancellationTokenSource _lifetime = new();
@@ -347,7 +351,7 @@ internal sealed class PipeClient : IDisposable
         try
         {
             var hello = await Read(pipe, deadline.Token);
-            if (hello.GetProperty("type").GetString() != "hello" || hello.GetProperty("version").GetInt32() != 1)
+            if (hello.GetProperty("type").GetString() != "hello" || hello.GetProperty("version").GetInt32() != 2)
                 throw new InvalidDataException(strings.Get("connection", "version"));
             return hello;
         }
@@ -385,8 +389,8 @@ internal sealed class PipeClient : IDisposable
     // engine last reported.
     internal void LaunchEngine()
     {
-        var adjacent = Path.Combine(AppContext.BaseDirectory, "Engine.exe");
-        if (!File.Exists(adjacent)) throw new FileNotFoundException(_strings.Get("connection", "missing"));
+        var adjacent = Path.Combine(AppContext.BaseDirectory, EngineFile);
+        if (!File.Exists(adjacent)) throw new FileNotFoundException(_strings.Format("connection", "missing", EngineFile));
         var start = new ProcessStartInfo(adjacent) { UseShellExecute = false, CreateNoWindow = true };
         start.ArgumentList.Add("--background");
         if (_dataDirectory is not null)

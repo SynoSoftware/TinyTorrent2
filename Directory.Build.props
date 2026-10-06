@@ -13,6 +13,14 @@
     <UseArtifactsOutput>true</UseArtifactsOutput>
   </PropertyGroup>
 
+  <!-- The executables' file names, without .exe. The engine and the window
+       each start the other by name, so both builds read them here. The engine
+       is the program people start, so it carries the product name. -->
+  <PropertyGroup>
+    <EngineTargetName>TinyTorrent</EngineTargetName>
+    <WindowTargetName>TinyTorrentUI</WindowTargetName>
+  </PropertyGroup>
+
   <!-- Local builds use local sources; commit-derived metadata otherwise recompiles
        every managed project after a documentation-only commit. CI keeps provenance. -->
   <PropertyGroup Condition="'$(ContinuousIntegrationBuild)' != 'true'">

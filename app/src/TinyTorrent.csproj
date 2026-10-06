@@ -3,12 +3,19 @@
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
     <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <AssemblyName>$(WindowTargetName)</AssemblyName>
+    <!-- Windows shows these in Task Manager and in Explorer's file details;
+         otherwise each repeats the file name. -->
+    <AssemblyTitle>TinyTorrent</AssemblyTitle>
+    <Product>TinyTorrent</Product>
+    <Company>TinyTorrent</Company>
     <RootNamespace>Syno.TinyTorrent</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>..\..\resources\TinyTorrent.ico</ApplicationIcon>
-    <Platforms>x86;x64;ARM64</Platforms>
+    <Platforms>x64;ARM64</Platforms>
     <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == '' and '$(Platform)' != '' and '$(Platform)' != 'AnyCPU'">win-$([System.String]::Copy('$(Platform)').ToLowerInvariant())</RuntimeIdentifier>
-    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">win-$([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString().ToLowerInvariant())</RuntimeIdentifier>
+    <!-- The OS, not the build process, so a 32-bit MSBuild still builds x64. -->
+    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">win-$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant())</RuntimeIdentifier>
     <UseWinUI>true</UseWinUI>
     <WinUISDKReferences>false</WinUISDKReferences>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -37,6 +44,7 @@
     <!-- The window and the engine each start only the other executable beside
          them, so the window's output holds the engine from the same configuration.
          TinyTorrent.slnx builds the engine first. -->
-    <None Include="$(ArtifactsPath)\bin\Engine\$(Configuration)\Engine.exe" Link="Engine.exe" CopyToOutputDirectory="PreserveNewest" Visible="false" />
+    <None Include="$(ArtifactsPath)\bin\Engine\$(Configuration)\$(EngineTargetName).exe" Link="$(EngineTargetName).exe" CopyToOutputDirectory="PreserveNewest" Visible="false" />
+    <AssemblyMetadata Include="EngineFile" Value="$(EngineTargetName).exe" />
   </ItemGroup>
 </Project>

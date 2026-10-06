@@ -58,10 +58,8 @@ public sealed class Preferences : INotifyPropertyChanged
     // Another TinyTorrent copy's entry is still TinyTorrent's registration, so
     // it counts as on and the Other message names that copy.
     public bool Startup => Registered("startup") != "none";
-    public bool StartupOther => Registered("startup") == "other";
     public string StartupOtherMessage => Other("startup");
     public bool HandlersRegistered => Registered("handlers") != "none";
-    public bool HandlersOther => Registered("handlers") == "other";
     public string HandlersOtherMessage => Other("handlers");
     // Windows lets only the person choose the default app, so a registration
     // that is not the default yet offers Windows Default apps.
@@ -89,7 +87,7 @@ public sealed class Preferences : INotifyPropertyChanged
     // "this", "other" or "none": whether TinyTorrent's entry starts this copy,
     // another TinyTorrent copy, or nothing.
     private string Registered(string name) => HasRegistration ? _registration.GetProperty(name).GetString() ?? "none" : "none";
-    private string Other(string name) => HasRegistration
+    private string Other(string name) => Registered(name) == "other"
         ? Text.Format("preferences", name + "_other", _registration.GetProperty(name + "_target").GetString() ?? string.Empty)
         : string.Empty;
     public bool CanSelectLanguage => CanEdit;
@@ -229,7 +227,9 @@ public sealed class Preferences : INotifyPropertyChanged
         if (!CanRegister) return;
         _registering = true;
         _registrationError = null;
-        Changed();
+        // Every property would also refresh the switches, which would show the
+        // state before this change until the engine answers.
+        Changed(nameof(CanRegister), nameof(IsPending), nameof(HasRegistrationError), nameof(RegistrationMessage));
         try { _registration = await _client.Send("registration", new { operation }); }
         catch (Exception error)
         {
@@ -363,9 +363,11 @@ public sealed class Preferences : INotifyPropertyChanged
         Schedule.Refresh();
     }
 
-    internal void Changed()
+    // Without names, every property changed.
+    internal void Changed(params string[] names)
     {
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
+        foreach (var name in names.Length == 0 ? new[] { string.Empty } : names)
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
         foreach (Command command in new[] { OpenDefaults, OpenStartup }) command.Refresh();
     }
 

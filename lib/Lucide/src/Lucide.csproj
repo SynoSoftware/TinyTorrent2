@@ -2,7 +2,7 @@
   <PropertyGroup>
     <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
     <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
-    <Platforms>x86;x64;ARM64</Platforms>
+    <Platforms>x64;ARM64</Platforms>
     <RootNamespace>Syno</RootNamespace>
     <!-- A WinUI library, so its content reaches every referencing app under Lucide/ and
          ms-appx:///Lucide/Fonts/lucide.ttf resolves. -->
