@@ -82,8 +82,6 @@ public sealed class Inspector : INotifyPropertyChanged
     public ICommand Retry { get; }
     public ICommand Restart => _owner.Restart;
     public bool CanRestart => _owner.CanRestart;
-    internal double? DownloadRate => _owner.IsLoading ? null : _owner.DownloadRate;
-    internal double? UploadRate => _owner.IsLoading ? null : _owner.UploadRate;
     public string RestartText => _owner.RestartText;
     public event PropertyChangedEventHandler? PropertyChanged;
     public event EventHandler? TextChanged;

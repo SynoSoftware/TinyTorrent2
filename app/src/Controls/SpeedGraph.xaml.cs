@@ -34,8 +34,8 @@ public sealed partial class SpeedGraph : Microsoft.UI.Xaml.Controls.UserControl
         var current = samples.LastOrDefault();
         var downloadPeak = samples.Select(sample => sample.DownloadRate).DefaultIfEmpty().Max();
         var uploadPeak = samples.Select(sample => sample.UploadRate).DefaultIfEmpty().Max();
-        Download.Text = text.Format("speed", "download", Rate(model.DownloadRate), Rate(downloadPeak));
-        Upload.Text = text.Format("speed", "upload", Rate(model.UploadRate), Rate(uploadPeak));
+        Download.Text = text.Format("speed", "download", Rate(model.IsAvailable ? current?.DownloadRate : null), Rate(downloadPeak));
+        Upload.Text = text.Format("speed", "upload", Rate(model.IsAvailable ? current?.UploadRate : null), Rate(uploadPeak));
         Maximum.Text = Rate(Math.Max(downloadPeak, uploadPeak));
         NoHistory.Text = text.Get("speed", "empty");
         NoHistory.Visibility = samples.Count == 0 ? Visibility.Visible : Visibility.Collapsed;

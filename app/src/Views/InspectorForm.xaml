@@ -89,7 +89,14 @@
                 </Grid>
                 <Grid x:Name="Speed" Visibility="Collapsed" RowSpacing="8">
                     <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
-                    <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock x:Name="AllTorrents" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center" /><ComboBox x:Name="Range" Grid.Column="1" SelectionChanged="OnRange"><ComboBoxItem x:Name="FiveMinutes" /><ComboBoxItem x:Name="Day" /></ComboBox></Grid>
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                        <TextBlock x:Name="AllTorrents" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center" />
+                        <ComboBox x:Name="Range" Grid.Column="1" SelectionChanged="OnRange">
+                            <ComboBoxItem x:Name="FiveMinutes"><TextBlock x:Name="MinutesLabel" /></ComboBoxItem>
+                            <ComboBoxItem x:Name="Day"><TextBlock x:Name="DayLabel" /></ComboBoxItem>
+                        </ComboBox>
+                    </Grid>
                     <controls:SpeedGraph x:Name="Graph" Grid.Row="1" />
                 </Grid>
                 <controls:PiecesMap x:Name="Map" Visibility="Collapsed" />

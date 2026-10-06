@@ -18,7 +18,7 @@
     "placeholder": "Buscar en TinyTorrent", "search": "Buscar torrents, comandos y ajustes", "torrent": "Torrents", "command": "Comandos", "settings": "Ajustes", "empty": "Sin resultados",
     "filter": "Filtro de torrents", "torrent_detail": "{0} · {1}", "preference_detail": "Ajustes · {0}", "selection_one": "{0:N0} torrent seleccionado", "selection_other": "{0:N0} torrents seleccionados"
   },
-  "columns": { "name": "Nombre", "size": "Tamaño", "progress": "Progreso", "status": "Estado", "down": "Velocidad de descarga", "up": "Velocidad de subida",
+  "columns": { "name": "Nombre", "size": "Tamaño", "progress": "Progreso", "status": "Estado", "down": "Descarga", "up": "Subida",
     "queue": "#", "eta": "Tiempo restante", "ratio": "Ratio", "peers": "Semillas/Pares", "added": "Añadido"
   },
   "add": {

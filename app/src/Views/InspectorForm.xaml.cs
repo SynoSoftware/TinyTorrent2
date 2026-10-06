@@ -142,8 +142,10 @@ public sealed partial class InspectorForm : UserControl
         NextColumn.DisplayName = text.Get("trackers", "next");
         MessageColumn.DisplayName = text.Get("trackers", "message");
         AllTorrents.Text = text.Get("speed", "all");
-        FiveMinutes.Content = text.Get("speed", "five_minutes");
-        Day.Content = text.Get("speed", "day");
+        MinutesLabel.Text = text.Get("speed", "five_minutes");
+        DayLabel.Text = text.Get("speed", "day");
+        AutomationProperties.SetName(FiveMinutes, MinutesLabel.Text);
+        AutomationProperties.SetName(Day, DayLabel.Text);
         AutomationProperties.SetName(Range, text.Get("speed", "range"));
         _files.RefreshText();
         Peers.RefreshView();

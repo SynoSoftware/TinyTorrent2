@@ -179,6 +179,11 @@ Use `TINYTORRENT_CAPTURE_REVIEW=library` only with the disposable library
 launcher's `library-capture.json` manifest. It checks native filter and named
 torrent selection with 300 real paused torrents, then captures the populated
 workspace, filter drawer and multi-file inspector. No live traffic is implied.
+Use `TINYTORRENT_CAPTURE_REVIEW=traffic` only with the disposable loopback
+launcher's `traffic-capture.json` manifest. It captures the active workspace,
+General, populated Peers, mixed Pieces and nonzero Speed history across the
+same matrix. It uses the existing Transfer peer and current engine; it does
+not repeat completed-download integrity checks or send desktop input.
 Use `TINYTORRENT_CAPTURE_REVIEW=schedule` for exact-minute overnight editing,
 validation, cancellation, moving and removal, with the schedule overview,
 selection and editor at all three sizes in English and Spanish, Light and Dark.
