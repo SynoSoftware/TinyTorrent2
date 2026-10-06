@@ -1,5 +1,23 @@
 # Morning report
 
+## Checkpoint summary — 2026-10-06
+
+Committed coherent steps: Files hierarchy `d23778a`, registration observation
+`1706002`, desktop startup `dbb67d1`, and Pieces presentation `962f72a`. The final
+owner-conventions checkpoint preserves Ctrl+comma for Settings, its displayed
+shortcut, Windows-first guidance and the Debug/free-artifacts-lane build rules.
+The shortcut still calls the existing Settings command. It is compiled and
+source-checked; physical key delivery remains unverified. No additional build or
+test was needed for these already compiled lines and documentation.
+
+The release goal remains active. Next evidence must address real remaining gaps:
+current mixed/aggregate Pieces rendering; exact bulk file-priority targets;
+flat-table performance comparison; registration repair/other-copy states and
+Windows choice/logon; physical desktop, accessibility and scaling; and the
+previously recorded live-download/file-lifecycle cases. Current source, capture
+and safety passes establish only their recorded scope. Do not rerun the full
+suite or repeat the completed final file-safety checks for app-only changes.
+
 ## Pieces presentation checkpoint — 2026-10-06
 
 The owner's Pieces changes share one palette between legend and map, align legend

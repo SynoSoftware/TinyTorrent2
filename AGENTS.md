@@ -29,9 +29,9 @@ each new agent reopens changes the product's direction from session to session.
 A plan or contract passes these tests, because each mechanism it asks for is
 permanent design, code, and review cost that the user never sees.
 
-- Start from what established libtorrent clients such as qBittorrent and other
-  Windows desktop applications already do. A different design names the user
-  benefit it gives; without one, follow the established design.
+- Start from what established Windows desktop applications already do. A
+  different design names the user benefit it gives; without one, follow the
+  established design.
 - A requirement names the failure a user would see without it. A rare edge case
   gets one sentence of reasoning, not a mechanism, because most edge cases never
   occur and every mechanism must still be built and maintained.
@@ -110,6 +110,21 @@ do not define this product.
   machine. Launch applications and desktop test hosts only when explicitly
   requested. Close what you launched and report what was verified and any
   material gaps.
+- Build Debug x64. Build Release only when the result depends on the
+  optimised build: a timing or performance measurement, `engine/tests/Checks.ps1`,
+  which runs the Release engine, a release candidate, or an owner request.
+  Debug and Release are the only configurations. Release adds whole-program
+  optimisation to every link and leaves a second set of executables, so an
+  unneeded one holds the owner's machine longer and hides which executable
+  carries the current code.
+- Build into the default output, `artifacts/`. While another build is writing
+  it, or an `Engine.exe` or `TinyTorrent.exe` started from it is running, use
+  the lowest-numbered free lane, `artifacts/lanes/2`, then `artifacts/lanes/3`:
+  pass `/p:ArtifactsPath=<repository>\artifacts\lanes\<n>` to the engine build
+  and then the app build, because the app copies `Engine.exe` from its own
+  lane. Return to the default output once it is free. Every output folder holds
+  a complete set of executables, and one that is not rebuilt runs old code with
+  no sign of it.
 - After every build, compare the files it compiled, which the build log lists,
   with what you changed. A source edit recompiles that file; a header edit
   recompiles the files that include it. When a build compiles more than that,

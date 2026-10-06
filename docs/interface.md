@@ -482,7 +482,7 @@ meaningful instead of suggesting a seed priority that libtorrent does not use.
 Torrent commands are Pause, Resume, Force start, Open, Open folder, Copy magnet
 link, Copy info hash, Move files, Verify, Remove, and Delete files. Download in
 sequential order and Download first and last pieces first are menu choices
-beside them, as in qBittorrent. An item is checked when every selected torrent
+beside them. An item is checked when every selected torrent
 has that choice and mixed when only some do. Choosing a checked item turns the
 choice off for all of them, and otherwise turns it on for all of them, so one
 click makes a mixed selection consistent. The inspector does not repeat them:
@@ -518,10 +518,11 @@ to add a torrent. A status bar shows total download and upload speed, the
 alternative speed toggle, whether incoming connections arrive or the selected
 network interface is absent, and Update available when a newer release exists.
 
-Shortcuts match qBittorrent's, so people who move from it keep their habits.
-TinyTorrent has no Print, Save, or Refresh command, so Ctrl+P, Ctrl+S, and
-Ctrl+R serve torrent actions as they do there. Torrent shortcuts act while the
-table, selection toolbar or inspector has focus; an editor keeps its own keys.
+Shortcuts follow Windows conventions, so people keep the habits they use in
+other Windows applications. TinyTorrent has no Print, Save, or Refresh command,
+so Ctrl+P, Ctrl+S, and Ctrl+R are free for Pause, Resume and Verify. Torrent
+shortcuts act while the table, selection toolbar or inspector has focus; an
+editor keeps its own keys.
 
 | Key | Action |
 | --- | --- |
@@ -541,13 +542,11 @@ table, selection toolbar or inspector has focus; an editor keeps its own keys.
 | Ctrl+Shift++ / Ctrl+Shift+- | Move to the top / bottom of the queue |
 | Delete | Remove |
 | Shift+Delete | Delete files |
-| Alt+O | Preferences |
+| Ctrl+, | Settings |
 | Ctrl+W | Close the window |
 
-Where Windows has a standard key, it wins over qBittorrent's, because people
-use those keys in every Windows application. Alt+F4 closes the window, as Ctrl+W
-does. Exit has no shortcut, as in other Windows applications; Alt+F, X reaches
-it.
+Alt+F4 closes the window, as Ctrl+W does. Exit has no shortcut, as in other
+Windows applications; Alt+F, X reaches it.
 
 Remove keeps data; delete-data is an explicit, distinct decision. Each confirms
 once with the affected torrent names or count, a specific action such as Remove
@@ -917,8 +916,8 @@ The Speed view shows the [engine's session-wide speed history](engine.md#state-a
 whichever torrent is selected, and its heading says All torrents, so nobody
 reads it as the selected torrent's speed. It continues while WinUI
 is closed, so reopening shows what happened meanwhile. Offer the last 5
-minutes, 1 hour, 6 hours and 24 hours as always-visible choices, as qBittorrent
-offers fixed periods. The mouse wheel over the chart steps to a shorter or longer
+minutes, 1 hour, 6 hours and 24 hours as always-visible choices. The mouse
+wheel over the chart steps to a shorter or longer
 choice; it is a shortcut, so the choices stay visible. Unknown gaps, such as the
 time before an engine restart, are not interpolated into invented history.
 

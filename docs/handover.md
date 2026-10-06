@@ -1,5 +1,21 @@
 # Implementation handover — 2026-10-05
 
+## Current checkpoints and next work — 2026-10-06
+
+Files hierarchy `d23778a`, registration `1706002`, startup `dbb67d1` and Pieces
+`962f72a` are committed separately. The owner-conventions checkpoint retains the
+Ctrl+comma Settings route and the revised Windows/build rules. All product
+sources are included in the successful current app or engine compilation;
+documentation-only checkpointing does not justify another build.
+
+The goal is not complete. Current mixed/aggregate Pieces images, exact bulk file
+targets, comparative table performance, actual registration repair/other-copy
+states, Windows integration, physical input/accessibility/scaling and the earlier
+live-download gaps still need honest disposition. Use the evidence ledger at the
+top of [morning-report.md](morning-report.md); do not mistake absent findings for
+whole-product approval. Final FilesSafety and CheckpointRetry have passed once on
+the current engine. All processes launched for these checks are closed.
+
 ## Pieces presentation checkpoint — 2026-10-06
 
 Startup is committed as `dbb67d1`. The owner's Pieces presentation changes pass

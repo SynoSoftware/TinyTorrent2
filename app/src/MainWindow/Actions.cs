@@ -146,6 +146,7 @@ public sealed partial class MainWindow
             VirtualKey.Delete => Model.Text.Get("shortcuts", "delete"),
             VirtualKey.Add => "+",
             VirtualKey.Subtract => "-",
+            Comma => ",",
             _ => accelerator.Key.ToString()
         });
         return string.Join("+", parts);

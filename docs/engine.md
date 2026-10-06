@@ -124,9 +124,9 @@ Download in sequential order and Download first and last pieces first are
 choices saved with each torrent in `settings.json`. Addition accepts them, and
 a command changes them later for selected torrents. Sequential order is
 libtorrent's `sequential_download` [torrent flag](https://github.com/arvidn/libtorrent/blob/v2.1.2/include/libtorrent/torrent_flags.hpp).
-First and last pieces is not a libtorrent flag: as in qBittorrent, the engine
-gives top priority to 1 % of each wanted file at each end, at least one piece,
-so a media player can read a file's header and index early. libtorrent sets
+First and last pieces is not a libtorrent flag: the engine gives top priority
+to 1 % of each wanted file at each end, at least one piece, so a media player
+can read a file's header and index early. libtorrent sets
 piece priorities again from the file priorities when a file-priority change
 completes, so the engine raises those pieces again after each change and after
 verification, which can recreate libtorrent's piece picker. Startup

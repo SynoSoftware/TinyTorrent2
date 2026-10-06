@@ -32,6 +32,8 @@ public sealed partial class MainWindow : Window
     private bool _engineExit;
     private bool _loaded;
     private readonly Dictionary<ICommand, KeyboardAccelerator> _shortcuts = [];
+    // VirtualKey omits the Windows OEM comma code.
+    private const VirtualKey Comma = (VirtualKey)0xBC;
 
     public MainWindow(Strings strings)
     {
@@ -140,7 +142,7 @@ public sealed partial class MainWindow : Window
         AddShortcut(new() { Key = VirtualKey.F, Modifiers = VirtualKeyModifiers.Control }, FocusSearch);
         AddShortcut(new() { Key = VirtualKey.E, Modifiers = VirtualKeyModifiers.Control }, FocusSearch);
         AddShortcut(new() { Key = VirtualKey.K, Modifiers = VirtualKeyModifiers.Control }, FocusSearch);
-        AddShortcut(new() { Key = VirtualKey.O, Modifiers = VirtualKeyModifiers.Menu }, Model.ShowPreferences);
+        AddShortcut(new() { Key = Comma, Modifiers = VirtualKeyModifiers.Control }, Model.ShowPreferences);
         AddShortcut(new() { Key = VirtualKey.Left, Modifiers = VirtualKeyModifiers.Menu }, Model.ShowTorrents);
         AddShortcut(new() { Key = VirtualKey.O, Modifiers = VirtualKeyModifiers.Control | VirtualKeyModifiers.Shift }, Model.AddMagnet);
         AddShortcut(new() { Key = VirtualKey.P, Modifiers = VirtualKeyModifiers.Control | VirtualKeyModifiers.Shift }, Model.PauseAll);
