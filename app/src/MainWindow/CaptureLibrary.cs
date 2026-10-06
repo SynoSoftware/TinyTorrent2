@@ -135,28 +135,13 @@ public sealed partial class MainWindow
             await CaptureLayout();
         }
 
-        async Task Matrix(string name, Torrent anchor)
+        Task Matrix(string name, Torrent anchor) => CaptureMatrix(async (suffix, _) =>
         {
-            foreach (var language in new[] { "en", "es" })
-            {
-                Model.SelectLanguage(language);
-                await CaptureReady(Model, () => Model.CanClose && Model.Text.Language == language);
-                foreach (var theme in new[] { "light", "dark" })
-                {
-                    await Model.Preferences.SelectTheme(theme);
-                    await CaptureReady(Model, () => Model.CanClose && Model.Theme == theme);
-                    foreach (var size in new[] { new SizeInt32(720, 560), new SizeInt32(1040, 680), new SizeInt32(1280, 800) })
-                    {
-                        AppWindow.Resize(new SizeInt32(Math.Max((int)(size.Width * scale), minimum), (int)(size.Height * scale)));
-                        await CaptureLayout();
-                        Torrents.ScrollIntoView(anchor);
-                        var prefix = "library-" + language + "-" + theme + "-" + size.Width + "x" + size.Height + "-" + name;
-                        await CapturePage(prefix);
-                        completed.Add(prefix);
-                    }
-                }
-            }
-        }
+            Torrents.ScrollIntoView(anchor);
+            var prefix = "library-" + suffix + "-" + name;
+            await CapturePage(prefix);
+            completed.Add(prefix);
+        });
 
         await Matrix("populated-search-landing", target);
         Model.IsFilterOpen = true;
@@ -223,10 +208,77 @@ public sealed partial class MainWindow
             if (folder.IsExpanded != expanded) branch.Expand();
             await CaptureLayout();
         }
+        async Task<int[]> ReadPriorities()
+        {
+            using var saved = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(store, "settings.json")));
+            return saved.RootElement.GetProperty("torrents").EnumerateArray()
+                .Single(torrent => torrent.GetProperty("torrent_id").GetString() == bundle.TorrentId)
+                .GetProperty("priorities").EnumerateArray().Select(value => value.GetInt32()).ToArray();
+        }
+        async Task ChoosePriority(string key)
+        {
+            CaptureInvoke(CaptureElements(InspectorContent).OfType<Button>().Single(button => button.Name == "Priority"));
+            await CaptureLayout();
+            var item = VisualTreeHelper.GetOpenPopupsForXamlRoot(Root.XamlRoot)
+                .SelectMany(popup => CaptureElements(popup.Child)).OfType<MenuFlyoutItem>()
+                .Single(item => item.Text == Model.Text.Get("files", key));
+            ((IInvokeProvider)FrameworkElementAutomationPeer.CreatePeerForElement(item).GetPattern(PatternInterface.Invoke)).Invoke();
+            await CaptureLayout();
+            await CaptureReady(Model.Inspector, () => !Model.Inspector.IsPending && !Model.Inspector.HasFileDraft && !Model.Inspector.IsLoading);
+        }
+        var baseline = await ReadPriorities();
+        if (!priorities.SequenceEqual(baseline) || priorities.Any(priority => priority != 4))
+            throw new InvalidOperationException("The bulk-priority fixture does not have its original Normal priorities.");
+        var maps = files.Single(file => file.Index == 1).Parent ?? throw new InvalidOperationException("The Maps fixture folder is missing.");
+        try
+        {
+            ((ISelectionItemProvider)parent.CreateItemAutomationPeer(files.Single(file => file.Index == 0)).GetPattern(PatternInterface.SelectionItem)).Select();
+            ((ISelectionItemProvider)parent.CreateItemAutomationPeer(maps).GetPattern(PatternInterface.SelectionItem)).AddToSelection();
+            ((ISelectionItemProvider)parent.CreateItemAutomationPeer(files.Single(file => file.Index == 1)).GetPattern(PatternInterface.SelectionItem)).AddToSelection();
+            if (table.Selection.Items.Count != 3) throw new InvalidOperationException("The native overlapping priority selection did not select three rows.");
+            await ChoosePriority("high");
+            var saved = await ReadPriorities();
+            var exact = saved.SequenceEqual(new[] { 7, 7, 7, 4, 4, 4, 4, 4 });
+            outcomes.Add(new { journey = "native overlapping bulk priority", changedIndexes = new[] { 0, 1, 2 }, persistedPriorities = saved, exactTargets = exact });
+            if (!exact) throw new InvalidOperationException("Bulk High priority did not persist exactly the folder, overlapping child and outside file indexes.");
+        }
+        finally
+        {
+            await ChoosePriority("normal");
+            var saved = await ReadPriorities();
+            var restored = priorities.SequenceEqual(saved) && priorities.SequenceEqual(Model.Inspector.Files.Priorities());
+            outcomes.Add(new { journey = "native bulk priority restore", originalPrioritiesRestored = restored });
+            table.Selection = new Syno.TableView.Selection([], null);
+            if (!restored) throw new InvalidOperationException("The native priority menu did not restore the original priorities.");
+        }
         await Matrix("multi-file-inspector", bundle);
         Model.Inspector.Select(InspectorSection.Pieces);
         await CaptureReady(Model.Inspector, () => !Model.Inspector.IsLoading && Model.Inspector.Pieces is not null);
         await Matrix("pieces", bundle);
+        await CapturePieces(outcomes, completed);
         Model.CloseInspector();
+    }
+
+    private async Task CaptureMatrix(Func<string, SizeInt32, Task> capture)
+    {
+        foreach (var language in new[] { "en", "es" })
+        {
+            Model.SelectLanguage(language);
+            await CaptureReady(Model, () => Model.CanClose && Model.Text.Language == language);
+            foreach (var theme in new[] { "light", "dark" })
+            {
+                await Model.Preferences.SelectTheme(theme);
+                await CaptureReady(Model, () => Model.CanClose && Model.Theme == theme);
+                foreach (var size in new[] { new SizeInt32(720, 560), new SizeInt32(1040, 680), new SizeInt32(1280, 800) })
+                {
+                    await CaptureLayout();
+                    var scale = Root.XamlRoot.RasterizationScale;
+                    var minimum = ((Microsoft.UI.Windowing.OverlappedPresenter)AppWindow.Presenter).PreferredMinimumWidth ?? 0;
+                    AppWindow.Resize(new SizeInt32(Math.Max((int)(size.Width * scale), minimum), (int)(size.Height * scale)));
+                    await CaptureLayout();
+                    await capture(language + "-" + theme + "-" + size.Width + "x" + size.Height, size);
+                }
+            }
+        }
     }
 }

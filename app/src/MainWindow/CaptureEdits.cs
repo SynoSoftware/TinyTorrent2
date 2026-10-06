@@ -42,9 +42,9 @@ public sealed partial class MainWindow
         bool PeriodsRetained() => preferences.Schedule.Periods.Count == originalPeriods.Length &&
             preferences.Schedule.Periods.Zip(originalPeriods).All(pair => pair.First.Matches(pair.Second));
 
-        async Task<TextBox> Edit(Preference field, PreferenceSection section, string input)
+        async Task<TextBox> Edit(Preference field, string input)
         {
-            await ShowPreferences(new(section, field.Name));
+            await ShowPreferences(new(field.Section, field.Name));
             await CaptureLayout();
             var form = _preferencesForm ?? throw new InvalidOperationException("The edit review preferences did not open.");
             var number = CaptureElements(form).OfType<NumberBox>().Single(control => ReferenceEquals(control.Tag, field));
@@ -112,16 +112,16 @@ public sealed partial class MainWindow
         try
         {
             var valid = originalRate == "64" ? "65" : "64";
-            await Edit(rate, PreferenceSection.Transfers, valid);
+            await Edit(rate, valid);
             await CapturePage("edits-valid-rate-before-leaving");
             if (!await Leave() || Model.Page != WindowPage.Torrents || rate.Input != valid || rate.HasDraft || rate.IsPending || rate.Message.Length != 0)
                 throw new InvalidOperationException("Leaving a valid native rate edit did not apply it and navigate.");
             outcomes.Add(new { journey = "valid rate departure", applied = true, navigated = true, prompted = false, input = rate.Input });
             completed.Add("edits-valid-rate-departure");
 
-            var downloadEditor = await Edit(rate, PreferenceSection.Transfers, "160");
+            var downloadEditor = await Edit(rate, "160");
             var uploadValue = originalUpload == "32" ? "33" : "32";
-            await Edit(upload, PreferenceSection.Transfers, uploadValue);
+            await Edit(upload, uploadValue);
             await CaptureReady(rate, () => !rate.IsPending && !rate.HasDraft);
             var injected = false;
             void OnUpload(object? sender, System.ComponentModel.PropertyChangedEventArgs args)
@@ -144,7 +144,7 @@ public sealed partial class MainWindow
             }
             finally { upload.PropertyChanged -= OnUpload; }
 
-            var invalidEditor = await Edit(port, PreferenceSection.Network, "70000");
+            var invalidEditor = await Edit(port, "70000");
             var connections = CaptureElements(_preferencesForm!).OfType<NumberBox>()
                 .Single(control => ReferenceEquals(control.Tag, preferences.Connections));
             connections.Focus(FocusState.Programmatic);
@@ -154,7 +154,7 @@ public sealed partial class MainWindow
                 throw new InvalidOperationException("Moving to another field did not restore the invalid port's saved value.");
             outcomes.Add(new { journey = "invalid port field departure", restored = true, nativeTextRestored = true });
             completed.Add("edits-invalid-port-field-departure");
-            invalidEditor = await Edit(port, PreferenceSection.Network, "70000");
+            invalidEditor = await Edit(port, "70000");
             await CapturePage("edits-invalid-port-before-leaving");
             if (!await Leave() || Model.Page != WindowPage.Torrents || port.Input != originalPort || invalidEditor.Text != originalPort || port.HasDraft || port.Message.Length != 0)
                 throw new InvalidOperationException("Leaving an invalid native port edit did not restore the saved value and navigate.");
@@ -162,7 +162,7 @@ public sealed partial class MainWindow
             completed.Add("edits-invalid-port-departure");
 
             var concurrent = rate.Input == "96" ? "97" : "96";
-            await Edit(rate, PreferenceSection.Transfers, concurrent);
+            await Edit(rate, concurrent);
             await CapturePage("edits-pending-rate-before-leaving");
             var save = preferences.Commit(rate);
             var pending = rate.IsPending;
@@ -177,7 +177,7 @@ public sealed partial class MainWindow
             outcomes.Add(new { journey = "pending rate departure", pendingObserved = pending, applied = true, firstDepartureNavigated = true, prompted = false });
             completed.Add("edits-pending-rate-departure");
 
-            var unsavedEditor = await Edit(rate, PreferenceSection.Transfers, "128");
+            var unsavedEditor = await Edit(rate, "128");
             var first = preferences.Commit(rate);
             if (!rate.IsPending) throw new InvalidOperationException("The newer-input review did not start a pending save.");
             rate.Input = "129";
@@ -193,7 +193,7 @@ public sealed partial class MainWindow
             outcomes.Add(new { journey = "pending acknowledgement with newer input", layer = "preference owner with native display", newerInputRetained = true, newerInputStayedDraft = true, confirmedInput = rate.Input });
             completed.Add("edits-pending-newer-input");
 
-            var queuedEditor = await Edit(rate, PreferenceSection.Transfers, "256");
+            var queuedEditor = await Edit(rate, "256");
             var active = preferences.Commit(rate);
             if (!rate.IsPending) throw new InvalidOperationException("The queued-input review did not start a pending save.");
             rate.Input = "257";
@@ -211,7 +211,7 @@ public sealed partial class MainWindow
             outcomes.Add(new { journey = "explicit save during pending acknowledgement", layer = "preference owner with native display", explicitSubmissionSaved = true, laterInputRetained = true, laterInputStayedDraft = true, confirmedInput = rate.Input });
             completed.Add("edits-pending-explicit-save");
 
-            var cancelEditor = await Edit(rate, PreferenceSection.Transfers, "512");
+            var cancelEditor = await Edit(rate, "512");
             var cancelledSave = preferences.Commit(rate);
             if (!rate.IsPending) throw new InvalidOperationException("The pending Cancel review did not start a save.");
             rate.Cancel();
@@ -223,7 +223,7 @@ public sealed partial class MainWindow
             outcomes.Add(new { journey = "Cancel during pending acknowledgement", followedConfirmation = true, retainedDraft = false, confirmedInput = rate.Input });
             completed.Add("edits-pending-cancel");
 
-            await Edit(rate, PreferenceSection.Transfers, originalRate);
+            await Edit(rate, originalRate);
             await preferences.Commit(rate);
             if (rate.Input != originalRate || rate.HasDraft) throw new InvalidOperationException("The original rate was not restored.");
 
@@ -272,12 +272,12 @@ public sealed partial class MainWindow
             upload.Cancel();
             if (rate.Input != originalRate)
             {
-                await Edit(rate, PreferenceSection.Transfers, originalRate);
+                await Edit(rate, originalRate);
                 await preferences.Commit(rate);
             }
             if (upload.Input != originalUpload)
             {
-                await Edit(upload, PreferenceSection.Transfers, originalUpload);
+                await Edit(upload, originalUpload);
                 await preferences.Commit(upload);
             }
             if (rate.Input != originalRate || rate.HasDraft || upload.Input != originalUpload || upload.HasDraft ||

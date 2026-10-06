@@ -1,20 +1,28 @@
 # Implementation handover — 2026-10-05
 
-## Current checkpoints and next work — 2026-10-06
+## Current acceptance and limits — 2026-10-06
 
-Files hierarchy `d23778a`, registration `1706002`, startup `dbb67d1` and Pieces
-`962f72a` are committed separately. The owner-conventions checkpoint retains the
-Ctrl+comma Settings route and the revised Windows/build rules. All product
-sources are included in the successful current app or engine compilation;
-documentation-only checkpointing does not justify another build.
+Files hierarchy `d23778a`, registration `1706002`, startup `dbb67d1`, Pieces
+`962f72a` and owner conventions `46e5a01` are committed separately. Settings
+departure correction `203ca3f` applies an earlier field edited while a later save
+is pending before the first navigation. Its focused native-editor check and the
+ordinary Debug app build pass. The selected-row stripe remains removed in
+`b1a21e0`; the current ordinary executable includes that removal.
 
-The goal is not complete. Current mixed/aggregate Pieces images, exact bulk file
-targets, comparative table performance, actual registration repair/other-copy
-states, Windows integration, physical input/accessibility/scaling and the earlier
-live-download gaps still need honest disposition. Use the evidence ledger at the
-top of [morning-report.md](morning-report.md); do not mistake absent findings for
-whole-product approval. Final FilesSafety and CheckpointRetry have passed once on
-the current engine. All processes launched for these checks are closed.
+The final adversarial worklist reviewer accepts the reviewed milestones 3–5
+continuation with no remaining concrete blocker and recorded limits. Exact bulk
+file targets and all 24 mixed/aggregate Pieces images now pass. Current evidence
+and the explicit disposition of each remaining check are at the top of
+[morning-report.md](morning-report.md). This acceptance does not claim Windows
+integration, physical input/accessibility/scaling, comparative table performance
+or unperformed live-download cases were verified. Packaging/Distribution remain
+outside the task. Earlier pending statuses below are historical checkpoints.
+
+Final FilesSafety and CheckpointRetry passed once on the current engine; no
+engine code changed afterwards. All processes launched for these checks are
+closed. Reuse valid compilation/evidence rather than rerunning a suite for
+documentation or app-only changes. The code is checkpointed for subsequent
+architecture work without starting that separate refactor here.
 
 ## Pieces presentation checkpoint — 2026-10-06
 

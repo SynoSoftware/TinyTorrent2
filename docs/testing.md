@@ -212,7 +212,10 @@ Use `TINYTORRENT_CAPTURE_REVIEW=edits` for ordinary Settings departure,
 new input and explicit commits during a pending acknowledgement, and schedule
 Save/Discard/Cancel. The acknowledgement races change the preference input
 synchronously before the UI thread yields and verify its native display
-afterward; ordinary departure uses native editors. The check restores its
+afterward; ordinary departure uses native editors. A two-field departure edits
+Download again when Upload starts saving, then verifies that the first navigation
+applies both values. This catches an earlier field being left unsaved after the
+departure loop has passed it. The check restores its
 fixture values and periods. It does not simulate keyboard delivery or engine
 refusal.
 Use `TINYTORRENT_CAPTURE_REVIEW=library` only with the disposable library
@@ -221,9 +224,16 @@ torrent selection with 300 real paused torrents, then captures the populated
 workspace, filter drawer, multi-file inspector and Pieces. Native hierarchy
 providers check that collapsing a folder prunes its hidden selected child while
 retaining outside selection, and expansion leaves priorities unchanged. Native
+priority menu actions select a folder, an overlapping child and an outside file,
+verify the exact persisted priority indexes, then restore the original priorities.
+Separate synthetic Pieces captures exercise the production model and renderer
+with mixed states, partial progress and 20,000 aggregated pieces. They replace
+only the diagnostic map temporarily; the live torrent header describes another
+fixture. These images establish rendering, not engine accuracy or live transfers.
+Native
 focus also reveals the last header in both flow directions without changing
 vertical scroll. This does not deliver physical arrow/End keys. No live traffic
-or mixed Pieces state is implied by this paused fixture.
+is implied by this paused fixture.
 Use `TINYTORRENT_CAPTURE_REVIEW=traffic` only with the disposable loopback
 launcher's `traffic-capture.json` manifest. It captures the active workspace,
 General, populated Peers, mixed Pieces and nonzero Speed history across the
@@ -264,6 +274,12 @@ judgment and the actual evidence; neither replaces the other.
 XAML images exclude native window chrome, system dialogs and desktop acrylic.
 Record those limitations rather than claiming a full desktop capture. Do not
 drive or capture the shared desktop while the owner needs it.
+
+The review sizes 720x560, 1040x680 and 1280x800 name requested window dimensions.
+The accepted title bar can raise the minimum width to keep its controls usable;
+the captured client area also excludes native frame dimensions. Use the recorded
+capture dimensions and scale for actual size claims. A scene labelled 720x560
+does not prove a literal 720-pixel client width when Windows clamps the request.
 
 ## Resource checks
 

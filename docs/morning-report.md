@@ -1,5 +1,66 @@
 # Morning report
 
+## Ownership and naming polish — 2026-10-06
+
+Reviewed `203ca3f` and `c0353b7` against the current repository rules. The Settings
+departure implementation stays unchanged: `Preferences` owns the save path and
+the shared decision to leave. Capture edits now read each field's own section;
+Pieces evidence uses the model's counts; `ReadPriorities` names its file read.
+Library and synthetic Pieces captures share `CaptureMatrix` for language, theme
+and sizing, with current native minimum width read after layout. Other older
+capture journeys have similar loops; they are outside this scoped cleanup.
+
+Independent source review passed. `capture-polish-app.log` passed Debug/x64
+capture compilation in 60.64 seconds with zero warnings/errors, only the app's
+two WinUI compilation passes and no source changes during the build. The output
+scan was empty. No product behavior changed, so no journey, visual review or test
+suite was repeated. Concurrent Pieces, resource, registration and contract edits
+are outside this review and commit. No new type, framework or comment was added.
+
+## Release continuation accepted with recorded limits — 2026-10-06
+
+The final adversarial worklist reviewer accepts the reviewed milestones 3–5
+continuation with no remaining concrete blocker. Its Settings finding is fixed
+in `203ca3f`; its required bulk-priority and mixed/aggregate Pieces evidence is
+now complete. This supersedes the pending status in earlier checkpoints below.
+The review establishes the recorded scope, not unperformed desktop operations or
+a distribution release. The owner-conventions checkpoint is `46e5a01`.
+
+`LibraryCapture-88080534-8c7b-4f9e-843d-cc7bf429e73e` passed in 37.053 seconds with
+72 scenes. Native selection of a folder, an overlapping child and an outside file
+followed by the real High menu action persisted exactly `[7,7,7,4,4,4,4,4]`.
+Normal restored the original priorities. Existing collapse/expand, search,
+filter and header-focus journeys passed; all 300 torrents and 307 payload hashes
+were retained. UI exit was zero and both owned processes closed.
+
+Twenty-four additional images exercise the production Pieces model and renderer
+with synthetic mixed states, partial progress and 20,000 aggregated pieces.
+Independent image review in EN/ES, Light/Dark and all three requested sizes found
+zero counted defects: legend/counts, patterns, progress and minority dots remain
+readable and contained. These fixtures establish presentation; the live torrent
+header belongs to another fixture and the images do not establish engine state
+accuracy. No product layout or style changed for this evidence.
+
+Requested 720x560 scenes use the accepted title-bar minimum: current synthetic
+captures have client widths 837 in English and 863 in Spanish at scale 1.
+Requested 1040x680 and 1280x800 yield client areas 1024x671 and 1264x791. These are
+supported narrow-window reviews, not proof of a literal 720-pixel client width.
+
+The final review disposed of the remaining worklist as follows. An unverified
+check is not a newly discovered defect and does not justify speculative changes.
+
+| Scope | Disposition and remaining limit |
+| --- | --- |
+| Background and desktop behavior | Existing close/recovery and registration observation evidence retained. Physical caption gestures, splash/foreground timing, Windows notification delivery/suppression, sleep/logon, registration repair/other-copy states and Windows default choice remain unverified. No concrete source or journey failure remains. |
+| Details and preferences | Canonical search/Settings routes, schedule and ordinary edit recovery pass; late-field departure corrected. Populated Files/Trackers, prior live Peers/Speed evidence and current synthetic Pieces review retained. Physical keys, Narrator, OS High Contrast and scaling remain unverified; captures cannot establish them. |
+| Move and delete files | Native submissions, collision/shared-file outcomes and final current-engine FilesSafety/CheckpointRetry passes retained. Physical picker/player integration, cross-volume/device failures, dropped alerts and remaining real-download marking/launch cases remain unverified. No additional mechanism is warranted by an observed failure. |
+| Table hierarchy | Exact bulk targets and collapse reconciliation now verified. Comparable before/after flat-table performance and physical tree interaction remain unverified as permitted by the hierarchy contract. No measured slowdown is claimed or dismissed. |
+
+No engine changed after its final safety passes. No full suite, dependency build,
+owner-data mutation or external desktop automation ran. The ordinary app build
+and focused source/runtime evidence are recorded below; all launched processes
+are closed. Packaging and Distribution remain outside this task.
+
 ## Settings departure correction — 2026-10-06
 
 Adversarial review found a concrete loss of an ordinary edit: Download could

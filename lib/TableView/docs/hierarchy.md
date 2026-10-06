@@ -561,8 +561,15 @@ across EN/ES, Light/Dark and the three supported sizes passed an independent
 image review. The app build and Everything output-path check passed; exact logs
 and evidence are in the [morning report](../../../docs/morning-report.md).
 
-Physical pointer/keyboard input, Narrator, actual High Contrast, exact bulk
-file-command targets and before/after flat-table performance remain unverified
+The later `LibraryCapture-88080534-8c7b-4f9e-843d-cc7bf429e73e` selected a folder,
+its child and an outside file through native selection providers, then invoked
+High through the real priority menu. Persisted priorities were exactly
+`[7,7,7,4,4,4,4,4]`; the same menu restored the original Normal values. All 300
+torrents and 307 payload hashes were retained. This closes the host's exact bulk
+target check without deriving the expected indexes from its selection code.
+
+Physical pointer/keyboard input, Narrator, actual High Contrast and before/after
+flat-table performance remain unverified
 acceptance checks. Native programmatic header focus passed in LTR and RTL, but
 does not establish physical tree-key navigation. No comparative responsiveness
 claim follows from source review, compilation or these captures.
