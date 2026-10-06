@@ -252,19 +252,35 @@ saves too quickly for a pending display to help, so its control stays enabled,
 keeps focus, and shows nothing until the save fails. This follows
 the distinction in Microsoft's [toggle guidance](https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/toggles).
 
-Use an explicit Save/Cancel editor only when values form one coherent change,
-such as a tracker list. Keep its draft until submitted or cancelled. Viewing
-details, changing a setting that has already applied, and ordinary navigation
-do not create a dirty page. Ask Save/Discard/Cancel only when leaving would lose
-actual unfinished input; Cancel keeps the editor and focus. A pending accepted
-command is engine work, not an unsaved draft requiring another confirmation.
+Use an explicit Save/Cancel editor only when values form one coherent change:
+a tracker list, a schedule period, the Add form, or moving or deleting files.
+Keep its draft until submitted or cancelled. Viewing details, changing a setting
+that has already applied, and ordinary navigation do not create a dirty page. A
+pending accepted command is engine work, not an unsaved draft requiring another
+confirmation.
+
+**Owner ruling: a setting applies immediately and never asks.** Fluent 2 and
+Microsoft's app settings guidance apply a setting without a Save or confirmation
+step. Leaving Settings or closing the window applies each valid typed value, as
+moving to another field does, and restores the saved value of an invalid one, as
+WinUI's NumberBox does by default. If the engine refuses a valid value, the
+person stays on Settings with the error beside the field, because the error
+would otherwise be on a page they can no longer see.
+
+**Owner ruling: leaving an explicit editor with unfinished input asks Save,
+Discard or Cancel.** This is the familiar Windows choice for unsaved work, and it
+keeps the input without making the person return to the editor first. Save runs
+the editor's own action, such as Save, Add, Move or Delete; if it fails, the
+editor stays open with its error. Discard drops the draft and continues. Cancel
+keeps the editor and focus. Deleting files still shows its own confirmation of
+what will be deleted.
 
 Send only intended changes through the [engine's edit path](engine.md#committed-edits).
 Refresh confirmed facts without replacing the user's current input. On refusal,
 keep that input and explain the actionable reason at the affected control.
 Reconnection preserves unfinished input but does not submit it automatically.
-When the engine is unavailable, Restart is reachable inside an open Add or
-speed-limit draft as well as the main window. A modal editor must not cover the
+When the engine is unavailable, Restart is reachable inside an open Add draft
+as well as the main window. A modal editor must not cover the
 only recovery command and force the person to discard input to reach it.
 Language selection retains its immediate, in-place behavior.
 
@@ -275,8 +291,11 @@ Language selection retains its immediate, in-place behavior.
 The download window extends acrylic content into its custom title bar.
 The File menu contains Add torrent file, Add magnet link, Settings and Exit.
 Torrent contains the existing selection commands, queue actions, Pause all,
-Resume all and speed limits. Commands retain their selection availability and
-shortcuts. View contains a checkable Filters item; Help contains About.
+Resume all and Speed limits. **Owner ruling:** Speed limits opens Settings at
+the speed limits, as its search result does; there is no separate limits dialog,
+because two editors for one setting disagree about when it applies. Commands
+retain their selection availability and shortcuts. View contains a checkable
+Filters item; Help contains About.
 Add is available in File and through the existing keyboard and search paths.
 The first window has a 560 effective-pixel minimum height; its minimum width
 keeps the complete title-bar row usable, starting at 720 effective pixels.
@@ -308,9 +327,10 @@ Settings opens from File and About from Help. Exit is a File command and keeps
 its existing pending-work and draft guards. Keyboard and search paths invoke
 the same owners. About shows the product identity and running version on the
 same acrylic surface. The current page belongs to the main view model.
-Leaving Settings preserves pending work and asks before discarding actual
-unfinished input; the inspector keeps its target and draft while another page
-is visible. The Torrent menu and row context menu share selection commands.
+Leaving Settings follows the two owner rulings in
+[Committing edits](#committing-edits). The inspector keeps its target and draft
+while another page is visible. The Torrent menu and row context menu share
+selection commands.
 Properties is available in Torrent for one selected torrent, and in its row
 context menu while the inspector is closed.
 Show the selected count at the top of Torrent; the row context menu names

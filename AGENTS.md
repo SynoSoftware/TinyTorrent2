@@ -19,6 +19,11 @@ Before applying a rule, check that its reason holds in the case in front of you.
 If it does not, report that and ask before continuing; do not comply anyway and
 do not quietly ignore it. A rule whose reason you cannot find is a finding.
 
+A rule marked **Owner ruling** is the owner's settled decision. Reviews, plans
+and later agents build on it as fixed. When a case seems to conflict with one,
+follow the ruling and report the conflict to the owner, because a ruling that
+each new agent reopens changes the product's direction from session to session.
+
 ## Plans start from common sense
 
 A plan or contract passes these tests, because each mechanism it asks for is
