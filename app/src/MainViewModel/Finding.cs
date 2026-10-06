@@ -121,21 +121,20 @@ public sealed partial class MainViewModel
 
     private IEnumerable<Suggestion> CommandSuggestions()
     {
-        var application = Text.Get("window", "title");
         var selection = Text.FormatCount("finding", "selection", _selected.Length);
         var all = Text.Get("speed", "all");
-        yield return new(Text.Get("finding", "settings"), application, SuggestionScope.Command, ShowPreferences);
-        yield return new(Text.Get("window", "torrents"), application, SuggestionScope.Command, ShowTorrents);
-        yield return new(Text.Get("about", "title"), application, SuggestionScope.Command, ShowAbout);
-        if (HasUpdate) yield return new(UpdateText, application, SuggestionScope.Command, OpenUpdate);
-        yield return new(Text.Get("commands", "add_file"), application, SuggestionScope.Command, Add);
-        yield return new(Text.Get("commands", "add_magnet"), application, SuggestionScope.Command, AddMagnet);
+        yield return new(Text.Get("finding", "settings"), string.Empty, SuggestionScope.Command, ShowPreferences);
+        yield return new(Text.Get("window", "torrents"), string.Empty, SuggestionScope.Command, ShowTorrents);
+        yield return new(Text.Get("about", "title"), string.Empty, SuggestionScope.Command, ShowAbout);
+        if (HasUpdate) yield return new(UpdateText, string.Empty, SuggestionScope.Command, OpenUpdate);
+        yield return new(Text.Get("commands", "add_file"), string.Empty, SuggestionScope.Command, Add);
+        yield return new(Text.Get("commands", "add_magnet"), string.Empty, SuggestionScope.Command, AddMagnet);
         yield return new(Text.Get("commands", AllPaused ? "resume_all" : "pause_all"), all, SuggestionScope.Command, AllPaused ? ResumeAll : PauseAll);
         yield return new(Text.Get("commands", "limits"), Text.Format("finding", "preference_detail", Text.Get("preferences", "transfers")),
             SuggestionScope.Settings, Limits);
-        yield return new(Text.Get("chrome", IsDark ? "light" : "dark"), application, SuggestionScope.Command, SwitchTheme);
-        yield return new(Text.Get("commands", "exit"), application, SuggestionScope.Command, Exit);
-        yield return new(RestartText, application, SuggestionScope.Command, Restart);
+        yield return new(Text.Get("chrome", IsDark ? "light" : "dark"), string.Empty, SuggestionScope.Command, SwitchTheme);
+        yield return new(Text.Get("commands", "exit"), string.Empty, SuggestionScope.Command, Exit);
+        yield return new(RestartText, string.Empty, SuggestionScope.Command, Restart);
         foreach (var (key, command) in new (string, ICommand)[]
         {
             ("pause", Pause), ("resume", Resume), ("force", Force), ("verify", Verify), ("remove", Remove),
@@ -191,6 +190,7 @@ public sealed class FilterChoice(MainViewModel owner, TorrentFilter filter) : IN
 public sealed record Suggestion(string Label, string Detail, SuggestionScope Scope, ICommand Command)
 {
     public bool IsEnabled => Command.CanExecute(null);
+    public bool HasDetail => Detail.Length > 0;
     public override string ToString() => Label;
 }
 

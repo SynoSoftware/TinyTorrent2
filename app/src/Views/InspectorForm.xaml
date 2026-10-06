@@ -10,7 +10,7 @@
         <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
         <!-- The empty star column balances the name's, so the sections sit
              centred while Close keeps its width when the inspector is narrow. -->
-        <Grid ColumnSpacing="12" Padding="16,0" Background="{ThemeResource LayerFillColorDefaultBrush}" BorderThickness="0,0,0,1" BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}">
+        <Grid ColumnSpacing="12" Padding="16,0" BorderThickness="0,0,0,1" BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}">
             <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
             <!-- Left-aligned, so the size follows a short name and a long name trims before it. -->
             <Grid HorizontalAlignment="Left" ColumnSpacing="12">

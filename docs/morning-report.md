@@ -1,5 +1,40 @@
 # Morning report
 
+## Accepted UI checkpoint — 2026-10-06
+
+The owner's ten pending files retain the raised, rounded inspector, shared table
+header band and short dividers, file-list cell alignment and header selection,
+collapsed empty dialog title and simpler command suggestions. These are the
+intentional changes described in the owner's attached report, not regressions.
+They are included unchanged in this checkpoint.
+
+The passing `schedule-feedback-app.log` build already includes these exact
+source edits; none was changed after that build. Reusing it avoids another
+compilation of unchanged code. Existing completed captures also include them:
+Add `UiSelfCapture-0d08f16f-281a-46e7-9120-46c3c1ce316d` (12 cases), search
+`UiSelfCapture-058843c3-dc47-4cf5-b1fd-3def26a6bc69` (18 completed routes/cases),
+and Library `LibraryCapture-a1cd25b0-ee02-419f-8edd-a785bc528816` (36 cases).
+Their manifests were re-read and all report no failure. The fresh visual gate
+below covers these surfaces. No additional build, test or launch was needed.
+
+The GitHub list was refreshed: the same 34 agent-filed issues remain open.
+Their open state is not a defect verdict. Current source already separates
+connection and command errors, supplies caption shortcut tooltips, routes
+Settings search to its authoritative editor and sends notices to the open UI
+instead of a Windows balloon. These traces do not prove physical keyboard or
+Windows notification delivery. Schedule feedback is committed as `e462f14`.
+
+A fresh functional reviewer then checked current source against milestones 3–5,
+the active contracts and recorded outcomes. It found zero actionable blockers:
+command routes share their existing owners; tray/activation/Exit and history
+retain their lifecycle owners; all contracted preferences exist; failed
+inspector edits retain drafts; Move/Delete preserve shared-file scope,
+collisions and interrupted recovery. It also reviewed all ten pending owner
+files and found no functional source reason to withhold their commit. This
+closes the source gate without new tests. It does not turn the recorded native
+desktop, accessibility, live-download and exceptional-filesystem gaps into
+verified outcomes, nor establish distribution readiness.
+
 ## Fresh release capture review — 2026-10-06
 
 A fresh reviewer saw only the goal, capture images and their manifests. It

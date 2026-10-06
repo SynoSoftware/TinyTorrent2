@@ -840,10 +840,17 @@ could not get used to a left navigation pane, and one row keeps the sections
 visible while the working view gets the full inspector width. The person
 adjusts the inspector's height with the split.
 
-The table and inspector headers share the native `LayerFillColorDefaultBrush`
-surface and `DividerStrokeColorDefaultBrush` bottom edge. Their shared semantic
-resources identify both as workspace headers in every theme; neither defines
-a local color palette.
+The inspector is a layer above the workspace, because it shows one torrent's
+properties rather than more of the table. It is a raised surface:
+`CardBackgroundFillColorDefaultBrush` fill, `SurfaceStrokeColorDefaultBrush`
+edge and `OverlayCornerRadius` corners, inset from the window edges so the base
+acrylic shows between it and the table. These two tokens are chosen because they
+stay visible on the dark acrylic base, where `LayerFillColorDefaultBrush` and
+`CardStrokeColorDefaultBrush` differ from it by too little to see. Its header sits on that layer with a
+`DividerStrokeColorDefaultBrush` bottom edge. A table inside it keeps the table
+header, so every column header in the product looks the same: a
+`ControlAltFillColorTertiaryBrush` band, the one platform fill that differs from
+both the window and the card by a similar visible step in Light and Dark.
 
 Apply individual choices and explicit file commands through the same commit
 rules. When a coherent edit needs a draft, keep one active editor bound to the

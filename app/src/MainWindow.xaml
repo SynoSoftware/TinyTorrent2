@@ -35,7 +35,7 @@
             <Grid x:Name="SearchArea" Grid.Column="3" Margin="24,0" VerticalAlignment="Center">
                 <AutoSuggestBox x:Name="Search" MaxWidth="320" MinWidth="200" HorizontalAlignment="Stretch" Text="{x:Bind Model.Query, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                     QueryIcon="Find" TextMemberPath="Label" TextChanged="OnSearchChanged" QuerySubmitted="OnSearchSubmitted" GotFocus="OnSearchFocus">
-                    <AutoSuggestBox.ItemTemplate><DataTemplate x:DataType="local:Suggestion"><StackPanel Spacing="2" Margin="0,4"><TextBlock Text="{x:Bind Label}" TextWrapping="Wrap" /><TextBlock Text="{x:Bind Detail}" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" /></StackPanel></DataTemplate></AutoSuggestBox.ItemTemplate>
+                    <AutoSuggestBox.ItemTemplate><DataTemplate x:DataType="local:Suggestion"><StackPanel Spacing="2" Margin="0,4"><TextBlock Text="{x:Bind Label}" TextWrapping="Wrap" /><TextBlock Text="{x:Bind Detail}" Visibility="{x:Bind HasDetail}" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" /></StackPanel></DataTemplate></AutoSuggestBox.ItemTemplate>
                 </AutoSuggestBox>
             </Grid>
             <StackPanel x:Name="AddButtons" Grid.Column="4" Orientation="Horizontal">
@@ -138,7 +138,8 @@
             </table:Table.Columns>
         </table:Table>
         <controls:Splitter x:Name="Split" Grid.Row="1" Visibility="{x:Bind Model.HasInspector, Mode=OneWay}" />
-        <Grid Grid.Row="2" Visibility="{x:Bind Model.HasInspector, Mode=OneWay}" BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}" BorderThickness="0,1,0,0">
+        <Grid Grid.Row="2" Visibility="{x:Bind Model.HasInspector, Mode=OneWay}" Margin="8,0" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+            BorderBrush="{ThemeResource SurfaceStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="{ThemeResource OverlayCornerRadius}">
             <ContentControl x:Name="InspectorContent" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
         </Grid>
             </Grid>

@@ -1,5 +1,20 @@
 # Implementation handover — 2026-10-05
 
+## Accepted UI checkpoint — 2026-10-06
+
+The owner's raised inspector, table-header, file-list, empty-dialog-title and
+search-result edits are preserved unchanged in this checkpoint. The existing
+successful app build and completed Add/search/library captures include this
+source. Do not restore the old flat inspector or call its accepted elevation a
+regression. The fresh visual review and schedule correction are complete;
+`e462f14` contains that correction. Exact evidence and release limits remain in
+[morning-report.md](morning-report.md).
+
+A fresh functional audit also reports zero actionable source blockers against
+milestones 3–5, including these ten UI files. Native desktop/accessibility and
+the recorded live-download/filesystem evidence gaps remain unverified. No new
+build, tests or launch were run merely to repeat existing evidence.
+
 ## Schedule feedback milestone — 2026-10-06
 
 The fresh broad capture reviewer found one counted defect: rejected schedule
@@ -360,7 +375,8 @@ The architecture implementation and its follow-up source review are recorded in
 [the architecture evidence](architecture/proposed/evidence.md); its historical
 deletion targets are not a new backlog. The current work is release verification
 and concrete corrections, not another architecture pass. The owner's current
-inspector, file-list, table-header and search diff is compiled but uncommitted.
+inspector, file-list, table-header and search work is included in the accepted
+UI checkpoint above.
 Keep its intentional design. The fresh capture gate closes after the schedule
 feedback correction; it does not establish native input or complete feature
 correctness. The morning report owns exact runs and their limits.

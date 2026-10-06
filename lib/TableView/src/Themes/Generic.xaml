@@ -147,42 +147,48 @@
             reaches the strip's background instead and starts neither section 11's drag nor a sort.
         -->
         <Setter Property="Background" Value="Transparent" />
-        <!-- The visible half of section 10's resize separator. The strip's grab zone is wider. -->
-        <Setter Property="BorderBrush" Value="{ThemeResource DividerStrokeColorDefaultBrush}" />
-        <Setter Property="BorderThickness" Value="0,0,1,0" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="header:Cell">
-                    <Grid x:Name="Root"
-                          Background="{TemplateBinding Background}"
-                          Padding="{TemplateBinding Padding}"
-                          BorderBrush="{TemplateBinding BorderBrush}"
-                          BorderThickness="{TemplateBinding BorderThickness}">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
+                    <Grid x:Name="Root" Background="{TemplateBinding Background}">
+                        <Grid Padding="{TemplateBinding Padding}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
 
-                        <ContentPresenter x:Name="PART_Header"
-                                          Grid.Column="0"
-                                          Foreground="{TemplateBinding Foreground}"
-                                          HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
-                                          VerticalAlignment="Center" />
+                            <ContentPresenter x:Name="PART_Header"
+                                              Grid.Column="0"
+                                              Foreground="{TemplateBinding Foreground}"
+                                              HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalAlignment="Center" />
+
+                            <!--
+                                Section 9's direction glyph on the active header. The state itself is
+                                on the cell as AutomationProperties.ItemStatus, so the glyph is a
+                                decoration the automation tree does not need to repeat.
+                            -->
+                            <FontIcon x:Name="PART_SortGlyph"
+                                      Grid.Column="1"
+                                      Margin="4,0,0,0"
+                                      FontSize="14"
+                                      Glyph="&#xE70E;"
+                                      Foreground="{ThemeResource TextFillColorPrimaryBrush}"
+                                      VerticalAlignment="Center"
+                                      AutomationProperties.AccessibilityView="Raw"
+                                      Visibility="Collapsed" />
+                        </Grid>
 
                         <!--
-                            Section 9's direction glyph on the active header. The state itself is
-                            on the cell as AutomationProperties.ItemStatus, so the glyph is a
-                            decoration the automation tree does not need to repeat.
+                            The visible half of section 10's resize separator; the strip's grab
+                            zone is wider. It is shorter than the cell, so the header reads as a
+                            row of labels rather than a row of boxes.
                         -->
-                        <FontIcon x:Name="PART_SortGlyph"
-                                  Grid.Column="1"
-                                  Margin="4,0,0,0"
-                                  FontSize="14"
-                                  Glyph="&#xE70E;"
-                                  Foreground="{ThemeResource TextFillColorPrimaryBrush}"
-                                  VerticalAlignment="Center"
-                                  AutomationProperties.AccessibilityView="Raw"
-                                  Visibility="Collapsed" />
+                        <Rectangle Width="1"
+                                   Height="16"
+                                   HorizontalAlignment="Right"
+                                   VerticalAlignment="Center"
+                                   Fill="{ThemeResource DividerStrokeColorDefaultBrush}" />
 
                         <VisualStateManager.VisualStateGroups>
                             <!-- Section 11: the dragged header stays identifiable, in the same
@@ -209,8 +215,12 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="header:Strip">
+                    <!-- A neutral tint one step from the surface beneath, lighter in
+                         Dark and darker in Light. Fluent has no header fill; this one
+                         keeps a similar step on the window and on a card in both
+                         themes, where the layer fills vanish in Dark. -->
                     <Border x:Name="PART_Clip"
-                            Background="{ThemeResource LayerFillColorDefaultBrush}"
+                            Background="{ThemeResource ControlAltFillColorTertiaryBrush}"
                             BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
                             BorderThickness="0,0,0,1">
                         <Grid>

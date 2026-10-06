@@ -214,6 +214,7 @@ public sealed class FileNode : INotifyPropertyChanged
     }
     public string ProgressText => Progress.ToString("P1", CultureInfo.CurrentCulture);
     public bool ShowsProgress => _owner.ShowsProgress;
+    public bool HasFolders => _owner.HasFolders;
     public bool IsEnabled => _owner.IsEnabled;
     public bool? Wanted
     {

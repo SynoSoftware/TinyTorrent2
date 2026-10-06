@@ -14,7 +14,7 @@ public sealed partial class Dialog : ContentDialog
         typeof(Dialog), new PropertyMetadata(null, (dialog, _) => ((Dialog)dialog).ShowFooter()));
 
     public static readonly DependencyProperty GlyphProperty = DependencyProperty.Register(nameof(Glyph), typeof(string),
-        typeof(Dialog), new PropertyMetadata(string.Empty, (dialog, _) => ((Dialog)dialog).ShowGlyph()));
+        typeof(Dialog), new PropertyMetadata(string.Empty, (dialog, _) => ((Dialog)dialog).ShowTitle()));
 
     // Each button's Lucide icon and the tooltip that says what its one word does
     // not. Every dialog's Close button is Cancel, so it defaults to Cancel's icon.
@@ -42,12 +42,13 @@ public sealed partial class Dialog : ContentDialog
     public Dialog()
     {
         Opened += (_, _) => FocusOnOpen();
+        RegisterPropertyChangedCallback(TitleProperty, (_, _) => ShowTitle());
     }
 
     protected override void OnApplyTemplate()
     {
         base.OnApplyTemplate();
-        ShowGlyph();
+        ShowTitle();
         ShowFooter();
     }
 
@@ -59,14 +60,21 @@ public sealed partial class Dialog : ContentDialog
         if (GetTemplateChild("EndColumn") is ColumnDefinition end) end.Width = Footer is null ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
     }
 
-    // The template cannot reach Lucide.Font, and an empty icon still takes the
-    // column spacing.
-    private void ShowGlyph()
+    // The template cannot reach Lucide.Font. An empty icon still takes the
+    // column spacing, and an empty title row still takes its margin, which
+    // pushes down content that draws its own heading.
+    private void ShowTitle()
     {
-        if (GetTemplateChild("TitleIcon") is not FontIcon icon) return;
-        icon.FontFamily = Lucide.Font;
-        icon.Glyph = Glyph;
-        icon.Visibility = Glyph.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+        if (GetTemplateChild("TitleIcon") is FontIcon icon)
+        {
+            icon.FontFamily = Lucide.Font;
+            icon.Glyph = Glyph;
+            icon.Visibility = Glyph.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+        }
+        if (GetTemplateChild("TitleArea") is UIElement area)
+        {
+            area.Visibility = Title is null or "" && Glyph.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
+        }
     }
 
     // The person can type and press Escape at once. Focus goes to the first

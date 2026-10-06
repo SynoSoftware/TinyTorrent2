@@ -3,6 +3,7 @@ using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
+using Syno.TableView;
 using Windows.System;
 
 namespace Syno.TinyTorrent.Controls;
@@ -26,6 +27,22 @@ public sealed partial class FileBrowser : UserControl
         AutomationProperties.SetHelpText(All, Model.Text.Get("files", "all_matching"));
         Model.Refresh();
     }
+
+    // The TableView's own default, so this list's cells cannot drift from the
+    // product's tables.
+    public static Thickness Cell { get; } = (Thickness)Table.CellPaddingProperty.GetMetadata(typeof(Table)).DefaultValue;
+    public static Thickness Trail { get; } = new(0, 0, Cell.Right, 0);
+
+    // WinUI's TreeViewItem insets a row by 4 pixels and reserves a 40-pixel
+    // expander column (14 + 12 + 14). A list without folders never shows an
+    // expander, so its rows move left over that column. Either way a top-level
+    // row's check box starts one cell inset past the expanders it shows.
+    private const double Inset = 4;
+    private const double Expander = 40;
+
+    public static Thickness Lead(bool folders) => new(Cell.Left + (folders ? Expander : 0), 0, Cell.Right, 0);
+
+    public static Thickness Indent(bool folders) => new(Lead(folders).Left - Inset - Expander, 0, 0, 0);
 
     private void OnAll(object sender, RoutedEventArgs args)
     {

@@ -563,7 +563,7 @@
                                                         <RowDefinition Height="Auto" />
                                                         <RowDefinition Height="*" />
                                                     </Grid.RowDefinitions>
-                                                    <Grid Margin="{ThemeResource ContentDialogTitleMargin}" ColumnSpacing="12">
+                                                    <Grid x:Name="TitleArea" Margin="{ThemeResource ContentDialogTitleMargin}" ColumnSpacing="12">
                                                         <Grid.ColumnDefinitions>
                                                             <ColumnDefinition Width="Auto" />
                                                             <ColumnDefinition Width="*" />
