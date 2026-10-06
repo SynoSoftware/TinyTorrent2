@@ -55,8 +55,6 @@
             </Grid>
         </Border>
         <TextBlock x:Name="Hint" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" />
-        <TextBlock Text="{x:Bind Model.ScheduleMessage, Mode=OneWay}" Visibility="{x:Bind Model.HasScheduleError, Mode=OneWay}"
-            TextWrapping="Wrap" Foreground="{ThemeResource SystemFillColorCriticalBrush}" AutomationProperties.LiveSetting="Assertive" />
         <Border x:Name="PeriodEditor" Padding="16" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
             BorderThickness="1" CornerRadius="{ThemeResource ControlCornerRadius}" Visibility="{x:Bind Model.IsEditing, Mode=OneWay}">
             <StackPanel Spacing="12">
@@ -90,6 +88,10 @@
                 </StackPanel>
             </StackPanel>
         </Border>
+        <TextBlock x:Name="ScheduleError" Text="{x:Bind Model.ScheduleMessage, Mode=OneWay}" Visibility="{x:Bind Model.HasScheduleError, Mode=OneWay}"
+            Style="{StaticResource BodyTextStyle}" Foreground="{ThemeResource SystemFillColorCriticalBrush}" IsTextSelectionEnabled="True"
+            ToolTipService.ToolTip="{x:Bind Model.ScheduleMessage, Mode=OneWay}" AutomationProperties.Name="{x:Bind Model.ScheduleMessage, Mode=OneWay}"
+            AutomationProperties.LiveSetting="Assertive" />
         <Expander Header="{x:Bind Model.PeriodSummary, Mode=OneWay}" Visibility="{x:Bind Model.HasPeriods, Mode=OneWay}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
             <StackPanel Spacing="12">
                 <StackPanel Spacing="4" Visibility="{x:Bind Model.HasAlternative, Mode=OneWay}">

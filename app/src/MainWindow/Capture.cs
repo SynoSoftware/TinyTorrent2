@@ -413,6 +413,13 @@ public sealed partial class MainWindow
                         CaptureInvoke(FindButton("EditPeriod"));
                         await CaptureLayout();
                         await CapturePage(prefix + "-editor", form);
+                        foreach (var day in CaptureElements(form).OfType<CheckBox>())
+                            if (AutomationProperties.GetAutomationId(day).StartsWith("PeriodDay", StringComparison.Ordinal)) day.IsChecked = false;
+                        await CaptureLayout();
+                        CaptureInvoke(FindButton("SavePeriod"));
+                        await CaptureReady(preferences, () => preferences.HasScheduleError);
+                        await CaptureLayout();
+                        await CaptureUi(prefix + "-validation");
                         CaptureInvoke(FindButton("CancelPeriod"));
                         await CaptureReady(preferences, () => !preferences.IsEditing);
                         completed.Add(prefix);

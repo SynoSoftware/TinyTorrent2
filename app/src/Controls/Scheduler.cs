@@ -55,6 +55,16 @@ public sealed partial class Scheduler : UserControl
     private void OnModel(object? sender, PropertyChangedEventArgs args)
     {
         Hint.Visibility = Model.IsEditing ? Visibility.Collapsed : Visibility.Visible;
+        if (string.IsNullOrEmpty(args.PropertyName) && Model.HasScheduleError)
+        {
+            var message = Model.ScheduleMessage;
+            DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
+            {
+                if (!IsLoaded || !Model.HasScheduleError || Model.ScheduleMessage != message) return;
+                UpdateLayout();
+                ScheduleError.StartBringIntoView(new BringIntoViewOptions { AnimationDesired = false });
+            });
+        }
         if (_editor == Model.Draft) return;
         _editor = Model.Draft;
         DispatcherQueue.TryEnqueue(() =>

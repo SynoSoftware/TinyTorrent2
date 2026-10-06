@@ -1,5 +1,56 @@
 # Morning report
 
+## Fresh release capture review — 2026-10-06
+
+A fresh reviewer saw only the goal, capture images and their manifests. It
+reviewed Library/filter/inspector, Add, Settings, search, Schedule, Move/Delete,
+live-traffic details and desktop recovery across the captured EN/ES, Light/Dark
+and three-size combinations. It found one counted defect: a rejected schedule
+save leaves the correction message above the visible editor and Save action.
+There were no other counted visual findings in those supplied images.
+
+The current baseline `UiSelfCapture-98faa2cc-31c0-468d-8f88-2bba3697af42`
+confirms that defect. All twelve schedule cases and the exact-minute overnight,
+rejected-save, cancel, move and remove journeys passed in 120.91 seconds. The
+invalid draft and existing saved periods were retained. Both disposable
+processes exited and the generated-output scan was empty. Behavioral success
+did not make the missing visible rejection feedback acceptable.
+
+This is a visual gate, not proof of complete feature correctness. Actual High
+Contrast, Narrator, physical keyboard delivery, DPI/text scaling, populated
+trackers and native caption/tray/picker/default-app behavior remain unverified.
+Historical captures prove only their recorded scope; the newer partial Add and
+timed-out broader Files run are not complete clean-exit passes. The full release
+goal remains open. Selection cancellation is committed as `6b6163b`.
+
+The correction moves the single existing error directly after the period editor
+and reveals it after a rejected operation. It uses the shared body-text style,
+keeps the full text selectable and accessible, and neither takes focus nor
+scrolls on ordinary draft typing. Non-editor failures still use that same error.
+No scheduling rule or accepted editor layout changed. The existing schedule
+journey now captures each rejected-save viewport without moving the scroll
+position for the image, so capture itself cannot hide a missing reveal.
+
+- `artifacts/schedule-feedback-app.log`: 43.82 seconds, zero warnings/errors;
+  only the app's two WinUI compilation passes ran, with TableView and Lucide
+  reused. The output-location scan was empty.
+- The settled source review found zero counted defects in bindings, error
+  ownership, delayed reveal or focus retention. No code comments were added.
+- Correction capture `UiSelfCapture-e2d0ce8c-c2ff-4ca2-8bad-d1a2bc3484c2`
+  passed all twelve combinations and existing schedule journeys in 140.46
+  seconds. All 88 frames were stable. No TinyTorrent or Engine process remained,
+  and the generated-output scan was empty.
+- The parent reviewed the twelve rejected-save viewports in sequence as a new
+  user, a keyboard user, an accessibility reviewer, a Fluent designer and a
+  clarity reviewer. The message is readable with Save visible in every case;
+  source confirms focus is not moved. High Contrast and actual assistive-input
+  behavior cannot be concluded from these pixels. No counted correction defect
+  or further layout change was identified.
+- The fresh adversarial reviewer's first correction-only re-review inspected
+  all twelve validation images plus the initial rejection. It reports the
+  finding resolved with zero remaining counted defects. No second correction
+  round, engine build, engine check or full suite was needed.
+
 ## Selection cancellation milestone — 2026-10-06
 
 The remaining concrete #54 gesture defects are corrected. A press captures the

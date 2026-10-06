@@ -1,13 +1,28 @@
 # Implementation handover — 2026-10-05
 
-## Current continuation — 2026-10-06
+## Schedule feedback milestone — 2026-10-06
+
+The fresh broad capture reviewer found one counted defect: rejected schedule
+saves left their error offscreen. The single error now appears beside the
+editor's actions and is revealed without taking focus. The app build and all
+twelve schedule capture/journey cases pass; the reviewer's first correction
+re-review reports zero remaining counted findings. The accepted layout and
+schedule rules are preserved. Exact evidence and native-input limitations are
+at the top of [morning-report.md](morning-report.md).
+
+This closes the supplied-image visual gate, not whole-product release
+acceptance. Keep the owner's concurrent UI diff intact. The remaining native
+desktop, accessibility and live-download evidence gaps below still apply; do
+not repeat unchanged engine checks or a broad suite for this UI-only milestone.
+
+## Selection continuation — 2026-10-06
 
 The remaining #54 marquee rollback and stale deferred-click defects are fixed.
 Three focused gesture cases and four existing in-process UIA selection cases
 pass; source adversarial review and the app build pass. No visual layout changed.
-Exact evidence is at the top of [morning-report.md](morning-report.md). A fresh
-broader capture review is in progress, and whole-product release acceptance stays
-open. Keep the owner's concurrent UI work out of this selection-only commit.
+Exact evidence is in [morning-report.md](morning-report.md). Commit `6b6163b`
+contains this correction. Whole-product release acceptance stays open; the
+fresh capture gate and its correction are recorded above that evidence.
 
 ## Keyboard and contrast continuation — 2026-10-06
 
@@ -324,25 +339,31 @@ no `TinyTorrent.exe` or `Engine.exe`. No desktop automation remains active.
 
 ## Plan status
 
-| Milestone | Status | Next completion gate |
+| Milestone | Implemented checkpoints | Remaining release evidence |
 | --- | --- | --- |
 | First usable download | Completed previously, `e0a5a92` | Historical journeys and first resource measurements are recorded. |
 | Everyday torrent actions | Completed previously, `6afbf65` | Historical evidence is recorded, with stated physical Explorer/drop and accessibility gaps. |
-| Background and desktop behavior | Completed, `43e47eb`; current process journey and fresh correction review passed | Native notifications, physical sleep and logon are source-reviewed, not physically exercised; see morning report. |
-| Details and preferences | Completed, `c9e3995`; current captures, native input journeys and second correction review passed | EN/ES, Light/Dark and requested sizes reviewed; exact narrow width, physical accessibility and populated-traffic limitations remain documented. |
-| Move and delete files | Completed, `c9e3995`; current engine safety, actual UI submissions, interrupted move and second correction review passed | Collision/shared ownership preserve bytes; physical picker, cross-volume/device failures and dropped alerts remain unverified. |
+| Background and desktop behavior | `43e47eb`; later close/recovery journeys and `3f6de13` notification preferences | Actual Windows notification delivery, physical sleep/logon and native caption gestures remain unverified. |
+| Details and preferences | `c9e3995`, later canonical Settings/search routing, `1eaf391` Add access keys, `245479e` header/contrast, `6b6163b` selection recovery; schedule feedback corrected after fresh visual review | Supplied-image gate closes with zero remaining counted defects. Physical keys, Narrator, OS High Contrast and scaling remain unverified; requested720 uses the documented current minimum. |
+| Move and delete files | `c9e3995`; `007dcde` file lifecycle and final FileNames, FilesSafety and CheckpointRetry checks | Physical picker, cross-volume/device failures, dropped alerts, real-download marking and native unfinished-file launch remain unverified. |
 
-These statuses describe the earlier milestone gates, not release acceptance.
-The current goal additionally requires actual command-search journeys,
-deliberate settings coverage, populated-screen review and an independent release
-review. Search, the 300-torrent paused library and file-name correction now have
-those checks; the live inspector now has a loopback transfer, populated peers,
-mixed pieces and nonzero history across the same matrix, with zero remaining
-counted visual findings after correction. Broader release acceptance remains
-open because concurrent owner edits postdate that candidate. The current
-direction is the architecture handoff at the top of this file; retain valid
-prior evidence and verify affected outcomes as that work settles.
-Read the current continuation in the morning report for the files and limits.
+These checkpoints do not claim release acceptance. Native search submission
+currently reaches the authoritative Settings editor and selected inspector.
+Every setting in the settled Preferences contract has an app field and control,
+including the three notification switches; engine tuning is deliberately outside
+that list. The latest 300-torrent library and focused selection/UIA checks pass.
+Earlier live-traffic captures cover populated peers, mixed pieces and history;
+they do not prove later changes or current transfer behavior. Transfer checks
+remain owner-requested only.
+
+The architecture implementation and its follow-up source review are recorded in
+[the architecture evidence](architecture/proposed/evidence.md); its historical
+deletion targets are not a new backlog. The current work is release verification
+and concrete corrections, not another architecture pass. The owner's current
+inspector, file-list, table-header and search diff is compiled but uncommitted.
+Keep its intentional design. The fresh capture gate closes after the schedule
+feedback correction; it does not establish native input or complete feature
+correctness. The morning report owns exact runs and their limits.
 The sections below retain the earlier handover's history.
 
 ## Earlier handover: pending task finished
