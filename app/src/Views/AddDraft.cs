@@ -33,7 +33,7 @@ public sealed class AddDraft : INotifyPropertyChanged
     private Exception? _magnetFailure;
     public string Magnet { get => _magnet; set { _magnet = value; _magnetFailure = null; Refresh(); } }
     public bool HasMagnetError => _magnetFailure is not null;
-    public string MagnetMessage => _magnetFailure is null ? string.Empty : _owner.FormatError(_magnetFailure);
+    public string MagnetMessage => _magnetFailure is null ? string.Empty : _strings.Error(_magnetFailure);
     public bool EditingMagnet { get; internal set; }
     public string Source => string.Join(Environment.NewLine, Sources.Select(source => source.Source));
     public string Destination
@@ -51,7 +51,7 @@ public sealed class AddDraft : INotifyPropertyChanged
     public string Space => FreeSpace() is { } free ? _strings.Format("add", "free", _strings.Bytes(free)) : string.Empty;
     public string Shared => string.Join(Environment.NewLine, Sources.Select(source => source.Shared).Where(text => text.Length > 0));
     private Exception? Failure => _failure ?? Sources.Select(source => source.Failure).FirstOrDefault(error => error is not null);
-    public string Message => !_owner.IsConnected ? _owner.Message : Failure is { } failure ? _owner.FormatError(failure) :
+    public string Message => !_owner.IsConnected ? _owner.Message : Failure is { } failure ? _strings.Error(failure) :
         HasFiles && !Files.HasWanted ? _strings.Get("add", "no_files") : string.Empty;
     public bool HasError => Message.Length > 0;
     public InfoBarSeverity Severity => InfoBarSeverity.Error;
@@ -198,7 +198,7 @@ public sealed class AddDraft : INotifyPropertyChanged
         {
             await _pass;
             var captured = Sources.ToArray();
-            if (_neverShow) await _owner.SaveSettings(new { show_add = false });
+            if (_neverShow) await _owner.Preferences.HideAddForm();
             foreach (var source in captured)
             {
                 if (source.Uncertain && _owner.Find(source.Hashes) is { } existing)
@@ -255,7 +255,7 @@ public sealed class AddDraft : INotifyPropertyChanged
             _owner.Accepted("add", "title");
             return true;
         }
-        catch (Exception error) { _failure = error; _owner.Announce(_owner.FormatError(error)); return false; }
+        catch (Exception error) { _failure = error; _owner.Announce(_strings.Error(error)); return false; }
         finally
         {
             IsSubmitting = false;
@@ -419,7 +419,7 @@ public sealed class AddSource : INotifyPropertyChanged
     internal string? PreviewId { get; set; }
     internal Exception? Failure { get; set; }
     internal bool Uncertain { get; set; }
-    public string Description => Failure is not null ? Failure is CommandFailure ? Failure.Message : _strings.Error("unknown", Failure.Message) :
+    public string Description => Failure is not null ? _strings.Error(Failure) :
         Duplicate.Length > 0 ? _strings.Get("add", "already_added") :
         !MetadataReady ? _strings.Get("add", "metadata") : !Files.HasWanted ? _strings.Get("add", "no_files") : _strings.Bytes(Size);
     public string Shared => SharedWith.Length == 0 || SharedDestination != _draft.Destination ? string.Empty :

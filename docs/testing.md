@@ -167,8 +167,8 @@ uses a window outside the desktop, does not activate it, saves images and XAML
 control bounds, and closes itself. A connected store mismatch stops the review
 before changes. A second review window exits without activating an existing
 application. Normal launches perform no automatic capture.
-Use `TINYTORRENT_CAPTURE_REVIEW=smoke` to rerun the recovery journeys and settings
-viewports without repeating the full themes-and-sizes batch.
+Use `TINYTORRENT_CAPTURE_REVIEW=smoke` to rerun the recovery journeys without
+repeating the Settings viewport or full themes-and-sizes batches.
 Use `TINYTORRENT_CAPTURE_REVIEW=shell` for the title-bar menus, narrow layouts,
 themes, selection commands, secondary pages and retained filter state.
 Use `TINYTORRENT_CAPTURE_REVIEW=search` for native AutoSuggestBox result
@@ -198,9 +198,9 @@ Use `TINYTORRENT_CAPTURE_REVIEW=desktop` with the disposable desktop launcher fo
 declining Exit with unfinished input and reconnecting an open tracker draft.
 Its restart handshake affects only the launcher's own fixture engine; it does
 not automate the desktop or establish native notification/power behavior.
-Use `TINYTORRENT_CAPTURE_REVIEW=details` for the inspector and Settings at all
-three sizes and both themes in the fixture's selected language, followed by
-native priority, tracker, live-language and preference recovery journeys.
+Use `TINYTORRENT_CAPTURE_REVIEW=details` for the native priority, tracker,
+live-language and preference recovery journeys without repeating the full
+layout matrix.
 `details-files` limits correction captures to Files and localized selected
 Settings choices; it does not repeat those behavioral journeys.
 Use `TINYTORRENT_CAPTURE_REVIEW=files` with the disposable files launcher for

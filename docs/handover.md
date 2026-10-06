@@ -2,6 +2,32 @@
 
 ## Current handoff — 2026-10-06
 
+The owner then authorized implementation of all eight selected architecture
+slices. Checkpoint **`db6ec1d`** committed the preimplementation tree first.
+Architecture changes are committed separately, with their owners described
+in [architecture-current.md](architecture-current.md) and their slice mapping,
+adversarial findings and focused evidence in the proposal's
+[implementation checkpoint](architecture/proposed/evidence.md#implementation-checkpoint).
+Use that record for architecture status; the earlier correction handoff below
+is historical.
+
+The implementation session recorded Release engine and app builds with zero
+warnings/errors. Focused committed
+file persistence, Settings edits, live-language details, unavailable-draft
+recovery, and cancelled/failed Exit plus reconnect checks pass. No full suite
+or transfer checks ran. Broader release acceptance, including the existing
+large-library automation-provider gap, remains open.
+
+Preserve the concurrent Add-dialog, splitter and torrent-option work. Its Add
+pane layout was stabilized after a reproduced layout cycle by using star
+columns; its design, resizing controls and options remain. Do not restore the
+pixel-width feedback loop. Architecture and concurrent edits overlap in several
+files. The architecture commit excludes those concurrent changes, which remain
+uncommitted. Its separated snapshot was reviewed from source; no builds or tests
+were run while preparing the commit.
+
+## Release correction checkpoint — 2026-10-06
+
 The owner chose to finish the in-flight release corrections, then proceed with
 the selected [architecture](architecture/proposed/README.md). The correction
 batch is committed as **`c7b9326`**. Its focused checks and bounded adversarial

@@ -1216,9 +1216,9 @@ public sealed partial class Table
         }
     }
 
-    private void FocusCurrentRow(FocusState state)
+    private void FocusCurrentRow(FocusState state, object? row = null)
     {
-        if (_selection.Focus is not object item || _itemsView is null)
+        if ((row ?? _selection.Focus) is not object item || _itemsView is null)
         {
             return;
         }
@@ -1229,9 +1229,13 @@ public sealed partial class Table
             return;
         }
 
+        object? handoff = row is null ? null : FocusManager.GetFocusedElement(XamlRoot);
+        object? focus = _selection.Focus;
         DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
         {
-            if (_selection.IsSame(item, _selection.Focus)
+            if ((row is null ? _selection.IsSame(item, _selection.Focus) :
+                ReferenceEquals(FocusManager.GetFocusedElement(XamlRoot), handoff) &&
+                ReferenceEquals(_selection.Focus, focus) && View.Contains(item))
                 && _itemsView?.ContainerFromItem(item) is Control realized)
             {
                 realized.Focus(state);

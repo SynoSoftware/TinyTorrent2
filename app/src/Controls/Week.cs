@@ -1,4 +1,3 @@
-using System.ComponentModel;
 using Microsoft.UI.Input;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
@@ -22,14 +21,14 @@ public sealed partial class Week : UserControl
     private double Gutter => 64 * _settings.TextScaleFactor;
     private double Ruler => 24 * _settings.TextScaleFactor;
     private double RowHeight => 16 + 32 * _settings.TextScaleFactor;
-    private readonly Preferences _model;
+    private readonly Schedule _model;
     private Drag? _drag;
     private int _day;
     private int _minute;
     private int? _hoverDay;
     private double TrackWidth => Math.Max(1, ActualWidth - Gutter);
 
-    internal Week(Preferences model)
+    internal Week(Schedule model)
     {
         _model = model;
         InitializeComponent();
@@ -41,7 +40,6 @@ public sealed partial class Week : UserControl
         AutomationProperties.SetAutomationId(this, "ScheduleTimeline");
         Loaded += (_, _) =>
         {
-            _model.PropertyChanged += OnModel;
             _model.WeekChanged += OnWeek;
             _model.TextChanged += OnText;
             _settings.TextScaleFactorChanged += OnScaling;
@@ -51,7 +49,6 @@ public sealed partial class Week : UserControl
         Unloaded += (_, _) =>
         {
             CancelDrag();
-            _model.PropertyChanged -= OnModel;
             _model.WeekChanged -= OnWeek;
             _model.TextChanged -= OnText;
             _settings.TextScaleFactorChanged -= OnScaling;
@@ -60,16 +57,14 @@ public sealed partial class Week : UserControl
         ActualThemeChanged += (_, _) => Draw();
     }
 
-    private void OnModel(object? sender, PropertyChangedEventArgs args)
+    private void OnWeek(object? sender, EventArgs args)
     {
-        if (args.PropertyName == nameof(Preferences.HasDraft)) return;
         if (_drag is { } drag && (!_model.CanSchedule || drag.Draft != _model.Draft ||
             (drag.Draft is null && drag.Action != PeriodAction.Create && !_model.Periods.Contains(drag.Period)))) CancelDrag();
         if (_drag is null) Draw();
     }
 
-    private void OnWeek(object? sender, EventArgs args) => OnModel(sender, new(string.Empty));
-    private void OnText(object? sender, EventArgs args) { DrawGrid(); Draw(); }
+    private void OnText(object? sender, EventArgs args) => DrawGrid();
     private void OnScaling(UISettings sender, object args) => DispatcherQueue.TryEnqueue(() => { CancelDrag(); DrawGrid(); Draw(); });
     private double X(int minute) => Gutter + minute / 1440.0 * TrackWidth;
     private double Y(int day) => Ruler + day * RowHeight;
@@ -166,7 +161,7 @@ public sealed partial class Week : UserControl
                 var times = (TextBlock)caption.Children[1];
                 times.Style = (Style)Resources[style];
                 times.Text = range.Start == 0 && range.End == 1440 ? _model.Text.Get("preferences", "time_all_day") :
-                    _model.Text.Format("preferences", "time_range", Preferences.Time(range.Start), Preferences.Time(range.End));
+                    _model.Text.Format("preferences", "time_range", Schedule.Time(range.Start), Schedule.Time(range.End));
                 times.TextAlignment = TextAlignment.Center;
                 block.Width = Math.Max(0, X(range.End) - X(range.Start));
                 block.Height = RowHeight - 12;
@@ -198,9 +193,9 @@ public sealed partial class Week : UserControl
             cursor.BorderThickness = new(1);
             cursor.CornerRadius = new(0);
             Position(cursor, X(_minute), Y(_day));
-            ShowTip(_model.Text.Format("preferences", "day_schedule", _model.Day(_day), Preferences.Time(_minute)), X(_minute));
+            ShowTip(_model.Text.Format("preferences", "day_schedule", _model.Day(_day), Schedule.Time(_minute)), X(_minute));
         }
-        var description = selected?.Description ?? _model.Text.Format("preferences", "day_schedule", _model.Day(_day), Preferences.Time(_minute));
+        var description = selected?.Description ?? _model.Text.Format("preferences", "day_schedule", _model.Day(_day), Schedule.Time(_minute));
         AutomationProperties.SetName(this, _model.Text.Format("preferences", "timeline_name", description));
         if (_drag is { HasMoved: true } active && preview is not null)
         {

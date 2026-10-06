@@ -1,4 +1,3 @@
-using System.Collections.ObjectModel;
 using System.Text.Json;
 using System.Windows.Input;
 using Syno.TinyTorrent.Models;
@@ -9,7 +8,6 @@ namespace Syno.TinyTorrent;
 
 public sealed partial class MainViewModel
 {
-    private JsonElement _settings;
     private bool _receivingSources;
     private bool _sourcesPending;
     public bool AllPaused { get; private set; }
@@ -19,7 +17,7 @@ public sealed partial class MainViewModel
     public string Incoming => MissingInterface.Length > 0 ? Text.Format("preferences", "unavailable_interface", MissingInterface) :
         Text.Get("window", HasIncoming ? "incoming" : "no_incoming");
     public string SelectionText => Text.Format("window", "selected", _selected.Length);
-    public string ErrorCount => Text.Format("window", "errors", Torrents.Count(torrent => torrent.ErrorCode.Length > 0));
+    public string ErrorCount => Text.Format("window", "errors", Torrents.Count(torrent => torrent.IsError));
     public bool HasSelection => _selected.Length > 0;
     public bool CanReorder => CanEdit && VisibleTorrents.Count(torrent => torrent.Queue >= 0) > 1;
     private bool CanMove => CanEdit && _selected.Length > 0 && _selected.All(torrent => torrent.Queue >= 0);
@@ -28,7 +26,7 @@ public sealed partial class MainViewModel
     public string EmptyActionText => Text.Get("window", Torrents.Count > 0 ? "clear_filters" : "add");
     public ICommand EmptyAction => Torrents.Count > 0 ? ClearFilters : Add;
     public ICommand ClearFilters { get; }
-    public bool ShowAdd => Setting("show_add", true);
+    public bool ShowAdd => Preferences.ShowAdd.ConfirmedOn;
     public bool AlternativeLimits
     {
         get => _alternativeLimits;
@@ -61,9 +59,6 @@ public sealed partial class MainViewModel
     public event EventHandler<Torrent[]>? DeleteRequested;
     public event EventHandler<string>? OpenRequested;
     public event EventHandler<string>? CopyRequested;
-
-    private bool Setting(string name, bool fallback) => _settings.ValueKind == JsonValueKind.Object &&
-        _settings.TryGetProperty(name, out var value) ? value.GetBoolean() : fallback;
 
     internal Torrent? Find(IEnumerable<string> hashes) => Torrents.FirstOrDefault(torrent =>
         torrent.Hashes.Intersect(hashes, StringComparer.OrdinalIgnoreCase).Any());
@@ -120,35 +115,11 @@ public sealed partial class MainViewModel
         finally { _receivingSources = false; Refresh(); }
     }
 
-    internal async Task SaveSettings(object changes)
-    {
-        await _client.Send("settings", new { changes });
-        RequestSnapshot();
-    }
-
     private async Task SaveAlternative(bool enabled)
     {
         if (!CanEdit) return;
-        try { await SaveSettings(new { alternative_limits = enabled }); Accepted("window", "alternative"); ClearError(); }
+        try { await Preferences.SetAlternative(enabled); Accepted("window", "alternative"); ClearError(); }
         catch (Exception error) { Report(error); }
-    }
-
-    internal static bool IsValidLimit(double value) => double.IsFinite(value) && value >= 0 && value <= int.MaxValue / 1024.0;
-
-    public async Task<IReadOnlyDictionary<string, int>> SaveLimits(IReadOnlyDictionary<string, double> values)
-    {
-        if (!CanSave) throw new InvalidOperationException(Message.Length > 0 ? Message : Text.Get("connection", "unavailable"));
-        var changes = new Dictionary<string, int>();
-        foreach (var (name, value) in values)
-        {
-            if (!IsValidLimit(value))
-                throw new CommandFailure("invalid_limits", null, Text);
-            changes[name] = checked((int)Math.Round(value * 1024));
-        }
-        await SaveSettings(changes);
-        Accepted("commands", "limits");
-        ClearError();
-        return changes;
     }
 
     private Task Queue(string direction) => Queue(new { torrent_ids = _selected.Select(torrent => torrent.TorrentId).ToArray(), direction });
@@ -225,5 +196,10 @@ public sealed partial class MainViewModel
         return Task.CompletedTask;
     }
 
-    public void CloseInspector() { Inspector.Close(); Changed(nameof(HasInspector)); }
+    public bool CloseInspector()
+    {
+        if (!Inspector.Close()) return false;
+        Changed(nameof(HasInspector));
+        return true;
+    }
 }

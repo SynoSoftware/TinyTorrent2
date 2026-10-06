@@ -258,6 +258,7 @@
                                     </controls:SettingsRow>
                                     <controls:SettingsRow x:Name="InterfaceRow" Header="{x:Bind Model.Interface.Label, Mode=OneWay}" Error="{x:Bind Model.Interface.Message, Mode=OneWay}">
                                         <ComboBox x:Name="Interfaces" Width="240" SelectionChanged="OnInterface"
+                                            ItemsSource="{x:Bind Model.Interfaces, Mode=OneWay}" SelectedItem="{x:Bind Model.SelectedInterface, Mode=OneWay}"
                                             IsEnabled="{x:Bind Model.Interface.CanEdit, Mode=OneWay}" AutomationProperties.Name="{x:Bind Model.Interface.Label, Mode=OneWay}" AutomationProperties.AutomationId="NetworkInterface">
                                             <ComboBox.ItemTemplate>
                                                 <DataTemplate x:DataType="local:InterfaceChoice">
@@ -282,7 +283,7 @@
                         <StackPanel x:Name="Appearance" Spacing="16" Visibility="Collapsed">
                             <controls:SettingsSection x:Name="AppearanceSection" Glyph="{x:Bind icons:Lucide.Palette}">
                                 <StackPanel Spacing="16">
-                                    <controls:SettingsRow x:Name="LanguageRow">
+                                    <controls:SettingsRow x:Name="LanguageRow" Error="{x:Bind Model.Language.Message, Mode=OneWay}">
                                         <ComboBox x:Name="Languages" MinWidth="200" SelectionChanged="OnLanguage" IsEnabled="{x:Bind Model.CanSelectLanguage, Mode=OneWay}" AutomationProperties.AutomationId="Language">
                                             <ComboBox.Items>
                                                 <ComboBoxItem x:Name="English" Tag="en" AutomationProperties.AutomationId="EnglishLanguage"><TextBlock x:Name="EnglishLabel" /></ComboBoxItem>
@@ -290,7 +291,7 @@
                                             </ComboBox.Items>
                                         </ComboBox>
                                     </controls:SettingsRow>
-                                    <controls:SettingsRow x:Name="ThemeRow">
+                                    <controls:SettingsRow x:Name="ThemeRow" Error="{x:Bind Model.Theme.Message, Mode=OneWay}">
                                         <ComboBox x:Name="Theme" MinWidth="200" SelectionChanged="OnTheme" IsEnabled="{x:Bind Model.CanSelectTheme, Mode=OneWay}" AutomationProperties.AutomationId="Theme">
                                             <ComboBox.Items>
                                                 <ComboBoxItem x:Name="SystemTheme" Tag="system"><TextBlock x:Name="SystemLabel" /></ComboBoxItem>

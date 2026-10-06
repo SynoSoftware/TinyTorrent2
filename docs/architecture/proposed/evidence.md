@@ -12,6 +12,125 @@ establishes an operation or risk; it does not establish a reproduced failure,
 its frequency or its latency. Earlier timings below are reported evidence from
 the linked issues, not measurements performed by this consolidation.
 
+## Implementation checkpoint
+
+Architecture implementation began from `db6ec1d` on 2026-10-06. The current
+working tree includes concurrent Add, splitter and torrent-option work; those
+changes are outside this architecture review's completion claim.
+The architecture commit separates those changes using the Git index. Build and
+runtime evidence below describes the combined implementation tree at the time
+of each check; the separated commit received source review without another
+build or test run.
+
+| Delivery slice | Implemented ownership |
+| --- | --- |
+| 1 — Settings | `Preferences` owns fields, conversion, adapter choices and submission, including confirmed theme/language; `Schedule` owns period drafts and whole-list saves. Shared departure handles invalid input and refusal. |
+| 2 — Modal lifetime | One `DialogInteraction` covers display, submission and cleanup. Close resolves concrete editors and restores the actual unresolved suspended editor. |
+| 3 — Selection and feedback | One model transition accepts selection and inspector consequences. Membership reflection retains unavailable drafts. Connection and command messages remain separate across pages; `Strings.Error` and `Torrent.IsError` own their common rules. |
+| 4 — Publication and drawing | One changed projection publication, independent reorder eligibility, narrow routine refresh, relevant schedule signals, stable peer/tracker rows, fixed status-rate widths and guarded physical-focus handoff. |
+| 5 — Bindings | Touched Add, Inspector, Files and file-browser text uses bindings with explicit live-language refresh; native focus and commits remain direct. Menu hints and OEM queue keys use the registered native accelerators. |
+| 6 — Committed edits | One private native `CommitEdit` serves explicit edits and tracker merges without changing their admission rules. |
+| 7 — History | `SpeedHistory` owns buffers and aggregation; engine cadence and session identity remain unchanged. |
+| 8 — Diagnostics | Capture mode is parsed once. Removed duplicate Limits capture, smoke Settings layout sweep, obsolete invalid-input retention and form-instance assertions. Details mode runs its existing behavior journey directly; full layout and files matrices remain available. |
+
+No new overlay host was warranted by the existing event callers: app conditions
+use app-level messages, editor errors stay local, and engine desktop notifications
+keep their existing path. There is no duplicate notification runtime.
+
+Adversarial source review covered all eight slices and found issues in mutable
+cell binding, deferred focus, membership reflection, field departure and suspended
+editor recovery. Those findings were corrected and rereviewed. Source review is
+not runtime or release acceptance.
+The designated colleague, **Review consolidated architecture**, additionally
+found omitted adapter and shortcut ownership changes and hidden preference
+drafts left by non-Settings commands. These were corrected and rereviewed; the
+first source-review verdict was **0 standards blockers, 0 specification blockers**.
+The owner requested another adversarial pass in that colleague's chat; the
+renewed review found and verified the corrections described below.
+Commands now save through `Preferences` without creating ordinary field drafts:
+theme and alternative-limit failures use command feedback, while Add owns its
+own failure. Direct Settings edits retain their local failed input. The unused
+language toggle command and its resource keys were removed. This approval covers
+the selected architecture, not the release acceptance limits below.
+
+The renewed review found two further obligations: TableView must restore physical
+row focus before publishing `SelectionChanged`, so host handlers keep control;
+and deferred Add admission must run after a cancelled draft decision as well as
+an accepted one, so acknowledged external sources cannot remain unseen. Both
+were corrected in their existing owners, without additional interaction state.
+Normal refusal resumes deferred Add; a caught display or cleanup exception
+reports its failure without automatically retrying the same dialog. Independent
+reviewers reread these fixes and found no remaining concrete architecture blocker.
+
+The focused `CommittedFiles` check passed using the owned disposable store in
+`artifacts/evidence/CommittedFiles-d6aa70d7-0097-4c79-82fa-d3aedd5fc913`: compound
+priority/tracker persistence and explicit tracker clearing survived restart.
+The ten edit journeys passed in
+`artifacts/evidence/UiSelfCapture-571588c8-d1ee-426d-879a-217ea6dd7384`, including
+newer input, explicit queued save intent, invalid field/page departure and all
+three schedule departure choices. The added field-departure case guards the
+specific defect that page departure coverage missed.
+
+After the final shared-confirmation change, all ten edit journeys passed again
+in `artifacts/evidence/UiSelfCapture-1afbdb85-bb62-46d9-9dfd-c210a2ce543a`
+(6.1 seconds inside the app). Two preceding attempts passed the confirmation
+cases but stopped on a schedule capture selector: repeated template visuals
+shared automation IDs, and x:Bind did not supply the assumed DataContext.
+The capture now obtains the current day from its owning repeater's realized
+item mapping; the native Toggle and resulting draft assertions remain.
+
+The focused details journey passed in
+`artifacts/evidence/UiSelfCapture-282b9755-0b71-45b1-bfe6-6e63eb0736c5` (2 seconds
+inside the app): a live language switch retained tracker text and native focus,
+and tracker, file-priority and ordinary preference choices applied. The narrowed
+recovery journey passed in
+`artifacts/evidence/UiSelfCapture-f32b5717-76c4-40a0-809c-71e498bc9eaa` (14 seconds):
+removing a torrent preserved its unavailable inspector draft with Save disabled
+and Cancel available. These checks use real offscreen XAML, not physical input.
+
+Close/recovery passed in
+`artifacts/evidence/DesktopCapture-378338c1-9188-4efd-ade1-e84f7caa92d1`: twelve
+cancelled Exit cases preserved Add input across language, theme and size; failed
+Save restored its input, field error and focus; reconnect retained the tracker
+draft. The launcher also verified history advancing after the UI exited. An
+earlier attempt exposed a layout cycle in concurrent Add-pane sizing. Replacing
+its measured-width feedback with star columns preserved that dialog's design and
+allowed the same journey to pass. All processes these checks launched were closed.
+
+Both Release targets compiled with zero warnings/errors. Native compilation
+matched changed-header dependents; managed compilation stayed in the affected
+app/TableView assemblies. A later concurrent wire-field change required refreshing
+the engine paired with the app after a focused launch exposed the mismatch.
+No full suite or transfer check ran. The prescribed Everything output-directory
+check could not connect to its service; a filesystem walk excluding `artifacts/`,
+`3rdParty/` and `.git/` found no generated output folders elsewhere.
+
+The final coherent app build is `artifacts/architecture-settled-build.log`,
+with zero warnings/errors. It compiled the app and reused current TableView and
+Lucide outputs; TableView's final focus fix compiled in
+`artifacts/architecture-adversarial-build.log`. Concurrent Add XAML edits between
+that build's passes caused a checksum warning, resolved by the coherent build.
+Those Add changes are preserved; compiling them does not expand this review's
+scope into acceptance of that separate UI work. No source was newer than the
+final app binary when the focused edit check ran.
+
+Release acceptance remains separate: the earlier 300-torrent automation-provider
+failure was not rerun as a broad matrix, and these checks do not establish native
+physical-input/automation behavior, Narrator, High Contrast, transfer throughput
+or measured responsiveness. Untouched Move-editor restoration and rare native
+storage/history boundaries have source review rather than new runtime evidence.
+The existing issues retain those broader acceptance obligations.
+
+### Advisory follow-up review
+
+A further reviewer questioned theme edits through Settings versus the title bar,
+TableView's native automation selection integration (#40), diagnostic code in
+the product window, and editor-specific close recovery. These are advisory
+concerns, not owner rulings or accepted implementation requirements. Their
+suggested changes still need a concrete failure or simplification benefit and
+comparison with the existing owners. The implementation checkpoint records an
+improvement; it does not declare every ownership concern settled.
+
 ## Settings and editors
 
 | Finding at review time | Evidence and implication |
@@ -21,7 +140,7 @@ the linked issues, not measurements performed by this consolidation.
 | Acknowledgement could erase newer input | `Preference.Accept` assigned `_input = _confirmedInput` unconditionally. Separate the value submitted from the draft now being edited. Submit 100, then type 200: acknowledgement of 100 must leave 200 intact. If Enter commits 200 while 100 is pending, then 300 is typed without submission, preserve 200 as explicit intent and 300 as draft. Reconnection must not replay either automatically. |
 | Back could lose its intended action | OnFieldDeparture committed only when focus stayed inside the form; Navigate rejected departure while Preferences.IsPending. Merely adding a save could still consume Back without navigating. Await relevant submission and continue the original transition only on success, following the owner ruling for invalid or refused input. |
 | Schedule is a real transaction | Preferences combined ordinary Fields and a period draft in HasDraft, and field/registration/schedule work in IsPending. The schedule submits a whole period list with its own error and pending lifetime. A concrete schedule owner earns its place; a file-only move does not. Reviewable substeps within the Settings pass avoid temporary competing submission and notification paths. |
-| Dialog closure was shorter than its interaction | Remove awaited its command after native closure before signalling completion. Completing the logical operation at ShowAsync alone would allow closing to race submission and cleanup. Conversely, a detached native prompt must free its slot for a required confirmation within that same operation. |
+| Dialog closure was shorter than its interaction | Remove awaited its command after native closure before signalling completion. Completing the logical operation at ShowAsync alone would allow closing to race submission and cleanup. Native occupancy and logical completion remain distinct; current Save actions need no nested confirmation, and Delete keeps its existing confirmation. |
 | Failed close could hide an unfinished editor | CloseWindow hid dialogs before awaiting later work. `keepDraft` was set only after CancelClose succeeded; an exception before then could leave the live window without the editor. Restore the actual suspended, still-valid interaction independently of successful protocol replies. This was source reasoning, not a reproduced failure. |
 | Selection acceptance was spread across owners | Workspace kept a rollback selection and prompted; MainViewModel assigned product selection and retargeted Inspector; Inspector could refuse, and a close outcome was ignored. One accepted transition removes that coordination. TableView selection, product membership and a retained unavailable inspector draft remain different facts. |
 | Global text refresh did unrelated work | Opening Add, Files or the discard prompt could call window-wide RefreshText, which also rebuilt menus and refreshed the torrent table. Populate the concrete dialog or its bindings without that global work. |

@@ -28,7 +28,7 @@
         <Grid Grid.Row="1" RowSpacing="8" Padding="16,8,16,12">
             <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
             <InfoBar IsClosable="False" Severity="Error" IsOpen="{x:Bind Model.HasError, Mode=OneWay}" Message="{x:Bind Model.Message, Mode=OneWay}">
-                <InfoBar.ActionButton><Button x:Name="Retry" Command="{x:Bind Model.Retry}" /></InfoBar.ActionButton>
+                <InfoBar.ActionButton><Button x:Name="Retry" Content="{x:Bind Model.Text.Get('inspector', 'retry'), Mode=OneWay}" Command="{x:Bind Model.Retry}" /></InfoBar.ActionButton>
             </InfoBar>
             <Grid Grid.Row="1">
                 <ScrollViewer x:Name="General" HorizontalScrollMode="Disabled" HorizontalScrollBarVisibility="Disabled">
@@ -36,33 +36,33 @@
                         <Grid ColumnSpacing="24" RowSpacing="16">
                             <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                             <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
-                            <StackPanel Spacing="4"><TextBlock x:Name="DownloadedLabel" Foreground="{ThemeResource TextFillColorSecondaryBrush}" /><TextBlock Text="{x:Bind Model.Downloaded, Mode=OneWay}" IsTextSelectionEnabled="True" /></StackPanel>
-                            <StackPanel Grid.Column="1" Spacing="4"><TextBlock x:Name="RemainingLabel" Foreground="{ThemeResource TextFillColorSecondaryBrush}" /><TextBlock Text="{x:Bind Model.Remaining, Mode=OneWay}" IsTextSelectionEnabled="True" /></StackPanel>
-                            <StackPanel Grid.Column="2" Spacing="4"><TextBlock x:Name="RatioLabel" Foreground="{ThemeResource TextFillColorSecondaryBrush}" /><TextBlock Text="{x:Bind Model.Target.RatioText, Mode=OneWay}" IsTextSelectionEnabled="True" /></StackPanel>
-                            <StackPanel Grid.Row="1" Spacing="4"><TextBlock x:Name="StatusLabel" Foreground="{ThemeResource TextFillColorSecondaryBrush}" /><TextBlock Text="{x:Bind Model.Target.Status, Mode=OneWay}" TextWrapping="Wrap" /></StackPanel>
-                            <StackPanel Grid.Row="1" Grid.Column="1" Spacing="4"><TextBlock x:Name="AddedLabel" Foreground="{ThemeResource TextFillColorSecondaryBrush}" /><TextBlock Text="{x:Bind Model.Target.AddedText, Mode=OneWay}" IsTextSelectionEnabled="True" TextWrapping="Wrap" /></StackPanel>
-                            <StackPanel Grid.Row="1" Grid.Column="2" Spacing="4"><TextBlock x:Name="CreatedLabel" Foreground="{ThemeResource TextFillColorSecondaryBrush}" /><TextBlock Text="{x:Bind Model.CreatedText, Mode=OneWay}" IsTextSelectionEnabled="True" TextWrapping="Wrap" /></StackPanel>
-                            <StackPanel Grid.Row="2" Spacing="4"><TextBlock x:Name="CreatorLabel" Foreground="{ThemeResource TextFillColorSecondaryBrush}" /><TextBlock Text="{x:Bind Model.Creator, Mode=OneWay}" IsTextSelectionEnabled="True" TextWrapping="Wrap" /></StackPanel>
-                            <StackPanel Grid.Row="2" Grid.Column="1" Spacing="4"><TextBlock x:Name="PieceSizeLabel" Foreground="{ThemeResource TextFillColorSecondaryBrush}" /><TextBlock Text="{x:Bind Model.PieceSizeText, Mode=OneWay}" IsTextSelectionEnabled="True" /></StackPanel>
-                            <StackPanel Grid.Row="2" Grid.Column="2" Spacing="4"><TextBlock x:Name="PrivacyLabel" Foreground="{ThemeResource TextFillColorSecondaryBrush}" /><TextBlock Text="{x:Bind Model.PrivacyText, Mode=OneWay}" /></StackPanel>
+                            <StackPanel Spacing="4"><TextBlock x:Name="DownloadedLabel" Text="{x:Bind Model.Text.Get('inspector', 'downloaded'), Mode=OneWay}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" /><TextBlock Text="{x:Bind Model.Target.DownloadedText, Mode=OneWay}" IsTextSelectionEnabled="True" /></StackPanel>
+                            <StackPanel Grid.Column="1" Spacing="4"><TextBlock x:Name="RemainingLabel" Text="{x:Bind Model.Text.Get('inspector', 'remaining'), Mode=OneWay}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" /><TextBlock Text="{x:Bind Model.Target.RemainingText, Mode=OneWay}" IsTextSelectionEnabled="True" /></StackPanel>
+                            <StackPanel Grid.Column="2" Spacing="4"><TextBlock x:Name="RatioLabel" Text="{x:Bind Model.Text.Get('columns', 'ratio'), Mode=OneWay}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" /><TextBlock Text="{x:Bind Model.Target.RatioText, Mode=OneWay}" IsTextSelectionEnabled="True" /></StackPanel>
+                            <StackPanel Grid.Row="1" Spacing="4"><TextBlock x:Name="StatusLabel" Text="{x:Bind Model.Text.Get('columns', 'status'), Mode=OneWay}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" /><TextBlock Text="{x:Bind Model.Target.Status, Mode=OneWay}" TextWrapping="Wrap" /></StackPanel>
+                            <StackPanel Grid.Row="1" Grid.Column="1" Spacing="4"><TextBlock x:Name="AddedLabel" Text="{x:Bind Model.Text.Get('columns', 'added'), Mode=OneWay}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" /><TextBlock Text="{x:Bind Model.Target.AddedText, Mode=OneWay}" IsTextSelectionEnabled="True" TextWrapping="Wrap" /></StackPanel>
+                            <StackPanel Grid.Row="1" Grid.Column="2" Spacing="4"><TextBlock x:Name="CreatedLabel" Text="{x:Bind Model.Text.Get('inspector', 'created'), Mode=OneWay}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" /><TextBlock Text="{x:Bind Model.CreatedText, Mode=OneWay}" IsTextSelectionEnabled="True" TextWrapping="Wrap" /></StackPanel>
+                            <StackPanel Grid.Row="2" Spacing="4"><TextBlock x:Name="CreatorLabel" Text="{x:Bind Model.Text.Get('inspector', 'creator'), Mode=OneWay}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" /><TextBlock Text="{x:Bind Model.Creator, Mode=OneWay}" IsTextSelectionEnabled="True" TextWrapping="Wrap" /></StackPanel>
+                            <StackPanel Grid.Row="2" Grid.Column="1" Spacing="4"><TextBlock x:Name="PieceSizeLabel" Text="{x:Bind Model.Text.Get('inspector', 'piece_size'), Mode=OneWay}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" /><TextBlock Text="{x:Bind Model.PieceSizeText, Mode=OneWay}" IsTextSelectionEnabled="True" /></StackPanel>
+                            <StackPanel Grid.Row="2" Grid.Column="2" Spacing="4"><TextBlock x:Name="PrivacyLabel" Text="{x:Bind Model.Text.Get('inspector', 'privacy'), Mode=OneWay}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" /><TextBlock Text="{x:Bind Model.PrivacyText, Mode=OneWay}" /></StackPanel>
                         </Grid>
-                        <StackPanel Spacing="4"><TextBlock x:Name="FolderLabel" Foreground="{ThemeResource TextFillColorSecondaryBrush}" /><TextBlock Text="{x:Bind Model.Folder, Mode=OneWay}" IsTextSelectionEnabled="True" TextWrapping="Wrap" FlowDirection="LeftToRight" /></StackPanel>
-                        <StackPanel Spacing="4"><TextBlock x:Name="CommentLabel" Foreground="{ThemeResource TextFillColorSecondaryBrush}" /><TextBlock Text="{x:Bind Model.Comment, Mode=OneWay}" IsTextSelectionEnabled="True" TextWrapping="Wrap" /></StackPanel>
+                        <StackPanel Spacing="4"><TextBlock x:Name="FolderLabel" Text="{x:Bind Model.Text.Get('add', 'destination'), Mode=OneWay}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" /><TextBlock Text="{x:Bind Model.Folder, Mode=OneWay}" IsTextSelectionEnabled="True" TextWrapping="Wrap" FlowDirection="LeftToRight" /></StackPanel>
+                        <StackPanel Spacing="4"><TextBlock x:Name="CommentLabel" Text="{x:Bind Model.Text.Get('inspector', 'comment'), Mode=OneWay}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" /><TextBlock Text="{x:Bind Model.Comment, Mode=OneWay}" IsTextSelectionEnabled="True" TextWrapping="Wrap" /></StackPanel>
                         <TextBox x:Name="Hashes" Text="{x:Bind Model.Hashes, Mode=OneWay}" IsReadOnly="True" AcceptsReturn="True" FlowDirection="LeftToRight" />
                         <TextBox x:Name="Magnet" Text="{x:Bind Model.Magnet, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" MaxHeight="96" FlowDirection="LeftToRight" />
                     </StackPanel>
                 </ScrollViewer>
                 <Grid x:Name="Files" Visibility="Collapsed" RowSpacing="8">
                     <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
-                    <Button x:Name="RetryFiles" Command="{x:Bind Model.RetryFiles}" HorizontalAlignment="Left" Visibility="{x:Bind Model.HasFileDraft, Mode=OneWay}" />
+                    <Button x:Name="RetryFiles" Content="{x:Bind Model.Text.Get('inspector', 'retry_files'), Mode=OneWay}" Command="{x:Bind Model.RetryFiles}" HorizontalAlignment="Left" Visibility="{x:Bind Model.HasFileDraft, Mode=OneWay}" />
                     <ContentPresenter x:Name="FileContent" Grid.Row="1" Visibility="{x:Bind Model.HasFiles, Mode=OneWay}" />
-                    <TextBlock x:Name="WaitingMetadata" Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center" TextWrapping="Wrap" Visibility="{x:Bind local:InspectorForm.Hidden(Model.HasFiles), Mode=OneWay}" />
+                    <TextBlock x:Name="WaitingMetadata" Text="{x:Bind Model.Text.Get('pieces', 'metadata'), Mode=OneWay}" Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center" TextWrapping="Wrap" Visibility="{x:Bind local:InspectorForm.Hidden(Model.HasFiles), Mode=OneWay}" />
                 </Grid>
                 <table:Table x:Name="Peers" Visibility="Collapsed" ShowsFitButton="True" ItemsSource="{x:Bind Model.Peers, Mode=OneWay}">
-                    <table:Table.EmptyContent><TextBlock x:Name="NoPeers" HorizontalAlignment="Center" VerticalAlignment="Center" TextWrapping="Wrap" /></table:Table.EmptyContent>
+                    <table:Table.EmptyContent><TextBlock x:Name="NoPeers" Text="{x:Bind Model.Text.Get('peers', 'empty'), Mode=OneWay}" HorizontalAlignment="Center" VerticalAlignment="Center" TextWrapping="Wrap" /></table:Table.EmptyContent>
                     <table:Table.Columns>
                         <table:Column x:Name="EndpointColumn" Id="endpoint" Width="220" CanHide="False"><table:Column.CellTemplate><DataTemplate x:DataType="models:Peer"><TextBlock Text="{x:Bind Endpoint}" VerticalAlignment="Center" FlowDirection="LeftToRight" /></DataTemplate></table:Column.CellTemplate></table:Column>
-                        <table:Column x:Name="ClientColumn" Id="client" Width="180"><table:Column.CellTemplate><DataTemplate x:DataType="models:Peer"><TextBlock Text="{x:Bind Client}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" /></DataTemplate></table:Column.CellTemplate></table:Column>
+                        <table:Column x:Name="ClientColumn" Id="client" Width="180"><table:Column.CellTemplate><DataTemplate x:DataType="models:Peer"><TextBlock Text="{x:Bind Client, Mode=OneWay}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" /></DataTemplate></table:Column.CellTemplate></table:Column>
                         <table:Column x:Name="ConnectionColumn" Id="connection" Width="220"><table:Column.CellTemplate><DataTemplate x:DataType="models:Peer"><TextBlock Text="{x:Bind ConnectionText, Mode=OneWay}" VerticalAlignment="Center" /></DataTemplate></table:Column.CellTemplate></table:Column>
                         <table:Column x:Name="PeerProgressColumn" Id="progress" Width="100" CellAlignment="Right"><table:Column.CellTemplate><DataTemplate x:DataType="models:Peer"><TextBlock Text="{x:Bind ProgressText, Mode=OneWay}" VerticalAlignment="Center" /></DataTemplate></table:Column.CellTemplate></table:Column>
                         <table:Column x:Name="PeerDownColumn" Id="down" Width="120" CellAlignment="Right"><table:Column.CellTemplate><DataTemplate x:DataType="models:Peer"><TextBlock Text="{x:Bind DownloadText, Mode=OneWay}" VerticalAlignment="Center" /></DataTemplate></table:Column.CellTemplate></table:Column>
@@ -73,9 +73,9 @@
                 </table:Table>
                 <Grid x:Name="Trackers" Visibility="Collapsed" RowSpacing="8">
                     <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
-                    <StackPanel Orientation="Horizontal" Spacing="8" Visibility="{x:Bind local:InspectorForm.Hidden(Model.IsEditingTrackers), Mode=OneWay}"><Button x:Name="EditTrackers" Command="{x:Bind Model.EditTrackers}" /><Button x:Name="Reannounce" Command="{x:Bind Model.Reannounce}" /></StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="8" Visibility="{x:Bind local:InspectorForm.Hidden(Model.IsEditingTrackers), Mode=OneWay}"><Button x:Name="EditTrackers" Content="{x:Bind Model.Text.Get('trackers', 'edit'), Mode=OneWay}" Command="{x:Bind Model.EditTrackers}" /><Button x:Name="Reannounce" Content="{x:Bind Model.Text.Get('trackers', 'reannounce'), Mode=OneWay}" Command="{x:Bind Model.Reannounce}" /></StackPanel>
                     <table:Table x:Name="TrackerTable" Grid.Row="1" ShowsFitButton="True" ItemsSource="{x:Bind Model.Trackers, Mode=OneWay}" Visibility="{x:Bind local:InspectorForm.Hidden(Model.IsEditingTrackers), Mode=OneWay}">
-                        <table:Table.EmptyContent><TextBlock x:Name="NoTrackers" HorizontalAlignment="Center" VerticalAlignment="Center" TextWrapping="Wrap" /></table:Table.EmptyContent>
+                        <table:Table.EmptyContent><TextBlock x:Name="NoTrackers" Text="{x:Bind Model.Text.Get('trackers', 'empty'), Mode=OneWay}" HorizontalAlignment="Center" VerticalAlignment="Center" TextWrapping="Wrap" /></table:Table.EmptyContent>
                         <table:Table.Columns>
                             <table:Column x:Name="UrlColumn" Id="url" Width="320" CanHide="False"><table:Column.CellTemplate><DataTemplate x:DataType="models:Tracker"><TextBlock Text="{x:Bind Url}" VerticalAlignment="Center" FlowDirection="LeftToRight" TextTrimming="CharacterEllipsis" /></DataTemplate></table:Column.CellTemplate></table:Column>
                             <table:Column x:Name="TierColumn" Id="tier" Width="64" CellAlignment="Right"><table:Column.CellTemplate><DataTemplate x:DataType="models:Tracker"><TextBlock Text="{x:Bind TierText, Mode=OneWay}" VerticalAlignment="Center" /></DataTemplate></table:Column.CellTemplate></table:Column>
@@ -84,24 +84,24 @@
                             <table:Column x:Name="LeechersColumn" Id="leechers" Width="90" CellAlignment="Right"><table:Column.CellTemplate><DataTemplate x:DataType="models:Tracker"><TextBlock Text="{x:Bind LeechersText, Mode=OneWay}" VerticalAlignment="Center" /></DataTemplate></table:Column.CellTemplate></table:Column>
                             <table:Column x:Name="CompletedColumn" Id="completed" Width="100" CellAlignment="Right"><table:Column.CellTemplate><DataTemplate x:DataType="models:Tracker"><TextBlock Text="{x:Bind DownloadedText, Mode=OneWay}" VerticalAlignment="Center" /></DataTemplate></table:Column.CellTemplate></table:Column>
                             <table:Column x:Name="NextColumn" Id="next" Width="140"><table:Column.CellTemplate><DataTemplate x:DataType="models:Tracker"><TextBlock Text="{x:Bind NextText, Mode=OneWay}" VerticalAlignment="Center" /></DataTemplate></table:Column.CellTemplate></table:Column>
-                            <table:Column x:Name="MessageColumn" Id="message" Width="280"><table:Column.CellTemplate><DataTemplate x:DataType="models:Tracker"><TextBlock Text="{x:Bind Message}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" /></DataTemplate></table:Column.CellTemplate></table:Column>
+                            <table:Column x:Name="MessageColumn" Id="message" Width="280"><table:Column.CellTemplate><DataTemplate x:DataType="models:Tracker"><TextBlock Text="{x:Bind Message, Mode=OneWay}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" /></DataTemplate></table:Column.CellTemplate></table:Column>
                         </table:Table.Columns>
                     </table:Table>
                     <Grid x:Name="TrackerEditor" Grid.RowSpan="2" RowSpacing="8" Background="{ThemeResource LayerFillColorDefaultBrush}" Visibility="{x:Bind Model.IsEditingTrackers, Mode=OneWay}">
                         <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
-                        <TextBlock x:Name="TrackerHint" TextWrapping="Wrap" />
+                        <TextBlock x:Name="TrackerHint" Text="{x:Bind Model.Text.Get('trackers', 'hint'), Mode=OneWay}" TextWrapping="Wrap" />
                         <TextBox x:Name="TrackerInput" Grid.Row="1" Text="{x:Bind Model.TrackerInput, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="NoWrap" IsEnabled="{x:Bind local:InspectorForm.Not(Model.IsPending), Mode=OneWay}" FlowDirection="LeftToRight" />
-                        <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8"><Button x:Name="SaveTrackers" IsEnabled="{x:Bind Model.CanEdit, Mode=OneWay}" /><Button x:Name="CancelTrackers" Command="{x:Bind Model.CancelTrackers}" /></StackPanel>
+                        <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8"><Button x:Name="SaveTrackers" Content="{x:Bind Model.Text.Get('trackers', 'save'), Mode=OneWay}" IsEnabled="{x:Bind Model.CanEdit, Mode=OneWay}" /><Button x:Name="CancelTrackers" Content="{x:Bind Model.Text.Get('add', 'cancel'), Mode=OneWay}" Command="{x:Bind Model.CancelTrackers}" /></StackPanel>
                     </Grid>
                 </Grid>
                 <Grid x:Name="Speed" Visibility="Collapsed" RowSpacing="8">
                     <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
                     <Grid ColumnSpacing="16">
                         <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                        <TextBlock x:Name="AllTorrents" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center" />
+                        <TextBlock x:Name="AllTorrents" Text="{x:Bind Model.Text.Get('speed', 'all'), Mode=OneWay}" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center" />
                         <ComboBox x:Name="Range" Grid.Column="1" SelectionChanged="OnRange">
-                            <ComboBoxItem x:Name="FiveMinutes"><TextBlock x:Name="MinutesLabel" /></ComboBoxItem>
-                            <ComboBoxItem x:Name="Day"><TextBlock x:Name="DayLabel" /></ComboBoxItem>
+                            <ComboBoxItem x:Name="FiveMinutes"><TextBlock x:Name="MinutesLabel" Text="{x:Bind Model.Text.Get('speed', 'five_minutes'), Mode=OneWay}" /></ComboBoxItem>
+                            <ComboBoxItem x:Name="Day"><TextBlock x:Name="DayLabel" Text="{x:Bind Model.Text.Get('speed', 'day'), Mode=OneWay}" /></ComboBoxItem>
                         </ComboBox>
                     </Grid>
                     <controls:SpeedGraph x:Name="Graph" Grid.Row="1" Samples="{x:Bind Model.History, Mode=OneWay}" IsDay="{x:Bind Model.IsDay, Mode=OneWay}" IsAvailable="{x:Bind Model.IsAvailable, Mode=OneWay}" />

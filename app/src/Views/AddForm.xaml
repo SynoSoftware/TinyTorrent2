@@ -11,7 +11,7 @@
             <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.HardDriveDownload}" FontSize="20" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
                 Visibility="{x:Bind local:AddForm.Hidden(Model.Draft.GettingMetadata), Mode=OneWay}" AutomationProperties.AccessibilityView="Raw" />
             <TextBlock Grid.Column="1" Text="{x:Bind Model.Draft.Preview, Mode=OneWay}" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-            <DropDownButton x:Name="More" Grid.Column="2">
+            <DropDownButton x:Name="More" Content="{x:Bind Model.Text.Get('add', 'more'), Mode=OneWay}" Grid.Column="2">
                 <DropDownButton.Flyout>
                     <MenuFlyout Placement="BottomEdgeAlignedRight">
                         <MenuFlyoutItem x:Name="Files" IsEnabled="{x:Bind Model.Draft.CanEdit, Mode=OneWay}" Click="OnFiles">
@@ -33,13 +33,13 @@
                         <StackPanel Spacing="8">
                             <StackPanel Orientation="Horizontal" Spacing="8">
                                 <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.HardDrive}" FontSize="16" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" AutomationProperties.AccessibilityView="Raw" />
-                                <TextBlock x:Name="DestinationLabel" Style="{StaticResource BodyStrongTextBlockStyle}" AutomationProperties.HeadingLevel="Level2" />
+                                <TextBlock x:Name="DestinationLabel" Text="{x:Bind Model.Text.Get('add', 'destination'), Mode=OneWay}" Style="{StaticResource BodyStrongTextBlockStyle}" AutomationProperties.HeadingLevel="Level2" />
                             </StackPanel>
                             <Grid ColumnSpacing="8">
                                 <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                                 <TextBox x:Name="Destination" Text="{x:Bind Model.Draft.Destination, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{x:Bind Model.Draft.CanEdit, Mode=OneWay}"
                                     AutomationProperties.LabeledBy="{x:Bind DestinationLabel}" ToolTipService.ToolTip="{x:Bind Model.Draft.Destination, Mode=OneWay}" />
-                                <Button x:Name="Browse" Grid.Column="1" IsEnabled="{x:Bind Model.Draft.CanEdit, Mode=OneWay}" Click="OnDestination" />
+                                <Button x:Name="Browse" Content="{x:Bind Model.Text.Get('add', 'browse'), Mode=OneWay}" Grid.Column="1" IsEnabled="{x:Bind Model.Draft.CanEdit, Mode=OneWay}" Click="OnDestination" />
                             </Grid>
                             <TextBlock Text="{x:Bind Model.Draft.Space, Mode=OneWay}" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                             <TextBlock Text="{x:Bind Model.Draft.Shared, Mode=OneWay}" TextWrapping="Wrap" />
@@ -47,13 +47,13 @@
                         <StackPanel Spacing="8">
                             <StackPanel Orientation="Horizontal" Spacing="8">
                                 <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.SlidersHorizontal}" FontSize="16" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" AutomationProperties.AccessibilityView="Raw" />
-                                <TextBlock x:Name="OptionsLabel" Style="{StaticResource BodyStrongTextBlockStyle}" AutomationProperties.HeadingLevel="Level2" />
+                                <TextBlock x:Name="OptionsLabel" Text="{x:Bind Model.Text.Get('add', 'options'), Mode=OneWay}" Style="{StaticResource BodyStrongTextBlockStyle}" AutomationProperties.HeadingLevel="Level2" />
                             </StackPanel>
-                            <CheckBox x:Name="Paused" IsChecked="{x:Bind Model.Draft.Paused, Mode=TwoWay}" IsEnabled="{x:Bind Model.Draft.CanEdit, Mode=OneWay}" />
+                            <CheckBox x:Name="Paused" Content="{x:Bind Model.Text.Get('add', 'paused'), Mode=OneWay}" IsChecked="{x:Bind Model.Draft.Paused, Mode=TwoWay}" IsEnabled="{x:Bind Model.Draft.CanEdit, Mode=OneWay}" />
                         </StackPanel>
                     </StackPanel>
                 </ScrollViewer>
-                <CheckBox x:Name="NeverShow" Grid.Row="1" IsChecked="{x:Bind Model.Draft.NeverShow, Mode=TwoWay}" IsEnabled="{x:Bind Model.Draft.CanEdit, Mode=OneWay}" />
+                <CheckBox x:Name="NeverShow" Content="{x:Bind Model.Text.Get('add', 'never_show'), Mode=OneWay}" Grid.Row="1" IsChecked="{x:Bind Model.Draft.NeverShow, Mode=TwoWay}" IsEnabled="{x:Bind Model.Draft.CanEdit, Mode=OneWay}" />
             </Grid>
             <Border Grid.Column="1" Padding="12" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="{ThemeResource OverlayCornerRadius}">
                 <Grid RowSpacing="12">
@@ -62,8 +62,8 @@
                         <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
                         <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                         <TextBox x:Name="MagnetInput" Text="{x:Bind Model.Draft.Magnet, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{x:Bind Model.Draft.CanEdit, Mode=OneWay}" />
-                        <Button x:Name="Paste" Grid.Column="1" VerticalAlignment="Bottom" IsEnabled="{x:Bind Model.Draft.CanEdit, Mode=OneWay}" Click="OnPaste" />
-                        <Button x:Name="Preview" Grid.Column="2" VerticalAlignment="Bottom" IsEnabled="{x:Bind Model.Draft.CanEdit, Mode=OneWay}" Click="OnPreview" />
+                        <Button x:Name="Paste" Content="{x:Bind Model.Text.Get('add', 'paste'), Mode=OneWay}" Grid.Column="1" VerticalAlignment="Bottom" IsEnabled="{x:Bind Model.Draft.CanEdit, Mode=OneWay}" Click="OnPaste" />
+                        <Button x:Name="Preview" Content="{x:Bind Model.Text.Get('add', 'review'), Mode=OneWay}" Grid.Column="2" VerticalAlignment="Bottom" IsEnabled="{x:Bind Model.Draft.CanEdit, Mode=OneWay}" Click="OnPreview" />
                         <InfoBar Grid.Row="1" Grid.ColumnSpan="3" IsClosable="False" Severity="Error" IsOpen="{x:Bind Model.Draft.HasMagnetError, Mode=OneWay}" Visibility="{x:Bind Model.Draft.HasMagnetError, Mode=OneWay}" Message="{x:Bind Model.Draft.MagnetMessage, Mode=OneWay}" />
                     </Grid>
                     <Grid Grid.Row="1" Visibility="{x:Bind Model.Draft.HasSources, Mode=OneWay}">

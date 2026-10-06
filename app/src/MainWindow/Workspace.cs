@@ -14,8 +14,6 @@ public sealed partial class MainWindow
     private bool _refreshingFilters;
     private bool _selecting;
     private double _splitHeight = 360;
-    private Syno.TableView.Selection _selection = new([], null);
-    private Task<bool>? _draftDecision;
 
     private bool HasEditorFocus()
     {
@@ -40,7 +38,7 @@ public sealed partial class MainWindow
         if (Model.Page == WindowPage.Preferences && page != WindowPage.Preferences)
         {
             if (!await Model.Preferences.PrepareLeave()) return false;
-            if (Model.Preferences.HasDraft && !await ResolveDraft(Model.Preferences.CommitPeriod, () =>
+            if (Model.Preferences.HasDraft && !await ResolveDraft(Model.Preferences.Schedule.CommitPeriod, () =>
                 { Model.Preferences.CancelDraft(); return Task.CompletedTask; })) return false;
         }
         if (Model.IsClosing) return false;
@@ -75,57 +73,42 @@ public sealed partial class MainWindow
         ViewMenu.IsEnabled = Model.Page == WindowPage.Torrents;
     }
 
-    private async Task SelectTorrent()
+    private async Task<bool> SelectTorrent(Syno.TableView.Selection? selection = null)
     {
-        if (_selecting || Model.IsClosing) return;
+        if (_selecting || Model.IsClosing) return false;
         _selecting = true;
-        var desired = Torrents.Selection;
+        var desired = selection ?? Torrents.Selection;
         try
         {
-            var changesTarget = Model.Inspector.IsOpen && (desired.Items.Count != 1 ||
-                !ReferenceEquals(desired.Items[0], Model.Inspector.Target));
-            if (changesTarget && (Model.Inspector.IsPending || Model.Inspector.HasDraft && !await ResolveDraft(Model.Inspector.SaveDraft, () =>
-                { Model.Inspector.CancelDraft(); return Task.CompletedTask; })))
-            {
-                var retained = _selection.Items.Where(item => Model.VisibleTorrents.Contains((Torrent)item)).ToArray();
-                Torrents.Selection = new Syno.TableView.Selection(retained, retained.Contains(_selection.Current) ? _selection.Current : retained.FirstOrDefault());
-                _selection = Torrents.Selection;
-                Model.Select(retained.Cast<Torrent>(), _selection.Current as Torrent);
-                return;
-            }
-            if (changesTarget) Model.Inspector.CancelDraft();
-            _selection = desired;
-            Model.Select(desired.Items.Cast<Torrent>(), desired.Current as Torrent);
+            var accepted = await Model.Select(desired.Items.Cast<Torrent>(), desired.Current as Torrent, () =>
+                ResolveDraft(Model.Inspector.SaveDraft, () => { Model.Inspector.CancelDraft(); return Task.CompletedTask; }));
+            var retained = Model.Selected.Where(Model.VisibleTorrents.Contains).ToArray();
+            Torrents.Selection = new Syno.TableView.Selection(retained, Model.Current is { } current && Model.VisibleTorrents.Contains(current) ? current : null);
+            return accepted;
         }
         finally { _selecting = false; }
     }
 
     private async Task<bool> ResolveDraft(Func<Task<bool>> save, Func<Task> discard)
     {
-        if (_draftDecision is { } existing) return await existing;
-        var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        _draftDecision = completion.Task;
         var focused = FocusManager.GetFocusedElement(Root.XamlRoot) as Control;
-        try
+        return await Interact(async interaction =>
         {
             var prompt = new ContentDialog { XamlRoot = Root.XamlRoot, DefaultButton = ContentDialogButton.Primary };
-            _closePrompt = prompt;
-            RefreshText();
-            var choice = await prompt.ShowAsync();
+            var choice = await ShowDialog(interaction, prompt, () =>
+            {
+                prompt.Title = Model.Text.Get("changes", "title");
+                prompt.Content = Model.Text.Get("changes", "detail");
+                prompt.PrimaryButtonText = Model.Text.Get("changes", "save");
+                prompt.SecondaryButtonText = Model.Text.Get("changes", "discard");
+                prompt.CloseButtonText = Model.Text.Get("add", "cancel");
+            });
             var resolved = false;
             if (choice == ContentDialogResult.Primary) resolved = await save();
             else if (choice == ContentDialogResult.Secondary) { await discard(); resolved = true; }
             if (!resolved && focused is { IsLoaded: true }) focused.Focus(FocusState.Programmatic);
-            completion.TrySetResult(resolved);
             return resolved;
-        }
-        catch (Exception error)
-        {
-            Model.Report(error);
-            completion.TrySetResult(false);
-            return false;
-        }
-        finally { _closePrompt = null; _draftDecision = null; }
+        }, isDraftDecision: true);
     }
 
     private void OnFiltersClose(object sender, RoutedEventArgs args) => CloseFilters();

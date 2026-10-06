@@ -1,6 +1,6 @@
 # Current architecture
 
-Source review, 2026-10-04. This describes what exists in **TinyTorrent2**, not the
+Source review, 2026-10-06. This describes what exists in **TinyTorrent2**, not the
 earlier application in `../TinyTorrent`. The [target architecture](architecture.md)
 owns the intended product design and its [open decisions](architecture.md#decisions-still-open).
 The first download path has Release builds, production checks and a hands-on
@@ -55,10 +55,29 @@ payload transfer, and checkpoints through one storage writer. Closing the produc
 exits its process while the engine and tray remain. Appearance choices use the
 saved settings owner and embedded catalogues in each process.
 
-The product follows MVVM: `MainViewModel` owns display collection, selection,
-commands, settings and connection feedback; `AddDraft` owns unfinished input and
-addition operations. `MainWindow` retains native pickers, dialog lifetime, chrome,
-focus and TableView gestures. Property and command bindings connect those owners.
+The product follows MVVM. `MainViewModel` owns membership, accepted selection,
+commands and connection facts. It publishes a completed visible list only when
+membership or order changes; routine snapshots refresh window state, while
+connection and language transitions propagate to the affected child owners.
+`Preferences` owns confirmed settings, ordinary field drafts, adapter choices,
+conversion and submission. Its concrete `Schedule` owns period editing and whole-list saves.
+`AddDraft`, `Inspector` and `FileOperation` own their unfinished operations.
+Inspector retains peer/tracker row identity within the current session and target.
+
+`MainWindow` retains native pickers, chrome, focus and TableView gestures. Menu
+shortcut hints use the registered native accelerators. One
+private dialog interaction covers native display, submission and cleanup, and
+remembers the actual suspended editor for unsuccessful close recovery. The
+model accepts or refuses selection before the window reflects it. Connection
+conditions and command failures have separate app-level messages; field and
+editor failures stay at their owners. Text bindings retain explicit language
+refresh where the catalogue changes.
+
+In the engine, one private `CommitEdit` derives, persists and applies intended
+tracker/priority changes for explicit edits and merges; each entry point keeps
+its own legality checks. `SpeedHistory` owns its buffers and aggregation, while
+the engine owns sampling cadence and the session envelope. These are the
+implemented owners selected by the [consolidated architecture](architecture/proposed/README.md).
 
 The project files own framework, platform, and package choices. The sample and
 test hosts declare unpackaged deployment. TableView carries its own English

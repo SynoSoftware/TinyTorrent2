@@ -28,7 +28,7 @@ public sealed class Torrent(string torrentId, Strings strings) : INotifyProperty
     public string StatusCode { get; private set; } = string.Empty;
     public string Status => strings.Status(StatusCode);
     public bool IsPaused => StatusCode is "paused" or "all_paused";
-    public bool IsError => StatusCode == "error";
+    public bool IsError => StatusCode == "error" || ErrorCode.Length > 0;
     public bool IsProgressNormal => !IsPaused && !IsError && !IsMoving;
     public string StatusGlyph => StatusCode switch
     {
@@ -47,8 +47,10 @@ public sealed class Torrent(string torrentId, Strings strings) : INotifyProperty
     public double UploadRate { get; private set; }
     public string ErrorCode { get; private set; } = string.Empty;
     public string ErrorDetail { get; private set; } = string.Empty;
-    public string ErrorText => ErrorCode.Length == 0 ? string.Empty : strings.Error(ErrorCode, ErrorDetail);
+    public string ErrorText => IsError ? strings.Error(ErrorCode, ErrorDetail) : string.Empty;
     public string SizeText => strings.Bytes(Size);
+    public string DownloadedText => strings.Bytes(Downloaded);
+    public string RemainingText => strings.Bytes(Remaining);
     public string ProgressText => IsMoving ? "—" : Progress.ToString("P1", CultureInfo.CurrentCulture);
     public string DownloadText => _connected ? strings.Format("units", "rate", strings.Bytes(DownloadRate)) : "—";
     public string UploadText => _connected ? strings.Format("units", "rate", strings.Bytes(UploadRate)) : "—";

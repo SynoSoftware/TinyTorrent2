@@ -310,16 +310,7 @@ void Engine::State::MergeTrackers(Preview& preview, std::string const& id, Reply
         {
             trackers.emplace_back(url);
         }
-        auto document = Saved();
-        document.torrents.at(id).trackers = trackers;
-        changes.Commit(document.ToJson(), reply, [this, id, trackers]
-        {
-            auto& torrent = torrents.at(id);
-            torrent.facts.trackers = trackers;
-            torrent.handle.replace_trackers(trackers);
-            torrent.unsaved = true;
-            return Success();
-        });
+        CommitEdit(id, {}, trackers, reply);
     }))
     {
         reply(Failure(ErrorCode::Overloaded));

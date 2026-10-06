@@ -2,6 +2,7 @@
 
 #include "Changes.h"
 #include "Engine.h"
+#include "Engine/History.h"
 #include "Log.h"
 #include "Store.h"
 #include "Torrent.h"
@@ -9,7 +10,6 @@
 #include <libtorrent/alert_types.hpp>
 #include <libtorrent/session.hpp>
 #include <chrono>
-#include <deque>
 #include <filesystem>
 #include <functional>
 #include <map>
@@ -167,16 +167,6 @@ public:
     std::optional<bool> appliedPause;
     std::optional<bool> appliedAlternative;
     std::vector<std::string> limitingSeeds;
-    struct SpeedSample
-    {
-        std::int64_t time = 0;
-        double download = 0;
-        double upload = 0;
-    };
-    std::deque<SpeedSample> seconds;
-    std::deque<SpeedSample> minutes;
-    SpeedSample minute;
-    int minuteCount = 0;
 
     // What a file operation on the selected torrents reaches. Both path lists
     // are sorted by PathBefore.
@@ -308,7 +298,6 @@ public:
     void SetIntent(std::vector<std::string> const& ids, Intent intent, Reply reply);
     void Edit(std::string const& id, Json const& choices, Reply reply);
     void CompletePriorities(Torrent& torrent);
-    void SampleHistory();
     Json History(bool day) const;
 
     static bool IsQueued(lt::queue_position_t position);
@@ -340,5 +329,12 @@ public:
     void On(lt::torrent_error_alert const& alert);
     void On(lt::file_error_alert const& alert);
     void On(lt::alerts_dropped_alert const&);
+
+private:
+    SpeedHistory history;
+
+    void CommitEdit(std::string const& id,
+        std::map<int, lt::download_priority_t> const& priorities,
+        std::optional<std::vector<lt::announce_entry>> const& trackers, Reply reply);
 };
 }

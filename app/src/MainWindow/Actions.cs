@@ -15,12 +15,7 @@ namespace Syno.TinyTorrent;
 
 public sealed partial class MainWindow
 {
-    private ContentDialog? _removeDialog;
-    private TaskCompletionSource? _removeClosed;
-    private ContentDialog? _filesDialog;
     private FileForm? _filesForm;
-    private TaskCompletionSource? _filesClosed;
-    private bool HasDialog => _addDialog is not null || _removeDialog is not null || _filesDialog is not null || _closePrompt is not null;
 
     private void OnQueueKey(object sender, KeyRoutedEventArgs args)
     {
@@ -31,8 +26,10 @@ public sealed partial class MainWindow
         if (!Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Control).HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down)) return;
         if (Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Menu).HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down)) return;
         var shift = Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Shift).HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
-        var command = args.Key == plus ? shift ? Model.Top : Model.Up : shift ? Model.Bottom : Model.Down;
-        if (!command.CanExecute(null)) return;
+        var key = args.Key == plus ? VirtualKey.Add : VirtualKey.Subtract;
+        var modifiers = VirtualKeyModifiers.Control | (shift ? VirtualKeyModifiers.Shift : VirtualKeyModifiers.None);
+        var command = _shortcuts.FirstOrDefault(pair => pair.Value.Key == key && pair.Value.Modifiers == modifiers).Key;
+        if (command is null || !command.CanExecute(null)) return;
         command.Execute(null);
         args.Handled = true;
     }
@@ -49,13 +46,13 @@ public sealed partial class MainWindow
         HelpMenu.AccessKey = Model.Text.Get("menus", "help_key");
         AutomationProperties.SetName(Menus, Model.Text.Get("commands", "menu"));
         FileMenu.Items.Clear();
-        FileMenu.Items.Add(Menu("add_file", Model.Add, Syno.Lucide.FilePlus, "Ctrl+O"));
-        FileMenu.Items.Add(Menu("add_magnet", Model.AddMagnet, Syno.Lucide.Link, "Ctrl+Shift+O"));
+        FileMenu.Items.Add(Menu("add_file", Model.Add, Syno.Lucide.FilePlus));
+        FileMenu.Items.Add(Menu("add_magnet", Model.AddMagnet, Syno.Lucide.Link));
         FileMenu.Items.Add(new MenuFlyoutSeparator());
         FileMenu.Items.Add(new MenuFlyoutItem { Text = Model.Text.Get("finding", "settings"),
-            Command = Model.ShowPreferences, Icon = Icon(Syno.Lucide.Settings), KeyboardAcceleratorTextOverride = "Alt+O" });
+            Command = Model.ShowPreferences, Icon = Icon(Syno.Lucide.Settings), KeyboardAcceleratorTextOverride = ShortcutText(Model.ShowPreferences) });
         FileMenu.Items.Add(new MenuFlyoutSeparator());
-        FileMenu.Items.Add(Menu("exit", Model.Exit, Syno.Lucide.Power, "Ctrl+Q"));
+        FileMenu.Items.Add(Menu("exit", Model.Exit, Syno.Lucide.Power));
         TorrentMenu.Items.Clear();
         var selection = new MenuFlyoutItem { IsEnabled = false };
         selection.SetBinding(MenuFlyoutItem.TextProperty, new Binding { Source = Model,
@@ -64,8 +61,8 @@ public sealed partial class MainWindow
         TorrentMenu.Items.Add(new MenuFlyoutSeparator());
         AddSelection(TorrentMenu.Items, true);
         TorrentMenu.Items.Add(new MenuFlyoutSeparator());
-        TorrentMenu.Items.Add(Menu("pause_all", Model.PauseAll, Syno.Lucide.Pause, "Ctrl+Shift+P"));
-        TorrentMenu.Items.Add(Menu("resume_all", Model.ResumeAll, Syno.Lucide.Play, "Ctrl+Shift+S"));
+        TorrentMenu.Items.Add(Menu("pause_all", Model.PauseAll, Syno.Lucide.Pause));
+        TorrentMenu.Items.Add(Menu("resume_all", Model.ResumeAll, Syno.Lucide.Play));
         TorrentMenu.Items.Add(Menu("limits", Model.Limits, Syno.Lucide.Gauge));
         ClearFiltersButton.Content = Model.Text.Get("window", "clear_filters");
         HelpMenu.Items.Clear();
@@ -84,9 +81,9 @@ public sealed partial class MainWindow
 
     private void AddSelection(IList<MenuFlyoutItemBase> items, bool properties)
     {
-        items.Add(Menu("pause", Model.Pause, Syno.Lucide.Pause, "Ctrl+P"));
-        items.Add(Menu("resume", Model.Resume, Syno.Lucide.Play, "Ctrl+S"));
-        items.Add(Menu("force", Model.Force, Syno.Lucide.Zap, "Ctrl+M"));
+        items.Add(Menu("pause", Model.Pause, Syno.Lucide.Pause));
+        items.Add(Menu("resume", Model.Resume, Syno.Lucide.Play));
+        items.Add(Menu("force", Model.Force, Syno.Lucide.Zap));
         items.Add(new MenuFlyoutSeparator());
         items.Add(Menu("open", Model.Open, Syno.Lucide.File));
         items.Add(Menu("open_folder", Model.OpenFolder, Syno.Lucide.FolderOpen));
@@ -94,133 +91,159 @@ public sealed partial class MainWindow
         items.Add(Menu("copy_hash", Model.CopyHash, Syno.Lucide.Hash));
         if (properties) items.Add(Menu("properties", Model.Properties, Syno.Lucide.Info));
         items.Add(new MenuFlyoutSeparator());
-        items.Add(Menu("verify", Model.Verify, Syno.Lucide.RefreshCw, "Ctrl+R"));
+        items.Add(Menu("verify", Model.Verify, Syno.Lucide.RefreshCw));
         items.Add(Menu("move", Model.MoveFiles, Syno.Lucide.FolderInput));
         var queue = new MenuFlyoutSubItem { Text = Model.Text.Get("menus", "queue"), Icon = Icon(Syno.Lucide.ListOrdered) };
-        queue.Items.Add(Menu("up", Model.Up, Syno.Lucide.ArrowUp, "Ctrl++"));
-        queue.Items.Add(Menu("down", Model.Down, Syno.Lucide.ArrowDown, "Ctrl+-"));
-        queue.Items.Add(Menu("top", Model.Top, Syno.Lucide.ArrowUpToLine, "Ctrl+Shift++"));
-        queue.Items.Add(Menu("bottom", Model.Bottom, Syno.Lucide.ArrowDownToLine, "Ctrl+Shift+-"));
+        queue.Items.Add(Menu("up", Model.Up, Syno.Lucide.ArrowUp));
+        queue.Items.Add(Menu("down", Model.Down, Syno.Lucide.ArrowDown));
+        queue.Items.Add(Menu("top", Model.Top, Syno.Lucide.ArrowUpToLine));
+        queue.Items.Add(Menu("bottom", Model.Bottom, Syno.Lucide.ArrowDownToLine));
         items.Add(queue);
         items.Add(new MenuFlyoutSeparator());
-        items.Add(Menu("remove", Model.Remove, Syno.Lucide.X, "Delete"));
-        items.Add(Menu("delete_files", Model.DeleteFiles, Syno.Lucide.Trash2, "Shift+Delete"));
+        items.Add(Menu("remove", Model.Remove, Syno.Lucide.X));
+        items.Add(Menu("delete_files", Model.DeleteFiles, Syno.Lucide.Trash2));
     }
 
-    private MenuFlyoutItem Menu(string name, ICommand command, string glyph, string shortcut = "") =>
+    private MenuFlyoutItem Menu(string name, ICommand command, string glyph) =>
         new() { Text = Model.Text.Get("commands", name), Command = command,
-            Icon = Icon(glyph), KeyboardAcceleratorTextOverride = shortcut };
+            Icon = Icon(glyph), KeyboardAcceleratorTextOverride = ShortcutText(command) };
+
+    private string ShortcutText(ICommand command)
+    {
+        if (!_shortcuts.TryGetValue(command, out var accelerator)) return string.Empty;
+        var parts = new List<string>();
+        if (accelerator.Modifiers.HasFlag(VirtualKeyModifiers.Control)) parts.Add(Model.Text.Get("shortcuts", "control"));
+        if (accelerator.Modifiers.HasFlag(VirtualKeyModifiers.Menu)) parts.Add(Model.Text.Get("shortcuts", "alt"));
+        if (accelerator.Modifiers.HasFlag(VirtualKeyModifiers.Shift)) parts.Add(Model.Text.Get("shortcuts", "shift"));
+        parts.Add(accelerator.Key switch
+        {
+            VirtualKey.Delete => Model.Text.Get("shortcuts", "delete"),
+            VirtualKey.Add => "+",
+            VirtualKey.Subtract => "-",
+            _ => accelerator.Key.ToString()
+        });
+        return string.Join("+", parts);
+    }
 
     private static FontIcon Icon(string glyph) => new() { FontFamily = Syno.Lucide.Font, Glyph = glyph };
 
     private async Task ConfirmRemove(Torrent[] torrents)
     {
-        if (HasDialog) return;
-        var dialog = new ContentDialog
+        if (HasDialog || Model.IsClosing) return;
+        await Interact(async interaction =>
         {
-            XamlRoot = Root.XamlRoot, RequestedTheme = Root.ActualTheme, FlowDirection = Root.FlowDirection,
-            Title = Model.Text.Get("remove", "title"),
-            Content = Model.Text.Format("remove", "detail", string.Join(Environment.NewLine, torrents.Select(torrent => torrent.Name))),
-            Tag = torrents,
-            PrimaryButtonText = Model.Text.Get("commands", "remove"), CloseButtonText = Model.Text.Get("add", "cancel"),
-            DefaultButton = ContentDialogButton.Close
-        };
-        _removeDialog = dialog;
-        _removeClosed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        try
-        {
-            if (await dialog.ShowAsync() == ContentDialogResult.Primary) await Model.RemoveTorrents(torrents);
-        }
-        catch (Exception error) { Model.Report(error); }
-        finally
-        {
-            _removeDialog = null;
-            _removeClosed.TrySetResult();
-            if (!Model.IsClosing && (Model.Draft.Sources.Count > 0 || Model.Draft.EditingMagnet)) _ = ShowAdd();
-        }
+            var dialog = new ContentDialog
+            {
+                XamlRoot = Root.XamlRoot,
+                DefaultButton = ContentDialogButton.Close
+            };
+            var choice = await ShowDialog(interaction, dialog, () =>
+            {
+                dialog.Title = Model.Text.Get("remove", "title");
+                dialog.PrimaryButtonText = Model.Text.Get("commands", "remove");
+                dialog.CloseButtonText = Model.Text.Get("add", "cancel");
+                dialog.Content = Model.Text.Format("remove", "detail", string.Join(Environment.NewLine, torrents.Select(torrent => torrent.Name)));
+            });
+            if (choice == ContentDialogResult.Primary) await Model.RemoveTorrents(torrents);
+            return true;
+        });
     }
 
     private async Task ShowFiles(Torrent[] torrents, FileAction action, bool initialize = true)
     {
         if (HasDialog || Model.IsClosing) return;
-        if (initialize) Model.Files.Begin(torrents, action);
-        var form = new FileForm(Model);
-        form.DestinationRequested += async (_, _) =>
+        await Interact(async interaction =>
         {
-            var folder = await PickFolder();
-            if (folder is not null) Model.Files.Destination = folder;
-        };
-        var body = new ScrollViewer { Content = form, Width = Math.Min(560, Root.ActualWidth - 80),
-            MaxHeight = Math.Max(220, Root.ActualHeight - 180), VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
-        void ResizeBody(object sender, SizeChangedEventArgs args)
-        {
-            var atEnd = body.VerticalOffset >= body.ScrollableHeight - 1;
-            body.Width = Math.Min(560, Root.ActualWidth - 80);
-            body.MaxHeight = Math.Max(220, Root.ActualHeight - 180);
-            body.UpdateLayout();
-            if (Model.Files.HasError && atEnd) body.ChangeView(null, body.ScrollableHeight, null, true);
-        }
-        body.SizeChanged += (_, args) =>
-        {
-            if (Model.Files.HasError && body.VerticalOffset + args.PreviousSize.Height >= body.ExtentHeight - 1)
-                body.ChangeView(null, body.ScrollableHeight, null, true);
-        };
-        form.SizeChanged += (_, args) =>
-        {
-            if (Model.Files.HasError && body.VerticalOffset + body.ViewportHeight >= args.PreviousSize.Height - 1)
+            if (initialize) Model.Files.Begin(torrents, action);
+            if (action == FileAction.Move)
+                interaction.Restore = () => !interaction.IsResolved && torrents.All(Model.Contains) ? ShowFiles(torrents, action, false) : Task.CompletedTask;
+            interaction.ResolveDraft = async () =>
             {
+                if (!Model.Files.HasDraft) return true;
+                return interaction.IsResolved = await ResolveDraft(Model.Files.Submit, () =>
+                    { Model.Files.Cancel(); return Task.CompletedTask; });
+            };
+            var form = new FileForm(Model);
+            form.DestinationRequested += async (_, _) =>
+            {
+                var folder = await PickFolder();
+                if (folder is not null) Model.Files.Destination = folder;
+            };
+            var body = new ScrollViewer { Content = form, Width = Math.Min(560, Root.ActualWidth - 80),
+                MaxHeight = Math.Max(220, Root.ActualHeight - 180), VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+            void ResizeBody(object sender, SizeChangedEventArgs args)
+            {
+                var atEnd = body.VerticalOffset >= body.ScrollableHeight - 1;
+                body.Width = Math.Min(560, Root.ActualWidth - 80);
+                body.MaxHeight = Math.Max(220, Root.ActualHeight - 180);
                 body.UpdateLayout();
-                body.ChangeView(null, body.ScrollableHeight, null, true);
+                if (Model.Files.HasError && atEnd) body.ChangeView(null, body.ScrollableHeight, null, true);
             }
-        };
-        Root.SizeChanged += ResizeBody;
-        var dialog = new ContentDialog { XamlRoot = Root.XamlRoot, Content = body,
-            DefaultButton = action == FileAction.Delete ? ContentDialogButton.Close : ContentDialogButton.Primary };
-        dialog.Resources["ContentDialogMaxWidth"] = 608d;
-        dialog.Opened += (_, _) =>
-        {
-            if (!Model.Files.HasError) return;
-            body.UpdateLayout();
-            body.ChangeView(null, body.ScrollableHeight, null, true);
-        };
-        dialog.SetBinding(ContentDialog.IsPrimaryButtonEnabledProperty, new Binding { Source = Model.Files,
-            Path = new PropertyPath(nameof(FileOperation.CanSubmit)), Mode = BindingMode.OneWay });
-        dialog.PrimaryButtonClick += async (_, args) =>
-        {
-            args.Cancel = true;
-            var deferral = args.GetDeferral();
-            try
+            body.SizeChanged += (_, args) =>
             {
-                args.Cancel = !await Model.Files.Submit();
-                if (args.Cancel)
+                if (Model.Files.HasError && body.VerticalOffset + args.PreviousSize.Height >= body.ExtentHeight - 1)
+                    body.ChangeView(null, body.ScrollableHeight, null, true);
+            };
+            form.SizeChanged += (_, args) =>
+            {
+                if (Model.Files.HasError && body.VerticalOffset + body.ViewportHeight >= args.PreviousSize.Height - 1)
                 {
                     body.UpdateLayout();
                     body.ChangeView(null, body.ScrollableHeight, null, true);
                 }
+            };
+            Root.SizeChanged += ResizeBody;
+            var dialog = new ContentDialog { XamlRoot = Root.XamlRoot, Content = body,
+                DefaultButton = action == FileAction.Delete ? ContentDialogButton.Close : ContentDialogButton.Primary };
+            dialog.Resources["ContentDialogMaxWidth"] = 608d;
+            dialog.Opened += (_, _) =>
+            {
+                if (!Model.Files.HasError) return;
+                body.UpdateLayout();
+                body.ChangeView(null, body.ScrollableHeight, null, true);
+            };
+            dialog.SetBinding(ContentDialog.IsPrimaryButtonEnabledProperty, new Binding { Source = Model.Files,
+                Path = new PropertyPath(nameof(FileOperation.CanSubmit)), Mode = BindingMode.OneWay });
+            dialog.PrimaryButtonClick += async (_, args) =>
+            {
+                args.Cancel = true;
+                var deferral = args.GetDeferral();
+                try
+                {
+                    args.Cancel = !await Model.Files.Submit();
+                    if (!args.Cancel) interaction.IsResolved = true;
+                    if (args.Cancel)
+                    {
+                        body.UpdateLayout();
+                        body.ChangeView(null, body.ScrollableHeight, null, true);
+                    }
+                }
+                finally { deferral.Complete(); }
+            };
+            dialog.Closing += (_, args) => { if ((Model.Files.IsPending || Model.IsPicking) && !Model.IsClosing) args.Cancel = true; };
+            _filesForm = form;
+            var scope = initialize ? Model.Files.RefreshScope() : Task.CompletedTask;
+            try
+            {
+                await ShowDialog(interaction, dialog, () =>
+                {
+                    dialog.Title = Model.Files.Title;
+                    dialog.PrimaryButtonText = Model.Files.Title;
+                    dialog.CloseButtonText = Model.Text.Get("add", "cancel");
+                    form.RefreshText();
+                });
+                interaction.IsResolved |= !Model.IsClosing;
             }
-            finally { deferral.Complete(); }
-        };
-        dialog.Closing += (_, args) => { if ((Model.Files.IsPending || Model.IsPicking) && !Model.IsClosing) args.Cancel = true; };
-        _filesDialog = dialog;
-        _filesForm = form;
-        _filesClosed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        RefreshText();
-        try
-        {
-            if (initialize) _ = Model.Files.RefreshScope();
-            await dialog.ShowAsync();
-        }
-        catch (Exception error) { Model.Report(error); }
-        finally
-        {
-            Root.SizeChanged -= ResizeBody;
-            body.Content = null;
-            _filesDialog = null;
-            _filesForm = null;
-            if (!Model.IsClosing) Model.Files.Cancel();
-            _filesClosed.TrySetResult();
-            if (!Model.IsClosing && (Model.Draft.Sources.Count > 0 || Model.Draft.EditingMagnet)) _ = ShowAdd();
-        }
+            finally
+            {
+                await scope;
+                Root.SizeChanged -= ResizeBody;
+                body.Content = null;
+                _filesForm = null;
+                if (!Model.IsClosing) Model.Files.Cancel();
+            }
+            return true;
+        });
     }
 
     private async void OnInspectorClose(object sender, RoutedEventArgs args)
@@ -231,7 +254,7 @@ public sealed partial class MainWindow
             if (!await ResolveDraft(Model.Inspector.SaveDraft, () =>
                 { Model.Inspector.CancelDraft(); return Task.CompletedTask; })) return;
         }
-        Model.CloseInspector();
+        if (!Model.CloseInspector()) return;
         Torrents.Focus(FocusState.Programmatic);
     }
 

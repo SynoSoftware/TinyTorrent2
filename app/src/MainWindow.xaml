@@ -154,14 +154,17 @@
             <InfoBar x:Name="Feedback" IsClosable="False" Severity="{x:Bind Model.Severity, Mode=OneWay}" Message="{x:Bind Model.Message, Mode=OneWay}" IsOpen="{x:Bind Model.HasFeedback, Mode=OneWay}" Visibility="{x:Bind Model.HasFeedback, Mode=OneWay}">
                 <InfoBar.ActionButton><Button AutomationProperties.AutomationId="Restart" Content="{x:Bind Model.RestartText, Mode=OneWay}" Command="{x:Bind Model.Restart}" Visibility="{x:Bind Model.CanRestart, Mode=OneWay}" /></InfoBar.ActionButton>
             </InfoBar>
+            <InfoBar Severity="Error" IsClosable="True" CloseButtonClick="OnDismissError"
+                Message="{x:Bind Model.CommandError, Mode=OneWay}" IsOpen="{x:Bind Model.HasCommandError, Mode=OneWay}"
+                Visibility="{x:Bind Model.HasCommandError, Mode=OneWay}" />
             <TextBlock x:Name="TorrentError" TextWrapping="Wrap" Text="{x:Bind Model.TorrentError, Mode=OneWay}" Visibility="{x:Bind Model.HasTorrentError, Mode=OneWay}" />
             <Button Content="{x:Bind Model.UpdateText, Mode=OneWay}" Command="{x:Bind Model.OpenUpdate}" Visibility="{x:Bind Model.HasUpdate, Mode=OneWay}" />
             <Grid ColumnSpacing="12">
                 <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
                 <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                 <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
-                    <TextBlock Text="{x:Bind Model.DownloadText, Mode=OneWay}" MinWidth="170" />
-                    <TextBlock Text="{x:Bind Model.UploadText, Mode=OneWay}" MinWidth="170" />
+                    <TextBlock Text="{x:Bind Model.DownloadText, Mode=OneWay}" Width="170" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{x:Bind Model.DownloadText, Mode=OneWay}" />
+                    <TextBlock Text="{x:Bind Model.UploadText, Mode=OneWay}" Width="170" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{x:Bind Model.UploadText, Mode=OneWay}" />
                     <TextBlock Text="{x:Bind Model.PausedText, Mode=OneWay}" />
                 </StackPanel>
                 <ToggleButton x:Name="Alternative" Grid.Column="1" IsChecked="{x:Bind Model.AlternativeLimits, Mode=TwoWay}" IsEnabled="{x:Bind Model.CanEdit, Mode=OneWay}"><TextBlock x:Name="AlternativeText" MaxWidth="160" TextWrapping="Wrap" /></ToggleButton>

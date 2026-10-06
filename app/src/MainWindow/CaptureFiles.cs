@@ -72,8 +72,8 @@ public sealed partial class MainWindow
             await SelectTorrent();
             Run(action == FileAction.Move ? Model.MoveFiles : Model.DeleteFiles);
             await CaptureLayout();
-            var dialog = _filesDialog ?? throw new InvalidOperationException("The file command did not open its dialog.");
-            var closed = _filesClosed?.Task ?? throw new InvalidOperationException("The file dialog has no completion.");
+            var dialog = _interaction?.Dialog ?? throw new InvalidOperationException("The file command did not open its dialog.");
+            var closed = _interaction?.Completion.Task ?? throw new InvalidOperationException("The file dialog has no completion.");
             await CaptureReady(Model.Files, () => !Model.Files.IsPending);
             if (Model.Files.HasError) throw new InvalidOperationException("The file scope could not be read: " + Model.Files.Message);
             return (dialog, closed);
@@ -98,8 +98,8 @@ public sealed partial class MainWindow
                 throw new InvalidOperationException("The complete shared scope cannot submit its move.");
             await Matrix("move-confirm", dialog.Content as FrameworkElement);
             CaptureInvoke(dialog);
-            await CaptureReady(Model.Files, () => Model.Files.HasError || _filesDialog is null);
-            if (_filesDialog is null || !SamePath(Model.Files.Destination, collision) || !Model.Files.IncludeShared || !Model.Files.UseExisting)
+            await CaptureReady(Model.Files, () => Model.Files.HasError || _interaction?.Dialog is null);
+            if (_interaction?.Dialog is null || !SamePath(Model.Files.Destination, collision) || !Model.Files.IncludeShared || !Model.Files.UseExisting)
                 throw new InvalidOperationException("The destination ownership refusal lost the dialog choices.");
             await CaptureLayout();
             await CaptureUi("files-move-refused-post-submit");
@@ -113,7 +113,7 @@ public sealed partial class MainWindow
         }
         finally { dialog.Hide(); await closed; }
 
-        if (Environment.GetEnvironmentVariable("TINYTORRENT_CAPTURE_REVIEW") == "files-layout")
+        if (ReviewMode == CaptureMode.FilesLayout)
         {
             outcomes.Add(new { journey = "capture scope", pickerExercised = false,
                 scope = "Layout correction captures and one native ownership refusal; no accepted move or deletion. All fixture membership and bytes remain." });
@@ -124,10 +124,10 @@ public sealed partial class MainWindow
         await SelectTorrent();
         Run(Model.Remove);
         await CaptureLayout();
-        var removal = _removeDialog ?? throw new InvalidOperationException("The outside owner removal confirmation did not open.");
-        closed = _removeClosed?.Task ?? throw new InvalidOperationException("The removal confirmation has no completion.");
+        var removal = _interaction?.Dialog ?? throw new InvalidOperationException("The outside owner removal confirmation did not open.");
+        closed = _interaction?.Completion.Task ?? throw new InvalidOperationException("The removal confirmation has no completion.");
         try { CaptureInvoke(removal); await closed.WaitAsync(TimeSpan.FromSeconds(20)); }
-        finally { if (_removeDialog is not null) removal.Hide(); }
+        finally { if (_interaction?.Dialog is not null) removal.Hide(); }
         await CaptureReady(Model, () => !Model.Torrents.Contains(outside));
         CheckBytes(collisionFile, collisionHash);
 
@@ -139,7 +139,7 @@ public sealed partial class MainWindow
             CaptureInvoke(dialog);
             await closed.WaitAsync(TimeSpan.FromSeconds(20));
         }
-        finally { if (_filesDialog is not null) { dialog.Hide(); await closed; } }
+        finally { if (_interaction?.Dialog is not null) { dialog.Hide(); await closed; } }
         await CaptureReady(Model, () => group.All(torrent => !torrent.IsMoving && torrent.ErrorCode == "destination_exists"));
         CheckBytes(sourceFile, sourceHash);
         CheckBytes(collisionFile, collisionHash);
@@ -160,7 +160,7 @@ public sealed partial class MainWindow
             CaptureInvoke(dialog);
             await closed.WaitAsync(TimeSpan.FromSeconds(20));
         }
-        finally { if (_filesDialog is not null) { dialog.Hide(); await closed; } }
+        finally { if (_interaction?.Dialog is not null) { dialog.Hide(); await closed; } }
         await CaptureReady(Model, () => group.All(torrent => !torrent.IsMoving && torrent.MoveDestination.Length == 0 && SamePath(torrent.SavePath, destination)));
         CheckBytes(movedFile, sourceHash);
         CheckBytes(collisionFile, collisionHash);
@@ -179,7 +179,7 @@ public sealed partial class MainWindow
             CaptureInvoke(dialog);
             await closed.WaitAsync(TimeSpan.FromSeconds(20));
         }
-        finally { if (_filesDialog is not null) { dialog.Hide(); await closed; } }
+        finally { if (_interaction?.Dialog is not null) { dialog.Hide(); await closed; } }
         await CaptureReady(Model, () => !Model.Torrents.Contains(group[0]));
         if (group.Skip(1).Any(torrent => !Model.Torrents.Contains(torrent)))
             throw new InvalidOperationException("The partial deletion removed an outside owner.");
@@ -198,7 +198,7 @@ public sealed partial class MainWindow
             CaptureInvoke(dialog);
             await closed.WaitAsync(TimeSpan.FromSeconds(20));
         }
-        finally { if (_filesDialog is not null) { dialog.Hide(); await closed; } }
+        finally { if (_interaction?.Dialog is not null) { dialog.Hide(); await closed; } }
         await CaptureReady(Model, () => Model.Torrents.Count == 0);
         var until = DateTime.UtcNow.AddSeconds(20);
         while (File.Exists(movedFile) && DateTime.UtcNow < until) await Task.Delay(100);

@@ -55,7 +55,12 @@ public sealed partial class InspectorForm : UserControl
     private void OnText(object? sender, EventArgs args) => RefreshText();
     public static bool Not(bool value) => !value;
     public static Visibility Hidden(bool value) => value ? Visibility.Collapsed : Visibility.Visible;
-    private void OnModel(object? sender, PropertyChangedEventArgs args) => Refresh();
+    private void OnModel(object? sender, PropertyChangedEventArgs args)
+    {
+        if (args.PropertyName == nameof(Inspector.Peers)) Peers.RefreshView();
+        if (args.PropertyName == nameof(Inspector.Trackers)) TrackerTable.RefreshView();
+        Refresh();
+    }
     private void OnSection(SelectorBar sender, SelectorBarSelectionChangedEventArgs args)
     {
         if (!_refreshing && sender.SelectedItem is { Tag: InspectorSection section }) Model.Select(section);
@@ -88,6 +93,7 @@ public sealed partial class InspectorForm : UserControl
 
     internal void RefreshText()
     {
+        Bindings.Update();
         var text = Model.Text;
         FlowDirection = text.IsRightToLeft ? FlowDirection.RightToLeft : FlowDirection.LeftToRight;
         foreach (var section in Sections.Items)
@@ -98,32 +104,11 @@ public sealed partial class InspectorForm : UserControl
         AutomationProperties.SetName(Sections, text.Get("inspector", "sections"));
         AutomationProperties.SetName(Close, text.Get("inspector", "close"));
         ToolTipService.SetToolTip(Close, text.Get("inspector", "close"));
-        DownloadedLabel.Text = text.Get("inspector", "downloaded");
-        RemainingLabel.Text = text.Get("inspector", "remaining");
-        RatioLabel.Text = text.Get("columns", "ratio");
-        StatusLabel.Text = text.Get("columns", "status");
-        AddedLabel.Text = text.Get("columns", "added");
-        CreatedLabel.Text = text.Get("inspector", "created");
-        CreatorLabel.Text = text.Get("inspector", "creator");
-        PieceSizeLabel.Text = text.Get("inspector", "piece_size");
-        PrivacyLabel.Text = text.Get("inspector", "privacy");
-        FolderLabel.Text = text.Get("add", "destination");
-        CommentLabel.Text = text.Get("inspector", "comment");
         Hashes.Header = text.Get("inspector", "hashes");
         Magnet.Header = text.Get("add", "magnet");
         AutomationProperties.SetName(Hashes, (string)Hashes.Header);
         AutomationProperties.SetName(Magnet, (string)Magnet.Header);
-        Retry.Content = text.Get("inspector", "retry");
-        RetryFiles.Content = text.Get("inspector", "retry_files");
-        EditTrackers.Content = text.Get("trackers", "edit");
-        Reannounce.Content = text.Get("trackers", "reannounce");
-        SaveTrackers.Content = text.Get("trackers", "save");
-        CancelTrackers.Content = text.Get("add", "cancel");
-        TrackerHint.Text = text.Get("trackers", "hint");
         AutomationProperties.SetName(TrackerInput, text.Get("inspector", "trackers"));
-        NoPeers.Text = text.Get("peers", "empty");
-        NoTrackers.Text = text.Get("trackers", "empty");
-        WaitingMetadata.Text = text.Get("pieces", "metadata");
         Peers.Strings = TrackerTable.Strings = text.Table;
         EndpointColumn.DisplayName = text.Get("peers", "endpoint");
         ClientColumn.DisplayName = text.Get("peers", "client");
@@ -141,9 +126,6 @@ public sealed partial class InspectorForm : UserControl
         CompletedColumn.DisplayName = text.Get("trackers", "completed");
         NextColumn.DisplayName = text.Get("trackers", "next");
         MessageColumn.DisplayName = text.Get("trackers", "message");
-        AllTorrents.Text = text.Get("speed", "all");
-        MinutesLabel.Text = text.Get("speed", "five_minutes");
-        DayLabel.Text = text.Get("speed", "day");
         AutomationProperties.SetName(FiveMinutes, MinutesLabel.Text);
         AutomationProperties.SetName(Day, DayLabel.Text);
         AutomationProperties.SetName(Range, text.Get("speed", "range"));

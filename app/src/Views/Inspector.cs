@@ -34,16 +34,16 @@ public sealed class Inspector : INotifyPropertyChanged
     public Torrent? Target => _target;
     public string Name => _target?.Name ?? string.Empty;
     public bool IsOpen => _target is not null;
-    public bool IsAvailable => _owner.IsConnected && _target is not null && _owner.Torrents.Contains(_target);
+    public bool IsAvailable => _owner.IsConnected && _target is not null && _owner.Contains(_target);
     private bool CanSave => IsAvailable && _owner.CanSave && !_pending;
     public bool CanEdit => _visible && CanSave && !_owner.IsClosing;
     public bool IsPending => _pending;
     public bool IsLoading => _fetching;
     public bool HasDraft => !_pending && (_fileChanges.Count > 0 || _editingTrackers && _trackerInput != _trackerOriginal);
-    private bool IsRemoved => _owner.IsConnected && _target is not null && !_owner.Torrents.Contains(_target);
+    private bool IsRemoved => _owner.IsConnected && _target is not null && !_owner.Contains(_target);
     public bool HasError => IsRemoved || _readFailure is not null || _editFailure is not null;
-    public string Message => IsRemoved ? Text.Get("inspector", "removed") : _editFailure is { } edit ? _owner.FormatError(edit) :
-        _readFailure is { } read ? _owner.FormatError(read) : string.Empty;
+    public string Message => IsRemoved ? Text.Get("inspector", "removed") : _editFailure is { } edit ? Text.Error(edit) :
+        _readFailure is { } read ? Text.Error(read) : string.Empty;
     public FileSelection Files { get; }
     public IReadOnlyList<Peer> Peers { get; private set; } = [];
     public IReadOnlyList<Tracker> Trackers { get; private set; } = [];
@@ -60,8 +60,6 @@ public sealed class Inspector : INotifyPropertyChanged
     public string CreatedText => Created <= 0 ? "—" : DateTimeOffset.FromUnixTimeSeconds(Created).LocalDateTime.ToString("g", CultureInfo.CurrentCulture);
     public string PieceSizeText => PieceSize <= 0 ? "—" : Text.Bytes(PieceSize);
     public string PrivacyText => IsPrivate is { } privacy ? Text.Get("inspector", privacy ? "private" : "public") : "—";
-    public string Downloaded => _target is null ? string.Empty : Text.Bytes(_target.Downloaded);
-    public string Remaining => _target is null ? string.Empty : Text.Bytes(_target.Remaining);
     public bool IsEditingTrackers => _editingTrackers;
     public bool HasFileDraft => _fileChanges.Count > 0;
     public bool HasFiles => _filesLoaded;
@@ -148,6 +146,9 @@ public sealed class Inspector : INotifyPropertyChanged
         if (_session != session)
         {
             _session = session;
+            Peers = [];
+            Trackers = [];
+            _trackersLoaded = false;
             Invalidate();
             _readFailure = null;
         }
@@ -189,9 +190,27 @@ public sealed class Inspector : INotifyPropertyChanged
             {
                 case InspectorSection.General: ApplyGeneral(reply); break;
                 case InspectorSection.Files: ApplyFiles(reply); break;
-                case InspectorSection.Peers: Peers = reply.GetProperty("peers").EnumerateArray().Select(peer => new Peer(Text, peer)).ToArray(); break;
+                case InspectorSection.Peers:
+                    var peers = Peers.ToDictionary(peer => peer.Endpoint);
+                    var nextPeers = reply.GetProperty("peers").EnumerateArray().Select(data =>
+                    {
+                        if (!peers.TryGetValue(data.GetProperty("endpoint").GetString()!, out var peer)) return new Peer(Text, data);
+                        peer.Update(data);
+                        return peer;
+                    }).ToArray();
+                    if (!Peers.SequenceEqual(nextPeers)) Peers = nextPeers;
+                    else PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Peers)));
+                    break;
                 case InspectorSection.Trackers:
-                    Trackers = reply.GetProperty("trackers").EnumerateArray().Select(tracker => new Tracker(Text, tracker)).ToArray();
+                    var trackers = Trackers.ToDictionary(tracker => tracker.Url);
+                    var nextTrackers = reply.GetProperty("trackers").EnumerateArray().Select(data =>
+                    {
+                        if (!trackers.TryGetValue(data.GetProperty("url").GetString()!, out var tracker)) return new Tracker(Text, data);
+                        tracker.Update(data);
+                        return tracker;
+                    }).ToArray();
+                    if (!Trackers.SequenceEqual(nextTrackers)) Trackers = nextTrackers;
+                    else PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Trackers)));
                     _trackersLoaded = true;
                     break;
                 case InspectorSection.Speed:

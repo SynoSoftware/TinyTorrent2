@@ -442,7 +442,9 @@ void Engine::State::Maintain()
         statusAt = now;
         RefreshPolicy();
         LimitSeeds();
-        SampleHistory();
+        auto time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+        auto activity = Activity();
+        history.Sample(time, double(activity.downloadRate), double(activity.uploadRate));
         for (auto& [id, torrent] : torrents)
         {
             CompletePriorities(torrent);

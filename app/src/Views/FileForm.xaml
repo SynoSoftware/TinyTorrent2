@@ -3,11 +3,11 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
     <StackPanel Spacing="12" MaxWidth="560">
         <TextBlock Text="{x:Bind Model.Files.Instruction, Mode=OneWay}" TextWrapping="Wrap" />
-        <TextBlock x:Name="CurrentLabel" Style="{StaticResource BodyStrongTextBlockStyle}" />
+        <TextBlock x:Name="CurrentLabel" Text="{x:Bind Model.Text.Get('file_operation', 'current'), Mode=OneWay}" Style="{StaticResource BodyStrongTextBlockStyle}" />
         <TextBlock Text="{x:Bind Model.Files.Locations, Mode=OneWay}" TextWrapping="Wrap" IsTextSelectionEnabled="True" FlowDirection="LeftToRight" />
         <StackPanel Spacing="8" Visibility="{x:Bind Model.Files.HasShared, Mode=OneWay}">
             <TextBlock Text="{x:Bind Model.Files.SharedText, Mode=OneWay}" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
-            <CheckBox x:Name="IncludeShared" AutomationProperties.AutomationId="IncludeShared"
+            <CheckBox x:Name="IncludeShared" Content="{x:Bind Model.Text.Get('file_operation', 'include_shared'), Mode=OneWay}" AutomationProperties.AutomationId="IncludeShared"
                 IsChecked="{x:Bind Model.Files.IncludeShared, Mode=TwoWay}"
                 Visibility="{x:Bind Model.Files.IsMove, Mode=OneWay}" IsEnabled="{x:Bind Model.Files.CanRefresh, Mode=OneWay}" />
             <TextBlock Text="{x:Bind Model.Files.KeptText, Mode=OneWay}" TextWrapping="Wrap"
@@ -18,22 +18,22 @@
                 <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                 <TextBox x:Name="Destination" AutomationProperties.AutomationId="MoveDestination" IsReadOnly="True"
                     Text="{x:Bind Model.Files.Destination, Mode=OneWay}" FlowDirection="LeftToRight" />
-                <Button x:Name="Browse" AutomationProperties.AutomationId="MoveBrowse" Grid.Column="1" VerticalAlignment="Bottom"
+                <Button x:Name="Browse" Content="{x:Bind Model.Text.Get('add', 'browse'), Mode=OneWay}" AutomationProperties.AutomationId="MoveBrowse" Grid.Column="1" VerticalAlignment="Bottom"
                     IsEnabled="{x:Bind Model.Files.CanRefresh, Mode=OneWay}" Click="OnDestination" />
             </Grid>
-            <TextBlock x:Name="ResultLabel" Style="{StaticResource BodyStrongTextBlockStyle}"
+            <TextBlock x:Name="ResultLabel" Text="{x:Bind Model.Text.Get('file_operation', 'resulting'), Mode=OneWay}" Style="{StaticResource BodyStrongTextBlockStyle}"
                 Visibility="{x:Bind Model.Files.HasDestination, Mode=OneWay}" />
             <TextBlock Text="{x:Bind Model.Files.ResultingFolders, Mode=OneWay}" TextWrapping="Wrap" IsTextSelectionEnabled="True" FlowDirection="LeftToRight"
                 Visibility="{x:Bind Model.Files.HasDestination, Mode=OneWay}" />
-            <CheckBox x:Name="UseExisting" AutomationProperties.AutomationId="UseExisting"
+            <CheckBox x:Name="UseExisting" Content="{x:Bind Model.Text.Get('file_operation', 'use_existing'), Mode=OneWay}" AutomationProperties.AutomationId="UseExisting"
                 IsChecked="{x:Bind Model.Files.UseExisting, Mode=TwoWay}" IsEnabled="{x:Bind Model.Files.CanRefresh, Mode=OneWay}" />
-            <TextBlock x:Name="ExistingWarning" TextWrapping="Wrap" Visibility="{x:Bind Model.Files.UseExisting, Mode=OneWay}" />
+            <TextBlock x:Name="ExistingWarning" Text="{x:Bind Model.Text.Get('file_operation', 'existing_warning'), Mode=OneWay}" TextWrapping="Wrap" Visibility="{x:Bind Model.Files.UseExisting, Mode=OneWay}" />
         </StackPanel>
         <ProgressRing Width="20" Height="20" HorizontalAlignment="Left"
             IsActive="{x:Bind Model.Files.IsPending, Mode=OneWay}" Visibility="{x:Bind Model.Files.IsPending, Mode=OneWay}" />
         <InfoBar IsClosable="False" Severity="Error" IsOpen="{x:Bind Model.Files.HasError, Mode=OneWay}"
             Visibility="{x:Bind Model.Files.HasError, Mode=OneWay}" Message="{x:Bind Model.Files.Message, Mode=OneWay}" />
-        <Button x:Name="Refresh" AutomationProperties.AutomationId="RefreshFileScope" Click="OnRefresh"
+        <Button x:Name="Refresh" Content="{x:Bind Model.Text.Get('file_operation', 'refresh'), Mode=OneWay}" AutomationProperties.AutomationId="RefreshFileScope" Click="OnRefresh"
             Visibility="{x:Bind Model.Files.HasError, Mode=OneWay}" IsEnabled="{x:Bind Model.Files.CanRefresh, Mode=OneWay}" />
         <InfoBar IsClosable="False" Severity="Error" IsOpen="{x:Bind Model.CanRestart, Mode=OneWay}"
             Visibility="{x:Bind Model.CanRestart, Mode=OneWay}" Message="{x:Bind Model.Message, Mode=OneWay}">

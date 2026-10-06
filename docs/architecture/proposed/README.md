@@ -12,6 +12,11 @@ The [active contracts](../../README.md) own required behavior, including the
 settled owner rulings; implementation updates the relevant source maps and
 records its evidence against those contracts.
 
+Implementation from `db6ec1d` is tracked in the
+[checkpoint](evidence.md#implementation-checkpoint); the
+[current source map](../../architecture-current.md) describes the implemented
+owners. Historical deletion targets below are not a second backlog.
+
 Apply the owner's [governing goal](delivery.md#governing-goal) to every slice,
 including work underway and deferred issues. Put each decision in one owner,
 retain distinctions that affect behavior, and remove the old path when replacing
@@ -170,11 +175,11 @@ allows only one open dialog per window, supporting this single-slot design.
 
 Completion means the entire interaction has settled: submission where applicable,
 visual detachment and event cleanup. Native dialog occupancy can end before
-that interaction completes: after detachment, the same save/close operation can
-use the slot for a required follow-up confirmation, including file deletion.
-Keep unrelated dialog admission and deferred Add blocked until the enclosing
-operation settles. Ordinary window members can express these two lifetimes;
-neither a modal queue nor a bypass of confirmation is needed. `ShowAsync`
+that interaction completes. Keep unrelated dialog admission and deferred Add
+blocked until the enclosing operation settles. Current Save actions need no
+nested confirmation: Delete has no editable draft, and its existing dialog is
+already the destructive confirmation. Preserve that confirmation without adding
+unused dialog nesting. Ordinary window members express these two lifetimes. `ShowAsync`
 returning is not enough when the operation continues afterward. Otherwise closing
 can race unfinished work that the existing Remove path waits for.
 

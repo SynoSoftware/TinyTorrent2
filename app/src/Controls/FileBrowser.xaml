@@ -9,14 +9,14 @@
             <CheckBox x:Name="All" MinWidth="0" IsChecked="{x:Bind Model.AllMatching, Mode=OneWay}" IsEnabled="{x:Bind Model.IsEnabled, Mode=OneWay}" Click="OnAll">
                 <TextBlock Text="{x:Bind Model.Summary, Mode=OneWay}" TextTrimming="CharacterEllipsis" />
             </CheckBox>
-            <AutoSuggestBox x:Name="Search" Grid.Column="1" VerticalAlignment="Center" QueryIcon="Find" Text="{x:Bind Model.Search, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+            <AutoSuggestBox x:Name="Search" PlaceholderText="{x:Bind Model.Text.Get('files', 'search'), Mode=OneWay}" Grid.Column="1" VerticalAlignment="Center" QueryIcon="Find" Text="{x:Bind Model.Search, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
         </Grid>
         <Grid Grid.Row="1" ColumnSpacing="8" Padding="72,0,4,0">
             <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="84" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="150" /></Grid.ColumnDefinitions>
-            <TextBlock x:Name="NameLabel" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-            <TextBlock x:Name="SizeLabel" Grid.Column="1" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextAlignment="Right" />
-            <TextBlock x:Name="ProgressLabel" Grid.Column="2" Width="108" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Visibility="{x:Bind Model.ShowsProgress, Mode=OneWay}" />
-            <TextBlock x:Name="PriorityLabel" Grid.Column="3" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            <TextBlock x:Name="NameLabel" Text="{x:Bind Model.Text.Get('files', 'name'), Mode=OneWay}" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            <TextBlock x:Name="SizeLabel" Text="{x:Bind Model.Text.Get('columns', 'size'), Mode=OneWay}" Grid.Column="1" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextAlignment="Right" />
+            <TextBlock x:Name="ProgressLabel" Text="{x:Bind Model.Text.Get('columns', 'progress'), Mode=OneWay}" Grid.Column="2" Width="108" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Visibility="{x:Bind Model.ShowsProgress, Mode=OneWay}" />
+            <TextBlock x:Name="PriorityLabel" Text="{x:Bind Model.Text.Get('files', 'priority'), Mode=OneWay}" Grid.Column="3" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
         </Grid>
         <TreeView Grid.Row="2" ItemsSource="{x:Bind Model.Roots, Mode=OneWay}" SelectionMode="None" CanDragItems="False" CanReorderItems="False" KeyDown="OnFilesKey">
             <TreeView.ItemTemplate>

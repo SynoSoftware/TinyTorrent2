@@ -139,7 +139,7 @@ public sealed partial class MainWindow
         var identities = new HashSet<string>(placement.Selected ?? []);
         var selected = Model.VisibleTorrents.Where(torrent => identities.Contains(torrent.TorrentId)).ToArray();
         var current = selected.FirstOrDefault(torrent => torrent.TorrentId == placement.Current) ?? selected.FirstOrDefault();
-        Torrents.Selection = new Syno.TableView.Selection(selected, current);
+        await SelectTorrent(new Syno.TableView.Selection(selected, current));
         Model.Inspector.Select(placement.Section);
         if (placement.InspectorOpen) Run(Model.Properties);
         // After the inspector, which sets how many rows fit, and before another
@@ -162,8 +162,8 @@ public sealed partial class MainWindow
             Inspector = InspectorContent.Content is InspectorForm form ? form.Layout : _placement?.Inspector,
             Page = Model.Page, Settings = _preferencesForm?.Section ?? PreferenceSection.General,
             Filter = Model.Filter, FiltersOpen = Model.IsFilterOpen,
-            Selected = [.. _selection.Items.Cast<Torrent>().Select(torrent => torrent.TorrentId)],
-            Current = (_selection.Current as Torrent)?.TorrentId,
+            Selected = [.. Model.Selected.Select(torrent => torrent.TorrentId)],
+            Current = Model.Current?.TorrentId,
             InspectorOpen = Model.HasInspector, Section = Model.Inspector.Section,
             HorizontalOffset = Torrents.HorizontalOffset, VerticalOffset = Torrents.VerticalOffset
         };

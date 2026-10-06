@@ -1,5 +1,4 @@
 using System.ComponentModel;
-using System.Net.NetworkInformation;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
@@ -18,7 +17,6 @@ public sealed partial class PreferencesForm : UserControl
     private readonly HashSet<TextBox> _editors = [];
     private bool _refreshing;
     private readonly Scheduler _scheduler;
-    private InterfaceChoice? _unavailableInterface;
     public Preferences Model { get; }
     public event EventHandler? DestinationRequested;
 
@@ -26,7 +24,7 @@ public sealed partial class PreferencesForm : UserControl
     {
         Model = model;
         InitializeComponent();
-        _scheduler = new Scheduler(model);
+        _scheduler = new Scheduler(model.Schedule);
         ScheduleContent.Content = _scheduler;
         _scheduler.SpeedRequested += (_, _) => Navigate(new(PreferenceSection.Transfers, "download_limit"));
         Watch(Destination);
@@ -41,7 +39,7 @@ public sealed partial class PreferencesForm : UserControl
         Model.TextChanged += OnText;
         Model.PropertyChanged += OnModel;
         RefreshText();
-        RefreshInterfaces();
+        Model.RefreshInterfaces();
         _ = Model.ObserveRegistration();
     }
 
@@ -55,10 +53,8 @@ public sealed partial class PreferencesForm : UserControl
     private void OnModel(object? sender, PropertyChangedEventArgs args)
     {
         _refreshing = true;
-        Languages.SelectedItem = Model.Language == "es" ? Spanish : English;
-        Theme.SelectedItem = Model.Theme switch { "light" => LightTheme, "dark" => DarkTheme, _ => SystemTheme };
-        foreach (InterfaceChoice item in Interfaces.Items)
-            if (item.InterfaceId == Model.Interface.Input) Interfaces.SelectedItem = item;
+        Languages.SelectedItem = Model.Text.Language == "es" ? Spanish : English;
+        Theme.SelectedItem = Model.Theme.Input switch { "light" => LightTheme, "dark" => DarkTheme, _ => SystemTheme };
         _refreshing = false;
     }
 
@@ -99,17 +95,13 @@ public sealed partial class PreferencesForm : UserControl
         AutomationProperties.SetName(Languages, LanguageRow.Header);
         Label(English, EnglishLabel, "english");
         Label(Spanish, SpanishLabel, "spanish");
-        Languages.SelectedItem = Model.Language == "es" ? Spanish : English;
+        Languages.SelectedItem = Model.Text.Language == "es" ? Spanish : English;
         ThemeRow.Header = Model.Text.Get("preferences", "theme");
         AutomationProperties.SetName(Theme, ThemeRow.Header);
         Label(SystemTheme, SystemLabel, "system_theme");
         Label(LightTheme, LightLabel, "light_theme");
         Label(DarkTheme, DarkLabel, "dark_theme");
-        Theme.SelectedItem = Model.Theme switch { "light" => LightTheme, "dark" => DarkTheme, _ => SystemTheme };
-        foreach (InterfaceChoice item in Interfaces.Items)
-            if (item.InterfaceId.Length == 0) item.Text = Model.Text.Get("preferences", "any_interface");
-        if (_unavailableInterface is { } unavailable)
-            unavailable.Text = Model.Text.Format("preferences", "unavailable_interface", unavailable.InterfaceId);
+        Theme.SelectedItem = Model.Theme.Input switch { "light" => LightTheme, "dark" => DarkTheme, _ => SystemTheme };
         _refreshing = false;
     }
 
@@ -135,27 +127,6 @@ public sealed partial class PreferencesForm : UserControl
     {
         section.Header = Model.Text.Get("preferences", header);
         section.Description = Model.Text.Get("preferences", description);
-    }
-
-    public void RefreshInterfaces()
-    {
-        _refreshing = true;
-        try
-        {
-            Interfaces.Items.Clear();
-            _unavailableInterface = null;
-            Interfaces.Items.Add(new InterfaceChoice(string.Empty, Model.Text.Get("preferences", "any_interface")));
-            foreach (var adapter in NetworkInterface.GetAllNetworkInterfaces())
-                Interfaces.Items.Add(new InterfaceChoice(adapter.Id, adapter.Name));
-            if (Model.Interface.Input.Length > 0 && !Interfaces.Items.Cast<InterfaceChoice>().Any(item => item.InterfaceId == Model.Interface.Input))
-            {
-                _unavailableInterface = new InterfaceChoice(Model.Interface.Input, Model.Text.Format("preferences", "unavailable_interface", Model.Interface.Input));
-                Interfaces.Items.Add(_unavailableInterface);
-            }
-            Interfaces.SelectedItem = Interfaces.Items.Cast<InterfaceChoice>().First(item => item.InterfaceId == Model.Interface.Input);
-        }
-        catch (NetworkInformationException error) { Model.Interface.Reject(error); }
-        finally { _refreshing = false; }
     }
 
     // The corner marks overhang the page; the clip keeps them off the navigation
@@ -277,22 +248,9 @@ public sealed partial class PreferencesForm : UserControl
             if (current == this)
             {
                 field.Input = editor.Text;
-                await Model.Commit(field);
+                await Model.Depart(field);
                 return;
             }
         }
     }
-}
-
-public sealed class InterfaceChoice(string interfaceId, string text) : INotifyPropertyChanged
-{
-    private string _text = text;
-    public string InterfaceId { get; } = interfaceId;
-    public string Text
-    {
-        get => _text;
-        internal set { _text = value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Text))); }
-    }
-    public event PropertyChangedEventHandler? PropertyChanged;
-    public override string ToString() => Text;
 }

@@ -27,7 +27,7 @@ public partial class App : Application
                 try { await PipeClient.ForwardOpen(text); }
                 catch (Exception error)
                 {
-                    var message = error is CommandFailure ? error.Message : text.Error("unknown", error.Message);
+                    var message = text.Error(error);
                     MessageBoxW(IntPtr.Zero, message, text.Get("window", "title"), 0x10);
                 }
             }

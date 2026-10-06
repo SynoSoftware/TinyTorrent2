@@ -1,5 +1,5 @@
 #include "Engine/State.h"
-#include <chrono>
+#include "Engine/History.h"
 
 namespace tt
 {
@@ -16,11 +16,9 @@ constexpr std::size_t minuteSamples = oneDay / minuteLength - 1;
 constexpr std::int64_t sampleGap = 2;
 }
 
-void Engine::State::SampleHistory()
+void SpeedHistory::Sample(std::int64_t time, double download, double upload)
 {
-    auto time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-    auto activity = Activity();
-    SpeedSample sample{time, double(activity.downloadRate), double(activity.uploadRate)};
+    Point sample{time, download, upload};
     if (!seconds.empty() && time <= seconds.back().time)
     {
         seconds.clear();
@@ -52,10 +50,10 @@ void Engine::State::SampleHistory()
     }
 }
 
-Json Engine::State::History(bool day) const
+Json SpeedHistory::Read(bool day) const
 {
     Json samples = Json::array();
-    auto append = [&samples](SpeedSample const& sample)
+    auto append = [&samples](Point const& sample)
     {
         samples.push_back({{"time", sample.time}, {"download_rate", sample.download},
             {"upload_rate", sample.upload}});
@@ -68,6 +66,11 @@ Json Engine::State::History(bool day) const
     {
         append({minute.time, minute.download / minuteCount, minute.upload / minuteCount});
     }
-    return {{"session_id", sessionId}, {"samples", std::move(samples)}};
+    return samples;
+}
+
+Json Engine::State::History(bool day) const
+{
+    return {{"session_id", sessionId}, {"samples", history.Read(day)}};
 }
 }

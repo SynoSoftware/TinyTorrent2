@@ -88,6 +88,8 @@ public sealed class Strings
         return string.IsNullOrWhiteSpace(detail) ? message : Format("errors", "detail", message, detail);
     }
 
+    public string Error(Exception error) => error is CommandFailure ? error.Message : Error("unknown", error.Message);
+
     public string Bytes(double value)
     {
         var units = new[] { "bytes", "kib", "mib", "gib", "tib" };

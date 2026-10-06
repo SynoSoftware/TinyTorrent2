@@ -9,13 +9,13 @@ public sealed class Tracker : INotifyPropertyChanged
 {
     private readonly Strings _text;
     public string Url { get; }
-    public int Tier { get; }
-    public TrackerStatus Status { get; }
-    public int Seeds { get; }
-    public int Leechers { get; }
-    public int Downloaded { get; }
-    public long NextAnnounce { get; }
-    public string Message { get; }
+    public int Tier { get; private set; }
+    public TrackerStatus Status { get; private set; }
+    public int Seeds { get; private set; }
+    public int Leechers { get; private set; }
+    public int Downloaded { get; private set; }
+    public long NextAnnounce { get; private set; }
+    public string Message { get; private set; } = string.Empty;
     public string StatusText => _text.Get("trackers", Status.ToString().ToLowerInvariant());
     public string TierText => (Tier + 1).ToString(CultureInfo.CurrentCulture);
     public string SeedsText => Seeds < 0 ? "—" : Seeds.ToString("N0", CultureInfo.CurrentCulture);
@@ -28,6 +28,11 @@ public sealed class Tracker : INotifyPropertyChanged
     {
         _text = text;
         Url = data.GetProperty("url").GetString()!;
+        Update(data);
+    }
+
+    internal void Update(JsonElement data)
+    {
         Tier = data.GetProperty("tier").GetInt32();
         Status = data.GetProperty("status").GetString() switch
         {
@@ -43,6 +48,7 @@ public sealed class Tracker : INotifyPropertyChanged
         Downloaded = data.GetProperty("downloaded").GetInt32();
         NextAnnounce = data.GetProperty("next_announce").GetInt64();
         Message = data.GetProperty("message").GetString()!;
+        RefreshText();
     }
 
     internal void RefreshText() => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));

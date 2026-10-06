@@ -4,6 +4,12 @@ Implement the [selected architecture](README.md) in complete slices. This plan
 does not request immediate product changes, authorize desktop launches, or turn
 the historical review reports into additional contracts.
 
+Implementation started from checkpoint `db6ec1d` on 2026-10-06 after the owner
+authorized this work. The [current source map](../../architecture-current.md)
+describes the resulting owners. The slice descriptions below retain the
+implementation rationale; current verification belongs in
+[implementation evidence](evidence.md#implementation-checkpoint).
+
 ## Governing goal
 
 The owner's goal is easy-to-read, low-bloat code, not preservation of the current
@@ -86,8 +92,9 @@ through each editor's existing action and outcome, following the
 continuing the original transition; this adds no shared draft interface or
 duplicate submission path.
 After resolving that editor, recheck remaining draft owners before closing.
-Detach the native prompt before a required follow-up confirmation uses its slot;
-continue awaiting the whole operation and exclude unrelated dialogs meanwhile.
+Detach the native prompt while continuing to await the whole operation and
+exclude unrelated dialogs meanwhile. Current Save actions need no nested
+confirmation; Delete has no editable draft and keeps its existing confirmation.
 
 **Evidence:** reuse Exit/Keep-input, Add and file-operation journeys. Exercise
 unsuccessful closing after the editor is hidden and confirm the same valid

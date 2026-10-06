@@ -5,11 +5,12 @@
     "disconnected": "Downloads have stopped. Showing last known values. Choose Restart to restart the engine.",
     "error": "The operation could not be completed. {0}", "download_rate": "Download: {0}", "upload_rate": "Upload: {0}",
     "storage_failed": "Saved downloads could not be loaded. Close TinyTorrent and check the engine data folder before trying again.",
-    "no_matches": "No matching torrents", "no_matches_detail": "Clear the search or Errors filter to see your other torrents.", "clear_filters": "Clear filters",
+    "no_matches": "No matching torrents", "no_matches_detail": "Clear the filter to see your other torrents.", "clear_filters": "Clear filters",
     "incoming": "Incoming connections available", "no_incoming": "No incoming connections yet", "selected": "{0} selected", "errors": "Errors · {0}", "search": "Find a torrent", "alternative": "Alternative limits"
   },
-  "chrome": { "dark": "Switch to dark theme", "light": "Switch to light theme", "english": "Language: Spanish. Switch to English", "spanish": "Language: English. Switch to Spanish" },
+  "chrome": { "dark": "Switch to dark theme", "light": "Switch to light theme" },
   "menus": { "file": "File", "file_key": "F", "torrent": "Torrent", "torrent_key": "T", "view": "View", "view_key": "V", "help": "Help", "help_key": "H", "back": "Back", "queue": "Queue" },
+  "shortcuts": { "control": "Ctrl", "alt": "Alt", "shift": "Shift", "delete": "Delete" },
   "filters": {
     "active": "Filters: {0} · {1:N0}",
     "title": "Filters", "close": "Close filters", "all": "All", "downloading": "Downloading", "seeding": "Seeding", "paused": "Paused", "queued": "Queued", "errors": "Errors", "count": "{0} · {1:N0}"

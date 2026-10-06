@@ -1,4 +1,3 @@
-using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Text.Json;
 using System.Windows.Input;
@@ -27,7 +26,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     private bool _storageFailed;
     private bool _languageSaved = true;
     private string? _startupError;
-    private bool _settingsPending;
     private bool _changingLanguage;
     private string _requestedLanguage = "en";
     private int _languageRevision;
@@ -38,7 +36,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     private string? _connectionReason;
     private bool _loaded;
     private bool _ready;
-    private bool _writable;
+    private bool _stopping;
     private bool _closed;
     private bool _closing;
     private bool _picking;
@@ -46,10 +44,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     private bool _dark;
 
     public Strings Text { get; }
-    public ObservableCollection<Torrent> Torrents { get; } = [];
+    public List<Torrent> Torrents { get; } = [];
     public AddDraft Draft { get; }
     public Preferences Preferences { get; }
-    public string Theme { get; private set; } = "system";
+    public string Theme => Preferences.Theme.ConfirmedText.Length > 0 ? Preferences.Theme.ConfirmedText : "system";
     public bool IsConnected => _connected;
     internal double DownloadRate => _downloadRate;
     internal double UploadRate => _uploadRate;
@@ -57,12 +55,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     public bool IsStorageFailed => _storageFailed;
     public bool IsEmptyVisible => !_storageFailed;
     public bool IsClosing => _closing;
-    public bool CanClose => !_settingsPending && !_picking && !_receivingSources && !Draft.IsPending &&
+    public bool CanClose => !_changingLanguage && !_picking && !_receivingSources && !Draft.IsPending &&
         !Inspector.IsPending && !Preferences.IsPending && !Files.IsPending;
     public bool CanExit => _connected && CanClose;
     public string? DataDirectory => _client.DataDirectory;
     public bool HasDraft => Draft.HasChanges || Inspector.HasDraft || Preferences.HasDraft || Files.HasDraft;
-    internal bool CanSave => _writable && !_picking;
+    internal bool CanSave => _connected && !_loading && !_storageFailed && !_stopping && !_picking;
     public bool CanEdit => CanSave && !_closing;
     public bool IsPicking
     {
@@ -89,13 +87,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     public ICommand Pause { get; }
     public ICommand Resume { get; }
     public ICommand Exit { get; }
-    public ICommand SwitchLanguage { get; }
     public ICommand SwitchTheme { get; }
     public string DownloadText => Text.Format("window", "download_rate", Rate(_downloadRate));
     public string UploadText => Text.Format("window", "upload_rate", Rate(_uploadRate));
     public string PausedText => _connected && AllPaused ? Text.Get("status", "all_paused") : string.Empty;
     private string Rate(double rate) => _connected && !_loading && !_storageFailed ? Text.Format("units", "rate", Text.Bytes(rate)) : "—";
-    public string TorrentError => _current is null || _current.ErrorCode.Length == 0 ? string.Empty :
+    public string TorrentError => _current is null || !_current.IsError ? string.Empty :
         Text.Format("errors", "torrent", _current.Name, _current.ErrorText);
     public string Message
     {
@@ -104,23 +101,24 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             if (!_connected)
             {
                 var message = Text.Get("window", _sessionId.Length == 0 ? "connecting" : "disconnected");
-                var detail = _error is not null ? FormatError(_error) : _connectionReason;
+                var detail = _connectionReason;
                 return string.IsNullOrEmpty(detail) ? message : Text.Format("errors", "detail", message, detail);
             }
             if (_storageFailed) return Text.Error("storage_failed", _startupError);
             if (_loading) return Text.Get("window", "connecting");
-            if (_error is not null) return FormatError(_error);
             return !_languageSaved ? Text.Get("errors", "language_unsaved") : string.Empty;
         }
     }
     public bool HasFeedback => Message.Length > 0;
+    public string CommandError => _error is null ? string.Empty : Text.Error(_error);
+    public bool HasCommandError => _error is not null;
     public bool HasTorrentError => TorrentError.Length > 0;
-    public InfoBarSeverity Severity => _error is not null || _connected && _storageFailed ?
+    public InfoBarSeverity Severity => _connected && _storageFailed ?
         InfoBarSeverity.Error : InfoBarSeverity.Warning;
 
     public event PropertyChangedEventHandler? PropertyChanged;
     public event EventHandler? TextChanged;
-    public event EventHandler<bool>? SnapshotApplied;
+    internal event EventHandler<SnapshotAppliedEventArgs>? SnapshotApplied;
     public event EventHandler<Torrent>? RevealRequested;
     public event EventHandler? AddRequested;
     public event EventHandler? ActivateRequested;
@@ -156,9 +154,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         Pause = new Command(() => ActOnSelection("pause"), () => CanEdit && _selected.Length > 0);
         Resume = new Command(() => ActOnSelection("resume"), () => CanEdit && _selected.Length > 0);
         Exit = new Command(ExitEngine, () => CanExit);
-        SwitchLanguage = new Command(() => { SelectLanguage(_requestedLanguage == "es" ? "en" : "es"); return Task.CompletedTask; },
-            () => _connected && (!_settingsPending || _changingLanguage));
-        SwitchTheme = new Command(ChangeTheme, () => _connected && !_settingsPending);
+        SwitchTheme = new Command(ChangeTheme, () => CanEdit);
         AddMagnet = new Command(() =>
         {
             Draft.EditingMagnet = true;
@@ -185,11 +181,17 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         CopyMagnet = new Command(() => CopyTorrent(false), () => CanEdit && _selected.Length == 1);
         CopyHash = new Command(() => CopyTorrent(true), () => CanEdit && _selected.Length == 1);
         Properties = new Command(() => Inspect(Inspector.Section), () => CanEdit && _selected.Length == 1);
-        ClearFilters = new Command(ClearFinding, () => Search.Length > 0 || Filter != TorrentFilter.All);
+        ClearFilters = new Command(ClearFinding, () => Filter != TorrentFilter.All);
         ShowPreferences = new Command(() => RequestPreferences(new(PreferenceSection.General)), () => true);
         ShowTorrents = new Command(() => { TorrentsRequested?.Invoke(this, EventArgs.Empty); return Task.CompletedTask; }, () => true);
         ShowAbout = new Command(() => { AboutRequested?.Invoke(this, EventArgs.Empty); return Task.CompletedTask; }, () => true);
         OpenUpdate = new Command(() => { OpenRequested?.Invoke(this, ReleasePage); return Task.CompletedTask; }, () => HasUpdate);
+        Preferences.Updates.PropertyChanged += (_, _) =>
+        {
+            ObserveUpdates();
+            Changed(nameof(HasUpdate));
+            ((Command)OpenUpdate).Refresh();
+        };
         _client.Snapshot += QueueSnapshot;
         _client.Disconnected += reason => _dispatcher.TryEnqueue(() =>
         {
@@ -197,7 +199,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             _connected = false;
             _connectionReason = reason;
             _ready = false;
-            _writable = false;
             Draft.Invalidate();
             Inspector.Disconnect();
             foreach (var torrent in Torrents) torrent.Disconnect();
@@ -220,19 +221,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         _client.Start();
     }
 
-    public void Select(IEnumerable<Torrent> items, Torrent? current)
-    {
-        _selected = items.ToArray();
-        _current = current;
-        Refresh();
-        if (Inspector.IsOpen && !Inspector.HasDraft && !Inspector.IsPending)
-        {
-            if (_selected.Length == 1) _ = Inspect(Inspector.Section); else CloseInspector();
-        }
-    }
+    internal bool Contains(Torrent torrent) =>
+        _byId.TryGetValue(torrent.TorrentId, out var current) && ReferenceEquals(current, torrent);
 
     private void Apply(JsonElement snapshot)
     {
+        var previousAccess = (_connected, _loading, _storageFailed, _stopping);
         var sessionId = snapshot.GetProperty("session_id").GetString()!;
         if (_sessionId != sessionId) Draft.Invalidate();
         _sessionId = sessionId;
@@ -241,30 +235,29 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         _loading = snapshot.TryGetProperty("loading", out var startup) && startup.GetBoolean();
         _storageFailed = snapshot.TryGetProperty("storage_failed", out var storage) && storage.GetBoolean();
         _startupError = snapshot.TryGetProperty("startup_error", out var detail) ? detail.GetString() : null;
-        _writable = !_loading && !_storageFailed && !snapshot.GetProperty("stopping").GetBoolean();
+        _stopping = snapshot.GetProperty("stopping").GetBoolean();
+        var accessChanged = previousAccess != (_connected, _loading, _storageFailed, _stopping);
         // The first state the window can show: the saved settings, or the
         // storage failure that replaces them.
         var first = !_ready && !_loading;
         _ready |= first;
         if (_loading || _storageFailed)
         {
-            Refresh();
+            if (accessChanged) Refresh(); else RefreshWindow();
+            ObserveUpdates();
             if (first) ShowRequested?.Invoke(this, EventArgs.Empty);
             return;
         }
         var settings = snapshot.GetProperty("settings");
-        _settings = settings;
         Preferences.Apply(settings);
         AllPaused = snapshot.GetProperty("all_paused").GetBoolean();
         HasIncoming = snapshot.GetProperty("has_incoming").GetBoolean();
         MissingInterface = snapshot.TryGetProperty("missing_interface", out var missing) ? missing.GetString() ?? string.Empty : string.Empty;
-        _alternativeLimits = snapshot.TryGetProperty("alternative_limits", out var alternative) ? alternative.GetBoolean() : Setting("alternative_limits", false);
-        if (settings.TryGetProperty("theme", out var theme)) Theme = theme.GetString()!;
-        if (!_settingsPending && settings.TryGetProperty("language", out var language) &&
-            language.GetString() is { } tag && tag != _requestedLanguage)
+        _alternativeLimits = snapshot.TryGetProperty("alternative_limits", out var alternative) ? alternative.GetBoolean() : Preferences.Alternative.ConfirmedOn;
+        if (!_changingLanguage && Preferences.Language.ConfirmedText is { Length: > 0 } tag && tag != _requestedLanguage)
             _languageLoad = LoadLanguage(tag);
         var present = new HashSet<string>();
-        var queueChanged = false;
+        var eligibilityChanged = false;
         foreach (var item in snapshot.GetProperty("torrents").EnumerateArray())
         {
             var torrentId = item.GetProperty("torrent_id").GetString()!;
@@ -275,8 +268,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
                 _byId.Add(torrentId, torrent);
                 Torrents.Add(torrent);
             }
-            queueChanged |= torrent.Queue != item.GetProperty("queue").GetInt32();
+            var couldReorder = torrent.Queue >= 0;
             torrent.Update(item);
+            eligibilityChanged |= couldReorder != (torrent.Queue >= 0);
         }
         foreach (var torrent in Torrents.Where(row => !present.Contains(row.TorrentId)).ToArray())
         {
@@ -285,17 +279,19 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         }
         _selected = _selected.Where(row => present.Contains(row.TorrentId)).ToArray();
         if (_current is not null && !present.Contains(_current.TorrentId)) _current = null;
+        if (Inspector.Target is { } target && !Contains(target)) CloseInspector();
         var languageSaved = snapshot.GetProperty("language_saved").GetBoolean();
         if (!_languageSaved && languageSaved && _error is CommandFailure { Command: "settings" }) _error = null;
         _languageSaved = languageSaved;
-        if (settings.TryGetProperty("default_destination", out var destination))
-            Draft.UseDefault(destination.GetString()!);
+        Draft.UseDefault(Preferences.Destination.ConfirmedText);
         _downloadRate = snapshot.GetProperty("download_rate").GetDouble();
         _uploadRate = snapshot.GetProperty("upload_rate").GetDouble();
-        Refresh();
+        var published = Project();
+        if (accessChanged) Refresh(); else RefreshWindow();
+        ObserveUpdates();
         if (first) ShowRequested?.Invoke(this, EventArgs.Empty);
         Inspector.Observe(sessionId);
-        SnapshotApplied?.Invoke(this, queueChanged);
+        SnapshotApplied?.Invoke(this, new SnapshotAppliedEventArgs(published, eligibilityChanged));
         if (_revealId is not null && _byId.TryGetValue(_revealId, out var revealed))
         {
             _revealId = null;
@@ -377,12 +373,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
 
     internal void SelectLanguage(string language)
     {
-        if (!_connected || _settingsPending && !_changingLanguage) return;
+        if (!CanEdit) return;
         _requestedLanguage = language;
         ++_languageRevision;
         if (_changingLanguage) return;
         _changingLanguage = true;
-        _settingsPending = true;
         Refresh();
         _ = ChangeLanguage();
     }
@@ -403,7 +398,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
                     if (revision != _languageRevision) continue;
                     Publish(catalogue);
                     published = true;
-                    await _client.Send("settings", new { changes = new { language } });
+                    await Preferences.SaveLanguage(language);
                     if (revision != _languageRevision) continue;
                     _error = null;
                     break;
@@ -411,13 +406,16 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
                 catch (Exception error)
                 {
                     if (revision != _languageRevision) continue;
-                    if (!published) _requestedLanguage = Text.Language;
-                    Report(error);
+                    if (!published)
+                    {
+                        _requestedLanguage = Text.Language;
+                        Report(error);
+                    }
                     break;
                 }
             }
         }
-        finally { _changingLanguage = false; _settingsPending = false; Refresh(); }
+        finally { _changingLanguage = false; Refresh(); }
     }
 
     private void Publish(Strings.Catalogue catalogue)
@@ -436,18 +434,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
 
     public async Task SelectTheme(string theme)
     {
-        if (!_connected || _settingsPending) return;
-        if (theme == Theme) return;
-        _settingsPending = true;
-        Refresh();
-        try
-        {
-            await _client.Send("settings", new { changes = new { theme } });
-            Theme = theme;
-            _error = null;
-        }
+        if (!CanEdit) return;
+        try { await Preferences.Save(new { theme }); ClearError(); }
         catch (Exception error) { Report(error); }
-        finally { _settingsPending = false; Refresh(); }
     }
 
     // Requests queued before this one reach the engine first, so a command that
@@ -491,7 +480,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         if (_closed) return;
         _error = error;
         Refresh();
-        Announce(FormatError(error));
+        Announce(Text.Error(error));
     }
 
     internal void Accepted(string group, string key) => Announce(Text.Format("outcomes", "accepted", Text.Get(group, key)));
@@ -500,8 +489,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     {
         if (!_closed) AnnouncementRequested?.Invoke(this, message);
     }
-
-    internal string FormatError(Exception error) => error is CommandFailure ? error.Message : Text.Error("unknown", error.Message);
 
     // Stops new operations while the window closes. Accepted work still
     // finishes, and CanClose reports when it has.
@@ -522,7 +509,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
 
     internal void Reveal(string torrentId)
     {
-        Search = string.Empty;
         ErrorsOnly = false;
         Filter = TorrentFilter.All;
         _revealId = torrentId;
@@ -535,30 +521,33 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     // a lost connection reports itself.
     internal void RequestSnapshot() => _ = _client.Read(Consumer.Summary, "snapshot");
 
-    internal void ClearError() { _error = null; Refresh(); }
+    internal void ClearError() { _error = null; RefreshWindow(); }
 
     private void Refresh()
     {
         if (_closed) return;
-        Project();
-        foreach (var choice in Filters) choice.Refresh();
-        Changed(string.Empty);
         Draft.Refresh();
         Inspector.Refresh();
         Preferences.Refresh();
         Files.Refresh();
+        RefreshWindow();
+    }
+
+    private void RefreshWindow()
+    {
+        if (_closed) return;
+        foreach (var choice in Filters) choice.Refresh();
+        Changed(string.Empty);
         foreach (Command command in new[] { Add, AddMagnet, Pause, Resume, Force, Verify, Remove, MoveFiles, DeleteFiles,
             Up, Down, Top, Bottom, PauseAll, ResumeAll, Open, OpenFolder, CopyMagnet, CopyHash,
-            Properties, Limits, ClearFilters, ShowPreferences, ShowTorrents, ShowAbout, OpenUpdate, Exit, SwitchLanguage, SwitchTheme, Restart }) command.Refresh();
+            Properties, Limits, ClearFilters, ShowPreferences, ShowTorrents, ShowAbout, OpenUpdate, Exit, SwitchTheme, Restart }) command.Refresh();
     }
 
     private void OnTaskChanged(object? sender, PropertyChangedEventArgs args)
     {
         if (ReferenceEquals(sender, Preferences))
         {
-            ObserveUpdates();
-            Changed(nameof(HasUpdate));
-            ((Command)OpenUpdate).Refresh();
+            Changed(nameof(Theme));
         }
         Changed(nameof(CanClose));
         Changed(nameof(CanExit));
@@ -577,6 +566,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         _client.Dispose();
         lock (_snapshotGate) _latest = null;
     }
+}
+
+internal sealed class SnapshotAppliedEventArgs(bool published, bool eligibilityChanged) : EventArgs
+{
+    public bool Published { get; } = published;
+    public bool EligibilityChanged { get; } = eligibilityChanged;
 }
 
 internal sealed class Command(Func<Task> execute, Func<bool> enabled) : ICommand

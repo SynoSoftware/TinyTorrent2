@@ -43,7 +43,7 @@ public sealed class FileOperation : INotifyPropertyChanged
     public string SharedText => owner.Text.Format("file_operation", IsMove ? "move_shared" : "delete_shared",
         string.Join(Environment.NewLine, _shared.Select(torrent => torrent.Name)));
     public string KeptText => HasKeptFiles ? owner.Text.FormatCount("file_operation", "kept", _keptFiles) : string.Empty;
-    public string Message => _failure is null ? string.Empty : owner.FormatError(_failure);
+    public string Message => _failure is null ? string.Empty : owner.Text.Error(_failure);
     public bool HasError => _failure is not null;
     public string Destination
     {

@@ -6,7 +6,6 @@ namespace Syno.TinyTorrent;
 
 public sealed partial class MainViewModel
 {
-    private string _search = string.Empty;
     private string _query = string.Empty;
     private TorrentFilter _filter;
     private bool _filterOpen;
@@ -28,12 +27,11 @@ public sealed partial class MainViewModel
     public string VersionText => Text.Format("about", "version", typeof(MainViewModel).Assembly.GetName().Version?.ToString(3) ?? string.Empty);
 
     public IReadOnlyList<Torrent> VisibleTorrents { get; private set; } = [];
-    public string Search { get => _search; set { if (_search == value) return; _search = value; Refresh(); } }
     public string Query { get => _query; set { if (_query == value) return; _query = value; Changed(nameof(Query)); } }
     public TorrentFilter Filter
     {
         get => _filter;
-        set { if (_filter == value) return; _filter = value; Refresh(); }
+        set { if (_filter == value) return; _filter = value; Project(); RefreshWindow(); }
     }
     public bool ErrorsOnly
     {
@@ -63,29 +61,27 @@ public sealed partial class MainViewModel
         TorrentFilter.Seeding => torrent.StatusCode is "seeding" or "completed",
         TorrentFilter.Paused => torrent.StatusCode is "paused" or "all_paused",
         TorrentFilter.Queued => torrent.StatusCode == "queued",
-        TorrentFilter.Errors => torrent.ErrorCode.Length > 0 || torrent.IsError,
+        TorrentFilter.Errors => torrent.IsError,
         _ => false
     };
 
-    private void Project()
+    private bool Project()
     {
-        var desired = Torrents.Where(torrent => torrent.Name.Contains(_search, StringComparison.CurrentCultureIgnoreCase) &&
-            Matches(torrent, Filter)).OrderBy(torrent => torrent.QueueOrder).ToArray();
+        var desired = Torrents.Where(torrent => Matches(torrent, Filter)).OrderBy(torrent => torrent.QueueOrder).ToArray();
         // TableView rebuilds its whole view for every source notification, so a
         // changed projection is published as one new list, not row by row.
         if (!desired.SequenceEqual(VisibleTorrents))
         {
             VisibleTorrents = desired;
             Changed(nameof(VisibleTorrents));
+            return true;
         }
-        if (Inspector.Target is { } target && !Torrents.Contains(target)) CloseInspector();
+        return false;
     }
 
     private Task ClearFinding()
     {
-        _search = string.Empty;
-        _filter = TorrentFilter.All;
-        Refresh();
+        Filter = TorrentFilter.All;
         return Task.CompletedTask;
     }
 
@@ -165,20 +161,11 @@ public sealed partial class MainViewModel
             yield return PreferenceSuggestion(new(section), Text.Get("preferences", section.ToString().ToLowerInvariant()));
         foreach (var field in Preferences.Fields)
         {
-            var section = field.Name switch
-            {
-                "download_limit" or "upload_limit" or "alternative_download_limit" or "alternative_upload_limit" or
-                    "active_downloads" or "active_seeds" or "ratio_limit" or "seeding_minutes" => PreferenceSection.Transfers,
-                "connection_limit" or "network_interface" or "port_mapping" or "listen_port" => PreferenceSection.Network,
-                "schedule_enabled" => PreferenceSection.Schedule,
-                _ => PreferenceSection.General
-            };
-            yield return PreferenceSuggestion(new(section, field.Name), field.Label);
+            if (field == Preferences.Alternative) continue;
+            yield return PreferenceSuggestion(new(field.Section, field.Name), field.Label);
         }
         foreach (var key in new[] { "start_signin", "startup_settings", "open_defaults", "remove_handler" })
             yield return PreferenceSuggestion(new(PreferenceSection.General, key), Text.Get("preferences", key));
-        yield return PreferenceSuggestion(new(PreferenceSection.Appearance, "language"), Text.Get("preferences", "language"));
-        yield return PreferenceSuggestion(new(PreferenceSection.Appearance, "theme"), Text.Get("preferences", "theme"));
         yield return PreferenceSuggestion(new(PreferenceSection.Schedule, "add_period"), Text.Get("preferences", "add_period"));
     }
 

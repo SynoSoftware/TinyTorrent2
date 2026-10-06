@@ -80,90 +80,97 @@ void Engine::State::Edit(std::string const& id, Json const& choices, Reply reply
     Act({id}, reply, [this, priorities = std::move(priorities), trackers = std::move(trackers)]
         (auto const& ids, Reply reply)
     {
-        auto const& id = ids.front();
-        auto& torrent = torrents.at(id);
-        if (!priorities.empty() && torrent.priorityReply)
+        CommitEdit(ids.front(), priorities, trackers, reply);
+    });
+}
+
+void Engine::State::CommitEdit(std::string const& id,
+    std::map<int, lt::download_priority_t> const& priorities,
+    std::optional<std::vector<lt::announce_entry>> const& trackers, Reply reply)
+{
+    auto& torrent = torrents.at(id);
+    if (!priorities.empty() && torrent.priorityReply)
+    {
+        reply(Failure(ErrorCode::Overloaded));
+        return;
+    }
+    auto facts = torrent.facts;
+    if (!priorities.empty())
+    {
+        auto metadata = torrent.handle.torrent_file();
+        if (!metadata)
         {
-            reply(Failure(ErrorCode::Overloaded));
+            reply(Failure(ErrorCode::MetadataUnavailable));
             return;
         }
-        auto facts = torrent.facts;
-        if (!priorities.empty())
+        if (facts.priorities.empty())
         {
-            auto metadata = torrent.handle.torrent_file();
-            if (!metadata)
-            {
-                reply(Failure(ErrorCode::MetadataUnavailable));
-                return;
-            }
-            if (facts.priorities.empty())
-            {
-                facts.priorities = DefaultPriorities(metadata->layout());
-            }
-            for (auto const& [index, priority] : priorities)
-            {
-                if (index >= metadata->num_files())
-                {
-                    reply(Failure(ErrorCode::InvalidPriorities));
-                    return;
-                }
-                facts.priorities[index] = priority;
-            }
-            auto chosen = Priorities(facts.priorities, metadata);
-            if (!chosen)
+            facts.priorities = DefaultPriorities(metadata->layout());
+        }
+        for (auto const& [index, priority] : priorities)
+        {
+            if (index >= metadata->num_files())
             {
                 reply(Failure(ErrorCode::InvalidPriorities));
                 return;
             }
-            facts.priorities = std::move(*chosen);
+            facts.priorities[index] = priority;
         }
-        if (trackers)
+        auto chosen = Priorities(facts.priorities, metadata);
+        if (!chosen)
         {
-            facts.trackers = trackers;
-        }
-        auto apply = [this, id, facts, priorities, trackers, reply]
-        {
-            auto& torrent = torrents.at(id);
-            torrent.facts = facts;
-            torrent.unsaved = true;
-            if (trackers)
-            {
-                auto current = torrent.handle.trackers();
-                if (current.size() != trackers->size() || !std::equal(current.begin(), current.end(),
-                    trackers->begin(), [](auto const& left, auto const& right)
-                    { return left.url == right.url && left.tier == right.tier; }))
-                {
-                    torrent.handle.replace_trackers(*trackers);
-                }
-            }
-            if (!priorities.empty() && torrent.handle.get_file_priorities() != facts.priorities)
-            {
-                torrent.priorityReply = reply;
-                torrent.handle.prioritize_files(facts.priorities);
-            }
-            else
-            {
-                reply(Success());
-            }
-        };
-        if (facts.ToJson() == torrent.facts.ToJson())
-        {
-            apply();
+            reply(Failure(ErrorCode::InvalidPriorities));
             return;
         }
-        auto document = Saved();
-        document.torrents.at(id) = facts;
-        changes.Commit(document.ToJson(), [apply, reply](StorageOutcome outcome)
+        facts.priorities = std::move(*chosen);
+    }
+    if (trackers)
+    {
+        facts.trackers = trackers;
+    }
+    auto apply = [this, id, facts, hasPriorities = !priorities.empty(), hasTrackers = bool(trackers), reply]
+    {
+        auto& torrent = torrents.at(id);
+        torrent.facts = facts;
+        torrent.unsaved = true;
+        if (hasTrackers)
         {
-            if (outcome.succeeded)
+            auto const& trackers = *facts.trackers;
+            auto current = torrent.handle.trackers();
+            if (current.size() != trackers.size() || !std::equal(current.begin(), current.end(),
+                trackers.begin(), [](auto const& left, auto const& right)
+                { return left.url == right.url && left.tier == right.tier; }))
             {
-                apply();
+                torrent.handle.replace_trackers(trackers);
             }
-            else
-            {
-                reply(Failure(ErrorCode::StorageFailed, outcome.detail));
-            }
-        });
+        }
+        if (hasPriorities && torrent.handle.get_file_priorities() != facts.priorities)
+        {
+            torrent.priorityReply = reply;
+            torrent.handle.prioritize_files(facts.priorities);
+        }
+        else
+        {
+            reply(Success());
+        }
+    };
+    if (facts.ToJson() == torrent.facts.ToJson())
+    {
+        apply();
+        return;
+    }
+    auto document = Saved();
+    document.torrents.at(id) = facts;
+    changes.Commit(document.ToJson(), [apply, reply](StorageOutcome outcome)
+    {
+        if (outcome.succeeded)
+        {
+            apply();
+        }
+        else
+        {
+            reply(Failure(ErrorCode::StorageFailed, outcome.detail));
+        }
     });
 }
 

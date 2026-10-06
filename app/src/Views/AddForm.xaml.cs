@@ -25,17 +25,10 @@ public sealed partial class AddForm : UserControl
 
     internal void RefreshText()
     {
-        More.Content = Model.Text.Get("add", "more");
+        Bindings.Update();
         Files.Text = Model.Text.Get("commands", "add_file");
         Magnet.Text = Model.Text.Get("commands", "add_magnet");
-        DestinationLabel.Text = Model.Text.Get("add", "destination");
-        OptionsLabel.Text = Model.Text.Get("add", "options");
-        Browse.Content = Model.Text.Get("add", "browse");
-        Paused.Content = Model.Text.Get("add", "paused");
-        NeverShow.Content = Model.Text.Get("add", "never_show");
         MagnetInput.Header = Model.Text.Get("add", "magnet");
-        Paste.Content = Model.Text.Get("add", "paste");
-        Preview.Content = Model.Text.Get("add", "review");
         _browser.RefreshText();
     }
 

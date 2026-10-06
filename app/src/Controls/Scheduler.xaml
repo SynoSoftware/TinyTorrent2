@@ -17,16 +17,16 @@
         <Grid ColumnSpacing="12">
             <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
             <StackPanel Spacing="4">
-                <ToggleSwitch x:Name="Enabled" Header="{x:Bind Model.Schedule.Label, Mode=OneWay}" Tag="{x:Bind Model.Schedule}"
+                <ToggleSwitch x:Name="Enabled" Header="{x:Bind Model.Enabled.Label, Mode=OneWay}" Tag="{x:Bind Model.Enabled}"
                     OnContent="{x:Bind Model.OnText, Mode=OneWay}" OffContent="{x:Bind Model.OffText, Mode=OneWay}"
-                    IsOn="{x:Bind Model.Schedule.IsOn, Mode=OneWay}" IsEnabled="{x:Bind Model.Schedule.CanEdit, Mode=OneWay}"
-                    Toggled="OnToggle" AutomationProperties.Name="{x:Bind Model.Schedule.Label, Mode=OneWay}" AutomationProperties.AutomationId="ScheduleEnabled" />
+                    IsOn="{x:Bind Model.Enabled.IsOn, Mode=OneWay}" IsEnabled="{x:Bind Model.Enabled.CanEdit, Mode=OneWay}"
+                    Toggled="OnToggle" AutomationProperties.Name="{x:Bind Model.Enabled.Label, Mode=OneWay}" AutomationProperties.AutomationId="ScheduleEnabled" />
             </StackPanel>
             <Button x:Name="AddPeriod" Grid.Column="1" VerticalAlignment="Top" Style="{StaticResource AccentButtonStyle}" Command="{x:Bind Model.AddPeriod}" AutomationProperties.AutomationId="AddPeriod" />
         </Grid>
         <TextBlock Text="{x:Bind Model.WeekStatus, Mode=OneWay}" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" />
-        <TextBlock Text="{x:Bind Model.Schedule.Message, Mode=OneWay}" TextWrapping="Wrap" Foreground="{ThemeResource SystemFillColorCriticalBrush}"
-            Visibility="{x:Bind local:Scheduler.MessageVisibility(Model.Schedule.Message), Mode=OneWay}" AutomationProperties.LiveSetting="Assertive" />
+        <TextBlock Text="{x:Bind Model.Enabled.Message, Mode=OneWay}" TextWrapping="Wrap" Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+            Visibility="{x:Bind local:Scheduler.MessageVisibility(Model.Enabled.Message), Mode=OneWay}" AutomationProperties.LiveSetting="Assertive" />
         <ContentControl x:Name="Timeline" HorizontalContentAlignment="Stretch" IsTabStop="False" />
         <TextBlock x:Name="PreviewHint" Visibility="{x:Bind Model.IsEditing, Mode=OneWay}" TextWrapping="Wrap"
             Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" />

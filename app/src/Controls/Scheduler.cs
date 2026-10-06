@@ -14,10 +14,10 @@ public sealed partial class Scheduler : UserControl
 {
     private PeriodDraft? _editor;
     private bool _refreshing;
-    public Preferences Model { get; }
+    public Schedule Model { get; }
     public event EventHandler? SpeedRequested;
 
-    public Scheduler(Preferences model)
+    public Scheduler(Schedule model)
     {
         Model = model;
         InitializeComponent();
@@ -135,7 +135,7 @@ public sealed partial class Scheduler : UserControl
     }
 
     private void Label(ContentControl control, string key) => control.Content = Model.Text.Get("preferences", key);
-    private async void OnToggle(object sender, RoutedEventArgs args) => await Model.Toggle(Model.Schedule, Enabled.IsOn);
+    private async void OnToggle(object sender, RoutedEventArgs args) => await Model.Toggle(Enabled.IsOn);
     private void OnSpeedLimits(object sender, RoutedEventArgs args) => SpeedRequested?.Invoke(this, EventArgs.Empty);
     public static int ModeIndex(bool paused) => paused ? 1 : 0;
     public static Visibility MessageVisibility(string value) => string.IsNullOrEmpty(value) ? Visibility.Collapsed : Visibility.Visible;

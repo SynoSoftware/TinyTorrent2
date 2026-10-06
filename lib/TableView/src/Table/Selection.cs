@@ -1,4 +1,5 @@
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Data;
 
@@ -335,18 +336,20 @@ public sealed partial class Table
             ReconcileSelection(FocusState.Unfocused);
             return;
         }
-        // Section 5.3 cancels a live gesture for a view-changing update. The test is whether the
-        // view actually changed, not whether the source published: the original host published about once
-        // a second and cancelling on each one made both gestures unusable, a marquee dying on the
-        // next publish and a row drag dying under the pointer. A marquee is never
-        // cancelled here at all — the rectangle has not moved, so what it covers is re-derived
-        // over the new view below. A row drag is, but only once the order beneath it moved, which
-        // is the moment its destination stopped meaning what the user aimed at.
+        if (order.SequenceEqual(View, ReferenceEqualityComparer.Instance))
+        {
+            CancelRowDrag();
+            UpdateStateLayer();
+            ReconcileSelection(FocusState.Unfocused);
+            return;
+        }
 
         // Capture how the rows hold focus, not merely that they do, and capture it before the view
         // changes. Once the focused row's container is gone the framework has already rescued
         // focus, carrying that container's state to whatever it landed on, which is not the row's.
         FocusState rowFocus = RowSurfaceFocusState();
+        object? focusedItem = rowFocus != FocusState.Unfocused && FocusManager.GetFocusedElement(XamlRoot) is ListViewItem focusedRow
+            ? _itemsView?.ItemFromContainer(focusedRow) : null;
         // Remove keyboard focus before containers leave so native focus rescue cannot
         // carry a row's keyboard cue onto an unrelated control.
         if (rowFocus != FocusState.Unfocused) _itemsView?.Focus(FocusState.Pointer);
@@ -396,7 +399,8 @@ public sealed partial class Table
         }
 
         UpdateStateLayer();
-        ReconcileSelection(rowFocus);
+        object? retained = focusedItem is null ? null : View.FirstOrDefault(item => _selection.IsSame(item, focusedItem));
+        ReconcileSelection(rowFocus, retained);
     }
 
     private void ValidateRows(IReadOnlyList<object> snapshot)
@@ -418,7 +422,7 @@ public sealed partial class Table
     /// selection as soon as that row is removed, and a reorder is a removal, so its selection and
     /// its focus are restored from the model here rather than trusted.
     /// </summary>
-    private void ReconcileSelection(FocusState rowFocus)
+    private void ReconcileSelection(FocusState rowFocus, object? focusedItem = null)
     {
         SyncSelectionPolicy();
 
@@ -437,7 +441,11 @@ public sealed partial class Table
             _selection.SetMarqueeSelection(MarqueeItems(), View);
         }
 
-        if (!_detached) RestoreRowFocus(rowFocus);
+        if (!_detached)
+        {
+            if (focusedItem is not null) FocusCurrentRow(rowFocus, focusedItem);
+            else RestoreRowFocus(rowFocus);
+        }
         CommitSelection();
     }
 

@@ -91,3 +91,31 @@ internal enum PeriodAction
     Start,
     End
 }
+
+public enum PreferenceKind
+{
+    Text,
+    Boolean,
+    Rate,
+    Number,
+    Integer,
+    Port
+}
+
+internal enum CaptureMode
+{
+    None,
+    Full,
+    Smoke,
+    Shell,
+    Schedule,
+    Desktop,
+    Details,
+    DetailsFiles,
+    Files,
+    FilesLayout,
+    Search,
+    Library,
+    Traffic,
+    Edits
+}

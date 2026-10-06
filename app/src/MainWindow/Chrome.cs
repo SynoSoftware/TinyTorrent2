@@ -111,44 +111,14 @@ public sealed partial class MainWindow
         Torrents.Strings = Model.Text.Table;
         Root.FlowDirection = Model.Text.IsRightToLeft ? FlowDirection.RightToLeft : FlowDirection.LeftToRight;
         RefreshDialogs();
-        _form?.RefreshText();
-        _filesForm?.RefreshText();
-        if (_filesDialog is { } files)
-        {
-            files.Title = Model.Files.Title;
-            files.PrimaryButtonText = Model.Files.Title;
-            files.CloseButtonText = Model.Text.Get("add", "cancel");
-        }
-        if (_removeDialog is { } removal)
-        {
-            removal.Title = Model.Text.Get("remove", "title");
-            removal.PrimaryButtonText = Model.Text.Get("commands", "remove");
-            removal.CloseButtonText = Model.Text.Get("add", "cancel");
-            if (removal.Tag is Torrent[] torrents)
-                removal.Content = Model.Text.Format("remove", "detail", string.Join(Environment.NewLine, torrents.Select(torrent => torrent.Name)));
-        }
-        if (_addDialog is not null)
-        {
-            _addDialog.Title = Model.Text.Get("add", "title");
-            _addDialog.CloseButtonText = Model.Text.Get("add", "cancel");
-        }
-        if (_closePrompt is not null)
-        {
-            _closePrompt.Title = Model.Text.Get("changes", "title");
-            _closePrompt.Content = Model.Text.Get("changes", "detail");
-            _closePrompt.PrimaryButtonText = Model.Text.Get("changes", "save");
-            _closePrompt.SecondaryButtonText = Model.Text.Get("changes", "discard");
-            _closePrompt.CloseButtonText = Model.Text.Get("add", "cancel");
-        }
+        _interaction?.RefreshText?.Invoke();
         Torrents.RefreshView();
     }
 
     private void RefreshDialogs()
     {
-        ContentDialog?[] dialogs = [_addDialog, _closePrompt, _removeDialog, _filesDialog];
-        foreach (var dialog in dialogs)
+        if (_interaction?.Dialog is { } dialog)
         {
-            if (dialog is null) continue;
             dialog.RequestedTheme = Root.ActualTheme;
             dialog.FlowDirection = Root.FlowDirection;
         }

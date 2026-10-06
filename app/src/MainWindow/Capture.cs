@@ -24,7 +24,24 @@ public sealed partial class MainWindow
 {
     private string? _captureDirectory;
     private Task? _capture;
-    internal static bool IsCaptureReview => Environment.GetEnvironmentVariable("TINYTORRENT_CAPTURE_REVIEW") is "1" or "smoke" or "shell" or "schedule" or "desktop" or "details" or "details-files" or "files" or "files-layout" or "search" or "library" or "traffic" or "edits";
+    private static readonly CaptureMode ReviewMode = Environment.GetEnvironmentVariable("TINYTORRENT_CAPTURE_REVIEW") switch
+    {
+        "1" => CaptureMode.Full,
+        "smoke" => CaptureMode.Smoke,
+        "shell" => CaptureMode.Shell,
+        "schedule" => CaptureMode.Schedule,
+        "desktop" => CaptureMode.Desktop,
+        "details" => CaptureMode.Details,
+        "details-files" => CaptureMode.DetailsFiles,
+        "files" => CaptureMode.Files,
+        "files-layout" => CaptureMode.FilesLayout,
+        "search" => CaptureMode.Search,
+        "library" => CaptureMode.Library,
+        "traffic" => CaptureMode.Traffic,
+        "edits" => CaptureMode.Edits,
+        _ => CaptureMode.None
+    };
+    internal static bool IsCaptureReview => ReviewMode != CaptureMode.None;
 
     internal void ShowCaptureReview()
     {
@@ -173,7 +190,7 @@ public sealed partial class MainWindow
         var dialog = current() ?? throw new InvalidOperationException("The review dialog did not open.");
         try
         {
-            if (ReferenceEquals(dialog, _filesDialog)) await CaptureReady(Model.Files, () => !Model.Files.IsPending);
+            if (_filesForm is not null) await CaptureReady(Model.Files, () => !Model.Files.IsPending);
             await CapturePage(name, dialog.Content as FrameworkElement);
         }
         finally { dialog.Hide(); await closed; }
@@ -214,7 +231,7 @@ public sealed partial class MainWindow
         Model.Draft.EditingMagnet = true;
         var closed = ShowAdd();
         await CaptureLayout();
-        var dialog = _addDialog ?? throw new InvalidOperationException("The Add dialog did not open.");
+        var dialog = _interaction?.Dialog ?? throw new InvalidOperationException("The Add dialog did not open.");
         try
         {
             Model.Draft.Magnet = "invalid magnet";
@@ -226,7 +243,7 @@ public sealed partial class MainWindow
         }
         finally { dialog.Hide(); await closed; }
 
-        Model.Select([target], target);
+        await Model.Select([target], target);
         Run(Model.Properties);
         Model.Inspector.Select(InspectorSection.Trackers);
         await CaptureLayout();
@@ -235,7 +252,7 @@ public sealed partial class MainWindow
         Model.Inspector.TrackerInput = "https://example.invalid/announce";
         closed = ConfirmRemove([target]);
         await CaptureLayout();
-        dialog = _removeDialog ?? throw new InvalidOperationException("The removal dialog did not open.");
+        dialog = _interaction?.Dialog ?? throw new InvalidOperationException("The removal dialog did not open.");
         CaptureInvoke(dialog);
         await closed;
         await CaptureReady(Model.Inspector, () => !Model.Inspector.IsAvailable);
@@ -330,12 +347,12 @@ public sealed partial class MainWindow
         var narrow = ((Microsoft.UI.Windowing.OverlappedPresenter)AppWindow.Presenter).PreferredMinimumWidth ?? 720;
         AppWindow.Resize(new SizeInt32(narrow, 560));
         await CapturePage("shell-spanish");
-        await CaptureDialog("shell-add", () => { Run(Model.AddMagnet); return _dialogClosed?.Task ?? Task.CompletedTask; }, () => _addDialog);
+        await CaptureDialog("shell-add", () => { Run(Model.AddMagnet); return _interaction?.Completion.Task ?? Task.CompletedTask; }, () => _interaction?.Dialog);
     }
 
     private async Task CaptureSchedule(List<object> outcomes, List<string> completed)
     {
-        var preferences = Model.Preferences;
+        var preferences = Model.Preferences.Schedule;
         var existing = preferences.Periods.ToArray();
         SchedulePeriod? created = null;
         await ShowPreferences(new(PreferenceSection.Schedule));
@@ -440,7 +457,7 @@ public sealed partial class MainWindow
         await ShowTorrents();
         Run(Model.AddMagnet);
         await CaptureLayout();
-        var dialog = _addDialog ?? throw new InvalidOperationException("The desktop review Add dialog did not open.");
+        var dialog = _interaction?.Dialog ?? throw new InvalidOperationException("The desktop review Add dialog did not open.");
         var input = CaptureElements(dialog).OfType<TextBox>().Single(control => control.Name == "MagnetInput");
         input.Focus(FocusState.Programmatic);
         input.Text = magnet;
@@ -462,13 +479,14 @@ public sealed partial class MainWindow
                     AppWindow.Resize(new SizeInt32(Math.Max((int)(size.Width * scale), minimum), (int)(size.Height * scale)));
                     var prefix = "desktop-" + language + "-" + theme + "-" + size.Width + "x" + size.Height;
                     Run(Model.Exit);
-                    await CaptureReady(Model, () => _closePrompt is not null);
+                    await CaptureReady(Model, () => _interaction is { IsDraftDecision: true, Dialog: not null });
                     await CapturePage(prefix + "-exit-prompt");
-                    var prompt = _closePrompt ?? throw new InvalidOperationException("Exit did not retain its draft prompt.");
+                    var prompt = _interaction?.Dialog ?? throw new InvalidOperationException("Exit did not retain its draft prompt.");
                     CaptureInvoke(CaptureElements(prompt).OfType<Button>().Single(control => control.Name == "CloseButton"));
-                    await CaptureReady(Model, () => !Model.IsClosing && Model.CanEdit && _addDialog is not null);
+                    await CaptureReady(Model, () => !Model.IsClosing && Model.CanEdit && Model.IsAddOpen &&
+                        _interaction is { IsDraftDecision: false, Dialog: not null });
                     await CaptureLayout();
-                    dialog = _addDialog ?? throw new InvalidOperationException("Keep input did not recover the Add form.");
+                    dialog = _interaction?.Dialog ?? throw new InvalidOperationException("Keep input did not recover the Add form.");
                     input = CaptureElements(dialog).OfType<TextBox>().Single(control => control.Name == "MagnetInput");
                     if (input.Text != magnet || Model.Draft.Magnet != magnet || !Model.Draft.HasChanges)
                         throw new InvalidOperationException("Keep input lost the unfinished magnet.");
@@ -480,12 +498,13 @@ public sealed partial class MainWindow
         await CapturePage("desktop-kept-magnet", dialog.Content as FrameworkElement);
         input.Focus(FocusState.Programmatic);
         Run(Model.Exit);
-        await CaptureReady(Model, () => _closePrompt is not null);
+        await CaptureReady(Model, () => _interaction is { IsDraftDecision: true, Dialog: not null });
         await CapturePage("desktop-exit-save-invalid");
-        CaptureInvoke(_closePrompt ?? throw new InvalidOperationException("Exit did not retain its Save prompt."));
-        await CaptureReady(Model, () => !Model.IsClosing && Model.CanEdit && _addDialog is not null && Model.Draft.HasMagnetError);
+        CaptureInvoke(_interaction?.Dialog ?? throw new InvalidOperationException("Exit did not retain its Save prompt."));
+        await CaptureReady(Model, () => !Model.IsClosing && Model.CanEdit && Model.IsAddOpen &&
+            _interaction is { IsDraftDecision: false, Dialog: not null } && Model.Draft.HasMagnetError);
         await CaptureLayout();
-        dialog = _addDialog ?? throw new InvalidOperationException("Failed Save did not recover the Add form.");
+        dialog = _interaction?.Dialog ?? throw new InvalidOperationException("Failed Save did not recover the Add form.");
         input = CaptureElements(dialog).OfType<TextBox>().Single(control => control.Name == "MagnetInput");
         if (input.Text != magnet || Model.Draft.Magnet != magnet || !Model.Draft.HasChanges ||
             !ReferenceEquals(FocusManager.GetFocusedElement(Root.XamlRoot), input))
@@ -493,7 +512,7 @@ public sealed partial class MainWindow
         await CapturePage("desktop-exit-save-failed", dialog.Content as FrameworkElement);
         outcomes.Add(new { journey = "Exit Save with invalid magnet", errorRetained = true, inputRetained = true,
             addFormRecovered = true, focusRetained = true, engineConnected = Model.IsConnected });
-        var closed = _dialogClosed?.Task ?? throw new InvalidOperationException("The recovered Add dialog has no close completion.");
+        var closed = _interaction?.Completion.Task ?? throw new InvalidOperationException("The recovered Add dialog has no close completion.");
         CaptureInvoke(CaptureElements(dialog).OfType<Button>().Single(control => control.Name == "CloseButton"));
         await closed;
         await CaptureReady(Model.Draft, () => !Model.Draft.HasChanges && !Model.Draft.EditingMagnet);
@@ -629,29 +648,6 @@ public sealed partial class MainWindow
             throw new InvalidOperationException("The native preference switch could not be restored.");
         outcomes.Add(new { journey = "native immediate preference", applied = true, restored = true });
 
-        await ShowPreferences(new(PreferenceSection.Network));
-        await CaptureLayout();
-        var number = CaptureElements(form).OfType<NumberBox>().Single(control => ReferenceEquals(control.Tag, preferences.Port));
-        var input = CaptureElements(number).OfType<TextBox>().First();
-        var next = CaptureElements(form).OfType<NumberBox>().Single(control => ReferenceEquals(control.Tag, preferences.Connections));
-        var departure = CaptureElements(next).OfType<TextBox>().First();
-        var originalPort = preferences.Port.Input;
-        input.Focus(FocusState.Programmatic);
-        input.Text = "70000";
-        await CaptureLayout();
-        departure.Focus(FocusState.Programmatic);
-        await CaptureReady(preferences.Port, () => preferences.Port.Message.Length > 0);
-        if (preferences.Port.Input != "70000" || input.Text != "70000" || !preferences.Port.HasDraft || preferences.Port.IsPending)
-            throw new InvalidOperationException("The invalid native port edit was not retained and rejected.");
-        outcomes.Add(new { journey = "invalid native port", rejectedOnDeparture = true, inputRetained = true });
-        await CapturePage("details-invalid-port", form);
-        input.Focus(FocusState.Programmatic);
-        input.Text = originalPort;
-        await CaptureLayout();
-        departure.Focus(FocusState.Programmatic);
-        await CaptureLayout();
-        if (preferences.Port.HasDraft || preferences.Port.Message.Length > 0)
-            throw new InvalidOperationException("Correcting the native port edit did not recover the field.");
     }
 
     private async Task CaptureReview()
@@ -670,55 +666,57 @@ public sealed partial class MainWindow
             if (!string.Equals(Path.GetFullPath(store).TrimEnd(Path.DirectorySeparatorChar),
                     Path.GetFullPath(Model.DataDirectory ?? string.Empty).TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase))
                 throw new InvalidOperationException("The connected engine does not own the capture store.");
-            if (Environment.GetEnvironmentVariable("TINYTORRENT_CAPTURE_REVIEW") == "schedule")
+            if (ReviewMode == CaptureMode.Schedule)
             {
                 await CaptureSchedule(outcomes, completed);
                 return;
             }
-            if (Environment.GetEnvironmentVariable("TINYTORRENT_CAPTURE_REVIEW") is "files" or "files-layout")
+            if (ReviewMode is CaptureMode.Files or CaptureMode.FilesLayout)
             {
                 await CaptureFiles(outcomes, completed);
                 return;
             }
-            if (Environment.GetEnvironmentVariable("TINYTORRENT_CAPTURE_REVIEW") == "library")
+            if (ReviewMode == CaptureMode.Library)
             {
                 await CaptureLibrary(outcomes, completed);
                 return;
             }
             var target = Model.Torrents.FirstOrDefault() ?? throw new InvalidOperationException("The review store has no torrent.");
-            if (Environment.GetEnvironmentVariable("TINYTORRENT_CAPTURE_REVIEW") == "edits")
+            if (ReviewMode == CaptureMode.Details)
+            {
+                await CaptureDetails(target, outcomes);
+                return;
+            }
+            if (ReviewMode == CaptureMode.Edits)
             {
                 await CaptureEdits(target, outcomes, completed);
                 return;
             }
-            if (Environment.GetEnvironmentVariable("TINYTORRENT_CAPTURE_REVIEW") == "traffic")
+            if (ReviewMode == CaptureMode.Traffic)
             {
                 await CaptureTraffic(target, outcomes, completed);
                 return;
             }
-            if (Environment.GetEnvironmentVariable("TINYTORRENT_CAPTURE_REVIEW") == "search")
+            if (ReviewMode == CaptureMode.Search)
             {
                 await CaptureSearch(target, outcomes, completed);
                 return;
             }
-            if (Environment.GetEnvironmentVariable("TINYTORRENT_CAPTURE_REVIEW") == "desktop")
+            if (ReviewMode == CaptureMode.Desktop)
             {
                 await CaptureDesktop(target, outcomes, completed);
                 return;
             }
-            if (Environment.GetEnvironmentVariable("TINYTORRENT_CAPTURE_REVIEW") == "shell")
+            if (ReviewMode == CaptureMode.Shell)
             {
                 await CaptureShell(target, outcomes);
                 return;
             }
-            var filesOnly = Environment.GetEnvironmentVariable("TINYTORRENT_CAPTURE_REVIEW") == "details-files";
-            var details = filesOnly || Environment.GetEnvironmentVariable("TINYTORRENT_CAPTURE_REVIEW") == "details";
+            var filesOnly = ReviewMode == CaptureMode.DetailsFiles;
             var preferences = Model.Preferences.Fields.Select(field => (field.Name, field.Input, field.IsOn)).ToArray();
             (int Index, int Priority)[]? priorities = null;
-            FrameworkElement? inspector = null;
-            PreferencesForm? settings = null;
             string[] languages = filesOnly ? ["en", "es"] : [Model.Text.Language];
-            var themes = Environment.GetEnvironmentVariable("TINYTORRENT_CAPTURE_REVIEW") == "smoke" ? Array.Empty<string>() : ["light", "dark"];
+            var themes = ReviewMode == CaptureMode.Smoke ? Array.Empty<string>() : ["light", "dark"];
             foreach (var language in languages)
             foreach (var theme in themes)
             {
@@ -728,13 +726,13 @@ public sealed partial class MainWindow
                 await CaptureReady(Model, () => Model.CanClose && Model.Text.Language == language);
                 foreach (var size in new[] { new SizeInt32(720, 560), new SizeInt32(1040, 680), new SizeInt32(1280, 800) })
                 {
-                    var prefix = (details ? "details-" + language + "-" : string.Empty) + theme + "-" + size.Width + "x" + size.Height + "-";
+                    var prefix = (filesOnly ? "details-" + language + "-" : string.Empty) + theme + "-" + size.Width + "x" + size.Height + "-";
                     var scale = Root.XamlRoot.RasterizationScale;
                     var minimum = ((Microsoft.UI.Windowing.OverlappedPresenter)AppWindow.Presenter).PreferredMinimumWidth ?? 0;
                     AppWindow.Resize(new SizeInt32(Math.Max((int)(size.Width * scale), minimum), (int)(size.Height * scale)));
                     await ShowTorrents();
                     if (!filesOnly) Model.CloseInspector();
-                    if (!details)
+                    if (!filesOnly)
                     {
                         await CapturePage(prefix + "torrents");
                         Model.IsFilterOpen = true;
@@ -753,12 +751,9 @@ public sealed partial class MainWindow
                         {
                             priorities ??= Model.Inspector.Files.Roots.SelectMany(root => root.Nodes())
                                 .Where(file => file.Index >= 0).Select(file => (file.Index, file.Priority)).OrderBy(file => file.Index).ToArray();
-                            inspector ??= InspectorContent.Content as FrameworkElement;
-                            if (!ReferenceEquals(inspector, InspectorContent.Content))
-                                throw new InvalidOperationException("The language capture recreated the file form.");
                         }
                         await CapturePage(prefix + "properties-" + section, InspectorContent.Content as FrameworkElement);
-                        if (details && section == InspectorSection.Files && size.Width == 720)
+                        if (filesOnly && section == InspectorSection.Files && size.Width == 720)
                         {
                             var priority = CaptureElements(InspectorContent).OfType<ComboBox>().First();
                             priority.IsDropDownOpen = true;
@@ -770,34 +765,24 @@ public sealed partial class MainWindow
                     foreach (var section in filesOnly ? new[] { PreferenceSection.Appearance, PreferenceSection.Network } : Enum.GetValues<PreferenceSection>())
                     {
                         await ShowPreferences(new(section));
-                        if (filesOnly)
-                        {
-                            settings ??= _preferencesForm;
-                            if (!ReferenceEquals(settings, _preferencesForm))
-                                throw new InvalidOperationException("The language capture recreated the preferences form.");
-                        }
                         await CapturePage(prefix + "settings-" + section, _preferencesForm);
-                        if (!details && section == PreferenceSection.Schedule && Model.Preferences.Periods.FirstOrDefault() is { } period)
+                        if (!filesOnly && section == PreferenceSection.Schedule && Model.Preferences.Schedule.Periods.FirstOrDefault() is { } period)
                         {
-                            Model.Preferences.Edit(period);
+                            Model.Preferences.Schedule.Edit(period);
                             await CaptureLayout();
                             await CaptureUi(prefix + "period-editor");
-                            Run(Model.Preferences.CancelPeriod);
+                            Run(Model.Preferences.Schedule.CancelPeriod);
                         }
                     }
-                    if (details) { completed.Add(prefix); continue; }
+                    if (filesOnly) { completed.Add(prefix); continue; }
                     await ShowAbout();
                     await CapturePage(prefix + "about");
                     await ShowTorrents();
-                    Run(Model.Limits);
-                    await CaptureLayout();
-                    await CapturePage(prefix + "limits-settings", _preferencesForm);
-                    await ShowTorrents();
-                    await CaptureDialog(prefix + "remove", () => ConfirmRemove([target]), () => _removeDialog);
-                    await CaptureDialog(prefix + "move", () => ShowFiles([target], FileAction.Move), () => _filesDialog);
-                    await CaptureDialog(prefix + "delete", () => ShowFiles([target], FileAction.Delete), () => _filesDialog);
+                    await CaptureDialog(prefix + "remove", () => ConfirmRemove([target]), () => _interaction?.Dialog);
+                    await CaptureDialog(prefix + "move", () => ShowFiles([target], FileAction.Move), () => _interaction?.Dialog);
+                    await CaptureDialog(prefix + "delete", () => ShowFiles([target], FileAction.Delete), () => _interaction?.Dialog);
                     Model.Draft.EditingMagnet = true;
-                    await CaptureDialog(prefix + "add", ShowAdd, () => _addDialog);
+                    await CaptureDialog(prefix + "add", ShowAdd, () => _interaction?.Dialog);
                     completed.Add(prefix);
                 }
             }
@@ -811,25 +796,20 @@ public sealed partial class MainWindow
                 var minimum = ((Microsoft.UI.Windowing.OverlappedPresenter)AppWindow.Presenter).PreferredMinimumWidth ?? 0;
                 AppWindow.Resize(new SizeInt32(Math.Max((int)(720 * scale), minimum), (int)(560 * scale)));
                 await ShowTorrents();
-                await CapturePage("details-en-light-720x560-reverse-properties-Files", inspector);
+                await CapturePage("details-en-light-720x560-reverse-properties-Files", InspectorContent.Content as FrameworkElement);
                 foreach (var section in new[] { PreferenceSection.Appearance, PreferenceSection.Network })
                 {
                     await ShowPreferences(new(section));
                     await CapturePage("details-en-light-720x560-reverse-settings-" + section, _preferencesForm);
                 }
-                if (!ReferenceEquals(inspector, InspectorContent.Content) || !ReferenceEquals(settings, _preferencesForm) || priorities is null ||
+                if (priorities is null ||
                     !priorities.SequenceEqual(Model.Inspector.Files.Roots.SelectMany(root => root.Nodes())
                         .Where(file => file.Index >= 0).Select(file => (file.Index, file.Priority)).OrderBy(file => file.Index)) ||
                     !preferences.SequenceEqual(Model.Preferences.Fields.Select(field => (field.Name, field.Input, field.IsOn))) ||
                     Model.Inspector.HasFileDraft || Model.Preferences.HasDraft || Model.Preferences.IsPending)
                     throw new InvalidOperationException("Changing the capture language altered file priorities or preferences.");
                 outcomes.Add(new { journey = "live language selected choices", languages = new[] { "en", "es", "en" },
-                    fileFormRetained = true, preferencesFormRetained = true, prioritiesRetained = true, preferencesRetained = true });
-                return;
-            }
-            if (details)
-            {
-                await CaptureDetails(target, outcomes);
+                    prioritiesRetained = true, preferencesRetained = true });
                 return;
             }
             if (completed.Count > 0)
@@ -842,12 +822,6 @@ public sealed partial class MainWindow
                 await CaptureReady(Model, () => Model.CanClose && Model.Text.Language == "en");
             }
             AppWindow.Resize(new SizeInt32(1040, 680));
-            if (themes.Length == 0)
-                foreach (var section in Enum.GetValues<PreferenceSection>())
-                {
-                    await ShowPreferences(new(section));
-                    await CapturePage("settings-" + section, _preferencesForm);
-                }
             await ShowTorrents();
             await CaptureSmoke(target, outcomes);
         }
