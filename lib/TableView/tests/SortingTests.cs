@@ -4,7 +4,9 @@ using System.Reflection;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media.Imaging;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using Windows.Storage.Streams;
 
 namespace Syno.TableView.Tests;
 
@@ -384,7 +386,7 @@ public class SortingTests
         Windows.Foundation.Point origin =
             glyph.TransformToVisual(h.Table).TransformPoint(new Windows.Foundation.Point(0, 0));
 
-        RowCueContrastTests.Shot shot = await RowCueContrastTests.Shot.TakeAsync(h.Table);
+        Shot shot = await Shot.TakeAsync(h.Table);
         double scale = h.Table.XamlRoot.RasterizationScale;
         int PixelX(double dips) => Math.Clamp((int)Math.Round(dips * scale), 0, shot.Width - 1);
 
@@ -419,6 +421,78 @@ public class SortingTests
         Expect.Throws<ArgumentException>(() => h.Table.Sort = new(h.Table.Columns[1]));
         Assert.IsNull(h.Table.Sort, "the refused request left the order alone");
     });
+
+    /// <summary>One rendered frame of the control, addressed in pixels.</summary>
+    private sealed class Shot
+    {
+        private byte[] _pixels = Array.Empty<byte>();
+
+        internal int Width { get; private set; }
+
+        internal int Height { get; private set; }
+
+        internal double Scale { get; private set; } = 1;
+
+        internal static async Task<Shot> TakeAsync(FrameworkElement element)
+        {
+            RenderTargetBitmap bitmap = new();
+            await bitmap.RenderAsync(element);
+            IBuffer buffer = await bitmap.GetPixelsAsync();
+            byte[] pixels = new byte[buffer.Length];
+            DataReader.FromBuffer(buffer).ReadBytes(pixels);
+
+            Shot shot = new()
+            {
+                _pixels = pixels,
+                Width = bitmap.PixelWidth,
+                Height = bitmap.PixelHeight,
+                Scale = element.XamlRoot?.RasterizationScale ?? 1,
+            };
+
+            Assert.IsTrue(shot.Width > 0 && shot.Height > 0, "The control rendered an empty bitmap.");
+            return shot;
+        }
+
+        internal int Y(double dips) => Math.Clamp((int)Math.Round(dips * Scale), 0, Height - 1);
+
+        internal uint At(int x, int y)
+        {
+            int i = (((y * Width) + x) * 4);
+            return (uint)(_pixels[i] | (_pixels[i + 1] << 8) | (_pixels[i + 2] << 16));
+        }
+
+        internal double MaxContrast(uint reference, int x0, int x1, int y0, int y1)
+        {
+            double best = 0;
+            for (int y = Math.Max(0, y0); y <= Math.Min(Height - 1, y1); y++)
+            {
+                for (int x = Math.Max(0, x0); x <= Math.Min(Width - 1, x1); x++)
+                {
+                    best = Math.Max(best, Contrast(At(x, y), reference));
+                }
+            }
+
+            return best;
+        }
+
+        private static double Contrast(uint a, uint b)
+        {
+            double first = Luminance(a);
+            double second = Luminance(b);
+            return (Math.Max(first, second) + 0.05) / (Math.Min(first, second) + 0.05);
+        }
+
+        private static double Luminance(uint bgr) =>
+            (0.2126 * Linear((bgr >> 16) & 0xFF))
+            + (0.7152 * Linear((bgr >> 8) & 0xFF))
+            + (0.0722 * Linear(bgr & 0xFF));
+
+        private static double Linear(uint channel)
+        {
+            double value = channel / 255.0;
+            return value <= 0.03928 ? value / 12.92 : Math.Pow((value + 0.055) / 1.055, 2.4);
+        }
+    }
 }
 
 /// <summary>

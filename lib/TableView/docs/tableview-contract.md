@@ -866,9 +866,9 @@ chrome:
 
 The retained row appearance has specific exceptions awaiting the
 [hands-on Fluent review](../../../docs/architecture.md#decisions-still-open): no hover
-fill, square corners for edge-to-edge rows, and section 19's neutral selection
-bar. Native row focus is enabled after the first product journey verified visible
-keyboard location, selection, Pause/Resume and focus recovery during refresh.
+fill and square corners for edge-to-edge rows. Native row focus is enabled after
+the first product journey verified visible keyboard location, selection,
+Pause/Resume and focus recovery during refresh.
 The [integration record](tableview-implementation.md#keyboard-and-automation-integration)
 keeps broader automation and RTL verification separate from that narrow path.
 
@@ -1610,7 +1610,7 @@ itself MUST:
   and High Contrast update at runtime. It must not hard-code colors or define
   TableView-specific brush, type, geometry, spacing, or token resources;
 - meet at least 4.5:1 contrast for table-owned normal text and 3:1 for
-  table-owned large text and required non-text information, including selected,
+  table-owned large text and required non-text information, including
   drag-destination, and availability cues, in every applicable state and
   supported theme. A resource name or use of a standard palette is not proof of
   that result. The table draws no current-row cue: WinUI draws none either, and
@@ -1618,11 +1618,10 @@ itself MUST:
   because Fluent gives position to the focus visual and choice to selection.
   Current remains a model concept that section 13 needs for the anchor and for
   range selection, and nothing measures it because nothing paints it;
-- use one full-height selected-row bar with the existing platform
-  `ListViewItemForegroundSelected` brush. Its Light/Dark treatment is neutral,
-  independent of the user's accent; High Contrast uses system highlight text.
-  This resource choice requires rendered contrast verification and does not
-  itself establish the 3:1 measurement;
+- **Owner ruling: use the native row container's selection fill and focus
+  visual, without an additional selected-row stripe.** Selection identifies
+  the whole row; an extra vertical mark adds unwanted chrome beside its data.
+  Keep native High Contrast selection behavior and UI Automation state;
 - end a row's own fill at its last column rather than at the edge of the list,
   and show the move cursor over a row that can be dragged. The space to the
   right of the last column belongs to no row, and section 14's marquee is

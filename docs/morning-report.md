@@ -1,5 +1,52 @@
 # Morning report
 
+## Native row selection milestone — 2026-10-06
+
+The owner rejected the vertical selected-row stripe. It was already in initial
+import `c2b9907`, attributed to SynoSoftware; this repository does not identify
+its original writer. Its comment justified it using earlier low-contrast fill
+measurements. The stripe and its obsolete visual state are now removed, leaving
+native row selection fill, focus, drag opacity and UI Automation unchanged.
+The table contract records the owner's decision, so a later review does not
+reinstate the stripe. Three tests requiring that removed stripe were deleted;
+their image helper moved unchanged to its remaining sort-arrow test consumer.
+
+The existing `LibraryCapture-a1cd25b0-ee02-419f-8edd-a785bc528816` images and
+the owner's screenshot establish the baseline. After capture
+`LibraryCapture-88900975-9ad0-4603-8381-be00720e9deb` passed all 36 scenes in
+37.20 seconds, with 300 members and 307 payload hashes unchanged. The parent
+reviewed all twelve selected-row variants; native fill remains visible without
+the stripe. A fresh image-only reviewer independently inspected those twelve,
+four narrow inspectors, four filters, header focus and two baseline comparisons.
+Its five-role review found zero counted defects. Physical input, actual High
+Contrast and Narrator remain outside these images. Minimum width still clamps
+the requested 720 sizes.
+
+`selection-native-app.log` passed in 75.67 seconds, compiling only TableView
+and the capture app's two WinUI passes each. `selection-test-compile.log` passed
+in 45.16 seconds, compiling only the two test-project passes; the test host was
+not launched and no suite ran. Both builds had zero warnings/errors. Output
+location scans were empty and the disposable library processes exited. Source
+and test-cleanup review found zero remaining findings.
+
+The ordinary build `selection-native-release.log` failed in XAML pass 2 with
+WMC9999 after 63.61 seconds. Concurrent owner edits changed MainWindow.xaml
+during compilation; the generated MainWindow.g.cs was left empty. This is not
+a successful ordinary build, and its output is not claimed current. No cache
+or source was deleted to hide the failure. New owner toolbar/splash/design-doc
+work is preserved outside this milestone. The stripe's passing capture build
+predates that concurrent work.
+
+Populated Trackers evidence is still in progress. Run
+`UiSelfCapture-72cd3b41-6519-4ca5-b3a2-4b9ef9f5744e` stopped at the existing
+compound language-switch assertion after replacing its one-line fixture with
+four URLs across two tiers. It did not reach tracker Save. The pending diagnostic
+now compares native TextBox text before/after the switch and records separate
+input/model/focus outcomes and newline counts; it is reviewed but not yet built.
+The final URL/tier assertion remains. If native input uses CR-only separators,
+inspect the tracker parser before treating the failure as a harness-only issue.
+Keep that pending Capture.cs/docs/testing.md work separate from this commit.
+
 ## Native caption checkpoint — 2026-10-06
 
 The accepted owner UI is committed as `6809410`. The ordinary Release app has

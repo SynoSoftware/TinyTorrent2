@@ -52,21 +52,6 @@
         </body:Row>
     </DataTemplate>
 
-    <!--
-        This control paints two things on a row: the selected bar and a drag. The selected
-        background stays the container's, because drawing a second fill here read as two
-        backgrounds. Neither focus nor the current row is drawn at all.
-
-        The container's fill alone measured 1.08:1 in Light and 1.18:1 in Dark, so the bar must
-        carry section 19's 3:1 independently of the user's accent. The selected-item foreground
-        resolves to the primary text brush in Light/Dark and highlight text in High Contrast.
-        It keeps the same single bar while removing the accent dependency; RowCueContrastTests
-        measures the rendered cue, including a deliberately low-contrast accent brush.
-
-        Not the two-tone marker pair, which would clear 3:1 in every theme and is already proven
-        here: three wide, vertical, at x = 0 it is section 11's column drop marker exactly, parked
-        at the first boundary. Two different promises must not share a picture.
-    -->
     <Style TargetType="body:Row">
         <Setter Property="IsTabStop" Value="False" />
         <Setter Property="HorizontalContentAlignment" Value="Stretch" />
@@ -75,43 +60,12 @@
             <Setter.Value>
                 <ControlTemplate TargetType="body:Row">
                     <Grid x:Name="Root">
-                        <!--
-                            Full row height, square, and no inset. Every one of those follows from
-                            the rows sitting edge to edge, which is also why the container is
-                            CornerRadius="0": an inset bar with its own corner radius leaves a gap
-                            at each row seam, so a run of selected rows reads as separate marks
-                            instead of one block.
-
-                            Three wide is the platform's own indicator width. It publishes no
-                            width key — the resource tree was enumerated for one — but it publishes
-                            ListViewItemSelectionIndicatorCornerRadius as 1.5 in every theme, which
-                            is half of a fully rounded bar, and NavigationViewSelectionIndicatorWidth
-                            as 3.
-
-                            Under the cells, so a cell's content is never painted over. Section 8
-                            already forbids a cell template painting a row backdrop, which is the
-                            one thing that could hide the bar from underneath.
-                        -->
-                        <Rectangle x:Name="SelectedBar"
-                                   Width="3"
-                                   HorizontalAlignment="Left"
-                                   Fill="{ThemeResource ListViewItemForegroundSelected}"
-                                   Opacity="0" />
-
                         <ContentPresenter Content="{TemplateBinding Content}"
                                           ContentTemplate="{TemplateBinding ContentTemplate}"
                                           HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
                                           VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
 
                         <VisualStateManager.VisualStateGroups>
-                            <VisualStateGroup x:Name="RowEmphasis">
-                                <VisualState x:Name="Rest" />
-                                <VisualState x:Name="Selected">
-                                    <VisualState.Setters>
-                                        <Setter Target="SelectedBar.Opacity" Value="1" />
-                                    </VisualState.Setters>
-                                </VisualState>
-                            </VisualStateGroup>
                             <!-- Section 16: the moving packet stays identifiable, in the same
                                  treatment the platform gives a dragged list item and section 11
                                  gives a dragged header. -->

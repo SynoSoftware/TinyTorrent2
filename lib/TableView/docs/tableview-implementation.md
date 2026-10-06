@@ -67,10 +67,9 @@ sorting, scrolling, and gesture feedback do not create a hidden measurement tree
 Rich cell templates receive row items directly. Live values use live bindings;
 formatting can stay lazy so invisible cells do not allocate display strings.
 
-The control adds its own selection cues where the standard container does not
-meet the contract. Keyboard location uses the native container focus visual.
-Earlier selected-row contrast of 1.08:1 is the reason the
-regression check exists, not a current rendering claim. Actual contrast, Narrator,
+The native container paints selection and keyboard focus. The row template
+adds only drag opacity; it does not paint an additional selected-row stripe.
+Actual contrast, Narrator,
 and out-of-process automation still require relevant runtime evidence under the
 [testing policy](../../../docs/testing.md).
 

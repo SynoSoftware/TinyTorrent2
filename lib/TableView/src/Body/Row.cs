@@ -6,14 +6,9 @@ using Microsoft.UI.Xaml.Media;
 namespace Syno.TableView.Body;
 
 /// <summary>
-/// The table-drawn selected and dragged cues, and the cursor that says a row can be dragged. The
+/// The table-drawn drag cue and the cursor that says a row can be dragged. The
 /// row template's root, wrapping the cells panel.
 /// </summary>
-/// <remarks>
-/// The container's fill measured 1.08:1 in Light and 1.18:1 in Dark against section 19's 3:1
-/// requirement. The template's single bar uses the selected-item foreground so its contrast
-/// does not depend on the user's accent.
-/// </remarks>
 public sealed partial class Row : ContentControl
 {
     /// <summary>
@@ -87,21 +82,18 @@ public sealed partial class Row : ContentControl
     private void OnRowVisualsChanged(object? sender, EventArgs e) => UpdateStates(useTransitions: true);
 
     /// <summary>
-    /// A selected row and a dragged row are what this control paints. Selection is read for the bar
-    /// only; the selected background stays the container's, because drawing one here put a second
-    /// fill over it. Keyboard focus stays the native container's visual. The cursor
-    /// is the one other cue: the move cursor while the table would drag this row, which is also how
-    /// a sorted table, where the table withholds the drag, says so before the press. Without the
-    /// move cursor a drag from the row is section 14's sweep.
+    /// This control paints the drag cue; selection and keyboard focus stay the native container's
+    /// visuals. The cursor is the one other cue: the move cursor while the table
+    /// would drag this row, which is also how a sorted table, where the table
+    /// withholds the drag, says so before the press. Without the move cursor a
+    /// drag from the row is section 14's sweep.
     /// </summary>
     private void UpdateStates(bool useTransitions)
     {
         object? item = DataContext;
-        bool selected = _owner is not null && _owner.IsRowSelected(item);
         bool dragging = _owner is not null && _owner.IsRowDragging(item);
         bool draggable = _owner is not null && item is not null && _owner.CanBeginRowDrag(item);
 
-        VisualStateManager.GoToState(this, selected ? "Selected" : "Rest", useTransitions);
         VisualStateManager.GoToState(this, dragging ? "Dragging" : "NotDragging", useTransitions);
         ProtectedCursor = draggable ? MoveCursor : null;
     }

@@ -1,5 +1,20 @@
 # Implementation handover — 2026-10-05
 
+## Native row selection milestone — 2026-10-06
+
+The owner rejected the selected-row stripe. It is removed; native selection
+fill and keyboard focus remain. The capture build, 36-case populated-library
+journey, test-project compilation and fresh visual review pass. No suite ran.
+Exact evidence is at the top of [morning-report.md](morning-report.md).
+
+Concurrent owner toolbar/splash/design-document edits arrived during the
+ordinary build, which failed in XAML compilation. Preserve those edits and do
+not claim its executable is current. The stripe proof predates them. Pending
+Capture.cs/docs/testing.md changes extend the Trackers fixture; its multiline
+language-switch assertion has a reviewed diagnostic correction awaiting build
+and a focused rerun. Check actual native newline handling before changing the
+product parser. All broader release evidence gaps remain open.
+
 ## Native caption checkpoint — 2026-10-06
 
 The owner's accepted UI checkpoint is committed as `6809410`. The ordinary
