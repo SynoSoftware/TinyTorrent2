@@ -1,10 +1,12 @@
 # Morning report
 
-## Current continuation — 2026-10-05
+## Current continuation — 2026-10-06
 
-The exact current goal is in [handover.md](handover.md#current-goal). Work has
-resumed; milestones 3–5 remain open. The entries below this section describe
-earlier candidates and are not evidence for the owner's engine refactor.
+The exact current goal is in [handover.md](handover.md#current-goal). Milestones
+3–5 have completed their scoped implementation, current captures and fresh
+adversarial gates, with zero counted defects remaining. Completion commits are
+recorded below. The entries under Earlier handover evidence describe earlier
+candidates and are not evidence for the owner's engine refactor.
 
 The first coherent step retains the owner's role folders and finishes the
 accepted schedule. The current source compiled without a schedule compiler
@@ -73,6 +75,8 @@ or engine build ran. Actual UI move/delete submissions remain for milestone 5.
 
 ### Background and desktop behavior gate
 
+Committed as `43e47eb`.
+
 The current desktop journey passed in 17,502 ms with a clean UI exit:
 `artifacts/evidence/DesktopCapture-9b76c9c8-c247-4c79-9be4-e1d9846b6918`.
 All 12 language/theme/size combinations kept unfinished magnet input after
@@ -115,6 +119,160 @@ Remaining desktop plan checks were assessed for a concrete likely failure:
   settings were changed on the owner's machine; an actual logon remains unverified.
 - Native caption menus, drag, acrylic, High Contrast and Narrator retain their
   established owners. XAML captures do not prove those Windows surfaces.
+
+Capture size names are requested outer-window sizes, not image dimensions.
+Windows frame insets reduce the 1040/1280 captures to 1024/1264 client pixels.
+The accepted caption's minimum width clamps a 720 request: the current desktop
+captures are 734 client pixels in English and 760 in Spanish, at scale 1.
+Thus exact 720-pixel outer-window operation is not established. The caption was
+not narrowed or restyled to defeat its existing collision protection.
+
+For file-operation recovery, the user role favors a clear retry; the Windows
+designer keeps accepted background work on the torrent row; the storage expert
+requires clearing a preflight marker when no files moved; the maintainer rejects
+a second UI copy of engine move state. The chosen contract remains: a refusal
+retains dialog choices, while an accepted operation's later error explains how
+to reopen Move and choose the correct folder. No extra state mechanism was added.
+
+### Details and preferences evidence
+
+The current inspector and accepted Settings cards were captured in English and
+Spanish, Light and Dark, at all three requested sizes (subject to the caption
+minimum above). No Settings or schedule restyling was needed.
+
+- `UiSelfCapture-94168166-627e-4ad4-8e6f-f9f18078a770` completed the English
+  images before its old launcher bound interrupted the larger bilingual batch.
+  These are image evidence, not a successful complete run.
+- `UiSelfCapture-aee5a18a-1456-40c8-a79f-c87d8a498401` completed the Spanish
+  matrix and native journeys in 139,454 ms, with no failure and a clean exit.
+  Selecting High saved priority 7 and restoring the original choice succeeded.
+  A live language switch retained tracker input and programmatic native focus;
+  Save confirmed the tracker and restoring the original tracker list succeeded.
+  The splash preference applied immediately and was restored. Entering port
+  70000 retained the rejected input on focus departure; correcting it recovered
+  the field. No physical keyboard or system-picker coverage is implied.
+- Files had two concrete rendering defects: the priority label clipped, and
+  Spanish bulk-action labels squeezed the summary into a one-character column,
+  pushing the file list out of view. A 180-wide priority column and a separate
+  wrapping bulk-action row preserve the existing commands and expose the files.
+  `UiSelfCapture-f444aecc-8628-4e17-8bad-020d917b8236` captured that improvement
+  in all 12 combinations in 21,970 ms, with a clean exit.
+- The fresh capture-only reviewer examined inspector, Settings and schedule
+  families and found one remaining defect: selected priority/interface labels
+  sometimes retained the previous language. The correction keeps live native
+  TextBlock labels instead of replacing selected string content.
+  `UiSelfCapture-1c8092d4-27e3-4e75-8d03-96354eca55f1` completed the focused
+  correction matrix in 72,239 ms with a clean exit: Files, Appearance and Network
+  in all 12 combinations, plus a narrow reverse ES-to-EN switch. The forms stayed
+  alive and priorities/preferences remained unchanged. Black priority-popup
+  images do not establish dropdown readability.
+  First correction review passed Files and Appearance but caught English
+  “Any interface” in every Spanish Network view. WinUI moves selected UI content
+  out of its item, so replacing the emptied item's content missed the displayed
+  label. Static choices now retain named TextBlocks; dynamic interface choices
+  use a notified label through a native item template. The final capture holds
+  the selected theme constant while changing language, avoiding a selection
+  change that could hide this failure.
+  `UiSelfCapture-cf161c2a-da35-424c-b54e-036a52551653` completed that final
+  correction matrix in 71,742 ms, with no failure and a clean exit. The retained
+  forms, priorities and preference values passed their guards in both directions.
+  The fresh reviewer's second correction review passed Files, Appearance and
+  Network across all 12 combinations and the reverse switch, with zero counted
+  defects or correction regressions. The accepted Settings cards, title bar
+  and schedule retain their existing design.
+
+An earlier Spanish-startup diagnostic raced the existing asynchronous language
+load. Capture now awaits that same owner before choosing its matrix language.
+The interrupted `UiSelfCapture-22d68de8-002c-40f4-88d7-a4e63a1ae0c0` run is not
+behavioral evidence. Normal window placement already awaited language loading.
+
+### Move and delete evidence
+
+`FilesCapture-b61de94a-c8bb-4992-8078-f8f4100060c3` completed 72 matrix states
+and all five native submission outcomes using disposable local payloads:
+destination ownership refusal retained the dialog and choices; an occupied-file
+collision retained source and destination bytes; a complete three-owner shared
+group moved correctly; deleting one owner retained the other two and shared
+bytes; deleting the remaining group removed membership and payload while leaving
+unrelated sentinels intact. Its launcher reached its old five-minute bound during
+the final PNG, so the overall run is **not** a clean-exit pass. The outcomes were
+recorded before that failure, and saved membership/payload were checked afterward.
+
+The fresh capture-only reviewer accepted the unchanged delete/collision views
+and found two Move defects: empty facts consumed space needed for the options,
+and the refusal could be out of view. Empty facts now collapse and a refused
+submission reveals its feedback. `FilesCapture-70f40b2d-249f-4f42-8e91-364d8f4b5469`
+completed the 36 Move states and native ownership refusal in 157,142 ms, with no
+failure and a clean exit. All four fixture members and payload hashes remained
+unchanged. First correction review resolved the empty-space finding; feedback
+still clipped after shrinking the window. The body now follows the window size
+and retains the bottom position only if the person was already there.
+`FilesCapture-460ca8cb-a178-4f13-b405-248957498907` passed the final correction
+run in 156,869 ms, with a clean exit, 36 states and unchanged membership/hashes.
+The fresh reviewer's second correction review passed all 12 refusal states,
+including all narrow variants: feedback and Refresh are visible. Zero counted
+Move findings remain. Its immediate post-submit PNG is blank; the readable
+final resize states and prior readable post-submit capture support this verdict.
+
+All evidence directories above are under `artifacts/evidence/`, with images and
+`review.json` in `captures/`. The files fixtures retain the exact launcher as
+`check.ps1`. Native picker interaction, cross-volume device failures and dropped
+native alerts are unverified. The changed UI adds no filesystem implementation;
+current FilesSafety, CheckpointRetry and the real interrupted-move check provide
+the targeted data-safety evidence. No engine rebuild or full suite was needed.
+
+The Move correction build was
+`artifacts/evidence/final-corrections-build.log`: 30.92 seconds, zero warnings or
+errors. The log shows only TinyTorrent compilation; library packaging metadata
+was read without recompiling the libraries. Output-location checks stayed empty.
+The final selected-label build, `artifacts/evidence/selected-label-build.log`,
+passed in 25.62 seconds with zero warnings/errors and the same app-only scope.
+
+Sequential review of these surfaces used the requested roles. The first-time
+user needed readable options and the reason a Move failed; the keyboard user
+needed retained edits and reachable native commands; the accessibility role
+required labels and text alongside visual state, with Narrator/High Contrast
+explicitly unverified; Fluent and UX roles retained the accepted composition
+and fixed only clipping, hidden state and space displacing needed content.
+Watermark prominence and denser visual styling remain taste notes, not defects.
+
+Remaining plan checks were assessed against a likely failure a person would see:
+
+- Failed edits and live language: native rejected-input and retained-draft
+  journeys above cover losing work; the fresh review's selected-label defect
+  receives its own focused correction capture.
+- Committed file/tracker choices: current native submissions confirm the engine
+  answers; prior restart-policy evidence predates the owner's refactor and is
+  not relabeled as current. No persistence code changed in this continuation.
+- Peers and active speed/piece updates: the inspector matrix establishes layout,
+  including empty states, not populated peer traffic. A new swarm/throughput
+  exercise is not justified by these view-only corrections; that coverage remains
+  unverified on the current candidate.
+- RTL, enlarged text, High Contrast and actual Narrator speech: EN/ES and both
+  normal themes are current evidence. No new RTL language or system accessibility
+  setting is introduced for this scoped pass; these conditions remain unverified.
+- Move/delete byte loss: current focused engine checks and native disposable
+  submissions cover collision, shared ownership and actual interrupted movement.
+  Cross-volume/device failure and deliberately dropped alerts remain unverified;
+  adding another storage fault mechanism would not exercise a changed owner.
+- Explorer batch opening, physical drag/drop and folder picking: retained native
+  owners are outside offscreen XAML evidence. No unrelated desktop automation or
+  default-application changes were introduced to manufacture a pass.
+
+### Final review and completion
+
+The fresh final reviewer checked the handover plan, current source and evidence
+after its capture-only review. Milestone 3's lifecycle/background owners,
+milestone 4's inspector/preferences and milestone 5's file operations match the
+plan. It found no additional counted product defect. The broad historical
+“preserve choices on failure” wording was clarified to submission refusal,
+matching the existing precise asynchronous-operation rule; this does not add a
+second operation-history owner.
+
+The final correction gates leave zero counted defects. The evidence limits
+above remain limits, not claims of physical verification. All owned app/engine
+processes are closed, the final output-location check prints no paths, and no
+engine code, dependency, distribution work or full test suite was included.
 
 ## Earlier handover evidence
 

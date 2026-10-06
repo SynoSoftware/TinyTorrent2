@@ -18,7 +18,7 @@ public sealed partial class PreferencesForm : UserControl
     private readonly HashSet<TextBox> _editors = [];
     private bool _refreshing;
     private readonly Scheduler _scheduler;
-    private ComboBoxItem? _unavailableInterface;
+    private InterfaceChoice? _unavailableInterface;
     public Preferences Model { get; }
     public event EventHandler? DestinationRequested;
 
@@ -57,8 +57,8 @@ public sealed partial class PreferencesForm : UserControl
         _refreshing = true;
         Languages.SelectedItem = Model.Language == "es" ? Spanish : English;
         Theme.SelectedItem = Model.Theme switch { "light" => LightTheme, "dark" => DarkTheme, _ => SystemTheme };
-        foreach (ComboBoxItem item in Interfaces.Items)
-            if (Equals(item.Tag, Model.Interface.Input)) Interfaces.SelectedItem = item;
+        foreach (InterfaceChoice item in Interfaces.Items)
+            if (item.InterfaceId == Model.Interface.Input) Interfaces.SelectedItem = item;
         _refreshing = false;
     }
 
@@ -97,19 +97,19 @@ public sealed partial class PreferencesForm : UserControl
         Label(AppearanceSection, "appearance", "appearance_hint");
         LanguageRow.Header = Model.Text.Get("preferences", "language");
         AutomationProperties.SetName(Languages, LanguageRow.Header);
-        English.Content = Model.Text.Get("preferences", "english");
-        Spanish.Content = Model.Text.Get("preferences", "spanish");
+        Label(English, EnglishLabel, "english");
+        Label(Spanish, SpanishLabel, "spanish");
         Languages.SelectedItem = Model.Language == "es" ? Spanish : English;
         ThemeRow.Header = Model.Text.Get("preferences", "theme");
         AutomationProperties.SetName(Theme, ThemeRow.Header);
-        Label(SystemTheme, "system_theme");
-        Label(LightTheme, "light_theme");
-        Label(DarkTheme, "dark_theme");
+        Label(SystemTheme, SystemLabel, "system_theme");
+        Label(LightTheme, LightLabel, "light_theme");
+        Label(DarkTheme, DarkLabel, "dark_theme");
         Theme.SelectedItem = Model.Theme switch { "light" => LightTheme, "dark" => DarkTheme, _ => SystemTheme };
-        foreach (ComboBoxItem item in Interfaces.Items)
-            if (Equals(item.Tag, string.Empty)) item.Content = Model.Text.Get("preferences", "any_interface");
+        foreach (InterfaceChoice item in Interfaces.Items)
+            if (item.InterfaceId.Length == 0) item.Text = Model.Text.Get("preferences", "any_interface");
         if (_unavailableInterface is { } unavailable)
-            unavailable.Content = Model.Text.Format("preferences", "unavailable_interface", unavailable.Tag);
+            unavailable.Text = Model.Text.Format("preferences", "unavailable_interface", unavailable.InterfaceId);
         _refreshing = false;
     }
 
@@ -117,6 +117,12 @@ public sealed partial class PreferencesForm : UserControl
     {
         control.Content = Model.Text.Get(group, key);
         AutomationProperties.SetName(control, (string)control.Content);
+    }
+
+    private void Label(ComboBoxItem item, TextBlock label, string key)
+    {
+        label.Text = Model.Text.Get("preferences", key);
+        AutomationProperties.SetName(item, label.Text);
     }
 
     private void Label(SelectorBarItem item, string key)
@@ -138,15 +144,15 @@ public sealed partial class PreferencesForm : UserControl
         {
             Interfaces.Items.Clear();
             _unavailableInterface = null;
-            Interfaces.Items.Add(new ComboBoxItem { Content = Model.Text.Get("preferences", "any_interface"), Tag = string.Empty });
+            Interfaces.Items.Add(new InterfaceChoice(string.Empty, Model.Text.Get("preferences", "any_interface")));
             foreach (var adapter in NetworkInterface.GetAllNetworkInterfaces())
-                Interfaces.Items.Add(new ComboBoxItem { Content = adapter.Name, Tag = adapter.Id });
-            if (Model.Interface.Input.Length > 0 && !Interfaces.Items.Cast<ComboBoxItem>().Any(item => Equals(item.Tag, Model.Interface.Input)))
+                Interfaces.Items.Add(new InterfaceChoice(adapter.Id, adapter.Name));
+            if (Model.Interface.Input.Length > 0 && !Interfaces.Items.Cast<InterfaceChoice>().Any(item => item.InterfaceId == Model.Interface.Input))
             {
-                _unavailableInterface = new ComboBoxItem { Content = Model.Text.Format("preferences", "unavailable_interface", Model.Interface.Input), Tag = Model.Interface.Input };
+                _unavailableInterface = new InterfaceChoice(Model.Interface.Input, Model.Text.Format("preferences", "unavailable_interface", Model.Interface.Input));
                 Interfaces.Items.Add(_unavailableInterface);
             }
-            Interfaces.SelectedItem = Interfaces.Items.Cast<ComboBoxItem>().First(item => Equals(item.Tag, Model.Interface.Input));
+            Interfaces.SelectedItem = Interfaces.Items.Cast<InterfaceChoice>().First(item => item.InterfaceId == Model.Interface.Input);
         }
         catch (NetworkInformationException error) { Model.Interface.Reject(error); }
         finally { _refreshing = false; }
@@ -207,8 +213,8 @@ public sealed partial class PreferencesForm : UserControl
     }
     private async void OnInterface(object sender, SelectionChangedEventArgs args)
     {
-        if (_refreshing || Interfaces.SelectedItem is not ComboBoxItem { Tag: string value } || value == Model.Interface.Input) return;
-        Model.Interface.Input = value;
+        if (_refreshing || Interfaces.SelectedItem is not InterfaceChoice choice || choice.InterfaceId == Model.Interface.Input) return;
+        Model.Interface.Input = choice.InterfaceId;
         await Model.Commit(Model.Interface);
     }
     private void OnLanguage(object sender, SelectionChangedEventArgs args)
@@ -268,4 +274,17 @@ public sealed partial class PreferencesForm : UserControl
             }
         }
     }
+}
+
+public sealed class InterfaceChoice(string interfaceId, string text) : INotifyPropertyChanged
+{
+    private string _text = text;
+    public string InterfaceId { get; } = interfaceId;
+    public string Text
+    {
+        get => _text;
+        internal set { _text = value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Text))); }
+    }
+    public event PropertyChangedEventHandler? PropertyChanged;
+    public override string ToString() => Text;
 }

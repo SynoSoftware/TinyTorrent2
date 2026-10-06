@@ -4,9 +4,10 @@ Work resumed on 2026-10-05 under the current goal below. The first coherent step
 retains the owner's app role folders, verifies the finished schedule, corrects
 clipped short-period labels and fixes a reproduced window-shutdown crash.
 Current evidence is at the top of [morning-report.md](morning-report.md).
-The background/desktop capture gate passed after correcting clipped tracker
-actions during disconnection. Details/preferences and move/delete gates remain
-open; native desktop evidence limitations are recorded in the morning report.
+Milestones 3–5 passed their current implementation and fresh adversarial gates
+after correcting clipped tracker actions, file controls, localized selected
+choices and Move feedback. Zero counted defects remain. Completion commits and
+native desktop evidence limitations are recorded in the morning report.
 
 At the earlier handover, work stopped at the owner's request to move to another project. The pending app
 recovery smoke check finished and passed. The five-milestone implementation is
@@ -82,10 +83,10 @@ The shared checkout is `main`. The owner moved it there; this pass did not switc
 branches. Inspect `git status` and preserve uncommitted work, including concurrent
 engine edits. Account for ownership before staging a milestone commit.
 
-The last verified candidate,
-`C:\SynoSoftware\TinyTorrent2\artifacts\checks\ui-review-build\TinyTorrent.exe`,
-predates commits `3c1d765` to `3a1c5bb`, so it shows none of their changes.
-Build a new candidate before collecting runtime evidence. Keep the engine,
+The current candidate is
+`C:\SynoSoftware\TinyTorrent2\artifacts\bin\TinyTorrent\release_win-x64\TinyTorrent.exe`.
+The earlier `artifacts/checks/ui-review-build` candidate is historical and
+predates the owner's Settings and engine commits. Keep the engine,
 managed assemblies and runtime files together: each executable starts only the
 other one beside it. A running engine owns the logon-scoped endpoint; another
 data directory alone does not isolate a test.
@@ -101,16 +102,17 @@ no `TinyTorrent.exe` or `Engine.exe`. No desktop automation remains active.
 | --- | --- | --- |
 | First usable download | Completed previously, `e0a5a92` | Historical journeys and first resource measurements are recorded. |
 | Everyday torrent actions | Completed previously, `6afbf65` | Historical evidence is recorded, with stated physical Explorer/drop and accessibility gaps. |
-| Background and desktop behavior | Current process journey and fresh visual correction review passed | Native notifications, physical sleep and logon are source-reviewed, not physically exercised; see morning report. |
-| Details and preferences | Implementation committed (`3c1d765` to `3a1c5bb`); no completion commit | Adopted-surface acceptance, failed edits, live language/focus/RTL and closed-window speed history. |
-| Move and delete files | Engine safety checks passed; UI committed in `3c1d765`; no completion commit | Actual UI submissions with disposable payloads, relevant failures and a real interrupted move. |
+| Background and desktop behavior | Completed, `43e47eb`; current process journey and fresh correction review passed | Native notifications, physical sleep and logon are source-reviewed, not physically exercised; see morning report. |
+| Details and preferences | Completed; current captures, native input journeys and second correction review passed | EN/ES, Light/Dark and requested sizes reviewed; exact narrow width, physical accessibility and populated-traffic limitations remain documented. |
+| Move and delete files | Completed; current engine safety, actual UI submissions, interrupted move and second correction review passed | Collision/shared ownership preserve bytes; physical picker, cross-volume/device failures and dropped alerts remain unverified. |
 
-Finish and commit the remaining milestones in order. Use the requested fresh
-adversarial review when each implementation is stable, and fix its concrete
-findings before the completion commit. Existing scoped reviews do not establish
-acceptance of the entire current diff.
+The final reviewer also checked the current plan, source and evidence for
+completeness; its only counted correction findings are resolved. No further
+implementation is queued for this goal. Read the current continuation in the
+morning report for completion commits, exact evidence and honest limits. The
+sections below retain the earlier handover's history, not new completion gates.
 
-## Pending task finished
+## Earlier handover: pending task finished
 
 The final unattended recovery run passed in **12,156 ms**:
 
@@ -358,7 +360,7 @@ rewrites, not producing a more elaborate plan or a longer review report.
   stay with the engine (#13, closed). Silent-peer, reconnect and disposal fault
   scenarios still need focused runtime evidence.
 
-## Resume sequence
+## Earlier resume sequence
 
 1. Inspect the shared diff and concurrent work. Apply the coding standard above
    to current work and deferred issues: simplify bad structure where the benefit

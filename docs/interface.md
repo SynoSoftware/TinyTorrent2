@@ -622,8 +622,9 @@ least one wanted file, because a new download otherwise has no useful work.
 
 Move files moves the torrent's own files; other files in its folder stay. Show the
 folder the files will be in, so choosing the torrent's own folder instead of
-the folder that contains it is visible before the move. Preserve choices on
-failure. When files are already at the destination, offer Use files there,
+the folder that contains it is visible before the move. Preserve choices when
+submission is refused, so the person can correct them without starting over.
+When files are already at the destination, offer Use files there,
 following [engine relocation](engine.md#removal-and-relocation). When other
 torrents use the files, name them and offer to move them together.
 

@@ -24,7 +24,7 @@ public sealed partial class MainWindow
 {
     private string? _captureDirectory;
     private Task? _capture;
-    internal static bool IsCaptureReview => Environment.GetEnvironmentVariable("TINYTORRENT_CAPTURE_REVIEW") is "1" or "smoke" or "shell" or "schedule" or "desktop";
+    internal static bool IsCaptureReview => Environment.GetEnvironmentVariable("TINYTORRENT_CAPTURE_REVIEW") is "1" or "smoke" or "shell" or "schedule" or "desktop" or "details" or "details-files" or "files" or "files-layout";
 
     internal void ShowCaptureReview()
     {
@@ -561,6 +561,103 @@ public sealed partial class MainWindow
         Model.CloseInspector();
     }
 
+    private async Task CaptureDetails(Torrent target, List<object> outcomes)
+    {
+        await ShowTorrents();
+        Torrents.Selection = new Syno.TableView.Selection([target], target);
+        await SelectTorrent();
+        Run(Model.Properties);
+        Model.Inspector.Select(InspectorSection.Files);
+        await CaptureReady(Model.Inspector, () => !Model.Inspector.IsLoading && Model.Inspector.HasFiles);
+        await CaptureLayout();
+        var file = Model.Inspector.Files.Roots.SelectMany(root => root.Nodes()).First(node => node.Index >= 0 && !node.IsPadding);
+        var priority = CaptureElements(InspectorContent).OfType<ComboBox>().First();
+        var originalPriority = priority.SelectedIndex;
+        priority.SelectedIndex = 4;
+        await CaptureReady(Model.Inspector, () => !Model.Inspector.IsPending && !Model.Inspector.HasFileDraft && !Model.Inspector.IsLoading);
+        if (file.Priority != 7 || !Model.Inspector.Files.HasWanted)
+            throw new InvalidOperationException("The native priority choice was not saved.");
+        outcomes.Add(new { journey = "native file priority", priority = file.Priority, appliedImmediately = true });
+        priority.SelectedIndex = originalPriority;
+        await CaptureReady(Model.Inspector, () => !Model.Inspector.IsPending && !Model.Inspector.HasFileDraft && !Model.Inspector.IsLoading);
+        if (file.PriorityIndex != originalPriority)
+            throw new InvalidOperationException("The native priority choice could not be restored.");
+
+        Model.Inspector.Select(InspectorSection.Trackers);
+        await CaptureReady(Model.Inspector, () => !Model.Inspector.IsLoading && Model.Inspector.EditTrackers.CanExecute(null));
+        await CaptureLayout();
+        Button FindButton(string name) => CaptureElements(InspectorContent).OfType<Button>().Single(control => control.Name == name);
+        var trackers = Model.Inspector.Trackers.Select(tracker => (tracker.Url, tracker.Tier)).ToHashSet();
+        CaptureInvoke(FindButton("EditTrackers"));
+        await CaptureLayout();
+        var editor = CaptureElements(InspectorContent).OfType<TextBox>().Single(control => control.Name == "TrackerInput");
+        var originalInput = editor.Text;
+        const string trackerInput = "https://example.invalid/details";
+        editor.Focus(FocusState.Programmatic);
+        editor.Text = trackerInput;
+        var language = Model.Text.Language == "en" ? "es" : "en";
+        Model.SelectLanguage(language);
+        await CaptureReady(Model, () => Model.CanClose && Model.Text.Language == language);
+        await CaptureLayout();
+        if (editor.Text != trackerInput || Model.Inspector.TrackerInput != trackerInput || !Model.Inspector.HasDraft ||
+            !ReferenceEquals(FocusManager.GetFocusedElement(Root.XamlRoot), editor))
+            throw new InvalidOperationException("The live language switch lost tracker input or focus.");
+        outcomes.Add(new { journey = "language switch with tracker draft", inputRetained = true, focusRetained = true, focusSource = "programmatic native focus", language });
+        await CapturePage("details-live-tracker-draft", InspectorContent.Content as FrameworkElement);
+        CaptureInvoke(FindButton("SaveTrackers"));
+        await CaptureReady(Model.Inspector, () => !Model.Inspector.IsEditingTrackers && !Model.Inspector.IsPending && !Model.Inspector.IsLoading &&
+            Model.Inspector.Trackers.Any(tracker => tracker.Url == trackerInput));
+        outcomes.Add(new { journey = "native tracker save", confirmed = true });
+        CaptureInvoke(FindButton("EditTrackers"));
+        await CaptureLayout();
+        editor = CaptureElements(InspectorContent).OfType<TextBox>().Single(control => control.Name == "TrackerInput");
+        editor.Text = originalInput;
+        CaptureInvoke(FindButton("SaveTrackers"));
+        await CaptureReady(Model.Inspector, () => !Model.Inspector.IsEditingTrackers && !Model.Inspector.IsPending && !Model.Inspector.IsLoading &&
+            trackers.SetEquals(Model.Inspector.Trackers.Select(tracker => (tracker.Url, tracker.Tier))));
+        Model.CloseInspector();
+
+        var preferences = Model.Preferences;
+        await ShowPreferences(new(PreferenceSection.General));
+        await CaptureLayout();
+        var form = _preferencesForm ?? throw new InvalidOperationException("The detail review preferences did not open.");
+        var toggle = CaptureElements(form).OfType<ToggleSwitch>().Single(control => ReferenceEquals(control.Tag, preferences.ShowSplash));
+        var originalSplash = toggle.IsOn;
+        toggle.IsOn = !originalSplash;
+        await CaptureReady(preferences, () => !preferences.ShowSplash.IsPending && !preferences.ShowSplash.HasDraft);
+        if (preferences.ShowSplash.IsOn == originalSplash)
+            throw new InvalidOperationException("The native preference switch did not apply immediately.");
+        toggle.IsOn = originalSplash;
+        await CaptureReady(preferences, () => !preferences.ShowSplash.IsPending && !preferences.ShowSplash.HasDraft);
+        if (preferences.ShowSplash.IsOn != originalSplash)
+            throw new InvalidOperationException("The native preference switch could not be restored.");
+        outcomes.Add(new { journey = "native immediate preference", applied = true, restored = true });
+
+        await ShowPreferences(new(PreferenceSection.Network));
+        await CaptureLayout();
+        var number = CaptureElements(form).OfType<NumberBox>().Single(control => ReferenceEquals(control.Tag, preferences.Port));
+        var input = CaptureElements(number).OfType<TextBox>().First();
+        var next = CaptureElements(form).OfType<NumberBox>().Single(control => ReferenceEquals(control.Tag, preferences.Connections));
+        var departure = CaptureElements(next).OfType<TextBox>().First();
+        var originalPort = preferences.Port.Input;
+        input.Focus(FocusState.Programmatic);
+        input.Text = "70000";
+        await CaptureLayout();
+        departure.Focus(FocusState.Programmatic);
+        await CaptureReady(preferences.Port, () => preferences.Port.Message.Length > 0);
+        if (preferences.Port.Input != "70000" || input.Text != "70000" || !preferences.Port.HasDraft || preferences.Port.IsPending)
+            throw new InvalidOperationException("The invalid native port edit was not retained and rejected.");
+        outcomes.Add(new { journey = "invalid native port", rejectedOnDeparture = true, inputRetained = true });
+        await CapturePage("details-invalid-port", form);
+        input.Focus(FocusState.Programmatic);
+        input.Text = originalPort;
+        await CaptureLayout();
+        departure.Focus(FocusState.Programmatic);
+        await CaptureLayout();
+        if (preferences.Port.HasDraft || preferences.Port.Message.Length > 0)
+            throw new InvalidOperationException("Correcting the native port edit did not recover the field.");
+    }
+
     private async Task CaptureReview()
     {
         var clock = Stopwatch.StartNew();
@@ -573,12 +670,18 @@ public sealed partial class MainWindow
             if (store is null || !Path.IsPathFullyQualified(store))
                 throw new InvalidOperationException("Capture review requires an absolute disposable store path.");
             await CaptureReady(Model, () => Model.IsConnected && !Model.IsLoading);
+            await Model.LanguageLoad;
             if (!string.Equals(Path.GetFullPath(store).TrimEnd(Path.DirectorySeparatorChar),
                     Path.GetFullPath(Model.DataDirectory ?? string.Empty).TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase))
                 throw new InvalidOperationException("The connected engine does not own the capture store.");
             if (Environment.GetEnvironmentVariable("TINYTORRENT_CAPTURE_REVIEW") == "schedule")
             {
                 await CaptureSchedule(outcomes, completed);
+                return;
+            }
+            if (Environment.GetEnvironmentVariable("TINYTORRENT_CAPTURE_REVIEW") is "files" or "files-layout")
+            {
+                await CaptureFiles(outcomes, completed);
                 return;
             }
             var target = Model.Torrents.FirstOrDefault() ?? throw new InvalidOperationException("The review store has no torrent.");
@@ -592,37 +695,73 @@ public sealed partial class MainWindow
                 await CaptureShell(target, outcomes);
                 return;
             }
+            var filesOnly = Environment.GetEnvironmentVariable("TINYTORRENT_CAPTURE_REVIEW") == "details-files";
+            var details = filesOnly || Environment.GetEnvironmentVariable("TINYTORRENT_CAPTURE_REVIEW") == "details";
+            var preferences = Model.Preferences.Fields.Select(field => (field.Name, field.Input, field.IsOn)).ToArray();
+            (int Index, int Priority)[]? priorities = null;
+            FrameworkElement? inspector = null;
+            PreferencesForm? settings = null;
+            string[] languages = filesOnly ? ["en", "es"] : [Model.Text.Language];
             var themes = Environment.GetEnvironmentVariable("TINYTORRENT_CAPTURE_REVIEW") == "smoke" ? Array.Empty<string>() : ["light", "dark"];
+            foreach (var language in languages)
             foreach (var theme in themes)
             {
                 await Model.SelectTheme(theme);
                 await CaptureReady(Model, () => Model.CanClose && Model.Theme == theme);
-                foreach (var size in new[] { new SizeInt32(1040, 680), new SizeInt32(1280, 800), new SizeInt32(720, 560) })
+                Model.SelectLanguage(language);
+                await CaptureReady(Model, () => Model.CanClose && Model.Text.Language == language);
+                foreach (var size in new[] { new SizeInt32(720, 560), new SizeInt32(1040, 680), new SizeInt32(1280, 800) })
                 {
-                    var prefix = theme + "-" + size.Width + "x" + size.Height + "-";
-                    AppWindow.Resize(size);
+                    var prefix = (details ? "details-" + language + "-" : string.Empty) + theme + "-" + size.Width + "x" + size.Height + "-";
+                    var scale = Root.XamlRoot.RasterizationScale;
+                    var minimum = ((Microsoft.UI.Windowing.OverlappedPresenter)AppWindow.Presenter).PreferredMinimumWidth ?? 0;
+                    AppWindow.Resize(new SizeInt32(Math.Max((int)(size.Width * scale), minimum), (int)(size.Height * scale)));
                     await ShowTorrents();
-                    Model.CloseInspector();
-                    await CapturePage(prefix + "torrents");
-                    Model.IsFilterOpen = true;
-                    await CapturePage(prefix + "filters");
-                    Model.IsFilterOpen = false;
+                    if (!filesOnly) Model.CloseInspector();
+                    if (!details)
+                    {
+                        await CapturePage(prefix + "torrents");
+                        Model.IsFilterOpen = true;
+                        await CapturePage(prefix + "filters");
+                        Model.IsFilterOpen = false;
+                    }
                     Torrents.Selection = new Syno.TableView.Selection([target], target);
                     await SelectTorrent();
                     Run(Model.Properties);
-                    foreach (var section in Enum.GetValues<InspectorSection>())
+                    foreach (var section in filesOnly ? new[] { InspectorSection.Files } : Enum.GetValues<InspectorSection>())
                     {
                         Model.Inspector.Select(section);
                         await CaptureLayout();
-                        await CaptureReady(Model.Inspector, () => !Model.Inspector.IsLoading);
+                        await CaptureReady(Model.Inspector, () => !Model.Inspector.IsLoading && (!filesOnly || Model.Inspector.HasFiles));
+                        if (filesOnly)
+                        {
+                            priorities ??= Model.Inspector.Files.Roots.SelectMany(root => root.Nodes())
+                                .Where(file => file.Index >= 0).Select(file => (file.Index, file.Priority)).OrderBy(file => file.Index).ToArray();
+                            inspector ??= InspectorContent.Content as FrameworkElement;
+                            if (!ReferenceEquals(inspector, InspectorContent.Content))
+                                throw new InvalidOperationException("The language capture recreated the file form.");
+                        }
                         await CapturePage(prefix + "properties-" + section, InspectorContent.Content as FrameworkElement);
+                        if (details && section == InspectorSection.Files && size.Width == 720)
+                        {
+                            var priority = CaptureElements(InspectorContent).OfType<ComboBox>().First();
+                            priority.IsDropDownOpen = true;
+                            try { await CapturePage(prefix + "priority-choices"); }
+                            finally { priority.IsDropDownOpen = false; }
+                        }
                     }
-                    Model.CloseInspector();
-                    foreach (var section in Enum.GetValues<PreferenceSection>())
+                    if (!filesOnly) Model.CloseInspector();
+                    foreach (var section in filesOnly ? new[] { PreferenceSection.Appearance, PreferenceSection.Network } : Enum.GetValues<PreferenceSection>())
                     {
                         await ShowPreferences(new(section));
+                        if (filesOnly)
+                        {
+                            settings ??= _preferencesForm;
+                            if (!ReferenceEquals(settings, _preferencesForm))
+                                throw new InvalidOperationException("The language capture recreated the preferences form.");
+                        }
                         await CapturePage(prefix + "settings-" + section, _preferencesForm);
-                        if (section == PreferenceSection.Schedule && Model.Preferences.Periods.FirstOrDefault() is { } period)
+                        if (!details && section == PreferenceSection.Schedule && Model.Preferences.Periods.FirstOrDefault() is { } period)
                         {
                             Model.Preferences.Edit(period);
                             await CaptureLayout();
@@ -630,6 +769,7 @@ public sealed partial class MainWindow
                             Run(Model.Preferences.CancelPeriod);
                         }
                     }
+                    if (details) { completed.Add(prefix); continue; }
                     await ShowAbout();
                     await CapturePage(prefix + "about");
                     await ShowTorrents();
@@ -641,6 +781,37 @@ public sealed partial class MainWindow
                     await CaptureDialog(prefix + "add", ShowAdd, () => _addDialog);
                     completed.Add(prefix);
                 }
+            }
+            if (filesOnly)
+            {
+                await Model.SelectTheme("light");
+                await CaptureReady(Model, () => Model.CanClose && Model.Theme == "light");
+                Model.SelectLanguage("en");
+                await CaptureReady(Model, () => Model.CanClose && Model.Text.Language == "en");
+                var scale = Root.XamlRoot.RasterizationScale;
+                var minimum = ((Microsoft.UI.Windowing.OverlappedPresenter)AppWindow.Presenter).PreferredMinimumWidth ?? 0;
+                AppWindow.Resize(new SizeInt32(Math.Max((int)(720 * scale), minimum), (int)(560 * scale)));
+                await ShowTorrents();
+                await CapturePage("details-en-light-720x560-reverse-properties-Files", inspector);
+                foreach (var section in new[] { PreferenceSection.Appearance, PreferenceSection.Network })
+                {
+                    await ShowPreferences(new(section));
+                    await CapturePage("details-en-light-720x560-reverse-settings-" + section, _preferencesForm);
+                }
+                if (!ReferenceEquals(inspector, InspectorContent.Content) || !ReferenceEquals(settings, _preferencesForm) || priorities is null ||
+                    !priorities.SequenceEqual(Model.Inspector.Files.Roots.SelectMany(root => root.Nodes())
+                        .Where(file => file.Index >= 0).Select(file => (file.Index, file.Priority)).OrderBy(file => file.Index)) ||
+                    !preferences.SequenceEqual(Model.Preferences.Fields.Select(field => (field.Name, field.Input, field.IsOn))) ||
+                    Model.Inspector.HasFileDraft || Model.Preferences.HasDraft || Model.Preferences.IsPending)
+                    throw new InvalidOperationException("Changing the capture language altered file priorities or preferences.");
+                outcomes.Add(new { journey = "live language selected choices", languages = new[] { "en", "es", "en" },
+                    fileFormRetained = true, preferencesFormRetained = true, prioritiesRetained = true, preferencesRetained = true });
+                return;
+            }
+            if (details)
+            {
+                await CaptureDetails(target, outcomes);
+                return;
             }
             if (completed.Count > 0)
             {

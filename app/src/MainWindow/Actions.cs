@@ -155,6 +155,28 @@ public sealed partial class MainWindow
         };
         var body = new ScrollViewer { Content = form, Width = Math.Min(560, Root.ActualWidth - 80),
             MaxHeight = Math.Max(220, Root.ActualHeight - 180), VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+        void ResizeBody(object sender, SizeChangedEventArgs args)
+        {
+            var atEnd = body.VerticalOffset >= body.ScrollableHeight - 1;
+            body.Width = Math.Min(560, Root.ActualWidth - 80);
+            body.MaxHeight = Math.Max(220, Root.ActualHeight - 180);
+            body.UpdateLayout();
+            if (Model.Files.HasError && atEnd) body.ChangeView(null, body.ScrollableHeight, null, true);
+        }
+        body.SizeChanged += (_, args) =>
+        {
+            if (Model.Files.HasError && body.VerticalOffset + args.PreviousSize.Height >= body.ExtentHeight - 1)
+                body.ChangeView(null, body.ScrollableHeight, null, true);
+        };
+        form.SizeChanged += (_, args) =>
+        {
+            if (Model.Files.HasError && body.VerticalOffset + body.ViewportHeight >= args.PreviousSize.Height - 1)
+            {
+                body.UpdateLayout();
+                body.ChangeView(null, body.ScrollableHeight, null, true);
+            }
+        };
+        Root.SizeChanged += ResizeBody;
         var dialog = new ContentDialog { XamlRoot = Root.XamlRoot, Content = body,
             DefaultButton = action == FileAction.Delete ? ContentDialogButton.Close : ContentDialogButton.Primary };
         dialog.Resources["ContentDialogMaxWidth"] = 608d;
@@ -164,7 +186,15 @@ public sealed partial class MainWindow
         {
             args.Cancel = true;
             var deferral = args.GetDeferral();
-            try { args.Cancel = !await Model.Files.Submit(); }
+            try
+            {
+                args.Cancel = !await Model.Files.Submit();
+                if (args.Cancel)
+                {
+                    body.UpdateLayout();
+                    body.ChangeView(null, body.ScrollableHeight, null, true);
+                }
+            }
             finally { deferral.Complete(); }
         };
         dialog.Closing += (_, args) => { if ((Model.Files.IsPending || Model.IsPicking) && !Model.IsClosing) args.Cancel = true; };
@@ -180,6 +210,7 @@ public sealed partial class MainWindow
         catch (Exception error) { Model.Report(error); }
         finally
         {
+            Root.SizeChanged -= ResizeBody;
             body.Content = null;
             _filesDialog = null;
             _filesForm = null;

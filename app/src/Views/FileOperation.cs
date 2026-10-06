@@ -23,15 +23,17 @@ public sealed class FileOperation : INotifyPropertyChanged
     public bool IsPending { get; private set; }
     public bool HasDraft => Action == FileAction.Move && (Destination != _originalDestination || IncludeShared || UseExisting);
     public bool CanSubmit => owner.CanEdit && !IsPending && _loaded &&
-        (Action == FileAction.Delete || Destination.Length > 0 && (_shared.Length == 0 || IncludeShared));
+        (Action == FileAction.Delete || HasDestination && (!HasShared || IncludeShared));
     public bool CanRefresh => owner.CanEdit && !IsPending;
     public bool IsMove => Action == FileAction.Move;
     public bool HasShared => _shared.Length > 0;
+    public bool HasDestination => Destination.Length > 0;
+    public bool HasKeptFiles => !IsMove && _keptFiles > 0;
     public string Title => owner.Text.Get("commands", IsMove ? "move" : "delete_files");
     public string Instruction => owner.Text.Get("file_operation", IsMove ? "move_detail" : "delete_detail");
     public string Locations => string.Join(Environment.NewLine + Environment.NewLine,
         _torrents.Concat(IncludeShared ? _shared : []).Select(torrent => torrent.Name + Environment.NewLine + torrent.Folder));
-    public string ResultingFolders => Destination.Length == 0 ? string.Empty : string.Join(Environment.NewLine,
+    public string ResultingFolders => !HasDestination ? string.Empty : string.Join(Environment.NewLine,
         _torrents.Concat(IncludeShared ? _shared : []).Select(torrent =>
         {
             var relative = Path.GetRelativePath(torrent.SavePath, torrent.Folder);
@@ -39,7 +41,7 @@ public sealed class FileOperation : INotifyPropertyChanged
         }).Distinct(StringComparer.OrdinalIgnoreCase));
     public string SharedText => owner.Text.Format("file_operation", IsMove ? "move_shared" : "delete_shared",
         string.Join(Environment.NewLine, _shared.Select(torrent => torrent.Name)));
-    public string KeptText => IsMove || _keptFiles == 0 ? string.Empty : owner.Text.FormatCount("file_operation", "kept", _keptFiles);
+    public string KeptText => HasKeptFiles ? owner.Text.FormatCount("file_operation", "kept", _keptFiles) : string.Empty;
     public string Message => _failure is null ? string.Empty : owner.FormatError(_failure);
     public bool HasError => _failure is not null;
     public string Destination

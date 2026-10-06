@@ -258,7 +258,13 @@
                                     </controls:SettingsRow>
                                     <controls:SettingsRow x:Name="InterfaceRow" Header="{x:Bind Model.Interface.Label, Mode=OneWay}" Error="{x:Bind Model.Interface.Message, Mode=OneWay}">
                                         <ComboBox x:Name="Interfaces" Width="240" SelectionChanged="OnInterface"
-                                            IsEnabled="{x:Bind Model.Interface.CanEdit, Mode=OneWay}" AutomationProperties.Name="{x:Bind Model.Interface.Label, Mode=OneWay}" AutomationProperties.AutomationId="NetworkInterface" />
+                                            IsEnabled="{x:Bind Model.Interface.CanEdit, Mode=OneWay}" AutomationProperties.Name="{x:Bind Model.Interface.Label, Mode=OneWay}" AutomationProperties.AutomationId="NetworkInterface">
+                                            <ComboBox.ItemTemplate>
+                                                <DataTemplate x:DataType="local:InterfaceChoice">
+                                                    <TextBlock Text="{x:Bind Text, Mode=OneWay}" />
+                                                </DataTemplate>
+                                            </ComboBox.ItemTemplate>
+                                        </ComboBox>
                                     </controls:SettingsRow>
                                     <controls:SettingsRow x:Name="ConnectionsRow" Header="{x:Bind Model.Connections.Label, Mode=OneWay}" Error="{x:Bind Model.Connections.Message, Mode=OneWay}">
                                         <NumberBox Width="160" Tag="{x:Bind Model.Connections}" Text="{x:Bind Model.Connections.Input, Mode=TwoWay}"
@@ -278,15 +284,18 @@
                                 <StackPanel Spacing="16">
                                     <controls:SettingsRow x:Name="LanguageRow">
                                         <ComboBox x:Name="Languages" MinWidth="200" SelectionChanged="OnLanguage" IsEnabled="{x:Bind Model.CanSelectLanguage, Mode=OneWay}" AutomationProperties.AutomationId="Language">
-                                            <ComboBox.Items><ComboBoxItem x:Name="English" Tag="en" AutomationProperties.AutomationId="EnglishLanguage" /><ComboBoxItem x:Name="Spanish" Tag="es" AutomationProperties.AutomationId="SpanishLanguage" /></ComboBox.Items>
+                                            <ComboBox.Items>
+                                                <ComboBoxItem x:Name="English" Tag="en" AutomationProperties.AutomationId="EnglishLanguage"><TextBlock x:Name="EnglishLabel" /></ComboBoxItem>
+                                                <ComboBoxItem x:Name="Spanish" Tag="es" AutomationProperties.AutomationId="SpanishLanguage"><TextBlock x:Name="SpanishLabel" /></ComboBoxItem>
+                                            </ComboBox.Items>
                                         </ComboBox>
                                     </controls:SettingsRow>
                                     <controls:SettingsRow x:Name="ThemeRow">
                                         <ComboBox x:Name="Theme" MinWidth="200" SelectionChanged="OnTheme" IsEnabled="{x:Bind Model.CanSelectTheme, Mode=OneWay}" AutomationProperties.AutomationId="Theme">
                                             <ComboBox.Items>
-                                                <ComboBoxItem x:Name="SystemTheme" Tag="system" />
-                                                <ComboBoxItem x:Name="LightTheme" Tag="light" />
-                                                <ComboBoxItem x:Name="DarkTheme" Tag="dark" />
+                                                <ComboBoxItem x:Name="SystemTheme" Tag="system"><TextBlock x:Name="SystemLabel" /></ComboBoxItem>
+                                                <ComboBoxItem x:Name="LightTheme" Tag="light"><TextBlock x:Name="LightLabel" /></ComboBoxItem>
+                                                <ComboBoxItem x:Name="DarkTheme" Tag="dark"><TextBlock x:Name="DarkLabel" /></ComboBoxItem>
                                             </ComboBox.Items>
                                         </ComboBox>
                                     </controls:SettingsRow>

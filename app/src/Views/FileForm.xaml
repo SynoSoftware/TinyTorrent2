@@ -10,7 +10,8 @@
             <CheckBox x:Name="IncludeShared" AutomationProperties.AutomationId="IncludeShared"
                 IsChecked="{x:Bind Model.Files.IncludeShared, Mode=TwoWay}"
                 Visibility="{x:Bind Model.Files.IsMove, Mode=OneWay}" IsEnabled="{x:Bind Model.Files.CanRefresh, Mode=OneWay}" />
-            <TextBlock Text="{x:Bind Model.Files.KeptText, Mode=OneWay}" TextWrapping="Wrap" />
+            <TextBlock Text="{x:Bind Model.Files.KeptText, Mode=OneWay}" TextWrapping="Wrap"
+                Visibility="{x:Bind Model.Files.HasKeptFiles, Mode=OneWay}" />
         </StackPanel>
         <StackPanel Spacing="8" Visibility="{x:Bind Model.Files.IsMove, Mode=OneWay}">
             <Grid ColumnSpacing="8">
@@ -20,8 +21,10 @@
                 <Button x:Name="Browse" AutomationProperties.AutomationId="MoveBrowse" Grid.Column="1" VerticalAlignment="Bottom"
                     IsEnabled="{x:Bind Model.Files.CanRefresh, Mode=OneWay}" Click="OnDestination" />
             </Grid>
-            <TextBlock x:Name="ResultLabel" Style="{StaticResource BodyStrongTextBlockStyle}" />
-            <TextBlock Text="{x:Bind Model.Files.ResultingFolders, Mode=OneWay}" TextWrapping="Wrap" IsTextSelectionEnabled="True" FlowDirection="LeftToRight" />
+            <TextBlock x:Name="ResultLabel" Style="{StaticResource BodyStrongTextBlockStyle}"
+                Visibility="{x:Bind Model.Files.HasDestination, Mode=OneWay}" />
+            <TextBlock Text="{x:Bind Model.Files.ResultingFolders, Mode=OneWay}" TextWrapping="Wrap" IsTextSelectionEnabled="True" FlowDirection="LeftToRight"
+                Visibility="{x:Bind Model.Files.HasDestination, Mode=OneWay}" />
             <CheckBox x:Name="UseExisting" AutomationProperties.AutomationId="UseExisting"
                 IsChecked="{x:Bind Model.Files.UseExisting, Mode=TwoWay}" IsEnabled="{x:Bind Model.Files.CanRefresh, Mode=OneWay}" />
             <TextBlock x:Name="ExistingWarning" TextWrapping="Wrap" Visibility="{x:Bind Model.Files.UseExisting, Mode=OneWay}" />

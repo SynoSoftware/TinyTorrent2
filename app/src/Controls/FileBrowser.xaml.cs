@@ -21,8 +21,8 @@ public sealed partial class FileBrowser : UserControl
     internal void RefreshText()
     {
         Search.PlaceholderText = Model.Text.Get("files", "search");
-        All.Content = Model.Text.Get("files", "all_matching");
-        None.Content = Model.Text.Get("files", "none_matching");
+        AllLabel.Text = Model.Text.Get("files", "all_matching");
+        NoneLabel.Text = Model.Text.Get("files", "none_matching");
         NameLabel.Text = Model.Text.Get("files", "name");
         SizeLabel.Text = Model.Text.Get("columns", "size");
         ProgressLabel.Text = Model.Text.Get("columns", "progress");

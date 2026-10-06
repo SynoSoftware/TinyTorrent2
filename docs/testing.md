@@ -178,6 +178,18 @@ Use `TINYTORRENT_CAPTURE_REVIEW=desktop` with the disposable desktop launcher fo
 declining Exit with unfinished input and reconnecting an open tracker draft.
 Its restart handshake affects only the launcher's own fixture engine; it does
 not automate the desktop or establish native notification/power behavior.
+Use `TINYTORRENT_CAPTURE_REVIEW=details` for the inspector and Settings at all
+three sizes and both themes in the fixture's selected language, followed by
+native priority, tracker, live-language and preference recovery journeys.
+`details-files` limits correction captures to Files and localized selected
+Settings choices; it does not repeat those behavioral journeys.
+Use `TINYTORRENT_CAPTURE_REVIEW=files` with the disposable files launcher for
+shared Move/Delete confirmations, native submissions, collision refusal and
+byte preservation. `files-layout` stops after the Move layout and ownership
+refusal, preserving fixture membership and payload. These modes require the
+launcher's `files-capture.json` manifest; they are not general-purpose actions
+against an existing store. The system folder picker is outside XAML capture,
+so the diagnostic supplies its disposable destination to the existing owner.
 
 First review functionality and recovery through the existing owners. Then use
 the images to examine hierarchy, spacing, alignment, typography, grouping,
