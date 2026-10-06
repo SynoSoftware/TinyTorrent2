@@ -136,6 +136,7 @@ public sealed partial class MainWindow
             !Enum.IsDefined(placement.Section) || !Enum.IsDefined(placement.Settings)) return;
         Model.Filter = placement.Filter;
         Model.IsFilterOpen = placement.FiltersOpen;
+        Model.IsToolbarOpen = placement.ToolbarOpen;
         var identities = new HashSet<string>(placement.Selected ?? []);
         var selected = Model.VisibleTorrents.Where(torrent => identities.Contains(torrent.TorrentId)).ToArray();
         var current = selected.FirstOrDefault(torrent => torrent.TorrentId == placement.Current) ?? selected.FirstOrDefault();
@@ -161,7 +162,7 @@ public sealed partial class MainWindow
             SplitHeight = _splitHeight, Torrents = Torrents.Layout,
             Inspector = InspectorContent.Content is InspectorForm form ? form.Layout : _placement?.Inspector,
             Page = Model.Page, Settings = _preferencesForm?.Section ?? PreferenceSection.General,
-            Filter = Model.Filter, FiltersOpen = Model.IsFilterOpen,
+            Filter = Model.Filter, FiltersOpen = Model.IsFilterOpen, ToolbarOpen = Model.IsToolbarOpen,
             Selected = [.. Model.Selected.Select(torrent => torrent.TorrentId)],
             Current = Model.Current?.TorrentId,
             InspectorOpen = Model.HasInspector, Section = Model.Inspector.Section,
@@ -195,6 +196,7 @@ public sealed partial class MainWindow
         public PreferenceSection Settings { get; init; }
         public TorrentFilter Filter { get; init; }
         public bool FiltersOpen { get; init; }
+        public bool ToolbarOpen { get; init; } = true;
         public IReadOnlyList<string>? Selected { get; init; }
         public string? Current { get; init; }
         public bool InspectorOpen { get; init; }

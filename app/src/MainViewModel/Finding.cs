@@ -151,6 +151,7 @@ public sealed partial class MainViewModel
             yield return new(choice.Label, Text.Get("finding", "filter"), SuggestionScope.Navigation,
                 new Command(() => { Filter = choice.Filter; IsFilterOpen = true; return Task.CompletedTask; }, () => true));
         yield return new(Text.Get("filters", "title"), Text.Get("finding", "filter"), SuggestionScope.Navigation, SwitchFilters);
+        yield return new(Text.Get("menus", "toolbar"), string.Empty, SuggestionScope.Navigation, SwitchToolbar);
         foreach (var section in Enum.GetValues<InspectorSection>())
             yield return new(Text.Get("inspector", section.ToString().ToLowerInvariant()),
                 Text.Get("commands", "properties") + " · " + selection, SuggestionScope.Navigation,

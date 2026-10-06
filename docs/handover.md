@@ -1,5 +1,20 @@
 # Implementation handover — 2026-10-05
 
+## Inspector viewport and toolbar checkpoint — 2026-10-06
+
+`609bbc5` fixes multiline tracker saving. The following viewport correction
+keeps the inspector above the footer at narrow sizes, including the owner's
+toolbar. Its source gate, capture build, focused details journey and first
+adversarial correction review pass; zero counted findings remain in this scope.
+The coherent toolbar/menu dependencies are checkpointed with that correction.
+Exact evidence and limits are recorded in [morning-report.md](morning-report.md).
+
+Preserve the still-uncommitted Ctrl+comma, hierarchy/file-tree, Pieces, pipe,
+engine and design-authority work. The interrupted ordinary build is not a pass;
+the latest successful compilation is the capture variant. Do not repeat the full
+suite or call this a release approval. Current native desktop/accessibility and
+live-download evidence gaps, plus review of the owner's later changes, remain.
+
 ## Multiline tracker save milestone — 2026-10-06
 
 The native multiline tracker editor was joining CR-separated URLs on Save.

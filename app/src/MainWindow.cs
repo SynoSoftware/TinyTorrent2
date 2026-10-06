@@ -42,6 +42,7 @@ public sealed partial class MainWindow : Window
         Filters.ItemsSource = Model.Filters;
         Split.ValueChanged += (_, value) => { _splitHeight = value; UpdateInspectorSize(); };
         Workspace.SizeChanged += (_, _) => UpdateInspectorSize();
+        Toolbar.SizeChanged += (_, _) => UpdateInspectorSize();
         StatusBar.SizeChanged += (_, _) => UpdateStatus();
         _uiSettings.TextScaleFactorChanged += OnTextScaling;
         FiltersClose.Content = new FontIcon { FontFamily = Syno.Lucide.Font, Glyph = Syno.Lucide.X, FontSize = 16 };
@@ -131,7 +132,6 @@ public sealed partial class MainWindow : Window
         Closed += (_, _) => { _uiSettings.TextScaleFactorChanged -= OnTextScaling; Model.Dispose(); };
         AddShortcut(new() { Key = VirtualKey.O, Modifiers = VirtualKeyModifiers.Control }, Model.Add);
         AddShortcut(new() { Key = VirtualKey.W, Modifiers = VirtualKeyModifiers.Control }, () => _ = CloseWindow(engineExit: false));
-        AddShortcut(new() { Key = VirtualKey.Q, Modifiers = VirtualKeyModifiers.Control }, Model.Exit);
         AddShortcut(new() { Key = VirtualKey.P, Modifiers = VirtualKeyModifiers.Control, ScopeOwner = Torrents }, Model.Pause);
         AddShortcut(new() { Key = VirtualKey.S, Modifiers = VirtualKeyModifiers.Control, ScopeOwner = Torrents }, Model.Resume);
         AddShortcut(new() { Key = VirtualKey.M, Modifiers = VirtualKeyModifiers.Control, ScopeOwner = Torrents }, Model.Force);
@@ -175,7 +175,8 @@ public sealed partial class MainWindow : Window
             Root.RequestedTheme = Model.Theme switch { "light" => ElementTheme.Light, "dark" => ElementTheme.Dark, _ => ElementTheme.Default };
         if (string.IsNullOrEmpty(args.PropertyName) || args.PropertyName == nameof(MainViewModel.IsLoading))
             Torrents.Placeholder = Model.IsLoading ? Syno.TableView.Placeholder.Loading : Syno.TableView.Placeholder.Empty;
-        if (string.IsNullOrEmpty(args.PropertyName) || args.PropertyName == nameof(MainViewModel.HasInspector)) UpdateInspectorSize();
+        if (string.IsNullOrEmpty(args.PropertyName) || args.PropertyName == nameof(MainViewModel.HasInspector) ||
+                args.PropertyName == nameof(MainViewModel.IsToolbarOpen)) UpdateInspectorSize();
         if (string.IsNullOrEmpty(args.PropertyName) || args.PropertyName == nameof(MainViewModel.Filter))
         {
             _refreshingFilters = true;
@@ -206,7 +207,7 @@ public sealed partial class MainWindow : Window
         if (selection) accelerator.ScopeOwner = Root;
         accelerator.Invoked += (_, args) =>
         {
-            if (HasDialog && accelerator.Key is not (VirtualKey.W or VirtualKey.Q)) return;
+            if (HasDialog && accelerator.Key != VirtualKey.W) return;
             if (selection && (Model.Page != WindowPage.Torrents || HasEditorFocus())) return;
             if (Root.XamlRoot?.Content is null) return;
             action();

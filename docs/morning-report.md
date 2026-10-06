@@ -1,5 +1,38 @@
 # Morning report
 
+## Inspector viewport and toolbar checkpoint — 2026-10-06
+
+Tracker data correction `609bbc5` is committed. The subsequent narrow capture
+finding is fixed: inspector sizing now uses the bounded outer workspace height,
+subtracts the visible toolbar and retains the existing table/splitter reserve.
+Workspace resizing, toolbar measurement and visibility changes update that one
+calculation. This preserves the owner's toolbar and inspector styling instead
+of feeding an overflowing child grid's height back into its own allocation.
+
+The owner's coherent toolbar/menu slice is included in this checkpoint: shared
+selection command bindings, View/search visibility, saved placement, localized
+menu access keys and menu access-key scopes. Source review found zero counted
+defects in those dependencies or the sizing correction. Newer Ctrl+comma edits
+arrived after the build and remain unstaged with the owner's other ongoing work.
+
+`inspector-viewport-app.log` passed in 69.54 seconds with zero warnings/errors.
+It compiled TableView after concurrent hierarchy edits and the capture app,
+two WinUI passes each; source hashes did not change during compilation. The
+paused isolated run `UiSelfCapture-fafe8ae7-c681-4001-bc0f-28d859ba577d` passed
+in 11.71 seconds, retaining the exact tracker-save/reopen/restore proofs and
+producing the twelve EN/ES Light/Dark views. Its UI and engine exited, and the
+generated-output scan was empty. No engine build or suite ran.
+
+Parent review confirmed the narrow inspector boundary and scrollbar above the
+footer. The image-only adversarial review's first correction review reports zero
+remaining findings: all four narrow variants are contained, supplied bottom-scroll
+views show the remaining rows, and representative medium/large views retain their
+layout. Physical keyboard navigation, real High Contrast/Narrator, toolbar state
+across a real window restart and the owner's concurrent feature changes remain
+outside this evidence. The interrupted ordinary build remains unverified; this
+checkpoint uses the successful capture build and does not claim a current normal
+Release executable or complete release readiness.
+
 ## Multiline tracker save milestone — 2026-10-06
 
 The populated details journey exposed a product bug: WinUI's multiline TextBox

@@ -9,7 +9,7 @@
     "incoming": "Conexiones entrantes disponibles", "no_incoming": "Aún no hay conexiones entrantes", "selected": "{0} seleccionados", "errors": "Errores · {0}", "search": "Buscar un torrent", "alternative": "Límites alternativos", "add_tip": "Añadir un archivo torrent", "clear_filters_tip": "Mostrar todos los torrents"
   },
   "chrome": { "dark": "Cambiar al tema oscuro", "light": "Cambiar al tema claro" },
-  "menus": { "file": "Archivo", "file_key": "A", "torrent": "Torrent", "torrent_key": "T", "view": "Ver", "view_key": "V", "help": "Ayuda", "help_key": "Y", "back": "Atrás", "queue": "Cola", "on": "Activado", "off": "Desactivado", "mixed": "Mixto" },
+  "menus": { "file": "Archivo", "file_key": "A", "torrent": "Torrent", "torrent_key": "T", "view": "Ver", "view_key": "V", "help": "Ayuda", "help_key": "Y", "back": "Atrás", "queue": "Cola", "toolbar": "Barra de herramientas", "on": "Activado", "off": "Desactivado", "mixed": "Mixto", "add_file_key": "A", "add_magnet_key": "M", "settings_key": "J", "exit_key": "S", "pause_key": "P", "resume_key": "R", "force_key": "F", "open_key": "A", "open_folder_key": "C", "copy_magnet_key": "G", "copy_hash_key": "H", "properties_key": "O", "verify_key": "V", "move_key": "M", "queue_key": "L", "sequential_key": "S", "first_last_key": "I", "remove_key": "E", "delete_files_key": "B", "pause_all_key": "T", "resume_all_key": "N", "limits_key": "D", "up_key": "S", "down_key": "B", "top_key": "P", "bottom_key": "F", "filters_key": "F", "toolbar_key": "B", "about_key": "A" },
   "shortcuts": { "control": "Ctrl", "alt": "Alt", "shift": "Mayús", "delete": "Supr", "tip": "{0} ({1})" },
   "filters": {
     "active": "Filtros: {0} · {1:N0}",

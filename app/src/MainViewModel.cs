@@ -43,6 +43,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     private bool _picking;
     private bool _addOpen;
     private bool _dark;
+    private bool _toolbarOpen = true;
 
     public Strings Text { get; }
     public IReadOnlyList<Torrent> Torrents => _torrents;
@@ -89,6 +90,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     public ICommand Resume { get; }
     public ICommand Exit { get; }
     public ICommand SwitchTheme { get; }
+    public bool IsToolbarOpen
+    {
+        get => _toolbarOpen;
+        set { if (_toolbarOpen == value) return; _toolbarOpen = value; Changed(nameof(IsToolbarOpen)); }
+    }
+    public ICommand SwitchToolbar { get; }
     public string DownloadText => Text.Format("window", "download_rate", Rate(_downloadRate));
     public string UploadText => Text.Format("window", "upload_rate", Rate(_uploadRate));
     public string PausedText => _connected && AllPaused ? Text.Get("status", "all_paused") : string.Empty;
@@ -173,6 +180,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         SwitchSequential = new Command(() => SetPieceOrder(PieceOrder.Sequential, Sequential != true), () => CanEditSelection);
         SwitchFirstLast = new Command(() => SetPieceOrder(PieceOrder.FirstLast, FirstLast != true), () => CanEditSelection);
         SwitchFilters = new Command(() => { IsFilterOpen = !IsFilterOpen; return Task.CompletedTask; }, () => true);
+        SwitchToolbar = new Command(() => { IsToolbarOpen = !IsToolbarOpen; return Task.CompletedTask; }, () => true);
         Verify = new Command(() => ActOnSelection("verify"), () => CanEdit && _selected.Length > 0);
         Remove = new Command(() => { RemoveRequested?.Invoke(this, _selected.ToArray()); return Task.CompletedTask; }, () => CanEdit && _selected.Length > 0);
         MoveFiles = new Command(() => { MoveRequested?.Invoke(this, _selected.ToArray()); return Task.CompletedTask; },
@@ -545,7 +553,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         if (_closed) return;
         foreach (var choice in Filters) choice.Refresh();
         Changed(string.Empty);
-        foreach (Command command in new[] { Add, AddMagnet, Pause, Resume, Force, SwitchSequential, SwitchFirstLast, SwitchFilters,
+        foreach (Command command in new[] { Add, AddMagnet, Pause, Resume, Force, SwitchSequential, SwitchFirstLast, SwitchFilters, SwitchToolbar,
             Verify, Remove, MoveFiles, DeleteFiles,
             Up, Down, Top, Bottom, PauseAll, ResumeAll, Open, OpenFolder, CopyMagnet, CopyHash,
             Properties, Limits, ClearFilters, ShowPreferences, ShowTorrents, ShowAbout, OpenUpdate, Exit, SwitchTheme, Restart, OpenCompletion }) command.Refresh();

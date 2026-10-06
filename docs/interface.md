@@ -65,9 +65,11 @@ code are not production architecture.
 for commands and replaces the application navigation pane. Its dropdown commands
 use Lucide icons and separators between distinct action groups; menu headings
 retain native text presentation.
-A menu choice shows its state as its icon: a checked, empty or mixed square. It
-is never a check-mark item, because one check-mark item gives every item in its
-menu a second icon column that is empty beside the others.
+In a menu that mixes choices with commands, a choice shows its state as its
+icon: a checked, empty or mixed square. It is not a check-mark item there,
+because one check-mark item gives every item in its menu a second icon column
+that is empty beside the others. A menu of only on/off choices, such as View,
+uses native check-mark items with Lucide icons, because no column stands empty.
 
 The custom title bar contains one row: app icon, File/Torrent/View/Help MenuBar,
 bounded Search, Add torrent file and Add magnet link, a small separator, the
@@ -417,8 +419,10 @@ Torrent contains the existing selection commands, queue actions, Pause all,
 Resume all and Speed limits. **Owner ruling:** Speed limits opens Settings at
 the speed limits, as its search result does; there is no separate limits dialog,
 because two editors for one setting disagree about when it applies. Commands
-retain their selection availability and shortcuts. View contains a checkable
-Filters item; Help contains About.
+retain their selection availability and shortcuts. View contains checkable
+Filters and Toolbar items; Help contains About. Every menu item has a localized
+access key that is unique in its menu, as in other Windows applications: in
+English, Alt+F, X exits.
 Add is available in File and through the existing keyboard and search paths.
 The first window has a 560 effective-pixel minimum height; its minimum width
 keeps the complete title-bar row usable, starting at 720 effective pixels.
@@ -495,6 +499,17 @@ are in the window and the tray, and keep each torrent's own
 [paused or running state](engine.md#state-and-work). Exit is in the window as
 well as the tray.
 
+The toolbar, a row above the table that View shows or hides, holds Resume,
+Pause, Open folder, Properties, Verify, Remove and Delete files, as subtle
+icon buttons in groups split by dividers. It shows only the commands whose icon
+a person recognizes without its tooltip, because Fluent asks a toolbar for
+familiar icons; the menus keep every command. Copy magnet link stays off it
+because its link icon is Add magnet link's in the title bar above. Its buttons
+act on the selection and are disabled without one, as their menu items are; Add
+stays in the title bar so it is visible while the toolbar is hidden. The
+toolbar is one Tab stop, and the arrow keys move inside it. It starts visible,
+and the window layout remembers it.
+
 Dropping torrent files or magnet text on the window, or pasting them with Ctrl+V
 while the table has focus, follows the same Show the Add form preference. Sources
 join an already-open Add task; otherwise that preference decides whether the
@@ -528,7 +543,11 @@ table, selection toolbar or inspector has focus; an editor keeps its own keys.
 | Shift+Delete | Delete files |
 | Alt+O | Preferences |
 | Ctrl+W | Close the window |
-| Ctrl+Q | Exit |
+
+Where Windows has a standard key, it wins over qBittorrent's, because people
+use those keys in every Windows application. Alt+F4 closes the window, as Ctrl+W
+does. Exit has no shortcut, as in other Windows applications; Alt+F, X reaches
+it.
 
 Remove keeps data; delete-data is an explicit, distinct decision. Each confirms
 once with the affected torrent names or count, a specific action such as Remove

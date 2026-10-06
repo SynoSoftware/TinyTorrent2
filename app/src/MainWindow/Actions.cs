@@ -40,20 +40,21 @@ public sealed partial class MainWindow
     private void RefreshMenus()
     {
         FileMenu.Title = Model.Text.Get("menus", "file");
-        FileMenu.AccessKey = Model.Text.Get("menus", "file_key");
+        FileMenu.AccessKey = MenuKey("file");
         TorrentMenu.Title = Model.Text.Get("menus", "torrent");
-        TorrentMenu.AccessKey = Model.Text.Get("menus", "torrent_key");
+        TorrentMenu.AccessKey = MenuKey("torrent");
         ViewMenu.Title = Model.Text.Get("menus", "view");
-        ViewMenu.AccessKey = Model.Text.Get("menus", "view_key");
+        ViewMenu.AccessKey = MenuKey("view");
         HelpMenu.Title = Model.Text.Get("menus", "help");
-        HelpMenu.AccessKey = Model.Text.Get("menus", "help_key");
+        HelpMenu.AccessKey = MenuKey("help");
         AutomationProperties.SetName(Menus, Model.Text.Get("commands", "menu"));
         FileMenu.Items.Clear();
         FileMenu.Items.Add(Menu("add_file", Model.Add, Syno.Lucide.FilePlus));
         FileMenu.Items.Add(Menu("add_magnet", Model.AddMagnet, Syno.Lucide.Link));
         FileMenu.Items.Add(new MenuFlyoutSeparator());
         FileMenu.Items.Add(new MenuFlyoutItem { Text = Model.Text.Get("finding", "settings"),
-            Command = Model.ShowPreferences, Icon = Icon(Syno.Lucide.Settings), KeyboardAcceleratorTextOverride = ShortcutText(Model.ShowPreferences) });
+            Command = Model.ShowPreferences, Icon = Icon(Syno.Lucide.Settings), AccessKey = MenuKey("settings"),
+            KeyboardAcceleratorTextOverride = ShortcutText(Model.ShowPreferences) });
         FileMenu.Items.Add(new MenuFlyoutSeparator());
         FileMenu.Items.Add(Menu("exit", Model.Exit, Syno.Lucide.Power));
         TorrentMenu.Items.Clear();
@@ -68,12 +69,18 @@ public sealed partial class MainWindow
         TorrentMenu.Items.Add(Menu("resume_all", Model.ResumeAll, Syno.Lucide.Play));
         TorrentMenu.Items.Add(Menu("limits", Model.Limits, Syno.Lucide.Gauge));
         ViewMenu.Items.Clear();
-        ViewMenu.Items.Add(Choice(() => Model.FilterLabel, Model.SwitchFilters, () => Model.IsFilterOpen));
+        ViewMenu.Items.Add(Toggle(() => Model.FilterLabel, "filters", Model.SwitchFilters, () => Model.IsFilterOpen, Syno.Lucide.Funnel));
+        ViewMenu.Items.Add(Toggle(() => Model.Text.Get("menus", "toolbar"), "toolbar", Model.SwitchToolbar, () => Model.IsToolbarOpen, Syno.Lucide.PanelTop));
         ClearFiltersButton.Text = Model.Text.Get("window", "clear_filters");
         ToolTipService.SetToolTip(ClearFiltersButton, Model.Text.Get("window", "clear_filters_tip"));
         HelpMenu.Items.Clear();
-        HelpMenu.Items.Add(new MenuFlyoutItem { Text = Model.Text.Get("about", "title"), Command = Model.ShowAbout, Icon = Icon(Syno.Lucide.Info) });
-        foreach (var (button, name, command) in new[] { (AddButton, "add_file", Model.Add), (MagnetButton, "add_magnet", Model.AddMagnet) })
+        HelpMenu.Items.Add(new MenuFlyoutItem { Text = Model.Text.Get("about", "title"), Command = Model.ShowAbout, Icon = Icon(Syno.Lucide.Info),
+            AccessKey = MenuKey("about") });
+        AutomationProperties.SetName(Toolbar, Model.Text.Get("commands", "selection"));
+        foreach (var (button, name, command) in new[] { (AddButton, "add_file", Model.Add), (MagnetButton, "add_magnet", Model.AddMagnet),
+            (ResumeButton, "resume", Model.Resume), (PauseButton, "pause", Model.Pause), (FolderButton, "open_folder", Model.OpenFolder),
+            (PropertiesButton, "properties", Model.Properties), (VerifyButton, "verify", Model.Verify),
+            (RemoveButton, "remove", Model.Remove), (DeleteButton, "delete_files", Model.DeleteFiles) })
         {
             var label = Model.Text.Get("commands", name);
             var shortcut = ShortcutText(command);
@@ -106,15 +113,16 @@ public sealed partial class MainWindow
         items.Add(new MenuFlyoutSeparator());
         items.Add(Menu("verify", Model.Verify, Syno.Lucide.RefreshCw));
         items.Add(Menu("move", Model.MoveFiles, Syno.Lucide.FolderInput));
-        var queue = new MenuFlyoutSubItem { Text = Model.Text.Get("menus", "queue"), Icon = Icon(Syno.Lucide.ListOrdered) };
+        var queue = new MenuFlyoutSubItem { Text = Model.Text.Get("menus", "queue"), Icon = Icon(Syno.Lucide.ListOrdered),
+            AccessKey = MenuKey("queue") };
         queue.Items.Add(Menu("up", Model.Up, Syno.Lucide.ArrowUp));
         queue.Items.Add(Menu("down", Model.Down, Syno.Lucide.ArrowDown));
         queue.Items.Add(Menu("top", Model.Top, Syno.Lucide.ArrowUpToLine));
         queue.Items.Add(Menu("bottom", Model.Bottom, Syno.Lucide.ArrowDownToLine));
         items.Add(queue);
         items.Add(new MenuFlyoutSeparator());
-        items.Add(Choice(() => Model.Text.Get("commands", "sequential"), Model.SwitchSequential, () => Model.Sequential));
-        items.Add(Choice(() => Model.Text.Get("commands", "first_last"), Model.SwitchFirstLast, () => Model.FirstLast));
+        items.Add(Choice(() => Model.Text.Get("commands", "sequential"), "sequential", Model.SwitchSequential, () => Model.Sequential));
+        items.Add(Choice(() => Model.Text.Get("commands", "first_last"), "first_last", Model.SwitchFirstLast, () => Model.FirstLast));
         items.Add(new MenuFlyoutSeparator());
         items.Add(Menu("remove", Model.Remove, Syno.Lucide.ListX));
         items.Add(Menu("delete_files", Model.DeleteFiles, Syno.Lucide.Trash2));
@@ -122,7 +130,9 @@ public sealed partial class MainWindow
 
     private MenuFlyoutItem Menu(string name, ICommand command, string glyph) =>
         new() { Text = Model.Text.Get("commands", name), Command = command,
-            Icon = Icon(glyph), KeyboardAcceleratorTextOverride = ShortcutText(command) };
+            Icon = Icon(glyph), AccessKey = MenuKey(name), KeyboardAcceleratorTextOverride = ShortcutText(command) };
+
+    private string MenuKey(string name) => Model.Text.Get("menus", name + "_key");
 
     private string ShortcutText(ICommand command)
     {
@@ -142,23 +152,40 @@ public sealed partial class MainWindow
     }
 
     // A plain item showing its state as its icon, not a ToggleMenuFlyoutItem:
-    // a toggle gives every item in its menu an empty check column. The item
-    // reads its state when its menu opens and while the menu stays open.
-    private MenuFlyoutItem Choice(Func<string> text, ICommand command, Func<bool?> state)
+    // a toggle gives every item in its menu an empty check column.
+    private MenuFlyoutItem Choice(Func<string> text, string name, ICommand command, Func<bool?> state)
     {
         var icon = new FontIcon { FontFamily = Syno.Lucide.Font };
-        var item = new MenuFlyoutItem { Command = command, Icon = icon };
-        void Show(object? sender, PropertyChangedEventArgs? args)
+        var item = new MenuFlyoutItem { Command = command, Icon = icon, AccessKey = MenuKey(name) };
+        Follow(item, () =>
         {
             var current = state();
             item.Text = text();
             icon.Glyph = current switch { true => Syno.Lucide.SquareCheck, false => Syno.Lucide.Square, null => Syno.Lucide.SquareMinus };
             AutomationProperties.SetItemStatus(item, Model.Text.Get("menus", current switch { true => "on", false => "off", null => "mixed" }));
-        }
-        Show(null, null);
-        item.Loaded += (_, _) => { Show(null, null); Model.PropertyChanged += Show; };
-        item.Unloaded += (_, _) => Model.PropertyChanged -= Show;
+        });
         return item;
+    }
+
+    // For a menu whose items are all toggles, so no check column stands empty.
+    private ToggleMenuFlyoutItem Toggle(Func<string> text, string name, ICommand command, Func<bool> state, string glyph)
+    {
+        var item = new ToggleMenuFlyoutItem { Command = command, Icon = Icon(glyph), AccessKey = MenuKey(name) };
+        Follow(item, () =>
+        {
+            item.Text = text();
+            item.IsChecked = state();
+        });
+        return item;
+    }
+
+    // Shows an item's state when its menu opens and while the menu stays open.
+    private void Follow(MenuFlyoutItem item, Action show)
+    {
+        void Show(object? sender, PropertyChangedEventArgs args) => show();
+        show();
+        item.Loaded += (_, _) => { show(); Model.PropertyChanged += Show; };
+        item.Unloaded += (_, _) => Model.PropertyChanged -= Show;
     }
 
     private static FontIcon Icon(string glyph) => new() { FontFamily = Syno.Lucide.Font, Glyph = glyph };

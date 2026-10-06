@@ -27,10 +27,13 @@
                 <Image.Source><SvgImageSource UriSource="ms-appx:///Assets/tinyTorrent.svg" /></Image.Source>
             </Image>
             <MenuBar x:Name="Menus" Grid.Column="2" Padding="0" VerticalAlignment="Center">
-                <MenuBarItem x:Name="FileMenu" />
-                <MenuBarItem x:Name="TorrentMenu" />
-                <MenuBarItem x:Name="ViewMenu" />
-                <MenuBarItem x:Name="HelpMenu" />
+                <!-- Without IsAccessKeyScope, a quick Alt+F opens the menu but its
+                     items' access keys stay inactive, so Alt+F, X does nothing:
+                     https://github.com/microsoft/microsoft-ui-xaml/issues/10791 -->
+                <MenuBarItem x:Name="FileMenu" IsAccessKeyScope="True" />
+                <MenuBarItem x:Name="TorrentMenu" IsAccessKeyScope="True" />
+                <MenuBarItem x:Name="ViewMenu" IsAccessKeyScope="True" />
+                <MenuBarItem x:Name="HelpMenu" IsAccessKeyScope="True" />
             </MenuBar>
             <Grid x:Name="SearchArea" Grid.Column="3" Margin="24,0" VerticalAlignment="Center">
                 <AutoSuggestBox x:Name="Search" MaxWidth="320" MinWidth="200" HorizontalAlignment="Stretch" Text="{x:Bind Model.Query, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
@@ -71,7 +74,36 @@
                     <controls:ActionButton x:Name="ClearFiltersButton" Glyph="{x:Bind icons:Lucide.FunnelX}" Grid.Row="2" Margin="8" Command="{x:Bind Model.ClearFilters}" HorizontalAlignment="Stretch" />
                 </Grid>
             </SplitView.Pane>
-            <Grid x:Name="TorrentWorkspace" Background="Transparent">
+            <Grid Background="Transparent">
+                <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+                <StackPanel x:Name="Toolbar" Orientation="Horizontal" Spacing="4" Margin="4" TabFocusNavigation="Once" XYFocusKeyboardNavigation="Enabled"
+                    Visibility="{x:Bind Model.IsToolbarOpen, Mode=OneWay}">
+                    <Button x:Name="ResumeButton" Style="{StaticResource SubtleButtonStyle}" Command="{x:Bind Model.Resume}">
+                        <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Play}" FontSize="16" />
+                    </Button>
+                    <Button x:Name="PauseButton" Style="{StaticResource SubtleButtonStyle}" Command="{x:Bind Model.Pause}">
+                        <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Pause}" FontSize="16" />
+                    </Button>
+                    <Border Width="1" Height="16" Margin="4,0" VerticalAlignment="Center" Background="{ThemeResource DividerStrokeColorDefaultBrush}" />
+                    <Button x:Name="FolderButton" Style="{StaticResource SubtleButtonStyle}" Command="{x:Bind Model.OpenFolder}">
+                        <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.FolderOpen}" FontSize="16" />
+                    </Button>
+                    <Button x:Name="PropertiesButton" Style="{StaticResource SubtleButtonStyle}" Command="{x:Bind Model.Properties}">
+                        <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Info}" FontSize="16" />
+                    </Button>
+                    <Border Width="1" Height="16" Margin="4,0" VerticalAlignment="Center" Background="{ThemeResource DividerStrokeColorDefaultBrush}" />
+                    <Button x:Name="VerifyButton" Style="{StaticResource SubtleButtonStyle}" Command="{x:Bind Model.Verify}">
+                        <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.RefreshCw}" FontSize="16" />
+                    </Button>
+                    <Border Width="1" Height="16" Margin="4,0" VerticalAlignment="Center" Background="{ThemeResource DividerStrokeColorDefaultBrush}" />
+                    <Button x:Name="RemoveButton" Style="{StaticResource SubtleButtonStyle}" Command="{x:Bind Model.Remove}">
+                        <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.ListX}" FontSize="16" />
+                    </Button>
+                    <Button x:Name="DeleteButton" Style="{StaticResource SubtleButtonStyle}" Command="{x:Bind Model.DeleteFiles}">
+                        <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Trash2}" FontSize="16" />
+                    </Button>
+                </StackPanel>
+            <Grid x:Name="TorrentWorkspace" Grid.Row="1" Background="Transparent">
                 <Grid.RowDefinitions><RowDefinition Height="*" MinHeight="110" /><RowDefinition Height="Auto" /><RowDefinition x:Name="InspectorRow" Height="0" /></Grid.RowDefinitions>
         <table:Table x:Name="Torrents" Background="Transparent" ShowsFitButton="True" ItemsSource="{x:Bind Model.VisibleTorrents, Mode=OneWay}" CanReorder="{x:Bind Model.CanReorder, Mode=OneWay}">
             <table:Table.EmptyContent>
@@ -142,6 +174,7 @@
             BorderBrush="{ThemeResource SurfaceStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="{ThemeResource OverlayCornerRadius}">
             <ContentControl x:Name="InspectorContent" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
         </Grid>
+            </Grid>
             </Grid>
         </SplitView>
         <ContentControl x:Name="PreferencesContent" Grid.Row="1" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" Visibility="Collapsed" />
