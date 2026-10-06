@@ -422,6 +422,47 @@ public class SortingTests
         Assert.IsNull(h.Table.Sort, "the refused request left the order alone");
     });
 
+    [TestMethod]
+    public Task Section9_HiddenSortIsRefusedWithoutChangingTheView() => TestHost.RunAsync(async () =>
+    {
+        SortHarness h = await SortHarness.LoadAsync(new[] { 3, 1, 2 }, sortableColumns: 2);
+        h.Table.Layout = TestData.Layout(
+            visibility: new Dictionary<string, bool> { ["b"] = false }, sortColumnId: "a");
+        h.Table.Selection = new(new object[] { h.Rows[1] });
+        Sort? before = h.Table.Sort;
+        int events = 0;
+        h.Table.LayoutChanged += (_, _) => events++;
+
+        Expect.Throws<ArgumentException>(() =>
+            h.Table.Sort = new(h.Table.Columns[1], SortDirection.Descending));
+
+        Assert.AreEqual(before, h.Table.Sort);
+        CollectionAssert.AreEqual(new[] { "k1", "k2", "k0" }, h.ViewKeys());
+        Assert.AreSame(h.Rows[1], h.Table.Selection.Current);
+        Assert.AreEqual(0, events);
+
+        h.Table.Layout = h.Table.Layout;
+
+        Assert.AreEqual(before, h.Table.Sort);
+        CollectionAssert.AreEqual(new[] { "k1", "k2", "k0" }, h.ViewKeys());
+        Assert.IsFalse(TableHarness.IsVisible(h.Table, "b"));
+        Assert.AreEqual(0, events);
+    });
+
+    [TestMethod]
+    public Task Section9_InitialSortRejectsAColumnHiddenByPendingLayout() => TestHost.RunAsync(async () =>
+    {
+        Table table = TestData.Table(TestData.Column("a"), TestData.Column("b"));
+        table.Schema<SortRow>().SortKey(table.Columns[1], row => row.Rank);
+        table.Layout = TestData.Layout(visibility: new Dictionary<string, bool> { ["b"] = false });
+        table.Sort = new(table.Columns[1]);
+
+        Exception error = await TableHarness.LoadExpectingFailureAsync(table);
+
+        Assert.IsInstanceOfType<ArgumentException>(error, error.ToString());
+        Assert.IsNull(table.Sort);
+    });
+
     /// <summary>One rendered frame of the control, addressed in pixels.</summary>
     private sealed class Shot
     {

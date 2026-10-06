@@ -1,5 +1,61 @@
 # Morning report
 
+## Release goal resumed — 2026-10-06
+
+The release goal is active. The earlier scoped acceptance does not establish
+whole-product release readiness. `89570ea` checkpoints the owner's desktop
+identity, registration, protocol and inspector changes. Further owner edits are
+in progress in Add, Pieces and the engine; preserve them. The older statement
+that no engine changed after FilesSafety/CheckpointRetry is no longer current.
+Run those two checks once after the final engine change, not between these edits.
+
+GitHub's 34 previously open reports were reconciled: 24 resolved or superseded,
+10 retained with narrower implementation or verification scope. Local completion
+is distinguished from publication. New AI-authored reports #132–139 are
+investigation candidates, not owner requirements or established regressions.
+The current contracts and owner rulings govern their disposition.
+
+The confirmed #56 defect is corrected at TableView's existing sort validator.
+Explicit sorting by an effectively hidden column now throws before changing
+sort, row order, selection or layout events; initial schema capture uses that
+same validator. Defensive saved-layout restoration is unchanged. Runtime
+CellPadding updates remain outside the selected scope.
+
+`hidden-sort-build.log` passed Debug/x64 compilation of TableView and its test
+host, reusing Lucide. A concurrent MSBuild briefly locked the library output;
+the existing copy retry succeeded. Only two targeted tests ran: rejection with
+unchanged view/layout roundtrip, and initial rejection after a pending layout
+hides the requested column. Both passed in about one second; results are in
+`artifacts/TestResults/hidden-sort/hidden-sort.trx`. These checks catch an
+invisible ordering state and a layout roundtrip that silently changes it, which
+the compiler cannot detect. No full suite or product launch was performed.
+
+Initial triage of the new layout reports:
+
+- #132: the command error, torrent reason and filter label still occupy footer
+  rows; measure their effect at fixed dimensions. The connection overlay already
+  has evidence of stable workspace bounds; preserve it.
+- #133–134: file-operation recovery and Settings feedback need fixed-size
+  before/after bounds, not a blanket replacement of Auto rows or inline errors.
+- #135: the latest Pieces heading/detail changes supersede parts of the report;
+  live legend wrapping and Speed inspection still need current measurement.
+- #136: retained `UiSelfCapture-0d08f16f-281a-46e7-9120-46c3c1ce316d` evidence
+  shows the Spanish narrow magnet error shrinking the editor from 149 to 96
+  pixels and moving Paste/Preview from y=337 to y=284. Destination and dialog
+  action bounds stay unchanged. This proves that earlier failure, not acceptance
+  of the owner's in-progress Add changes. Reproduce on the current build before
+  editing the surface.
+- #137: distinguish live status changes from switching torrents, and preserve
+  editable multiline input. Full values must remain accessible when trimmed.
+- #138–139: explicit edit/expand/resize transitions are not automatically
+  defects. Measure routine feedback separately; the week pointer overlay and
+  existing table scroll-offset protections do not justify replacement.
+
+The owner's product processes remain running and were not interrupted. Current
+self-capture and isolated engine checks must wait until the engine connection
+is available; there is no new visual acceptance, desktop integration proof or
+release approval in this checkpoint.
+
 ## Ownership and naming polish — 2026-10-06
 
 Reviewed `203ca3f` and `c0353b7` against the current repository rules. The Settings

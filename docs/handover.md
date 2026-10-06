@@ -1,5 +1,27 @@
 # Implementation handover — 2026-10-05
 
+## Release continuation resumed — 2026-10-06
+
+The release goal is active; the scoped acceptance below is not a whole-product
+release approval. Owner checkpoint `89570ea` changes executable identity,
+registration, protocol handling and inspector presentation. More owner Add,
+Pieces and engine edits are underway. The older no-engine-changes qualification
+on the safety passes is superseded: run FilesSafety and CheckpointRetry once
+after the last engine change.
+
+GitHub reconciliation closed 24 of the previous 34 reports and narrowed the ten
+remaining ones. Treat new AI-authored #132–139 as investigations against current
+code and owner rulings, not requirements to redesign accepted screens.
+TableView #56 now rejects hidden-column sorts through its shared validator;
+Debug/x64 compilation and its two focused state/roundtrip checks pass. The
+morning report records the evidence and initial layout triage. Existing captures
+already show a 53-pixel magnet-validation action shift, which needs reproduction
+on the current Add surface before correction.
+
+The owner's running app/engine were left alone. Fresh before/after captures and
+isolated engine checks remain pending; no broader runtime or visual gate passed
+in this continuation. Preserve concurrent owner edits and avoid repeated suites.
+
 ## Current acceptance and limits — 2026-10-06
 
 Files hierarchy `d23778a`, registration `1706002`, startup `dbb67d1`, Pieces

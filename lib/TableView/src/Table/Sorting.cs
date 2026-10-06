@@ -94,7 +94,7 @@ public sealed partial class Table
     /// effective sort actually moved, so a host may set it from its own handler.
     /// </summary>
     /// <remarks>
-    /// The column must be one this table declared and must carry a sort key from
+    /// The column must be visible, declared by this table, and carry a sort key from
     /// <see cref="Schema{TRow}"/>; either way round, a request that cannot be met is the host
     /// asking for something impossible rather than compatibility input, so it throws. A saved sort
     /// arriving from storage is the other case and belongs in <see cref="Layout"/>, which recovers
@@ -165,6 +165,9 @@ public sealed partial class Table
                 "Schema<TRow>().SortKey(column, row => …).",
                 "value");
         }
+
+        if (!resolved.IsVisible)
+            throw new ArgumentException($"Column '{column.DisplayName}' is hidden.", "value");
 
         return resolved;
     }

@@ -379,11 +379,11 @@ unselected. An unavailable supplied `Current` is treated as `null` and uses that
 same fallback.
 
 `Sort` names a column and a direction as one value, so no state exists in which
-the two disagree, and `null` is natural order. The column must be one this table
-declared and must carry a sort key from `Schema<TRow>()`; a request that cannot
-be met is the host asking for something impossible, so it throws. A saved sort
-arriving from storage is the other case entirely and belongs in `Layout`, which
-recovers defensively (section 18).
+the two disagree, and `null` is natural order. The column must be visible in the
+effective layout, declared by this table, and carry a sort key from
+`Schema<TRow>()`; a request that cannot be met is the host asking for something
+impossible, so it throws. A saved sort arriving from storage is the other case
+entirely and belongs in `Layout`, which recovers defensively (section 18).
 
 `Schema<TRow>().CanReorder` defaults to every interactive row being draggable.
 Its setup-only predicate restricts dragging without restricting selection,
