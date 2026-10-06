@@ -13,6 +13,13 @@
     <UseArtifactsOutput>true</UseArtifactsOutput>
   </PropertyGroup>
 
+  <!-- Local builds use local sources; commit-derived metadata otherwise recompiles
+       every managed project after a documentation-only commit. CI keeps provenance. -->
+  <PropertyGroup Condition="'$(ContinuousIntegrationBuild)' != 'true'">
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+    <EnableSourceLink>false</EnableSourceLink>
+  </PropertyGroup>
+
   <!--
     Generated folders that still appear inside a project folder are never build input.
 
