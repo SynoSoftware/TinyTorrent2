@@ -1,5 +1,57 @@
 # Morning report
 
+## Native caption checkpoint — 2026-10-06
+
+The accepted owner UI is committed as `6809410`. The ordinary Release app has
+also been rebuilt with the committed production fixes: `release-current-app.log`
+passes in 54.70 seconds with zero warnings/errors. Only the app's two WinUI
+compilation passes ran; TableView and Lucide were reused. Its copied Engine.exe
+matches the already checked engine binary. The generated-output scan was empty.
+
+The diagnostic shell journey now asks its own window for native hit
+classifications at realized control centers and unused caption space. This
+catches an interactive control becoming draggable without sending pointer input
+or changing the owner's desktop. The helper keeps the existing `Capture` prefix;
+`HitRegions` distinguishes this native check from image capture. Production
+builds exclude it, and no product layout or behavior changed.
+
+The first run, `UiSelfCapture-02b7a8c7-f60d-458f-b990-51399905ff60`, passed all
+40 English hit queries, then exposed an incorrect existing harness assertion:
+Resume was expected to make a torrent visibly active while global Pause all
+remained on. The engine correctly saved its individual pause choice as false.
+The corrected journey waits for the invoked command's localized acknowledgement
+and checks the persisted individual choice while global pause remains true.
+Source review caught an overly broad announcement wait; its correction-only
+re-review reports zero remaining findings. That failed run is not a full pass.
+
+The final `caption-shell-final-app.log` build passed in 66.59 seconds with zero
+warnings/errors, compiling only the app's two WinUI passes. The earlier
+`caption-shell-app.log` build (48.78 seconds) preceded the review's acknowledgement
+filter correction; this extra compilation was needed for changed diagnostic code.
+All output-location scans were empty; no engine build or suite was run.
+
+Final run `UiSelfCapture-543c83b7-c2d1-4323-b60c-faa939fbd153` passed in 11.72
+seconds. All 50 native queries matched: English Light/Dark at 1024 and 837 client
+pixels, Spanish Dark at 863. The icon returned system-menu hit semantics, each
+app control returned client semantics, and unused space returned caption
+semantics. These widths reflect the accepted minimum, not exact-720 evidence.
+Native menu invocation saved Resume=false and Pause=true while retaining global
+pause. Recorded outcomes show Settings/About/back routes, theme switching,
+retained filters after closing the drawer, and one matching search result.
+Both disposable processes exited and the output-location scan was empty.
+
+A Debug instance appeared during compilation, so the first launch attempt
+refused to attach. Under the owner's existing authorization, its window was
+closed normally and its engine sent normal Exit before the final run. Both
+exited; the shutdown helper could not confirm the external process's exit code,
+so that owner-session shutdown is not counted as a storage-check pass.
+
+This closes native hit classification only. Physical dragging, double-click,
+system-menu input, native caption-button actions, actual High Contrast/Narrator,
+DPI/text scaling and the recorded live-download/filesystem gaps remain open.
+The fresh source and supplied-capture reviews found no remaining counted defect;
+their scope does not establish these unverified outcomes or distribution readiness.
+
 ## Accepted UI checkpoint — 2026-10-06
 
 The owner's ten pending files retain the raised, rounded inspector, shared table

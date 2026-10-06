@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.ComponentModel;
 using System.Globalization;
+using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.WindowsRuntime;
 using System.Text.Json;
 using Microsoft.UI.Xaml;
@@ -279,6 +280,8 @@ public sealed partial class MainWindow
                 var scale = Root.XamlRoot.RasterizationScale;
                 var minimum = ((Microsoft.UI.Windowing.OverlappedPresenter)AppWindow.Presenter).PreferredMinimumWidth ?? 0;
                 AppWindow.Resize(new SizeInt32(Math.Max((int)(width * scale), minimum), (int)(680 * scale)));
+                await CaptureLayout();
+                CaptureHitRegions(outcomes);
                 await CapturePage(theme + "-" + width + "-shell");
                 foreach (var menu in new[] { FileMenu, TorrentMenu, ViewMenu, HelpMenu })
                 {
@@ -309,9 +312,28 @@ public sealed partial class MainWindow
             var peer = FrameworkElementAutomationPeer.CreatePeerForElement(item);
             if (peer.GetPattern(PatternInterface.Invoke) is not IInvokeProvider invoke)
                 throw new InvalidOperationException("The torrent command cannot be invoked.");
-            invoke.Invoke();
-            await CaptureReady(Model, () => Model.CanEdit && (command == Model.Pause ? target.IsPaused : !target.IsPaused));
-            outcomes.Add(new { command = item.Text, enabled = item.IsEnabled, status = target.StatusCode });
+            var acknowledged = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var accepted = Model.Text.Format("outcomes", "accepted", Model.Text.Get("commands", command == Model.Pause ? "pause" : "resume"));
+            void Announced(object? sender, string message)
+            {
+                if (message == accepted) acknowledged.TrySetResult();
+            }
+            Model.AnnouncementRequested += Announced;
+            try
+            {
+                invoke.Invoke();
+                await acknowledged.Task.WaitAsync(TimeSpan.FromSeconds(20));
+            }
+            finally { Model.AnnouncementRequested -= Announced; }
+            if (Model.HasCommandError) throw new InvalidOperationException("The native torrent command failed.");
+            var directory = Model.DataDirectory ?? throw new InvalidOperationException("The shell capture has no store.");
+            using var saved = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(directory, "settings.json")));
+            var paused = saved.RootElement.GetProperty("torrents").EnumerateArray()
+                .Single(torrent => torrent.GetProperty("torrent_id").GetString() == target.TorrentId).GetProperty("paused").GetBoolean();
+            var allPaused = saved.RootElement.GetProperty("settings").GetProperty("all_paused").GetBoolean();
+            outcomes.Add(new { command = item.Text, enabled = item.IsEnabled, persistedPaused = paused, status = target.StatusCode, globalPaused = allPaused });
+            if (paused != (command == Model.Pause) || !allPaused || !Model.AllPaused)
+                throw new InvalidOperationException("The native torrent command did not save its pause choice while retaining global pause.");
             expand.Collapse();
         }
         Run(Model.ShowPreferences);
@@ -348,9 +370,53 @@ public sealed partial class MainWindow
         await CaptureLayout();
         var narrow = ((Microsoft.UI.Windowing.OverlappedPresenter)AppWindow.Presenter).PreferredMinimumWidth ?? 720;
         AppWindow.Resize(new SizeInt32(narrow, 560));
+        await CaptureLayout();
+        CaptureHitRegions(outcomes);
         await CapturePage("shell-spanish");
         await CaptureDialog("shell-add", () => { Run(Model.AddMagnet); return _interaction?.Completion.Task ?? Task.CompletedTask; }, () => _interaction?.Dialog);
     }
+
+    private void CaptureHitRegions(List<object> outcomes)
+    {
+        const uint WM_NCHITTEST = 0x0084;
+        const int HTCLIENT = 1;
+        const int HTCAPTION = 2;
+        const int HTSYSMENU = 3;
+        var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
+        var scale = Root.XamlRoot.RasterizationScale;
+        var hits = new List<object>();
+        var failed = false;
+
+        void Hit(string name, Windows.Foundation.Point position, int expected)
+        {
+            var point = new PointInt32((int)Math.Round(position.X * scale), (int)Math.Round(position.Y * scale));
+            if (!ClientToScreen(hwnd, ref point))
+                throw new InvalidOperationException("The review window's client coordinates could not be converted to screen coordinates.");
+            var coordinates = unchecked((int)((uint)(ushort)point.X | ((uint)(ushort)point.Y << 16)));
+            var actual = (int)SendMessageW(hwnd, WM_NCHITTEST, 0, coordinates);
+            hits.Add(new { name, screenX = point.X, screenY = point.Y, actual, expected });
+            failed |= actual != expected;
+        }
+
+        foreach (var control in new FrameworkElement[] { AppIcon, FileMenu, TorrentMenu, ViewMenu, HelpMenu, Search, AddButton, MagnetButton, ThemeButton })
+        {
+            var center = control.TransformToVisual(Root).TransformPoint(new Windows.Foundation.Point(control.ActualWidth / 2, control.ActualHeight / 2));
+            Hit(control.Name, center, control == AppIcon ? HTSYSMENU : HTCLIENT);
+        }
+        var menu = Menus.TransformToVisual(Root).TransformBounds(new Windows.Foundation.Rect(0, 0, Menus.ActualWidth, Menus.ActualHeight));
+        var search = Search.TransformToVisual(Root).TransformBounds(new Windows.Foundation.Rect(0, 0, Search.ActualWidth, Search.ActualHeight));
+        if (search.Left <= menu.Right) throw new InvalidOperationException("The review caption has no unused gap between its menu and search.");
+        Hit("gap", new Windows.Foundation.Point((menu.Right + search.Left) / 2, (menu.Top + menu.Bottom) / 2), HTCAPTION);
+        outcomes.Add(new { journey = "caption hit regions", language = Model.Text.Language, theme = Root.ActualTheme.ToString(), width = AppWindow.ClientSize.Width, hits });
+        if (failed) throw new InvalidOperationException("The review window returned an unexpected native caption hit classification.");
+    }
+
+    [DllImport("user32.dll", ExactSpelling = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool ClientToScreen(nint hwnd, ref PointInt32 point);
+
+    [DllImport("user32.dll", ExactSpelling = true)]
+    private static extern nint SendMessageW(nint hwnd, uint message, nint wParam, nint lParam);
 
     private async Task CaptureSchedule(List<object> outcomes, List<string> completed)
     {

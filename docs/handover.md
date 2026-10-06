@@ -1,5 +1,20 @@
 # Implementation handover — 2026-10-05
 
+## Native caption checkpoint — 2026-10-06
+
+The owner's accepted UI checkpoint is committed as `6809410`. The ordinary
+Release app now includes the committed production changes and current checked
+engine. The focused shell journey passes all 50 native hit classifications and
+its command/navigation outcomes. Its old Resume assertion was corrected to
+respect global Pause all; no product behavior or layout changed. Source review
+has no remaining finding. Exact builds and the final isolated run are recorded
+at the top of [morning-report.md](morning-report.md).
+
+No engine rebuild or full suite was needed. All launched processes are closed.
+Physical Windows input, accessibility/scaling and the previously recorded
+live-download/filesystem gaps remain unverified; top-level hit queries do not
+close them. The whole-product release goal remains active.
+
 ## Accepted UI checkpoint — 2026-10-06
 
 The owner's raised inspector, table-header, file-list, empty-dialog-title and

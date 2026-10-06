@@ -191,6 +191,11 @@ visual states in Light and Dark through WinUI's state manager. This checks the
 custom template's appearance, not pointer input or OS High Contrast rendering.
 Use `TINYTORRENT_CAPTURE_REVIEW=shell` for the title-bar menus, narrow layouts,
 themes, selection commands, secondary pages and retained filter state.
+It also queries the review window's native `WM_NCHITTEST` response at the app
+icon, menu and command centers, and unused caption space. This catches controls
+classified as draggable or an icon without system-menu semantics. It sends no
+input and establishes only top-level hit classification, not physical pointer
+delivery, child input routing or native caption-button actions.
 Use `TINYTORRENT_CAPTURE_REVIEW=preferences-layout` for General Settings and
 completion feedback in English and Spanish, Light and Dark, at the three review
 sizes. It commits and restores one notification switch through its native
