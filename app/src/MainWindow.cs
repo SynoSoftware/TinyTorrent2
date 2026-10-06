@@ -39,7 +39,7 @@ public sealed partial class MainWindow : Window
         ConfigureCapture();
         Filters.ItemsSource = Model.Filters;
         Split.ValueChanged += (_, value) => { _splitHeight = value; UpdateInspectorSize(); };
-        TorrentWorkspace.SizeChanged += (_, _) => UpdateInspectorSize();
+        Workspace.SizeChanged += (_, _) => UpdateInspectorSize();
         FiltersClose.Content = new FontIcon { FontFamily = Syno.Lucide.Font, Glyph = Syno.Lucide.X, FontSize = 16 };
         ExtendsContentIntoTitleBar = true;
         AppWindow.TitleBar.PreferredHeightOption = TitleBarHeightOption.Tall;

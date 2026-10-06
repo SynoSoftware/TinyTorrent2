@@ -41,8 +41,80 @@ updates now stop once the existing close owner commits to closing.
   scroll the accepted page rather than hiding actions. Decorative watermarks
   are an accepted taste choice, not a defect to redesign.
 - Every post-build/run output-location check returned no paths. All launched
-  UI and engine processes closed. The fresh milestone reviews and the two
-  mandated current-engine safety checks remain ahead.
+  UI and engine processes closed. Fresh milestone reviews remain ahead;
+  subsequent current-engine safety evidence follows below.
+
+### Current engine safety evidence
+
+The first coherent commit is `0f3ff54`. No engine code changed during this
+continuation. The current native output and the engine beside the app both hash
+to `70BDA19FBB2BC266238B74CE066BAE913AE09261F1ED29912BCD947E770D4AFC`.
+The two required checks now passed once against that binary:
+
+- `FilesSafety-3b060798-e17b-4009-a368-a9ecd8116f0b`: collision bytes preserved,
+  outside shared owners protected, complete shared group moved/deleted,
+  unrelated files retained, interrupted-marker recovery refused unsafe retries.
+- `CheckpointRetry-766758d3-73fe-48d2-b8e7-48b8b7025857`: blocked checkpoint
+  reported, retried after the obstruction was removed, and retained membership
+  and running intent after restart.
+- `InterruptedMove-e92b6aac-a449-4c37-8289-318c40808f37`: a separate focused
+  check killed only its disposable engine during a real 1,024-file relocation.
+  Twenty-five files had moved and 999 remained at the source. Restart reported
+  `move_interrupted`, no moving operation or download rate, and preserved the
+  destination marker. Every file existed at exactly one location with unchanged
+  bytes. This closes the earlier injected-marker evidence gap. The exact probe
+  is saved as `check.ps1` beside `result.json` in that evidence directory.
+
+These directories are under `artifacts/evidence/`. The real-interruption probe
+took under five seconds, with 2 MiB of local fixture payload and no transfer
+peer. It does not manipulate or delete the owner's data. Every launched process
+closed and each required output-location check printed nothing. No full suite
+or engine build ran. Actual UI move/delete submissions remain for milestone 5.
+
+### Background and desktop behavior gate
+
+The current desktop journey passed in 17,502 ms with a clean UI exit:
+`artifacts/evidence/DesktopCapture-9b76c9c8-c247-4c79-9be4-e1d9846b6918`.
+All 12 language/theme/size combinations kept unfinished magnet input after
+declining Exit. Cancel then cleared the recovered Add draft. Killing only the
+fixture engine and restarting it retained torrent membership and the open
+tracker draft in the same window. Save disabled while disconnected; Cancel
+remained available. After the window closed, engine history advanced from
+1791254481 to 1791254484 without a UI process.
+
+The fresh capture-only reviewer found one defect: the disconnected warning
+pushed the tracker editor's buttons below its visible bounds. Inspector sizing
+now measures the available parent workspace, rather than its already oversized
+child. The reviewer passed the correction in all six Spanish size/theme states
+and both narrow bottom views. Sequential user, keyboard, accessibility, Fluent
+and UX review found no further counted defect in these states. Still images
+do not establish actual keyboard or screen-reader operation.
+
+Final build: `artifacts/evidence/desktop-layout-build.log`, 27.24 seconds,
+zero warnings/errors, only the app compiled. A preceding build rebuilt unchanged
+libraries because the first commit changed SourceLink/assembly commit metadata;
+subsequent app-only checks use `BuildProjectReferences=false` with the verified
+library outputs. Every launched process closed; the output-location check was
+empty. No engine rebuild or broad suite ran.
+
+Remaining desktop plan checks were assessed for a concrete likely failure:
+
+- Open/Close/Exit, protected input and engine restart: current process journeys
+  above cover lost drafts, failed reconnect and shutdown crashes.
+- Closed-window history: current timestamps advance; the fixed ring capacity and
+  aggregation have one engine owner. A day-long wait adds no likely-failure proof.
+- Completion notifications, first-close notice and tray failures: current source
+  uses the engine-owned native tray and Windows notification-state gate. No code
+  changed there; headless capture cannot prove visible Windows delivery.
+- Sleep while the UI is closed: current engine-owned power request checks mains,
+  active transfers and preferences, and releases on exit. Physical sleep and
+  battery transitions remain unverified; changing this machine's power state
+  would interrupt the owner without testing a changed implementation.
+- Notification-area startup and associations: current registration owner uses
+  quoted executable paths and per-user registration. No startup/default-app
+  settings were changed on the owner's machine; an actual logon remains unverified.
+- Native caption menus, drag, acrylic, High Contrast and Narrator retain their
+  established owners. XAML captures do not prove those Windows surfaces.
 
 ## Earlier handover evidence
 

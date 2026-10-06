@@ -24,7 +24,7 @@ public sealed partial class MainWindow
 {
     private string? _captureDirectory;
     private Task? _capture;
-    internal static bool IsCaptureReview => Environment.GetEnvironmentVariable("TINYTORRENT_CAPTURE_REVIEW") is "1" or "smoke" or "shell" or "schedule";
+    internal static bool IsCaptureReview => Environment.GetEnvironmentVariable("TINYTORRENT_CAPTURE_REVIEW") is "1" or "smoke" or "shell" or "schedule" or "desktop";
 
     internal void ShowCaptureReview()
     {
@@ -453,6 +453,114 @@ public sealed partial class MainWindow
         }
     }
 
+    private async Task CaptureDesktop(Torrent target, List<object> outcomes, List<string> completed)
+    {
+        const string magnet = "magnet:?xt=urn:btih:";
+        await ShowTorrents();
+        Run(Model.AddMagnet);
+        await CaptureLayout();
+        var dialog = _addDialog ?? throw new InvalidOperationException("The desktop review Add dialog did not open.");
+        var input = CaptureElements(dialog).OfType<TextBox>().Single(control => control.Name == "MagnetInput");
+        input.Focus(FocusState.Programmatic);
+        input.Text = magnet;
+        await CaptureLayout();
+        if (Model.Draft.Magnet != magnet || !Model.Draft.HasChanges)
+            throw new InvalidOperationException("The unfinished native magnet input did not reach its draft.");
+        foreach (var language in new[] { "en", "es" })
+        {
+            Model.SelectLanguage(language);
+            await CaptureReady(Model, () => Model.CanClose && Model.Text.Language == language);
+            foreach (var theme in new[] { "light", "dark" })
+            {
+                await Model.SelectTheme(theme);
+                await CaptureReady(Model, () => Model.CanClose && Model.Theme == theme);
+                foreach (var size in new[] { new SizeInt32(720, 560), new SizeInt32(1040, 680), new SizeInt32(1280, 800) })
+                {
+                    var scale = Root.XamlRoot.RasterizationScale;
+                    var minimum = ((Microsoft.UI.Windowing.OverlappedPresenter)AppWindow.Presenter).PreferredMinimumWidth ?? 0;
+                    AppWindow.Resize(new SizeInt32(Math.Max((int)(size.Width * scale), minimum), (int)(size.Height * scale)));
+                    var prefix = "desktop-" + language + "-" + theme + "-" + size.Width + "x" + size.Height;
+                    Run(Model.Exit);
+                    await CaptureReady(Model, () => _closePrompt is not null);
+                    await CapturePage(prefix + "-exit-prompt");
+                    var prompt = _closePrompt ?? throw new InvalidOperationException("Exit did not retain its draft prompt.");
+                    CaptureInvoke(CaptureElements(prompt).OfType<Button>().Single(control => control.Name == "CloseButton"));
+                    await CaptureReady(Model, () => !Model.IsClosing && Model.CanEdit && _addDialog is not null);
+                    await CaptureLayout();
+                    dialog = _addDialog ?? throw new InvalidOperationException("Keep input did not recover the Add form.");
+                    input = CaptureElements(dialog).OfType<TextBox>().Single(control => control.Name == "MagnetInput");
+                    if (input.Text != magnet || Model.Draft.Magnet != magnet || !Model.Draft.HasChanges)
+                        throw new InvalidOperationException("Keep input lost the unfinished magnet.");
+                    completed.Add(prefix);
+                }
+            }
+        }
+        outcomes.Add(new { journey = "Exit with unfinished magnet", prompts = 12, inputRetained = true, addFormRecovered = true, engineConnected = Model.IsConnected });
+        await CapturePage("desktop-kept-magnet", dialog.Content as FrameworkElement);
+        var closed = _dialogClosed?.Task ?? throw new InvalidOperationException("The recovered Add dialog has no close completion.");
+        CaptureInvoke(CaptureElements(dialog).OfType<Button>().Single(control => control.Name == "CloseButton"));
+        await closed;
+        await CaptureReady(Model.Draft, () => !Model.Draft.HasChanges && !Model.Draft.EditingMagnet);
+        outcomes.Add(new { journey = "cancel recovered Add", draftCleared = true });
+
+        Model.SelectLanguage("es");
+        await CaptureReady(Model, () => Model.CanClose && Model.Text.Language == "es");
+        await Model.SelectTheme("light");
+        await CaptureReady(Model, () => Model.CanClose && Model.Theme == "light");
+        var raster = Root.XamlRoot.RasterizationScale;
+        var minimumWidth = ((Microsoft.UI.Windowing.OverlappedPresenter)AppWindow.Presenter).PreferredMinimumWidth ?? 0;
+        AppWindow.Resize(new SizeInt32(Math.Max((int)(1040 * raster), minimumWidth), (int)(680 * raster)));
+        var membership = Model.Torrents.Select(torrent => torrent.TorrentId).Order().ToArray();
+        Torrents.Selection = new Syno.TableView.Selection([target], target);
+        await SelectTorrent();
+        Run(Model.Properties);
+        Model.Inspector.Select(InspectorSection.Trackers);
+        await CaptureReady(Model.Inspector, () => !Model.Inspector.IsLoading && Model.Inspector.EditTrackers.CanExecute(null));
+        await CaptureLayout();
+        CaptureInvoke(CaptureElements(InspectorContent).OfType<Button>().Single(control => control.Name == "EditTrackers"));
+        await CaptureLayout();
+        var editor = CaptureElements(InspectorContent).OfType<TextBox>().Single(control => control.Name == "TrackerInput");
+        const string trackerInput = "https://example.invalid/unfinished";
+        editor.Text = trackerInput;
+        await CaptureLayout();
+        if (!Model.Inspector.HasDraft || Model.Inspector.TrackerInput != trackerInput)
+            throw new InvalidOperationException("The native tracker editor did not retain its unfinished input.");
+        await CapturePage("desktop-before-restart", InspectorContent.Content as FrameworkElement);
+        var signal = Path.Combine(_captureDirectory ?? throw new InvalidOperationException("The desktop review has no capture directory."), "restart.txt");
+        await File.WriteAllTextAsync(signal, "restart");
+        await CaptureReady(Model, () => !Model.IsConnected);
+        if (!Model.Inspector.HasDraft || Model.Inspector.TrackerInput != trackerInput || Model.Inspector.SaveTrackers.CanExecute(null) || !Model.Inspector.CancelTrackers.CanExecute(null))
+            throw new InvalidOperationException("Disconnect did not preserve a safely cancellable tracker draft.");
+        var requestedTheme = Root.RequestedTheme;
+        try
+        {
+            foreach (var theme in new[] { ElementTheme.Light, ElementTheme.Dark })
+                foreach (var size in new[] { new SizeInt32(720, 560), new SizeInt32(1040, 680), new SizeInt32(1280, 800) })
+                {
+                    AppWindow.Resize(new SizeInt32(Math.Max((int)(size.Width * raster), minimumWidth), (int)(size.Height * raster)));
+                    Root.RequestedTheme = theme;
+                    await CapturePage("desktop-disconnected-es-" + theme.ToString().ToLowerInvariant() + "-" + size.Width + "x" + size.Height,
+                        InspectorContent.Content as FrameworkElement);
+                }
+        }
+        finally
+        {
+            Root.RequestedTheme = requestedTheme;
+            AppWindow.Resize(new SizeInt32(Math.Max((int)(1040 * raster), minimumWidth), (int)(680 * raster)));
+        }
+        await File.WriteAllTextAsync(signal, "disconnected");
+        await CaptureReady(Model, () => Model.IsConnected && !Model.IsLoading && Model.CanEdit);
+        await CaptureReady(Model.Inspector, () => !Model.Inspector.IsLoading && Model.Inspector.IsAvailable);
+        if (!membership.SequenceEqual(Model.Torrents.Select(torrent => torrent.TorrentId).Order()) || Model.Inspector.Target?.TorrentId != target.TorrentId ||
+            !Model.Inspector.HasDraft || Model.Inspector.TrackerInput != trackerInput || editor.Text != trackerInput)
+            throw new InvalidOperationException("Reconnect lost torrent membership or the unfinished tracker draft.");
+        outcomes.Add(new { journey = "engine restart with tracker draft", reconnected = true, membershipRetained = true, targetRetained = true, draftRetained = true });
+        await CapturePage("desktop-reconnected", InspectorContent.Content as FrameworkElement);
+        CaptureInvoke(CaptureElements(InspectorContent).OfType<Button>().Single(control => control.Name == "CancelTrackers"));
+        await CaptureReady(Model.Inspector, () => !Model.Inspector.IsEditingTrackers && !Model.Inspector.HasDraft);
+        Model.CloseInspector();
+    }
+
     private async Task CaptureReview()
     {
         var clock = Stopwatch.StartNew();
@@ -474,6 +582,11 @@ public sealed partial class MainWindow
                 return;
             }
             var target = Model.Torrents.FirstOrDefault() ?? throw new InvalidOperationException("The review store has no torrent.");
+            if (Environment.GetEnvironmentVariable("TINYTORRENT_CAPTURE_REVIEW") == "desktop")
+            {
+                await CaptureDesktop(target, outcomes, completed);
+                return;
+            }
             if (Environment.GetEnvironmentVariable("TINYTORRENT_CAPTURE_REVIEW") == "shell")
             {
                 await CaptureShell(target, outcomes);

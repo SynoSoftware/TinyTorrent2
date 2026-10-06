@@ -174,6 +174,10 @@ themes, selection commands, secondary pages and retained filter state.
 Use `TINYTORRENT_CAPTURE_REVIEW=schedule` for exact-minute overnight editing,
 validation, cancellation, moving and removal, with the schedule overview,
 selection and editor at all three sizes in English and Spanish, Light and Dark.
+Use `TINYTORRENT_CAPTURE_REVIEW=desktop` with the disposable desktop launcher for
+declining Exit with unfinished input and reconnecting an open tracker draft.
+Its restart handshake affects only the launcher's own fixture engine; it does
+not automate the desktop or establish native notification/power behavior.
 
 First review functionality and recovery through the existing owners. Then use
 the images to examine hierarchy, spacing, alignment, typography, grouping,

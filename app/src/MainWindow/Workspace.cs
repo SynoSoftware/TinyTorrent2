@@ -175,7 +175,7 @@ public sealed partial class MainWindow
             if (_placement?.Inspector is { } layout) form.Layout = layout;
             InspectorContent.Content = form;
         }
-        var maximum = Math.Max(0, TorrentWorkspace.ActualHeight - 126);
+        var maximum = Math.Max(0, Workspace.ActualHeight - 126);
         var minimum = Math.Min(300, maximum);
         Split.SetBounds(minimum, maximum, _splitHeight);
         InspectorRow.Height = new GridLength(Math.Clamp(_splitHeight, minimum, maximum));

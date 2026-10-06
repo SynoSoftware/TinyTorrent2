@@ -4,7 +4,9 @@ Work resumed on 2026-10-05 under the current goal below. The first coherent step
 retains the owner's app role folders, verifies the finished schedule, corrects
 clipped short-period labels and fixes a reproduced window-shutdown crash.
 Current evidence is at the top of [morning-report.md](morning-report.md).
-Milestones 3–5 and their fresh adversarial gates remain open.
+The background/desktop capture gate passed after correcting clipped tracker
+actions during disconnection. Details/preferences and move/delete gates remain
+open; native desktop evidence limitations are recorded in the morning report.
 
 At the earlier handover, work stopped at the owner's request to move to another project. The pending app
 recovery smoke check finished and passed. The five-milestone implementation is
@@ -99,7 +101,7 @@ no `TinyTorrent.exe` or `Engine.exe`. No desktop automation remains active.
 | --- | --- | --- |
 | First usable download | Completed previously, `e0a5a92` | Historical journeys and first resource measurements are recorded. |
 | Everyday torrent actions | Completed previously, `6afbf65` | Historical evidence is recorded, with stated physical Explorer/drop and accessibility gaps. |
-| Background and desktop behavior | Implementation committed (`3c1d765` to `bb44cb2`); no completion commit | Current Open/Close/Exit/restart and protected input; notifications and sleep with WinUI closed; tray failure reports and startup in the notification area. |
+| Background and desktop behavior | Current process journey and fresh visual correction review passed | Native notifications, physical sleep and logon are source-reviewed, not physically exercised; see morning report. |
 | Details and preferences | Implementation committed (`3c1d765` to `3a1c5bb`); no completion commit | Adopted-surface acceptance, failed edits, live language/focus/RTL and closed-window speed history. |
 | Move and delete files | Engine safety checks passed; UI committed in `3c1d765`; no completion commit | Actual UI submissions with disposable payloads, relevant failures and a real interrupted move. |
 
