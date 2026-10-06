@@ -8,7 +8,6 @@ using Windows.ApplicationModel.DataTransfer;
 using Windows.Foundation;
 using Windows.Storage;
 using Windows.System;
-using Syno.TinyTorrent.Helpers;
 using Syno.TinyTorrent.Models;
 using Syno.TinyTorrent.Views;
 
@@ -16,14 +15,12 @@ namespace Syno.TinyTorrent;
 
 public sealed partial class MainWindow
 {
-    private ContentDialog? _limitsDialog;
-    private TaskCompletionSource? _limitsClosed;
     private ContentDialog? _removeDialog;
     private TaskCompletionSource? _removeClosed;
     private ContentDialog? _filesDialog;
     private FileForm? _filesForm;
     private TaskCompletionSource? _filesClosed;
-    private bool HasDialog => _addDialog is not null || _limitsDialog is not null || _removeDialog is not null || _filesDialog is not null || _closePrompt is not null;
+    private bool HasDialog => _addDialog is not null || _removeDialog is not null || _filesDialog is not null || _closePrompt is not null;
 
     private void OnQueueKey(object sender, KeyRoutedEventArgs args)
     {
@@ -180,6 +177,12 @@ public sealed partial class MainWindow
         var dialog = new ContentDialog { XamlRoot = Root.XamlRoot, Content = body,
             DefaultButton = action == FileAction.Delete ? ContentDialogButton.Close : ContentDialogButton.Primary };
         dialog.Resources["ContentDialogMaxWidth"] = 608d;
+        dialog.Opened += (_, _) =>
+        {
+            if (!Model.Files.HasError) return;
+            body.UpdateLayout();
+            body.ChangeView(null, body.ScrollableHeight, null, true);
+        };
         dialog.SetBinding(ContentDialog.IsPrimaryButtonEnabledProperty, new Binding { Source = Model.Files,
             Path = new PropertyPath(nameof(FileOperation.CanSubmit)), Mode = BindingMode.OneWay });
         dialog.PrimaryButtonClick += async (_, args) =>
@@ -220,68 +223,13 @@ public sealed partial class MainWindow
         }
     }
 
-    private async Task ShowLimits(bool initialize = true)
-    {
-        if (HasDialog) return;
-        if (initialize) Model.Speed.Begin();
-        var body = new StackPanel { Spacing = 12 };
-        foreach (var choice in Model.Speed.Choices)
-        {
-            var editor = new NumberBox { DataContext = choice, Header = Model.Text.Get("limits", choice.Name), Minimum = 0,
-                Maximum = int.MaxValue / 1024.0, ValidationMode = NumberBoxValidationMode.Disabled,
-                Text = choice.Input, SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Compact };
-            editor.Loaded += (_, _) =>
-            {
-                if (TextEditor.Find(editor) is { } input)
-                    input.TextChanged += (_, _) => { if (editor.IsEnabled) choice.Input = input.Text; };
-            };
-            editor.SetBinding(Control.IsEnabledProperty, new Binding { Source = Model.Speed, Path = new PropertyPath(nameof(SpeedLimits.CanApply)), Mode = BindingMode.OneWay });
-            body.Children.Add(editor);
-        }
-        body.Children.Add(new TextBlock { Text = Model.Text.Get("limits", "units"), TextWrapping = TextWrapping.Wrap });
-        var feedback = new InfoBar { IsClosable = false, Severity = InfoBarSeverity.Error };
-        feedback.SetBinding(InfoBar.MessageProperty, new Binding { Source = Model.Speed, Path = new PropertyPath(nameof(SpeedLimits.Message)), Mode = BindingMode.OneWay });
-        feedback.SetBinding(InfoBar.IsOpenProperty, new Binding { Source = Model.Speed, Path = new PropertyPath(nameof(SpeedLimits.HasError)), Mode = BindingMode.OneWay });
-        body.Children.Add(feedback);
-        var restart = new Button { Command = Model.Restart };
-        AutomationProperties.SetAutomationId(restart, "Restart");
-        restart.SetBinding(ContentControl.ContentProperty, new Binding { Source = Model, Path = new PropertyPath(nameof(MainViewModel.RestartText)), Mode = BindingMode.OneWay });
-        var connection = new InfoBar { IsClosable = false, Severity = InfoBarSeverity.Error, ActionButton = restart };
-        connection.SetBinding(InfoBar.MessageProperty, new Binding { Source = Model, Path = new PropertyPath(nameof(MainViewModel.Message)), Mode = BindingMode.OneWay });
-        connection.SetBinding(InfoBar.IsOpenProperty, new Binding { Source = Model, Path = new PropertyPath(nameof(MainViewModel.CanRestart)), Mode = BindingMode.OneWay });
-        body.Children.Add(connection);
-        var dialog = new ContentDialog { XamlRoot = Root.XamlRoot, RequestedTheme = Root.ActualTheme, FlowDirection = Root.FlowDirection,
-            Title = Model.Text.Get("commands", "limits"), Content = body, PrimaryButtonText = Model.Text.Get("limits", "apply"),
-            CloseButtonText = Model.Text.Get("add", "cancel"), DefaultButton = ContentDialogButton.Primary };
-        dialog.SetBinding(ContentDialog.IsPrimaryButtonEnabledProperty, new Binding { Source = Model.Speed, Path = new PropertyPath(nameof(SpeedLimits.CanApply)), Mode = BindingMode.OneWay });
-        dialog.PrimaryButtonClick += async (_, args) =>
-        {
-            args.Cancel = true;
-            var deferral = args.GetDeferral();
-            try { args.Cancel = !await Model.Speed.Apply(); }
-            finally { deferral.Complete(); }
-        };
-        dialog.Closing += (_, args) => { if (Model.Speed.IsPending && !Model.IsClosing) args.Cancel = true; };
-        _limitsDialog = dialog;
-        _limitsClosed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        try { await dialog.ShowAsync(); }
-        catch (Exception error) { Model.Report(error); }
-        finally
-        {
-            _limitsDialog = null;
-            _limitsClosed.TrySetResult();
-            if (!Model.IsClosing) Model.Speed.Begin();
-            if (!Model.IsClosing && (Model.Draft.Sources.Count > 0 || Model.Draft.EditingMagnet)) _ = ShowAdd();
-        }
-    }
-
     private async void OnInspectorClose(object sender, RoutedEventArgs args)
     {
-        if (Model.Inspector.IsPending) return;
+        if (Model.IsClosing || Model.Inspector.IsPending) return;
         if (Model.Inspector.HasDraft)
         {
-            if (!await ConfirmDiscard()) return;
-            Model.Inspector.CancelDraft();
+            if (!await ResolveDraft(Model.Inspector.SaveDraft, () =>
+                { Model.Inspector.CancelDraft(); return Task.CompletedTask; })) return;
         }
         Model.CloseInspector();
         Torrents.Focus(FocusState.Programmatic);
@@ -299,6 +247,7 @@ public sealed partial class MainWindow
 
     private void OnDragOver(object sender, DragEventArgs args)
     {
+        if (!Model.CanEdit) return;
         if (args.DataView.Contains(StandardDataFormats.StorageItems) || args.DataView.Contains(StandardDataFormats.Text))
             args.AcceptedOperation = DataPackageOperation.Copy;
     }
@@ -316,6 +265,7 @@ public sealed partial class MainWindow
 
     private async Task AddSources(DataPackageView content)
     {
+        if (!Model.CanEdit) return;
         if (content.Contains(StandardDataFormats.StorageItems))
         {
             var files = await content.GetStorageItemsAsync();

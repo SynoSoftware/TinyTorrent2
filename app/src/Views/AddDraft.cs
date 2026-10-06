@@ -54,7 +54,8 @@ public sealed class AddDraft : INotifyPropertyChanged
         HasFiles && !Files.HasWanted ? _strings.Get("add", "no_files") : string.Empty;
     public bool HasError => Message.Length > 0;
     public InfoBarSeverity Severity => InfoBarSeverity.Error;
-    public bool CanEdit => _owner.CanEdit && !IsPending;
+    private bool CanSave => _owner.CanSave && !IsPending;
+    public bool CanEdit => CanSave && !_owner.IsClosing;
     public bool CanSubmit => CanEdit && !HasMagnetError && (Sources.Count > 0 || !string.IsNullOrWhiteSpace(Magnet)) && !string.IsNullOrWhiteSpace(_destination) &&
         Sources.All(source => source.PreviewId is not null || source.Failure is not null || source.Uncertain) &&
         Sources.All(source => !source.MetadataReady || source.SharedDestination == _destination) &&
@@ -108,7 +109,7 @@ public sealed class AddDraft : INotifyPropertyChanged
             var source = new AddSource(value, _strings, this);
             var destination = _destination;
             var preview = await PreviewSource(source, destination);
-            if (Magnet != input || !_owner.IsAddOpen)
+            if (Magnet != input || !_owner.IsAddOpen && !_owner.IsClosing)
             {
                 await Release(preview.GetProperty("preview_id").GetString()!);
                 return false;
@@ -186,8 +187,8 @@ public sealed class AddDraft : INotifyPropertyChanged
 
     public async Task<bool> Submit()
     {
-        if (!CanEdit || !await AcceptMagnet()) return false;
-        if (!CanEdit || Sources.Count == 0 || string.IsNullOrWhiteSpace(_destination) || (HasFiles && !Files.HasWanted)) return false;
+        if (!CanSave || !await AcceptMagnet()) return false;
+        if (!CanSave || Sources.Count == 0 || string.IsNullOrWhiteSpace(_destination) || (HasFiles && !Files.HasWanted)) return false;
         IsSubmitting = true;
         Refresh();
         var destination = _destination;

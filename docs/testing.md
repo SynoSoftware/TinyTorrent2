@@ -175,6 +175,13 @@ Use `TINYTORRENT_CAPTURE_REVIEW=search` for native AutoSuggestBox result
 submission: unavailable commands, Properties from Settings, speed-limit
 navigation, named-setting focus and reopening suggestions. It captures localized
 results across themes and sizes; it does not synthesize Ctrl+K keyboard input.
+Use `TINYTORRENT_CAPTURE_REVIEW=edits` for ordinary Settings departure,
+new input and explicit commits during a pending acknowledgement, and schedule
+Save/Discard/Cancel. The acknowledgement races change the preference input
+synchronously before the UI thread yields and verify its native display
+afterward; ordinary departure uses native editors. The check restores its
+fixture values and periods. It does not simulate keyboard delivery or engine
+refusal.
 Use `TINYTORRENT_CAPTURE_REVIEW=library` only with the disposable library
 launcher's `library-capture.json` manifest. It checks native filter and named
 torrent selection with 300 real paused torrents, then captures the populated

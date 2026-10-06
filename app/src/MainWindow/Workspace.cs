@@ -15,7 +15,7 @@ public sealed partial class MainWindow
     private bool _selecting;
     private double _splitHeight = 360;
     private Syno.TableView.Selection _selection = new([], null);
-    private Task<bool>? _discardDecision;
+    private Task<bool>? _draftDecision;
 
     private bool HasEditorFocus()
     {
@@ -37,11 +37,11 @@ public sealed partial class MainWindow
     private async Task<bool> Navigate(WindowPage page)
     {
         if (HasDialog || Model.IsClosing || _allowClose) return false;
-        if (Model.Page == WindowPage.Preferences && page != WindowPage.Preferences && Model.Preferences.IsPending) return false;
-        if (Model.Page == WindowPage.Preferences && page != WindowPage.Preferences && Model.Preferences.HasDraft)
+        if (Model.Page == WindowPage.Preferences && page != WindowPage.Preferences)
         {
-            if (!await ConfirmDiscard()) return false;
-            Model.Preferences.CancelDraft();
+            if (!await Model.Preferences.PrepareLeave()) return false;
+            if (Model.Preferences.HasDraft && !await ResolveDraft(Model.Preferences.CommitPeriod, () =>
+                { Model.Preferences.CancelDraft(); return Task.CompletedTask; })) return false;
         }
         if (Model.IsClosing) return false;
         Model.Page = page;
@@ -77,14 +77,15 @@ public sealed partial class MainWindow
 
     private async Task SelectTorrent()
     {
-        if (_selecting) return;
+        if (_selecting || Model.IsClosing) return;
         _selecting = true;
         var desired = Torrents.Selection;
         try
         {
             var changesTarget = Model.Inspector.IsOpen && (desired.Items.Count != 1 ||
                 !ReferenceEquals(desired.Items[0], Model.Inspector.Target));
-            if (changesTarget && (Model.Inspector.IsPending || Model.Inspector.HasDraft && !await ConfirmDiscard()))
+            if (changesTarget && (Model.Inspector.IsPending || Model.Inspector.HasDraft && !await ResolveDraft(Model.Inspector.SaveDraft, () =>
+                { Model.Inspector.CancelDraft(); return Task.CompletedTask; })))
             {
                 var retained = _selection.Items.Where(item => Model.VisibleTorrents.Contains((Torrent)item)).ToArray();
                 Torrents.Selection = new Syno.TableView.Selection(retained, retained.Contains(_selection.Current) ? _selection.Current : retained.FirstOrDefault());
@@ -99,19 +100,24 @@ public sealed partial class MainWindow
         finally { _selecting = false; }
     }
 
-    private async Task<bool> ConfirmDiscard()
+    private async Task<bool> ResolveDraft(Func<Task<bool>> save, Func<Task> discard)
     {
-        if (_discardDecision is { } existing) return await existing;
+        if (_draftDecision is { } existing) return await existing;
         var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        _discardDecision = completion.Task;
+        _draftDecision = completion.Task;
+        var focused = FocusManager.GetFocusedElement(Root.XamlRoot) as Control;
         try
         {
-            var prompt = new ContentDialog { XamlRoot = Root.XamlRoot, DefaultButton = ContentDialogButton.Close };
+            var prompt = new ContentDialog { XamlRoot = Root.XamlRoot, DefaultButton = ContentDialogButton.Primary };
             _closePrompt = prompt;
             RefreshText();
-            var discard = await prompt.ShowAsync() == ContentDialogResult.Primary;
-            completion.TrySetResult(discard);
-            return discard;
+            var choice = await prompt.ShowAsync();
+            var resolved = false;
+            if (choice == ContentDialogResult.Primary) resolved = await save();
+            else if (choice == ContentDialogResult.Secondary) { await discard(); resolved = true; }
+            if (!resolved && focused is { IsLoaded: true }) focused.Focus(FocusState.Programmatic);
+            completion.TrySetResult(resolved);
+            return resolved;
         }
         catch (Exception error)
         {
@@ -119,7 +125,7 @@ public sealed partial class MainWindow
             completion.TrySetResult(false);
             return false;
         }
-        finally { _closePrompt = null; _discardDecision = null; }
+        finally { _closePrompt = null; _draftDecision = null; }
     }
 
     private void OnFiltersClose(object sender, RoutedEventArgs args) => CloseFilters();

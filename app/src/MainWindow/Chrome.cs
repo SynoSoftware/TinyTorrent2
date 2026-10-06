@@ -120,15 +120,6 @@ public sealed partial class MainWindow
             files.PrimaryButtonText = Model.Files.Title;
             files.CloseButtonText = Model.Text.Get("add", "cancel");
         }
-        if (_limitsDialog?.Content is StackPanel limits)
-        {
-            _limitsDialog.Title = Model.Text.Get("commands", "limits");
-            _limitsDialog.PrimaryButtonText = Model.Text.Get("limits", "apply");
-            _limitsDialog.CloseButtonText = Model.Text.Get("add", "cancel");
-            foreach (var editor in limits.Children.OfType<NumberBox>())
-                editor.Header = Model.Text.Get("limits", ((LimitChoice)editor.DataContext).Name);
-            foreach (var label in limits.Children.OfType<TextBlock>()) label.Text = Model.Text.Get("limits", "units");
-        }
         if (_removeDialog is { } removal)
         {
             removal.Title = Model.Text.Get("remove", "title");
@@ -144,17 +135,18 @@ public sealed partial class MainWindow
         }
         if (_closePrompt is not null)
         {
-            _closePrompt.Title = Model.Text.Get("add", "discard");
-            _closePrompt.Content = Model.Text.Get("add", "discard_detail");
-            _closePrompt.PrimaryButtonText = Model.Text.Get("add", "discard_action");
-            _closePrompt.CloseButtonText = Model.Text.Get("add", "keep");
+            _closePrompt.Title = Model.Text.Get("changes", "title");
+            _closePrompt.Content = Model.Text.Get("changes", "detail");
+            _closePrompt.PrimaryButtonText = Model.Text.Get("changes", "save");
+            _closePrompt.SecondaryButtonText = Model.Text.Get("changes", "discard");
+            _closePrompt.CloseButtonText = Model.Text.Get("add", "cancel");
         }
         Torrents.RefreshView();
     }
 
     private void RefreshDialogs()
     {
-        ContentDialog?[] dialogs = [_addDialog, _closePrompt, _limitsDialog, _removeDialog, _filesDialog];
+        ContentDialog?[] dialogs = [_addDialog, _closePrompt, _removeDialog, _filesDialog];
         foreach (var dialog in dialogs)
         {
             if (dialog is null) continue;

@@ -57,12 +57,13 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     public bool IsStorageFailed => _storageFailed;
     public bool IsEmptyVisible => !_storageFailed;
     public bool IsClosing => _closing;
-    public bool CanClose => !_settingsPending && !_picking && !_receivingSources && !Draft.IsPending && !Speed.IsPending &&
+    public bool CanClose => !_settingsPending && !_picking && !_receivingSources && !Draft.IsPending &&
         !Inspector.IsPending && !Preferences.IsPending && !Files.IsPending;
     public bool CanExit => _connected && CanClose;
     public string? DataDirectory => _client.DataDirectory;
-    public bool HasDraft => Draft.HasChanges || Speed.HasChanges || Inspector.HasDraft || Preferences.HasDraft || Files.HasDraft;
-    public bool CanEdit => _writable && !_picking && !_closing;
+    public bool HasDraft => Draft.HasChanges || Inspector.HasDraft || Preferences.HasDraft || Files.HasDraft;
+    internal bool CanSave => _writable && !_picking;
+    public bool CanEdit => CanSave && !_closing;
     public bool IsPicking
     {
         get => _picking;
@@ -90,16 +91,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     public ICommand Exit { get; }
     public ICommand SwitchLanguage { get; }
     public ICommand SwitchTheme { get; }
-    public string Rates
-    {
-        get
-        {
-            var rates = Text.Format("window", "rates",
-                _connected && !_loading && !_storageFailed ? Text.Format("units", "rate", Text.Bytes(_downloadRate)) : "—",
-                _connected && !_loading && !_storageFailed ? Text.Format("units", "rate", Text.Bytes(_uploadRate)) : "—");
-            return _connected && AllPaused ? Text.Format("window", "paused_rates", rates) : rates;
-        }
-    }
+    public string DownloadText => Text.Format("window", "download_rate", Rate(_downloadRate));
+    public string UploadText => Text.Format("window", "upload_rate", Rate(_uploadRate));
+    public string PausedText => _connected && AllPaused ? Text.Get("status", "all_paused") : string.Empty;
+    private string Rate(double rate) => _connected && !_loading && !_storageFailed ? Text.Format("units", "rate", Text.Bytes(rate)) : "—";
     public string TorrentError => _current is null || _current.ErrorCode.Length == 0 ? string.Empty :
         Text.Format("errors", "torrent", _current.Name, _current.ErrorText);
     public string Message
@@ -142,13 +137,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         _dispatcher = dispatcher;
         _client = new PipeClient(strings);
         Draft = new AddDraft(this, _client, strings);
-        Speed = new SpeedLimits(this);
         Files = new FileOperation(this, _client);
         Inspector = new Inspector(this, _client);
         Preferences = new Preferences(this, _client);
         Filters = Enum.GetValues<TorrentFilter>().Select(filter => new FilterChoice(this, filter)).ToArray();
         Draft.PropertyChanged += OnTaskChanged;
-        Speed.PropertyChanged += OnTaskChanged;
         Inspector.PropertyChanged += OnTaskChanged;
         Preferences.PropertyChanged += OnTaskChanged;
         Files.PropertyChanged += OnTaskChanged;
@@ -186,7 +179,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         Bottom = new Command(() => Queue("bottom"), () => CanMove);
         PauseAll = new Command(() => SessionPause(true), () => CanEdit);
         ResumeAll = new Command(() => SessionPause(false), () => CanEdit);
-        Limits = new Command(() => { LimitsRequested?.Invoke(this, EventArgs.Empty); return Task.CompletedTask; }, () => CanEdit);
+        Limits = new Command(() => RequestPreferences(new(PreferenceSection.Transfers, "download_limit")), () => true);
         Open = new Command(() => OpenTorrent(false), () => CanEdit && _selected.Length == 1);
         OpenFolder = new Command(() => OpenTorrent(true), () => CanEdit && _selected.Length == 1);
         CopyMagnet = new Command(() => CopyTorrent(false), () => CanEdit && _selected.Length == 1);
@@ -432,7 +425,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         Text.Publish(catalogue);
         foreach (var torrent in Torrents) torrent.RefreshText();
         Draft.Refresh();
-        Speed.Refresh();
         Inspector.RefreshText();
         Preferences.RefreshText();
         Files.Refresh();
@@ -489,7 +481,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     public async Task CancelDraft()
     {
         await Draft.Cancel();
-        Speed.Begin();
         Inspector.CancelDraft();
         Preferences.CancelDraft();
         Files.Cancel();
@@ -553,7 +544,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         foreach (var choice in Filters) choice.Refresh();
         Changed(string.Empty);
         Draft.Refresh();
-        Speed.Refresh();
         Inspector.Refresh();
         Preferences.Refresh();
         Files.Refresh();

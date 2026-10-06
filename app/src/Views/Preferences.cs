@@ -49,7 +49,7 @@ public sealed class Preferences : INotifyPropertyChanged
     public IReadOnlyList<Preference> Fields { get; }
     public ObservableCollection<SchedulePeriod> Periods { get; } = [];
     public PeriodDraft? Draft => _draft;
-    public bool HasDraft => Fields.Any(preference => preference.HasDraft) || _draft?.HasChanges == true;
+    public bool HasDraft => _draft?.HasChanges == true;
     public bool IsPending => Fields.Any(preference => preference.IsPending) || _registering || _savingSchedule;
     public bool CanEdit => _owner.CanEdit;
     public bool CanRegister => CanEdit && !_registering;
@@ -202,38 +202,69 @@ public sealed class Preferences : INotifyPropertyChanged
 
     public async Task Commit(Preference field)
     {
-        if (!field.CanEdit || field.IsPending || !field.HasDraft) return;
+        if (!field.CanEdit || !field.IsPending && !field.HasDraft) return;
         if (!TryValue(field, out var value)) { field.Invalid(); return; }
         await Submit(field, value);
     }
 
+    public async Task<bool> PrepareLeave()
+    {
+        await Task.WhenAll(Fields.Select(field => field.Saving));
+        var saved = true;
+        foreach (var field in Fields)
+        {
+            if (!field.HasDraft) continue;
+            if (!TryValue(field, out var value)) { field.Cancel(); continue; }
+            if (field.HasFailure || !_owner.CanSave) { saved = false; continue; }
+            await Submit(field, value);
+            if (field.HasDraft) saved = false;
+        }
+        return saved && !Fields.Any(field => field.HasDraft);
+    }
+
     public async Task Toggle(Preference field, bool value)
     {
-        if (!field.CanEdit || field.IsPending || field.IsOn == value) return;
+        if (!field.CanEdit || field.IsOn == value) return;
         field.Choose(value);
-        if (!field.HasDraft) { field.Cancel(); return; }
+        if (!field.HasDraft && !field.IsPending) { field.Cancel(); return; }
         await Submit(field, value);
     }
 
     private async Task Submit(Preference field, object value)
     {
+        if (!_owner.CanSave) return;
+        var submitted = field.Capture(value);
+        if (field.IsPending)
+        {
+            field.Defer(submitted);
+            await field.Saving;
+            return;
+        }
         field.Begin();
         Refresh();
         try
         {
-            if (field.IsRate)
+            while (true)
             {
-                var saved = await _owner.SaveLimits(new Dictionary<string, double> { [field.Name] = (double)value });
-                field.Accept(JsonSerializer.SerializeToElement(saved[field.Name]));
+                try
+                {
+                    if (field.IsRate)
+                    {
+                        var saved = await _owner.SaveLimits(new Dictionary<string, double> { [field.Name] = (double)submitted.Value });
+                        field.Accept(JsonSerializer.SerializeToElement(saved[field.Name]), submitted);
+                    }
+                    else
+                    {
+                        await _owner.SaveSettings(new Dictionary<string, object> { [field.Name] = submitted.Value });
+                        field.Accept(JsonSerializer.SerializeToElement(submitted.Value), submitted);
+                    }
+                    if (field == Schedule) WeekChanged?.Invoke(this, EventArgs.Empty);
+                }
+                catch (Exception error) { field.Reject(error); break; }
+                if (!_owner.CanSave || field.TakeIntent() is not { } next) break;
+                submitted = next;
             }
-            else
-            {
-                await _owner.SaveSettings(new Dictionary<string, object> { [field.Name] = value });
-                field.Accept(JsonSerializer.SerializeToElement(value));
-            }
-            if (field == Schedule) WeekChanged?.Invoke(this, EventArgs.Empty);
         }
-        catch (Exception error) { field.Reject(error); }
         finally { field.End(); Refresh(); }
     }
 
@@ -241,9 +272,10 @@ public sealed class Preferences : INotifyPropertyChanged
     {
         value = field.Input.Trim();
         if (field.Name is "default_destination" or "network_interface") return true;
+        if (field.IsBoolean) { value = field.IsOn; return true; }
         if (!double.TryParse(field.Input, NumberStyles.Float | NumberStyles.AllowThousands,
                 CultureInfo.CurrentCulture, out var number)) return false;
-        if (field.IsRate) { value = number; return true; }
+        if (field.IsRate) { value = number; return MainViewModel.IsValidLimit(number); }
         if (!double.IsFinite(number) || number < 0) return false;
         if (field.Name == "ratio_limit") { value = number; return true; }
         if (number != Math.Truncate(number) || number > int.MaxValue ||
@@ -303,17 +335,20 @@ public sealed class Preferences : INotifyPropertyChanged
         Refresh();
     }
 
-    private async Task CommitPeriod()
+    public async Task<bool> CommitPeriod()
     {
-        if (_draft is not { } draft || !CanSchedule) return;
+        if (_draft is not { } draft) return true;
+        if (!_owner.CanSave || _savingSchedule) return false;
         if (!draft.Days.Any(day => day.IsChecked) || draft.Start is null || draft.End is null)
         {
             _invalidPeriod = true;
             Refresh();
-            return;
+            return false;
         }
         var period = new SchedulePeriod(this, draft);
-        if (await SubmitPeriod(period, _editingIndex)) CancelPeriodDraft();
+        if (!await SubmitPeriod(period, _editingIndex)) return false;
+        CancelPeriodDraft();
+        return true;
     }
 
     private async Task<bool> SubmitPeriod(SchedulePeriod period, int? index)
@@ -441,19 +476,24 @@ public sealed class Preference(Preferences owner, string name) : INotifyProperty
     private Exception? _failure;
     private bool _invalid;
     private bool? _choice;
+    private TaskCompletionSource? _saving;
+    private Submission? _intent;
+    private bool _cancelled;
     public string Name { get; } = name;
     public bool IsRate => Name is "download_limit" or "upload_limit" or "alternative_download_limit" or "alternative_upload_limit";
     public string Label => owner.Text.Get(IsRate ? "limits" : "preferences", Name);
     public string Input
     {
         get => _input;
-        set { if (_input == value) return; _input = value; _failure = null; _invalid = false; Refresh(); owner.Refresh(); }
+        set { if (_input == value) return; _input = value; _cancelled = false; _failure = null; _invalid = false; Refresh(); owner.Refresh(); }
     }
     public bool IsOn => _choice ?? _confirmed.ValueKind == JsonValueKind.True;
     public bool HasDraft => _input != _confirmedInput || _choice is { } choice && choice != (_confirmed.ValueKind == JsonValueKind.True);
-    public bool IsPending { get; private set; }
-    // A save stays enabled, so the control keeps focus; Commit and Toggle ignore
-    // input until it completes. Saves are too quick to need a pending display.
+    public bool IsPending => _saving is not null;
+    internal bool IsBoolean => _confirmed.ValueKind is JsonValueKind.True or JsonValueKind.False;
+    internal bool HasFailure => _failure is not null;
+    internal Task Saving => _saving?.Task ?? Task.CompletedTask;
+    // A save keeps its control enabled so later input keeps focus.
     public bool CanEdit => owner.CanEdit;
     public string Message => _invalid ? owner.Text.Get(IsRate ? "errors" : "preferences", IsRate ? "invalid_limits" : Name == "listen_port" ? "invalid_port" : "invalid_number") :
         _failure is null ? string.Empty :
@@ -469,13 +509,48 @@ public sealed class Preference(Preferences owner, string name) : INotifyProperty
         if (!preserve) { _input = _confirmedInput; _choice = null; }
         Refresh();
     }
-    internal void Accept(JsonElement value) { Confirm(value); _input = _confirmedInput; _choice = null; _failure = null; _invalid = false; Refresh(); }
-    internal void Begin() { IsPending = true; _failure = null; _invalid = false; Refresh(); }
-    internal void End() { IsPending = false; Refresh(); }
+    internal sealed record Submission(object Value, string Input, bool? Choice);
+    internal Submission Capture(object value) { _cancelled = false; return new(value, _input, _choice); }
+    internal void Defer(Submission submitted) => _intent = submitted;
+    internal Submission? TakeIntent()
+    {
+        var intent = _intent;
+        _intent = null;
+        return intent;
+    }
+    internal void Accept(JsonElement value, Submission submitted)
+    {
+        var preserve = !_cancelled && (_input != submitted.Input || _choice != submitted.Choice);
+        Confirm(value);
+        if (!preserve) { _input = _confirmedInput; _choice = null; _invalid = false; }
+        _cancelled = false;
+        _failure = null;
+        Refresh();
+    }
+    internal void Begin() { _saving = new(TaskCreationOptions.RunContinuationsAsynchronously); _failure = null; _invalid = false; Refresh(); }
+    internal void End()
+    {
+        var saving = _saving;
+        _saving = null;
+        _intent = null;
+        _cancelled = false;
+        Refresh();
+        saving?.TrySetResult();
+    }
     internal void Reject(Exception error) { _failure = error; Refresh(); }
     internal void Invalid() { _invalid = true; Refresh(); }
-    internal void Choose(bool value) { _choice = value; Refresh(); }
-    public void Cancel() { _input = _confirmedInput; _choice = null; _failure = null; _invalid = false; Refresh(); owner.Refresh(); }
+    internal void Choose(bool value) { _choice = value; _cancelled = false; _failure = null; _invalid = false; Refresh(); }
+    public void Cancel()
+    {
+        _intent = null;
+        _cancelled = IsPending;
+        _input = _confirmedInput;
+        _choice = null;
+        _failure = null;
+        _invalid = false;
+        Refresh();
+        owner.Refresh();
+    }
     internal void Refresh() => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
 }
 

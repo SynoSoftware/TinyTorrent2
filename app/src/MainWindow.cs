@@ -40,6 +40,15 @@ public sealed partial class MainWindow : Window
         Filters.ItemsSource = Model.Filters;
         Split.ValueChanged += (_, value) => { _splitHeight = value; UpdateInspectorSize(); };
         Workspace.SizeChanged += (_, _) => UpdateInspectorSize();
+        Root.SizeChanged += (_, args) =>
+        {
+            var narrow = args.NewSize.Width < 960;
+            Grid.SetRow(Incoming, narrow ? 1 : 0);
+            Grid.SetColumn(Incoming, narrow ? 0 : 3);
+            Grid.SetColumnSpan(Incoming, narrow ? 4 : 1);
+            Incoming.Margin = new Thickness(0, narrow ? 8 : 0, 0, 0);
+            Incoming.TextAlignment = narrow ? TextAlignment.Left : TextAlignment.Right;
+        };
         FiltersClose.Content = new FontIcon { FontFamily = Syno.Lucide.Font, Glyph = Syno.Lucide.X, FontSize = 16 };
         ExtendsContentIntoTitleBar = true;
         AppWindow.TitleBar.PreferredHeightOption = TitleBarHeightOption.Tall;
@@ -78,7 +87,6 @@ public sealed partial class MainWindow : Window
         Model.RemoveRequested += async (_, torrents) => await ConfirmRemove(torrents);
         Model.MoveRequested += async (_, torrents) => await ShowFiles(torrents, FileAction.Move);
         Model.DeleteRequested += async (_, torrents) => await ShowFiles(torrents, FileAction.Delete);
-        Model.LimitsRequested += async (_, _) => await ShowLimits();
         Model.OpenRequested += (_, path) =>
         {
             try { Process.Start(new ProcessStartInfo(path) { UseShellExecute = true }); }
@@ -234,15 +242,15 @@ public sealed partial class MainWindow : Window
         finally
         {
             body.Content = null;
+            Model.IsAddOpen = false;
+            if (!Model.IsClosing && completed)
+            {
+                try { await Model.Draft.Cancel(); }
+                catch (Exception error) { Model.Report(error); }
+            }
             _form = null;
             _addDialog = null;
-            Model.IsAddOpen = false;
             _dialogClosed.TrySetResult();
-        }
-        if (!Model.IsClosing && completed)
-        {
-            try { await Model.Draft.Cancel(); }
-            catch (Exception error) { Model.Report(error); }
         }
     }
 
@@ -310,18 +318,21 @@ public sealed partial class MainWindow : Window
 
     private async Task CloseWindow(bool engineExit)
     {
+        var focused = FocusManager.GetFocusedElement(Root.XamlRoot) as Control;
+        var focusName = focused?.Name;
         _engineExit |= engineExit;
         if (!Model.BeginClose())
         {
-            if (engineExit && (_closePrompt is not null || Model.IsPicking)) await Model.DeferClose();
+            if (engineExit) await Model.DeferClose();
             return;
         }
         var wasOpen = false;
-        var hadLimits = false;
         var hadFiles = false;
-        var keepDraft = false;
         try
         {
+            if (_engineExit) await Model.DeferClose();
+            if (_draftDecision is { } decision && !await decision) return;
+            if (!await Model.Preferences.PrepareLeave()) return;
             if (!Model.CanClose)
             {
                 if (_engineExit && Model.IsPicking) await Model.DeferClose();
@@ -339,28 +350,18 @@ public sealed partial class MainWindow : Window
                 finally { Model.PropertyChanged -= OnIdle; }
             }
             wasOpen = _addDialog is not null;
-            hadLimits = _limitsDialog is not null;
             hadFiles = _filesDialog is not null;
             var hadRemoval = _removeDialog is not null;
             _addDialog?.Hide();
-            _limitsDialog?.Hide();
             _removeDialog?.Hide();
             _filesDialog?.Hide();
             if (wasOpen && _dialogClosed is not null) await _dialogClosed.Task;
-            if (hadLimits && _limitsClosed is not null) await _limitsClosed.Task;
             if (hadRemoval && _removeClosed is not null) await _removeClosed.Task;
             if (hadFiles && _filesClosed is not null) await _filesClosed.Task;
             if (Model.HasDraft)
             {
                 if (_engineExit) await Model.DeferClose();
-                if (!await ConfirmDiscard())
-                {
-                    if (_engineExit) await Model.CancelClose();
-                    keepDraft = true;
-                    return;
-                }
-                if (_engineExit) await Model.Close(true);
-                await Model.CancelDraft();
+                if (!await ResolveDraft(SaveDraft, Model.CancelDraft)) return;
             }
             await SavePlacement();
             await Model.Close(_engineExit);
@@ -370,24 +371,53 @@ public sealed partial class MainWindow : Window
         catch (Exception error)
         {
             Model.Report(error);
-            if (_engineExit)
+        }
+        finally
+        {
+            if (!_allowClose && _engineExit)
             {
                 try { await Model.CancelClose(); }
                 catch (Exception failure) { Model.Report(failure); }
             }
-        }
-        finally
-        {
             _engineExit = false;
             if (!_allowClose) Model.EndClose();
-            if (keepDraft)
+            if (!_allowClose)
             {
-                await Model.Activated(true);
+                if (wasOpen || hadFiles) await Model.Activated(true);
                 if (hadFiles) _ = ShowFiles([], Model.Files.Action, false);
-                else if (hadLimits) _ = ShowLimits(false);
                 else if (wasOpen || Model.Draft.Sources.Count > 0 || Model.Draft.EditingMagnet) _ = ShowAdd();
+                else if (Model.Inspector.HasDraft && Model.Inspector.HasError)
+                {
+                    Model.Inspector.Select(Model.Inspector.IsEditingTrackers ? InspectorSection.Trackers : InspectorSection.Files);
+                    await ShowTorrents();
+                    focused = (InspectorContent.Content as FrameworkElement)?.FindName(
+                        Model.Inspector.IsEditingTrackers ? "TrackerInput" : "RetryFiles") as Control;
+                }
+                else if (Model.Preferences.HasDraft && Model.Preferences.HasScheduleError)
+                {
+                    await ShowPreferences(new(PreferenceSection.Schedule));
+                    var scheduler = (_preferencesForm?.FindName("ScheduleContent") as ContentControl)?.Content as FrameworkElement;
+                    focused = scheduler?.FindName(focusName ?? "StartTime") as Control ?? scheduler?.FindName("StartTime") as Control;
+                }
+                if (focused is { IsLoaded: true })
+                    DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () => focused.Focus(FocusState.Programmatic));
+                else if (!string.IsNullOrEmpty(focusName))
+                {
+                    var form = hadFiles ? _filesForm as FrameworkElement : _form;
+                    DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,
+                        () => (form?.FindName(focusName) as Control)?.Focus(FocusState.Programmatic));
+                }
             }
         }
+    }
+
+    private async Task<bool> SaveDraft()
+    {
+        if (Model.Draft.HasChanges && !await Model.Draft.Submit()) return false;
+        if (Model.Files.HasDraft && !await Model.Files.Submit()) return false;
+        if (Model.Preferences.HasDraft && !await Model.Preferences.CommitPeriod()) return false;
+        if (Model.Inspector.HasDraft && !await Model.Inspector.SaveDraft()) return false;
+        return !Model.HasDraft;
     }
 
     [DllImport("user32.dll")]

@@ -35,7 +35,8 @@ public sealed class Inspector : INotifyPropertyChanged
     public string Name => _target?.Name ?? string.Empty;
     public bool IsOpen => _target is not null;
     public bool IsAvailable => _owner.IsConnected && _target is not null && _owner.Torrents.Contains(_target);
-    public bool CanEdit => _visible && IsAvailable && _owner.CanEdit && !_pending;
+    private bool CanSave => IsAvailable && _owner.CanSave && !_pending;
+    public bool CanEdit => _visible && CanSave && !_owner.IsClosing;
     public bool IsPending => _pending;
     public bool IsLoading => _fetching;
     public bool HasDraft => !_pending && (_fileChanges.Count > 0 || _editingTrackers && _trackerInput != _trackerOriginal);
@@ -247,7 +248,7 @@ public sealed class Inspector : INotifyPropertyChanged
 
     private async Task SaveFiles()
     {
-        if (!CanEdit || _fileChanges.Count == 0) return;
+        if (!CanSave || _fileChanges.Count == 0) return;
         var priorities = _fileChanges.Select(change => new { index = change.Key, priority = change.Value }).ToArray();
         await Apply("edit", new { torrent_id = _target!.TorrentId, changes = new { priorities } }, _fileChanges.Clear);
     }
@@ -264,7 +265,7 @@ public sealed class Inspector : INotifyPropertyChanged
 
     private async Task CommitTrackers()
     {
-        if (!CanEdit || !_editingTrackers) return;
+        if (!CanSave || !_editingTrackers) return;
         if (_trackerInput == _trackerOriginal) { CancelTrackerDraft(); return; }
         var trackers = new List<object>();
         var tier = 0;
@@ -304,6 +305,14 @@ public sealed class Inspector : INotifyPropertyChanged
         _trackerInput = _trackerOriginal;
         _editFailure = null;
         Refresh();
+    }
+
+    internal async Task<bool> SaveDraft()
+    {
+        if (_editingTrackers) await CommitTrackers();
+        if (_editingTrackers && _trackerInput != _trackerOriginal) return false;
+        if (HasFileDraft) await SaveFiles();
+        return !HasDraft;
     }
 
     public void CancelDraft()

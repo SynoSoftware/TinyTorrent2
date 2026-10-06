@@ -3,9 +3,9 @@
     "title": "TinyTorrent", "torrents": "Torrents", "add": "Añadir torrent", "pause": "Pausar", "resume": "Reanudar", "exit": "Salir",
     "empty_title": "Todavía no hay torrents", "empty": "Añade un archivo torrent o un enlace magnet para empezar a descargar.", "connecting": "Conectando…",
     "disconnected": "Las descargas se han detenido. Se muestran los últimos datos conocidos. Pulsa Reiniciar para reiniciar el motor.",
-    "error": "No se pudo completar la operación. {0}", "rates": "Descarga: {0}   Subida: {1}",
+    "error": "No se pudo completar la operación. {0}", "download_rate": "Descarga: {0}", "upload_rate": "Subida: {0}",
     "storage_failed": "No se pudieron cargar las descargas guardadas. Cierra TinyTorrent y comprueba su carpeta de datos antes de volver a intentarlo.",
-    "no_matches": "No hay torrents coincidentes", "no_matches_detail": "Borra la búsqueda o el filtro de errores para ver los otros torrents.", "clear_filters": "Borrar filtros", "paused_rates": "{0} · Todos en pausa",
+    "no_matches": "No hay torrents coincidentes", "no_matches_detail": "Borra la búsqueda o el filtro de errores para ver los otros torrents.", "clear_filters": "Borrar filtros",
     "incoming": "Conexiones entrantes disponibles", "no_incoming": "Aún no hay conexiones entrantes", "selected": "{0} seleccionados", "errors": "Errores · {0}", "search": "Buscar un torrent", "alternative": "Límites alternativos"
   },
   "chrome": { "dark": "Cambiar al tema oscuro", "light": "Cambiar al tema claro", "english": "Idioma: español. Cambiar a inglés", "spanish": "Idioma: inglés. Cambiar a español" },
@@ -24,12 +24,11 @@
   "add": {
     "title": "Añadir torrent", "source": "Archivo torrent", "browse": "Examinar…", "destination": "Carpeta de descarga",
     "paused": "Iniciar en pausa", "submit": "Añadir", "submit_all": "Añadir todos", "cancel": "Cancelar", "preview": "{0} · {1}",
-    "pending": "Añadiendo…", "discard": "¿Descartar los cambios sin terminar?",
-    "discard_detail": "Sigue editando para conservar tus opciones.",
-    "discard_action": "Descartar", "keep": "Seguir editando", "remove_source": "Quitar fuente", "all_files": "Seleccionar todos los archivos",
+    "pending": "Añadiendo…", "remove_source": "Quitar fuente", "all_files": "Seleccionar todos los archivos",
     "sources": "{0} fuentes", "more_files": "Añadir archivos…", "magnet": "Enlace magnet", "paste": "Pegar", "review": "Obtener metadatos", "metadata": "Obteniendo metadatos…", "already_added": "Ya añadido", "merge": "Combinar nuevos rastreadores", "shared": "Otros torrents usan archivos en esta carpeta: {0}", "never_show": "No volver a mostrar", "no_files": "Selecciona al menos un archivo para añadir este torrent."
   },
   "status": { "unknown": "Desconocido", "downloading": "Descargando", "seeding": "Compartiendo", "paused": "En pausa", "all_paused": "Todos en pausa", "checking": "Comprobando", "queued": "En cola", "error": "Error", "completed": "Completado", "metadata": "Obteniendo metadatos", "moving": "Moviendo archivos" },
+  "changes": { "title": "¿Guardar los cambios?", "detail": "¿Quieres guardar los cambios antes de salir?", "save": "Guardar", "discard": "Descartar" },
   "units": { "bytes": "{0:N0} B", "kib": "{0:N1} KiB", "mib": "{0:N1} MiB", "gib": "{0:N1} GiB", "tib": "{0:N1} TiB", "rate": "{0}/s",
     "eta": "{0} min", "peers": "{0} / {1}"
   },
@@ -226,5 +225,5 @@
     "spanish": "Español"
   },
   "about": { "title": "Acerca de", "description": "Cliente de torrents para Windows", "version": "Versión {0}", "update": "Actualización disponible" },
-  "limits": { "download_limit": "Descarga (KiB/s)", "upload_limit": "Subida (KiB/s)", "alternative_download_limit": "Descarga alternativa (KiB/s)", "alternative_upload_limit": "Subida alternativa (KiB/s)", "units": "0 significa sin límite. Aplica los cambios a ambos grupos de límites a la vez.", "apply": "Aplicar" }
+  "limits": { "download_limit": "Descarga (KiB/s)", "upload_limit": "Subida (KiB/s)", "alternative_download_limit": "Descarga alternativa (KiB/s)", "alternative_upload_limit": "Subida alternativa (KiB/s)" }
 }

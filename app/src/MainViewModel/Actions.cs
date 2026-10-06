@@ -12,7 +12,6 @@ public sealed partial class MainViewModel
     private JsonElement _settings;
     private bool _receivingSources;
     private bool _sourcesPending;
-    public SpeedLimits Speed { get; }
     public bool AllPaused { get; private set; }
     public bool HasIncoming { get; private set; }
     public string MissingInterface { get; private set; } = string.Empty;
@@ -56,7 +55,6 @@ public sealed partial class MainViewModel
     public ICommand CopyHash { get; }
     public ICommand Properties { get; }
     public ICommand Limits { get; }
-    public event EventHandler? LimitsRequested;
     public event EventHandler? FilesRequested;
     public event EventHandler<Torrent[]>? RemoveRequested;
     public event EventHandler<Torrent[]>? MoveRequested;
@@ -66,8 +64,6 @@ public sealed partial class MainViewModel
 
     private bool Setting(string name, bool fallback) => _settings.ValueKind == JsonValueKind.Object &&
         _settings.TryGetProperty(name, out var value) ? value.GetBoolean() : fallback;
-    public double Limit(string name) => _settings.ValueKind == JsonValueKind.Object &&
-        _settings.TryGetProperty(name, out var value) ? value.GetInt32() / 1024.0 : 0;
 
     internal Torrent? Find(IEnumerable<string> hashes) => Torrents.FirstOrDefault(torrent =>
         torrent.Hashes.Intersect(hashes, StringComparer.OrdinalIgnoreCase).Any());
@@ -137,13 +133,15 @@ public sealed partial class MainViewModel
         catch (Exception error) { Report(error); }
     }
 
+    internal static bool IsValidLimit(double value) => double.IsFinite(value) && value >= 0 && value <= int.MaxValue / 1024.0;
+
     public async Task<IReadOnlyDictionary<string, int>> SaveLimits(IReadOnlyDictionary<string, double> values)
     {
-        if (!CanEdit) throw new InvalidOperationException(Message.Length > 0 ? Message : Text.Get("connection", "unavailable"));
+        if (!CanSave) throw new InvalidOperationException(Message.Length > 0 ? Message : Text.Get("connection", "unavailable"));
         var changes = new Dictionary<string, int>();
         foreach (var (name, value) in values)
         {
-            if (!double.IsFinite(value) || value < 0 || value > int.MaxValue / 1024.0)
+            if (!IsValidLimit(value))
                 throw new CommandFailure("invalid_limits", null, Text);
             changes[name] = checked((int)Math.Round(value * 1024));
         }

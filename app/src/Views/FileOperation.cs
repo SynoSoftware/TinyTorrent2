@@ -22,8 +22,9 @@ public sealed class FileOperation : INotifyPropertyChanged
     public FileAction Action { get; private set; }
     public bool IsPending { get; private set; }
     public bool HasDraft => Action == FileAction.Move && (Destination != _originalDestination || IncludeShared || UseExisting);
-    public bool CanSubmit => owner.CanEdit && !IsPending && _loaded &&
+    private bool CanSave => owner.CanSave && !IsPending && _loaded &&
         (Action == FileAction.Delete || HasDestination && (!HasShared || IncludeShared));
+    public bool CanSubmit => CanSave && !owner.IsClosing;
     public bool CanRefresh => owner.CanEdit && !IsPending;
     public bool IsMove => Action == FileAction.Move;
     public bool HasShared => _shared.Length > 0;
@@ -103,7 +104,7 @@ public sealed class FileOperation : INotifyPropertyChanged
 
     public async Task<bool> Submit()
     {
-        if (!CanSubmit) return false;
+        if (!CanSave) return false;
         IsPending = true;
         Refresh();
         try

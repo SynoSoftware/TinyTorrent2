@@ -163,11 +163,16 @@
             <TextBlock x:Name="TorrentError" TextWrapping="Wrap" Text="{x:Bind Model.TorrentError, Mode=OneWay}" Visibility="{x:Bind Model.HasTorrentError, Mode=OneWay}" />
             <Button Content="{x:Bind Model.UpdateText, Mode=OneWay}" Command="{x:Bind Model.OpenUpdate}" Visibility="{x:Bind Model.HasUpdate, Mode=OneWay}" />
             <Grid ColumnSpacing="12">
+                <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
                 <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                <TextBlock x:Name="Rates" Text="{x:Bind Model.Rates, Mode=OneWay}" VerticalAlignment="Center" TextWrapping="Wrap" />
+                <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                    <TextBlock Text="{x:Bind Model.DownloadText, Mode=OneWay}" MinWidth="170" />
+                    <TextBlock Text="{x:Bind Model.UploadText, Mode=OneWay}" MinWidth="170" />
+                    <TextBlock Text="{x:Bind Model.PausedText, Mode=OneWay}" />
+                </StackPanel>
                 <ToggleButton x:Name="Alternative" Grid.Column="1" IsChecked="{x:Bind Model.AlternativeLimits, Mode=TwoWay}" IsEnabled="{x:Bind Model.CanEdit, Mode=OneWay}"><TextBlock x:Name="AlternativeText" MaxWidth="160" TextWrapping="Wrap" /></ToggleButton>
                 <ToggleButton Grid.Column="2" Margin="12,0,0,0" Content="{x:Bind Model.ErrorCount, Mode=OneWay}" IsChecked="{x:Bind Model.ErrorsOnly, Mode=TwoWay}" />
-                <TextBlock Grid.Column="3" Text="{x:Bind Model.Incoming, Mode=OneWay}" ToolTipService.ToolTip="{x:Bind Model.Incoming, Mode=OneWay}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" TextAlignment="Right" />
+                <TextBlock x:Name="Incoming" Grid.Column="3" Text="{x:Bind Model.Incoming, Mode=OneWay}" ToolTipService.ToolTip="{x:Bind Model.Incoming, Mode=OneWay}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" TextAlignment="Right" />
             </Grid>
         </StackPanel>
     </Grid>

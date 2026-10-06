@@ -139,7 +139,8 @@ public sealed partial class MainViewModel
         yield return new(Text.Get("commands", "add_file"), application, SuggestionScope.Command, Add);
         yield return new(Text.Get("commands", "add_magnet"), application, SuggestionScope.Command, AddMagnet);
         yield return new(Text.Get("commands", AllPaused ? "resume_all" : "pause_all"), all, SuggestionScope.Command, AllPaused ? ResumeAll : PauseAll);
-        yield return PreferenceSuggestion(new(PreferenceSection.Transfers, "download_limit"), Text.Get("commands", "limits"));
+        yield return new(Text.Get("commands", "limits"), Text.Format("finding", "preference_detail", Text.Get("preferences", "transfers")),
+            SuggestionScope.Settings, Limits);
         yield return new(Text.Get("chrome", IsDark ? "light" : "dark"), application, SuggestionScope.Command, SwitchTheme);
         yield return new(Text.Get("commands", "exit"), application, SuggestionScope.Command, Exit);
         yield return new(RestartText, application, SuggestionScope.Command, Restart);

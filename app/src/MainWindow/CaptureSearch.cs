@@ -118,25 +118,53 @@ public sealed partial class MainWindow
         completed.Add("search-properties-settings");
 
         await ShowTorrents();
+        var rate = Model.Preferences.Fields.Single(field => field.Name == "download_limit");
+        var rateInput = rate.Input;
+        (bool Transfers, bool Focused) LimitsState()
+        {
+            if (_preferencesForm is not { } form) return (false, false);
+            var transfers = Model.Page == WindowPage.Preferences && CaptureElements(form).OfType<SelectorBar>()
+                .Single(control => control.Name == "Categories").SelectedItem?.Tag?.ToString() == "Transfers";
+            var editor = CaptureElements(form).OfType<NumberBox>().SingleOrDefault(control => ReferenceEquals(control.Tag, rate));
+            var focus = FocusManager.GetFocusedElement(Root.XamlRoot) as DependencyObject;
+            while (focus is not null && !ReferenceEquals(focus, editor)) focus = VisualTreeHelper.GetParent(focus);
+            return (transfers, editor is not null && focus is not null);
+        }
         var limits = Model.Text.Get("commands", "limits");
         list = await Open(limits, "search-limits-before");
         choice = await Choose(list, limits);
         await CaptureLayout();
         await CaptureUi("search-limits-after");
-        var transfers = Model.Page == WindowPage.Preferences && _limitsDialog is null && _preferencesForm is { } form &&
-            CaptureElements(form).OfType<SelectorBar>().Single(control => control.Name == "Categories")
-                .SelectedItem?.Tag?.ToString() == "Transfers";
-        outcomes.Add(new { journey = "speed limits result", choice.Submitted, transfers, page = Model.Page.ToString(),
-            speedDialogOpened = _limitsDialog is not null });
-        if (!choice.Submitted || !transfers) failures.Add("Speed limits does not navigate to the existing Transfers settings.");
-        if (_limitsDialog is { } dialog)
-        {
-            var closed = _limitsClosed?.Task ?? throw new InvalidOperationException("The speed dialog has no close completion.");
-            dialog.Hide();
-            await closed;
-        }
+        var limitsState = LimitsState();
+        var limitsRetained = rate.Input == rateInput && !rate.HasDraft && !rate.IsPending;
+        outcomes.Add(new { journey = "speed limits result", choice.Submitted, limitsState.Transfers, limitsState.Focused,
+            retained = limitsRetained, page = Model.Page.ToString(), field = rate.Name });
+        if (!choice.Submitted || !limitsState.Transfers || !limitsState.Focused || !limitsRetained)
+            failures.Add("Speed limits search does not focus the existing Transfers setting without changing it.");
         Search.IsSuggestionListOpen = false;
         completed.Add("search-limits");
+
+        await ShowTorrents();
+        var menuPeer = FrameworkElementAutomationPeer.CreatePeerForElement(TorrentMenu);
+        if (menuPeer.GetPattern(PatternInterface.ExpandCollapse) is not IExpandCollapseProvider expand)
+            throw new InvalidOperationException("The Torrent menu does not expose native expansion.");
+        expand.Expand();
+        await CaptureLayout();
+        await CaptureUi("search-menu-limits-before");
+        var menu = TorrentMenu.Items.OfType<MenuFlyoutItem>().Single(item => item.Command == Model.Limits);
+        var itemPeer = FrameworkElementAutomationPeer.CreatePeerForElement(menu);
+        if (itemPeer.GetPattern(PatternInterface.Invoke) is not IInvokeProvider invoke)
+            throw new InvalidOperationException("The Speed limits menu item does not expose native Invoke.");
+        invoke.Invoke();
+        await CaptureLayout();
+        await CaptureUi("search-menu-limits-after");
+        var menuState = LimitsState();
+        var menuRetained = rate.Input == rateInput && !rate.HasDraft && !rate.IsPending;
+        outcomes.Add(new { journey = "speed limits menu", menuState.Transfers, menuState.Focused,
+            retained = menuRetained, page = Model.Page.ToString(), field = rate.Name });
+        if (!menuState.Transfers || !menuState.Focused || !menuRetained)
+            failures.Add("Speed limits menu does not focus the same Transfers setting as Search without changing it.");
+        completed.Add("search-menu-limits");
 
         await ShowTorrents();
         var port = Model.Preferences.Port;

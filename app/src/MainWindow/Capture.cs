@@ -24,7 +24,7 @@ public sealed partial class MainWindow
 {
     private string? _captureDirectory;
     private Task? _capture;
-    internal static bool IsCaptureReview => Environment.GetEnvironmentVariable("TINYTORRENT_CAPTURE_REVIEW") is "1" or "smoke" or "shell" or "schedule" or "desktop" or "details" or "details-files" or "files" or "files-layout" or "search" or "library" or "traffic";
+    internal static bool IsCaptureReview => Environment.GetEnvironmentVariable("TINYTORRENT_CAPTURE_REVIEW") is "1" or "smoke" or "shell" or "schedule" or "desktop" or "details" or "details-files" or "files" or "files-layout" or "search" or "library" or "traffic" or "edits";
 
     internal void ShowCaptureReview()
     {
@@ -204,36 +204,17 @@ public sealed partial class MainWindow
         await CaptureReady(Model.Inspector, () => !Model.Inspector.IsLoading && Model.Inspector.Pieces is not null);
         await CapturePage("pieces", InspectorContent.Content as FrameworkElement);
         Model.CloseInspector();
-        var closed = ShowLimits();
+        Run(Model.Limits);
         await CaptureLayout();
-        var dialog = _limitsDialog ?? throw new InvalidOperationException("The limits dialog did not open.");
-        try
-        {
-            var number = CaptureElements(dialog).OfType<NumberBox>().First();
-            var input = CaptureElements(number).OfType<TextBox>().First();
-            input.Focus(FocusState.Programmatic);
-            input.Text = "abc";
-            await CaptureLayout();
-            if (Model.Speed.Choices[0].Input != "abc")
-                throw new InvalidOperationException($"The limits owner did not retain typed input: {Model.Speed.Choices[0].Input}; editor: {input.Text}.");
-            CaptureInvoke(dialog);
-            try { await CaptureReady(Model.Speed, () => Model.Speed.HasError || _limitsDialog is null); }
-            catch (TimeoutException)
-            {
-                throw new InvalidOperationException($"Apply did not report the input outcome: owner={Model.Speed.Choices[0].Input}, editor={input.Text}, enabled={dialog.IsPrimaryButtonEnabled}.");
-            }
-            if (_limitsDialog is null) throw new InvalidOperationException("Apply closed the limits dialog with invalid input.");
-            if (Model.Speed.Choices[0].Input != "abc" || input.Text != "abc")
-                throw new InvalidOperationException("The limits editor lost the rejected input.");
-            outcomes.Add(new { journey = "invalid speed limit", rejectedInputRetained = true, dialogStayedOpen = true });
-            await CapturePage("invalid-limit", dialog.Content as FrameworkElement);
-        }
-        finally { dialog.Hide(); await closed; }
+        await CapturePage("speed-limits-settings", _preferencesForm);
+        outcomes.Add(new { journey = "speed limits settings", page = Model.Page.ToString(),
+            scope = "Canonical Transfers settings; the obsolete modal Apply/invalid-input scenario is removed." });
+        await ShowTorrents();
 
         Model.Draft.EditingMagnet = true;
-        closed = ShowAdd();
+        var closed = ShowAdd();
         await CaptureLayout();
-        dialog = _addDialog ?? throw new InvalidOperationException("The Add dialog did not open.");
+        var dialog = _addDialog ?? throw new InvalidOperationException("The Add dialog did not open.");
         try
         {
             Model.Draft.Magnet = "invalid magnet";
@@ -497,6 +478,21 @@ public sealed partial class MainWindow
         }
         outcomes.Add(new { journey = "Exit with unfinished magnet", prompts = 12, inputRetained = true, addFormRecovered = true, engineConnected = Model.IsConnected });
         await CapturePage("desktop-kept-magnet", dialog.Content as FrameworkElement);
+        input.Focus(FocusState.Programmatic);
+        Run(Model.Exit);
+        await CaptureReady(Model, () => _closePrompt is not null);
+        await CapturePage("desktop-exit-save-invalid");
+        CaptureInvoke(_closePrompt ?? throw new InvalidOperationException("Exit did not retain its Save prompt."));
+        await CaptureReady(Model, () => !Model.IsClosing && Model.CanEdit && _addDialog is not null && Model.Draft.HasMagnetError);
+        await CaptureLayout();
+        dialog = _addDialog ?? throw new InvalidOperationException("Failed Save did not recover the Add form.");
+        input = CaptureElements(dialog).OfType<TextBox>().Single(control => control.Name == "MagnetInput");
+        if (input.Text != magnet || Model.Draft.Magnet != magnet || !Model.Draft.HasChanges ||
+            !ReferenceEquals(FocusManager.GetFocusedElement(Root.XamlRoot), input))
+            throw new InvalidOperationException("Failed Save lost the unfinished magnet or its editor focus.");
+        await CapturePage("desktop-exit-save-failed", dialog.Content as FrameworkElement);
+        outcomes.Add(new { journey = "Exit Save with invalid magnet", errorRetained = true, inputRetained = true,
+            addFormRecovered = true, focusRetained = true, engineConnected = Model.IsConnected });
         var closed = _dialogClosed?.Task ?? throw new InvalidOperationException("The recovered Add dialog has no close completion.");
         CaptureInvoke(CaptureElements(dialog).OfType<Button>().Single(control => control.Name == "CloseButton"));
         await closed;
@@ -690,6 +686,11 @@ public sealed partial class MainWindow
                 return;
             }
             var target = Model.Torrents.FirstOrDefault() ?? throw new InvalidOperationException("The review store has no torrent.");
+            if (Environment.GetEnvironmentVariable("TINYTORRENT_CAPTURE_REVIEW") == "edits")
+            {
+                await CaptureEdits(target, outcomes, completed);
+                return;
+            }
             if (Environment.GetEnvironmentVariable("TINYTORRENT_CAPTURE_REVIEW") == "traffic")
             {
                 await CaptureTraffic(target, outcomes, completed);
@@ -788,7 +789,10 @@ public sealed partial class MainWindow
                     await ShowAbout();
                     await CapturePage(prefix + "about");
                     await ShowTorrents();
-                    await CaptureDialog(prefix + "limits", () => ShowLimits(), () => _limitsDialog);
+                    Run(Model.Limits);
+                    await CaptureLayout();
+                    await CapturePage(prefix + "limits-settings", _preferencesForm);
+                    await ShowTorrents();
                     await CaptureDialog(prefix + "remove", () => ConfirmRemove([target]), () => _removeDialog);
                     await CaptureDialog(prefix + "move", () => ShowFiles([target], FileAction.Move), () => _filesDialog);
                     await CaptureDialog(prefix + "delete", () => ShowFiles([target], FileAction.Delete), () => _filesDialog);
