@@ -20,6 +20,7 @@
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
                 <ColumnDefinition x:Name="RightInset" Width="0" />
             </Grid.ColumnDefinitions>
             <Image x:Name="AppIcon" Grid.Column="1" Width="24" Height="24" Margin="16,0,8,0" AutomationProperties.AccessibilityView="Raw">
@@ -28,11 +29,7 @@
             <MenuBar x:Name="Menus" Grid.Column="2" Padding="0" VerticalAlignment="Center">
                 <MenuBarItem x:Name="FileMenu" />
                 <MenuBarItem x:Name="TorrentMenu" />
-                <MenuBarItem x:Name="ViewMenu">
-                    <ToggleMenuFlyoutItem x:Name="FiltersItem" Text="{x:Bind Model.FilterLabel, Mode=OneWay}" IsChecked="{x:Bind Model.IsFilterOpen, Mode=TwoWay}">
-                        <ToggleMenuFlyoutItem.Icon><FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Funnel}" /></ToggleMenuFlyoutItem.Icon>
-                    </ToggleMenuFlyoutItem>
-                </MenuBarItem>
+                <MenuBarItem x:Name="ViewMenu" />
                 <MenuBarItem x:Name="HelpMenu" />
             </MenuBar>
             <Grid x:Name="SearchArea" Grid.Column="3" Margin="24,0" VerticalAlignment="Center">
@@ -41,7 +38,16 @@
                     <AutoSuggestBox.ItemTemplate><DataTemplate x:DataType="local:Suggestion"><StackPanel Spacing="2" Margin="0,4"><TextBlock Text="{x:Bind Label}" TextWrapping="Wrap" /><TextBlock Text="{x:Bind Detail}" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" /></StackPanel></DataTemplate></AutoSuggestBox.ItemTemplate>
                 </AutoSuggestBox>
             </Grid>
-            <Button x:Name="ThemeButton" Grid.Column="4" Margin="0,0,12,0"
+            <StackPanel x:Name="AddButtons" Grid.Column="4" Orientation="Horizontal">
+                <Button x:Name="AddButton" Style="{StaticResource TinyTorrentCaptionButtonStyle}" Command="{x:Bind Model.Add}">
+                    <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.FilePlus}" FontSize="16" />
+                </Button>
+                <Button x:Name="MagnetButton" Style="{StaticResource TinyTorrentCaptionButtonStyle}" Command="{x:Bind Model.AddMagnet}">
+                    <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Link}" FontSize="16" />
+                </Button>
+                <Border Width="1" Height="16" Margin="8,0" VerticalAlignment="Center" Background="{ThemeResource DividerStrokeColorDefaultBrush}" />
+            </StackPanel>
+            <Button x:Name="ThemeButton" Grid.Column="5"
                 Style="{StaticResource TinyTorrentCaptionButtonStyle}" Command="{x:Bind Model.SwitchTheme}">
                 <FontIcon x:Name="ThemeIcon" FontFamily="{x:Bind icons:Lucide.Font}" FontSize="16" />
             </Button>
@@ -58,11 +64,11 @@
             <SplitView.Pane>
                 <Grid RowSpacing="8" Padding="8,8,8,0" KeyDown="OnFiltersKey">
                     <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
-                    <Grid ColumnSpacing="8"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock x:Name="FiltersTitle" Margin="8,0" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center" /><Button x:Name="FiltersClose" Grid.Column="1" Click="OnFiltersClose" /></Grid>
+                    <Grid ColumnSpacing="8"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock x:Name="FiltersTitle" Margin="8,0" Style="{StaticResource GroupTitleTextStyle}" /><Button Style="{StaticResource SubtleButtonStyle}" x:Name="FiltersClose" Grid.Column="1" Click="OnFiltersClose" /></Grid>
                     <ListView x:Name="Filters" Grid.Row="1" SelectionMode="Single" SelectionChanged="OnFilterChanged">
                         <ListView.ItemTemplate><DataTemplate x:DataType="local:FilterChoice"><Grid ColumnSpacing="8"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="{x:Bind Label, Mode=OneWay}" TextWrapping="Wrap" /><TextBlock Grid.Column="1" Text="{x:Bind Count, Mode=OneWay}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" /></Grid></DataTemplate></ListView.ItemTemplate>
                     </ListView>
-                    <Button x:Name="ClearFiltersButton" Grid.Row="2" Margin="8" Command="{x:Bind Model.ClearFilters}" HorizontalAlignment="Stretch" />
+                    <controls:ActionButton x:Name="ClearFiltersButton" Glyph="{x:Bind icons:Lucide.FunnelX}" Grid.Row="2" Margin="8" Command="{x:Bind Model.ClearFilters}" HorizontalAlignment="Stretch" />
                 </Grid>
             </SplitView.Pane>
             <Grid x:Name="TorrentWorkspace" Background="Transparent">
@@ -73,7 +79,7 @@
                     <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="420" Margin="24" Spacing="12">
                         <TextBlock x:Name="EmptyTitle" Text="{x:Bind Model.EmptyTitle, Mode=OneWay}" Style="{StaticResource SubtitleTextBlockStyle}" TextAlignment="Center" />
                         <TextBlock x:Name="EmptyInstruction" Text="{x:Bind Model.EmptyInstruction, Mode=OneWay}" TextWrapping="Wrap" TextAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                        <Button x:Name="EmptyAdd" Content="{x:Bind Model.EmptyActionText, Mode=OneWay}" HorizontalAlignment="Center" Command="{x:Bind Model.EmptyAction, Mode=OneWay}" />
+                        <controls:ActionButton Glyph="{x:Bind Model.EmptyActionGlyph, Mode=OneWay}" ToolTipService.ToolTip="{x:Bind Model.EmptyActionToolTip, Mode=OneWay}" x:Name="EmptyAdd" Text="{x:Bind Model.EmptyActionText, Mode=OneWay}" HorizontalAlignment="Center" Command="{x:Bind Model.EmptyAction, Mode=OneWay}" />
                     </StackPanel>
                 </Grid>
             </table:Table.EmptyContent>
@@ -131,7 +137,7 @@
                 </table:Column>
             </table:Table.Columns>
         </table:Table>
-        <controls:InspectorSplit x:Name="Split" Grid.Row="1" Visibility="{x:Bind Model.HasInspector, Mode=OneWay}" />
+        <controls:Splitter x:Name="Split" Grid.Row="1" Visibility="{x:Bind Model.HasInspector, Mode=OneWay}" />
         <Grid Grid.Row="2" Visibility="{x:Bind Model.HasInspector, Mode=OneWay}" BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}" BorderThickness="0,1,0,0">
             <ContentControl x:Name="InspectorContent" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
         </Grid>
@@ -143,34 +149,43 @@
                 <Image Width="64" Height="64" Margin="0,0,0,8" HorizontalAlignment="Left" AutomationProperties.AccessibilityView="Raw">
                     <Image.Source><SvgImageSource UriSource="ms-appx:///Assets/tinyTorrent.svg" /></Image.Source>
                 </Image>
-                <TextBlock Text="{x:Bind Model.AboutTitle, Mode=OneWay}" Style="{StaticResource TitleTextBlockStyle}" TextWrapping="Wrap" />
+                <TextBlock Text="{x:Bind Model.AboutTitle, Mode=OneWay}" Style="{StaticResource PageTitleTextStyle}" />
                 <TextBlock Text="{x:Bind Model.AboutDescription, Mode=OneWay}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
                 <TextBlock Text="{x:Bind Model.VersionText, Mode=OneWay}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
             </StackPanel>
         </ScrollViewer>
             </Grid>
+        <InfoBar x:Name="Feedback" Grid.Row="1" VerticalAlignment="Bottom" Margin="16,0,16,8" IsClosable="False" Severity="{x:Bind Model.Severity, Mode=OneWay}" Message="{x:Bind Model.Message, Mode=OneWay}" IsOpen="{x:Bind Model.HasFeedback, Mode=OneWay}" Visibility="{x:Bind Model.HasFeedback, Mode=OneWay}">
+            <InfoBar.ActionButton><controls:ActionButton Glyph="{x:Bind icons:Lucide.RotateCcw}" ToolTipService.ToolTip="{x:Bind Model.Text.Get('connection', 'restart_tip'), Mode=OneWay}" AutomationProperties.AutomationId="Restart" Text="{x:Bind Model.RestartText, Mode=OneWay}" Command="{x:Bind Model.Restart}" Visibility="{x:Bind Model.CanRestart, Mode=OneWay}" /></InfoBar.ActionButton>
+        </InfoBar>
         <StackPanel Grid.Row="2" Margin="16,8,16,12" Spacing="4">
             <TextBlock Text="{x:Bind Model.FilterLabel, Mode=OneWay}" Visibility="{x:Bind Model.HasFilter, Mode=OneWay}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-            <InfoBar x:Name="Feedback" IsClosable="False" Severity="{x:Bind Model.Severity, Mode=OneWay}" Message="{x:Bind Model.Message, Mode=OneWay}" IsOpen="{x:Bind Model.HasFeedback, Mode=OneWay}" Visibility="{x:Bind Model.HasFeedback, Mode=OneWay}">
-                <InfoBar.ActionButton><Button AutomationProperties.AutomationId="Restart" Content="{x:Bind Model.RestartText, Mode=OneWay}" Command="{x:Bind Model.Restart}" Visibility="{x:Bind Model.CanRestart, Mode=OneWay}" /></InfoBar.ActionButton>
-            </InfoBar>
             <InfoBar Severity="Error" IsClosable="True" CloseButtonClick="OnDismissError"
                 Message="{x:Bind Model.CommandError, Mode=OneWay}" IsOpen="{x:Bind Model.HasCommandError, Mode=OneWay}"
                 Visibility="{x:Bind Model.HasCommandError, Mode=OneWay}" />
             <TextBlock x:Name="TorrentError" TextWrapping="Wrap" Text="{x:Bind Model.TorrentError, Mode=OneWay}" Visibility="{x:Bind Model.HasTorrentError, Mode=OneWay}" />
-            <Button Content="{x:Bind Model.UpdateText, Mode=OneWay}" Command="{x:Bind Model.OpenUpdate}" Visibility="{x:Bind Model.HasUpdate, Mode=OneWay}" />
-            <Grid ColumnSpacing="12">
-                <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
-                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
-                    <TextBlock Text="{x:Bind Model.DownloadText, Mode=OneWay}" Width="170" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{x:Bind Model.DownloadText, Mode=OneWay}" />
-                    <TextBlock Text="{x:Bind Model.UploadText, Mode=OneWay}" Width="170" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{x:Bind Model.UploadText, Mode=OneWay}" />
-                    <TextBlock Text="{x:Bind Model.PausedText, Mode=OneWay}" />
+            <controls:ActionButton Glyph="{x:Bind icons:Lucide.CircleFadingArrowUp}" ToolTipService.ToolTip="{x:Bind Model.Text.Get('about', 'update_tip'), Mode=OneWay}" Text="{x:Bind Model.UpdateText, Mode=OneWay}" Command="{x:Bind Model.OpenUpdate}" Visibility="{x:Bind Model.HasUpdate, Mode=OneWay}" />
+            <Grid x:Name="StatusBar" ColumnSpacing="12">
+                <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                <StackPanel x:Name="Rates" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                    <TextBlock x:Name="DownloadRate" Text="{x:Bind Model.DownloadText, Mode=OneWay}" />
+                    <TextBlock x:Name="UploadRate" Text="{x:Bind Model.UploadText, Mode=OneWay}" />
                 </StackPanel>
-                <ToggleButton x:Name="Alternative" Grid.Column="1" IsChecked="{x:Bind Model.AlternativeLimits, Mode=TwoWay}" IsEnabled="{x:Bind Model.CanEdit, Mode=OneWay}"><TextBlock x:Name="AlternativeText" MaxWidth="160" TextWrapping="Wrap" /></ToggleButton>
-                <ToggleButton Grid.Column="2" Margin="12,0,0,0" Content="{x:Bind Model.ErrorCount, Mode=OneWay}" IsChecked="{x:Bind Model.ErrorsOnly, Mode=TwoWay}" />
-                <TextBlock x:Name="Incoming" Grid.Column="3" Text="{x:Bind Model.Incoming, Mode=OneWay}" ToolTipService.ToolTip="{x:Bind Model.Incoming, Mode=OneWay}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" TextAlignment="Right" />
+                <StackPanel x:Name="StatusActions" Grid.Column="1" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                    <TextBlock Text="{x:Bind Model.PausedText, Mode=OneWay}" />
+                    <ToggleButton x:Name="Alternative" IsChecked="{x:Bind Model.AlternativeLimits, Mode=TwoWay}" IsEnabled="{x:Bind Model.CanEdit, Mode=OneWay}"><TextBlock x:Name="AlternativeText" MaxWidth="160" TextWrapping="Wrap" /></ToggleButton>
+                    <ToggleButton Content="{x:Bind Model.ErrorCount, Mode=OneWay}" IsChecked="{x:Bind Model.ErrorsOnly, Mode=TwoWay}" />
+                </StackPanel>
+                <TextBlock x:Name="Incoming" Grid.Column="2" Text="{x:Bind Model.Incoming, Mode=OneWay}" ToolTipService.ToolTip="{x:Bind Model.Incoming, Mode=OneWay}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" TextAlignment="Right" />
             </Grid>
         </StackPanel>
+        <InfoBar x:Name="CompletionNotice" Grid.Row="1" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="16" MaxWidth="560"
+            Severity="Success" IsClosable="True" IsOpen="False" Visibility="Collapsed" CloseButtonClick="OnDismissCompletion"
+            Message="{x:Bind Model.CompletionText, Mode=OneWay}">
+            <InfoBar.ActionButton><controls:ActionButton Glyph="{x:Bind icons:Lucide.FolderOpen}" Text="{x:Bind Model.Text.Get('notifications', 'open_folder'), Mode=OneWay}"
+                ToolTipService.ToolTip="{x:Bind Model.CompletionTip, Mode=OneWay}" AutomationProperties.Name="{x:Bind Model.CompletionTip, Mode=OneWay}"
+                Command="{x:Bind Model.OpenCompletion}" /></InfoBar.ActionButton>
+        </InfoBar>
     </Grid>
 </Window>

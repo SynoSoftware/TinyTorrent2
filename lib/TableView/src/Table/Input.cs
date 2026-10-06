@@ -1205,20 +1205,12 @@ public sealed partial class Table
     /// removes the container holding focus it rescues focus itself, and it hands the leaving
     /// element's own focus state to whatever it lands on. That target is not scoped to this
     /// control, so focus can leave the table entirely: measured here, a sort with a focused row
-    /// left focus on the host page's own Clear button. Restoring from the captured state puts it
-    /// back on the row the table says is current.
+    /// left focus on the host page's own Clear button. Restore the retained physical row when
+    /// available, otherwise the selection's logical focus.
     /// </remarks>
-    private void RestoreRowFocus(FocusState was)
+    private void RestoreRowFocus(FocusState state, object? row = null)
     {
-        if (was != FocusState.Unfocused)
-        {
-            FocusCurrentRow(was);
-        }
-    }
-
-    private void FocusCurrentRow(FocusState state, object? row = null)
-    {
-        if ((row ?? _selection.Focus) is not object item || _itemsView is null)
+        if (state == FocusState.Unfocused || (row ?? _selection.Focus) is not object item || _itemsView is null)
         {
             return;
         }

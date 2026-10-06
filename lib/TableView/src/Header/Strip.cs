@@ -1,6 +1,7 @@
 using Microsoft.UI.Input;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
+using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
@@ -18,6 +19,15 @@ namespace Syno.TableView.Header;
 /// </summary>
 public sealed partial class Strip : Control
 {
+    protected override AutomationPeer OnCreateAutomationPeer() => new Peer(this);
+
+    private sealed class Peer(Strip strip) : FrameworkElementAutomationPeer(strip)
+    {
+        protected override AutomationControlType GetAutomationControlTypeCore() => AutomationControlType.Header;
+        protected override AutomationOrientation GetOrientationCore() => AutomationOrientation.Horizontal;
+        protected override bool IsContentElementCore() => false;
+    }
+
     private const string ClipPartName = "PART_Clip";
     private const string PanelPartName = "PART_HeaderPanel";
     private const string InsertionMarkerPartName = "PART_ColumnInsertionMarker";
@@ -754,13 +764,13 @@ public sealed partial class Strip : Control
     private bool ActivateSortFrom(DependencyObject? source)
     {
         Cell? cell = FindCell(source, out bool passive);
-        if (_owner is null || !passive || ColumnOf(cell) is not ResolvedColumn column
+        if (_owner is null || cell is null || !passive || ColumnOf(cell) is not ResolvedColumn column
             || !column.Column.CanSort)
         {
             return false;
         }
 
-        _owner.ActivateSort(column);
+        cell.ActivateSort();
         return true;
     }
 

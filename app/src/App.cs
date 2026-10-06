@@ -43,8 +43,10 @@ public partial class App : Application
             _instance.Dispose();
             Exit();
         };
-        if (MainWindow.IsCaptureReview) _window.ShowCaptureReview();
-        else _window.Activate();
+#if CAPTURE
+        if (MainWindow.IsCaptureReview) { _window.ShowCaptureReview(); return; }
+#endif
+        _window.Activate();
     }
 
     [DllImport("shell32.dll", CharSet = CharSet.Unicode)]

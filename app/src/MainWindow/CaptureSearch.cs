@@ -17,7 +17,7 @@ public sealed partial class MainWindow
         var baseline = Environment.GetEnvironmentVariable("TINYTORRENT_CAPTURE_SEARCH_BASELINE") == "1";
         Model.SelectLanguage("en");
         await CaptureReady(Model, () => Model.CanClose && Model.Text.Language == "en");
-        await Model.SelectTheme("light");
+        await Model.Preferences.SelectTheme("light");
         await CaptureReady(Model, () => Model.CanClose && Model.Theme == "light");
         var scale = Root.XamlRoot.RasterizationScale;
         var minimum = ((Microsoft.UI.Windowing.OverlappedPresenter)AppWindow.Presenter).PreferredMinimumWidth ?? 0;
@@ -44,7 +44,7 @@ public sealed partial class MainWindow
             foreach (var language in new[] { "en", "es" })
             foreach (var theme in new[] { "light", "dark" })
             {
-                await Model.SelectTheme(theme);
+                await Model.Preferences.SelectTheme(theme);
                 await CaptureReady(Model, () => Model.CanClose && Model.Theme == theme);
                 Model.SelectLanguage(language);
                 await CaptureReady(Model, () => Model.CanClose && Model.Text.Language == language);

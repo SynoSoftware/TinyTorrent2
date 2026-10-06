@@ -36,6 +36,7 @@ public sealed partial class InspectorForm : UserControl
         var sections = new[] { GeneralSection, FilesSection, PeersSection, TrackersSection, SpeedSection, PiecesSection };
         for (var index = 0; index < sections.Length; index++) sections[index].Tag = (InspectorSection)index;
         Sections.SelectedItem = sections[(int)model.Section];
+        for (var index = 0; index < Ranges.Items.Count; index++) Ranges.Items[index].Tag = (SpeedRange)index;
         Peers.Schema<Peer>().Key(peer => peer.Endpoint).SortKey(EndpointColumn, peer => peer.Endpoint)
             .SortKey(ClientColumn, peer => peer.Client).SortKey(ConnectionColumn, peer => peer.ConnectionText)
             .SortKey(PeerProgressColumn, peer => peer.Progress).SortKey(PeerDownColumn, peer => peer.DownloadRate)
@@ -46,28 +47,34 @@ public sealed partial class InspectorForm : UserControl
             .SortKey(SeedsColumn, tracker => tracker.Seeds).SortKey(LeechersColumn, tracker => tracker.Leechers)
             .SortKey(CompletedColumn, tracker => tracker.Downloaded).SortKey(NextColumn, tracker => tracker.NextAnnounce)
             .SortKey(MessageColumn, tracker => tracker.Message);
-        Loaded += (_, _) => { Model.TextChanged += OnText; Model.PropertyChanged += OnModel; RefreshText(); Refresh(); };
-        Unloaded += (_, _) => { Model.TextChanged -= OnText; Model.PropertyChanged -= OnModel; Map.Show(null, Model.Text); };
+        Loaded += (_, _) => { Model.TextChanged += OnText; Model.PropertyChanged += OnModel; Model.RowsUpdated += OnRows; RefreshText(); Refresh(); };
+        Unloaded += (_, _) => { Model.TextChanged -= OnText; Model.PropertyChanged -= OnModel; Model.RowsUpdated -= OnRows; Map.Show(null, Model.Text); };
         RefreshText();
         Refresh();
     }
 
     private void OnText(object? sender, EventArgs args) => RefreshText();
+
+    internal Control Recover()
+    {
+        Model.Select(Model.IsEditingTrackers ? InspectorSection.Trackers : InspectorSection.Files);
+        return Model.IsEditingTrackers ? TrackerInput : RetryFiles;
+    }
     public static bool Not(bool value) => !value;
     public static Visibility Hidden(bool value) => value ? Visibility.Collapsed : Visibility.Visible;
-    private void OnModel(object? sender, PropertyChangedEventArgs args)
+    private void OnRows(object? sender, InspectorSection section)
     {
-        if (args.PropertyName == nameof(Inspector.Peers)) Peers.RefreshView();
-        if (args.PropertyName == nameof(Inspector.Trackers)) TrackerTable.RefreshView();
-        Refresh();
+        if (section == InspectorSection.Peers) Peers.RefreshView();
+        else if (section == InspectorSection.Trackers) TrackerTable.RefreshView();
     }
+    private void OnModel(object? sender, PropertyChangedEventArgs args) => Refresh();
     private void OnSection(SelectorBar sender, SelectorBarSelectionChangedEventArgs args)
     {
         if (!_refreshing && sender.SelectedItem is { Tag: InspectorSection section }) Model.Select(section);
     }
-    private void OnRange(object sender, SelectionChangedEventArgs args)
+    private void OnRange(SelectorBar sender, SelectorBarSelectionChangedEventArgs args)
     {
-        if (!_refreshing) Model.IsDay = ReferenceEquals(Range.SelectedItem, Day);
+        if (!_refreshing && sender.SelectedItem is { Tag: SpeedRange range }) Model.Range = range;
     }
 
     private void Refresh()
@@ -77,7 +84,7 @@ public sealed partial class InspectorForm : UserControl
             views[index].Visibility = index == (int)Model.Section ? Visibility.Visible : Visibility.Collapsed;
         _refreshing = true;
         Sections.SelectedItem = Sections.Items.First(item => Equals(item.Tag, Model.Section));
-        Range.SelectedItem = Model.IsDay ? Day : FiveMinutes;
+        Ranges.SelectedItem = Ranges.Items.First(item => Equals(item.Tag, Model.Range));
         _refreshing = false;
         Map.Show(Model.Pieces, Model.Text);
         if (_editing != Model.IsEditingTrackers)
@@ -126,9 +133,6 @@ public sealed partial class InspectorForm : UserControl
         CompletedColumn.DisplayName = text.Get("trackers", "completed");
         NextColumn.DisplayName = text.Get("trackers", "next");
         MessageColumn.DisplayName = text.Get("trackers", "message");
-        AutomationProperties.SetName(FiveMinutes, MinutesLabel.Text);
-        AutomationProperties.SetName(Day, DayLabel.Text);
-        AutomationProperties.SetName(Range, text.Get("speed", "range"));
         Graph.RefreshText(text);
         _files.RefreshText();
         Peers.RefreshView();

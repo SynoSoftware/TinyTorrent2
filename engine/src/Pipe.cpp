@@ -41,6 +41,10 @@ bool Transfer(Io const& io, void* buffer, DWORD size, bool writing)
         }
         OVERLAPPED operation{};
         operation.hEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+        if (!operation.hEvent)
+        {
+            return false;
+        }
         DWORD transferred = 0;
         bool success = writing ? WriteFile(io.handle, bytes, size, &transferred, &operation)
                                : ReadFile(io.handle, bytes, size, &transferred, &operation);
@@ -143,6 +147,10 @@ std::wstring Pipe::Name(std::wstring const& sid)
 Pipe::Pipe(std::wstring const& sid, SECURITY_ATTRIBUTES& security, Json hello, Dispatch dispatch)
     : hello_(std::move(hello)), dispatch_(std::move(dispatch))
 {
+    if (!stop_)
+    {
+        throw std::runtime_error("Cannot create the pipe stop event: " + std::to_string(GetLastError()));
+    }
     auto name = Name(sid);
     for (DWORD index = 0; index != instances; ++index)
     {

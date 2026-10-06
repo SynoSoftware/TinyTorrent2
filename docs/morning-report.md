@@ -1,5 +1,175 @@
 # Morning report
 
+## Notification preferences and whole-tree checkpoint — 2026-10-06
+
+The owner requested the whole diff be committed before continuing. This checkpoint
+includes the owner's concurrent shared-control, Add, inspector, table automation,
+download-order and build changes, plus the earlier header corrections below.
+It is not release approval of every feature in that combined diff.
+
+Issue #130 now has three General notification switches: problems default on,
+finished and added default off. Existing saved `notifications_enabled` choices
+are preserved. Open-window notices use the existing pipe and persistent error
+feedback; completion has a bounded overlay with the existing Open folder action.
+It waits during editing and pauses its timeout on hover or focus. Windows notices
+use the tray only with the window closed and the appropriate switch enabled.
+The tray tooltip includes the error count; its error icon respects the problem
+switch. Pending tray bursts retain bounded failure and completion counts when
+the window opens. No notification history or competing folder command was added.
+
+Source review found and corrected dropped burst counts and generic errors being
+described as stopped torrents. The correction review reports no remaining
+finding in that scope. The updated owner rulings are preserved: the new hint is
+a tooltip/accessibility description, the action uses a one-word label with its
+folder icon and full accessible name, and shared InfoBar messages trim on one
+line with full text available to selection and tooltips. Existing Settings help
+text elsewhere remains a separate contract mismatch; these accepted cards were
+not restyled.
+
+- Engine: `artifacts/notifications-engine-final.log`, 34.80 seconds, zero
+  warnings/errors. Its 25 translation units follow the shared Engine.h change;
+  no PCH or dependencies were rebuilt.
+- App: `artifacts/notifications-app-reviewed.log`, 56.56 seconds, zero
+  warnings/errors. Only the app compiled through WinUI's generated-XAML passes;
+  Lucide and TableView compilation stayed up to date.
+- A later owner FileBrowser edit was included in the staged snapshot. Its app
+  compilation passed in `artifacts/whole-tree-checkpoint-build.log`, but the
+  reopened window locked the executable copy. The window was closed normally;
+  its existing background engine was left running. The retry,
+  `artifacts/whole-tree-checkpoint-copy.log`, encountered still newer, unstaged
+  FileBrowser edits in progress and failed XAML compilation (`Indent` and
+  `HasFolders` bindings). Those later FileBrowser and search edits are preserved
+  outside this checkpoint. Do not describe this changing working tree as built
+  or reuse its incomplete output as verified. The notification captures above
+  and engine checks concern their recorded candidates.
+- SettingsPolicy passed in `artifacts/evidence/SettingsPolicy-667eeac4-3bbd-46a0-821d-2e55f5e83710`.
+  The added assertions protect notification defaults and saved choices after
+  restart; compiler and visual review cannot establish persistence.
+- FilesSafety passed in `artifacts/evidence/FilesSafety-dc531f95-0aff-4dfd-a688-0850e12859cc`.
+  CheckpointRetry passed in `artifacts/evidence/CheckpointRetry-8df91431-6521-427b-81c3-d2d8616b9a08`.
+  Both ran once after the last engine change. No full suite or transfer check ran.
+- Before: `artifacts/evidence/UiSelfCapture-ee7bd093-d5b5-495e-9bb8-5ef48537d001`.
+  Final: `artifacts/evidence/UiSelfCapture-c79fdb87-183f-42a2-b443-43954f3344cb`.
+  All twelve EN/ES, Light/Dark, requested-size cases passed in 27.638 seconds.
+  A native switch committed and restored its value; completion feedback hid
+  during Search editing, returned afterward and dismissed on timeout.
+  Completion was simulated through the production UI handler, not downloaded.
+- The review-owned UI and engine exited. Generated-output scans found nothing
+  outside artifacts; Everything was available for the final checks.
+
+Remaining evidence: actual Windows balloon delivery/suppression and tray error
+icon, a live completed-download notice through the pipe, physical Open folder,
+hover/focus timeout suspension, High Contrast and Narrator. Requested720 still
+clamps to the existing 837 EN / 863 ES client minimum; this is not exact720 proof.
+The independent visual gate reviewed Notifications and completion in all twelve
+cases and found zero counted defects. Long torrent names, physical input and
+assistive-technology behavior were not established by those images.
+
+The next release work is still grounded in current code rather than open issue
+labels. #128 (Mark of the Web), #129 (unfinished `.!tt` names) and #131 (client
+identity/bootstrap/announce defaults) remain absent in source and are required
+by the engine contract. They are fixed behavior, not missing Settings switches.
+GitHub's older architecture issues include superseded implementations; their
+open state is not evidence of a live defect. Also retain the current narrow-width,
+native title-bar and accessibility gaps and the accepted-screen rule audit.
+
+## Header, magnet editor and feedback correction — 2026-10-06
+
+The table and torrent-properties headers now share WinUI's
+`LayerFillColorDefaultBrush` and `DividerStrokeColorDefaultBrush`. The custom
+caption contains only Add torrent and Add magnet after Search, followed by a
+separator and theme; all three use the same existing caption-button style at
+48 by 48, matching the native Tall caption buttons measured through read-only
+UI Automation. Torrent selection commands remain in the menu. LabForms' custom
+title-bar approach is retained: register the caption and mark only gaps between
+controls as draggable, preserving physical-pixel/DIP conversion and native
+caption ownership. Native hover and hit-testing behavior still needs a direct
+Windows check; XAML captures cannot establish that the reported hover defect is
+gone.
+
+The magnet editor wraps one URI in the available pane, with Paste and Preview
+centred below using the existing ActionButton and native dialog spacing token.
+Its existing preview flow shares the pane with the input. The connection InfoBar
+overlays the workspace above the footer instead of consuming a layout row.
+The shared native InfoBar template puts its action in a right-hand column;
+severity, theme, accessibility and control-state resources remain native.
+
+- Final app build: `artifacts/header-overlay-verified-build.log`, 42.99 seconds,
+  zero warnings/errors. Only the managed app compiled; Lucide and TableView
+  compilation stayed up to date. No engine build or full suite ran.
+- Final evidence:
+  `artifacts/evidence/UiSelfCapture-0dd9ab32-e75c-4c90-8657-cefdfb77b216`.
+  The focused capture completed all twelve EN/ES, Light/Dark size cases in
+  36.411 seconds. Long input stayed intact; invalid input was retained and the
+  fixture magnet reached the existing preview. No torrent was submitted.
+- Workspace dimensions and footer positions stayed identical before/after
+  showing the overlay. Nine overlay captures show the right-aligned action;
+  live bindings restored the connected state before three snapshots (EN Light
+  requested720, EN Dark requested1280, ES Dark requested720). This is presentation
+  evidence, not a connection/restart journey.
+- Requested720 is clamped to client widths 837 EN and 863 ES; requested1040 and
+  1280 yield 1024 and 1264. Exact720 acceptance remains open. High Contrast,
+  non-100% scaling, Narrator, native pointer/keyboard gestures and magnet-input
+  keyboard scrolling were not exercised.
+- Serial user, keyboard-user, accessibility, Fluent and UX image review, followed
+  by independent visual re-review, found zero counted defects introduced by
+  these corrections. The duplicate fixture preview combines a metadata-waiting
+  title with an already-added row; that existing state ambiguity remains open.
+- The first capture exposed a GridLength resource incorrectly used as a double
+  StackPanel spacing. A Grid spacer now consumes that native token directly;
+  the final run opens Add successfully. Both capture-owned processes exited,
+  and the fallback generated-output scan found nothing outside artifacts.
+  Everything IPC remained unavailable.
+
+These changes remain uncommitted with the owner's concurrent batch. No broader
+release approval is implied. Earlier typography evidence below is historical;
+the current capture supersedes its much wider shell minimum.
+
+## Add form consistency correction — 2026-10-06
+
+The Add form now uses shared native text roles: Subtitle for its title, Body
+Strong for group headings, and Body for values and status, including free space.
+Magnet and folder groups share heading treatment and insets. Shared heading and
+ActionButton text uses cap-to-baseline bounds for icon alignment. ActionButton
+uses WinUI's DefaultButtonStyle and ContentDialogButtonMinHeight; inline and
+footer buttons retain native corner and state resources, with no new size or
+corner tokens. The accepted two-pane layout remains.
+
+- Final app build: `artifacts/add-type-verified-build.log`, zero warnings/errors,
+  70.88 seconds. Only the managed app compiled; Lucide and TableView compilation
+  stayed up to date. No engine build, full suite or transfer tests ran.
+- Before: `artifacts/evidence/UiSelfCapture-fa5de6f3-6a7f-4f5d-bf6a-2e3ed950eb1b`.
+  Final: `artifacts/evidence/UiSelfCapture-cc2eff3c-b14b-4d8d-ac3b-5bd1d4245bc8`.
+  The focused `add-layout` journey completed all twelve EN/ES, Light/Dark,
+  requested-size cells in 19.678 seconds, with no failure. Review-owned app and
+  engine processes exited. The fallback output-directory scan found no output
+  outside artifacts; Everything IPC was unavailable.
+- Serial user, keyboard-user, accessibility, Fluent and UX review found no
+  visible defect in the corrected empty Add form. The independent visual
+  reviewer rechecked the owner's font, alignment and button corrections across
+  all twelve cells and reported zero counted findings. This is a visual result,
+  not proof of keyboard or screen-reader behavior.
+- The current shared shell minimum clamps both requested 720 and 1040 widths:
+  final client widths are 1181 in English and 1207 in Spanish. The 1280 request
+  yields 1264 client pixels; client heights are 551, 671 and 791 at scale 1.
+  Exact narrow-width acceptance is still open. High Contrast, scaling, Narrator,
+  hover/pressed states, populated previews and enabled Add were not exercised.
+
+Verification exposed a concurrent startup defect: RefreshMenus read toolbar
+commands before x:Bind assigned them, throwing on a null dictionary key. The
+later table-load error obscured that first exception. Tooltip lookup now uses
+the existing model commands directly. Temporary tracing and an unsuccessful
+initialization-order experiment were removed. Final startup and captures pass.
+
+The existing Debug instance was closed normally under the owner's earlier
+authorization. Its normal engine Exit ended the process, but the attached-process
+helper did not confirm a zero exit code; that instance's persistence outcome is
+unverified. Isolated capture engines subsequently exited successfully.
+
+These corrections remain uncommitted with the owner's concurrent shared-control,
+shell and engine work; no unrelated batch was committed by this correction.
+This does not close the broader release gate or validate those engine changes.
+
 ## Current continuation — 2026-10-06
 
 ### Handoff to architecture work — `c7b9326`

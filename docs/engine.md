@@ -120,6 +120,19 @@ but may make every file unwanted. A torrent already in the list can keep its
 content and seed while the person changes its selection; only addition needs at
 least one wanted file to give the new download useful work.
 
+Download in sequential order and Download first and last pieces first are
+choices saved with each torrent in `settings.json`. Addition accepts them, and
+a command changes them later for selected torrents. Sequential order is
+libtorrent's `sequential_download` [torrent flag](https://github.com/arvidn/libtorrent/blob/v2.1.2/include/libtorrent/torrent_flags.hpp).
+First and last pieces is not a libtorrent flag: as in qBittorrent, the engine
+gives top priority to 1 % of each wanted file at each end, at least one piece,
+so a media player can read a file's header and index early. libtorrent sets
+piece priorities again from the file priorities when a file-priority change
+completes, so the engine raises those pieces again after each change and after
+verification, which can recreate libtorrent's piece picker. Startup
+discards the piece priorities in resume files, so a resume file older than the
+choice cannot override it.
+
 ## Addition and identity
 
 libtorrent is the sole metadata parser, including v1, v2, and hybrid torrents.
@@ -522,6 +535,9 @@ installing user, not an administrator account used to install a prerequisite.
 Closing WinUI normally exits without confirmation. Resolve actual unfinished
 edits according to [the interface](interface.md#committing-edits), and do not
 silently drop changes already committed in the UI but still being submitted.
+Hide the window before waiting when no draft, dialog or picker needs it, so
+closing does not leave a disabled window on screen. Show it again if an edit
+decision or failed close needs the person's attention.
 Accepted operations and transfers continue in the engine. UI-only snapshots and
 detail collection stop or are released with their last consumer; tray status,
 queue policy, swarm activity, [speed history](#state-and-work), and persistence

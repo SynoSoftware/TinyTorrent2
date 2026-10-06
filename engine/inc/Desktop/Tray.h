@@ -4,6 +4,7 @@
 #include <windows.h>
 #include <oleacc.h>
 #include <optional>
+#include <vector>
 
 namespace tt::desktop
 {
@@ -22,10 +23,8 @@ public:
     std::optional<TrayItem> ShowMenu(POINT point);
     BOOL Measure(MEASUREITEMSTRUCT& item);
     BOOL Draw(DRAWITEMSTRUCT const& item);
-    // `windowShows` is true when the open window already presents this
-    // notice's failure, so the tray stays quiet about it.
-    void Queue(Notice notice, bool windowShows);
-    void Notify();
+    void Queue(Notice notice);
+    std::vector<Notice> Notify(bool windowShows);
     std::optional<Notice> TakeNotification();
 private:
     struct Row
@@ -40,6 +39,9 @@ private:
         unsigned count = 0;
         std::optional<Notice> failure;
         unsigned failureCount = 0;
+        std::optional<Notice> completion;
+        unsigned completionCount = 0;
+        bool added = false;
         ULONGLONG due = 0;
     };
     void Apply(DWORD action);
@@ -63,6 +65,7 @@ private:
     Activity activity_;
     bool loading_ = false;
     bool pausable_ = false;
+    HICON errorIcon_ = nullptr;
     std::wstring tooltip_;
     HMENU menu_ = nullptr;
     HFONT font_ = nullptr;

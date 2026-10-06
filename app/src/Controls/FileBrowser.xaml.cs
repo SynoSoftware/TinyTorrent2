@@ -34,16 +34,30 @@ public sealed partial class FileBrowser : UserControl
         All.IsChecked = Model.AllMatching;
     }
 
+    private void OnExpand(object sender, RoutedEventArgs args) => Model.Expand(true);
+    private void OnCollapse(object sender, RoutedEventArgs args) => Model.Expand(false);
+
+    // The tree owns the keyboard: arrows move between rows, Space toggles the
+    // focused row as its check box would, and F2 opens its priority. The check
+    // box stays out of the Tab order, so Tab crosses a long list in two stops.
     private void OnFilesKey(object sender, KeyRoutedEventArgs args)
     {
-        if (args.Key != VirtualKey.F2) return;
+        if (args.Key is not (VirtualKey.F2 or VirtualKey.Space)) return;
         var element = FocusManager.GetFocusedElement(XamlRoot) as DependencyObject;
         while (element is not null && !ReferenceEquals(element, sender))
         {
             if (element is ComboBox) return;
             if (element is TreeViewItem item)
             {
-                if (item.Content is Grid row && row.Children.OfType<ComboBox>().FirstOrDefault() is { IsEnabled: true } priority)
+                if (args.Key == VirtualKey.Space)
+                {
+                    if (item.DataContext is FileNode { IsEnabled: true } node)
+                    {
+                        node.Wanted = node.Wanted != true;
+                        args.Handled = true;
+                    }
+                }
+                else if (item.Content is Grid row && row.Children.OfType<ComboBox>().FirstOrDefault() is { IsEnabled: true } priority)
                 {
                     priority.Focus(FocusState.Keyboard);
                     priority.IsDropDownOpen = true;

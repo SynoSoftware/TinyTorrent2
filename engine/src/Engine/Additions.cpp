@@ -60,8 +60,7 @@ bool Engine::State::IsChoice(lt::download_priority_t priority)
 
 // Starts adding the previewed content. The preview ends here, and its
 // guarded torrent, if any, becomes the new torrent.
-void Engine::State::Add(Preview& preview, std::string const& destination,
-    std::vector<lt::download_priority_t> priorities, bool paused, std::function<void(Outcome, Added)> done)
+void Engine::State::Add(Preview& preview, Facts choices, std::function<void(Outcome, Added)> done)
 {
     UpdatePreview(preview);
     if (FilesBusy())
@@ -75,12 +74,12 @@ void Engine::State::Add(Preview& preview, std::string const& destination,
         done({}, {AdditionKind::Duplicate, duplicate});
         return;
     }
-    if (!IsAbsolute(destination))
+    if (!IsAbsolute(choices.savePath))
     {
         done({ErrorCode::InvalidDestination}, {});
         return;
     }
-    auto chosen = Priorities(std::move(priorities), preview.params.ti);
+    auto chosen = Priorities(std::move(choices.priorities), preview.params.ti);
     if (!chosen || (preview.params.ti && std::none_of(chosen->begin(), chosen->end(),
         [](auto priority) { return priority != lt::dont_download; })))
     {
@@ -90,11 +89,10 @@ void Engine::State::Add(Preview& preview, std::string const& destination,
     Addition addition;
     addition.identity = Identity();
     addition.params = preview.params;
-    addition.params.save_path = destination;
+    addition.params.save_path = choices.savePath;
     Guard(addition.params);
     addition.params.flags |= lt::torrent_flags::paused;
-    addition.facts.savePath = destination;
-    addition.facts.intent = paused ? Intent::Paused : Intent::Resumed;
+    addition.facts = std::move(choices);
     addition.facts.added = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
     addition.facts.priorities = std::move(*chosen);
     addition.facts.hashes = Hashes(preview.InfoHashes());
@@ -105,7 +103,7 @@ void Engine::State::Add(Preview& preview, std::string const& destination,
         pending.handle = preview.handle;
         pending.phase = AdditionPhase::Moving;
         pending.handle.pause();
-        pending.handle.move_storage(destination, lt::move_flags_t::reset_save_path);
+        pending.handle.move_storage(pending.facts.savePath, lt::move_flags_t::reset_save_path);
     }
     else
     {
@@ -138,7 +136,9 @@ void Engine::State::AddSource(std::string source, std::function<void(Outcome, Ad
             finish({}, {AdditionKind::Mergeable, Duplicate(preview->InfoHashes())});
             return;
         }
-        Add(*preview, settings.destination, {}, false, finish);
+        Facts choices;
+        choices.savePath = settings.destination;
+        Add(*preview, std::move(choices), finish);
     });
 }
 

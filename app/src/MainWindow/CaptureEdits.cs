@@ -16,7 +16,7 @@ public sealed partial class MainWindow
     {
         Model.SelectLanguage("en");
         await CaptureReady(Model, () => Model.CanClose && Model.Text.Language == "en");
-        await Model.SelectTheme("light");
+        await Model.Preferences.SelectTheme("light");
         await CaptureReady(Model, () => Model.CanClose && Model.Theme == "light");
         var scale = Root.XamlRoot.RasterizationScale;
         var minimum = ((Microsoft.UI.Windowing.OverlappedPresenter)AppWindow.Presenter).PreferredMinimumWidth ?? 0;

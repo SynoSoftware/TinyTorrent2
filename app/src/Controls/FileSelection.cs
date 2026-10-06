@@ -30,6 +30,7 @@ public sealed class FileSelection(Strings strings) : INotifyPropertyChanged
         get => _search;
         set { if (_search == value) return; _search = value; Project(); }
     }
+    public bool HasFolders => _roots.Any(root => root.IsFolder);
     public bool HasWanted => _files.Any(file => file.Priority > 0);
     public bool? AllMatching
     {
@@ -40,8 +41,9 @@ public sealed class FileSelection(Strings strings) : INotifyPropertyChanged
             return wanted == 0 ? false : wanted == matching.Length ? true : null;
         }
     }
+    public long WantedBytes => _files.Where(file => file.Priority > 0).Sum(file => file.Size);
     public string Summary => strings.Format("files", "summary", _files.Count(file => file.Priority > 0),
-        _files.Count(file => !file.IsPadding), strings.Bytes(_files.Where(file => file.Priority > 0).Sum(file => file.Size)));
+        _files.Count(file => !file.IsPadding), strings.Bytes(WantedBytes));
     public event PropertyChangedEventHandler? PropertyChanged;
     public event EventHandler? Changed;
     public event EventHandler<IReadOnlyDictionary<int, int>>? Edited;
@@ -97,6 +99,12 @@ public sealed class FileSelection(Strings strings) : INotifyPropertyChanged
     public void SelectMatching(bool wanted) => Want(_files.Where(Matches), wanted);
 
     internal void SelectAll() => Want(_files, true);
+
+    public void Expand(bool expanded)
+    {
+        foreach (var node in _roots.SelectMany(root => root.Nodes()).Where(node => node.IsFolder)) node.IsExpanded = expanded;
+        Refresh();
+    }
 
     internal void Apply(JsonElement files, bool preserveChoices)
     {
@@ -182,8 +190,18 @@ public sealed class FileNode : INotifyPropertyChanged
     public int Index { get; }
     public bool IsFolder => Index < 0;
     public bool IsPadding { get; internal set; }
+    public bool IsExpanded { get; set; } = true;
     public long Size { get; internal set; }
     public long Downloaded { get; internal set; }
+    public string Glyph => IsFolder ? Lucide.Folder : System.IO.Path.GetExtension(Name).ToLowerInvariant() switch
+    {
+        ".mkv" or ".mp4" or ".avi" or ".mov" or ".wmv" or ".webm" or ".m4v" or ".mpg" or ".mpeg" or ".ts" => Lucide.FileVideoCamera,
+        ".flac" or ".mp3" or ".wav" or ".aac" or ".ogg" or ".opus" or ".m4a" or ".wma" => Lucide.FileMusic,
+        ".jpg" or ".jpeg" or ".png" or ".gif" or ".webp" or ".bmp" => Lucide.FileImage,
+        ".txt" or ".nfo" or ".md" or ".pdf" or ".doc" or ".docx" or ".srt" or ".ass" or ".sub" => Lucide.FileText,
+        ".zip" or ".rar" or ".7z" or ".tar" or ".gz" or ".iso" => Lucide.FileArchive,
+        _ => Lucide.File
+    };
     public string SizeText => _owner.Text.Bytes(Files().Sum(file => file.Size));
     public double Progress
     {

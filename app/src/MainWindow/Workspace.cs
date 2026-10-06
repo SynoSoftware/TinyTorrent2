@@ -3,6 +3,7 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Windows.System;
+using Syno.TinyTorrent.Controls;
 using Syno.TinyTorrent.Models;
 using Syno.TinyTorrent.Views;
 
@@ -37,8 +38,14 @@ public sealed partial class MainWindow
         if (HasDialog || Model.IsClosing || _allowClose) return false;
         if (Model.Page == WindowPage.Preferences && page != WindowPage.Preferences)
         {
-            if (!await Model.Preferences.PrepareLeave()) return false;
-            if (Model.Preferences.HasDraft && !await ResolveDraft(Model.Preferences.Schedule.CommitPeriod, () =>
+            if (!await Model.Preferences.PrepareLeave())
+            {
+                var field = _preferencesForm?.Recover(null);
+                field?.StartBringIntoView();
+                field?.Focus(FocusState.Programmatic);
+                return false;
+            }
+            if (Model.Preferences.HasDraft && !await ResolveDraft("schedule", Model.Preferences.SaveDraft, () =>
                 { Model.Preferences.CancelDraft(); return Task.CompletedTask; })) return false;
         }
         if (Model.IsClosing) return false;
@@ -81,7 +88,7 @@ public sealed partial class MainWindow
         try
         {
             var accepted = await Model.Select(desired.Items.Cast<Torrent>(), desired.Current as Torrent, () =>
-                ResolveDraft(Model.Inspector.SaveDraft, () => { Model.Inspector.CancelDraft(); return Task.CompletedTask; }));
+                ResolveDraft("torrent", Model.Inspector.SaveDraft, () => { Model.Inspector.CancelDraft(); return Task.CompletedTask; }));
             var retained = Model.Selected.Where(Model.VisibleTorrents.Contains).ToArray();
             Torrents.Selection = new Syno.TableView.Selection(retained, Model.Current is { } current && Model.VisibleTorrents.Contains(current) ? current : null);
             return accepted;
@@ -89,19 +96,42 @@ public sealed partial class MainWindow
         finally { _selecting = false; }
     }
 
-    private async Task<bool> ResolveDraft(Func<Task<bool>> save, Func<Task> discard)
+    private async Task<bool> ResolveDraft(string editor, Func<Task<bool>> save, Func<Task> discard)
     {
         var focused = FocusManager.GetFocusedElement(Root.XamlRoot) as Control;
         return await Interact(async interaction =>
         {
-            var prompt = new ContentDialog { XamlRoot = Root.XamlRoot, DefaultButton = ContentDialogButton.Primary };
+            var prompt = new Dialog { XamlRoot = Root.XamlRoot, DefaultButton = ContentDialogButton.Close, SecondaryGlyph = Syno.Lucide.Undo2, CloseGlyph = Syno.Lucide.Pencil };
             var choice = await ShowDialog(interaction, prompt, () =>
             {
-                prompt.Title = Model.Text.Get("changes", "title");
-                prompt.Content = Model.Text.Get("changes", "detail");
-                prompt.PrimaryButtonText = Model.Text.Get("changes", "save");
+                var subject = editor == "torrent" ? (Model.Inspector.HasTrackerDraft, Model.Inspector.HasFileDraft) switch
+                {
+                    (true, true) => "torrent",
+                    (true, false) => "trackers",
+                    _ => "files"
+                } : editor;
+                prompt.Title = Model.Text.Get("changes", subject + "_title");
+                prompt.Content = editor switch
+                {
+                    "add" => Lines([Model.Draft.Heading]),
+                    "move" => Lines([Model.Files.Destination]),
+                    "schedule" => null,
+                    _ => Lines([Model.Inspector.Name])
+                };
+                (prompt.PrimaryButtonText, prompt.Glyph) = subject switch
+                {
+                    "add" => (Model.Draft.SubmitText, Syno.Lucide.CirclePlus),
+                    "move" => (Model.Files.SubmitText, Syno.Lucide.FolderInput),
+                    "files" => (Model.Text.Get("inspector", "retry_files"), Syno.Lucide.RotateCw),
+                    _ => (Model.Text.Get("changes", "save"), Syno.Lucide.Save)
+                };
+                prompt.PrimaryGlyph = prompt.Glyph;
+                prompt.PrimaryToolTip = Model.Text.Get("changes", subject + "_save_tip");
                 prompt.SecondaryButtonText = Model.Text.Get("changes", "discard");
-                prompt.CloseButtonText = Model.Text.Get("add", "cancel");
+                prompt.SecondaryToolTip = Model.Text.Get("changes", subject + "_discard_tip");
+                // Two words, because Cancel would not say whether it cancels the
+                // edit or the act that is leaving it.
+                prompt.CloseButtonText = Model.Text.Get("changes", "keep_editing");
             });
             var resolved = false;
             if (choice == ContentDialogResult.Primary) resolved = await save();

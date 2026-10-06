@@ -3,7 +3,8 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:local="using:Syno.TinyTorrent.Controls"
-    xmlns:views="using:Syno.TinyTorrent.Views">
+    xmlns:views="using:Syno.TinyTorrent.Views"
+    xmlns:icons="using:Syno">
     <UserControl.Resources>
         <DataTemplate x:Key="SchedulerPeriodTemplate" x:DataType="views:SchedulePeriod">
             <Button Command="{x:Bind Edit}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
@@ -46,9 +47,9 @@
                     <TextBlock Text="{x:Bind Model.Selection.Summary, Mode=OneWay}" TextWrapping="Wrap" />
                 </StackPanel>
                 <StackPanel x:Name="SelectionActions" Grid.Row="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                    <Button Content="{x:Bind Model.Selection.EditText, Mode=OneWay}" Command="{x:Bind Model.Selection.Edit, Mode=OneWay}"
+                    <local:ActionButton Glyph="{x:Bind icons:Lucide.Pencil}" ToolTipService.ToolTip="{x:Bind Model.Selection.EditName, Mode=OneWay}" Text="{x:Bind Model.Selection.EditText, Mode=OneWay}" Command="{x:Bind Model.Selection.Edit, Mode=OneWay}"
                         AutomationProperties.Name="{x:Bind Model.Selection.EditName, Mode=OneWay}" AutomationProperties.AutomationId="EditPeriod" />
-                    <Button Content="{x:Bind Model.Selection.RemoveText, Mode=OneWay}" Command="{x:Bind Model.Selection.Remove, Mode=OneWay}"
+                    <local:ActionButton Glyph="{x:Bind icons:Lucide.ListX}" ToolTipService.ToolTip="{x:Bind Model.Selection.RemoveName, Mode=OneWay}" Text="{x:Bind Model.Selection.RemoveText, Mode=OneWay}" Command="{x:Bind Model.Selection.Remove, Mode=OneWay}"
                         AutomationProperties.Name="{x:Bind Model.Selection.RemoveName, Mode=OneWay}" AutomationProperties.AutomationId="RemovePeriod" />
                 </StackPanel>
             </Grid>
@@ -59,7 +60,7 @@
         <Border x:Name="PeriodEditor" Padding="16" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
             BorderThickness="1" CornerRadius="{ThemeResource ControlCornerRadius}" Visibility="{x:Bind Model.IsEditing, Mode=OneWay}">
             <StackPanel Spacing="12">
-                <TextBlock Text="{x:Bind Model.EditorTitle, Mode=OneWay}" Style="{StaticResource BodyStrongTextBlockStyle}" AutomationProperties.HeadingLevel="Level3" />
+                <TextBlock Text="{x:Bind Model.EditorTitle, Mode=OneWay}" Style="{StaticResource GroupTitleTextStyle}" AutomationProperties.HeadingLevel="Level3" />
                 <TextBlock x:Name="DaysTitle" />
                 <ContentControl IsEnabled="{x:Bind Model.CanSchedule, Mode=OneWay}">
                     <ItemsRepeater ItemsSource="{x:Bind Model.Draft.Days, Mode=OneWay}">
@@ -92,11 +93,11 @@
         <Expander Header="{x:Bind Model.PeriodSummary, Mode=OneWay}" Visibility="{x:Bind Model.HasPeriods, Mode=OneWay}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
             <StackPanel Spacing="12">
                 <StackPanel Spacing="4" Visibility="{x:Bind Model.HasAlternative, Mode=OneWay}">
-                    <TextBlock Text="{x:Bind Model.AlternativeSummary, Mode=OneWay}" Style="{StaticResource BodyStrongTextBlockStyle}" AutomationProperties.HeadingLevel="Level3" />
+                    <TextBlock Text="{x:Bind Model.AlternativeSummary, Mode=OneWay}" Style="{StaticResource GroupTitleTextStyle}" AutomationProperties.HeadingLevel="Level3" />
                     <ItemsRepeater x:Name="AlternativePeriods" ItemTemplate="{StaticResource SchedulerPeriodTemplate}" />
                 </StackPanel>
                 <StackPanel Spacing="4" Visibility="{x:Bind Model.HasPaused, Mode=OneWay}">
-                    <TextBlock Text="{x:Bind Model.PausedSummary, Mode=OneWay}" Style="{StaticResource BodyStrongTextBlockStyle}" AutomationProperties.HeadingLevel="Level3" />
+                    <TextBlock Text="{x:Bind Model.PausedSummary, Mode=OneWay}" Style="{StaticResource GroupTitleTextStyle}" AutomationProperties.HeadingLevel="Level3" />
                     <ItemsRepeater x:Name="PausedPeriods" ItemTemplate="{StaticResource SchedulerPeriodTemplate}" />
                 </StackPanel>
             </StackPanel>

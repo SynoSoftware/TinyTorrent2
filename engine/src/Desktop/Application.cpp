@@ -929,7 +929,10 @@ void Application::Tick()
     {
         Notify(std::move(notice));
     }
-    tray_->Notify();
+    for (auto& pending : tray_->Notify(ui_ != nullptr))
+    {
+        Notify(std::move(pending));
+    }
     ticking_ = false;
 }
 
@@ -981,9 +984,7 @@ void Application::Pause()
         if (outcome.error)
         {
             auto detail = Utf8(strings_.Text("error", "pause")) + " " + outcome.detail;
-            // The window did not send this command, so it cannot show the
-            // failure even when it is open.
-            tray_->Queue({.kind = NoticeKind::Error, .name = Utf8(productName), .detail = detail}, false);
+            Notify({.kind = NoticeKind::Error, .name = Utf8(productName), .detail = detail});
         }
         Refresh();
     });
@@ -1108,7 +1109,13 @@ void Application::FinishSource(Outcome const& outcome, Added const& added)
 
 void Application::Notify(Notice notice)
 {
-    tray_->Queue(std::move(notice), ui_ != nullptr);
+    if (ui_)
+    {
+        ui_->Send(Json{{"type", "notice"}, {"kind", ToString(notice.kind)},
+            {"torrent_id", notice.torrentId}, {"name", notice.name}, {"detail", notice.detail}, {"count", notice.count}});
+        return;
+    }
+    tray_->Queue(std::move(notice));
 }
 
 void Application::ShowError(std::string const& key, std::wstring detail)
@@ -1123,6 +1130,6 @@ void Application::ShowError(std::string const& key, std::wstring detail)
         OutputDebugStringW(message.c_str());
         return;
     }
-    tray_->Queue({.kind = NoticeKind::Error, .name = Utf8(productName), .detail = Utf8(message)}, false);
+    Notify({.kind = NoticeKind::Error, .name = Utf8(productName), .detail = Utf8(message)});
 }
 }

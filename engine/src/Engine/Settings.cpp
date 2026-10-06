@@ -37,6 +37,8 @@ constexpr char alternativeDownload[] = "alternative_download_limit";
 constexpr char alternativeUpload[] = "alternative_upload_limit";
 constexpr char usesAlternative[] = "alternative_limits";
 constexpr char notificationsEnabled[] = "notifications_enabled";
+constexpr char notifyProblems[] = "notify_problems";
+constexpr char notifyAdded[] = "notify_added";
 constexpr char preventSleep[] = "prevent_sleep";
 constexpr char preventSleepSeeding[] = "prevent_sleep_seeding";
 constexpr char backgroundNoticeShown[] = "background_notice_shown";
@@ -90,6 +92,8 @@ Json Engine::State::Settings::ToJson() const
         {setting::alternativeUpload, alternative.upload},
         {setting::usesAlternative, usesAlternative},
         {setting::notificationsEnabled, notificationsEnabled},
+        {setting::notifyProblems, notifyProblems},
+        {setting::notifyAdded, notifyAdded},
         {setting::preventSleep, preventSleep},
         {setting::preventSleepSeeding, preventSleepSeeding},
         {setting::backgroundNoticeShown, backgroundNoticeShown}};
@@ -130,6 +134,8 @@ void Engine::State::Settings::Read(Json const& saved)
     alternative.upload = saved.value(setting::alternativeUpload, alternative.upload);
     usesAlternative = saved.value(setting::usesAlternative, usesAlternative);
     notificationsEnabled = saved.value(setting::notificationsEnabled, notificationsEnabled);
+    notifyProblems = saved.value(setting::notifyProblems, notifyProblems);
+    notifyAdded = saved.value(setting::notifyAdded, notifyAdded);
     preventSleep = saved.value(setting::preventSleep, preventSleep);
     preventSleepSeeding = saved.value(setting::preventSleepSeeding, preventSleepSeeding);
     backgroundNoticeShown = saved.value(setting::backgroundNoticeShown, backgroundNoticeShown);
@@ -242,6 +248,14 @@ std::optional<Engine::State::Settings> Engine::State::Settings::With(Json const&
         else if (key == setting::notificationsEnabled && value.is_boolean())
         {
             next.notificationsEnabled = value;
+        }
+        else if (key == setting::notifyProblems && value.is_boolean())
+        {
+            next.notifyProblems = value;
+        }
+        else if (key == setting::notifyAdded && value.is_boolean())
+        {
+            next.notifyAdded = value;
         }
         else if (key == setting::preventSleep && value.is_boolean())
         {

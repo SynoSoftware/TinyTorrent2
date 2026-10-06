@@ -105,7 +105,10 @@ std::string Engine::State::Identity()
         throw std::runtime_error("Cannot create identity");
     }
     wchar_t text[40];
-    StringFromGUID2(guid, text, static_cast<int>(std::size(text)));
+    if (!StringFromGUID2(guid, text, static_cast<int>(std::size(text))))
+    {
+        throw std::runtime_error("Cannot create identity");
+    }
     return Utf8(text);
 }
 
@@ -165,8 +168,11 @@ void Engine::State::Start(Document const& saved, Resumes& resumes)
         if (!facts.priorities.empty())
         {
             params.file_priorities = facts.priorities;
-            params.piece_priorities.clear();
         }
+        // Piece priorities follow from the saved file priorities and
+        // firstLast, so a resume file older than those choices cannot keep
+        // first and last pieces raised.
+        params.piece_priorities.clear();
         params.flags &= ~lt::torrent_flags::auto_managed;
         params.flags |= lt::torrent_flags::paused;
         auto handle = session->add_torrent(params);
@@ -259,6 +265,10 @@ tt::Activity Engine::State::Activity() const
         activity.downloadRate += torrent.status.download_payload_rate;
         activity.uploadRate += torrent.status.upload_payload_rate;
         activity.hasIncoming |= torrent.status.has_incoming;
+        if (torrent.Diagnose())
+        {
+            ++activity.errors;
+        }
         switch (torrent.Classify(IsPaused()))
         {
         case Status::Downloading:
@@ -289,6 +299,8 @@ tt::Activity Engine::State::Activity() const
     activity.allPaused = IsPaused();
     activity.missingInterface = interfaceMissing ? settings.networkInterface : std::string();
     activity.notificationsEnabled = settings.notificationsEnabled;
+    activity.notifyProblems = settings.notifyProblems;
+    activity.notifyAdded = settings.notifyAdded;
     activity.preventSleep = settings.preventSleep;
     activity.preventSleepSeeding = settings.preventSleepSeeding;
     activity.backgroundNoticeShown = settings.backgroundNoticeShown;

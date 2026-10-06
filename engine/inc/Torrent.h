@@ -37,6 +37,8 @@ struct Facts
     std::vector<std::string> hashes;
     // No choice retains the resume trackers; an empty choice removes them.
     std::optional<std::vector<lt::announce_entry>> trackers;
+    bool sequential = false;
+    bool firstLast = false;
 
     Json ToJson() const;
     static Facts Read(Json const& saved);
@@ -89,6 +91,9 @@ struct Torrent
     Json Describe(TorrentView view, bool includeFiles) const;
     Json Row(bool allPaused) const;
     void ApplyIntent();
+    // libtorrent sets piece priorities again from the file priorities each
+    // time those change, so this runs again after each change settles.
+    void PrioritizePieces() const;
     void Checkpoint(bool exiting);
 };
 

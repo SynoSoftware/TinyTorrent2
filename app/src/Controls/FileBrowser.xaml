@@ -1,31 +1,63 @@
 <UserControl x:Class="Syno.TinyTorrent.Controls.FileBrowser"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:icons="using:Syno"
     xmlns:local="using:Syno.TinyTorrent.Controls">
-    <Grid RowSpacing="8">
+    <Grid>
         <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
-        <Grid ColumnSpacing="12" Padding="44,0,4,0">
-            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="220" /></Grid.ColumnDefinitions>
+        <Grid ColumnSpacing="12" Padding="44,0,4,0" Margin="0,0,0,8">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" MaxWidth="220" /></Grid.ColumnDefinitions>
             <CheckBox x:Name="All" MinWidth="0" IsChecked="{x:Bind Model.AllMatching, Mode=OneWay}" IsEnabled="{x:Bind Model.IsEnabled, Mode=OneWay}" Click="OnAll">
                 <TextBlock Text="{x:Bind Model.Summary, Mode=OneWay}" TextTrimming="CharacterEllipsis" />
             </CheckBox>
-            <AutoSuggestBox x:Name="Search" PlaceholderText="{x:Bind Model.Text.Get('files', 'search'), Mode=OneWay}" Grid.Column="1" VerticalAlignment="Center" QueryIcon="Find" Text="{x:Bind Model.Search, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+            <Button Style="{StaticResource SubtleButtonStyle}" x:Name="ExpandAll" Grid.Column="1" Click="OnExpand" Visibility="{x:Bind Model.HasFolders, Mode=OneWay}"
+                ToolTipService.ToolTip="{x:Bind Model.Text.Get('files', 'expand_all'), Mode=OneWay}" AutomationProperties.Name="{x:Bind Model.Text.Get('files', 'expand_all'), Mode=OneWay}">
+                <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.ChevronsUpDown}" FontSize="16" />
+            </Button>
+            <Button Style="{StaticResource SubtleButtonStyle}" x:Name="CollapseAll" Grid.Column="2" Click="OnCollapse" Visibility="{x:Bind Model.HasFolders, Mode=OneWay}"
+                ToolTipService.ToolTip="{x:Bind Model.Text.Get('files', 'collapse_all'), Mode=OneWay}" AutomationProperties.Name="{x:Bind Model.Text.Get('files', 'collapse_all'), Mode=OneWay}">
+                <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.ChevronsDownUp}" FontSize="16" />
+            </Button>
+            <AutoSuggestBox x:Name="Search" PlaceholderText="{x:Bind Model.Text.Get('files', 'search'), Mode=OneWay}" Grid.Column="3" VerticalAlignment="Center" QueryIcon="Find" Text="{x:Bind Model.Search, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
         </Grid>
-        <Grid Grid.Row="1" ColumnSpacing="8" Padding="72,0,4,0">
+        <!-- Drawn like the TableView header, so every column header in the
+             product looks the same. -->
+        <Grid Grid.Row="1" ColumnSpacing="8" Padding="72,6,4,6" Background="{ThemeResource LayerFillColorDefaultBrush}" BorderThickness="0,0,0,1" BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}">
             <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="84" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="150" /></Grid.ColumnDefinitions>
-            <TextBlock x:Name="NameLabel" Text="{x:Bind Model.Text.Get('files', 'name'), Mode=OneWay}" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-            <TextBlock x:Name="SizeLabel" Text="{x:Bind Model.Text.Get('columns', 'size'), Mode=OneWay}" Grid.Column="1" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextAlignment="Right" />
-            <TextBlock x:Name="ProgressLabel" Text="{x:Bind Model.Text.Get('columns', 'progress'), Mode=OneWay}" Grid.Column="2" Width="108" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Visibility="{x:Bind Model.ShowsProgress, Mode=OneWay}" />
-            <TextBlock x:Name="PriorityLabel" Text="{x:Bind Model.Text.Get('files', 'priority'), Mode=OneWay}" Grid.Column="3" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            <TextBlock x:Name="NameLabel" Text="{x:Bind Model.Text.Get('files', 'name'), Mode=OneWay}" Style="{StaticResource BodyTextStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            <TextBlock x:Name="SizeLabel" Text="{x:Bind Model.Text.Get('columns', 'size'), Mode=OneWay}" Grid.Column="1" Style="{StaticResource BodyTextStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextAlignment="Right" />
+            <TextBlock x:Name="ProgressLabel" Text="{x:Bind Model.Text.Get('columns', 'progress'), Mode=OneWay}" Grid.Column="2" Width="108" Style="{StaticResource BodyTextStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Visibility="{x:Bind Model.ShowsProgress, Mode=OneWay}" />
+            <!-- Starts where the ComboBox text below starts, after its 12-pixel padding. -->
+            <TextBlock x:Name="PriorityLabel" Text="{x:Bind Model.Text.Get('files', 'priority'), Mode=OneWay}" Grid.Column="3" Margin="12,0,0,0" Style="{StaticResource BodyTextStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
         </Grid>
-        <TreeView Grid.Row="2" ItemsSource="{x:Bind Model.Roots, Mode=OneWay}" SelectionMode="None" CanDragItems="False" CanReorderItems="False" KeyDown="OnFilesKey">
+        <TreeView Grid.Row="2" ItemsSource="{x:Bind Model.Roots, Mode=OneWay}" SelectionMode="None" CanDragItems="False" CanReorderItems="False" PreviewKeyDown="OnFilesKey">
+            <!-- Priority draws as plain text until pointed at or focused, so file
+                 names lead each row. -->
+            <TreeView.Resources>
+                <ResourceDictionary>
+                    <ResourceDictionary.ThemeDictionaries>
+                        <ResourceDictionary x:Key="Light">
+                            <StaticResource x:Key="ComboBoxBackground" ResourceKey="SubtleFillColorTransparentBrush" />
+                            <StaticResource x:Key="ComboBoxBorderBrush" ResourceKey="SubtleFillColorTransparentBrush" />
+                        </ResourceDictionary>
+                        <ResourceDictionary x:Key="Dark">
+                            <StaticResource x:Key="ComboBoxBackground" ResourceKey="SubtleFillColorTransparentBrush" />
+                            <StaticResource x:Key="ComboBoxBorderBrush" ResourceKey="SubtleFillColorTransparentBrush" />
+                        </ResourceDictionary>
+                        <ResourceDictionary x:Key="HighContrast" />
+                    </ResourceDictionary.ThemeDictionaries>
+                </ResourceDictionary>
+            </TreeView.Resources>
             <TreeView.ItemTemplate>
                 <DataTemplate x:DataType="local:FileNode">
-                    <TreeViewItem ItemsSource="{x:Bind Children}" IsExpanded="True" HorizontalContentAlignment="Stretch">
+                    <TreeViewItem ItemsSource="{x:Bind Children}" IsExpanded="{x:Bind IsExpanded, Mode=TwoWay}" HorizontalContentAlignment="Stretch">
                         <Grid ColumnSpacing="8">
                             <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="84" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="150" /></Grid.ColumnDefinitions>
-                            <CheckBox MinWidth="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" IsChecked="{x:Bind Wanted, Mode=TwoWay}" IsEnabled="{x:Bind IsEnabled, Mode=OneWay}" AutomationProperties.Name="{x:Bind Name}" AutomationProperties.HelpText="{x:Bind Path}" ToolTipService.ToolTip="{x:Bind Path}">
-                                <TextBlock Text="{x:Bind Name}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
+                            <CheckBox MinWidth="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" IsTabStop="False" IsChecked="{x:Bind Wanted, Mode=TwoWay}" IsEnabled="{x:Bind IsEnabled, Mode=OneWay}" AutomationProperties.Name="{x:Bind Name}" AutomationProperties.HelpText="{x:Bind Path}" ToolTipService.ToolTip="{x:Bind Path}">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind Glyph}" FontSize="16" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" AutomationProperties.AccessibilityView="Raw" />
+                                    <TextBlock Text="{x:Bind Name}" VerticalAlignment="Center" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
+                                </StackPanel>
                             </CheckBox>
                             <TextBlock Grid.Column="1" Text="{x:Bind SizeText, Mode=OneWay}" VerticalAlignment="Center" TextAlignment="Right" />
                             <Grid Grid.Column="2" Width="108" VerticalAlignment="Center" RowSpacing="4" Visibility="{x:Bind ShowsProgress, Mode=OneWay}">

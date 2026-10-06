@@ -43,6 +43,7 @@ public sealed partial class MainViewModel
         get => _filterOpen;
         set { if (_filterOpen == value) return; _filterOpen = value; Changed(nameof(IsFilterOpen)); }
     }
+    public ICommand SwitchFilters { get; }
     public IReadOnlyList<FilterChoice> Filters { get; }
     public bool HasFilter => Filter != TorrentFilter.All;
     public string FilterLabel => Filter == TorrentFilter.All ? Text.Get("filters", "title") :
@@ -89,7 +90,7 @@ public sealed partial class MainViewModel
     {
         if (!_byId.TryGetValue(torrentId, out var torrent)) return Task.CompletedTask;
         ClearFinding();
-        RevealRequested?.Invoke(this, torrent);
+        RevealRequested?.Invoke(this, [torrent]);
         return Task.CompletedTask;
     }
 
@@ -144,11 +145,13 @@ public sealed partial class MainViewModel
         })
             yield return new(Text.Get("commands", key), selection,
                 command == Properties ? SuggestionScope.Navigation : SuggestionScope.Command, command);
+        foreach (var (order, state, command) in new[] { (PieceOrder.Sequential, Sequential, SwitchSequential),
+            (PieceOrder.FirstLast, FirstLast, SwitchFirstLast) })
+            yield return new(Text.Get("commands", PieceOrderKey(order, state != true)), selection, SuggestionScope.Command, command);
         foreach (var choice in Filters)
             yield return new(choice.Label, Text.Get("finding", "filter"), SuggestionScope.Navigation,
                 new Command(() => { Filter = choice.Filter; IsFilterOpen = true; return Task.CompletedTask; }, () => true));
-        yield return new(Text.Get("filters", "title"), Text.Get("finding", "filter"), SuggestionScope.Navigation,
-            new Command(() => { IsFilterOpen = !IsFilterOpen; return Task.CompletedTask; }, () => true));
+        yield return new(Text.Get("filters", "title"), Text.Get("finding", "filter"), SuggestionScope.Navigation, SwitchFilters);
         foreach (var section in Enum.GetValues<InspectorSection>())
             yield return new(Text.Get("inspector", section.ToString().ToLowerInvariant()),
                 Text.Get("commands", "properties") + " · " + selection, SuggestionScope.Navigation,
@@ -161,7 +164,6 @@ public sealed partial class MainViewModel
             yield return PreferenceSuggestion(new(section), Text.Get("preferences", section.ToString().ToLowerInvariant()));
         foreach (var field in Preferences.Fields)
         {
-            if (field == Preferences.Alternative) continue;
             yield return PreferenceSuggestion(new(field.Section, field.Name), field.Label);
         }
         foreach (var key in new[] { "start_signin", "startup_settings", "open_defaults", "remove_handler" })

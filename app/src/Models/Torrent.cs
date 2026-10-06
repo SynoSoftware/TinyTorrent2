@@ -22,6 +22,8 @@ public sealed class Torrent(string torrentId, Strings strings) : INotifyProperty
     public int QueueOrder => Queue < 0 ? int.MaxValue : Queue;
     public long Added { get; private set; }
     public string[] Hashes { get; private set; } = [];
+    public bool Sequential { get; private set; }
+    public bool FirstLast { get; private set; }
     public double Progress { get; private set; }
     public double Remaining => Size * (1 - Progress);
     public double Ratio => Downloaded == 0 ? Uploaded == 0 ? 0 : double.PositiveInfinity : (double)Uploaded / Downloaded;
@@ -85,6 +87,8 @@ public sealed class Torrent(string torrentId, Strings strings) : INotifyProperty
         Queue = row.GetProperty("queue").GetInt32();
         Added = row.GetProperty("added").GetInt64();
         Hashes = row.GetProperty("hashes").EnumerateArray().Select(hash => hash.GetString()!).ToArray();
+        Sequential = row.GetProperty("sequential").GetBoolean();
+        FirstLast = row.GetProperty("first_last").GetBoolean();
         Progress = row.GetProperty("progress").GetDouble();
         StatusCode = row.GetProperty("status").GetString()!;
         DownloadRate = row.GetProperty("download_rate").GetDouble();

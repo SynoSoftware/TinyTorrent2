@@ -96,7 +96,9 @@ public:
         Limits limits;
         Limits alternative{10 * 1024, 10 * 1024};
         bool usesAlternative = false;
-        bool notificationsEnabled = true;
+        bool notificationsEnabled = false;
+        bool notifyProblems = true;
+        bool notifyAdded = false;
         bool preventSleep = true;
         bool preventSleepSeeding = false;
         bool backgroundNoticeShown = false;
@@ -124,6 +126,11 @@ public:
 
     // A command's work on a list of torrents that all exist.
     using Action = std::function<void(std::vector<std::string> const& ids, Reply reply)>;
+
+    // Declared before the members that they initialize, because IntelliSense
+    // cannot find them otherwise.
+    static std::string Identity();
+    static Settings Defaults();
 
     std::filesystem::path directory;
     Store store;
@@ -206,7 +213,6 @@ public:
 
     State(std::filesystem::path path, std::function<void()> notification);
     ~State();
-    static std::string Identity();
     static bool Contains(std::vector<std::string> const& values, std::string const& value);
     void Start(Document const& saved, Resumes& resumes);
     std::filesystem::path ResumeFile(std::string const& id) const;
@@ -225,7 +231,6 @@ public:
     void RecordHashes(Torrent& torrent);
     void RecordHashes(Torrent& torrent, lt::info_hash_t const& hashes);
 
-    static Settings Defaults();
     void RefreshPolicy(bool configure = false);
     ScheduleMode ScheduledMode() const;
     bool IsPaused() const;
@@ -251,8 +256,9 @@ public:
         std::vector<std::string> known);
     void On(lt::metadata_failed_alert const& alert);
 
-    void Add(Preview& preview, std::string const& destination,
-        std::vector<lt::download_priority_t> priorities, bool paused, std::function<void(Outcome, Added)> done);
+    // choices holds the person's save path, intent, file priorities and piece
+    // order; Add records the rest.
+    void Add(Preview& preview, Facts choices, std::function<void(Outcome, Added)> done);
     void AddSource(std::string source, std::function<void(Outcome, Added)> done);
     static void Guard(lt::add_torrent_params& params);
     static std::optional<std::vector<lt::download_priority_t>> Priorities(
@@ -296,6 +302,9 @@ public:
     bool HoldsFiles(std::shared_ptr<lt::torrent_info const> const& metadata,
         std::string const& destination) const;
     void SetIntent(std::vector<std::string> const& ids, Intent intent, Reply reply);
+    // A missing choice keeps each torrent's current one.
+    void SetPieceOrder(std::vector<std::string> const& ids, std::optional<bool> sequential,
+        std::optional<bool> firstLast, Reply reply);
     void Edit(std::string const& id, Json const& choices, Reply reply);
     void CompletePriorities(Torrent& torrent);
     Json History(bool day) const;

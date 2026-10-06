@@ -97,13 +97,16 @@ Broader virtualization, Narrator and RTL scenarios remain unverified.
 
 - **Automation selection:** [Table.Selection](../src/Table/Selection.cs)
   restores its own selection after every unsolicited native `SelectionChanged`.
-  [Body.Surface](../src/Body/Surface.cs) supplies native row peers whose selection
-  actions request `Table.Selection`. Unsolicited native selection remains
-  rejected, preserving deliberate pointer arbitration.
+  [Body.Surface](../src/Body/Surface.cs) supplies list and item data peers whose
+  selection actions request `Table.Selection`, including unrealized rows. Cached
+  item peers resolve the current keyed row and enforce selection mode and row
+  interactivity. Unsolicited native selection remains rejected, preserving
+  deliberate pointer arbitration.
 - **Automation exposure:** [Header.Cell](../src/Header/Cell.cs)
-  and Table create framework automation peers. Sortable header peers invoke the
-  same sort operation as pointer and keyboard input. The hosted list retains
-  native list automation and the table peer supports drag notifications.
+  and [Header.Strip](../src/Header/Strip.cs) expose HeaderItem and Header peers
+  outside the content view. Sortable headers share one operation across pointer,
+  keyboard and automation input and raise its invoked event. The hosted list
+  extends native list automation and the table peer supports drag notifications.
 - **Keyboard location:** [Generic.xaml](../src/Themes/Generic.xaml)
   enables native row focus. Before reconciliation removes containers, physical
   focus moves to the list in pointer state; the existing logical focus owner
@@ -122,6 +125,9 @@ The lifetime and automation findings follow concrete source paths. The RTL
 consequence also depends on documented platform mirroring. The narrow product
 evidence is recorded in [implementation](../../../docs/implementation.md);
 it does not establish Narrator, detached reload or unrealized-row behavior.
+The later item-data and header-peer changes have source review only. The focused
+`AutomationTests` cover item selection, keyed replacement and selection policy;
+they have not run, and do not establish out-of-process provider routing.
 
 ## API verification
 

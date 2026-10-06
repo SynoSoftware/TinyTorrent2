@@ -148,7 +148,9 @@ Json Facts::ToJson() const
         {"ignores_seed_limits", ignoresSeedLimits},
         {"added", added},
         {"priorities", std::move(chosen)},
-        {"hashes", hashes}};
+        {"hashes", hashes},
+        {"sequential", sequential},
+        {"first_last", firstLast}};
     if (trackers)
     {
         saved["trackers"] = Json::array();
@@ -178,6 +180,8 @@ Facts Facts::Read(Json const& saved)
     facts.ignoresSeedLimits = saved.value("ignores_seed_limits", false);
     facts.priorities = ReadPriorities(saved.at("priorities"));
     facts.hashes = saved.value("hashes", std::vector<std::string>{});
+    facts.sequential = saved.value("sequential", false);
+    facts.firstLast = saved.value("first_last", false);
     if (saved.contains("trackers"))
     {
         facts.trackers.emplace();
@@ -614,6 +618,7 @@ Json Torrent::Row(bool allPaused) const
     return {{"torrent_id", identity}, {"save_path", facts.savePath},
         {"moving", moving}, {"move_destination", facts.moveDestination},
         {"paused", facts.intent == Intent::Paused}, {"forced", facts.intent == Intent::Forced},
+        {"sequential", facts.sequential}, {"first_last", facts.firstLast},
         {"added", facts.added}, {"name", Name()}, {"size", status.total_wanted},
         {"progress", status.progress}, {"status", ToString(Classify(allPaused))},
         {"download_rate", status.download_payload_rate}, {"upload_rate", status.upload_payload_rate},
@@ -627,6 +632,8 @@ Json Torrent::Row(bool allPaused) const
 
 void Torrent::ApplyIntent()
 {
+    handle.set_flags(facts.sequential ? lt::torrent_flags::sequential_download : lt::torrent_flags_t{},
+        lt::torrent_flags::sequential_download);
     if (!conflict.empty() || moving || !facts.moveDestination.empty())
     {
         handle.unset_flags(lt::torrent_flags::auto_managed);
@@ -658,6 +665,49 @@ void Torrent::ApplyIntent()
         handle.resume();
     }
     unsaved = true;
+}
+
+// Each piece gets the highest priority of the wanted files it holds, as
+// libtorrent gives it. With firstLast the end pieces of each wanted file get
+// the top priority: qBittorrent's 1 % of the file at each end, at least one
+// piece, which covers a media header and an AVI index.
+void Torrent::PrioritizePieces() const
+{
+    auto metadata = handle.torrent_file();
+    if (!metadata)
+    {
+        return;
+    }
+    auto const& files = metadata->layout();
+    auto priorities = handle.get_file_priorities();
+    std::int64_t length = files.piece_length();
+    std::vector<lt::download_priority_t> pieces(metadata->num_pieces(), lt::dont_download);
+    for (auto index : files.file_range())
+    {
+        auto size = files.file_size(index);
+        auto priority = priorities[static_cast<int>(index)];
+        if (size == 0 || files.pad_file_at(index) || priority == lt::dont_download)
+        {
+            continue;
+        }
+        auto first = static_cast<int>(files.file_offset(index) / length);
+        auto last = static_cast<int>((files.file_offset(index) + size - 1) / length);
+        for (auto piece = first; piece <= last; ++piece)
+        {
+            pieces[piece] = std::max(pieces[piece], priority);
+        }
+        if (!facts.firstLast)
+        {
+            continue;
+        }
+        auto count = static_cast<int>((size + 100 * length - 1) / (100 * length));
+        for (auto step = 0; step < count && first + step <= last; ++step)
+        {
+            pieces[first + step] = lt::top_priority;
+            pieces[last - step] = lt::top_priority;
+        }
+    }
+    handle.prioritize_pieces(pieces);
 }
 
 void Torrent::Checkpoint(bool exiting)

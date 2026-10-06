@@ -16,7 +16,15 @@ Json Catalogue(WORD resource)
 {
     auto module = GetModuleHandleW(nullptr);
     auto found = FindResourceW(module, MAKEINTRESOURCEW(resource), RT_RCDATA);
+    if (!found)
+    {
+        return {};
+    }
     auto loaded = LoadResource(module, found);
+    if (!loaded)
+    {
+        return {};
+    }
     auto bytes = static_cast<char const*>(LockResource(loaded));
     return Json::parse(std::string_view(bytes, SizeofResource(module, found)), nullptr, false);
 }

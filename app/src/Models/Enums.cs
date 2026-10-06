@@ -14,6 +14,12 @@ public enum Consumer
     Draft
 }
 
+public enum PieceOrder
+{
+    Sequential,
+    FirstLast
+}
+
 public enum FileAction
 {
     Move,
@@ -55,6 +61,14 @@ public enum InspectorSection
     Trackers,
     Speed,
     Pieces
+}
+
+public enum SpeedRange
+{
+    FiveMinutes,
+    Hour,
+    SixHours,
+    Day
 }
 
 public enum PieceKind
@@ -102,6 +116,7 @@ public enum PreferenceKind
     Port
 }
 
+#if CAPTURE
 internal enum CaptureMode
 {
     None,
@@ -117,5 +132,8 @@ internal enum CaptureMode
     Search,
     Library,
     Traffic,
-    Edits
+    Edits,
+    AddLayout,
+    PreferencesLayout
 }
+#endif

@@ -1,4 +1,3 @@
-using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Automation.Provider;
@@ -8,53 +7,66 @@ namespace Syno.TableView.Body;
 
 public sealed partial class Surface : ListView
 {
-    protected override DependencyObject GetContainerForItemOverride() => new Container();
+    protected override AutomationPeer OnCreateAutomationPeer() => new Peer(this);
 
-    private sealed partial class Container : ListViewItem
+    private sealed class Peer(Surface owner) : ListViewAutomationPeer(owner), ISelectionProvider
     {
-        protected override AutomationPeer OnCreateAutomationPeer() => new Peer(this);
+        internal Table? Table => Row.FindOwner(owner);
 
-        private sealed class Peer(Container container) : ListViewItemAutomationPeer(container), ISelectionItemProvider
+        protected override ItemAutomationPeer OnCreateItemAutomationPeer(object item) => new ItemPeer(item, this);
+
+        protected override object? GetPatternCore(PatternInterface pattern) =>
+            pattern == PatternInterface.Selection ?
+                Table is { SelectionMode: not ListViewSelectionMode.None } ? this : null : base.GetPatternCore(pattern);
+
+        bool ISelectionProvider.CanSelectMultiple => Table?.SelectionMode is ListViewSelectionMode.Multiple or ListViewSelectionMode.Extended;
+        bool ISelectionProvider.IsSelectionRequired => false;
+        IRawElementProviderSimple[] ISelectionProvider.GetSelection() => GetSelection();
+    }
+
+    private sealed class ItemPeer(object item, Peer parent) : ListViewItemDataAutomationPeer(item, parent), ISelectionItemProvider
+    {
+        private object? Current => parent.Table?.ResolveItem(Item);
+        private bool CanSelect => parent.Table is { SelectionMode: not ListViewSelectionMode.None } table &&
+            Current is { } current && table.CanInteract?.Invoke(current) != false;
+
+        protected override object? GetPatternCore(PatternInterface pattern) =>
+            pattern == PatternInterface.SelectionItem ? CanSelect ? this : null : base.GetPatternCore(pattern);
+
+        protected override bool IsEnabledCore() => parent.IsEnabled() && Current is { } current &&
+            parent.Table?.CanInteract?.Invoke(current) != false;
+
+        bool ISelectionItemProvider.IsSelected => parent.Table?.IsRowSelected(Item) == true;
+        IRawElementProviderSimple ISelectionItemProvider.SelectionContainer => ProviderFromPeer(parent);
+
+        void ISelectionItemProvider.Select()
         {
-            protected override object GetPatternCore(PatternInterface pattern) =>
-                pattern == PatternInterface.SelectionItem ? this : base.GetPatternCore(pattern);
+            var (table, current) = RequireSelection();
+            table.Selection = new Selection([current], current);
+        }
 
-            private Table? Table => Row.FindOwner(container);
+        void ISelectionItemProvider.AddToSelection()
+        {
+            var (table, current) = RequireSelection();
+            if (table.IsRowSelected(current)) return;
+            if (table.SelectionMode == ListViewSelectionMode.Single && table.Selection.Items.Count != 0)
+                throw new InvalidOperationException();
+            table.Selection = new Selection(table.Selection.Items.Append(current), current);
+        }
 
-            public bool IsSelected => Table?.IsRowSelected(container.Content) == true;
+        void ISelectionItemProvider.RemoveFromSelection()
+        {
+            var (table, current) = RequireSelection();
+            if (!table.IsRowSelected(current)) return;
+            table.Selection = new Selection(table.Selection.Items.Where(selected => !ReferenceEquals(selected, current)), current);
+        }
 
-            public IRawElementProviderSimple SelectionContainer =>
-                ProviderFromPeer(FrameworkElementAutomationPeer.CreatePeerForElement(
-                    ItemsControl.ItemsControlFromItemContainer(container)));
-
-            public void Select() => Change(new[] { container.Content });
-
-            public void AddToSelection()
-            {
-                if (Table is Table table && !IsSelected)
-                {
-                    if (table.SelectionMode == ListViewSelectionMode.Single && table.Selection.Items.Count != 0)
-                        throw new InvalidOperationException();
-                    Change(table.Selection.Items.Append(container.Content));
-                }
-            }
-
-            public void RemoveFromSelection()
-            {
-                if (Table is Table table && IsSelected)
-                    Change(table.Selection.Items.Where(item => !ReferenceEquals(item, container.Content)));
-            }
-
-            private void Change(IEnumerable<object> items)
-            {
-                if (!IsEnabled()) throw new ElementNotEnabledException();
-                if (Table is Table table && container.Content is object item)
-                {
-                    if (table.SelectionMode == ListViewSelectionMode.None || table.CanInteract?.Invoke(item) == false)
-                        return;
-                    table.Selection = new Selection(items, item);
-                }
-            }
+        private (Table Table, object Item) RequireSelection()
+        {
+            if (parent.Table is not { } table || Current is not { } current) throw new ElementNotAvailableException();
+            if (!IsEnabled()) throw new ElementNotEnabledException();
+            if (table.SelectionMode == ListViewSelectionMode.None) throw new InvalidOperationException();
+            return (table, current);
         }
     }
 }

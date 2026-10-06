@@ -572,7 +572,7 @@ The third review found two further divergences: a fresh torrent displayed ratio
 zero but sorted as infinity, and pasted or dropped magnets ignored Never show
 again. Ratio now has one numeric owner for sorting and formatting. Supplied
 sources now follow the same saved Add-form preference. The preference decision
-was taken in series: the everyday user expects Never show again to apply to
+was taken in series: the everyday user expects Don't show the Add form again to apply to
 paste; the keyboard user keeps the explicit Add magnet editor for entering a
 new link; the seeder keeps the explicit duplicate tracker offer; the maintainer
 uses the existing shared Add path; the product owner chooses those ordinary
@@ -715,7 +715,7 @@ Automation review. No unlock or LockApp interaction is attempted.
 
 The ninth source review found no further actionable code defect. It identified
 one wording mismatch: the modal-deferral sentence did not account for turning
-the Add form off. The everyday user expects Never show again to apply to new
+the Add form off. The everyday user expects Don't show the Add form again to apply to new
 sources; the heavy downloader expects sources to continue arriving during other
 tasks; the Windows engineer defers only a form that needs the dialog surface;
 the maintainer avoids a second modal policy in the view model; the product owner
@@ -1121,14 +1121,17 @@ regional formatting and live text derived when read. The Files view reuses
 FileBrowser. Peers and Trackers declare public TableView schemas with stable
 endpoint/URL keys and typed sort keys; no library change is required. The tracker
 editor preserves its coherent draft until Save or Cancel. SpeedGraph binds the
-history, range and availability, averages samples in buckets aligned to clock
-time, and draws monotone cubic native paths with separate figures across unknown
-time gaps. PiecesMap uses one BGRA
+history and a two-way range shared with the range bar and its
+wheel shortcut, averages samples in buckets aligned to clock time, and draws
+monotone cubic native paths with separate figures across unknown time gaps. Its
+marker exposes the marked point as a read-only UI Automation value. PiecesMap uses one BGRA
 bitmap, 16-pixel squares, 4-pixel gaps and 6-pixel gutters after each group of
 eight, matching the previous native map. Geometry and theme changes invalidate
 the raster; equal data does not. Grouped squares use the documented state tie
-order, received fill and a mixed-state corner. Arrow/Home/End navigation, a
-read-only UI Automation value and Ctrl+C expose the same range facts as hover.
+order, received fill, a mixed-state corner and an unavailable corner. Hover
+outlines a square without moving the selected square, which a click and
+Arrow/Home/End move; a read-only UI Automation value and Ctrl+C expose the
+selected square's range facts, the same text its tooltip shows.
 These surfaces are not yet connected to the product or runtime-reviewed.
 
 The owner's latest reference is `app/prototype.html` at `4082f7f`, variant C,
@@ -1256,12 +1259,22 @@ notifications are `{type:"activate"}`, `{type:"close"}`, and `{type:"sources"}`.
 passes the engine each request's connection beside the request, so no request field
 can claim another connection's previews.
 
+Desktop notices use `{type:"notice",kind,torrent_id,name,detail,count}` on that
+same connection while the window is open. `count` defaults to one; handing off
+a pending tray burst retains one representative failure and completion with
+their counts. The UI keeps completion feedback bounded and uses the current
+torrent identity to resolve Open folder. Windows delivery is reserved for a
+closed window and obeys the corresponding notification preference.
+
 Commands are `snapshot`, `preview` (source, destination), `preview_detail`
 (preview_id, destination), `add` (preview_id, destination, paused, optional
-priorities), `cancel_preview` (preview_id), `merge_trackers` (preview_id,
+priorities, optional sequential and first_last booleans that default to false),
+`cancel_preview` (preview_id), `merge_trackers` (preview_id,
 torrent_id), `torrent` (torrent_id), `pause`, `resume`, `force`, `verify`, and
 `remove` (torrent_ids), `queue` (torrent_ids with direction: up/down/top/bottom,
 or before_torrent_id: string/null for a row drop; null means end),
+`piece_order` (torrent_ids with sequential, first_last or both as booleans; an
+absent one keeps each torrent's choice),
 `session_pause` (paused), `settings` (changes), `open`, `ready`,
 `ui_closed`, `activate_reply` (available boolean), `close_reply` (state:
 waiting/closing/cancelled), and `exit`. Activation acknowledgement lets Open wait through an
@@ -1272,8 +1285,10 @@ Settings also accept `default_destination` (absolute path), `show_add` and
 `alternative_limits` (booleans), and `download_limit`, `upload_limit`,
 `alternative_download_limit`, `alternative_upload_limit` (bytes per second,
 integer 0 through INT_MAX; 0 means unlimited). Alternative limits initially use
-10 KiB/s in each direction. Settings also accept `notifications_enabled`,
-`prevent_sleep` and `prevent_sleep_seeding` (booleans).
+10 KiB/s in each direction. Settings also accept `notify_problems` (default true),
+`notifications_enabled` (finished downloads, default false), `notify_added`
+(default false), `prevent_sleep` and `prevent_sleep_seeding` (booleans).
+Existing saved notification choices keep their value.
 Session pause is persisted as `all_paused` through
 its command and preserves individual torrent intent. The desktop host records
 `background_notice_shown` through its own engine call; the settings command
@@ -1303,7 +1318,8 @@ Torrent rows contain torrent_id, name,
 size (bytes), progress (0..1), status (stable code), paused, download_rate and
 upload_rate (bytes/second), save_path, error (stable code), diagnostic detail,
 added (Unix seconds), seeds, peers, downloaded/uploaded (bytes), queue
-(libtorrent position), complete, incoming, forced, and hashes. `torrent` returns
+(libtorrent position), complete, incoming, forced, sequential, first_last, and
+hashes. `torrent` returns
 the torrent's facts, name, metadata_ready, files, hashes, current content folder,
 and magnet link.
 All identities are strings. Settings are intended changes rather than replacement

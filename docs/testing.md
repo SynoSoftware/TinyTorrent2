@@ -156,6 +156,15 @@ Report the relevant checks performed, their outcome, and any material gap.
 Distinguish source review, compilation, automated behavior checks, and manual
 observation. None should be described as stronger evidence than it provides.
 
+Capture journeys are excluded from ordinary builds. Build the app with
+`/p:EnableCapture=true` to include them; its output and intermediates use the
+`_capture` suffix under `artifacts/`, so a diagnostic build cannot replace the
+ordinary product. The option does not launch anything.
+For Release x64, launch `artifacts/bin/TinyTorrent/release_win-x64_capture/TinyTorrent.exe`
+with the `Engine.exe` beside it. Historical disposable launchers that name
+`release_win-x64` must have both executable paths changed before reuse; capture
+environment variables do not enable diagnostics in an ordinary binary.
+
 For UI reviews, use the automation tree for controls, state, bounds and focus;
 capture pixels when they establish a visual finding. A review launch may set
 `TINYTORRENT_CAPTURE_DIRECTORY` to an absolute evidence directory and use
@@ -169,8 +178,22 @@ before changes. A second review window exits without activating an existing
 application. Normal launches perform no automatic capture.
 Use `TINYTORRENT_CAPTURE_REVIEW=smoke` to rerun the recovery journeys without
 repeating the Settings viewport or full themes-and-sizes batches.
+Use `TINYTORRENT_CAPTURE_REVIEW=add-layout` for the workspace headers and empty/long-link
+magnet Add form in English and Spanish, Light and Dark, at the three review sizes.
+It also captures the connection overlay with its action at the right and records
+workspace bounds before and after; this is presentation evidence with a connected
+engine, not a simulated connection failure.
+One short-window case also invokes Preview with invalid input and a fixture
+magnet to inspect the error and preview areas. It does not submit a torrent or
+run unrelated journeys.
 Use `TINYTORRENT_CAPTURE_REVIEW=shell` for the title-bar menus, narrow layouts,
 themes, selection commands, secondary pages and retained filter state.
+Use `TINYTORRENT_CAPTURE_REVIEW=preferences-layout` for General Settings and
+completion feedback in English and Spanish, Light and Dark, at the three review
+sizes. It commits and restores one notification switch through its native
+control. Completion captures feed a simulated engine notice into the production
+UI handler; they do not prove Windows delivery, a real completed download or
+Explorer launch.
 Use `TINYTORRENT_CAPTURE_REVIEW=search` for native AutoSuggestBox result
 submission: unavailable commands, Properties from Settings, speed-limit
 navigation, named-setting focus and reopening suggestions. It captures localized

@@ -2,6 +2,7 @@
   "tray": {
     "rates": "↓ {0}  ↑ {1}",
     "counts": "{0} activos · {1} en cola",
+    "errors": "Errores: {0}",
     "paused": "En pausa · {0} torrents",
     "paused_one": "En pausa · {0} torrent",
     "pause": "Pausar transferencias",

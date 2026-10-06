@@ -101,13 +101,14 @@ Json Failure(ProblemKind kind, std::string detail)
 std::wstring Executable()
 {
     // Windows paths are at most 32,767 characters.
-    wchar_t path[32'768];
-    auto size = GetModuleFileNameW(nullptr, path, static_cast<DWORD>(std::size(path)));
-    if (!size || size == std::size(path))
+    std::wstring path(32'768, L'\0');
+    auto size = GetModuleFileNameW(nullptr, path.data(), static_cast<DWORD>(path.size()));
+    if (!size || size == path.size())
     {
         throw std::runtime_error("Cannot locate the engine executable.");
     }
-    return std::wstring(path, size);
+    path.resize(size);
+    return path;
 }
 
 char const* ToString(NoticeKind kind)

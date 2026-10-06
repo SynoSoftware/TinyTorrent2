@@ -39,9 +39,11 @@ public sealed partial class MainWindow
         "library" => CaptureMode.Library,
         "traffic" => CaptureMode.Traffic,
         "edits" => CaptureMode.Edits,
+        "add-layout" => CaptureMode.AddLayout,
+        "preferences-layout" => CaptureMode.PreferencesLayout,
         _ => CaptureMode.None
     };
-    internal static bool IsCaptureReview => ReviewMode != CaptureMode.None;
+    static MainWindow() => IsCaptureReview = ReviewMode != CaptureMode.None;
 
     internal void ShowCaptureReview()
     {
@@ -50,7 +52,7 @@ public sealed partial class MainWindow
         AppWindow.Show(false);
     }
 
-    private void ConfigureCapture()
+    partial void ConfigureCapture()
     {
         var directory = Environment.GetEnvironmentVariable("TINYTORRENT_CAPTURE_DIRECTORY");
         if (string.IsNullOrWhiteSpace(directory)) return;
@@ -270,7 +272,7 @@ public sealed partial class MainWindow
     {
         foreach (var theme in new[] { "light", "dark" })
         {
-            await Model.SelectTheme(theme);
+            await Model.Preferences.SelectTheme(theme);
             await CaptureReady(Model, () => Model.CanClose && Model.Theme == theme);
             foreach (var width in new[] { 1040, 720 })
             {
@@ -329,7 +331,7 @@ public sealed partial class MainWindow
         outcomes.Add(new { command = "theme", theme = Root.ActualTheme.ToString() });
         Run(ThemeButton.Command);
         await CaptureReady(Model, () => Model.CanClose && Model.Theme == "dark");
-        FiltersItem.IsChecked = true;
+        Model.IsFilterOpen = true;
         Model.Filter = TorrentFilter.Paused;
         await CapturePage("shell-filters");
         outcomes.Add(new { command = "filters", open = Workspace.IsPaneOpen });
@@ -396,7 +398,7 @@ public sealed partial class MainWindow
                 await CaptureReady(Model, () => Model.CanClose && Model.Text.Language == language);
                 foreach (var theme in new[] { "light", "dark" })
                 {
-                    await Model.SelectTheme(theme);
+                    await Model.Preferences.SelectTheme(theme);
                     await CaptureReady(Model, () => Model.CanClose && Model.Theme == theme);
                     foreach (var size in new[] { new SizeInt32(720, 560), new SizeInt32(1040, 680), new SizeInt32(1280, 800) })
                     {
@@ -470,7 +472,7 @@ public sealed partial class MainWindow
             await CaptureReady(Model, () => Model.CanClose && Model.Text.Language == language);
             foreach (var theme in new[] { "light", "dark" })
             {
-                await Model.SelectTheme(theme);
+                await Model.Preferences.SelectTheme(theme);
                 await CaptureReady(Model, () => Model.CanClose && Model.Theme == theme);
                 foreach (var size in new[] { new SizeInt32(720, 560), new SizeInt32(1040, 680), new SizeInt32(1280, 800) })
                 {
@@ -520,7 +522,7 @@ public sealed partial class MainWindow
 
         Model.SelectLanguage("es");
         await CaptureReady(Model, () => Model.CanClose && Model.Text.Language == "es");
-        await Model.SelectTheme("light");
+        await Model.Preferences.SelectTheme("light");
         await CaptureReady(Model, () => Model.CanClose && Model.Theme == "light");
         var raster = Root.XamlRoot.RasterizationScale;
         var minimumWidth = ((Microsoft.UI.Windowing.OverlappedPresenter)AppWindow.Presenter).PreferredMinimumWidth ?? 0;
@@ -666,6 +668,68 @@ public sealed partial class MainWindow
             if (!string.Equals(Path.GetFullPath(store).TrimEnd(Path.DirectorySeparatorChar),
                     Path.GetFullPath(Model.DataDirectory ?? string.Empty).TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase))
                 throw new InvalidOperationException("The connected engine does not own the capture store.");
+            if (ReviewMode == CaptureMode.PreferencesLayout)
+            {
+                foreach (var language in new[] { "en", "es" })
+                foreach (var theme in new[] { "light", "dark" })
+                {
+                    Model.SelectLanguage(language);
+                    await CaptureReady(Model, () => Model.CanClose && Model.Text.Language == language);
+                    await Model.Preferences.SelectTheme(theme);
+                    await CaptureReady(Model, () => Model.CanClose && Model.Theme == theme);
+                    foreach (var size in new[] { new SizeInt32(720, 560), new SizeInt32(1040, 680), new SizeInt32(1280, 800) })
+                    {
+                        var scale = Root.XamlRoot.RasterizationScale;
+                        var minimum = ((Microsoft.UI.Windowing.OverlappedPresenter)AppWindow.Presenter).PreferredMinimumWidth ?? 0;
+                        AppWindow.Resize(new SizeInt32(Math.Max((int)(size.Width * scale), minimum), (int)(size.Height * scale)));
+                        await ShowPreferences(new(PreferenceSection.General));
+                        var form = _preferencesForm ?? throw new InvalidOperationException("The preferences form did not open.");
+                        var name = "preferences-" + language + "-" + theme + "-" + size.Width + "x" + size.Height;
+                        await CapturePage(name, form);
+                        if (form.FindName("NotificationsSection") is FrameworkElement notifications)
+                        {
+                            notifications.StartBringIntoView(new BringIntoViewOptions { AnimationDesired = false, VerticalAlignmentRatio = 0 });
+                            await CaptureLayout();
+                            await CaptureUi(name + "-notifications");
+                        }
+                        if (language == "en" && theme == "light" && size.Width == 1040)
+                        {
+                            var preference = Model.Preferences.AddedNotifications;
+                            var toggle = CaptureElements(form).OfType<ToggleSwitch>().Single(control => ReferenceEquals(control.Tag, preference));
+                            var original = preference.ConfirmedOn;
+                            toggle.IsOn = !original;
+                            await CaptureReady(preference, () => !preference.IsPending && !preference.HasDraft && preference.ConfirmedOn == !original);
+                            toggle.IsOn = original;
+                            await CaptureReady(preference, () => !preference.IsPending && !preference.HasDraft && preference.ConfirmedOn == original);
+                            outcomes.Add(new { journey = "notification preference", nativeToggleCommitted = true, originalRestored = true });
+                        }
+                        await ShowTorrents();
+                        var torrent = Model.Torrents.First();
+                        Model.ReceiveNotice(JsonSerializer.SerializeToElement(new { type = "notice", kind = "completed", torrent_id = torrent.TorrentId, name = torrent.Name, detail = string.Empty, count = 1 }));
+                        await CaptureLayout();
+                        if (!Model.HasCompletion || !Model.OpenCompletion.CanExecute(null))
+                            throw new InvalidOperationException("The completion notice has no available folder action.");
+                        await CapturePage(name + "-completion");
+                        if (language == "en" && theme == "light" && size.Width == 1040)
+                        {
+                            Search.Focus(FocusState.Programmatic);
+                            await CaptureLayout();
+                            if (!HasEditorFocus() || CompletionNotice.Visibility != Visibility.Collapsed || !Model.HasCompletion)
+                                throw new InvalidOperationException("Editing search did not postpone completion feedback.");
+                            Torrents.Focus(FocusState.Programmatic);
+                            await CaptureLayout();
+                            if (CompletionNotice.Visibility != Visibility.Visible)
+                                throw new InvalidOperationException("Completion feedback did not return after editing.");
+                            await CaptureReady(Model, () => !Model.HasCompletion);
+                            outcomes.Add(new { journey = "completion lifetime", postponedWhileEditing = true, resumedAfterEditing = true, dismissedAfterTimeout = true });
+                        }
+                        Model.DismissCompletion();
+                        completed.Add(name);
+                    }
+                }
+                outcomes.Add(new { journey = "completion presentation", scope = "Simulated engine notice through the production UI handler; no download or Explorer launch" });
+                return;
+            }
             if (ReviewMode == CaptureMode.Schedule)
             {
                 await CaptureSchedule(outcomes, completed);
@@ -713,25 +777,97 @@ public sealed partial class MainWindow
                 return;
             }
             var filesOnly = ReviewMode == CaptureMode.DetailsFiles;
+            var addOnly = ReviewMode == CaptureMode.AddLayout;
+            if (addOnly) await Model.Draft.Cancel();
             var preferences = Model.Preferences.Fields.Select(field => (field.Name, field.Input, field.IsOn)).ToArray();
             (int Index, int Priority)[]? priorities = null;
-            string[] languages = filesOnly ? ["en", "es"] : [Model.Text.Language];
+            string[] languages = filesOnly || addOnly ? ["en", "es"] : [Model.Text.Language];
             var themes = ReviewMode == CaptureMode.Smoke ? Array.Empty<string>() : ["light", "dark"];
             foreach (var language in languages)
             foreach (var theme in themes)
             {
-                await Model.SelectTheme(theme);
+                await Model.Preferences.SelectTheme(theme);
                 await CaptureReady(Model, () => Model.CanClose && Model.Theme == theme);
                 Model.SelectLanguage(language);
                 await CaptureReady(Model, () => Model.CanClose && Model.Text.Language == language);
                 foreach (var size in new[] { new SizeInt32(720, 560), new SizeInt32(1040, 680), new SizeInt32(1280, 800) })
                 {
-                    var prefix = (filesOnly ? "details-" + language + "-" : string.Empty) + theme + "-" + size.Width + "x" + size.Height + "-";
+                    var prefix = (addOnly ? "add-layout-" + language + "-" : filesOnly ? "details-" + language + "-" : string.Empty) + theme + "-" + size.Width + "x" + size.Height + "-";
                     var scale = Root.XamlRoot.RasterizationScale;
                     var minimum = ((Microsoft.UI.Windowing.OverlappedPresenter)AppWindow.Presenter).PreferredMinimumWidth ?? 0;
                     AppWindow.Resize(new SizeInt32(Math.Max((int)(size.Width * scale), minimum), (int)(size.Height * scale)));
                     await ShowTorrents();
                     if (!filesOnly) Model.CloseInspector();
+                    if (addOnly)
+                    {
+                        await CapturePage(prefix + "header");
+                        Torrents.Selection = new Syno.TableView.Selection([target], target);
+                        await SelectTorrent();
+                        Run(Model.Properties);
+                        Model.Inspector.Select(InspectorSection.General);
+                        await CaptureReady(Model.Inspector, () => !Model.Inspector.IsLoading);
+                        await CapturePage(prefix + "headers", InspectorContent.Content as FrameworkElement);
+                        var message = Feedback.Message;
+                        var severity = Feedback.Severity;
+                        var visibility = Feedback.Visibility;
+                        var open = Feedback.IsOpen;
+                        var action = Feedback.ActionButton.Visibility;
+                        var workspace = new { width = Torrents.ActualWidth, height = Torrents.ActualHeight, footer = StatusBar.TransformToVisual(Root).TransformPoint(new Windows.Foundation.Point()).Y };
+                        try
+                        {
+                            Feedback.Message = Model.Text.Get("window", "connecting");
+                            Feedback.Severity = InfoBarSeverity.Warning;
+                            Feedback.Visibility = Visibility.Visible;
+                            Feedback.IsOpen = true;
+                            Feedback.ActionButton.Visibility = Visibility.Visible;
+                            await CapturePage(prefix + "connection-overlay");
+                            outcomes.Add(new { journey = prefix + "overlay layout", scope = "Presentation only; the engine remains connected",
+                                before = workspace, after = new { width = Torrents.ActualWidth, height = Torrents.ActualHeight, footer = StatusBar.TransformToVisual(Root).TransformPoint(new Windows.Foundation.Point()).Y },
+                                caption = new { add = AddButton.ActualWidth, magnet = MagnetButton.ActualWidth, theme = ThemeButton.ActualWidth, inset = AppWindow.TitleBar.RightInset } });
+                        }
+                        finally
+                        {
+                            Feedback.Message = message;
+                            Feedback.Severity = severity;
+                            Feedback.Visibility = visibility;
+                            Feedback.IsOpen = open;
+                            Feedback.ActionButton.Visibility = action;
+                        }
+                        Model.CloseInspector();
+                        Model.Draft.EditingMagnet = true;
+                        var closed = ShowAdd();
+                        await CaptureLayout();
+                        var dialog = _interaction?.Dialog ?? throw new InvalidOperationException("The Add dialog did not open: " + Model.CommandError);
+                        try
+                        {
+                            await CapturePage(prefix + "add", dialog.Content as FrameworkElement);
+                            var editor = CaptureElements(dialog).OfType<TextBox>().Single(control => control.Name == "MagnetInput");
+                            var magnet = "magnet:?xt=urn:btih:" + target.Hashes[0] + "&dn=Example%20download" +
+                                string.Concat(Enumerable.Range(1, 12).Select(index => "&tr=https%3A%2F%2Ftracker" + index + ".example.invalid%2Fannounce"));
+                            editor.Text = magnet;
+                            await CapturePage(prefix + "long-magnet", dialog.Content as FrameworkElement);
+                            if (Model.Draft.Magnet != magnet)
+                                throw new InvalidOperationException("The wrapped magnet editor changed its input.");
+                            if (language == "es" && theme == "dark" && size.Width == 720)
+                            {
+                                editor.Text = "invalid magnet";
+                                var preview = CaptureElements(dialog).OfType<Button>().Single(control => control.Name == "Preview");
+                                CaptureInvoke(preview);
+                                await CaptureReady(Model.Draft, () => Model.Draft.HasMagnetError && !Model.Draft.IsPending);
+                                if (editor.Text != "invalid magnet" || Model.Draft.Magnet != "invalid magnet")
+                                    throw new InvalidOperationException("The magnet editor lost its rejected input.");
+                                await CapturePage(prefix + "magnet-error", dialog.Content as FrameworkElement);
+                                editor.Text = "magnet:?xt=urn:btih:" + target.Hashes[0];
+                                CaptureInvoke(preview);
+                                await CaptureReady(Model.Draft, () => Model.Draft.HasSources && !Model.Draft.IsPending);
+                                await CapturePage(prefix + "magnet-preview", dialog.Content as FrameworkElement);
+                                outcomes.Add(new { journey = "magnet preview", rejectedInputRetained = true, previewVisible = Model.Draft.HasSources });
+                            }
+                        }
+                        finally { dialog.Hide(); await closed; }
+                        completed.Add(prefix);
+                        continue;
+                    }
                     if (!filesOnly)
                     {
                         await CapturePage(prefix + "torrents");
@@ -786,9 +922,10 @@ public sealed partial class MainWindow
                     completed.Add(prefix);
                 }
             }
+            if (addOnly) return;
             if (filesOnly)
             {
-                await Model.SelectTheme("light");
+                await Model.Preferences.SelectTheme("light");
                 await CaptureReady(Model, () => Model.CanClose && Model.Theme == "light");
                 Model.SelectLanguage("en");
                 await CaptureReady(Model, () => Model.CanClose && Model.Text.Language == "en");

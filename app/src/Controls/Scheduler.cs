@@ -50,6 +50,8 @@ public sealed partial class Scheduler : UserControl
         AddPeriod.Focus(FocusState.Programmatic);
     }
 
+    internal Control Editor(string? name) => (name is null ? null : FindName(name) as Control) ?? StartTime;
+
     private void OnModel(object? sender, PropertyChangedEventArgs args)
     {
         Hint.Visibility = Model.IsEditing ? Visibility.Collapsed : Visibility.Visible;

@@ -18,6 +18,7 @@ public sealed partial class Cell : Control
     private sealed class Peer(Cell cell) : FrameworkElementAutomationPeer(cell), IInvokeProvider
     {
         protected override AutomationControlType GetAutomationControlTypeCore() => AutomationControlType.HeaderItem;
+        protected override bool IsContentElementCore() => false;
 
         protected override object GetPatternCore(PatternInterface pattern) =>
             pattern == PatternInterface.Invoke && cell.Column?.CanSort == true
@@ -26,8 +27,7 @@ public sealed partial class Cell : Control
         public void Invoke()
         {
             if (!IsEnabled()) throw new ElementNotEnabledException();
-            if (cell.Column?.CanSort == true && Body.Row.FindOwner(cell) is Table table)
-                table.ActivateSort(cell.Column);
+            cell.ActivateSort();
         }
     }
 
@@ -51,6 +51,13 @@ public sealed partial class Cell : Control
     public Cell() => DefaultStyleKey = typeof(Cell);
 
     internal Column? Column { get; private set; }
+
+    internal void ActivateSort()
+    {
+        if (Column?.CanSort != true || Body.Row.FindOwner(this) is not Table table) return;
+        table.ActivateSort(Column);
+        FrameworkElementAutomationPeer.FromElement(this)?.RaiseAutomationEvent(AutomationEvents.InvokePatternOnInvoked);
+    }
 
     /// <summary>
     /// Section 11's "the dragged header remains identifiable". The state carries the platform's own

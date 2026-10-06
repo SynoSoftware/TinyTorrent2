@@ -280,6 +280,12 @@ public sealed partial class Table
         return -1;
     }
 
+    internal object? ResolveItem(object item)
+    {
+        var index = IndexInView(item);
+        return index < 0 ? null : View[index];
+    }
+
     public static void SetIsRowGestureEnabled(DependencyObject element, bool value) =>
         element.SetValue(IsRowGestureEnabledProperty, value);
 
@@ -441,11 +447,7 @@ public sealed partial class Table
             _selection.SetMarqueeSelection(MarqueeItems(), View);
         }
 
-        if (!_detached)
-        {
-            if (focusedItem is not null) FocusCurrentRow(rowFocus, focusedItem);
-            else RestoreRowFocus(rowFocus);
-        }
+        if (!_detached) RestoreRowFocus(rowFocus, focusedItem);
         CommitSelection();
     }
 

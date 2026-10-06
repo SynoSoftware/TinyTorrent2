@@ -67,8 +67,12 @@ constexpr int accentAttribute = 19;
 bool SetBlur(HWND window, bool enabled)
 {
     using Setter = BOOL(WINAPI*)(HWND, CompositionData*);
-    auto set = reinterpret_cast<Setter>(
-        GetProcAddress(GetModuleHandleW(L"user32.dll"), "SetWindowCompositionAttribute"));
+    auto user32 = GetModuleHandleW(L"user32.dll");
+    if (!user32)
+    {
+        return false;
+    }
+    auto set = reinterpret_cast<Setter>(GetProcAddress(user32, "SetWindowCompositionAttribute"));
     if (!set)
     {
         return false;

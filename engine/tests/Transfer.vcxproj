@@ -7,6 +7,9 @@
   <ItemGroup>
     <ClCompile Remove="@(ClCompile)" />
     <ResourceCompile Remove="@(ResourceCompile)" />
+    <ClCompile Include="../src/Precompiled.cpp">
+      <PrecompiledHeader>Create</PrecompiledHeader>
+    </ClCompile>
     <ClCompile Include="Transfer.cpp" />
   </ItemGroup>
   <ItemDefinitionGroup>

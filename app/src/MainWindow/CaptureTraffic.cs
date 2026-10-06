@@ -30,7 +30,7 @@ public sealed partial class MainWindow
         foreach (var language in new[] { "en", "es" })
         foreach (var theme in new[] { "light", "dark" })
         {
-            await Model.SelectTheme(theme);
+            await Model.Preferences.SelectTheme(theme);
             await CaptureReady(Model, () => Model.CanClose && Model.Theme == theme);
             Model.SelectLanguage(language);
             await CaptureReady(Model, () => Model.CanClose && Model.Text.Language == language);

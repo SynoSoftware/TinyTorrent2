@@ -5,6 +5,8 @@ namespace Syno.TinyTorrent.Models;
 
 public sealed class Pieces
 {
+    private const int Listed = 3;
+
     public bool MetadataReady { get; }
     public int PieceSize { get; }
     public int Peers { get; }
@@ -12,6 +14,7 @@ public sealed class Pieces
     public IReadOnlyList<int> Availability { get; }
     public IReadOnlyDictionary<int, double> Downloading { get; }
     public IReadOnlyList<PieceFile> Files { get; }
+    public IReadOnlyList<PieceKind> States { get; }
     public int Count => Verified.Count;
 
     internal Pieces(JsonElement data, IReadOnlyList<PieceFile> files)
@@ -27,9 +30,10 @@ public sealed class Pieces
             file.GetProperty("path").GetString()!, file.GetProperty("first_piece").GetInt32(),
             file.GetProperty("end_piece").GetInt32())).ToArray() : files;
         if (Availability.Count != Count) throw new InvalidDataException("Incomplete piece availability.");
+        States = Classify();
     }
 
-    internal PieceKind[] Classify()
+    private PieceKind[] Classify()
     {
         var threshold = Math.Max(1, (int)Math.Ceiling(Availability.DefaultIfEmpty().Max() * 0.15));
         var states = new PieceKind[Count];
@@ -49,33 +53,54 @@ public sealed class Pieces
         Verified.SequenceEqual(other.Verified) && Availability.SequenceEqual(other.Availability) && Files.SequenceEqual(other.Files) &&
         Downloading.Count == other.Downloading.Count && Downloading.All(piece => other.Downloading.TryGetValue(piece.Key, out var progress) && progress == piece.Value);
 
-    internal string Summary(Strings text, PieceKind[] states)
+    internal int[] Counts(int first, int end)
+    {
+        var counts = new int[Enum.GetValues<PieceKind>().Length];
+        for (var index = first; index < end; index++) counts[(int)States[index]]++;
+        return counts;
+    }
+
+    internal static string Label(Strings text, PieceKind kind, int count) =>
+        text.Format("pieces", "count", text.Get("pieces", kind.ToString().ToLowerInvariant()), count);
+
+    internal string Summary(Strings text)
     {
         if (!MetadataReady) return text.Get("pieces", "metadata");
-        if (states.All(state => state == PieceKind.Verified)) return text.Get("pieces", "complete");
+        if (States.All(state => state == PieceKind.Verified)) return text.Get("pieces", "complete");
         if (Peers == 0) return text.Get("pieces", "no_peers");
         var unavailable = new int[Count + 1];
         for (var index = 0; index < Count; index++)
-            unavailable[index + 1] = unavailable[index] + (states[index] == PieceKind.Unavailable ? 1 : 0);
+            unavailable[index + 1] = unavailable[index] + (States[index] == PieceKind.Unavailable ? 1 : 0);
         if (unavailable[Count] == 0) return text.Get("pieces", "available");
-        var names = Files.Where(file => unavailable[file.End] > unavailable[file.First]).Select(file => file.Path);
+        var names = Names(text, Files.Where(file => unavailable[file.End] > unavailable[file.First]));
         return text.FormatCount("pieces", "unavailable_files", unavailable[Count], string.Join(", ", names));
     }
 
-    internal string Describe(Strings text, int first, int end, PieceKind[] states)
+    internal string Describe(Strings text, int first, int end)
     {
-        var counts = new int[6];
-        for (var index = first; index < end; index++) counts[(int)states[index]]++;
+        var counts = Counts(first, end);
+        var copies = Enumerable.Range(first, end - first)
+            .Where(index => States[index] is not (PieceKind.Verified or PieceKind.Downloading))
+            .Select(index => Availability[index]).ToArray();
         var lines = new List<string>
         {
-            text.Format("pieces", "range", first + 1, end),
-            string.Join(", ", Files.Where(file => file.First < end && file.End > first).Select(file => file.Path))
+            end == first + 1 ? text.Format("pieces", "piece", end) : text.Format("pieces", "range", first + 1, end)
         };
-        foreach (var kind in Enum.GetValues<PieceKind>().Reverse())
-            lines.Add(text.Format("pieces", "count", text.Get("pieces", kind.ToString().ToLowerInvariant()), counts[(int)kind]));
-        if (end == first + 1 && states[first] is not PieceKind.Verified and not PieceKind.Downloading)
-            lines.Add(Peers == 0 ? text.Get("pieces", "unknown") : text.Format("pieces", "copies", Availability[first]));
+        lines.AddRange(Names(text, Files.Where(file => file.First < end && file.End > first)));
+        lines.AddRange(Enum.GetValues<PieceKind>().Reverse().Where(kind => counts[(int)kind] > 0)
+            .Select(kind => Label(text, kind, counts[(int)kind])));
+        if (copies.Length > 0)
+            lines.Add(Peers == 0 ? text.Get("pieces", "unknown")
+                : end == first + 1 ? text.Format("pieces", "copies", copies[0])
+                : copies.Min() == copies.Max() ? text.Format("pieces", "copies_each", copies[0])
+                : text.Format("pieces", "copies_range", copies.Min(), copies.Max()));
         return string.Join(Environment.NewLine, lines);
+    }
+
+    private static string[] Names(Strings text, IEnumerable<PieceFile> files)
+    {
+        var paths = files.Select(file => file.Path).ToArray();
+        return paths.Length <= Listed ? paths : [.. paths.Take(Listed), text.Format("pieces", "more", paths.Length - Listed)];
     }
 }
 

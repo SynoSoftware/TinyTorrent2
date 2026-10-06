@@ -60,6 +60,7 @@ struct Notice
     std::string name;
     std::string detail;
     std::string torrentId;
+    unsigned count = 1;
 };
 
 // The completion or failure of an operation. A failure has its error code
@@ -85,13 +86,16 @@ struct Activity
     std::int64_t uploadRate = 0;
     unsigned active = 0;
     unsigned queued = 0;
+    unsigned errors = 0;
     std::size_t torrentCount = 0;
     bool allPaused = false;
     std::string missingInterface;
     bool downloading = false;
     bool seeding = false;
     bool hasIncoming = false;
-    bool notificationsEnabled = true;
+    bool notificationsEnabled = false;
+    bool notifyProblems = true;
+    bool notifyAdded = false;
     bool preventSleep = true;
     bool preventSleepSeeding = false;
     bool backgroundNoticeShown = false;

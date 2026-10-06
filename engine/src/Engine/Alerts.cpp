@@ -69,7 +69,18 @@ void Engine::State::Handle(lt::alert* alert)
     {
         if (auto torrent = Find(priorities->handle))
         {
+            if (torrent->facts.firstLast)
+            {
+                torrent->PrioritizePieces();
+            }
             CompletePriorities(*torrent);
+        }
+    }
+    else if (auto checked = lt::alert_cast<lt::torrent_checked_alert>(alert))
+    {
+        if (auto torrent = Find(checked->handle); torrent && torrent->facts.firstLast)
+        {
+            torrent->PrioritizePieces();
         }
     }
     else if (auto paused = lt::alert_cast<lt::torrent_paused_alert>(alert))

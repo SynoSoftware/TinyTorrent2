@@ -26,7 +26,8 @@ constexpr std::pair<std::string_view, Command> commands[] = {
     {"file_scope", Command::FileScope},
     {"move", Command::Move},
     {"delete_files", Command::DeleteFiles},
-    {"queue", Command::Queue}};
+    {"queue", Command::Queue},
+    {"piece_order", Command::PieceOrder}};
 
 constexpr std::pair<std::string_view, QueueMove> moves[] = {
     {"up", QueueMove::Up},
@@ -139,9 +140,13 @@ void Engine::State::Execute(Json const& request, std::string const& connection, 
             reply(Failure(ErrorCode::PreviewExpired));
             return;
         }
-        Add(*preview, request.at("destination").get<std::string>(),
-            ReadPriorities(request.value("priorities", Json::array())), request.value("paused", false),
-            [reply](Outcome outcome, Added added)
+        Facts choices;
+        choices.savePath = request.at("destination").get<std::string>();
+        choices.intent = request.value("paused", false) ? Intent::Paused : Intent::Resumed;
+        choices.priorities = ReadPriorities(request.value("priorities", Json::array()));
+        choices.sequential = request.value("sequential", false);
+        choices.firstLast = request.value("first_last", false);
+        Add(*preview, std::move(choices), [reply](Outcome outcome, Added added)
         {
             reply(outcome.error ? Failure(*outcome.error, outcome.detail) :
                 Success({{"torrent_id", added.torrentId}, {"duplicate", added.kind == AdditionKind::Duplicate}}));
@@ -284,6 +289,25 @@ void Engine::State::Execute(Json const& request, std::string const& connection, 
         Act(TargetIds(request), reply, [this, move = *move, before](auto const& ids, Reply reply)
         {
             Queue(ids, move, before, reply);
+        });
+        break;
+    }
+    case Command::PieceOrder:
+    {
+        auto choice = [&request](char const* key)
+        {
+            return request.contains(key) ? std::optional(request.at(key).get<bool>()) : std::nullopt;
+        };
+        auto sequential = choice("sequential");
+        auto firstLast = choice("first_last");
+        if (!sequential && !firstLast)
+        {
+            reply(Failure(ErrorCode::InvalidRequest));
+            return;
+        }
+        Act(TargetIds(request), reply, [this, sequential, firstLast](auto const& ids, Reply reply)
+        {
+            SetPieceOrder(ids, sequential, firstLast, reply);
         });
         break;
     }
@@ -495,6 +519,33 @@ void Engine::State::SetIntent(std::vector<std::string> const& ids, Intent intent
                 torrent.diskError.clear();
             }
             torrent.ApplyIntent();
+        }
+        return Success();
+    });
+}
+
+void Engine::State::SetPieceOrder(std::vector<std::string> const& ids, std::optional<bool> sequential,
+    std::optional<bool> firstLast, Reply reply)
+{
+    auto document = Saved();
+    std::map<std::string, Facts> next;
+    for (auto const& id : ids)
+    {
+        auto& facts = document.torrents.at(id);
+        facts.sequential = sequential.value_or(facts.sequential);
+        facts.firstLast = firstLast.value_or(facts.firstLast);
+        next.emplace(id, facts);
+    }
+    changes.Commit(document.ToJson(), reply, [this, ids, next]
+    {
+        for (auto const& id : ids)
+        {
+            auto& torrent = torrents.at(id);
+            torrent.facts = next.at(id);
+            torrent.ApplyIntent();
+            // The file_prio_alert after ApplyIntent raises the end pieces only
+            // while firstLast is on, so turning it off lowers them here.
+            torrent.PrioritizePieces();
         }
         return Success();
     });

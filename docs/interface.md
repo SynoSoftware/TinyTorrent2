@@ -65,11 +65,25 @@ code are not production architecture.
 for commands and replaces the application navigation pane. Its dropdown commands
 use Lucide icons and separators between distinct action groups; menu headings
 retain native text presentation.
+A menu choice shows its state as its icon: a checked, empty or mixed square. It
+is never a check-mark item, because one check-mark item gives every item in its
+menu a second icon column that is empty beside the others.
 
 The custom title bar contains one row: app icon, File/Torrent/View/Help MenuBar,
-bounded Search, a light/dark switch, and native caption buttons. Keep the existing
+bounded Search, Add torrent file and Add magnet link, a small separator, the
+light/dark switch, and native caption buttons. Resume, Pause, Verify and Remove
+stay in the Torrent menu, not the header. Each button runs the same command as
+its menu item. Keep the existing
 custom title bar; do not replace it with the WinUI TitleBar control. A 24-pixel
 icon and 32-pixel Search sit within a 48-pixel row so the content has breathing room.
+
+**Owner's decision: retain the custom toolbar implementation.** Compose ordinary
+Buttons with the existing TinyTorrentCaptionButtonStyle, not CommandBar or
+AppBarButton. All app-side header actions share its size, spacing and states;
+the theme button sits immediately beside the native caption buttons, with no
+extra gap. CommandBar's separate button metrics break that visual consistency.
+Windows still owns minimize, maximize and close; never simulate those controls.
+
 Inset the icon, separate logical groups, and reserve Windows' caption insets plus
 a command buffer. Search is at most 320 effective pixels wide. The minimum window
 width accommodates the measured menus, a 200-pixel search and the caption buttons,
@@ -81,7 +95,7 @@ window, and Alt+Space opens the same menu. Windows owns these caption semantics;
 the icon does not open an application command menu.
 
 There is no application navigation pane, identity text, command overflow,
-language switch or permanent Add/Pause/Resume/Exit button. Language and theme
+language switch or permanent Exit button. Language and theme
 are chosen in Settings; the title-bar light/dark shortcut uses the same theme
 owner. Torrents is the normal workspace; Settings and About
 have a contextual Back button and Alt+Left route to it, with the existing draft
@@ -120,31 +134,112 @@ applying a general style rule against its semantics.
 ## Text, icons, and typography
 
 Use concise, action-specific labels. Include the object when context does not
-make it clear; use familiar OK and Cancel labels where their meaning fits.
-Prefer a specific verb for a consequential decision. Clarity and natural
-translation determine label length, without a fixed word limit.
+make it clear. Button labels follow the one-word ruling in
+[Buttons](#buttons); a menu item is read in a vertical list and may name its act
+with a verb phrase.
 
-Keep instructions needed to complete a task, errors, and decision information
-visible beside the relevant controls. Avoid redundant explanations.
-[Tooltips](https://fluent2.microsoft.design/components/web/react/core/tooltip/usage/)
-provide supplementary help, available on keyboard focus as well as hover. Full
-paths and other useful facts are available through focus, selection, copy, or
-accessible descriptions, rather than hover alone.
+**Owner ruling: help text is forbidden on work surfaces.** Help text explains
+what a control or choice does. It appears only on a surface dedicated to help
+and in
+[tooltips](https://fluent2.microsoft.design/components/web/react/core/tooltip/usage/),
+available on keyboard focus as well as hover. A work surface, such as the main
+window, a form, a dialog or Settings, shows labels, values, states and errors.
+Labels and the layout carry the meaning, and a sentence that explains them is
+help text. Errors stay visible beside the control they concern.
 
-Add an icon when it helps recognition or scanning; ordinary text buttons need
-none. Keep Lucide for application-authored icons and retain platform-owned
-control glyphs. Preserve native sizing, padding, hit areas, and button semantics;
-do not replace a standard dialog button merely to add an icon. Decorative icons
-stay out of automation; icon-only actions have explicit accessible names.
+**Owner ruling: work-surface text does not wrap, and no line is left empty to
+separate text.** A label, value or message takes one line. A value too long for
+its space trims with an ellipsis, and its full text is available through a
+tooltip, focus, selection, copy or the accessible description, rather than
+hover alone, so trimming is always preferred to wrapping. Spacing and grouping
+separate content, not blank lines. Wrapping changes a line's height with its
+text, which shifts everything below it as the text, the language or the window
+width changes. A person scans a surface by its lines, and wrapped or empty lines
+break that scan.
+
+Every button carries a Lucide icon, as [Buttons](#buttons) rules; elsewhere,
+add an icon when it helps recognition or scanning. Keep Lucide for
+application-authored icons and retain platform-owned control glyphs. Preserve
+native sizing, padding, hit areas, and button semantics. Decorative icons stay
+out of automation; icon-only actions have explicit accessible names.
+
+**Owner ruling: an application-authored icon is larger than the text beside it,
+and it never enlarges its container.** The icon may extend into the container's
+padding but never into its margin, so it does not touch neighbouring controls.
+This holds for every Lucide icon in the product. Icon size is part of the
+product's visual language: a larger icon is found at a glance, and rows and
+buttons with icons keep the same height and alignment as those without.
+Platform-owned glyphs, such as menu-item icons and control chevrons, keep their
+native size.
+
+**Owner ruling: everything on one line shares one vertical centre, and shared
+styles decide it, not individual elements.** Text is centred by the middle of
+its letters, halfway between the baseline and the top of the capitals, whatever
+its size; an icon by the middle of its glyph; a check box by the middle of its
+box. App.xaml's implicit styles and the shared controls own this. A screen does
+not set vertical alignment, line bounds, margins or padding on one element to
+move it into line: when a line is out of true, the fix goes into its shared
+owner, so it reaches every screen at once. A person reads a line as one unit,
+and a nudge on one element fixes one line while the next one stays wrong.
 
 Use WinUI's system fonts, language-aware fallback, and standard type-ramp roles
 and weights. Use sentence case and restrained emphasis. Preserve native control
-text metrics and support text scaling rather than shrinking text to fit. Allow
-text to wrap or expose the full value when trimming is appropriate. Text,
+text metrics and support text scaling rather than shrinking text to fit. Text,
 accessibility names, formatting, and direction follow the single
 [localisation contract](localisation.md).
 
+Choose text by its role, not by the screen: page titles use the Title role;
+dialog and form titles use Subtitle; group headings use Body
+Strong; field labels, values, commands and status text use Body. Secondary facts
+such as free space keep that body size and use the secondary text brush instead
+of smaller type. App.xaml owns the shared title and body styles.
+Equivalent groups use the same heading treatment and content inset, so a person
+can recognise the hierarchy without learning a different visual language in each
+pane. Native controls keep their internal spacing; a form does not compensate
+for it with negative margins.
+
 ## Buttons
+
+**Owner ruling: dialog buttons keep their natural width. When the dialog has
+supporting content for the button row, such as a status or a check box, that
+content holds the left of the row and the buttons sit at the right; when it has
+none, the buttons are centred.** ContentDialog's own template stretches its
+buttons across the row, which on a wide dialog draws two buttons of about 480
+pixels and leaves no place for a check box beside them, while right-aligned
+buttons beside an empty left look misplaced. Every dialog therefore uses the
+shared Dialog control, which draws the row this way from whether its Footer is
+set, with less padding above and below. The buttons keep the Windows order: the action first, then Cancel. A
+dialog opens with focus on its first text box that leaves Enter and Escape to
+the dialog, or otherwise on its default button, so the person can type or press
+Enter at once.
+
+**Owner ruling: a button is one word, one leading Lucide icon, and a tooltip
+that carries everything the word does not say.** The three are one rule. The
+word is one that people already know from other software, such as Add, Remove,
+Move, Browse or Retry, never a synonym coined for this screen. A second word is
+allowed only when one word would leave the person unsure which of two commands
+the button runs, and the code says why. The rule governs the visible label:
+tooltips, accessible names and menu items keep the words they need. A label is
+one line at every width and never wraps. One familiar word with its icon is
+read at a glance, while a label that is a phrase has to be read, and a tooltip
+keeps the scope and the consequence that the word drops. The shared
+`ActionButton` draws the icon before the word; every labelled button, the
+shared Dialog's included, is one.
+
+**Owner ruling: Fluent, not rainbow.** A button rests in the standard neutral
+style, and colour is rare and means something: the accent marks the default
+button, as below. A destructive button takes no alert colour; its word and its
+confirmation carry the meaning, so colour is never the only signal.
+
+**Owner ruling: a confirmation reads once, top to bottom.** The title asks the
+act, such as Remove torrents?. The body adds only the facts of what the act
+touches: its identity first, then what the title does not say, in words that do
+not repeat the title. An irreversible consequence of a destructive act stays in
+the body as one short line, because a tooltip must never carry the only warning;
+everything else the act does goes to the confirm button's tooltip. A short
+confirmation draws no panel around its text, because the dialog's frame,
+spacing and buttons already separate its parts. A confirmation with no fact
+beyond its title and buttons has no body.
 
 A button runs a command or opens a surface. A control that shows a setting, such
 as the alternative speed limits or the Errors shortcut, is a toggle or a selection
@@ -167,6 +262,10 @@ state. Label wording and icon use follow
 - **An icon-only button names itself in a tooltip,** with its accelerator, on
   keyboard focus as well as on hover. With no visible label, the tooltip is where
   a person learns what the icon does.
+- **An icon-only button is subtle.** It uses App.xaml's `SubtleButtonStyle`:
+  no fill or border until pointed at, as the window's caption buttons are. A
+  pane's Close then looks like the window's Close, and one act does not look
+  like two different controls.
 
 ## Windows, layout, and themes
 
@@ -276,6 +375,12 @@ WinUI's NumberBox does by default. If the engine refuses a valid value, the
 person stays on Settings with the error beside the field, because the error
 would otherwise be on a page they can no longer see.
 
+An unavailable engine is different from a refused value. Back preserves unfinished
+ordinary Settings input in the window and leaves the page; closing the window may
+discard that input without a prompt. Neither operation waits for reconnection,
+because ordinary Settings must not trap the person in an unavailable application.
+A picker or an operation already in progress finishes before close continues.
+
 **Owner ruling: leaving an explicit editor with unfinished input asks Save,
 Discard or Cancel.** This is the familiar Windows choice for unsaved work, and it
 keeps the input without making the person return to the editor first. Save runs
@@ -283,6 +388,15 @@ the editor's own action, such as Save, Add, Move or Delete; if it fails, the
 editor stays open with its error. Discard drops the draft and continues. Cancel
 keeps the editor and focus. Deleting files still shows its own confirmation of
 what will be deleted.
+
+On window close, ask only for work the person has actually entered: a torrent
+source, changed trackers or file choices, a changed schedule period, or a move
+destination. Opening an untouched editor or changing Add or Move options without
+a source or destination does not justify a question. The question names the
+unfinished work and its primary action: Add, Move, Save period or Save changes.
+Its text explains what Discard drops and that Keep editing cancels closing the
+window. Keep editing is the default button, so Enter cannot unexpectedly add a
+torrent, move files or discard input while the person is trying to close.
 
 Send only intended changes through the [engine's edit path](engine.md#committed-edits).
 Refresh confirmed facts without replacing the user's current input. On refusal,
@@ -362,7 +476,13 @@ before a seed means the end of the download queue. This keeps queue actions
 meaningful instead of suggesting a seed priority that libtorrent does not use.
 
 Torrent commands are Pause, Resume, Force start, Open, Open folder, Copy magnet
-link, Copy info hash, Move files, Verify, Remove, and Delete files. Open hands the file
+link, Copy info hash, Move files, Verify, Remove, and Delete files. Download in
+sequential order and Download first and last pieces first are menu choices
+beside them, as in qBittorrent. An item is checked when every selected torrent
+has that choice and mixed when only some do. Choosing a checked item turns the
+choice off for all of them, and otherwise turns it on for all of them, so one
+click makes a mixed selection consistent. The inspector does not repeat them:
+the item already shows the choice where it is changed. Open hands the file
 of a single-file torrent, or the folder of a multi-file torrent, to Windows as
 Explorer does, only on the person's request. Double-click and Enter on a row
 open the inspector; Properties in the torrent context menu does the same. The
@@ -417,8 +537,8 @@ torrent cannot be restored without its torrent file or magnet link. Delete files
 also states the file scope, that deletion is permanent, and that files other
 torrents use are kept. Deletion bypasses the Recycle Bin,
 because people delete a torrent's files to free disk space. The dialog
-opens with focus on Cancel, so Enter cannot delete data by accident. Use
-standard [ContentDialog buttons](https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/dialogs-and-flyouts/dialogs).
+opens with focus on Cancel, so Enter cannot delete data by accident. Its
+buttons follow the dialog button ruling in [Buttons](#buttons).
 Routine pause, resume, and applied settings need no confirmation.
 
 Retain recognizable identity and last-known read-only values on disconnect, mark
@@ -445,11 +565,14 @@ message cannot be the only explanation of unfinished or failed work.
 | Routine pause, resume, addition in the open window or applied setting | The changed state and one accessible outcome announcement; no visible success toast. |
 | Refused setting or failed editor action | Persistent feedback beside the field or inside that editor, following [Committing edits](#committing-edits). |
 | Failed command without an editor, such as Pause or Open folder | A dismissible app-level error message, separate from connection status; no timed disappearance. Retain the existing policy for clearing it after later command outcomes. |
-| Connection loss or unavailable storage affecting the application | Persistent app-level status reachable across pages; an inline InfoBar is appropriate. Recovery clears the condition. |
+| Connection loss or unavailable storage affecting the application | A persistent InfoBar over the bottom of the workspace, above the status footer. It overlays every page without resizing its content; recovery clears the condition. |
 | Useful, noncritical event elsewhere in the open application | A temporary overlay in one consistent corner of the window, without moving page content. Add this only for a named event whose existing presentation is insufficient. |
 | A finished download | The temporary overlay, with the torrent name and Open folder, as the [notification policy](engine.md#notifications-and-sleep) defines a finished download. |
 | A torrent stopped by an error, or a deletion that failed after removal | The dismissible app-level error message; a stopped torrent also stays in the Errors count. With the window closed, the engine's [notification policy](engine.md#notifications-and-sleep) sends a Windows notification instead. |
 | A decision requiring consent | The existing dialog for that operation. |
+
+InfoBar actions align to the right, with the message using the remaining width,
+so recovery has a consistent place instead of moving with the message length.
 
 Native control state notifications can satisfy routine accessible feedback;
 do not add a second announcement of the same result. Keep field and editor
@@ -476,7 +599,6 @@ explicit Paste action. Read the clipboard only after the relevant user action.
 Preserve accepted input and choices when a picker is cancelled or a replacement
 source fails; successful replacement deliberately starts a new preview.
 Getting metadata transfers pending magnet text into the staged source once.
-Removing that source cannot leave another copy pending for Add.
 
 Show preview progress immediately, keep cancellation available while acquiring
 metadata, and expose file choices when metadata is ready. The engine supplies
@@ -487,13 +609,19 @@ available before magnet metadata arrives, so a slow swarm does not hold the
 person in the form; the torrent then wants every file, and file choices move to
 the inspector's Files view.
 
-Several sources added together, by multi-selection in the picker, by opening
-several files from Explorer, or by one drop, share one form: their names and
-sizes, one destination, Start paused, and Add all. A source already in the
-list is marked Already added, with the offer to merge its trackers. Sources that
-arrive while the form is open join it. File choices for each torrent move to the Files view.
-Thirty torrents are one form, not thirty. The form has a
-Never show again check box, which turns off the Show the Add form preference
+**Owner ruling: several sources added together are added at once, with no
+form and no question.** This covers one drop or paste, and several files opened
+from Explorer that reach the window together. They go to the default folder with
+the default options, and the torrents they add are selected in the list, so the
+person sees that all of them arrived. A torrent already in the list is selected
+where it is and keeps its trackers, because offering a merge would be a
+question. A source that fails is reported in the window's error bar and
+dropped. File choices for each torrent are made later in the Files view. One
+drop of thirty torrents opens nothing, because a cascade of dialogs is the
+failure this protects against. Several files chosen through Add torrent file
+open one form, because choosing that command asks for it. Sources that arrive
+while the form is open join it, so a second dialog never opens. The form has a
+Don't show the Add form again check box, which turns off the Show the Add form preference
 where the person meets the form.
 If a source has no wanted files when a single-source task becomes a batch,
 Select all files beside that source restores a valid choice. Keep prior file
@@ -521,12 +649,39 @@ an indeterminate checkbox. Bulk Select all/none acts on files matching the
 search. The same file browser serves Add and the inspector, so these rules have
 one owner. Keep its summary, search, and bulk actions on one compact row and give
 the list the remaining viewport, because files are the task's primary content.
+Expand all and Collapse all appear when the list has folders, and each row shows
+an icon for its file type so a long list can be scanned.
 F2 opens the native priority choice for the focused file row; ordinary tree,
 checkbox and ComboBox keyboard behavior remains native.
 Keep file identity and selected bytes clear; when a known list
 has no wanted files, explain why Add is unavailable. The destination starts from
 the default download folder, initially Windows' Downloads known folder, and remains changeable through a native picker. A failed
 free-space check must not be presented as proof of an invalid folder.
+The destination also offers recent folders: the default folder and the folders of
+the newest torrents, six at most. They are derived from the default folder and
+existing torrents rather than stored, so removing a torrent removes its folder
+from the list. Dropping a single
+folder on the open form makes it the destination. Free space for the destination's
+drive appears under it, and a warning replaces it when the wanted files do not
+fit; the warning never blocks Add, because the person may free space first.
+Network drives show no free space, because asking a disconnected one can block the
+window.
+
+The form sets settings on the left and files on the right, with a splitter between
+them that keeps its share of the width while the dialog is open. Hide settings
+gives the files the whole width; the settings start hidden when the files would
+have too little room beside them, so file names stay readable in a small window. ContentDialog cannot
+be resized by dragging, so the form has Maximize and Restore in its header: the
+default size suits a typical torrent, and Maximize fills the window and follows it.
+Close follows Maximize at the right of the header, where Windows places it, and
+does what Cancel does.
+The magnet field wraps one link across multiple visible lines and scrolls
+vertically, using the available right-pane space. Wrapping does not insert line
+breaks into the link. Paste and Preview sit centred below it with the shared
+button treatment. When sources are previewed, they share the pane with the editor
+so its height cannot hide the preview.
+The commit button names its result, Add or Add paused, and Add all or Add all
+paused when several torrents, including typed magnet text, will be added.
 
 Keep one form with a reachable native footer. A long body scrolls; the virtualized
 file list has a finite viewport and owns its collection scrolling. Do not create
@@ -685,6 +840,11 @@ could not get used to a left navigation pane, and one row keeps the sections
 visible while the working view gets the full inspector width. The person
 adjusts the inspector's height with the split.
 
+The table and inspector headers share the native `LayerFillColorDefaultBrush`
+surface and `DividerStrokeColorDefaultBrush` bottom edge. Their shared semantic
+resources identify both as workspace headers in every theme; neither defines
+a local color palette.
+
 Apply individual choices and explicit file commands through the same commit
 rules. When a coherent edit needs a draft, keep one active editor bound to the
 torrent identity; protect only its unfinished input when changing context or
@@ -720,17 +880,23 @@ the person to reopen Move files and choose the folder holding the files.
 The Speed view shows the [engine's session-wide speed history](engine.md#state-and-work),
 whichever torrent is selected, and its heading says All torrents, so nobody
 reads it as the selected torrent's speed. It continues while WinUI
-is closed, so reopening shows what happened meanwhile. Offer the last five
-minutes and the last 24 hours. Unknown gaps, such as the time before an engine
-restart, are not interpolated into invented history. Provide current/peak text
-alongside a chart.
+is closed, so reopening shows what happened meanwhile. Offer the last 5
+minutes, 1 hour, 6 hours and 24 hours as always-visible choices, as qBittorrent
+offers fixed periods. The mouse wheel over the chart steps to a shorter or longer
+choice; it is a shortcut, so the choices stay visible. Unknown gaps, such as the
+time before an engine restart, are not interpolated into invented history.
 
 The chart shows the trend, not every sample: per-second rates jump with each
-burst from a peer. It draws five-second averages for five minutes and
-five-minute averages for the day, as a smooth curve that never rises above or
-falls below the averages. Download is a filled area and upload a dashed line,
-so the two differ without colour. The current and peak text and the rounded
-scale use the same averages, so the text never disagrees with the line.
+burst from a peer. It draws averages of 5 seconds, 1 minute, 5 minutes and 15
+minutes for the four choices, as a smooth curve that never rises above or falls
+below the averages. Download is a filled area and upload a dashed line, so the
+two differ without colour. Round clock times are marked under the chart.
+
+A one-line legend per direction gives the current average and the peak, so the
+chart keeps its height in a short inspector. The legend and the rounded scale
+use the same averages, so the text never disagrees with the line. Pointing at
+the chart, or moving through it with the arrow keys, shows that time's values in
+the legend instead; this is the equivalent textual fact of any point.
 
 One page owner allocates table and inspector space. Remember an explicit split
 adjustment within current usable bounds; the splitter is keyboard-adjustable and
@@ -759,7 +925,9 @@ TinyTorrent map; change them only when the
 - **Status.** Above the map, one sentence gives the conclusion: Complete, Waiting
   for metadata, No peers connected, All missing pieces are available, or the
   number of unavailable pieces and the files they belong to. Naming the files
-  lets the user skip them and let the rest finish.
+  lets the user skip them and let the rest finish. A list of files, here and in
+  the tooltip, names the first three and counts the rest, so a long list cannot
+  push the map out of view or fill the screen; Files lists every file.
 - **Legend.** Under the status, one row shows each state with its swatch and its
   count, then the piece count and piece size. The counts are the legend, so the
   two cannot disagree. The row wraps when the panel is narrow.
@@ -773,15 +941,24 @@ TinyTorrent map; change them only when the
   have; on a tie the worse state wins, in the order unavailable, rare, common,
   missing, downloading, verified. A square that holds more than one state gets a
   small triangle in its top-right corner, so the user knows its colour does not
-  describe every piece.
+  describe every piece. A square that holds an unavailable piece but shows
+  another state also gets a triangle in its bottom-left corner in the
+  unavailable colour, so a piece that can stop the download is never hidden by
+  a healthier majority. Its corner carries the meaning without colour.
 - **Drawing.** Use Fluent theme colours. A downloading square shows how much
   of it has arrived, so progress moves while the user watches. Fill, hatching,
   and border keep every state readable without colour.
-- **Pointer and keyboard.** The map is one focus stop. Pointing at a square, or
-  moving to it with the arrow keys, Home, or End, shows a tooltip with its piece
-  numbers, the files they belong to, the count of each state, and, for a single
-  missing piece, how many connected peers have it. The same text is the map's
-  UI Automation value, and Ctrl+C copies it.
+- **Pointer and keyboard.** The map is one focus stop with one selected square,
+  which the arrow keys, Home, End, and a click move; it shows the focus outline
+  while the map has focus. Pointing at a square gives it a thinner outline
+  without moving the selection, because a pointer passing over the map must not
+  move the keyboard's place. The square last pointed at or selected shows a
+  tooltip with its piece number or range, the files they belong to, the count
+  of each state it holds, and how many connected peers have its missing pieces
+  that are not downloading: the count for one piece, the lowest and highest for
+  several, because a merged square's colour cannot show that spread. While no
+  peer is connected, that count is unknown. The selected square's text is the
+  map's UI Automation value, and Ctrl+C copies it.
 - **Drawing cost.** Draw the squares into one bitmap and redraw only when the
   data changes, because one element per square is too slow at thousands of
   pieces.

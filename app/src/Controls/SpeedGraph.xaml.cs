@@ -1,39 +1,50 @@
 using System.Globalization;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
+using Microsoft.UI.Xaml.Automation.Peers;
+using Microsoft.UI.Xaml.Automation.Provider;
+using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Windows.Foundation;
+using Windows.System;
+using Syno.TinyTorrent.Models;
 using Syno.TinyTorrent.Services;
 using Syno.TinyTorrent.Views;
 
 namespace Syno.TinyTorrent.Controls;
 
 // Draws the Speed view as docs/interface.md defines it: averages, not samples.
-public sealed partial class SpeedGraph : Microsoft.UI.Xaml.Controls.UserControl
+public sealed partial class SpeedGraph : UserControl
 {
     public static readonly DependencyProperty SamplesProperty = DependencyProperty.Register(nameof(Samples),
         typeof(IReadOnlyList<SpeedSample>), typeof(SpeedGraph), new PropertyMetadata(Array.Empty<SpeedSample>(), (graph, _) => ((SpeedGraph)graph).Update()));
-    public static readonly DependencyProperty IsDayProperty = DependencyProperty.Register(nameof(IsDay), typeof(bool),
-        typeof(SpeedGraph), new PropertyMetadata(false, (graph, _) => ((SpeedGraph)graph).Update()));
-    public static readonly DependencyProperty IsAvailableProperty = DependencyProperty.Register(nameof(IsAvailable), typeof(bool),
-        typeof(SpeedGraph), new PropertyMetadata(false, (graph, _) => ((SpeedGraph)graph).Update()));
+    public static readonly DependencyProperty RangeProperty = DependencyProperty.Register(nameof(Range), typeof(SpeedRange),
+        typeof(SpeedGraph), new PropertyMetadata(SpeedRange.FiveMinutes, (graph, _) => ((SpeedGraph)graph).Update()));
 
-    // The engine samples once a second for five minutes and once a minute for
-    // the day. A longer pause between two samples is unknown time, such as an
-    // engine restart, so the line breaks there.
-    private static readonly Timescale Minutes = new(Length: 300, Bucket: 5, Gap: 2, Format: "T");
-    private static readonly Timescale Day = new(Length: 86400, Bucket: 300, Gap: 90, Format: "g");
-    private static readonly double[] Steps = [1, 1.5, 2, 3, 4, 5, 6, 8, 10];
+    // One notch of a mouse wheel. A touchpad sends smaller deltas that add up to
+    // it, so one swipe does not race through every range.
+    private const int Notch = 120;
     private Strings? _text;
+    private double? _marker;
+    private string _value = string.Empty;
+    private int _wheel;
 
     public SpeedGraph() => InitializeComponent();
 
     public IReadOnlyList<SpeedSample> Samples { get => (IReadOnlyList<SpeedSample>)GetValue(SamplesProperty); set => SetValue(SamplesProperty, value); }
-    public bool IsDay { get => (bool)GetValue(IsDayProperty); set => SetValue(IsDayProperty, value); }
-    public bool IsAvailable { get => (bool)GetValue(IsAvailableProperty); set => SetValue(IsAvailableProperty, value); }
+    public SpeedRange Range { get => (SpeedRange)GetValue(RangeProperty); set => SetValue(RangeProperty, value); }
+
+    // The shown range ends at the newest sample.
+    private long Start(Timescale scale) => (Samples.Count == 0 ? DateTimeOffset.Now.ToUnixTimeSeconds() : Samples[^1].Time) - scale.Length;
 
     internal void RefreshText(Strings text)
     {
         _text = text;
+        AutomationProperties.SetName(this, text.Get("speed", "chart"));
+        DownloadLabel.Text = text.Get("speed", "download");
+        UploadLabel.Text = text.Get("speed", "upload");
+        NoHistory.Text = text.Get("speed", "empty");
         Update();
     }
 
@@ -45,27 +56,47 @@ public sealed partial class SpeedGraph : Microsoft.UI.Xaml.Controls.UserControl
         {
             return;
         }
-        var scale = IsDay ? Day : Minutes;
-        var samples = Samples;
-        var end = samples.Count == 0 ? DateTimeOffset.Now.ToUnixTimeSeconds() : samples[^1].Time;
-        var runs = Bucket(samples, scale, end - scale.Length);
+        var scale = Timescale.Of(Range);
+        var start = Start(scale);
+        var runs = Bucket(Samples, scale, start);
         var averages = runs.SelectMany(run => run).ToArray();
-        var current = IsAvailable ? averages.LastOrDefault() : null;
+        var marked = Nearest(averages, _marker);
+        var shown = marked ?? averages.LastOrDefault();
         var downloadPeak = averages.Select(average => average.Download).DefaultIfEmpty().Max();
         var uploadPeak = averages.Select(average => average.Upload).DefaultIfEmpty().Max();
         var top = Ceiling(Math.Max(downloadPeak, uploadPeak));
-        Download.Text = text.Format("speed", "download", Rate(text, current?.Download), Rate(text, downloadPeak));
-        Upload.Text = text.Format("speed", "upload", Rate(text, current?.Upload), Rate(text, uploadPeak));
+        var at = marked is null ? null : text.Format("speed", "at", Time(marked.Time, scale.Format));
+        DownloadValue.Text = Rate(text, shown?.Download);
+        UploadValue.Text = Rate(text, shown?.Upload);
+        DownloadDetail.Text = at ?? text.Format("speed", "peak", Rate(text, downloadPeak));
+        UploadDetail.Text = at ?? text.Format("speed", "peak", Rate(text, uploadPeak));
         Maximum.Text = averages.Length == 0 ? string.Empty : Rate(text, top);
-        NoHistory.Text = text.Get("speed", "empty");
         NoHistory.Visibility = averages.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
-        var last = DateTimeOffset.FromUnixTimeSeconds(end).ToLocalTime();
-        End.Text = last.ToString(scale.Format, CultureInfo.CurrentCulture);
-        Start.Text = last.AddSeconds(-scale.Length).ToString(scale.Format, CultureInfo.CurrentCulture);
-        Draw(runs, scale, end - scale.Length, top);
+        _value = marked is null ? string.Empty : text.Format("speed", "point", Time(marked.Time, scale.Format),
+            Rate(text, marked.Download), Rate(text, marked.Upload));
+        var extent = new Extent(Plot.ActualWidth, Plot.ActualHeight, start, scale.Length, top);
+        if (extent.Width <= 0 || extent.Height <= 0)
+        {
+            return;
+        }
+        Draw(runs, extent);
+        DrawTicks(extent, scale);
+        DrawMarker(extent, marked);
     }
 
     private static string Rate(Strings text, double? value) => value is { } rate ? text.Format("units", "rate", text.Bytes(rate)) : "—";
+
+    private static string Time(double time, string format) =>
+        DateTimeOffset.FromUnixTimeSeconds((long)Math.Round(time)).ToLocalTime().ToString(format, CultureInfo.CurrentCulture);
+
+    private static Average? Nearest(Average[] averages, double? time) =>
+        time is { } target && averages.Length > 0 ? averages.MinBy(average => Math.Abs(average.Time - target)) : null;
+
+    private Average[] Averages()
+    {
+        var scale = Timescale.Of(Range);
+        return Bucket(Samples, scale, Start(scale)).SelectMany(run => run).ToArray();
+    }
 
     // Splits the samples at unknown time, then averages each run in buckets
     // aligned to clock time, so a new sample changes only the newest bucket.
@@ -121,7 +152,8 @@ public sealed partial class SpeedGraph : Microsoft.UI.Xaml.Controls.UserControl
         }
         var value = Math.Max(peak / unit, 1);
         var power = Math.Pow(10, Math.Floor(Math.Log10(value)));
-        foreach (var step in Steps)
+        ReadOnlySpan<double> steps = [1, 1.5, 2, 3, 4, 5, 6, 8, 10];
+        foreach (var step in steps)
         {
             var top = step * power;
             if (top >= value)
@@ -132,33 +164,74 @@ public sealed partial class SpeedGraph : Microsoft.UI.Xaml.Controls.UserControl
         return 1024 * unit;
     }
 
-    private void Draw(List<List<Average>> runs, Timescale scale, long start, double top)
+    private void Draw(List<List<Average>> runs, Extent extent)
     {
-        var width = Plot.ActualWidth;
-        var height = Plot.ActualHeight;
         var area = new PathGeometry();
         var download = new PathGeometry();
         var upload = new PathGeometry();
-        if (width > 0 && height > 0)
+        foreach (var run in runs)
         {
-            foreach (var run in runs)
-            {
-                var downloads = run.Select(average => Position(average.Time, average.Download)).ToArray();
-                var uploads = run.Select(average => Position(average.Time, average.Upload)).ToArray();
-                var fill = new PathFigure { StartPoint = new Point(downloads[0].X, height), IsClosed = true };
-                fill.Segments.Add(new LineSegment { Point = downloads[0] });
-                fill.Segments.Add(Curve(downloads));
-                fill.Segments.Add(new LineSegment { Point = new Point(downloads[^1].X, height) });
-                area.Figures.Add(fill);
-                download.Figures.Add(Line(downloads));
-                upload.Figures.Add(Line(uploads));
-            }
+            var downloads = run.Select(average => extent.At(average.Time, average.Download)).ToArray();
+            var uploads = run.Select(average => extent.At(average.Time, average.Upload)).ToArray();
+            var fill = new PathFigure { StartPoint = new Point(downloads[0].X, extent.Height), IsClosed = true };
+            fill.Segments.Add(new LineSegment { Point = downloads[0] });
+            fill.Segments.Add(Curve(downloads));
+            fill.Segments.Add(new LineSegment { Point = new Point(downloads[^1].X, extent.Height) });
+            area.Figures.Add(fill);
+            download.Figures.Add(Line(downloads));
+            upload.Figures.Add(Line(uploads));
         }
         DownloadArea.Data = area;
         DownloadLine.Data = download;
         UploadLine.Data = upload;
+    }
 
-        Point Position(double time, double rate) => new((time - start) * width / scale.Length, height * (1 - rate / top));
+    // Marks round local clock times, such as every hour on the hour. A label
+    // that would touch the previous one is left out; its line stays.
+    private void DrawTicks(Extent extent, Timescale scale)
+    {
+        var ticks = new GeometryGroup();
+        TickLabels.Children.Clear();
+        var offset = (long)TimeZoneInfo.Local.GetUtcOffset(DateTimeOffset.FromUnixTimeSeconds(extent.Start)).TotalSeconds;
+        var first = (extent.Start + offset + scale.Tick - 1) / scale.Tick * scale.Tick - offset;
+        var right = double.NegativeInfinity;
+        for (var time = first; time <= extent.Start + extent.Length; time += scale.Tick)
+        {
+            var x = extent.At(time, 0).X;
+            ticks.Children.Add(new LineGeometry { StartPoint = new Point(x, 0), EndPoint = new Point(x, extent.Height) });
+            var label = new TextBlock { Text = Time(time, "t"), Style = (Style)Resources["SpeedGraphTickStyle"], HorizontalAlignment = HorizontalAlignment.Left };
+            TickLabels.Children.Add(label);
+            label.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            var width = label.DesiredSize.Width;
+            var left = Math.Clamp(x - width / 2, 0, Math.Max(0, extent.Width - width));
+            if (left < right + 8)
+            {
+                TickLabels.Children.Remove(label);
+                continue;
+            }
+            label.Margin = new Thickness(left, 0, 0, 0);
+            right = left + width;
+        }
+        Ticks.Data = ticks;
+    }
+
+    private void DrawMarker(Extent extent, Average? marked)
+    {
+        if (marked is null)
+        {
+            Marker.Visibility = Visibility.Collapsed;
+            return;
+        }
+        var download = extent.At(marked.Time, marked.Download);
+        var upload = extent.At(marked.Time, marked.Upload);
+        MarkerLine.X1 = download.X;
+        MarkerLine.X2 = download.X;
+        MarkerLine.Y2 = extent.Height;
+        Canvas.SetLeft(DownloadDot, download.X - DownloadDot.Width / 2);
+        Canvas.SetTop(DownloadDot, download.Y - DownloadDot.Height / 2);
+        Canvas.SetLeft(UploadDot, upload.X - UploadDot.Width / 2);
+        Canvas.SetTop(UploadDot, upload.Y - UploadDot.Height / 2);
+        Marker.Visibility = Visibility.Visible;
     }
 
     private static PathFigure Line(Point[] points)
@@ -215,7 +288,144 @@ public sealed partial class SpeedGraph : Microsoft.UI.Xaml.Controls.UserControl
         return slopes;
     }
 
-    private sealed record Timescale(long Length, long Bucket, long Gap, string Format);
+    // Moves the marker to the nearest average and reports the change to
+    // assistive technology. Pointer moves within one average redraw nothing,
+    // and data updates under a fixed marker stay silent, so no transfer tick is
+    // announced.
+    private void Mark(double? time)
+    {
+        var snapped = Nearest(Averages(), time)?.Time;
+        if (snapped == _marker)
+        {
+            return;
+        }
+        var previous = _value;
+        _marker = snapped;
+        Update();
+        if (previous != _value)
+        {
+            FrameworkElementAutomationPeer.FromElement(this)?.RaisePropertyChangedEvent(ValuePatternIdentifiers.ValueProperty, previous, _value);
+        }
+    }
+
+    private void OnPointer(object sender, PointerRoutedEventArgs args)
+    {
+        if (Plot.ActualWidth <= 0)
+        {
+            return;
+        }
+        var scale = Timescale.Of(Range);
+        var x = args.GetCurrentPoint(Plot).Position.X;
+        Mark(Start(scale) + x / Plot.ActualWidth * scale.Length);
+    }
+
+    private void OnPressed(object sender, PointerRoutedEventArgs args)
+    {
+        Focus(FocusState.Pointer);
+        OnPointer(sender, args);
+    }
+
+    private void OnPointerExit(object sender, PointerRoutedEventArgs args)
+    {
+        if (FocusState != FocusState.Keyboard)
+        {
+            Mark(null);
+        }
+    }
+
+    private void OnFocus(object sender, RoutedEventArgs args)
+    {
+        if (FocusState == FocusState.Keyboard && _marker is null)
+        {
+            Mark(Averages().LastOrDefault()?.Time);
+        }
+    }
+
+    private void OnBlur(object sender, RoutedEventArgs args) => Mark(null);
+
+    private void OnKey(object sender, KeyRoutedEventArgs args)
+    {
+        if (args.Key == VirtualKey.Escape && _marker is not null)
+        {
+            Mark(null);
+            args.Handled = true;
+            return;
+        }
+        var averages = Averages();
+        if (averages.Length == 0)
+        {
+            return;
+        }
+        var index = Nearest(averages, _marker) is { } marked ? Array.IndexOf(averages, marked) : averages.Length - 1;
+        int? next = args.Key switch
+        {
+            VirtualKey.Left => index - 1,
+            VirtualKey.Right => index + 1,
+            VirtualKey.Home => 0,
+            VirtualKey.End => averages.Length - 1,
+            _ => null,
+        };
+        if (next is { } target)
+        {
+            Mark(averages[Math.Clamp(target, 0, averages.Length - 1)].Time);
+            args.Handled = true;
+        }
+    }
+
+    // The wheel steps through the same ranges as the range buttons: up shows a
+    // shorter range, down a longer one, always ending now.
+    private void OnWheel(object sender, PointerRoutedEventArgs args)
+    {
+        var properties = args.GetCurrentPoint(this).Properties;
+        if (properties.IsHorizontalMouseWheel)
+        {
+            return;
+        }
+        args.Handled = true;
+        if (Math.Sign(properties.MouseWheelDelta) != Math.Sign(_wheel))
+        {
+            _wheel = 0;
+        }
+        _wheel += properties.MouseWheelDelta;
+        while (Math.Abs(_wheel) >= Notch)
+        {
+            var step = _wheel > 0 ? -1 : 1;
+            _wheel -= Math.Sign(_wheel) * Notch;
+            Range = (SpeedRange)Math.Clamp((int)Range + step, (int)SpeedRange.FiveMinutes, (int)SpeedRange.Day);
+        }
+        OnPointer(sender, args);
+    }
+
+    protected override AutomationPeer OnCreateAutomationPeer() => new GraphPeer(this);
+
+    private sealed class GraphPeer(SpeedGraph graph) : FrameworkElementAutomationPeer(graph), IValueProvider
+    {
+        protected override string GetClassNameCore() => nameof(SpeedGraph);
+        protected override AutomationControlType GetAutomationControlTypeCore() => AutomationControlType.Custom;
+        protected override object? GetPatternCore(PatternInterface pattern) => pattern == PatternInterface.Value ? this : base.GetPatternCore(pattern);
+        public bool IsReadOnly => true;
+        public string Value => graph._value;
+        public void SetValue(string value) => throw new InvalidOperationException();
+    }
+
+    private sealed record Timescale(long Length, long Bucket, long Gap, long Tick, string Format)
+    {
+        // The engine samples once a second for five minutes and once a minute
+        // for the day. A longer pause between two samples is unknown time, such
+        // as an engine restart, so the line breaks there.
+        public static Timescale Of(SpeedRange range) => range switch
+        {
+            SpeedRange.FiveMinutes => new(Length: 300, Bucket: 5, Gap: 2, Tick: 60, Format: "T"),
+            SpeedRange.Hour => new(Length: 3600, Bucket: 60, Gap: 90, Tick: 900, Format: "t"),
+            SpeedRange.SixHours => new(Length: 21600, Bucket: 300, Gap: 90, Tick: 3600, Format: "t"),
+            _ => new(Length: 86400, Bucket: 900, Gap: 90, Tick: 21600, Format: "t"),
+        };
+    }
 
     private sealed record Average(double Time, double Download, double Upload);
+
+    private sealed record Extent(double Width, double Height, long Start, long Length, double Top)
+    {
+        public Point At(double time, double rate) => new((time - Start) * Width / Length, Height * (1 - rate / Top));
+    }
 }

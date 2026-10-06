@@ -24,7 +24,8 @@ enum class Command
     FileScope,
     Move,
     DeleteFiles,
-    Queue
+    Queue,
+    PieceOrder
 };
 
 enum class TorrentView

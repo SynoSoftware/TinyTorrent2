@@ -15,7 +15,18 @@
     <Nullable>enable</Nullable>
     <WindowsPackageType>None</WindowsPackageType>
     <PublishTrimmed>false</PublishTrimmed>
+    <!-- The solution's build dependency on the engine looks like a reference to
+         a project on a newer Windows SDK. The engine is a separate native
+         process that the window only copies beside itself. -->
+    <MSBuildWarningsAsMessages>$(MSBuildWarningsAsMessages);MSB3851</MSBuildWarningsAsMessages>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(EnableCapture)' == 'true'">
+    <DefineConstants>$(DefineConstants);CAPTURE</DefineConstants>
+    <ArtifactsPivots>$(Configuration.ToLowerInvariant())_$(RuntimeIdentifier.ToLowerInvariant())_capture</ArtifactsPivots>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(EnableCapture)' != 'true'">
+    <Compile Remove="MainWindow\Capture*.cs" />
+  </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.2705" />
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.4.0" />

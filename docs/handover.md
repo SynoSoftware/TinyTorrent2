@@ -1,5 +1,60 @@
 # Implementation handover — 2026-10-05
 
+## Whole-tree and notifications checkpoint — 2026-10-06
+
+The owner authorized committing the whole working diff, including concurrent
+shared controls, Add, inspector, table automation and engine download-order work.
+The notification feature now has its three switches, existing saved-choice
+compatibility, in-window completion action, closed-window Windows delivery and
+tray error indication. Preserve the owner's newer design rulings; the notification
+hint is not visible help text, and completion uses the shared one-line InfoBar.
+
+Final app and engine builds pass. SettingsPolicy, FilesSafety and CheckpointRetry
+pass against the current engine; the latter two ran once after its last change.
+The twelve-cell Settings/notification capture and its native toggle and editing/
+timeout journeys pass. Source re-review accepted the two corrected findings;
+the independent twelve-cell visual review found zero counted defects.
+Evidence and runtime limitations are at the top of
+[morning-report.md](morning-report.md). This checkpoint does not settle release
+readiness or prove all concurrent changes.
+
+Further FileBrowser and search edits arrived after staging and remain outside
+this checkpoint. A copy retry caught their XAML mid-edit and failed; preserve
+that work and check its settled source before the next build. The staged app
+source had compiled before an executable-copy lock; the final notification
+candidate has its separate successful build and captures. See the report for
+the exact distinction. An owner-started background engine remains running.
+
+Continue with current-code checks for contract work #128, #129 and #131, plus
+the existing narrow-width, native caption and accessibility evidence gaps.
+Those three engine features are absent; they are fixed behavior, not additional
+Settings switches. Do not treat older agent-filed GitHub issues as automatically
+valid. Do not repeat the completed engine checks for documentation or UI edits.
+
+## Header and feedback correction checkpoint — 2026-10-06
+
+Preserve the current custom title bar, the two Add actions after Search, shared
+48-pixel caption buttons, multiline magnet editor, overlay connection bar with
+right-aligned action, and shared table/properties header surfaces. The final
+app build and twelve-cell focused capture pass; independent image review found
+no counted correction-induced defects. Exact720, native caption hover/gestures,
+High Contrast, scaling and keyboard/screen-reader checks remain open. Full
+evidence and the three missing overlay snapshots are recorded at the top of
+[morning-report.md](morning-report.md). This correction is uncommitted alongside
+the owner's concurrent work and does not settle overall release readiness.
+
+## Add form correction checkpoint — 2026-10-06
+
+The owner's typography, icon alignment and rounded-button corrections are in the
+working tree. Shared styles use native WinUI type roles, button styling and
+tokens. Preserve them with the concurrent Add and shell work. The focused final
+app build and twelve-cell Add capture pass; the visual re-review reports zero
+counted defects in those corrections. Current shell minimums prevent exact 720
+and 1040 width verification. Evidence, the startup tooltip fix, process-exit
+limitation and remaining checks are recorded at the top of
+[morning-report.md](morning-report.md). No new commit or broader release approval
+was made by this correction.
+
 ## Current handoff — 2026-10-06
 
 The owner then authorized implementation of all eight selected architecture

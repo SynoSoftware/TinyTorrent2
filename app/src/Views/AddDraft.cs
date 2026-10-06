@@ -17,6 +17,8 @@ public sealed class AddDraft : INotifyPropertyChanged
     private string _destination;
     private string _defaultDestination;
     private bool _paused;
+    private bool _sequential;
+    private bool _firstLast;
     private bool _neverShow;
     private Exception? _failure;
     private CancellationTokenSource? _polling;
@@ -42,15 +44,37 @@ public sealed class AddDraft : INotifyPropertyChanged
         set { if (_destination == value) return; _destination = value; Refresh(); }
     }
     public bool Paused { get => _paused; set { _paused = value; Refresh(); } }
+    public bool Sequential { get => _sequential; set { _sequential = value; Refresh(); } }
+    public bool FirstLast { get => _firstLast; set { _firstLast = value; Refresh(); } }
     public bool NeverShow { get => _neverShow; set { _neverShow = value; Refresh(); } }
     public bool HasFiles => Sources.Count == 1 && Sources[0].MetadataReady && Sources[0].Duplicate.Length == 0;
     public bool GettingMetadata => Sources.Any(source => !source.MetadataReady && source.Failure is null && source.Duplicate.Length == 0);
-    public string Preview => Sources.Count == 1 ? _strings.Format("add", "preview", Sources[0].Name,
-        Sources[0].MetadataReady ? _strings.Bytes(Sources[0].Size) : _strings.Get("add", "metadata")) : _strings.Format("add", "sources", Sources.Count);
-    public string SubmitText => _strings.Get("add", IsSubmitting ? "pending" : Sources.Count > 1 ? "submit_all" : "submit");
-    public string Space => FreeSpace() is { } free ? _strings.Format("add", "free", _strings.Bytes(free)) : string.Empty;
+    public string Heading => Sources.Count switch
+    {
+        0 => _strings.Get("add", "title"),
+        1 => Sources[0].Name,
+        _ => _strings.Format("add", "sources", Sources.Count)
+    };
+    public string Detail => Sources.Count != 1 ? string.Empty : Sources[0].MetadataReady ? _strings.Bytes(Sources[0].Size) : _strings.Get("add", "metadata");
+    public string SubmitText => _strings.Get("add", IsSubmitting ? "pending" : "submit");
+    public string SubmitToolTip => _strings.Format("add", (SubmitCount > 1, _paused) switch
+    {
+        (true, true) => "submit_tip_all_paused",
+        (true, false) => "submit_tip_all",
+        (false, true) => "submit_tip_paused",
+        (false, false) => "submit_tip"
+    }, SubmitCount);
+    // Magnet text not yet accepted becomes one more source when Add runs.
+    private int SubmitCount => Sources.Count + (Magnet.Trim().Length > 0 ? 1 : 0);
+    public string Space => FreeSpace() is not { } free ? string.Empty : Needed > free ?
+        _strings.Format("add", "short", _strings.Bytes(Needed), _strings.Bytes(free)) : _strings.Format("add", "free", _strings.Bytes(free));
+    public bool LacksSpace => FreeSpace() is { } free && Needed > free;
+    private long Needed => Sources.Where(source => source.MetadataReady && source.Duplicate.Length == 0).Sum(source => source.Files.WantedBytes);
+    public string[] Folders => _owner.Torrents.OrderByDescending(torrent => torrent.Added).Select(torrent => torrent.SavePath)
+        .Prepend(_defaultDestination).Select(folder => Path.TrimEndingDirectorySeparator(folder.Trim()))
+        .Where(folder => folder.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).Take(6).ToArray();
     public string Shared => string.Join(Environment.NewLine, Sources.Select(source => source.Shared).Where(text => text.Length > 0));
-    private Exception? Failure => _failure ?? Sources.Select(source => source.Failure).FirstOrDefault(error => error is not null);
+    internal Exception? Failure => _failure ?? Sources.Select(source => source.Failure).FirstOrDefault(error => error is not null);
     public string Message => !_owner.IsConnected ? _owner.Message : Failure is { } failure ? _strings.Error(failure) :
         HasFiles && !Files.HasWanted ? _strings.Get("add", "no_files") : string.Empty;
     public bool HasError => Message.Length > 0;
@@ -62,7 +86,7 @@ public sealed class AddDraft : INotifyPropertyChanged
         Sources.All(source => !source.MetadataReady || source.SharedDestination == _destination) &&
         Sources.All(source => !source.MetadataReady || source.Duplicate.Length > 0 || source.Files.HasWanted) &&
         (!HasFiles || Files.HasWanted);
-    public bool HasChanges => Sources.Count > 0 || Magnet.Length > 0 || _destination != _defaultDestination || _paused || _neverShow;
+    public bool HasChanges => Sources.Count > 0 || !string.IsNullOrWhiteSpace(Magnet);
     public event PropertyChangedEventHandler? PropertyChanged;
 
     internal AddDraft(MainViewModel owner, PipeClient client, Strings strings)
@@ -194,17 +218,20 @@ public sealed class AddDraft : INotifyPropertyChanged
         Refresh();
         var destination = _destination;
         var paused = _paused;
+        var sequential = _sequential;
+        var firstLast = _firstLast;
         try
         {
             await _pass;
             var captured = Sources.ToArray();
+            var revealed = new List<string>();
             if (_neverShow) await _owner.Preferences.HideAddForm();
             foreach (var source in captured)
             {
                 if (source.Uncertain && _owner.Find(source.Hashes) is { } existing)
                 {
                     Sources.Remove(source);
-                    _owner.Reveal(existing.TorrentId);
+                    revealed.Add(existing.TorrentId);
                     continue;
                 }
                 if (source.PreviewId is null) await Acquire(source);
@@ -215,7 +242,7 @@ public sealed class AddDraft : INotifyPropertyChanged
                         await _client.Send("merge_trackers", new { preview_id = source.PreviewId, torrent_id = source.Duplicate });
                     Sources.Remove(source);
                     await Release(source.PreviewId);
-                    _owner.Reveal(source.Duplicate);
+                    revealed.Add(source.Duplicate);
                     continue;
                 }
                 var previewId = source.PreviewId;
@@ -225,8 +252,8 @@ public sealed class AddDraft : INotifyPropertyChanged
                 {
                     var priorities = source.MetadataReady ? source.Files.Priorities() : null;
                     addition = priorities is null ?
-                        await _client.Send("add", new { preview_id = previewId, destination, paused }) :
-                        await _client.Send("add", new { preview_id = previewId, destination, paused, priorities });
+                        await _client.Send("add", new { preview_id = previewId, destination, paused, sequential, first_last = firstLast }) :
+                        await _client.Send("add", new { preview_id = previewId, destination, paused, sequential, first_last = firstLast, priorities });
                 }
                 catch (Exception error)
                 {
@@ -243,8 +270,9 @@ public sealed class AddDraft : INotifyPropertyChanged
                 }
                 Sources.Remove(source);
                 _owner.ClearError();
-                _owner.Reveal(addition.GetProperty("torrent_id").GetString()!);
+                revealed.Add(addition.GetProperty("torrent_id").GetString()!);
             }
+            _owner.Reveal([.. revealed]);
             if (Sources.Count > 0)
             {
                 _failure = Sources.Select(source => source.Failure).FirstOrDefault(error => error is not null);
@@ -329,17 +357,6 @@ public sealed class AddDraft : INotifyPropertyChanged
             if (source.PreviewId is { } previewId) await Release(previewId);
     }
 
-    internal async Task Remove(AddSource source)
-    {
-        if (!CanEdit) return;
-        Sources.Remove(source);
-        _failure = null;
-        Refresh();
-        if (source.PreviewId is not { } previewId) return;
-        try { await Release(previewId); }
-        catch (Exception error) { _failure = error; Refresh(); }
-    }
-
     // The engine reuses a preview for content the connection already
     // previews, so a preview stays open while any source still uses it. An
     // acquisition that finishes after its source left releases its preview here.
@@ -351,7 +368,7 @@ public sealed class AddDraft : INotifyPropertyChanged
 
     internal void UseDefault(string destination)
     {
-        if (Sources.Count > 0 || _destination != _defaultDestination) return;
+        if (Sources.Count > 0 || _destination != _defaultDestination || _destination == destination) return;
         _defaultDestination = _destination = destination;
         Refresh();
     }
@@ -368,7 +385,7 @@ public sealed class AddDraft : INotifyPropertyChanged
         Files.Clear();
         Magnet = string.Empty;
         EditingMagnet = false;
-        _paused = _neverShow = false;
+        _paused = _sequential = _firstLast = _neverShow = false;
         _failure = null;
         _defaultDestination = _destination;
         Refresh();
@@ -405,7 +422,6 @@ public sealed class AddSource : INotifyPropertyChanged
     public string Source => Inputs[0];
     public FileSelection Files { get; }
     public string Name { get; private set; }
-    public ICommand Remove { get; }
     public ICommand SelectAll { get; }
     public long Size { get; private set; }
     public bool MetadataReady { get; private set; }
@@ -422,11 +438,12 @@ public sealed class AddSource : INotifyPropertyChanged
     public string Description => Failure is not null ? _strings.Error(Failure) :
         Duplicate.Length > 0 ? _strings.Get("add", "already_added") :
         !MetadataReady ? _strings.Get("add", "metadata") : !Files.HasWanted ? _strings.Get("add", "no_files") : _strings.Bytes(Size);
-    public string Shared => SharedWith.Length == 0 || SharedDestination != _draft.Destination ? string.Empty :
+    // An already added source adds no files, so it shares none.
+    public string Shared => Duplicate.Length > 0 || SharedWith.Length == 0 || SharedDestination != _draft.Destination ? string.Empty :
         _strings.Format("add", "shared", string.Join(", ", SharedWith));
-    public string MergeLabel => _strings.Get("add", "merge");
-    public string RemoveLabel => _strings.Get("add", "remove_source");
+    public string MergeLabel => _strings.Get("add", "merge_trackers");
     public string AllLabel => _strings.Get("add", "all_files");
+    public string AllToolTip => _strings.Get("add", "all_files_tip");
     public event PropertyChangedEventHandler? PropertyChanged;
 
     internal AddSource(string source, Strings strings, AddDraft draft)
@@ -436,7 +453,6 @@ public sealed class AddSource : INotifyPropertyChanged
         _strings = strings;
         _draft = draft;
         Files = new FileSelection(strings);
-        Remove = new Command(() => draft.Remove(this), () => draft.CanEdit);
         SelectAll = new Command(() => { Files.SelectAll(); return Task.CompletedTask; }, () => draft.CanEdit && NeedsFiles);
     }
 
@@ -464,7 +480,6 @@ public sealed class AddSource : INotifyPropertyChanged
     internal void Refresh()
     {
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
-        ((Command)Remove).Refresh();
         ((Command)SelectAll).Refresh();
     }
     public override string ToString() => Name;

@@ -10,9 +10,16 @@
         <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
         <!-- The empty star column balances the name's, so the sections sit
              centred while Close keeps its width when the inspector is narrow. -->
-        <Grid ColumnSpacing="12" Padding="16,0">
+        <Grid ColumnSpacing="12" Padding="16,0" Background="{ThemeResource LayerFillColorDefaultBrush}" BorderThickness="0,0,0,1" BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}">
             <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-            <TextBlock Text="{x:Bind Model.Name, Mode=OneWay}" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+            <!-- Left-aligned, so the size follows a short name and a long name trims before it. -->
+            <Grid HorizontalAlignment="Left" ColumnSpacing="12">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                <FontIcon Style="{StaticResource GroupIconStyle}" FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind Model.Target.StatusGlyph, Mode=OneWay, FallbackValue=''}" />
+                <TextBlock Grid.Column="1" Text="{x:Bind Model.Name, Mode=OneWay}" Style="{StaticResource GroupTitleTextStyle}"
+                    ToolTipService.ToolTip="{x:Bind Model.Name, Mode=OneWay}" AutomationProperties.HeadingLevel="Level1" />
+                <TextBlock Grid.Column="2" Text="{x:Bind Model.Target.SizeText, Mode=OneWay, FallbackValue=''}" Style="{StaticResource TitleDetailTextStyle}" />
+            </Grid>
             <SelectorBar x:Name="Sections" Grid.Column="1" Padding="0" SelectionChanged="OnSection" AutomationProperties.AutomationId="InspectorSections">
                 <SelectorBarItem x:Name="GeneralSection" AutomationProperties.AutomationId="InspectorGeneral" />
                 <SelectorBarItem x:Name="FilesSection" AutomationProperties.AutomationId="InspectorFiles" />
@@ -21,14 +28,14 @@
                 <SelectorBarItem x:Name="SpeedSection" AutomationProperties.AutomationId="InspectorSpeed" />
                 <SelectorBarItem x:Name="PiecesSection" AutomationProperties.AutomationId="InspectorPieces" />
             </SelectorBar>
-            <Button x:Name="Close" x:FieldModifier="internal" Grid.Column="3" VerticalAlignment="Center">
+            <Button x:Name="Close" x:FieldModifier="internal" Grid.Column="3" Style="{StaticResource SubtleButtonStyle}" VerticalAlignment="Center">
                 <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.X}" FontSize="16" />
             </Button>
         </Grid>
         <Grid Grid.Row="1" RowSpacing="8" Padding="16,8,16,12">
             <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
             <InfoBar IsClosable="False" Severity="Error" IsOpen="{x:Bind Model.HasError, Mode=OneWay}" Message="{x:Bind Model.Message, Mode=OneWay}">
-                <InfoBar.ActionButton><Button x:Name="Retry" Content="{x:Bind Model.Text.Get('inspector', 'retry'), Mode=OneWay}" Command="{x:Bind Model.Retry}" /></InfoBar.ActionButton>
+                <InfoBar.ActionButton><controls:ActionButton Glyph="{x:Bind icons:Lucide.RotateCw}" ToolTipService.ToolTip="{x:Bind Model.Text.Get('inspector', 'retry_tip'), Mode=OneWay}" x:Name="Retry" Text="{x:Bind Model.Text.Get('inspector', 'retry'), Mode=OneWay}" Command="{x:Bind Model.Retry}" /></InfoBar.ActionButton>
             </InfoBar>
             <Grid Grid.Row="1">
                 <ScrollViewer x:Name="General" HorizontalScrollMode="Disabled" HorizontalScrollBarVisibility="Disabled">
@@ -54,7 +61,7 @@
                 </ScrollViewer>
                 <Grid x:Name="Files" Visibility="Collapsed" RowSpacing="8">
                     <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
-                    <Button x:Name="RetryFiles" Content="{x:Bind Model.Text.Get('inspector', 'retry_files'), Mode=OneWay}" Command="{x:Bind Model.RetryFiles}" HorizontalAlignment="Left" Visibility="{x:Bind Model.HasFileDraft, Mode=OneWay}" />
+                    <controls:ActionButton Glyph="{x:Bind icons:Lucide.RotateCw}" ToolTipService.ToolTip="{x:Bind Model.Text.Get('inspector', 'retry_files_tip'), Mode=OneWay}" x:Name="RetryFiles" Text="{x:Bind Model.Text.Get('inspector', 'retry_files'), Mode=OneWay}" Command="{x:Bind Model.RetryFiles}" HorizontalAlignment="Left" Visibility="{x:Bind Model.HasFileDraft, Mode=OneWay}" />
                     <ContentPresenter x:Name="FileContent" Grid.Row="1" Visibility="{x:Bind Model.HasFiles, Mode=OneWay}" />
                     <TextBlock x:Name="WaitingMetadata" Text="{x:Bind Model.Text.Get('pieces', 'metadata'), Mode=OneWay}" Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center" TextWrapping="Wrap" Visibility="{x:Bind local:InspectorForm.Hidden(Model.HasFiles), Mode=OneWay}" />
                 </Grid>
@@ -73,7 +80,7 @@
                 </table:Table>
                 <Grid x:Name="Trackers" Visibility="Collapsed" RowSpacing="8">
                     <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
-                    <StackPanel Orientation="Horizontal" Spacing="8" Visibility="{x:Bind local:InspectorForm.Hidden(Model.IsEditingTrackers), Mode=OneWay}"><Button x:Name="EditTrackers" Content="{x:Bind Model.Text.Get('trackers', 'edit'), Mode=OneWay}" Command="{x:Bind Model.EditTrackers}" /><Button x:Name="Reannounce" Content="{x:Bind Model.Text.Get('trackers', 'reannounce'), Mode=OneWay}" Command="{x:Bind Model.Reannounce}" /></StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="8" Visibility="{x:Bind local:InspectorForm.Hidden(Model.IsEditingTrackers), Mode=OneWay}"><controls:ActionButton Glyph="{x:Bind icons:Lucide.Pencil}" ToolTipService.ToolTip="{x:Bind Model.Text.Get('trackers', 'edit_tip'), Mode=OneWay}" x:Name="EditTrackers" Text="{x:Bind Model.Text.Get('trackers', 'edit'), Mode=OneWay}" Command="{x:Bind Model.EditTrackers}" /><controls:ActionButton Glyph="{x:Bind icons:Lucide.RadioTower}" ToolTipService.ToolTip="{x:Bind Model.Text.Get('trackers', 'reannounce_tip'), Mode=OneWay}" x:Name="Reannounce" Text="{x:Bind Model.Text.Get('trackers', 'reannounce'), Mode=OneWay}" Command="{x:Bind Model.Reannounce}" /></StackPanel>
                     <table:Table x:Name="TrackerTable" Grid.Row="1" ShowsFitButton="True" ItemsSource="{x:Bind Model.Trackers, Mode=OneWay}" Visibility="{x:Bind local:InspectorForm.Hidden(Model.IsEditingTrackers), Mode=OneWay}">
                         <table:Table.EmptyContent><TextBlock x:Name="NoTrackers" Text="{x:Bind Model.Text.Get('trackers', 'empty'), Mode=OneWay}" HorizontalAlignment="Center" VerticalAlignment="Center" TextWrapping="Wrap" /></table:Table.EmptyContent>
                         <table:Table.Columns>
@@ -91,7 +98,7 @@
                         <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
                         <TextBlock x:Name="TrackerHint" Text="{x:Bind Model.Text.Get('trackers', 'hint'), Mode=OneWay}" TextWrapping="Wrap" />
                         <TextBox x:Name="TrackerInput" Grid.Row="1" Text="{x:Bind Model.TrackerInput, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="NoWrap" IsEnabled="{x:Bind local:InspectorForm.Not(Model.IsPending), Mode=OneWay}" FlowDirection="LeftToRight" />
-                        <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8"><Button x:Name="SaveTrackers" Content="{x:Bind Model.Text.Get('trackers', 'save'), Mode=OneWay}" IsEnabled="{x:Bind Model.CanEdit, Mode=OneWay}" /><Button x:Name="CancelTrackers" Content="{x:Bind Model.Text.Get('add', 'cancel'), Mode=OneWay}" Command="{x:Bind Model.CancelTrackers}" /></StackPanel>
+                        <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8"><controls:ActionButton Glyph="{x:Bind icons:Lucide.Save}" ToolTipService.ToolTip="{x:Bind Model.Text.Get('trackers', 'save_tip'), Mode=OneWay}" x:Name="SaveTrackers" Text="{x:Bind Model.Text.Get('trackers', 'save'), Mode=OneWay}" IsEnabled="{x:Bind Model.CanEdit, Mode=OneWay}" /><controls:ActionButton Glyph="{x:Bind icons:Lucide.X}" x:Name="CancelTrackers" Text="{x:Bind Model.Text.Get('add', 'cancel'), Mode=OneWay}" Command="{x:Bind Model.CancelTrackers}" /></StackPanel>
                     </Grid>
                 </Grid>
                 <Grid x:Name="Speed" Visibility="Collapsed" RowSpacing="8">
@@ -99,12 +106,14 @@
                     <Grid ColumnSpacing="16">
                         <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                         <TextBlock x:Name="AllTorrents" Text="{x:Bind Model.Text.Get('speed', 'all'), Mode=OneWay}" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center" />
-                        <ComboBox x:Name="Range" Grid.Column="1" SelectionChanged="OnRange">
-                            <ComboBoxItem x:Name="FiveMinutes"><TextBlock x:Name="MinutesLabel" Text="{x:Bind Model.Text.Get('speed', 'five_minutes'), Mode=OneWay}" /></ComboBoxItem>
-                            <ComboBoxItem x:Name="Day"><TextBlock x:Name="DayLabel" Text="{x:Bind Model.Text.Get('speed', 'day'), Mode=OneWay}" /></ComboBoxItem>
-                        </ComboBox>
+                        <SelectorBar x:Name="Ranges" Grid.Column="1" Padding="0" SelectionChanged="OnRange" AutomationProperties.Name="{x:Bind Model.Text.Get('speed', 'range'), Mode=OneWay}">
+                            <SelectorBarItem Text="{x:Bind Model.Text.Get('speed', 'five_minutes'), Mode=OneWay}" AutomationProperties.Name="{x:Bind Model.Text.Get('speed', 'five_minutes'), Mode=OneWay}" />
+                            <SelectorBarItem Text="{x:Bind Model.Text.Get('speed', 'hour'), Mode=OneWay}" AutomationProperties.Name="{x:Bind Model.Text.Get('speed', 'hour'), Mode=OneWay}" />
+                            <SelectorBarItem Text="{x:Bind Model.Text.Get('speed', 'six_hours'), Mode=OneWay}" AutomationProperties.Name="{x:Bind Model.Text.Get('speed', 'six_hours'), Mode=OneWay}" />
+                            <SelectorBarItem Text="{x:Bind Model.Text.Get('speed', 'day'), Mode=OneWay}" AutomationProperties.Name="{x:Bind Model.Text.Get('speed', 'day'), Mode=OneWay}" />
+                        </SelectorBar>
                     </Grid>
-                    <controls:SpeedGraph x:Name="Graph" Grid.Row="1" Samples="{x:Bind Model.History, Mode=OneWay}" IsDay="{x:Bind Model.IsDay, Mode=OneWay}" IsAvailable="{x:Bind Model.IsAvailable, Mode=OneWay}" />
+                    <controls:SpeedGraph x:Name="Graph" Grid.Row="1" Samples="{x:Bind Model.History, Mode=OneWay}" Range="{x:Bind Model.Range, Mode=TwoWay}" />
                 </Grid>
                 <controls:PiecesMap x:Name="Map" Visibility="Collapsed" />
             </Grid>

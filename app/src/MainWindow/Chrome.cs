@@ -6,12 +6,37 @@ using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Windows.Foundation;
 using Windows.Graphics;
+using Windows.UI.ViewManagement;
 using Syno.TinyTorrent.Models;
 
 namespace Syno.TinyTorrent;
 
 public sealed partial class MainWindow
 {
+    private readonly UISettings _uiSettings = new();
+
+    private void OnTextScaling(UISettings sender, object args) => DispatcherQueue.TryEnqueue(UpdateStatus);
+
+    private void UpdateStatus()
+    {
+        if (StatusBar.ActualWidth <= 0) return;
+        var scale = _uiSettings.TextScaleFactor;
+        var width = 224 * scale;
+        var narrow = StatusBar.ActualWidth < 960 * scale;
+        DownloadRate.Width = UploadRate.Width = width;
+        Rates.Orientation = StatusBar.ActualWidth < 2 * width + Rates.Spacing ? Orientation.Vertical : Orientation.Horizontal;
+        Grid.SetColumnSpan(Rates, narrow ? 3 : 1);
+        Grid.SetRow(StatusActions, narrow ? 1 : 0);
+        Grid.SetColumn(StatusActions, narrow ? 0 : 1);
+        Grid.SetColumnSpan(StatusActions, narrow ? 3 : 1);
+        StatusActions.Margin = new Thickness(0, narrow ? 8 : 0, 0, 0);
+        Grid.SetRow(Incoming, narrow ? 2 : 0);
+        Grid.SetColumn(Incoming, narrow ? 0 : 2);
+        Grid.SetColumnSpan(Incoming, narrow ? 3 : 1);
+        Incoming.Margin = new Thickness(0, narrow ? 8 : 0, 0, 0);
+        Incoming.TextAlignment = narrow ? TextAlignment.Left : TextAlignment.Right;
+    }
+
     private void UpdateChrome()
     {
         if (_allowClose || Root.XamlRoot is null) return;
@@ -22,10 +47,24 @@ public sealed partial class MainWindow
         RightInset.Width = new GridLength(right);
         UpdateMinimum(scale);
         if (Caption.ActualHeight <= 0) return;
-        var input = InputNonClientPointerSource.GetForWindowId(AppWindow.Id);
-        input.SetRegionRects(NonClientRegionKind.Passthrough,
-            new[] { Menus, (FrameworkElement)Search, ThemeButton }.Select(GetRegion).ToArray());
-        input.SetRegionRects(NonClientRegionKind.Icon, [GetRegion(AppIcon)]);
+        var start = AppWindow.TitleBar.LeftInset;
+        var end = Math.Max(start, (int)Math.Round(Caption.ActualWidth * scale) - AppWindow.TitleBar.RightInset);
+        var padding = (int)Math.Ceiling(4 * scale);
+        var height = (int)Math.Round(Caption.ActualHeight * scale);
+        var rectangles = new List<RectInt32>();
+        var exclusions = new FrameworkElement[] { AppIcon, Menus, Search, AddButtons, ThemeButton }
+            .Where(control => control.Visibility == Visibility.Visible && control.ActualWidth > 0)
+            .Select(GetRegion).OrderBy(bounds => bounds.X);
+        foreach (var bounds in exclusions)
+        {
+            var edge = Math.Clamp(bounds.X - padding, start, end);
+            if (edge > start) rectangles.Add(new RectInt32(start, 0, edge - start, height));
+            start = Math.Clamp(bounds.X + bounds.Width + padding, start, end);
+        }
+        if (end > start) rectangles.Add(new RectInt32(start, 0, end - start, height));
+        AppWindow.TitleBar.SetDragRectangles(rectangles.ToArray());
+        InputNonClientPointerSource.GetForWindowId(AppWindow.Id)
+            .SetRegionRects(NonClientRegionKind.Icon, [GetRegion(AppIcon)]);
     }
 
     private RectInt32 GetRegion(FrameworkElement control)
@@ -41,8 +80,8 @@ public sealed partial class MainWindow
     private void UpdateMinimum(double scale)
     {
         if (AppWindow.Presenter is not OverlappedPresenter presenter) return;
-        var content = 48 + Menus.ActualWidth + SearchArea.Margin.Left + Search.MinWidth +
-            SearchArea.Margin.Right + ThemeButton.Width + ThemeButton.Margin.Right;
+        var content = 48 + Menus.ActualWidth + SearchArea.Margin.Left +
+            Search.MinWidth + SearchArea.Margin.Right + AddButtons.ActualWidth + ThemeButton.Width;
         var frame = AppWindow.Size.Width - AppWindow.ClientSize.Width;
         var width = (int)Math.Ceiling(Math.Max(720, content + LeftInset.Width.Value + RightInset.Width.Value) * scale) + frame;
         var height = (int)Math.Ceiling(560 * scale);

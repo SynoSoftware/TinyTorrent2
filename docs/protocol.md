@@ -18,8 +18,8 @@ hold the request slot until all files have moved. Launch forwarding uses bounded
 short-lived pipe instances at the same endpoint and contract, so an attached UI
 cannot prevent another launch from forwarding its request.
 
-The engine also sends bounded control notifications for activation and close
-requests. One receive dispatcher separates them from replies;
+The engine also sends bounded control notifications for activation, close
+requests and desktop notices. One receive dispatcher separates them from replies;
 one writer per connection serializes whole frames so notifications and replies
 cannot interleave. A close request for Exit runs asynchronously, outside the
 request slot and receive loop, so committed edits are sent and unfinished input

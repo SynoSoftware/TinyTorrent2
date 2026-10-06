@@ -12,7 +12,7 @@ establishes an operation or risk; it does not establish a reproduced failure,
 its frequency or its latency. Earlier timings below are reported evidence from
 the linked issues, not measurements performed by this consolidation.
 
-## Implementation checkpoint
+## Historical implementation checkpoint
 
 Architecture implementation began from `db6ec1d` on 2026-10-06. The current
 working tree includes concurrent Add, splitter and torrent-option work; those
@@ -20,7 +20,9 @@ changes are outside this architecture review's completion claim.
 The architecture commit separates those changes using the Git index. Build and
 runtime evidence below describes the combined implementation tree at the time
 of each check; the separated commit received source review without another
-build or test run.
+build or test run. That separated commit is `e652d38`. The checks and review
+verdicts in this section describe that earlier work, not acceptance of the current
+working tree. Later advisory review found additional defects, recorded below.
 
 | Delivery slice | Implemented ownership |
 | --- | --- |
@@ -47,11 +49,11 @@ drafts left by non-Settings commands. These were corrected and rereviewed; the
 first source-review verdict was **0 standards blockers, 0 specification blockers**.
 The owner requested another adversarial pass in that colleague's chat; the
 renewed review found and verified the corrections described below.
-Commands now save through `Preferences` without creating ordinary field drafts:
-theme and alternative-limit failures use command feedback, while Add owns its
-own failure. Direct Settings edits retain their local failed input. The unused
-language toggle command and its resource keys were removed. This approval covers
-the selected architecture, not the release acceptance limits below.
+At that checkpoint, commands saved through `Preferences` without creating ordinary
+field drafts. Later review found that theme still needed the same field submission
+behavior at both entry points; the follow-up below supersedes this arrangement.
+The unused language toggle command and its resource keys were removed. The review
+verdict did not establish release acceptance or completeness of the review.
 
 The renewed review found two further obligations: TableView must restore physical
 row focus before publishing `SelectionChanged`, so host handlers keep control;
@@ -60,7 +62,8 @@ an accepted one, so acknowledged external sources cannot remain unseen. Both
 were corrected in their existing owners, without additional interaction state.
 Normal refusal resumes deferred Add; a caught display or cleanup exception
 reports its failure without automatically retrying the same dialog. Independent
-reviewers reread these fixes and found no remaining concrete architecture blocker.
+reviewers reread these fixes and reported no further blocker in those inspected
+paths. Later findings show that this was not an exhaustive architecture verdict.
 
 The focused `CommittedFiles` check passed using the owned disposable store in
 `artifacts/evidence/CommittedFiles-d6aa70d7-0097-4c79-82fa-d3aedd5fc913`: compound
@@ -123,13 +126,78 @@ The existing issues retain those broader acceptance obligations.
 
 ### Advisory follow-up review
 
-A further reviewer questioned theme edits through Settings versus the title bar,
-TableView's native automation selection integration (#40), diagnostic code in
-the product window, and editor-specific close recovery. These are advisory
-concerns, not owner rulings or accepted implementation requirements. Their
-suggested changes still need a concrete failure or simplification benefit and
-comparison with the existing owners. The implementation checkpoint records an
-improvement; it does not declare every ownership concern settled.
+Further reviews supplied four ownership concerns and a thirteen-point handover
+against `e652d38` and the changing working tree. These are advisory findings, not
+owner rulings. The following changes address their concrete source paths; no
+build, test or application launch has run for these follow-up changes.
+
+| Handover item | Current disposition |
+| --- | --- |
+| 1 — Unavailable Settings departure | Back preserves ordinary input and close can proceed without a prompt when saving is unavailable. A definite engine refusal still blocks with a visible field error. Close first waits for a picker or pending operation. |
+| 2 — Hidden language draft | Language uses shared submission. Restoring the confirmed catalogue settles its hidden field and retains failure feedback. Publication before saving remains with the language owner. |
+| 3 — Status rates at larger text sizes | Separate single-line allocations now grow with Windows text size. Available width and text scale determine when rates stack and when controls/connectivity move below; changing rates cannot change their line count or move controls. The 224-DIP base allocation and English/Spanish typography at larger text sizes still need visual verification. |
+| 4 — Repeated Add default refresh | An unchanged destination returns without refreshing the draft. |
+| 5 — Theme submission | Settings and the title bar call `Preferences.SelectTheme`, sharing input, pending state and failure handling. |
+| 6 — Unused alternative field | Removed the ordinary field and its fallback; effective mode comes from the engine snapshot, while saved choices retain their existing write path. |
+| 7 — Torrent membership | The mutable list is private and callers receive `IReadOnlyList<Torrent>`. |
+| 8 — Inspector row refresh | An explicit row-update event requests sorting when membership is unchanged. The two short identity-specific merge loops remain: callback plumbing or a new shared row interface would cost more than the duplicated iteration. |
+| 9 — Empty piece map | Unchanged null data no longer rebuilds the legend; a language change still refreshes it. |
+| 10 — Queued Settings intent | A definite refusal can continue to a later explicitly submitted value. Transport failure stops submission; reconnection never replays it. Later confirmation reconciles an uncertain submission without erasing newer input. |
+| 11 — Hidden new row eligibility | Only an existing visible row's eligibility change produces that invalidation; new membership uses normal list publication. |
+| 12 — Settings line count | Removed duplicate submission paths and the unused field. Line count alone does not justify another refactor; retained state represents pending input, explicit intent or an uncertain outcome. |
+| 13 — Physical row focus naming | The existing `RestoreRowFocus` now owns physical restoration directly, preserving its logical and physical staleness checks. |
+
+The four ownership concerns also produced source changes. TableView item data
+peers route unrealized selection through its selection owner, and header peers
+share sort invocation and its event. Focused automation tests were added but have
+not run; native provider routing and Narrator remain unverified. Capture sources
+are opt-in through `EnableCapture`, with separate output paths documented in
+[testing](../../testing.md). Forms reveal their own failed editors; the window
+retains close sequencing without naming their controls.
+
+Adversarial follow-up found two more recovery defects: discarding a schedule
+draft also cleared ordinary Settings input, and an old schedule error could
+redirect Inspector recovery. Schedule cancellation now affects only that draft,
+and recovery requires an actual failed schedule draft. Transport confirmation
+also handles normalized values, such as typed `20.0` confirmed as `20`, without
+retaining a stale error or manufacturing new input after cancellation.
+The final departure review found that newer input preserved during Back could
+also trigger schedule recovery without a schedule error. Recovery now leaves
+the current section and focus alone when no editor has an actual failure.
+
+### Remaining-source review
+
+After the Add work stopped, the final Add form, shared dialog/default-focus path,
+splitter, file-form bindings and piece-order feature received focused source
+review. The existing selection, feedback, close and recovery paths were also
+traced through their current owners. The reviewers made no edits; fixes were
+integrated by the implementation owner.
+
+Four concrete defects were corrected:
+
+- A delayed drop from a closed Add form could change a replacement form's draft.
+  Form drops now retain their origin and recheck its lifetime and editability
+  after data retrieval; the routed event is handled once.
+- The vertical splitter's keyboard directions did not follow RTL layout. Only
+  its horizontal-key mapping changes; native Thumb deltas keep their coordinates.
+- A second piece-order toggle could be suppressed because it matched an old
+  snapshot. Each explicit choice now reaches the existing command owner.
+- Verify can recreate libtorrent's piece picker. Its checked alert now reapplies
+  saved first/last priorities through the existing owner.
+
+Piece-order review traced saved choices, startup clearing stale resume priorities,
+metadata arrival, file-priority completion, shared-piece priority maxima and
+batch admission before persistence. It found no need for another pending-state
+or rollback mechanism. The explicit off/reset path remains necessary because
+unchanged file priorities do not make libtorrent reset piece priorities.
+
+This completes the requested source-review coverage, not release acceptance.
+Earlier runtime evidence above does not verify these versions. No build, test
+or application launch ran for this follow-up; text scaling, native automation,
+Narrator, focus behavior, piece-priority behavior and large-list responsiveness
+remain unverified. With the owner's approval, the findings and verification
+limits were posted to existing issues #48, #54, #112, #113, #119, #120, #125,
+#126 and #127. None was closed by this follow-up.
 
 ## Settings and editors
 

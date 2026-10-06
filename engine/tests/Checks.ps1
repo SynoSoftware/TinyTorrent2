@@ -290,12 +290,13 @@ try {
             Assert (@($trackers).Count -eq 0) 'An explicit empty tracker list restored the original trackers'
         }
         'SettingsPolicy' {
+            Assert ($initial.settings.notify_problems -eq $true -and $initial.settings.notifications_enabled -eq $false -and $initial.settings.notify_added -eq $false) 'Fresh notification preferences do not keep successes quiet and problems visible'
             $previewId = Preview
             $reply = Send-Command @{ command = 'add'; preview_id = $previewId; destination = $payload; paused = $true }
             Assert $reply.ok 'Settings policy fixture addition failed'
             $torrentId = $reply.data.torrent_id
             $period = @{ days = @(0, 1, 2, 3, 4, 5, 6); start = 0; end = 0; mode = 'paused' }
-            $reply = Send-Command @{ command = 'settings'; changes = @{ schedule_enabled = $true; schedule = @($period); check_for_updates = $false; active_downloads = 1; port_mapping = $false } }
+            $reply = Send-Command @{ command = 'settings'; changes = @{ schedule_enabled = $true; schedule = @($period); check_for_updates = $false; active_downloads = 1; port_mapping = $false; notify_problems = $false; notifications_enabled = $true; notify_added = $true } }
             Assert $reply.ok 'The weekly schedule could not be committed'
             $snapshot = (Send-Command @{ command = 'snapshot' }).data
             Assert $snapshot.all_paused 'An all-day paused period did not pause the session'
@@ -317,6 +318,7 @@ try {
             $snapshot = Start-Engine
             Assert ($snapshot.settings.schedule.Count -eq 1 -and $snapshot.settings.schedule[0].mode -eq 'alternative') 'A committed weekly period was lost at restart'
             Assert ($snapshot.settings.active_downloads -eq 1 -and -not $snapshot.settings.check_for_updates -and -not $snapshot.settings.port_mapping) 'Committed preferences were lost at restart'
+            Assert ($snapshot.settings.notify_problems -eq $false -and $snapshot.settings.notifications_enabled -eq $true -and $snapshot.settings.notify_added -eq $true) 'Notification choices were lost at restart'
             Assert ($snapshot.alternative_limits -and $snapshot.torrents[0].paused) 'Restart replayed a temporary override or lost individual pause intent'
             $missing = '{00000000-0000-0000-0000-000000000000}'
             $reply = Send-Command @{ command = 'settings'; changes = @{ network_interface = $missing } }
@@ -555,9 +557,11 @@ try {
         }
         'Restart' {
             $previewId = Preview
-            $reply = Send-Command @{ command = 'add'; preview_id = $previewId; destination = $payload; paused = $false }
+            $reply = Send-Command @{ command = 'add'; preview_id = $previewId; destination = $payload; paused = $false; sequential = $true }
             Assert $reply.ok 'Fixture addition failed'
             $torrentId = $reply.data.torrent_id
+            $reply = Send-Command @{ command = 'piece_order'; torrent_ids = @($torrentId); first_last = $true }
+            Assert $reply.ok 'First and last pieces choice was not saved'
             $reply = Send-Command @{ command = 'pause'; torrent_ids = @($torrentId) }
             Assert $reply.ok 'Pause intent was not saved'
             $reply = Send-Command @{ command = 'session_pause'; paused = $true }
@@ -569,6 +573,7 @@ try {
             Assert (@($snapshot.torrents).Count -eq 1) 'Saved torrent disappeared after restart'
             Assert ($snapshot.torrents[0].torrent_id -eq $torrentId) 'Durable identity changed after restart'
             Assert $snapshot.torrents[0].paused 'Saved pause intent was lost after restart'
+            Assert ($snapshot.torrents[0].sequential -and $snapshot.torrents[0].first_last) 'Saved download order was lost after restart'
             Assert $snapshot.all_paused 'Saved session pause was lost after restart'
             Assert ($snapshot.settings.language -eq 'es' -and $snapshot.settings.theme -eq 'dark') 'Saved appearance preferences were lost after restart'
             $reply = Send-Command @{ command = 'session_pause'; paused = $false }
@@ -746,7 +751,10 @@ finally {
     if ($script:pipe) { $script:pipe.Dispose() }
     # A run keeps only its logs and reports. Its payload, peer seed and engine
     # state are worthless once the check has ended.
-    Get-ChildItem -LiteralPath $directory |
-        Where-Object { $_.PSIsContainer -or $_.Extension -notin '.log', '.json' } |
-        Remove-Item -Recurse -Force -ErrorAction Continue
+    $evidence = [IO.Path]::GetFullPath((Join-Path $repository 'artifacts/evidence')) + [IO.Path]::DirectorySeparatorChar
+    $cleanup = [IO.Path]::GetFullPath($directory)
+    if (-not $cleanup.StartsWith($evidence, [StringComparison]::OrdinalIgnoreCase)) { throw 'Check cleanup escaped its evidence directory' }
+    foreach ($entry in Get-ChildItem -LiteralPath $cleanup | Where-Object { $_.PSIsContainer -or $_.Extension -notin '.log', '.json' }) {
+        Remove-Item -LiteralPath $entry.FullName -Recurse -Force -ErrorAction Continue
+    }
 }

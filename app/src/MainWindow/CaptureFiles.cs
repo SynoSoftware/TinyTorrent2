@@ -51,7 +51,7 @@ public sealed partial class MainWindow
                 await CaptureReady(Model, () => Model.CanClose && Model.Text.Language == language);
                 foreach (var theme in new[] { "light", "dark" })
                 {
-                    await Model.SelectTheme(theme);
+                    await Model.Preferences.SelectTheme(theme);
                     await CaptureReady(Model, () => Model.CanClose && Model.Theme == theme);
                     foreach (var size in new[] { new SizeInt32(720, 560), new SizeInt32(1040, 680), new SizeInt32(1280, 800) })
                     {

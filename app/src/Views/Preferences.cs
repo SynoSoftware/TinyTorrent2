@@ -35,16 +35,19 @@ public sealed class Preferences : INotifyPropertyChanged
     public InterfaceChoice? SelectedInterface => Interfaces.FirstOrDefault(choice => choice.InterfaceId == Interface.Input);
     public Preference PortMapping { get; }
     public Preference Port { get; }
-    public Preference Notifications { get; }
+    public Preference ProblemNotifications { get; }
+    public Preference FinishedNotifications { get; }
+    public Preference AddedNotifications { get; }
     public Preference PreventSleep { get; }
     public Preference SeedingSleep { get; }
     public Preference Updates { get; }
     public Schedule Schedule { get; }
-    public Preference Alternative { get; }
     public Preference Language { get; }
     public Preference Theme { get; }
     public IReadOnlyList<Preference> Fields { get; }
     public bool HasDraft => Schedule.HasDraft;
+    internal Preference? RefusedField => Fields.FirstOrDefault(preference => preference.HasDraft && preference.Failure is CommandFailure);
+    public bool HasError => RefusedField is not null || Schedule.HasDraft && Schedule.HasScheduleError;
     public bool IsPending => Fields.Any(preference => preference.IsPending) || _registering || Schedule.IsPending;
     public bool CanEdit => _owner.CanEdit;
     internal bool CanSave => _owner.CanSave;
@@ -75,13 +78,16 @@ public sealed class Preferences : INotifyPropertyChanged
     public bool CanSelectLanguage => CanEdit;
     public string OnText => Text.Get("preferences", "on");
     public string OffText => Text.Get("preferences", "off");
-    public bool CanSelectTheme => _owner.SwitchTheme.CanExecute(null);
+    public bool CanSelectTheme => CanEdit;
     public async Task SelectTheme(string theme)
     {
         if (!CanSelectTheme) return;
         Theme.Input = theme;
+        if (!Theme.HasDraft && !Theme.IsPending) { Theme.Cancel(); return; }
         await Commit(Theme);
     }
+
+    internal async Task<bool> SaveDraft() => await PrepareLeave() && await Schedule.CommitPeriod();
 
     public event PropertyChangedEventHandler? PropertyChanged;
     public event EventHandler? TextChanged;
@@ -108,18 +114,20 @@ public sealed class Preferences : INotifyPropertyChanged
         Interface.PropertyChanged += (_, _) => UpdateInterface();
         PortMapping = new(this, "port_mapping", PreferenceKind.Boolean, PreferenceSection.Network);
         Port = new(this, "listen_port", PreferenceKind.Port, PreferenceSection.Network);
-        Notifications = new(this, "notifications_enabled", PreferenceKind.Boolean, PreferenceSection.General);
+        ProblemNotifications = new(this, "notify_problems", PreferenceKind.Boolean, PreferenceSection.General);
+        FinishedNotifications = new(this, "notifications_enabled", PreferenceKind.Boolean, PreferenceSection.General);
+        AddedNotifications = new(this, "notify_added", PreferenceKind.Boolean, PreferenceSection.General);
         PreventSleep = new(this, "prevent_sleep", PreferenceKind.Boolean, PreferenceSection.General);
         SeedingSleep = new(this, "prevent_sleep_seeding", PreferenceKind.Boolean, PreferenceSection.General);
         Updates = new(this, "check_for_updates", PreferenceKind.Boolean, PreferenceSection.General);
         Schedule = new(this);
-        Alternative = new(this, "alternative_limits", PreferenceKind.Boolean, PreferenceSection.Transfers);
         Language = new(this, "language", PreferenceKind.Text, PreferenceSection.Appearance);
         Theme = new(this, "theme", PreferenceKind.Text, PreferenceSection.Appearance);
         Schedule.PropertyChanged += (_, _) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasDraft)));
         Fields = [Destination, ShowAdd, Download, Upload, AlternativeDownload, AlternativeUpload,
             Downloads, Seeds, Connections, Ratio, SeedingMinutes, Interface, PortMapping, Port,
-            Notifications, PreventSleep, SeedingSleep, Updates, Schedule.Enabled, ShowSplash, StartInTray, Alternative, Language, Theme];
+            ProblemNotifications, FinishedNotifications, AddedNotifications, PreventSleep, SeedingSleep, Updates,
+            Schedule.Enabled, ShowSplash, StartInTray, Language, Theme];
         OpenDefaults = new Command(() => Register("open_defaults"), () => CanRegister);
         RemoveHandler = new Command(() => Register("unregister_handlers"), () => CanRegister && HandlersRegistered);
         OpenStartup = new Command(() => Register("open_startup"), () => CanRegister);
@@ -184,16 +192,8 @@ public sealed class Preferences : INotifyPropertyChanged
     internal async Task SaveLanguage(string language)
     {
         Language.Input = language;
-        var submitted = Language.Capture(language);
-        Language.Begin();
-        Changed();
-        try
-        {
-            await Save(new { language });
-            Language.Accept(JsonSerializer.SerializeToElement(language), submitted);
-        }
-        catch (Exception error) { Language.Reject(error); throw; }
-        finally { Language.End(); Changed(); }
+        await Submit(Language, language);
+        if (Language.Failure is { } error) throw error;
     }
 
     internal Task SetAlternative(bool enabled) => Save(new { alternative_limits = enabled });
@@ -237,7 +237,7 @@ public sealed class Preferences : INotifyPropertyChanged
         var saved = true;
         foreach (var field in Fields)
             if (!await Depart(field)) saved = false;
-        return saved && !Fields.Any(field => field.HasDraft);
+        return saved;
     }
 
     public async Task<bool> Depart(Preference field)
@@ -245,9 +245,11 @@ public sealed class Preferences : INotifyPropertyChanged
         await field.Saving;
         if (!field.HasDraft) return true;
         if (!TryValue(field, out var value)) { field.Cancel(); return true; }
-        if (field.HasFailure || !_owner.CanSave) return false;
+        if (!_owner.CanSave) return !_owner.IsPicking;
+        if (field.Failure is CommandFailure) return false;
         await Submit(field, value);
-        return !field.HasDraft;
+        return !field.HasDraft || !_owner.CanSave && !_owner.IsPicking ||
+            field.Failure is not null and not CommandFailure;
     }
 
     public async Task Toggle(Preference field, bool value)
@@ -260,7 +262,7 @@ public sealed class Preferences : INotifyPropertyChanged
 
     private async Task Submit(Preference field, object value)
     {
-        if (!_owner.CanSave) return;
+        if (!_owner.CanSave) { field.Reject(new IOException(Text.Get("connection", "unavailable"))); return; }
         var submitted = field.Capture(value);
         if (field.IsPending)
         {
@@ -274,15 +276,21 @@ public sealed class Preferences : INotifyPropertyChanged
         {
             while (true)
             {
+                Exception? failure = null;
                 try
                 {
                     await Save(new Dictionary<string, object> { [field.Name] = submitted.Value });
                     field.Accept(JsonSerializer.SerializeToElement(submitted.Value), submitted);
                     if (field == Schedule.Enabled) Schedule.Refresh();
                 }
-                catch (Exception error) { field.Reject(error); break; }
-                if (!_owner.CanSave || field.TakeIntent() is not { } next) break;
-                submitted = next;
+                catch (Exception error) { failure = error; }
+                if (_owner.CanSave && (failure is null or CommandFailure) && field.TakeIntent() is { } next)
+                {
+                    submitted = next;
+                    continue;
+                }
+                if (failure is not null) field.Reject(failure, submitted);
+                break;
             }
         }
         finally { field.End(); Changed(); }
@@ -311,7 +319,6 @@ public sealed class Preferences : INotifyPropertyChanged
 
     public void CancelDraft()
     {
-        foreach (var field in Fields) field.Cancel();
         Schedule.CancelDraft();
     }
 
@@ -352,6 +359,7 @@ public sealed class Preference(Preferences owner, string name, PreferenceKind ki
     private bool? _choice;
     private TaskCompletionSource? _saving;
     private Submission? _intent;
+    private Submission? _uncertain;
     private bool _cancelled;
     public string Name { get; } = name;
     public PreferenceKind Kind { get; } = kind;
@@ -363,12 +371,12 @@ public sealed class Preference(Preferences owner, string name, PreferenceKind ki
     public string Input
     {
         get => _input;
-        set { if (_input == value) return; _input = value; _cancelled = false; _failure = null; _invalid = false; Refresh(); owner.Changed(); }
+        set { if (_input == value) return; _input = value; _cancelled = false; _failure = null; _uncertain = null; _invalid = false; Refresh(); owner.Changed(); }
     }
     public bool IsOn => _choice ?? _confirmed.ValueKind == JsonValueKind.True;
     public bool HasDraft => _input != _confirmedInput || _choice is { } choice && choice != (_confirmed.ValueKind == JsonValueKind.True);
     public bool IsPending => _saving is not null;
-    internal bool HasFailure => _failure is not null;
+    internal Exception? Failure => _failure;
     internal Task Saving => _saving?.Task ?? Task.CompletedTask;
     // A save keeps its control enabled so later input keeps focus.
     public bool CanEdit => owner.CanEdit;
@@ -379,14 +387,23 @@ public sealed class Preference(Preferences owner, string name, PreferenceKind ki
 
     internal bool Confirm(JsonElement value)
     {
-        if (_confirmed.ValueKind == value.ValueKind && _confirmed.GetRawText() == value.GetRawText()) return false;
-        var preserve = HasDraft || IsPending;
-        _confirmed = value.Clone();
-        _confirmedInput = value.ValueKind == JsonValueKind.String ? value.GetString()! :
-            value.ValueKind == JsonValueKind.Number ? (value.GetDouble() / (IsRate ? 1024 : 1)).ToString("G", CultureInfo.CurrentCulture) : string.Empty;
-        if (!preserve) { _input = _confirmedInput; _choice = null; }
-        Refresh();
-        return true;
+        var changed = _confirmed.ValueKind != value.ValueKind || _confirmed.GetRawText() != value.GetRawText();
+        if (changed)
+        {
+            var preserve = HasDraft || IsPending;
+            _confirmed = value.Clone();
+            _confirmedInput = value.ValueKind == JsonValueKind.String ? value.GetString()! :
+                value.ValueKind == JsonValueKind.Number ? (value.GetDouble() / (IsRate ? 1024 : 1)).ToString("G", CultureInfo.CurrentCulture) : string.Empty;
+            if (!preserve) { _input = _confirmedInput; _choice = null; }
+        }
+        if (!IsPending && _uncertain is { } submitted &&
+            JsonElement.DeepEquals(value, JsonSerializer.SerializeToElement(submitted.Value)))
+        {
+            Settle(submitted);
+            changed = true;
+        }
+        if (changed) Refresh();
+        return changed;
     }
     internal sealed record Submission(object Value, string Input, bool? Choice);
     internal Submission Capture(object value) { _cancelled = false; return new(value, _input, _choice); }
@@ -399,26 +416,36 @@ public sealed class Preference(Preferences owner, string name, PreferenceKind ki
     }
     internal void Accept(JsonElement value, Submission submitted)
     {
-        var preserve = !_cancelled && (_input != submitted.Input || _choice != submitted.Choice);
         Confirm(value);
+        Settle(submitted);
+        Refresh();
+    }
+    private void Settle(Submission submitted)
+    {
+        var preserve = !_cancelled && (_input != submitted.Input || _choice != submitted.Choice);
         if (!preserve) { _input = _confirmedInput; _choice = null; _invalid = false; }
         _cancelled = false;
         _failure = null;
-        Refresh();
+        _uncertain = null;
     }
-    internal void Begin() { _saving = new(TaskCreationOptions.RunContinuationsAsynchronously); _failure = null; _invalid = false; Refresh(); }
+    internal void Begin() { _saving = new(TaskCreationOptions.RunContinuationsAsynchronously); _failure = null; _uncertain = null; _invalid = false; Refresh(); }
     internal void End()
     {
         var saving = _saving;
         _saving = null;
         _intent = null;
-        _cancelled = false;
+        if (_uncertain is null) _cancelled = false;
         Refresh();
         saving?.TrySetResult();
     }
-    internal void Reject(Exception error) { _failure = error; Refresh(); }
+    internal void Reject(Exception error, Submission? submitted = null)
+    {
+        _failure = error;
+        _uncertain = error is CommandFailure ? null : submitted;
+        Refresh();
+    }
     internal void Invalid() { _invalid = true; Refresh(); }
-    internal void Choose(bool value) { _choice = value; _cancelled = false; _failure = null; _invalid = false; Refresh(); }
+    internal void Choose(bool value) { _choice = value; _cancelled = false; _failure = null; _uncertain = null; _invalid = false; Refresh(); }
     public void Cancel()
     {
         _intent = null;
@@ -426,6 +453,7 @@ public sealed class Preference(Preferences owner, string name, PreferenceKind ki
         _input = _confirmedInput;
         _choice = null;
         _failure = null;
+        _uncertain = null;
         _invalid = false;
         Refresh();
         owner.Changed();

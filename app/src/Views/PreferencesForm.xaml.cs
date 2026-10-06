@@ -70,6 +70,7 @@ public sealed partial class PreferencesForm : UserControl
         AutomationProperties.SetName(Categories, Model.Text.Get("preferences", "categories"));
         Label(DownloadsSection, "adding", "downloads_hint");
         ShowAddRow.Description = Model.Text.Get("preferences", "show_add_hint");
+        NotificationsSection.Header = Model.Text.Get("preferences", "notifications");
         Label(StartupSection, "startup", "startup_hint");
         SignInRow.Header = Model.Text.Get("preferences", "start_signin");
         AutomationProperties.SetName(Startup, SignInRow.Header);
@@ -148,6 +149,19 @@ public sealed partial class PreferencesForm : UserControl
     internal PreferenceSection Section =>
         Array.IndexOf(Sections, Categories.SelectedItem) is var index and >= 0 ? (PreferenceSection)index : PreferenceSection.General;
 
+    internal Control? Recover(string? focusName)
+    {
+        if (Model.RefusedField is { } field)
+        {
+            Categories.SelectedItem = Sections[(int)field.Section];
+            var control = FindControl(field.Name) ?? Categories;
+            return control is NumberBox ? TextEditor.Find(control) ?? control : control;
+        }
+        if (!Model.Schedule.HasDraft || !Model.Schedule.HasScheduleError) return null;
+        Categories.SelectedItem = ScheduleCategory;
+        return _scheduler.Editor(focusName);
+    }
+
     internal void Navigate(PreferenceTarget target)
     {
         Categories.SelectedItem = Sections[(int)target.Section];
@@ -155,24 +169,26 @@ public sealed partial class PreferencesForm : UserControl
         {
             UpdateLayout();
             if (target.Field == "add_period") { _scheduler.FocusAdd(); return; }
-            Control? control = target.Field switch
-            {
-                "start_signin" => Startup,
-                "startup_settings" => StartupSettings,
-                "open_defaults" => OpenDefaults,
-                "remove_handler" => Unregister,
-                "network_interface" => Interfaces,
-                "language" => Languages,
-                "theme" => Theme,
-                null => Categories,
-                _ => FindField(this, target.Field)
-            };
+            var control = FindControl(target.Field);
             if (control is null) return;
             control.StartBringIntoView();
             if (control is NumberBox && TextEditor.Find(control) is { } editor) editor.Focus(FocusState.Programmatic);
             else control.Focus(FocusState.Programmatic);
         });
     }
+
+    private Control? FindControl(string? field) => field switch
+    {
+        "start_signin" => Startup,
+        "startup_settings" => StartupSettings,
+        "open_defaults" => OpenDefaults,
+        "remove_handler" => Unregister,
+        "network_interface" => Interfaces,
+        "language" => Languages,
+        "theme" => Theme,
+        null => Categories,
+        _ => FindField(this, field)
+    };
 
     private static Control? FindField(DependencyObject element, string key)
     {

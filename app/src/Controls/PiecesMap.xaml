@@ -18,6 +18,7 @@
         <Grid x:Name="Viewport" Grid.Row="2" SizeChanged="OnSize">
             <Grid x:Name="Drawing" HorizontalAlignment="Center" VerticalAlignment="Top" PointerMoved="OnPointer" PointerPressed="OnPressed" PointerExited="OnPointerExit" FlowDirection="LeftToRight">
                 <Image x:Name="Bitmap" Stretch="Fill" AutomationProperties.AccessibilityView="Raw" />
+                <Border x:Name="Hover" Width="18" Height="18" BorderThickness="1" BorderBrush="{ThemeResource ControlStrongStrokeColorDefaultBrush}" HorizontalAlignment="Left" VerticalAlignment="Top" IsHitTestVisible="False" Visibility="Collapsed" />
                 <Border x:Name="Selection" Width="20" Height="20" BorderThickness="2" BorderBrush="{ThemeResource FocusStrokeColorOuterBrush}" HorizontalAlignment="Left" VerticalAlignment="Top" IsHitTestVisible="False" Visibility="Collapsed" />
                 <TextBlock x:Name="Ink" Foreground="{ThemeResource TextFillColorPrimaryBrush}" Visibility="Collapsed" />
             </Grid>

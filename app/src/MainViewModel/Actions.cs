@@ -24,6 +24,8 @@ public sealed partial class MainViewModel
     public string EmptyTitle => Text.Get("window", Torrents.Count > 0 ? "no_matches" : "empty_title");
     public string EmptyInstruction => Text.Get("window", Torrents.Count > 0 ? "no_matches_detail" : "empty");
     public string EmptyActionText => Text.Get("window", Torrents.Count > 0 ? "clear_filters" : "add");
+    public string EmptyActionGlyph => Torrents.Count > 0 ? Syno.Lucide.FunnelX : Syno.Lucide.FilePlus;
+    public string EmptyActionToolTip => Text.Get("window", Torrents.Count > 0 ? "clear_filters_tip" : "add_tip");
     public ICommand EmptyAction => Torrents.Count > 0 ? ClearFilters : Add;
     public ICommand ClearFilters { get; }
     public bool ShowAdd => Preferences.ShowAdd.ConfirmedOn;
@@ -32,6 +34,13 @@ public sealed partial class MainViewModel
         get => _alternativeLimits;
         set { if (value != AlternativeLimits) _ = SaveAlternative(value); }
     }
+    public bool CanEditSelection => CanEdit && _selected.Length > 0;
+    // Null when the selected torrents differ. Switching a mixed selection
+    // turns the choice on for all of them.
+    public bool? Sequential => Shared(torrent => torrent.Sequential);
+    public bool? FirstLast => Shared(torrent => torrent.FirstLast);
+    public ICommand SwitchSequential { get; }
+    public ICommand SwitchFirstLast { get; }
     public Inspector Inspector { get; }
     public bool HasInspector => Inspector.IsOpen;
     public ICommand AddMagnet { get; }
@@ -55,6 +64,7 @@ public sealed partial class MainViewModel
     public ICommand Limits { get; }
     public event EventHandler? FilesRequested;
     public event EventHandler<Torrent[]>? RemoveRequested;
+    public event EventHandler? MergeRequested;
     public event EventHandler<Torrent[]>? MoveRequested;
     public event EventHandler<Torrent[]>? DeleteRequested;
     public event EventHandler<string>? OpenRequested;
@@ -63,26 +73,60 @@ public sealed partial class MainViewModel
     internal Torrent? Find(IEnumerable<string> hashes) => Torrents.FirstOrDefault(torrent =>
         torrent.Hashes.Intersect(hashes, StringComparer.OrdinalIgnoreCase).Any());
 
+    // Dropped or pasted sources.
     public Task AddSources(IEnumerable<string> sources)
+    {
+        Draft.Own(sources);
+        return AddArrived();
+    }
+
+    // Picked sources: choosing Add torrent file asks for the form, however
+    // many files the person picks.
+    public Task AddPicked(IEnumerable<string> sources)
     {
         Draft.Own(sources);
         return AddOwnedSources();
     }
 
+    private Task AddArrived() => !IsAddOpen && Draft.Sources.Count > 1 ? AddTogether() : AddOwnedSources();
+
+    // Several sources arriving at once are added without the form or any
+    // question, so one drop never opens a cascade of dialogs. A torrent already
+    // in the list is shown where it is, and a source that fails is reported and
+    // dropped rather than left for a later form. Sources that could not be
+    // tried stay in the draft, so none is lost silently.
+    private async Task AddTogether()
+    {
+        await Draft.PrepareAll();
+        if (await Draft.Submit() || Draft.Failure is not { } failure) return;
+        Report(failure);
+        await Draft.Cancel();
+    }
+
     private async Task AddOwnedSources()
     {
         if (Draft.Sources.Count == 0) return;
-        if (ShowAdd || IsAddOpen)
+        if (IsAddOpen)
+        {
+            await Draft.PrepareAll();
+            return;
+        }
+        await Draft.PrepareAll();
+        // A torrent already in the list needs no form: Submit shows it where
+        // it is, and only trackers it lacks are worth a question.
+        if (Draft.Sources.All(source => source.Duplicate.Length > 0))
+        {
+            if (Draft.Sources.Any(source => source.MergeAvailable)) MergeRequested?.Invoke(this, EventArgs.Empty);
+            else if (await Draft.Submit()) Announce(Text.Get("errors", "duplicate"));
+            return;
+        }
+        if (ShowAdd)
         {
             AddRequested?.Invoke(this, EventArgs.Empty);
-            await Draft.PrepareAll();
+            return;
         }
-        else
-        {
-            await Draft.PrepareAll();
-            if (!Draft.Sources.Any(source => source.MergeAvailable)) await Draft.Submit();
-            if (Draft.Sources.Count > 0) AddRequested?.Invoke(this, EventArgs.Empty);
-        }
+        if (!Draft.Sources.Any(source => source.MergeAvailable)) await Draft.Submit();
+        if (Draft.Sources.Count > 0) AddRequested?.Invoke(this, EventArgs.Empty);
     }
 
     // The engine keeps offered sources until sources_received, so sources the
@@ -108,7 +152,7 @@ public sealed partial class MainViewModel
                 foreach (var activation in activations)
                     Draft.Own(activation.GetProperty("sources").EnumerateArray().Select(source => source.GetString()!));
                 await _client.Send("sources_received", new { activation_ids = activations.Select(activation => activation.GetProperty("activation_id").GetString()).ToArray() });
-                await AddOwnedSources();
+                await AddArrived();
             }
         }
         catch (Exception error) { Report(error); }
@@ -142,6 +186,36 @@ public sealed partial class MainViewModel
         catch (Exception error) { Report(error); }
     }
 
+    private bool? Shared(Func<Torrent, bool> choice) =>
+        _selected.All(choice) ? _selected.Length > 0 : _selected.Any(choice) ? null : false;
+
+    private static string PieceOrderKey(PieceOrder order, bool enabled) => (order, enabled) switch
+    {
+        (PieceOrder.Sequential, true) => "sequential",
+        (PieceOrder.Sequential, false) => "sequential_off",
+        (PieceOrder.FirstLast, true) => "first_last",
+        (PieceOrder.FirstLast, false) => "first_last_off",
+        _ => throw new ArgumentOutOfRangeException(nameof(order))
+    };
+
+    private async Task SetPieceOrder(PieceOrder order, bool enabled)
+    {
+        if (!CanEditSelection) return;
+        var arguments = new Dictionary<string, object>
+        {
+            ["torrent_ids"] = _selected.Select(torrent => torrent.TorrentId).ToArray(),
+            [order == PieceOrder.Sequential ? "sequential" : "first_last"] = enabled
+        };
+        try
+        {
+            await _client.Send("piece_order", arguments);
+            Accepted("commands", PieceOrderKey(order, enabled));
+            ClearError();
+            RequestSnapshot();
+        }
+        catch (Exception error) { Report(error); }
+    }
+
     private async Task SessionPause(bool paused)
     {
         if (!CanEdit) return;
@@ -160,10 +234,10 @@ public sealed partial class MainViewModel
     private async Task<JsonElement> Detail(Torrent torrent) =>
         await _client.Send("torrent", new { torrent_id = torrent.TorrentId });
 
-    private async Task OpenTorrent(bool folder)
+    private Task OpenTorrent(bool folder) => _selected.Length == 1 ? OpenTorrent(_selected[0], folder) : Task.CompletedTask;
+
+    private async Task OpenTorrent(Torrent torrent, bool folder)
     {
-        if (_selected.Length != 1) return;
-        var torrent = _selected[0];
         try
         {
             var detail = await Detail(torrent);

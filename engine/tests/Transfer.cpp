@@ -15,13 +15,44 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <Windows.h>
+#include <TlHelp32.h>
 
 namespace lt = libtorrent;
+
+// The checks stop the peer through its stop file, but a check whose process is
+// killed never writes that file, so the peer also ends when its parent ends.
+static HANDLE OpenParent()
+{
+    auto snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snapshot == INVALID_HANDLE_VALUE)
+    {
+        return nullptr;
+    }
+    PROCESSENTRY32W entry{};
+    entry.dwSize = sizeof(entry);
+    DWORD parent = 0;
+    for (auto found = Process32FirstW(snapshot, &entry); found; found = Process32NextW(snapshot, &entry))
+    {
+        if (entry.th32ProcessID == GetCurrentProcessId())
+        {
+            parent = entry.th32ParentProcessID;
+            break;
+        }
+    }
+    CloseHandle(snapshot);
+    return OpenProcess(SYNCHRONIZE, FALSE, parent);
+}
 
 int main(int argc, char** argv)
 {
     try
     {
+        auto parent = OpenParent();
+        if (parent == nullptr)
+        {
+            throw std::runtime_error("The parent process has exited");
+        }
         auto mode = argc == 4 ? std::string(argv[3]) : "seed";
         if (argc < 2 || argc > 4 || (mode != "seed" && mode != "download" && mode != "seed-files"))
             throw std::runtime_error("Usage: Transfer evidence-directory [product-port] [seed|download|seed-files]");
@@ -97,7 +128,7 @@ int main(int argc, char** argv)
         std::cout << "ready\ntorrent=" << torrent.string()
             << "\ndestination=" << destination.string()
             << "\nbytes=" << total << "\nproduct_port=" << port << std::endl;
-        while (!std::filesystem::exists(directory / "stop"))
+        while (!std::filesystem::exists(directory / "stop") && WaitForSingleObject(parent, 0) == WAIT_TIMEOUT)
         {
             auto status = handle.status();
             if (status.num_connections == 0) handle.clear_peers();

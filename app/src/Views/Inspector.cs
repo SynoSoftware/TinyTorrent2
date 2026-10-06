@@ -22,7 +22,7 @@ public sealed class Inspector : INotifyPropertyChanged
     private bool _filesLoaded;
     private bool _trackersLoaded;
     private bool _editingTrackers;
-    private bool _day;
+    private SpeedRange _range;
     private bool _visible = true;
     private Exception? _readFailure;
     private Exception? _editFailure;
@@ -35,11 +35,15 @@ public sealed class Inspector : INotifyPropertyChanged
     public string Name => _target?.Name ?? string.Empty;
     public bool IsOpen => _target is not null;
     public bool IsAvailable => _owner.IsConnected && _target is not null && _owner.Contains(_target);
+    // Speed shows the engine's session-wide history, so it needs only the
+    // connection; every other section reads the selected torrent.
+    private bool CanRead => _section == InspectorSection.Speed ? _owner.IsConnected : IsAvailable;
     private bool CanSave => IsAvailable && _owner.CanSave && !_pending;
     public bool CanEdit => _visible && CanSave && !_owner.IsClosing;
     public bool IsPending => _pending;
     public bool IsLoading => _fetching;
-    public bool HasDraft => !_pending && (_fileChanges.Count > 0 || _editingTrackers && _trackerInput != _trackerOriginal);
+    public bool HasDraft => !_pending && (HasFileDraft || HasTrackerDraft);
+    internal bool HasTrackerDraft => _editingTrackers && _trackerInput != _trackerOriginal;
     private bool IsRemoved => _owner.IsConnected && _target is not null && !_owner.Contains(_target);
     public bool HasError => IsRemoved || _readFailure is not null || _editFailure is not null;
     public string Message => IsRemoved ? Text.Get("inspector", "removed") : _editFailure is { } edit ? Text.Error(edit) :
@@ -69,10 +73,30 @@ public sealed class Inspector : INotifyPropertyChanged
         get => _trackerInput;
         set { if (_trackerInput == value) return; _trackerInput = value; _editFailure = null; Refresh(); }
     }
-    public bool IsDay
+    // The engine keeps a five-minute and a day history; the longer ranges all
+    // show part of the day history, so switching among them reads nothing new.
+    public SpeedRange Range
     {
-        get => _day;
-        set { if (_day == value) return; _day = value; Invalidate(); History = []; Refresh(); _ = Read(); }
+        get => _range;
+        set
+        {
+            if (_range == value)
+            {
+                return;
+            }
+            var reload = _range == SpeedRange.FiveMinutes || value == SpeedRange.FiveMinutes;
+            _range = value;
+            if (reload)
+            {
+                Invalidate();
+                History = [];
+            }
+            Refresh();
+            if (reload)
+            {
+                _ = Read();
+            }
+        }
     }
     public ICommand EditTrackers { get; }
     public ICommand SaveTrackers { get; }
@@ -84,6 +108,7 @@ public sealed class Inspector : INotifyPropertyChanged
     public string RestartText => _owner.RestartText;
     public event PropertyChangedEventHandler? PropertyChanged;
     public event EventHandler? TextChanged;
+    internal event EventHandler<InspectorSection>? RowsUpdated;
     public ICommand Reannounce { get; }
 
     internal Inspector(MainViewModel owner, PipeClient client)
@@ -101,7 +126,7 @@ public sealed class Inspector : INotifyPropertyChanged
         SaveTrackers = new Command(CommitTrackers, () => CanEdit && _editingTrackers);
         CancelTrackers = new Command(() => { CancelTrackerDraft(); return Task.CompletedTask; }, () => !_pending && _editingTrackers);
         RetryFiles = new Command(SaveFiles, () => CanEdit && HasFileDraft);
-        Retry = new Command(Read, () => IsAvailable && !_fetching);
+        Retry = new Command(Read, () => CanRead && !_fetching);
         Reannounce = new Command(() => Apply("reannounce", new { torrent_id = _target!.TorrentId }),
             () => CanEdit && !_editingTrackers);
     }
@@ -159,6 +184,7 @@ public sealed class Inspector : INotifyPropertyChanged
     internal void Disconnect()
     {
         Invalidate();
+        History = [];
         Refresh();
     }
 
@@ -174,7 +200,7 @@ public sealed class Inspector : INotifyPropertyChanged
 
     private async Task Read()
     {
-        if (!_visible || !IsOpen || !IsAvailable || _fetching) return;
+        if (!_visible || !IsOpen || !CanRead || _fetching) return;
         _fetching = true;
         var context = _context;
         var section = _section;
@@ -182,10 +208,10 @@ public sealed class Inspector : INotifyPropertyChanged
         Refresh();
         try
         {
-            var reply = section == InspectorSection.Speed ? await _client.Read(Consumer.Inspector, "history", new { range = _day ? "day" : "five_minutes" }) :
+            var reply = section == InspectorSection.Speed ? await _client.Read(Consumer.Inspector, "history", new { range = _range == SpeedRange.FiveMinutes ? "five_minutes" : "day" }) :
                 await _client.Read(Consumer.Inspector, "torrent", new { torrent_id = target.TorrentId, view = section.ToString().ToLowerInvariant(),
                     include_files = section == InspectorSection.Pieces && Pieces is not { MetadataReady: true } });
-            if (context != _context || !_visible || !IsAvailable) return;
+            if (context != _context || !_visible || !CanRead) return;
             switch (section)
             {
                 case InspectorSection.General: ApplyGeneral(reply); break;
@@ -199,7 +225,7 @@ public sealed class Inspector : INotifyPropertyChanged
                         return peer;
                     }).ToArray();
                     if (!Peers.SequenceEqual(nextPeers)) Peers = nextPeers;
-                    else PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Peers)));
+                    else RowsUpdated?.Invoke(this, InspectorSection.Peers);
                     break;
                 case InspectorSection.Trackers:
                     var trackers = Trackers.ToDictionary(tracker => tracker.Url);
@@ -210,7 +236,7 @@ public sealed class Inspector : INotifyPropertyChanged
                         return tracker;
                     }).ToArray();
                     if (!Trackers.SequenceEqual(nextTrackers)) Trackers = nextTrackers;
-                    else PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Trackers)));
+                    else RowsUpdated?.Invoke(this, InspectorSection.Trackers);
                     _trackersLoaded = true;
                     break;
                 case InspectorSection.Speed:
@@ -227,7 +253,7 @@ public sealed class Inspector : INotifyPropertyChanged
         {
             _fetching = false;
             Refresh();
-            if (context != _context && _visible && IsOpen && IsAvailable) _ = Read();
+            if (context != _context && _visible && IsOpen && CanRead) _ = Read();
         }
     }
 

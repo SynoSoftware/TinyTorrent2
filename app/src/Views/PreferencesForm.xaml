@@ -46,10 +46,9 @@
                             <StackPanel Padding="{TemplateBinding Padding}" Spacing="20" Background="{TemplateBinding Background}" CornerRadius="{TemplateBinding CornerRadius}">
                                 <Grid ColumnSpacing="16">
                                     <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                    <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{TemplateBinding Glyph}" FontSize="32" VerticalAlignment="Center"
-                                        Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" AutomationProperties.AccessibilityView="Raw" />
+                                    <FontIcon Style="{StaticResource GroupIconStyle}" FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{TemplateBinding Glyph}" />
                                     <StackPanel Grid.Column="1" Spacing="4" VerticalAlignment="Center">
-                                        <TextBlock Text="{TemplateBinding Header}" FontSize="16" FontWeight="SemiBold" TextWrapping="Wrap" AutomationProperties.HeadingLevel="Level2" />
+                                        <TextBlock Text="{TemplateBinding Header}" Style="{StaticResource GroupTitleTextStyle}" AutomationProperties.HeadingLevel="Level2" />
                                         <TextBlock x:Name="DescriptionText" Text="{TemplateBinding Description}" Style="{StaticResource PreferencesHintStyle}" />
                                     </StackPanel>
                                 </Grid>
@@ -101,7 +100,7 @@
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
                 <StackPanel Grid.Column="1">
-                    <TextBlock x:Name="PageTitle" Margin="0,0,0,24" Style="{StaticResource TitleTextBlockStyle}" AutomationProperties.HeadingLevel="Level1" />
+                    <TextBlock x:Name="PageTitle" Margin="0,0,0,24" Style="{StaticResource PageTitleTextStyle}" AutomationProperties.HeadingLevel="Level1" />
                     <SelectorBar x:Name="Categories" Margin="0,0,0,8" SelectionChanged="OnCategory" AutomationProperties.AutomationId="PreferenceCategories">
                         <SelectorBarItem x:Name="GeneralCategory" Tag="General" AutomationProperties.AutomationId="GeneralCategory">
                             <SelectorBarItem.Icon><FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.SlidersHorizontal}" FontSize="16" /></SelectorBarItem.Icon>
@@ -136,9 +135,24 @@
                                         <ToggleSwitch OnContent="{x:Bind Model.OnText, Mode=OneWay}" OffContent="{x:Bind Model.OffText, Mode=OneWay}" Tag="{x:Bind Model.ShowAdd}" IsOn="{x:Bind Model.ShowAdd.IsOn, Mode=OneWay}"
                                             IsEnabled="{x:Bind Model.ShowAdd.CanEdit, Mode=OneWay}" Toggled="OnToggle" AutomationProperties.Name="{x:Bind Model.ShowAdd.Label, Mode=OneWay}" AutomationProperties.AutomationId="ShowAdd" />
                                     </controls:SettingsRow>
-                                    <controls:SettingsRow Header="{x:Bind Model.Notifications.Label, Mode=OneWay}" Error="{x:Bind Model.Notifications.Message, Mode=OneWay}">
-                                        <ToggleSwitch OnContent="{x:Bind Model.OnText, Mode=OneWay}" OffContent="{x:Bind Model.OffText, Mode=OneWay}" Tag="{x:Bind Model.Notifications}" IsOn="{x:Bind Model.Notifications.IsOn, Mode=OneWay}"
-                                            IsEnabled="{x:Bind Model.Notifications.CanEdit, Mode=OneWay}" Toggled="OnToggle" AutomationProperties.Name="{x:Bind Model.Notifications.Label, Mode=OneWay}" AutomationProperties.AutomationId="Notifications" />
+                                </StackPanel>
+                            </controls:SettingsSection>
+                            <controls:SettingsSection x:Name="NotificationsSection" Glyph="{x:Bind icons:Lucide.Bell}">
+                                <StackPanel Spacing="16">
+                                    <controls:SettingsRow Header="{x:Bind Model.ProblemNotifications.Label, Mode=OneWay}" Error="{x:Bind Model.ProblemNotifications.Message, Mode=OneWay}">
+                                        <ToggleSwitch OnContent="{x:Bind Model.OnText, Mode=OneWay}" OffContent="{x:Bind Model.OffText, Mode=OneWay}" Tag="{x:Bind Model.ProblemNotifications}" IsOn="{x:Bind Model.ProblemNotifications.IsOn, Mode=OneWay}"
+                                            IsEnabled="{x:Bind Model.ProblemNotifications.CanEdit, Mode=OneWay}" Toggled="OnToggle" AutomationProperties.Name="{x:Bind Model.ProblemNotifications.Label, Mode=OneWay}" AutomationProperties.AutomationId="ProblemNotifications"
+                                            ToolTipService.ToolTip="{x:Bind Model.Text.Get('preferences', 'notifications_hint'), Mode=OneWay}" AutomationProperties.HelpText="{x:Bind Model.Text.Get('preferences', 'notifications_hint'), Mode=OneWay}" />
+                                    </controls:SettingsRow>
+                                    <controls:SettingsRow Header="{x:Bind Model.FinishedNotifications.Label, Mode=OneWay}" Error="{x:Bind Model.FinishedNotifications.Message, Mode=OneWay}">
+                                        <ToggleSwitch OnContent="{x:Bind Model.OnText, Mode=OneWay}" OffContent="{x:Bind Model.OffText, Mode=OneWay}" Tag="{x:Bind Model.FinishedNotifications}" IsOn="{x:Bind Model.FinishedNotifications.IsOn, Mode=OneWay}"
+                                            IsEnabled="{x:Bind Model.FinishedNotifications.CanEdit, Mode=OneWay}" Toggled="OnToggle" AutomationProperties.Name="{x:Bind Model.FinishedNotifications.Label, Mode=OneWay}" AutomationProperties.AutomationId="FinishedNotifications"
+                                            ToolTipService.ToolTip="{x:Bind Model.Text.Get('preferences', 'notifications_hint'), Mode=OneWay}" AutomationProperties.HelpText="{x:Bind Model.Text.Get('preferences', 'notifications_hint'), Mode=OneWay}" />
+                                    </controls:SettingsRow>
+                                    <controls:SettingsRow Header="{x:Bind Model.AddedNotifications.Label, Mode=OneWay}" Error="{x:Bind Model.AddedNotifications.Message, Mode=OneWay}">
+                                        <ToggleSwitch OnContent="{x:Bind Model.OnText, Mode=OneWay}" OffContent="{x:Bind Model.OffText, Mode=OneWay}" Tag="{x:Bind Model.AddedNotifications}" IsOn="{x:Bind Model.AddedNotifications.IsOn, Mode=OneWay}"
+                                            IsEnabled="{x:Bind Model.AddedNotifications.CanEdit, Mode=OneWay}" Toggled="OnToggle" AutomationProperties.Name="{x:Bind Model.AddedNotifications.Label, Mode=OneWay}" AutomationProperties.AutomationId="AddedNotifications"
+                                            ToolTipService.ToolTip="{x:Bind Model.Text.Get('preferences', 'notifications_hint'), Mode=OneWay}" AutomationProperties.HelpText="{x:Bind Model.Text.Get('preferences', 'notifications_hint'), Mode=OneWay}" />
                                     </controls:SettingsRow>
                                 </StackPanel>
                             </controls:SettingsSection>

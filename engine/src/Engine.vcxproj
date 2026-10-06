@@ -49,10 +49,12 @@
        dependency DLLs beside it. -->
   <PropertyGroup>
     <ThirdPartyPath>$(MSBuildThisFileDirectory)..\..\3rdParty\</ThirdPartyPath>
+    <!-- External, so warnings and code analysis report only the engine's own code. -->
+    <ExternalIncludePath>$(ThirdPartyPath)$(Configuration)\include;$(ThirdPartyPath)boost;$(ThirdPartyPath)json\include;$(ExternalIncludePath)</ExternalIncludePath>
   </PropertyGroup>
   <ItemDefinitionGroup>
     <ClCompile>
-      <AdditionalIncludeDirectories>$(ThirdPartyPath)$(Configuration)\include;$(ThirdPartyPath)boost;$(ThirdPartyPath)json\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <DisableAnalyzeExternal>true</DisableAnalyzeExternal>
     </ClCompile>
     <Link>
       <AdditionalLibraryDirectories>$(ThirdPartyPath)$(Configuration)\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
@@ -65,7 +67,7 @@
   <ItemDefinitionGroup>
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
-      <LanguageStandard>stdcpp20</LanguageStandard>
+      <LanguageStandard>stdcpp23</LanguageStandard>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <AdditionalIncludeDirectories>$(MSBuildThisFileDirectory)..\inc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>NOMINMAX;%(PreprocessorDefinitions)</PreprocessorDefinitions>

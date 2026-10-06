@@ -21,7 +21,8 @@ public sealed class FileOperation : INotifyPropertyChanged
     private int _keptFiles;
     public FileAction Action { get; private set; }
     public bool IsPending { get; private set; }
-    public bool HasDraft => Action == FileAction.Move && (Destination != _originalDestination || IncludeShared || UseExisting);
+    public bool HasDraft => Action == FileAction.Move && !string.IsNullOrWhiteSpace(Destination) &&
+        (Destination != _originalDestination || IncludeShared || UseExisting);
     private bool CanSave => owner.CanSave && !IsPending && _loaded &&
         (Action == FileAction.Delete || HasDestination && (!HasShared || IncludeShared));
     public bool CanSubmit => CanSave && !owner.IsClosing;
@@ -31,7 +32,11 @@ public sealed class FileOperation : INotifyPropertyChanged
     public bool HasDestination => Destination.Length > 0;
     public bool HasKeptFiles => !IsMove && _keptFiles > 0;
     public string Title => owner.Text.Get("commands", IsMove ? "move" : "delete_files");
-    public string Instruction => owner.Text.Get("file_operation", IsMove ? "move_detail" : "delete_detail");
+    public bool IsDelete => !IsMove;
+    public string SubmitText => owner.Text.Get("file_operation", IsMove ? "move" : "delete");
+    public string SubmitGlyph => IsMove ? Lucide.FolderInput : Lucide.Trash2;
+    public string SubmitToolTip => owner.Text.Get("file_operation", IsMove ? "move_tip" : "delete_tip");
+    public string Warning => owner.Text.Get("file_operation", "delete_warning");
     public string Locations => string.Join(Environment.NewLine + Environment.NewLine,
         _torrents.Concat(IncludeShared ? _shared : []).Select(torrent => torrent.Name + Environment.NewLine + torrent.Folder));
     public string ResultingFolders => !HasDestination ? string.Empty : string.Join(Environment.NewLine,

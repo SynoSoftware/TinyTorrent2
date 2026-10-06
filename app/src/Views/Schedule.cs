@@ -343,7 +343,7 @@ public sealed class SchedulePeriod : INotifyPropertyChanged
 public sealed class PeriodDraft : INotifyPropertyChanged
 {
     private readonly Schedule _owner;
-    private readonly SchedulePeriod? _original;
+    private readonly SchedulePeriod _original;
     private TimeSpan? _start;
     private TimeSpan? _end;
     private bool _paused;
@@ -363,7 +363,7 @@ public sealed class PeriodDraft : INotifyPropertyChanged
         get => _paused;
         set { if (_paused == value) return; _paused = value; Changed(); }
     }
-    public bool HasChanges => _original is null || Start?.TotalMinutes != _original.Start || End?.TotalMinutes != _original.End ||
+    public bool HasChanges => Start?.TotalMinutes != _original.Start || End?.TotalMinutes != _original.End ||
         IsPaused != (_original.Mode == ScheduleMode.Paused) || !Days.Where(day => day.IsChecked).Select(day => day.Index).SequenceEqual(_original.Days);
     public event PropertyChangedEventHandler? PropertyChanged;
     internal void SetSpan(PeriodSpan span)
@@ -387,12 +387,12 @@ public sealed class PeriodDraft : INotifyPropertyChanged
     internal PeriodDraft(Schedule owner, SchedulePeriod? period)
     {
         _owner = owner;
-        _original = period;
+        _original = period ?? new SchedulePeriod(owner, [0, 1, 2, 3, 4, 5, 6], new PeriodSpan(9 * 60, 8 * 60), ScheduleMode.Alternative);
         Days = Enumerable.Range(0, 7).Select(index => new DayChoice(this, index,
-            period is null || period.Days.Contains(index))).ToArray();
-        _start = TimeSpan.FromMinutes(period?.Start ?? 9 * 60);
-        _end = TimeSpan.FromMinutes(period?.End ?? 17 * 60);
-        _paused = period?.Mode == ScheduleMode.Paused;
+            _original.Days.Contains(index))).ToArray();
+        _start = TimeSpan.FromMinutes(_original.Start);
+        _end = TimeSpan.FromMinutes(_original.End);
+        _paused = _original.Mode == ScheduleMode.Paused;
     }
     internal string Day(int index) => _owner.Day(index);
     internal void Refresh()

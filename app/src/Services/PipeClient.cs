@@ -74,6 +74,7 @@ internal sealed class PipeClient : IDisposable
     internal event Action<JsonElement>? Snapshot;
     internal event Action<string>? Disconnected;
     internal event Action<string>? Control;
+    internal event Action<JsonElement>? Notice;
 
     internal PipeClient(Strings strings) => _strings = strings;
 
@@ -303,6 +304,7 @@ internal sealed class PipeClient : IDisposable
                 if (message.TryGetProperty("type", out var type))
                 {
                     if (type.GetString() is "activate" or "close" or "sources") Control?.Invoke(type.GetString()!);
+                    else if (type.GetString() == "notice") Notice?.Invoke(message);
                 }
                 else if (message.TryGetProperty("request_id", out var id) && id.GetInt64() == _awaitingId)
                     _reply?.TrySetResult(message);

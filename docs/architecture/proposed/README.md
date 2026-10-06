@@ -411,8 +411,10 @@ existing [#48 decision](https://github.com/SynoSoftware/TinyTorrent2/issues/48):
 separate fixed-width download/upload fields, still grouped with Alternative
 limits, with connectivity trailing. The speed graph's scale label sits above
 the plot, right-aligned, so its changing width cannot shift the plot sideways.
-Keep that layout. Check status-field widths with both languages and text scaling rather
-than moving rates elsewhere or reserving room for speculative status items.
+Keep those groups. Rate allocations grow with Windows text size, and available
+width determines when the rates stack and trailing groups move below. Current
+rate values never determine layout. Check field widths with both languages and
+text scaling rather than reserving room for speculative status items.
 `MinWidth` alone is not a stable allocation: longer text can still grow it.
 Verify the chosen layout at narrow window widths as well as changing rates.
 
@@ -499,8 +501,11 @@ of a fixed bug is not a replacement for valuable regression coverage.
 Remove redundant layout sweeps or obsolete implementation-specific journeys
 after applying the [testing policy](../../testing.md), not by a line-count quota.
 Do not create a separate automation product or public test-only interfaces.
-Packaging diagnostics differently is a separate measured release decision, not
-a prerequisite for this architecture.
+Capture sources are included only with `EnableCapture=true`, so diagnostic
+activation and window setup are absent from the ordinary executable. The opt-in
+build uses a separate output directory; [testing](../../testing.md) records how
+to pair its launcher and engine. This is a source inclusion boundary, not a new
+automation framework or a measured performance claim.
 
 ## Scope of this proposal
 
