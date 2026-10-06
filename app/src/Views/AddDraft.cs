@@ -48,6 +48,7 @@ public sealed class AddDraft : INotifyPropertyChanged
     public string Preview => Sources.Count == 1 ? _strings.Format("add", "preview", Sources[0].Name,
         Sources[0].MetadataReady ? _strings.Bytes(Sources[0].Size) : _strings.Get("add", "metadata")) : _strings.Format("add", "sources", Sources.Count);
     public string SubmitText => _strings.Get("add", IsSubmitting ? "pending" : Sources.Count > 1 ? "submit_all" : "submit");
+    public string Space => FreeSpace() is { } free ? _strings.Format("add", "free", _strings.Bytes(free)) : string.Empty;
     public string Shared => string.Join(Environment.NewLine, Sources.Select(source => source.Shared).Where(text => text.Length > 0));
     private Exception? Failure => _failure ?? Sources.Select(source => source.Failure).FirstOrDefault(error => error is not null);
     public string Message => !_owner.IsConnected ? _owner.Message : Failure is { } failure ? _owner.FormatError(failure) :
@@ -377,6 +378,22 @@ public sealed class AddDraft : INotifyPropertyChanged
     {
         foreach (var source in Sources) source.Refresh();
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
+    }
+
+    private long? FreeSpace()
+    {
+        try
+        {
+            if (!Path.IsPathFullyQualified(_destination)) return null;
+            var drive = new DriveInfo(_destination);
+            // A disconnected network drive can block the UI thread for seconds.
+            if (drive.DriveType == DriveType.Network || !drive.IsReady) return null;
+            return drive.AvailableFreeSpace;
+        }
+        catch (Exception error) when (error is ArgumentException or IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
     }
 }
 

@@ -42,7 +42,8 @@ public sealed partial class Table
 
     /// <summary>
     /// How long rows already on screen keep their places while a sort is applied over values the
-    /// source keeps changing. <see cref="TimeSpan.Zero"/> re-sorts on every update.
+    /// source keeps changing. <see cref="TimeSpan.Zero"/> re-sorts on every update. A sort by the
+    /// column that <see cref="Column.DefinesRowOrder"/> never waits.
     /// </summary>
     /// <remarks>
     /// Only relative position waits. Membership never does: a row that arrives appears at once, at
@@ -237,9 +238,12 @@ public sealed partial class Table
     /// </remarks>
     private IReadOnlyList<object> ViewOrder(IReadOnlyList<object> snapshot)
     {
-        // Natural order belongs to the host, which reorders when it means to; an empty view has no
-        // established order to preserve; and a zero interval is the host asking for none of this.
-        if (_sortColumn is null || _view.Count == 0 || _sortInterval == TimeSpan.Zero)
+        // Natural order belongs to the host, which reorders when it means to, and the row-order
+        // column shows that same order, so holding it would delay the person's own reorder; an
+        // empty view has no established order to preserve; and a zero interval is the host asking
+        // for none of this.
+        if (_sortColumn is null || _sortColumn.Column.DefinesRowOrder || _view.Count == 0 ||
+            _sortInterval == TimeSpan.Zero)
         {
             IReadOnlyList<object> order = SortedSnapshot(snapshot, _sortColumn, _sortDirection);
             _orderSettledAt = DateTimeOffset.UtcNow;

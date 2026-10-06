@@ -259,6 +259,9 @@ public sealed class Table : Control
     public bool ShowsFitButton { get; set; }     // default false
     public void RefreshView();
     public void ScrollIntoView(object item);
+    public double HorizontalOffset { get; }
+    public double VerticalOffset { get; }
+    public void ScrollTo(double horizontalOffset, double verticalOffset);
     public void Fit(Column column);
     public void FitColumns();
     public void ResetLayout();
@@ -555,6 +558,15 @@ Display-only updates need no call.
 `ScrollIntoView(item)` reveals an item in the current private view without
 changing selection or keyboard focus. Hosts use it after a confirmed operation
 whose result should be visible, without accessing the control's template parts.
+
+`HorizontalOffset` and `VerticalOffset` report how far the columns and rows are
+scrolled, in DIPs. `ScrollTo` moves both, clamped to the scrollable range,
+without changing selection or keyboard focus; a non-finite offset makes the
+call do nothing. It lays out the current rows first, so a host can restore a
+saved position immediately after supplying the rows. Called before `Loaded`,
+the offsets are held and applied when the table loads. A host restoring a saved
+position calls `ScrollTo` after it restores the layout and source, because
+column widths and row count decide the scrollable range.
 
 When the schema supplies a key selector, every new source snapshot—including
 assignment, `Add`, `Remove`, `Move`, `Replace`, and `Reset`—reconciles selected
@@ -903,7 +915,10 @@ Sorting requirements:
   bounded interval. Membership is never deferred; only relative position is. A
   row that arrives appears at once and a row that leaves goes at once, while
   existing rows trade places on the settling interval. `SortInterval`
-  sets that interval, and `TimeSpan.Zero` restores immediate re-sorting.
+  sets that interval, and `TimeSpan.Zero` restores immediate re-sorting. A
+  sort by the column that `DefinesRowOrder` never settles: that order changes
+  only when the host reorders, usually on the person's own command, so holding
+  it would delay that command.
 
 Avoiding automatic re-sorts on every property notification is important for
 rapidly changing data such as speed and progress.
@@ -1522,10 +1537,10 @@ Persist:
 - explicit width overrides in DIPs, including overrides for hidden columns;
 - active sort column and direction.
 
-Do not persist:
+Do not persist in the layout snapshot:
 
-- selected/current items;
-- scroll offsets;
+- selected/current items (a host stores their keys itself);
+- scroll offsets (a host stores `HorizontalOffset` and `VerticalOffset` itself);
 - loading state;
 - hover, drag, resize, marquee, or context-menu state;
 - row data.

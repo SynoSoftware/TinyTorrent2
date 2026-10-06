@@ -3,34 +3,27 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:local="using:Syno.TinyTorrent.Controls">
     <Grid RowSpacing="8">
-        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
-        <Grid ColumnSpacing="8">
-            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="160" /></Grid.ColumnDefinitions>
-            <TextBlock Text="{x:Bind Model.Summary, Mode=OneWay}" VerticalAlignment="Center" TextWrapping="Wrap" />
-            <TextBox x:Name="Search" Grid.Column="1" VerticalAlignment="Center" Text="{x:Bind Model.Search, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+        <Grid ColumnSpacing="12" Padding="44,0,4,0">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="220" /></Grid.ColumnDefinitions>
+            <CheckBox x:Name="All" MinWidth="0" IsChecked="{x:Bind Model.AllMatching, Mode=OneWay}" IsEnabled="{x:Bind Model.IsEnabled, Mode=OneWay}" Click="OnAll">
+                <TextBlock Text="{x:Bind Model.Summary, Mode=OneWay}" TextTrimming="CharacterEllipsis" />
+            </CheckBox>
+            <AutoSuggestBox x:Name="Search" Grid.Column="1" VerticalAlignment="Center" QueryIcon="Find" Text="{x:Bind Model.Search, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
         </Grid>
-        <Grid Grid.Row="1" ColumnSpacing="8" MaxWidth="400" HorizontalAlignment="Left">
-            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-            <Button x:Name="All" HorizontalAlignment="Stretch" Click="OnAll" IsEnabled="{x:Bind Model.IsEnabled, Mode=OneWay}">
-                <TextBlock x:Name="AllLabel" TextWrapping="WrapWholeWords" TextAlignment="Center" />
-            </Button>
-            <Button x:Name="None" Grid.Column="1" HorizontalAlignment="Stretch" Click="OnNone" IsEnabled="{x:Bind Model.IsEnabled, Mode=OneWay}">
-                <TextBlock x:Name="NoneLabel" TextWrapping="WrapWholeWords" TextAlignment="Center" />
-            </Button>
-        </Grid>
-        <Grid Grid.Row="2" ColumnSpacing="8" Padding="32,0,16,0">
-            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="84" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="180" /></Grid.ColumnDefinitions>
+        <Grid Grid.Row="1" ColumnSpacing="8" Padding="72,0,4,0">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="84" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="150" /></Grid.ColumnDefinitions>
             <TextBlock x:Name="NameLabel" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
             <TextBlock x:Name="SizeLabel" Grid.Column="1" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextAlignment="Right" />
             <TextBlock x:Name="ProgressLabel" Grid.Column="2" Width="108" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Visibility="{x:Bind Model.ShowsProgress, Mode=OneWay}" />
             <TextBlock x:Name="PriorityLabel" Grid.Column="3" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
         </Grid>
-        <TreeView Grid.Row="3" ItemsSource="{x:Bind Model.Roots, Mode=OneWay}" SelectionMode="None" CanDragItems="False" CanReorderItems="False" KeyDown="OnFilesKey">
+        <TreeView Grid.Row="2" ItemsSource="{x:Bind Model.Roots, Mode=OneWay}" SelectionMode="None" CanDragItems="False" CanReorderItems="False" KeyDown="OnFilesKey">
             <TreeView.ItemTemplate>
                 <DataTemplate x:DataType="local:FileNode">
                     <TreeViewItem ItemsSource="{x:Bind Children}" IsExpanded="True" HorizontalContentAlignment="Stretch">
                         <Grid ColumnSpacing="8">
-                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="84" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="180" /></Grid.ColumnDefinitions>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="84" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="150" /></Grid.ColumnDefinitions>
                             <CheckBox MinWidth="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" IsChecked="{x:Bind Wanted, Mode=TwoWay}" IsEnabled="{x:Bind IsEnabled, Mode=OneWay}" AutomationProperties.Name="{x:Bind Name}" AutomationProperties.HelpText="{x:Bind Path}" ToolTipService.ToolTip="{x:Bind Path}">
                                 <TextBlock Text="{x:Bind Name}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
                             </CheckBox>
@@ -40,7 +33,7 @@
                                 <ProgressBar Minimum="0" Maximum="1" Value="{x:Bind Progress, Mode=OneWay}" Height="4" AutomationProperties.AccessibilityView="Raw" />
                                 <TextBlock Grid.Row="1" Text="{x:Bind ProgressText, Mode=OneWay}" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                             </Grid>
-                            <ComboBox Grid.Column="3" SelectedIndex="{x:Bind PriorityIndex, Mode=TwoWay}" IsEnabled="{x:Bind IsEnabled, Mode=OneWay}" AutomationProperties.Name="{x:Bind Name}">
+                            <ComboBox Grid.Column="3" HorizontalAlignment="Stretch" SelectedIndex="{x:Bind PriorityIndex, Mode=TwoWay}" IsEnabled="{x:Bind IsEnabled, Mode=OneWay}" AutomationProperties.Name="{x:Bind Name}">
                                 <ComboBoxItem Visibility="{x:Bind IsFolder}"><TextBlock Text="{x:Bind Unchanged, Mode=OneWay}" /></ComboBoxItem>
                                 <ComboBoxItem><TextBlock Text="{x:Bind Skip, Mode=OneWay}" /></ComboBoxItem>
                                 <ComboBoxItem><TextBlock Text="{x:Bind Low, Mode=OneWay}" /></ComboBoxItem>

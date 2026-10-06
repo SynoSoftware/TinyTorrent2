@@ -108,7 +108,6 @@ public sealed partial class MainWindow
         NameButton(FiltersClose, Model.Text.Get("filters", "close"));
         AutomationProperties.SetName(Split, Model.Text.Get("inspector", "resize"));
         AlternativeText.Text = Model.Text.Get("window", "alternative");
-        InspectorClose.Content = Model.Text.Get("inspector", "close");
         Torrents.Strings = Model.Text.Table;
         Root.FlowDirection = Model.Text.IsRightToLeft ? FlowDirection.RightToLeft : FlowDirection.LeftToRight;
         RefreshDialogs();

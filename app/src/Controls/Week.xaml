@@ -29,13 +29,26 @@
         <Style x:Key="WeekOutlineStyle" TargetType="Border">
             <Setter Property="BorderBrush" Value="{ThemeResource TextFillColorPrimaryBrush}" />
         </Style>
-        <Style x:Key="WeekHandleStyle" TargetType="Border" BasedOn="{StaticResource WeekOutlineStyle}">
-            <Setter Property="Background" Value="{ThemeResource SolidBackgroundFillColorBaseBrush}" />
+        <Style x:Key="WeekHandleStyle" TargetType="Border">
+            <Setter Property="Background" Value="{ThemeResource TextOnAccentFillColorPrimaryBrush}" />
+        </Style>
+        <Style x:Key="WeekPausedHandleStyle" TargetType="Border">
+            <Setter Property="Background" Value="{ThemeResource TextFillColorPrimaryBrush}" />
         </Style>
         <Style x:Key="WeekTipStyle" TargetType="Border">
             <Setter Property="Background" Value="{ThemeResource SolidBackgroundFillColorBaseBrush}" />
             <Setter Property="BorderBrush" Value="{ThemeResource ControlStrokeColorDefaultBrush}" />
         </Style>
     </UserControl.Resources>
-    <Canvas x:Name="Drawing" Background="Transparent" />
+    <ToolTipService.ToolTip><ToolTip x:Name="HoverTip" /></ToolTipService.ToolTip>
+    <Grid Background="Transparent">
+        <Canvas x:Name="Backdrop" IsHitTestVisible="False" />
+        <Canvas x:Name="Blocks" IsHitTestVisible="False" />
+        <Canvas x:Name="Outlines" IsHitTestVisible="False" />
+        <Canvas x:Name="Feedback" IsHitTestVisible="False">
+            <Border x:Name="Tip" Padding="8" BorderThickness="1" Style="{StaticResource WeekTipStyle}" Visibility="Collapsed" AutomationProperties.AccessibilityView="Raw">
+                <TextBlock x:Name="TipText" TextWrapping="Wrap" Style="{StaticResource WeekTextStyle}" />
+            </Border>
+        </Canvas>
+    </Grid>
 </UserControl>

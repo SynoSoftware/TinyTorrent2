@@ -31,6 +31,15 @@ public sealed class FileSelection(Strings strings) : INotifyPropertyChanged
         set { if (_search == value) return; _search = value; Project(); }
     }
     public bool HasWanted => _files.Any(file => file.Priority > 0);
+    public bool? AllMatching
+    {
+        get
+        {
+            var matching = _files.Where(file => !file.IsPadding && Matches(file)).ToArray();
+            var wanted = matching.Count(file => file.Priority > 0);
+            return wanted == 0 ? false : wanted == matching.Length ? true : null;
+        }
+    }
     public string Summary => strings.Format("files", "summary", _files.Count(file => file.Priority > 0),
         _files.Count(file => !file.IsPadding), strings.Bytes(_files.Where(file => file.Priority > 0).Sum(file => file.Size)));
     public event PropertyChangedEventHandler? PropertyChanged;

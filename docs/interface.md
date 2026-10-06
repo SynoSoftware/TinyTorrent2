@@ -53,9 +53,10 @@ do not override WinUI's control semantics or require a second design system.
 
 The visual and interaction reference is `app/prototype.html`, variant
 C, commit `8614126` on `main`. Preserve its compact table, collapsible status
-drawer, caption search, vertical inspector sections and Preferences composition.
+drawer, caption search and Preferences composition.
 Implement them with native WinUI controls and the existing TableView and command
-owners. The owner's MenuBar decision below supersedes the prototype's shell
+owners. The owner's inspector-section decision below supersedes the prototype's
+vertical inspector sections, and the owner's MenuBar decision supersedes its shell
 and navigation. Keep the prototype unchanged; it is a historical reference,
 not an implementation target for those parts. Prototype sample data and browser
 code are not production architecture.
@@ -180,7 +181,15 @@ areas and DPI, recovering a reachable position and usable size. Preserve normal
 Windows move/resize behavior, caption buttons, and title-bar accessibility.
 On Close, WinUI saves normal bounds, their display scale, maximized state, the
 requested inspector split and the three tables' public layout snapshots in
-`window.json` beside the engine data. The engine does not read or write this file.
+`window.json` beside the engine data. It also saves the view: the page and
+Settings category, the filter and whether the filter pane is open, the selected
+torrents and current torrent, whether the inspector is open and on which
+section, and the torrent table's scroll position. Reopening the window shows it
+as the person left it; a saved torrent that no longer exists is left out of the
+selection. The view is restored once, from the first snapshot whose storage
+loaded. A window closed before then saves nothing, so an Exit during startup
+does not replace the saved view with defaults. The engine does not read or
+write this file.
 A missing or damaged layout uses the declared defaults; a layout write failure
 does not keep the window or engine open. Layout recovery never changes downloads.
 Use documented title-bar and backdrop APIs. The product window uses desktop
@@ -418,13 +427,45 @@ unknown while disconnected and displays an em dash; old rates must not appear
 current. Show loading separately from an empty list. Progress fills its column
 and uses distinct paused and error brushes alongside the written status, so state
 is visible without depending on color. Routine outcomes are announced to assistive
-technology without a visible toast; actionable failures appear in the affected
-message bar or field. Pending operations
+technology without a visible toast; actionable failures follow the
+[feedback placement policy](#feedback-placement). Pending operations
 and failures remain visible without exposing internal protocol machinery.
 Reconnection preserves presentation state according to the protocol contract.
 After reconnecting, show the confirmed list; do not leave a permanent busy state.
 A missing row means the torrent was removed, not that its files were deleted; a
 deletion failure arrives as a notification.
+
+### Feedback placement
+
+Choose the surface by what the person needs to do, because a disappearing
+message cannot be the only explanation of unfinished or failed work.
+
+| Situation | Surface |
+| --- | --- |
+| Routine pause, resume, addition in the open window or applied setting | The changed state and one accessible outcome announcement; no visible success toast. |
+| Refused setting or failed editor action | Persistent feedback beside the field or inside that editor, following [Committing edits](#committing-edits). |
+| Failed command without an editor, such as Pause or Open folder | A dismissible app-level error message, separate from connection status; no timed disappearance. Retain the existing policy for clearing it after later command outcomes. |
+| Connection loss or unavailable storage affecting the application | Persistent app-level status reachable across pages; an inline InfoBar is appropriate. Recovery clears the condition. |
+| Useful, noncritical event elsewhere in the open application | A temporary overlay in one consistent corner of the window, without moving page content. Add this only for a named event whose existing presentation is insufficient. |
+| Completion, background failure or deletion failure after removal | The existing engine-owned [notification policy](engine.md#notifications-and-sleep), including its delivery conditions and completion preference. |
+| A decision requiring consent | The existing dialog for that operation. |
+
+Native control state notifications can satisfy routine accessible feedback;
+do not add a second announcement of the same result. Keep field and editor
+errors at their point of correction. Keep unresolved
+app conditions visible independently of temporary messages. A transient overlay
+never takes focus, covers the active editor or confirmation, or becomes the sole
+place to recover from a failure. Announce its content once; any action must be
+keyboard accessible, and its timeout pauses during pointer or keyboard interaction.
+Combine repeated events instead of stacking an unbounded stream. Do not repeat
+an engine desktop notification as an in-app toast for the same event.
+
+[Fluent 2 toast guidance](https://fluent2.microsoft.design/components/web/react/core/toast/usage)
+supports consistent floating placement for noncritical events; it describes web
+components, not a native WinUI toast control. Native
+[InfoBar guidance](https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/infobar)
+uses inline presentation for lasting conditions. These are different purposes,
+so making every message float would hide useful context rather than improve it.
 
 ### Add
 
@@ -557,9 +598,14 @@ save owner with the exact editor rather than implementing scheduling rules twice
 
 Dragging empty time opens Add with that day and range selected; an ordinary click
 only focuses the week. Dragging a period horizontally preserves its duration;
-selected start/end handles resize it. Gestures snap to 15 minutes and show a
-live time/duration preview. Release saves a move or resize; Escape or lost pointer
-capture cancels it. The native time fields retain exact minute precision.
+selected start/end edges resize it. Thin inset grips appear on the hovered or
+dragged occurrence, while every occurrence keeps its selection outline, so
+recurring periods do not fill the week with handles. Gestures snap to 15 minutes and show a
+live time/duration preview. Release saves a move or resize of a saved period.
+While the exact editor is open, the draft remains draggable by its body or either
+edge and updates the time fields live; Save commits it. Escape or lost pointer
+capture restores the times before the gesture without discarding the draft.
+The native time fields retain exact minute precision.
 Blocks show their effective time ranges as well as their modes; hover and selection
 expose the complete source period, so an overlap does not obscure its saved times.
 The ruler reduces its tick count at narrow widths, and calendar geometry follows
@@ -623,12 +669,11 @@ a native TreeView with wanted, size, progress, and priority content, because
 folders require hierarchy and TableView's contract excludes tree rows. Reuse the
 file browser in Add; do not extend TableView with torrent-specific tree behavior.
 
-The six inspector sections use a native left NavigationView with a narrow,
-open pane, following the owner's compact-polished prototype. The torrent name
-and Close action sit above the navigation and content. This keeps the sections
-visible beside the working view; native pane scrolling keeps them reachable
-when text scaling needs more height. The lower inspector starts with enough
-height for all six sections and lets the person adjust the split.
+**Owner ruling:** the six inspector sections use a native SelectorBar, centred
+in one header row between the torrent name and an icon Close button. The owner
+could not get used to a left navigation pane, and one row keeps the sections
+visible while the working view gets the full inspector width. The person
+adjusts the inspector's height with the split.
 
 Apply individual choices and explicit file commands through the same commit
 rules. When a coherent edit needs a draft, keep one active editor bound to the
@@ -669,6 +714,13 @@ is closed, so reopening shows what happened meanwhile. Offer the last five
 minutes and the last 24 hours. Unknown gaps, such as the time before an engine
 restart, are not interpolated into invented history. Provide current/peak text
 alongside a chart.
+
+The chart shows the trend, not every sample: per-second rates jump with each
+burst from a peer. It draws five-second averages for five minutes and
+five-minute averages for the day, as a smooth curve that never rises above or
+falls below the averages. Download is a filled area and upload a dashed line,
+so the two differ without colour. The current and peak text and the rounded
+scale use the same averages, so the text never disagrees with the line.
 
 One page owner allocates table and inspector space. Remember an explicit split
 adjustment within current usable bounds; the splitter is keyboard-adjustable and

@@ -15,6 +15,10 @@ here so moving a topic does not require renaming its links.
 | 7 | [Testing](testing.md) | Which evidence earns its cost and what it establishes. |
 | 8 | [Naming and structure](naming.md) | Names and placement of types, files, folders, namespaces, and resource keys. |
 
+The [selected refactoring plan](architecture/proposed/README.md) consolidates
+the architecture reviews and delivery work. The active contracts above remain
+the authority for product behavior.
+
 The architecture owns the [live decision list](architecture.md#decisions-still-open).
 Update it as choices are made; historical reviews do not supply active requirements.
 

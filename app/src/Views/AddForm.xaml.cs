@@ -25,9 +25,11 @@ public sealed partial class AddForm : UserControl
 
     internal void RefreshText()
     {
-        Files.Content = Model.Text.Get("add", "more_files");
-        Magnet.Content = Model.Text.Get("add", "magnet");
-        Destination.Header = Model.Text.Get("add", "destination");
+        More.Content = Model.Text.Get("add", "more");
+        Files.Text = Model.Text.Get("commands", "add_file");
+        Magnet.Text = Model.Text.Get("commands", "add_magnet");
+        DestinationLabel.Text = Model.Text.Get("add", "destination");
+        OptionsLabel.Text = Model.Text.Get("add", "options");
         Browse.Content = Model.Text.Get("add", "browse");
         Paused.Content = Model.Text.Get("add", "paused");
         NeverShow.Content = Model.Text.Get("add", "never_show");
@@ -37,7 +39,7 @@ public sealed partial class AddForm : UserControl
         _browser.RefreshText();
     }
 
-    public static Visibility SourcesVisibility(bool hasFiles) => hasFiles ? Visibility.Collapsed : Visibility.Visible;
+    public static Visibility Hidden(bool value) => value ? Visibility.Collapsed : Visibility.Visible;
     private void OnFiles(object sender, RoutedEventArgs args) => FilesRequested?.Invoke(this, EventArgs.Empty);
     private void OnDestination(object sender, RoutedEventArgs args) => DestinationRequested?.Invoke(this, EventArgs.Empty);
     private async void OnPaste(object sender, RoutedEventArgs args)

@@ -1,4 +1,3 @@
-using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Windows.Input;
 using Syno.TinyTorrent.Models;
@@ -28,7 +27,7 @@ public sealed partial class MainViewModel
     public string AboutDescription => Text.Get("about", "description");
     public string VersionText => Text.Format("about", "version", typeof(MainViewModel).Assembly.GetName().Version?.ToString(3) ?? string.Empty);
 
-    public ObservableCollection<Torrent> VisibleTorrents { get; } = [];
+    public IReadOnlyList<Torrent> VisibleTorrents { get; private set; } = [];
     public string Search { get => _search; set { if (_search == value) return; _search = value; Refresh(); } }
     public string Query { get => _query; set { if (_query == value) return; _query = value; Changed(nameof(Query)); } }
     public TorrentFilter Filter
@@ -72,16 +71,12 @@ public sealed partial class MainViewModel
     {
         var desired = Torrents.Where(torrent => torrent.Name.Contains(_search, StringComparison.CurrentCultureIgnoreCase) &&
             Matches(torrent, Filter)).OrderBy(torrent => torrent.QueueOrder).ToArray();
-        var desiredSet = desired.ToHashSet();
-        foreach (var torrent in VisibleTorrents.Where(torrent => !desiredSet.Contains(torrent)).ToArray()) VisibleTorrents.Remove(torrent);
-        var visibleSet = VisibleTorrents.ToHashSet();
-        foreach (var torrent in desired)
-            if (!visibleSet.Contains(torrent)) VisibleTorrents.Add(torrent);
-        for (var index = 0; index < desired.Length; index++)
+        // TableView rebuilds its whole view for every source notification, so a
+        // changed projection is published as one new list, not row by row.
+        if (!desired.SequenceEqual(VisibleTorrents))
         {
-            if (ReferenceEquals(VisibleTorrents[index], desired[index])) continue;
-            var current = VisibleTorrents.IndexOf(desired[index]);
-            VisibleTorrents.Move(current, index);
+            VisibleTorrents = desired;
+            Changed(nameof(VisibleTorrents));
         }
         if (Inspector.Target is { } target && !Torrents.Contains(target)) CloseInspector();
     }

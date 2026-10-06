@@ -96,7 +96,7 @@ public sealed partial class MainWindow
             Torrents.Selection.Current is not Torrent selected || selected.TorrentId != target.TorrentId || !revealed)
             throw new InvalidOperationException("The named torrent result did not reveal the correct selection and clear the filter.");
         outcomes.Add(new { journey = "named torrent from filtered library", submitted, revealed, target = target.TorrentId, name = target.Name,
-            ordinal = Model.VisibleTorrents.IndexOf(target), retained = Model.Torrents.Count, filterCleared = true });
+            ordinal = Model.VisibleTorrents.ToList().IndexOf(target), retained = Model.Torrents.Count, filterCleared = true });
         Search.IsSuggestionListOpen = false;
         Search.Text = string.Empty;
         Model.IsFilterOpen = false;

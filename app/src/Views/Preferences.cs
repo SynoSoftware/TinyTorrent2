@@ -60,7 +60,6 @@ public sealed class Preferences : INotifyPropertyChanged
     public bool HasPaused => Periods.Any(period => period.Mode == ScheduleMode.Paused);
     public string PeriodSummary => Text.Format("preferences", "period_count", Periods.Count);
     public string EditorTitle => Text.Get("preferences", _editingIndex is null ? "new_period" : "edit_title");
-    public string PreviewLabel => Preview?.TimeLabel ?? string.Empty;
     public string WeekStatus => Text.Get("preferences", Schedule.IsOn ? "schedule_active" : "schedule_inactive");
     public string AlternativeSummary => Text.Format("preferences", "period_group", FormatMode(ScheduleMode.Alternative), Periods.Count(period => period.Mode == ScheduleMode.Alternative));
     public string PausedSummary => Text.Format("preferences", "period_group", FormatMode(ScheduleMode.Paused), Periods.Count(period => period.Mode == ScheduleMode.Paused));
@@ -315,8 +314,7 @@ public sealed class Preferences : INotifyPropertyChanged
         Edit(null);
         if (_draft is not { } draft) return;
         foreach (var choice in draft.Days) choice.IsChecked = choice.Index == day;
-        draft.Start = TimeSpan.FromMinutes(span.Start);
-        draft.End = TimeSpan.FromMinutes(span.End);
+        draft.SetSpan(span);
     }
 
     internal async Task Reschedule(SchedulePeriod period, PeriodSpan span)
@@ -327,11 +325,7 @@ public sealed class Preferences : INotifyPropertyChanged
         var current = Periods.FirstOrDefault(candidate => candidate.Matches(period) || candidate.Matches(changed));
         if (current is null) return;
         BeginEdit(current);
-        if (_draft is { } draft)
-        {
-            draft.Start = TimeSpan.FromMinutes(span.Start);
-            draft.End = TimeSpan.FromMinutes(span.End);
-        }
+        _draft?.SetSpan(span);
         Refresh();
     }
 
@@ -422,6 +416,12 @@ public sealed class Preferences : INotifyPropertyChanged
         foreach (var field in Fields) field.Refresh();
         foreach (var period in Periods) period.Refresh();
         foreach (Command command in new[] { AddPeriod, SavePeriod, CancelPeriod, OpenDefaults, RemoveHandler, OpenStartup }) command.Refresh();
+    }
+
+    internal void RefreshDraft(bool changed)
+    {
+        if (changed) PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasDraft)));
+        WeekChanged?.Invoke(this, EventArgs.Empty);
     }
 
     internal IEnumerable<ScheduleRange> Ranges(int day, SchedulePeriod? original = null, SchedulePeriod? preview = null)
@@ -657,6 +657,23 @@ public sealed class PeriodDraft : INotifyPropertyChanged
     public bool HasChanges => _original is null || Start?.TotalMinutes != _original.Start || End?.TotalMinutes != _original.End ||
         IsPaused != (_original.Mode == ScheduleMode.Paused) || !Days.Where(day => day.IsChecked).Select(day => day.Index).SequenceEqual(_original.Days);
     public event PropertyChangedEventHandler? PropertyChanged;
+    internal void SetSpan(PeriodSpan span)
+    {
+        var start = TimeSpan.FromMinutes(span.Start);
+        var end = TimeSpan.FromMinutes(span.End);
+        if (_start == start && _end == end) return;
+        var changed = HasChanges;
+        _start = start;
+        _end = end;
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Start)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(End)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(TimeLabel)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasChanges)));
+        _owner.RefreshDraft(changed != HasChanges);
+    }
+
+    public string TimeLabel => Start is not null && End is not null ? new SchedulePeriod(_owner, this).TimeLabel : string.Empty;
+
     internal PeriodDraft(Preferences owner, SchedulePeriod? period)
     {
         _owner = owner;

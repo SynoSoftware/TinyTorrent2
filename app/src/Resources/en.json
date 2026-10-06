@@ -25,7 +25,7 @@
     "title": "Add torrent", "source": "Torrent file", "browse": "Browse…", "destination": "Download folder",
     "paused": "Start paused", "submit": "Add", "submit_all": "Add all", "cancel": "Cancel", "preview": "{0} · {1}",
     "pending": "Adding…", "remove_source": "Remove source", "all_files": "Select all files",
-    "sources": "{0} sources", "more_files": "Add files…", "magnet": "Magnet link", "paste": "Paste", "review": "Get metadata", "metadata": "Getting metadata…", "already_added": "Already added", "merge": "Merge new trackers", "shared": "Files at this destination are also used by: {0}", "never_show": "Never show again", "no_files": "Select at least one file to add this torrent."
+    "sources": "{0} sources", "magnet": "Magnet link", "paste": "Paste", "review": "Get metadata", "metadata": "Getting metadata…", "already_added": "Already added", "merge": "Merge new trackers", "shared": "Files at this destination are also used by: {0}", "never_show": "Never show again", "more": "Add more", "options": "Options", "free": "{0} free", "no_files": "Select at least one file to add this torrent."
   },
   "status": { "unknown": "Unknown", "downloading": "Downloading", "seeding": "Seeding", "paused": "Paused", "all_paused": "All paused", "checking": "Checking", "queued": "Queued", "error": "Error", "completed": "Completed", "metadata": "Getting metadata", "moving": "Moving files" },
   "changes": { "title": "Save changes?", "detail": "Save your changes before leaving?", "save": "Save", "discard": "Discard" },
@@ -56,7 +56,7 @@
   },
   "connection": { "restart": "Restart", "version": "The engine and window versions do not match. Install a complete TinyTorrent release.", "unavailable": "The engine is unavailable.", "overload": "Too many commands are pending. Try again shortly.", "uncertain": "The connection was lost. Reconnecting to confirm the current state.", "missing": "Engine.exe was not found beside the application." },
   "commands": { "menu": "Application menu", "selection": "Selection actions", "add_file": "Add torrent file…", "add_magnet": "Add magnet link…", "pause": "Pause", "resume": "Resume", "force": "Force start", "verify": "Verify", "remove": "Remove", "move": "Move files", "delete_files": "Delete files", "open": "Open", "open_folder": "Open folder", "copy_magnet": "Copy magnet link", "copy_hash": "Copy info hash", "properties": "Properties", "up": "Move up", "down": "Move down", "top": "Move to top", "bottom": "Move to bottom", "pause_all": "Pause all", "resume_all": "Resume all", "limits": "Speed limits…", "exit": "Exit" },
-  "files": { "name": "File", "priority": "Priority", "summary": "{0} of {1} files · {2}", "search": "Find a file", "all_matching": "Select matching", "none_matching": "Deselect matching", "unchanged": "Leave unchanged", "skip": "Do not download", "low": "Low", "normal": "Normal", "high": "High" },
+  "files": { "name": "File", "priority": "Priority", "summary": "{0} of {1} files · {2}", "search": "Find a file", "all_matching": "Select or clear all matching files", "unchanged": "Leave unchanged", "skip": "Do not download", "low": "Low", "normal": "Normal", "high": "High" },
   "outcomes": { "accepted": "{0}: request accepted.", "queue": "Queue order" },
   "inspector": {
     "close": "Close inspector", "resize": "Resize inspector", "downloaded": "Downloaded", "remaining": "Remaining",
@@ -154,7 +154,7 @@
     "period_count": "Saved periods ({0:N0})",
     "period_group": "{0} ({1:N0})",
     "timeline_hint": "Drag empty time to add. Drag a period or its handles to move or resize it on all its days. Snaps to 15 minutes and saves on release; Esc cancels.",
-    "preview_hint": "Preview · Save to apply this period, or cancel to keep the saved schedule.",
+    "preview_hint": "Drag the preview to move it, or either edge to resize. Save applies the period; Esc during a drag restores its previous times.",
     "timeline_name": "Weekly schedule. {0}. Use arrow keys to choose a day and time, Space to select a period, and Enter to add or edit. Esc cancels.",
     "every_day": "Every day",
     "day_range": "{0}–{1}",

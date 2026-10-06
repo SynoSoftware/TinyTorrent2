@@ -3,6 +3,7 @@ using System.Text.Json;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml.Media;
 using Windows.Graphics;
+using Syno.TinyTorrent.Models;
 using Syno.TinyTorrent.Views;
 
 namespace Syno.TinyTorrent;
@@ -20,6 +21,11 @@ public sealed partial class MainWindow
     // failure.
     private bool _cloaked;
     private const int CloakAttribute = 13;
+    // The saved view is restored once, at the first snapshot whose storage
+    // loaded; a reconnect keeps the view the person has now. Until then the
+    // window holds only defaults, so Close saves nothing rather than overwrite
+    // the saved file.
+    private bool _viewRestored;
 
     private void SetCloak(bool cloaked)
     {
@@ -34,6 +40,7 @@ public sealed partial class MainWindow
         // A failed restore or language load still shows the window, with the
         // defaults, rather than keeping the splash waiting.
         if (_placementRead is { } reading) await Task.WhenAny(reading);
+        await RestoreView();
         await Task.WhenAny(Model.LanguageLoad);
         await Rendered();
         var ready = await Model.Ready();
@@ -120,17 +127,45 @@ public sealed partial class MainWindow
         }
     }
 
+    private async Task RestoreView()
+    {
+        if (_viewRestored || Model.IsClosing || Model.IsStorageFailed) return;
+        _viewRestored = true;
+        if (_placement is not { } placement) return;
+        if (!Enum.IsDefined(placement.Page) || !Enum.IsDefined(placement.Filter) ||
+            !Enum.IsDefined(placement.Section) || !Enum.IsDefined(placement.Settings)) return;
+        Model.Filter = placement.Filter;
+        Model.IsFilterOpen = placement.FiltersOpen;
+        var identities = new HashSet<string>(placement.Selected ?? []);
+        var selected = Model.VisibleTorrents.Where(torrent => identities.Contains(torrent.TorrentId)).ToArray();
+        var current = selected.FirstOrDefault(torrent => torrent.TorrentId == placement.Current) ?? selected.FirstOrDefault();
+        Torrents.Selection = new Syno.TableView.Selection(selected, current);
+        Model.Inspector.Select(placement.Section);
+        if (placement.InspectorOpen) Run(Model.Properties);
+        // After the inspector, which sets how many rows fit, and before another
+        // page hides the table.
+        Torrents.ScrollTo(placement.HorizontalOffset, placement.VerticalOffset);
+        if (placement.Page == WindowPage.Preferences) await ShowPreferences(new(placement.Settings));
+        else if (placement.Page == WindowPage.About) await ShowAbout();
+    }
+
     private async Task SavePlacement()
     {
         if (_placementRead is { } reading) await reading;
-        if (_placementPath is null) return;
+        if (_placementPath is null || !_viewRestored) return;
         RememberBounds();
         var placement = new Placement
         {
             X = _normalBounds.X, Y = _normalBounds.Y, Width = _normalBounds.Width, Height = _normalBounds.Height,
             Scale = _normalScale, Maximized = AppWindow.Presenter is OverlappedPresenter { State: OverlappedPresenterState.Maximized },
             SplitHeight = _splitHeight, Torrents = Torrents.Layout,
-            Inspector = InspectorContent.Content is InspectorForm form ? form.Layout : _placement?.Inspector
+            Inspector = InspectorContent.Content is InspectorForm form ? form.Layout : _placement?.Inspector,
+            Page = Model.Page, Settings = _preferencesForm?.Section ?? PreferenceSection.General,
+            Filter = Model.Filter, FiltersOpen = Model.IsFilterOpen,
+            Selected = [.. _selection.Items.Cast<Torrent>().Select(torrent => torrent.TorrentId)],
+            Current = (_selection.Current as Torrent)?.TorrentId,
+            InspectorOpen = Model.HasInspector, Section = Model.Inspector.Section,
+            HorizontalOffset = Torrents.HorizontalOffset, VerticalOffset = Torrents.VerticalOffset
         };
         var temporary = _placementPath + ".tmp";
         try
@@ -156,5 +191,15 @@ public sealed partial class MainWindow
         public double SplitHeight { get; init; } = 360;
         public Syno.TableView.ColumnLayout? Torrents { get; init; }
         public InspectorLayout? Inspector { get; init; }
+        public WindowPage Page { get; init; }
+        public PreferenceSection Settings { get; init; }
+        public TorrentFilter Filter { get; init; }
+        public bool FiltersOpen { get; init; }
+        public IReadOnlyList<string>? Selected { get; init; }
+        public string? Current { get; init; }
+        public bool InspectorOpen { get; init; }
+        public InspectorSection Section { get; init; }
+        public double HorizontalOffset { get; init; }
+        public double VerticalOffset { get; init; }
     }
 }

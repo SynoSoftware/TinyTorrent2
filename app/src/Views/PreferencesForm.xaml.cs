@@ -171,9 +171,15 @@ public sealed partial class PreferencesForm : UserControl
         Body.ChangeView(null, 0, null, true);
     }
 
+    // In PreferenceSection order.
+    private SelectorBarItem[] Sections => [GeneralCategory, TransfersCategory, NetworkCategory, ScheduleCategory, AppearanceCategory];
+
+    internal PreferenceSection Section =>
+        Array.IndexOf(Sections, Categories.SelectedItem) is var index and >= 0 ? (PreferenceSection)index : PreferenceSection.General;
+
     internal void Navigate(PreferenceTarget target)
     {
-        Categories.SelectedItem = new[] { GeneralCategory, TransfersCategory, NetworkCategory, ScheduleCategory, AppearanceCategory }[(int)target.Section];
+        Categories.SelectedItem = Sections[(int)target.Section];
         DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
         {
             UpdateLayout();

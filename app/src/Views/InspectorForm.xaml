@@ -4,21 +4,28 @@
     xmlns:local="using:Syno.TinyTorrent.Views"
     xmlns:controls="using:Syno.TinyTorrent.Controls"
     xmlns:models="using:Syno.TinyTorrent.Models"
-    xmlns:table="using:Syno.TableView">
-    <NavigationView x:Name="Sections" PaneDisplayMode="Left" OpenPaneLength="160" IsPaneOpen="True"
-        IsTitleBarAutoPaddingEnabled="False" IsBackButtonVisible="Collapsed"
-        Background="Transparent"
-        IsSettingsVisible="False" IsPaneToggleButtonVisible="False" SelectionChanged="OnSection"
-        AutomationProperties.AutomationId="InspectorSections">
-        <NavigationView.MenuItems>
-            <NavigationViewItem x:Name="GeneralSection" AutomationProperties.AutomationId="InspectorGeneral" />
-            <NavigationViewItem x:Name="FilesSection" AutomationProperties.AutomationId="InspectorFiles" />
-            <NavigationViewItem x:Name="PeersSection" AutomationProperties.AutomationId="InspectorPeers" />
-            <NavigationViewItem x:Name="TrackersSection" AutomationProperties.AutomationId="InspectorTrackers" />
-            <NavigationViewItem x:Name="SpeedSection" AutomationProperties.AutomationId="InspectorSpeed" />
-            <NavigationViewItem x:Name="PiecesSection" AutomationProperties.AutomationId="InspectorPieces" />
-        </NavigationView.MenuItems>
-        <Grid RowSpacing="8" Padding="16,8,16,12">
+    xmlns:table="using:Syno.TableView"
+    xmlns:icons="using:Syno">
+    <Grid>
+        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+        <!-- The empty star column balances the name's, so the sections sit
+             centred while Close keeps its width when the inspector is narrow. -->
+        <Grid ColumnSpacing="12" Padding="16,0">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+            <TextBlock Text="{x:Bind Model.Name, Mode=OneWay}" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+            <SelectorBar x:Name="Sections" Grid.Column="1" Padding="0" SelectionChanged="OnSection" AutomationProperties.AutomationId="InspectorSections">
+                <SelectorBarItem x:Name="GeneralSection" AutomationProperties.AutomationId="InspectorGeneral" />
+                <SelectorBarItem x:Name="FilesSection" AutomationProperties.AutomationId="InspectorFiles" />
+                <SelectorBarItem x:Name="PeersSection" AutomationProperties.AutomationId="InspectorPeers" />
+                <SelectorBarItem x:Name="TrackersSection" AutomationProperties.AutomationId="InspectorTrackers" />
+                <SelectorBarItem x:Name="SpeedSection" AutomationProperties.AutomationId="InspectorSpeed" />
+                <SelectorBarItem x:Name="PiecesSection" AutomationProperties.AutomationId="InspectorPieces" />
+            </SelectorBar>
+            <Button x:Name="Close" x:FieldModifier="internal" Grid.Column="3" VerticalAlignment="Center">
+                <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.X}" FontSize="16" />
+            </Button>
+        </Grid>
+        <Grid Grid.Row="1" RowSpacing="8" Padding="16,8,16,12">
             <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
             <InfoBar IsClosable="False" Severity="Error" IsOpen="{x:Bind Model.HasError, Mode=OneWay}" Message="{x:Bind Model.Message, Mode=OneWay}">
                 <InfoBar.ActionButton><Button x:Name="Retry" Command="{x:Bind Model.Retry}" /></InfoBar.ActionButton>
@@ -97,10 +104,10 @@
                             <ComboBoxItem x:Name="Day"><TextBlock x:Name="DayLabel" /></ComboBoxItem>
                         </ComboBox>
                     </Grid>
-                    <controls:SpeedGraph x:Name="Graph" Grid.Row="1" />
+                    <controls:SpeedGraph x:Name="Graph" Grid.Row="1" Samples="{x:Bind Model.History, Mode=OneWay}" IsDay="{x:Bind Model.IsDay, Mode=OneWay}" IsAvailable="{x:Bind Model.IsAvailable, Mode=OneWay}" />
                 </Grid>
                 <controls:PiecesMap x:Name="Map" Visibility="Collapsed" />
             </Grid>
         </Grid>
-    </NavigationView>
+    </Grid>
 </UserControl>

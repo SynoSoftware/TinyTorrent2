@@ -1,4 +1,5 @@
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
@@ -21,8 +22,8 @@ public sealed partial class FileBrowser : UserControl
     internal void RefreshText()
     {
         Search.PlaceholderText = Model.Text.Get("files", "search");
-        AllLabel.Text = Model.Text.Get("files", "all_matching");
-        NoneLabel.Text = Model.Text.Get("files", "none_matching");
+        ToolTipService.SetToolTip(All, Model.Text.Get("files", "all_matching"));
+        AutomationProperties.SetHelpText(All, Model.Text.Get("files", "all_matching"));
         NameLabel.Text = Model.Text.Get("files", "name");
         SizeLabel.Text = Model.Text.Get("columns", "size");
         ProgressLabel.Text = Model.Text.Get("columns", "progress");
@@ -30,8 +31,12 @@ public sealed partial class FileBrowser : UserControl
         Model.Refresh();
     }
 
-    private void OnAll(object sender, RoutedEventArgs args) => Model.SelectMatching(true);
-    private void OnNone(object sender, RoutedEventArgs args) => Model.SelectMatching(false);
+    private void OnAll(object sender, RoutedEventArgs args)
+    {
+        Model.SelectMatching(Model.AllMatching != true);
+        // The click has already toggled the box; show the selection that resulted.
+        All.IsChecked = Model.AllMatching;
+    }
 
     private void OnFilesKey(object sender, KeyRoutedEventArgs args)
     {

@@ -43,6 +43,7 @@ public sealed partial class Table : Control
 
     private bool _schemaCaptured;
     private ColumnLayout? _pendingLayout;
+    private (double Horizontal, double Vertical)? _pendingScroll;
 
     private UIElement? _shippedPlaceholder;
     private Placeholder _shippedPlaceholderKind;
@@ -317,6 +318,7 @@ public sealed partial class Table : Control
         }
         UpdateHorizontalRange();
         RebuildView();
+        ApplyPendingScroll();
     }
 
     private void ValidateColumns()
@@ -539,7 +541,7 @@ public sealed partial class Table : Control
 
     private void OnSnapshotChanged(object? sender, IReadOnlyList<object> snapshot) => RebuildView(snapshot);
 
-    // ---------------------------------------------------- horizontal offset
+    // ------------------------------------------------------- scroll offsets
 
     private void OnLayoutInvalidated(object? sender, LayoutInvalidationReason reason)
     {
@@ -620,6 +622,53 @@ public sealed partial class Table : Control
         {
             _horizontalScrollBar.Value = clamped;
         }
+    }
+
+    /// <summary>How far the columns are scrolled, in DIPs.</summary>
+    public double HorizontalOffset => _pendingScroll?.Horizontal ?? Geometry.HorizontalOffset;
+
+    /// <summary>How far the rows are scrolled, in DIPs.</summary>
+    public double VerticalOffset => _pendingScroll?.Vertical ?? InnerScrollViewer()?.VerticalOffset ?? 0;
+
+    /// <summary>
+    /// Scroll to the given offsets in DIPs, clamped to the scrollable range, without changing
+    /// selection or keyboard focus. A non-finite offset makes the call do nothing.
+    /// </summary>
+    /// <remarks>
+    /// The rows are laid out first, so an offset into rows the host has only just supplied is not
+    /// clamped to the shorter extent of the rows before them. Called before the table has loaded,
+    /// the offsets are held and applied when it loads.
+    /// </remarks>
+    public void ScrollTo(double horizontalOffset, double verticalOffset)
+    {
+        if (!double.IsFinite(horizontalOffset) || !double.IsFinite(verticalOffset))
+        {
+            return;
+        }
+
+        _pendingScroll = (horizontalOffset, verticalOffset);
+        ApplyPendingScroll();
+    }
+
+    private void ApplyPendingScroll()
+    {
+        if (_pendingScroll is not (double horizontal, double vertical) || !_schemaCaptured || _itemsView is null)
+        {
+            return;
+        }
+
+        _itemsView.UpdateLayout();
+        if (InnerScrollViewer() is not ScrollViewer scroller)
+        {
+            return;
+        }
+
+        _pendingScroll = null;
+        // The scroll bar clamps its value to its own maximum, so that range
+        // must already match the layout just completed.
+        UpdateHorizontalRange();
+        SetHorizontalOffset(horizontal);
+        scroller.ChangeView(null, vertical, null, disableAnimation: true);
     }
 
     // ------------------------------------------------- loading / empty states

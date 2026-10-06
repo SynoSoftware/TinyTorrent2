@@ -225,9 +225,10 @@ public sealed partial class MainWindow : Window
         _form.AllowDrop = true;
         _form.DragOver += OnDragOver;
         _form.Drop += OnDrop;
-        var body = new ScrollViewer { Content = _form, Width = Math.Min(816, Root.ActualWidth - 80), MaxHeight = Math.Max(220, Root.ActualHeight - 180), VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
-        var dialog = new ContentDialog { XamlRoot = Root.XamlRoot, Content = body, DefaultButton = ContentDialogButton.Primary };
-        dialog.Resources["ContentDialogMaxWidth"] = 864d;
+        _form.Width = Math.Min(960, Root.ActualWidth - 80);
+        _form.Height = Math.Clamp(Root.ActualHeight - 260, 280, 540);
+        var dialog = new ContentDialog { XamlRoot = Root.XamlRoot, Content = _form, DefaultButton = ContentDialogButton.Primary };
+        dialog.Resources["ContentDialogMaxWidth"] = 1008d;
         _addDialog = dialog;
         Model.IsAddOpen = true;
         RefreshText();
@@ -241,7 +242,7 @@ public sealed partial class MainWindow : Window
         catch (Exception error) { Model.Report(error); }
         finally
         {
-            body.Content = null;
+            dialog.Content = null;
             Model.IsAddOpen = false;
             if (!Model.IsClosing && completed)
             {

@@ -1120,8 +1120,10 @@ facts and failed edits. Peer and Tracker rows carry sampled raw facts, with
 regional formatting and live text derived when read. The Files view reuses
 FileBrowser. Peers and Trackers declare public TableView schemas with stable
 endpoint/URL keys and typed sort keys; no library change is required. The tracker
-editor preserves its coherent draft until Save or Cancel. SpeedGraph uses native
-paths with separate figures across unknown time gaps. PiecesMap uses one BGRA
+editor preserves its coherent draft until Save or Cancel. SpeedGraph binds the
+history, range and availability, averages samples in buckets aligned to clock
+time, and draws monotone cubic native paths with separate figures across unknown
+time gaps. PiecesMap uses one BGRA
 bitmap, 16-pixel squares, 4-pixel gaps and 6-pixel gutters after each group of
 eight, matching the previous native map. Geometry and theme changes invalidate
 the raster; equal data does not. Grouped squares use the documented state tie

@@ -47,7 +47,7 @@ public sealed partial class InspectorForm : UserControl
             .SortKey(CompletedColumn, tracker => tracker.Downloaded).SortKey(NextColumn, tracker => tracker.NextAnnounce)
             .SortKey(MessageColumn, tracker => tracker.Message);
         Loaded += (_, _) => { Model.TextChanged += OnText; Model.PropertyChanged += OnModel; RefreshText(); Refresh(); };
-        Unloaded += (_, _) => { Model.TextChanged -= OnText; Model.PropertyChanged -= OnModel; Map.Show(null, Model.Text); Graph.Show(null); };
+        Unloaded += (_, _) => { Model.TextChanged -= OnText; Model.PropertyChanged -= OnModel; Map.Show(null, Model.Text); };
         RefreshText();
         Refresh();
     }
@@ -56,9 +56,9 @@ public sealed partial class InspectorForm : UserControl
     public static bool Not(bool value) => !value;
     public static Visibility Hidden(bool value) => value ? Visibility.Collapsed : Visibility.Visible;
     private void OnModel(object? sender, PropertyChangedEventArgs args) => Refresh();
-    private void OnSection(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
+    private void OnSection(SelectorBar sender, SelectorBarSelectionChangedEventArgs args)
     {
-        if (!_refreshing && args.SelectedItem is NavigationViewItem { Tag: InspectorSection section }) Model.Select(section);
+        if (!_refreshing && sender.SelectedItem is { Tag: InspectorSection section }) Model.Select(section);
     }
     private void OnRange(object sender, SelectionChangedEventArgs args)
     {
@@ -71,10 +71,9 @@ public sealed partial class InspectorForm : UserControl
         for (var index = 0; index < views.Length; index++)
             views[index].Visibility = index == (int)Model.Section ? Visibility.Visible : Visibility.Collapsed;
         _refreshing = true;
-        Sections.SelectedItem = Sections.MenuItems.OfType<NavigationViewItem>().First(item => Equals(item.Tag, Model.Section));
+        Sections.SelectedItem = Sections.Items.First(item => Equals(item.Tag, Model.Section));
         Range.SelectedItem = Model.IsDay ? Day : FiveMinutes;
         _refreshing = false;
-        Graph.Show(Model);
         Map.Show(Model.Pieces, Model.Text);
         if (_editing != Model.IsEditingTrackers)
         {
@@ -91,13 +90,14 @@ public sealed partial class InspectorForm : UserControl
     {
         var text = Model.Text;
         FlowDirection = text.IsRightToLeft ? FlowDirection.RightToLeft : FlowDirection.LeftToRight;
-        NavigationViewItem[] sections = [GeneralSection, FilesSection, PeersSection, TrackersSection, SpeedSection, PiecesSection];
-        foreach (var section in sections)
+        foreach (var section in Sections.Items)
         {
-            section.Content = text.Get("inspector", ((InspectorSection)section.Tag).ToString().ToLowerInvariant());
-            AutomationProperties.SetName(section, (string)section.Content);
+            section.Text = text.Get("inspector", ((InspectorSection)section.Tag).ToString().ToLowerInvariant());
+            AutomationProperties.SetName(section, section.Text);
         }
         AutomationProperties.SetName(Sections, text.Get("inspector", "sections"));
+        AutomationProperties.SetName(Close, text.Get("inspector", "close"));
+        ToolTipService.SetToolTip(Close, text.Get("inspector", "close"));
         DownloadedLabel.Text = text.Get("inspector", "downloaded");
         RemainingLabel.Text = text.Get("inspector", "remaining");
         RatioLabel.Text = text.Get("columns", "ratio");
@@ -147,6 +147,7 @@ public sealed partial class InspectorForm : UserControl
         AutomationProperties.SetName(FiveMinutes, MinutesLabel.Text);
         AutomationProperties.SetName(Day, DayLabel.Text);
         AutomationProperties.SetName(Range, text.Get("speed", "range"));
+        Graph.RefreshText(text);
         _files.RefreshText();
         Peers.RefreshView();
         TrackerTable.RefreshView();

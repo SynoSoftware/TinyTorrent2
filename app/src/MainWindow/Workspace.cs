@@ -186,6 +186,7 @@ public sealed partial class MainWindow
         if (InspectorContent.Content is null)
         {
             var form = new InspectorForm(Model.Inspector);
+            form.Close.Click += OnInspectorClose;
             if (_placement?.Inspector is { } layout) form.Layout = layout;
             InspectorContent.Content = form;
         }
