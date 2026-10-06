@@ -4,6 +4,7 @@
 #include <libtorrent/read_resume_data.hpp>
 #include <libtorrent/session_params.hpp>
 #include <libtorrent/settings_pack.hpp>
+#include <libtorrent/fingerprint.hpp>
 #include <algorithm>
 
 namespace tt
@@ -123,8 +124,14 @@ void Engine::State::Start(Document const& saved, Resumes& resumes)
     pack.set_str(lt::settings_pack::listen_interfaces, "");
     pack.set_bool(lt::settings_pack::enable_upnp, false);
     pack.set_bool(lt::settings_pack::enable_natpmp, false);
+    pack.set_str(lt::settings_pack::user_agent, "TinyTorrent/" TT_VERSION);
+    pack.set_str(lt::settings_pack::peer_fingerprint,
+        lt::generate_fingerprint("TY", TT_VERSION_MAJOR, TT_VERSION_MINOR, TT_VERSION_BUILD, TT_VERSION_REVISION));
+    pack.set_str(lt::settings_pack::dht_bootstrap_nodes,
+        "dht.libtorrent.org:25401,dht.transmissionbt.com:6881,router.bittorrent.com:6881");
     pack.set_int(lt::settings_pack::alert_mask,
-        lt::alert_category::error | lt::alert_category::storage | lt::alert_category::status);
+        lt::alert_category::error | lt::alert_category::storage | lt::alert_category::status |
+        lt::alert_category::file_progress);
     session = std::make_unique<lt::session>(lt::session_params(pack));
     if (wake)
     {
@@ -175,8 +182,13 @@ void Engine::State::Start(Document const& saved, Resumes& resumes)
         params.piece_priorities.clear();
         params.flags &= ~lt::torrent_flags::auto_managed;
         params.flags |= lt::torrent_flags::paused;
+        params.flags |= lt::torrent_flags::default_dont_download;
+        if (!params.ti)
+            std::fill(params.file_priorities.begin(), params.file_priorities.end(), lt::dont_download);
         auto handle = session->add_torrent(params);
-        Install(id, handle, facts, params);
+        auto& torrent = Install(id, handle, facts, params);
+        torrent.namesReady = false;
+        PrepareFiles(torrent);
         if (facts.trackers)
         {
             handle.replace_trackers(*facts.trackers);
@@ -343,6 +355,8 @@ Torrent& Engine::State::Install(std::string const& id, lt::torrent_handle handle
     torrent.creator = params.created_by;
     torrent.created = params.creation_date;
     torrent.status = handle.status(lt::torrent_handle::query_name);
+    torrent.namesReady = params.ti != nullptr;
+    CompleteFiles(torrent);
     torrent.savedUploaded = torrent.status.all_time_upload;
     handles.emplace(handle, &torrent);
     return torrent;
@@ -434,6 +448,7 @@ void Engine::State::Tick()
         {
             Handle(alert);
         }
+        ContinueRename();
         if (!stopping)
         {
             Maintain();
@@ -460,6 +475,8 @@ void Engine::State::Maintain()
         for (auto& [id, torrent] : torrents)
         {
             CompletePriorities(torrent);
+            PrepareFiles(torrent);
+            FinishFiles(torrent);
         }
         session->post_torrent_updates(lt::torrent_handle::query_name);
     }

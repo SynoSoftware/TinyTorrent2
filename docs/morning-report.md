@@ -1,5 +1,68 @@
 # Morning report
 
+## File lifecycle and client defaults milestone — 2026-10-06
+
+The #128/#129/#131 slice implements fixed behavior, not more Settings switches.
+New absent files use `.!tt`; display names stay unchanged and `disk_path` carries
+the actual path. Finishing pauses and releases shared owners, performs one
+Windows rename without copying or replacing bytes, and updates their libtorrent
+mappings. A held file retries after 30 seconds without a download error. Startup
+and Use existing share name reconciliation and verify adopted content. Preparation
+admits eight torrents at a time, avoiding worker overload for a large library.
+Open uses the actual filename with its original extension through one Windows
+shell owner. Download completions attempt ZoneId=3; verification does not.
+Client identity uses the shared MSBuild Version, with the contracted bootstrap
+nodes and unlimited per-protocol announce counts.
+
+The source gate found three Move defects: missed final-name collisions, Use
+existing overlooking real filenames, and stale completion eligibility. Its first
+re-review found a related checkpoint-marker race. All four were corrected; the
+second correction review reports zero remaining counted findings in this slice.
+
+- Engine build: `artifacts/file-lifecycle-engine.log`, 54.19 seconds, zero
+  warnings/errors. Version preprocessor definitions require its PCH and all 26
+  other translation units to compile. No dependencies were rebuilt.
+- App build: `artifacts/file-lifecycle-app.log`, 53.10 seconds, zero
+  warnings/errors. The shared props change invalidates Lucide's CoreCompile
+  input; the owner changed TableView's XAML too. TableView and the app each use
+  WinUI's two generated-XAML compilation passes. The Open integration passed
+  source review; no screen or player was launched for this slice.
+- `FileNames-bb71b3a7-ab80-41bd-9a74-00a28ee18328` passed under
+  `artifacts/evidence/`: two shared owners, a held suffix across restart, retry,
+  byte preservation, both persisted mappings, no Internet mark on verified bytes,
+  final-name collision refusal and Use existing without redownloading.
+  The first fixture incorrectly assumed fast resume discovers externally copied
+  bytes; it was corrected to use the normal Verify command. The engine was not
+  rebuilt for that test correction.
+- `FilesSafety-f1fd9266-322f-47ee-83f5-adde1292cbef` and
+  `CheckpointRetry-dbbc2248-f1e1-4e76-9d81-4f2949676204` passed once after the
+  final engine change. One earlier FilesSafety launch refused an owner instance
+  before executing the check. That window and engine then closed normally under
+  the existing authorization. Each check closed its own engine.
+- No full suite, Transfer peer, UI automation or distribution work ran. Required
+  generated-output scans found nothing outside artifacts; Everything IPC required
+  the desktop permission context.
+
+Still unverified: positive Mark of the Web after a real download, native player
+launch for an unfinished file, native association/security prompts, cross-volume
+file behavior and dropped-alert recovery. A legitimate existing partial file
+keeps its real name for verification; it is the documented suffix exception.
+This milestone does not claim overall releasability. Concurrent inspector-card,
+file-list, header and search work belongs to the owner and is excluded from this
+commit; the accepted baseline is recorded below.
+
+## Owner's concurrent design baseline — 2026-10-06
+
+The owner confirmed that the current inspector-card and file-list work is
+intentional, not a regression from the earlier shared-header correction. Preserve
+the inset rounded inspector card, its visible semantic surface and edge, and the
+file list's shared table padding, aligned headers and checkboxes, and bounded
+columns. Column labels and the inspector title have different semantic roles;
+their typography and native heights need not be identical. Use the current
+interface contract and settled source for the exact tokens. Table-header styling
+is still being refined concurrently; do not restore an earlier appearance or
+claim the intermediate changes have passed visual review.
+
 ## Notification preferences and whole-tree checkpoint — 2026-10-06
 
 The owner requested the whole diff be committed before continuing. `3f6de13`

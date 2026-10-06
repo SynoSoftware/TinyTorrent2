@@ -195,7 +195,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         ShowPreferences = new Command(() => RequestPreferences(new(PreferenceSection.General)), () => true);
         ShowTorrents = new Command(() => { TorrentsRequested?.Invoke(this, EventArgs.Empty); return Task.CompletedTask; }, () => true);
         ShowAbout = new Command(() => { AboutRequested?.Invoke(this, EventArgs.Empty); return Task.CompletedTask; }, () => true);
-        OpenUpdate = new Command(() => { OpenRequested?.Invoke(this, ReleasePage); return Task.CompletedTask; }, () => HasUpdate);
+        OpenUpdate = new Command(() => { OpenRequested?.Invoke(this, new(ReleasePage)); return Task.CompletedTask; }, () => HasUpdate);
         Preferences.Updates.PropertyChanged += (_, _) =>
         {
             ObserveUpdates();

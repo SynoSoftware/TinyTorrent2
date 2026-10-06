@@ -359,7 +359,8 @@ void Engine::State::Act(std::vector<std::string> ids, Reply reply, Action action
                 reply(Failure(ErrorCode::TorrentRemoved));
                 return;
             }
-            if (torrents.at(id).moving)
+            auto const& torrent = torrents.at(id);
+            if (torrent.moving || torrent.preparingNames || !torrent.renaming.empty())
             {
                 reply(Failure(ErrorCode::FilesBusy));
                 return;
@@ -385,6 +386,7 @@ void Engine::State::Verify(std::vector<std::string> const& ids, Reply reply)
     for (auto const& id : ids)
     {
         torrents.at(id).receivedPayload = false;
+        torrents.at(id).completedFiles.clear();
         torrents.at(id).handle.force_recheck();
     }
     reply(Success());
@@ -397,7 +399,7 @@ void Engine::State::Remove(std::vector<std::string> const& ids, Reply reply, boo
     {
         auto scope = FileScope(ids);
         Deletion deleting;
-        deleting.holds = scope.files;
+        deleting.holds = scope.holds;
         for (auto const& file : scope.files)
         {
             if (!std::binary_search(scope.kept.begin(), scope.kept.end(), file, PathBefore))

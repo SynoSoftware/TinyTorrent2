@@ -17,6 +17,23 @@ void Engine::State::Handle(lt::alert* alert)
     {
         On(*updated);
     }
+    else if (auto state = lt::alert_cast<lt::state_changed_alert>(alert))
+    {
+        if (auto torrent = Find(state->handle))
+            torrent->fileState = state->state;
+    }
+    else if (auto file = lt::alert_cast<lt::file_completed_alert>(alert))
+    {
+        On(*file);
+    }
+    else if (auto renamed = lt::alert_cast<lt::file_renamed_alert>(alert))
+    {
+        On(*renamed);
+    }
+    else if (auto failed = lt::alert_cast<lt::file_rename_failed_alert>(alert))
+    {
+        On(*failed);
+    }
     else if (auto finished = lt::alert_cast<lt::torrent_finished_alert>(alert))
     {
         On(*finished);
@@ -78,9 +95,12 @@ void Engine::State::Handle(lt::alert* alert)
     }
     else if (auto checked = lt::alert_cast<lt::torrent_checked_alert>(alert))
     {
-        if (auto torrent = Find(checked->handle); torrent && torrent->facts.firstLast)
+        if (auto torrent = Find(checked->handle))
         {
-            torrent->PrioritizePieces();
+            CompleteFiles(*torrent);
+            FinishFiles(*torrent);
+            if (torrent->facts.firstLast)
+                torrent->PrioritizePieces();
         }
     }
     else if (auto paused = lt::alert_cast<lt::torrent_paused_alert>(alert))
@@ -90,6 +110,11 @@ void Engine::State::Handle(lt::alert* alert)
         {
             std::erase(relocation->waiting, paused->handle);
             ContinueMove();
+        }
+        if (rename)
+        {
+            std::erase(rename->waiting, paused->handle);
+            ContinueRename();
         }
     }
     else if (auto deleted = lt::alert_cast<lt::torrent_deleted_alert>(alert))
@@ -151,6 +176,11 @@ void Engine::State::AwaitCompletion(Torrent& torrent)
 // so a person who opens a completed file never finds it incomplete.
 void Engine::State::On(lt::cache_flushed_alert const& alert)
 {
+    if (rename && (rename->phase == RenamePhase::Flushing || rename->phase == RenamePhase::Recovering))
+    {
+        std::erase(rename->waiting, alert.handle);
+        ContinueRename();
+    }
     auto torrent = Find(alert.handle);
     if (!torrent || !torrent->flushing)
     {
@@ -207,6 +237,7 @@ void Engine::State::On(lt::metadata_received_alert const& alert)
     }
     if (auto torrent = Find(alert.handle))
     {
+        PrepareFiles(*torrent);
         torrent->ApplyIntent();
         RecordHashes(*torrent, alert.handle.info_hashes());
     }

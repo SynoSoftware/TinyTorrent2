@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory)]
-    [ValidateSet('Frames', 'FailedCommit', 'CheckpointRetry', 'Restart', 'DiskError', 'PreviewGuard', 'RemoveKeepFiles', 'QueueOrder', 'SelectedTransfer', 'MagnetDownload', 'SettingsPolicy', 'CommittedFiles', 'FilesSafety')]
+    [ValidateSet('Frames', 'FailedCommit', 'CheckpointRetry', 'Restart', 'DiskError', 'PreviewGuard', 'RemoveKeepFiles', 'QueueOrder', 'SelectedTransfer', 'MagnetDownload', 'SettingsPolicy', 'CommittedFiles', 'FilesSafety', 'FileNames')]
     [string] $Check,
     [Parameter(Mandatory)]
     [string] $TorrentFile,
@@ -53,6 +53,7 @@ $script:sequence = 0
 $script:process = $null
 $script:pipe = $null
 $stalled = $null
+$heldFile = $null
 $peer = $null
 $peerDirectory = Join-Path $directory 'peer'
 
@@ -160,6 +161,125 @@ function Payload-Hash([string] $path) {
 try {
     $initial = Start-Engine
     switch ($Check) {
+        'FileNames' {
+            $content = [Text.Encoding]::ASCII.GetBytes(('x' * 2048))
+            $digest = [Security.Cryptography.SHA1]::HashData($content)
+            $identities = @()
+            foreach ($pieceLength in 16384, 32768) {
+                $fixture = Join-Path $directory ("shared-$pieceLength.torrent")
+                $prefix = [Text.Encoding]::ASCII.GetBytes("d4:infod6:lengthi2048e4:name10:shared.bin12:piece lengthi${pieceLength}e6:pieces20:")
+                $suffix = [Text.Encoding]::ASCII.GetBytes('7:privatei1eee')
+                [IO.File]::WriteAllBytes($fixture, [byte[]]($prefix + $digest + $suffix))
+                $preview = Send-Command @{ command = 'preview'; source = $fixture; destination = $payload }
+                Assert $preview.ok 'The unfinished-file fixture did not preview'
+                $reply = Send-Command @{ command = 'add'; preview_id = $preview.data.preview_id; destination = $payload }
+                Assert ($reply.ok -and -not $reply.data.duplicate) 'Distinct unfinished-file owners were merged or refused'
+                $identities += $reply.data.torrent_id
+                $files = (Send-Command @{ command = 'torrent'; torrent_id = $reply.data.torrent_id; view = 'files' }).data.files
+                Assert ($files[0].path -eq 'shared.bin' -and $files[0].disk_path -eq 'shared.bin.!tt') 'New payload did not keep its logical name and unfinished disk name'
+            }
+            Stop-Engine
+            $unfinished = Join-Path $payload 'shared.bin.!tt'
+            $finished = Join-Path $payload 'shared.bin'
+            [IO.File]::WriteAllBytes($unfinished, $content)
+            $originalHash = Payload-Hash $unfinished
+            $heldFile = [IO.File]::Open($unfinished, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
+            $log = Join-Path $directory 'engine.log'
+            foreach ($restart in 1, 2) {
+                $previous = if (Test-Path -LiteralPath $log) { @(Select-String -LiteralPath $log -Pattern ' rename ').Count } else { 0 }
+                $snapshot = Start-Engine
+                Assert ($snapshot.torrents.Count -eq 2) 'Restart lost an unfinished-file owner'
+                if ($restart -eq 1) {
+                    $until = [DateTime]::UtcNow.AddSeconds(15)
+                    do {
+                        $reply = Send-Command @{ command = 'verify'; torrent_ids = $identities }
+                        if ($reply.ok) { break }
+                        Assert ($reply.error.code -eq 'files_busy') 'The copied-in fixture bytes could not be verified'
+                        Start-Sleep -Milliseconds 100
+                    } while ([DateTime]::UtcNow -lt $until)
+                    Assert $reply.ok 'Restored filename preparation did not admit verification'
+                }
+                $until = [DateTime]::UtcNow.AddSeconds(15)
+                do {
+                    $attempts = if (Test-Path -LiteralPath $log) { @(Select-String -LiteralPath $log -Pattern ' rename ').Count } else { 0 }
+                    if ($attempts -gt $previous) { break }
+                    Start-Sleep -Milliseconds 100
+                } while ([DateTime]::UtcNow -lt $until)
+                if ($attempts -le $previous) {
+                    $failure = @{
+                        snapshot = (Send-Command @{ command = 'snapshot' }).data
+                        files = @($identities | ForEach-Object { (Send-Command @{ command = 'torrent'; torrent_id = $_; view = 'files' }).data })
+                    } | ConvertTo-Json -Depth 20
+                    [IO.File]::WriteAllBytes((Join-Path $directory 'failure.json'), [Text.Encoding]::UTF8.GetBytes($failure))
+                }
+                Assert ($attempts -gt $previous) 'Verified unfinished content never attempted its held-file rename'
+                foreach ($torrentId in $identities) {
+                    $files = (Send-Command @{ command = 'torrent'; torrent_id = $torrentId; view = 'files' }).data.files
+                    Assert ($files[0].disk_path -eq 'shared.bin.!tt' -and $files[0].downloaded -eq 2048) 'A held-file rename lost verified bytes or the saved physical name'
+                }
+                $rows = (Send-Command @{ command = 'snapshot' }).data.torrents
+                Assert (@($rows | Where-Object { $_.error }).Count -eq 0) 'A held-file rename became a download error'
+                Assert ((Payload-Hash $unfinished) -eq $originalHash -and -not (Test-Path -LiteralPath $finished)) 'A refused rename copied, replaced or damaged payload'
+                if ($restart -eq 1) { Stop-Engine }
+            }
+            $heldFile.Dispose()
+            $heldFile = $null
+            $until = [DateTime]::UtcNow.AddSeconds(40)
+            do {
+                $paths = @($identities | ForEach-Object {
+                    (Send-Command @{ command = 'torrent'; torrent_id = $_; view = 'files' }).data.files[0].disk_path
+                })
+                if (@($paths | Where-Object { $_ -ne 'shared.bin' }).Count -eq 0) { break }
+                Start-Sleep -Milliseconds 100
+            } while ([DateTime]::UtcNow -lt $until)
+            Assert (@($paths | Where-Object { $_ -ne 'shared.bin' }).Count -eq 0) 'Retry did not update every shared-file owner to the finished name'
+            Assert ((Payload-Hash $finished) -eq $originalHash -and -not (Test-Path -LiteralPath $unfinished)) 'Finishing changed the bytes or left a second payload copy'
+            $zone = $null
+            try { $zone = [IO.File]::OpenRead($finished + ':Zone.Identifier') }
+            catch [IO.FileNotFoundException] { }
+            finally { if ($zone) { $zone.Dispose() } }
+            Assert ($null -eq $zone) 'Verification marked existing bytes as a new Internet download'
+            Stop-Engine
+            $null = Start-Engine
+            foreach ($torrentId in $identities) {
+                $files = (Send-Command @{ command = 'torrent'; torrent_id = $torrentId; view = 'files' }).data.files
+                Assert ($files[0].disk_path -eq 'shared.bin' -and $files[0].downloaded -eq 2048) 'The completed shared-file names or verified bytes were lost at restart'
+            }
+            $reply = Send-Command @{ command = 'remove'; torrent_ids = $identities }
+            Assert $reply.ok 'The completed fixture could not be removed while keeping its files'
+            $empty = Join-Path $directory 'empty'
+            $null = New-Item -ItemType Directory -Path $empty
+            $identities = @()
+            foreach ($pieceLength in 16384, 32768) {
+                $preview = Send-Command @{ command = 'preview'; source = (Join-Path $directory "shared-$pieceLength.torrent"); destination = $empty }
+                Assert $preview.ok 'The use-existing fixture did not preview'
+                $reply = Send-Command @{ command = 'add'; preview_id = $preview.data.preview_id; destination = $empty }
+                Assert $reply.ok 'The use-existing fixture could not be added'
+                $identities += $reply.data.torrent_id
+            }
+            $reply = Send-Command @{ command = 'move'; torrent_ids = $identities; destination = $payload }
+            Assert $reply.ok 'The final-name collision preflight was not accepted'
+            $until = [DateTime]::UtcNow.AddSeconds(15)
+            do {
+                $rows = (Send-Command @{ command = 'snapshot' }).data.torrents
+                if (@($rows | Where-Object { $_.moving -or $_.error -ne 'destination_exists' }).Count -eq 0) { break }
+                Start-Sleep -Milliseconds 100
+            } while ([DateTime]::UtcNow -lt $until)
+            Assert (@($rows | Where-Object { $_.moving -or $_.error -ne 'destination_exists' -or $_.save_path -ne $empty }).Count -eq 0) 'An unfinished suffix concealed a collision with the final filename'
+            Assert ((Payload-Hash $finished) -eq $originalHash) 'Collision preflight changed the existing completed bytes'
+            $reply = Send-Command @{ command = 'move'; torrent_ids = $identities; destination = $payload; use_existing = $true }
+            Assert $reply.ok 'Explicit use of existing completed files was refused'
+            $until = [DateTime]::UtcNow.AddSeconds(15)
+            do {
+                $files = @($identities | ForEach-Object {
+                    (Send-Command @{ command = 'torrent'; torrent_id = $_; view = 'files' }).data.files[0]
+                })
+                if (@($files | Where-Object { $_.disk_path -ne 'shared.bin' -or $_.downloaded -ne 2048 }).Count -eq 0) { break }
+                Start-Sleep -Milliseconds 100
+            } while ([DateTime]::UtcNow -lt $until)
+            Assert (@($files | Where-Object { $_.disk_path -ne 'shared.bin' -or $_.downloaded -ne 2048 }).Count -eq 0) 'Use existing ignored the completed name and tried to download another copy'
+            Assert ((Payload-Hash $finished) -eq $originalHash -and -not (Test-Path -LiteralPath $unfinished)) 'Use existing damaged the completed bytes or created another payload'
+        }
         'FilesSafety' {
             $reply = Send-Command @{ command = 'session_pause'; paused = $true }
             Assert $reply.ok 'The file-safety session could not pause'
@@ -731,6 +851,7 @@ try {
     [pscustomobject]@{ Check = $Check; Passed = $true; Evidence = $directory } | ConvertTo-Json
 }
 finally {
+    if ($heldFile) { $heldFile.Dispose() }
     if ($peer -and -not $peer.HasExited) {
         $null = New-Item -ItemType File -Path (Join-Path $peerDirectory 'stop') -Force
         if (-not $peer.WaitForExit(15000)) { $peer.Kill(); $peer.WaitForExit() }

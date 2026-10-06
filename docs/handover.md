@@ -1,5 +1,24 @@
 # Implementation handover — 2026-10-05
 
+## File lifecycle milestone — 2026-10-06
+
+The fixed-behavior work #128/#129/#131 is now implemented: unfinished filenames
+with shared-owner rename and retry, best-effort download marking, original-
+extension Open, and the contracted client identity/bootstrap/announce defaults.
+The final engine build, offline FileNames, FilesSafety and CheckpointRetry pass.
+The bounded adversarial source gate closes after its second correction review
+with no remaining counted finding. Exact evidence and unverified native/live-
+download behavior are at the top of [morning-report.md](morning-report.md).
+Do not repeat these engine checks for subsequent UI-only changes.
+
+Preserve the owner's concurrent rounded inspector-card, file-list alignment,
+table-header and search changes. They intentionally supersede the earlier
+identical-header appearance and are not regressions merely because they differ.
+The source UI work remains outside this milestone commit. Continue the remaining
+narrow-width, native desktop and accessibility evidence work against its settled
+design, without restyling accepted surfaces or treating open agent-filed issues
+as proof of defects. The overall releasability goal remains active.
+
 ## Whole-tree and notifications checkpoint — 2026-10-06
 
 `3f6de13` commits the owner's authorized whole working diff, including concurrent

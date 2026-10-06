@@ -1,5 +1,4 @@
 using System.ComponentModel;
-using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Windows.Input;
 using Microsoft.UI.Windowing;
@@ -88,11 +87,7 @@ public sealed partial class MainWindow : Window
         Model.MergeRequested += async (_, _) => await ConfirmMerge();
         Model.MoveRequested += async (_, torrents) => await ShowFiles(torrents, FileAction.Move);
         Model.DeleteRequested += async (_, torrents) => await ShowFiles(torrents, FileAction.Delete);
-        Model.OpenRequested += (_, path) =>
-        {
-            try { Process.Start(new ProcessStartInfo(path) { UseShellExecute = true }); }
-            catch (Exception error) { Model.Report(error); }
-        };
+        Model.OpenRequested += (_, args) => Open(args);
         Model.CopyRequested += (_, text) =>
         {
             try { var content = new DataPackage(); content.SetText(text); Clipboard.SetContent(content); }

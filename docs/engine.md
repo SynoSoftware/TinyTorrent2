@@ -363,14 +363,16 @@ setting.
   gets its suffixed name through `add_torrent_params::renamed_files`. A file
   that already exists there keeps its name, so verification finds it instead of
   downloading it again.
-- When a file completes, `rename_file` gives it its real name in the same
-  folder, so finishing is always a rename and never a copy. If another program
+- When a file completes, Windows gives it its real name in the same folder,
+  without replacing an existing file, then `rename_file` updates libtorrent's
+  mapping. Finishing is always a rename and never a copy. If another program
   has the file open, Windows refuses the rename; the file keeps its suffix and
   the engine tries again later, without reporting a download error.
 - libtorrent saves the current names in the resume data, so they survive a
   restart.
-- The shared-files comparison ignores the suffix, so a file is the same file
-  before and after it finishes.
+- The shared-files comparison uses the torrent's original name and its actual
+  disk name, so a file is the same file before and after it finishes. It does
+  not strip suffixes from unrelated names that happen to end in `.!tt`.
 - Open on a file that is still downloading starts the program registered for
   its real extension, through `ShellExecuteEx` with `SEE_MASK_CLASSNAME`, so
   watching a video during a sequential download still works in players that

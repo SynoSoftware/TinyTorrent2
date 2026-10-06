@@ -61,6 +61,7 @@ enum class AdditionPhase
 {
     Adding,
     Moving,
+    Naming,
     Saving
 };
 
@@ -71,6 +72,15 @@ enum class RelocationPhase
     Moving,
     Saving,
     Unknown
+};
+
+enum class RenamePhase
+{
+    Waiting,
+    Flushing,
+    Moving,
+    Naming,
+    Recovering
 };
 
 enum class DeletionPhase

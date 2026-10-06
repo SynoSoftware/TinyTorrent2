@@ -57,8 +57,22 @@ void Engine::State::Stop()
     {
         return;
     }
+    if (!payload.IsIdle())
+        return;
     if (FilesBusy())
     {
+        if (rename)
+        {
+            if (!stepStarted)
+                stepStarted = std::chrono::steady_clock::now();
+            if (std::chrono::steady_clock::now() - *stepStarted >= stepTimeout)
+            {
+                saveFailure.emplace();
+                diagnostics.Write("shutdown", "", "rename_pending");
+                Finish();
+                return;
+            }
+        }
         bool unknown = (relocation && relocation->phase == RelocationPhase::Unknown) ||
             (deletion && deletion->phase == DeletionPhase::Unknown);
         if (!unknown)

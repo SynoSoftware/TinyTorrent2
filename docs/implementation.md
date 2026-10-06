@@ -1569,8 +1569,11 @@ strings in its saved `trackers` field, for existing action and check consumers.
 
 General supplies `folder`, `magnet`, `hashes`, metadata `comment`, `creator`,
 `created` (Unix seconds), `piece_size` (bytes), and `private` (null until metadata).
-Files supplies `metadata_ready` and indexed `files`, with relative `path`, byte
-`size`, `padding`, effective `priority`, and actual byte `downloaded` values.
+Files supplies `metadata_ready` and indexed `files`, with logical relative `path`,
+actual `disk_path`, byte `size`, `padding`, effective `priority`, and actual byte
+`downloaded` values. Resolve `disk_path` against `save_path` for file operations;
+display `path`. This preserves the torrent's name while unfinished payload uses
+the engine-owned `.!tt` name. The legacy combined detail includes both paths too.
 Peers supplies `peers`: endpoint, client, transport, incoming/encrypted facts,
 progress from 0 to 1, payload `download_rate`/`upload_rate` in bytes per second,
 and payload `downloaded`/`uploaded` byte counters.

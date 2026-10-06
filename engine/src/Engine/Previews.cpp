@@ -32,7 +32,10 @@ std::vector<std::string> Engine::State::SharedFiles(std::shared_ptr<lt::torrent_
         {
             continue;
         }
-        for (auto const& full : FilePaths(torrent))
+        auto paths = FilePaths(torrent);
+        auto physical = FilePaths(torrent, {}, false);
+        paths.insert(paths.end(), physical.begin(), physical.end());
+        for (auto const& full : paths)
         {
             if (std::binary_search(wanted.begin(), wanted.end(), full, PathBefore))
             {
@@ -47,12 +50,17 @@ std::vector<std::string> Engine::State::SharedFiles(std::shared_ptr<lt::torrent_
         {
             names.push_back(deletion->names);
         }
-        else
+        else if (relocation)
         {
             for (auto const& id : relocation->ids)
             {
                 names.push_back(torrents.at(id).Name());
             }
+        }
+        else if (rename)
+        {
+            for (auto const& owner : rename->owners)
+                names.push_back(torrents.at(owner.torrentId).Name());
         }
     }
     return names;

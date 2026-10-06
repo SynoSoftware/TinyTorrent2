@@ -67,7 +67,7 @@ public sealed partial class MainViewModel
     public event EventHandler? MergeRequested;
     public event EventHandler<Torrent[]>? MoveRequested;
     public event EventHandler<Torrent[]>? DeleteRequested;
-    public event EventHandler<string>? OpenRequested;
+    public event EventHandler<OpenRequestedEventArgs>? OpenRequested;
     public event EventHandler<string>? CopyRequested;
 
     internal Torrent? Find(IEnumerable<string> hashes) => Torrents.FirstOrDefault(torrent =>
@@ -243,9 +243,16 @@ public sealed partial class MainViewModel
             var detail = await Detail(torrent);
             var destination = detail.GetProperty("save_path").GetString()!;
             var files = detail.GetProperty("files").EnumerateArray().Where(file => !file.GetProperty("padding").GetBoolean()).ToArray();
-            var path = !folder && files.Length == 1 ? Path.Combine(destination, files[0].GetProperty("path").GetString()!) :
-                detail.GetProperty("folder").GetString()!;
-            OpenRequested?.Invoke(this, path);
+            var path = detail.GetProperty("folder").GetString()!;
+            string? extension = null;
+            if (!folder && files.Length == 1)
+            {
+                var logical = files[0].GetProperty("path").GetString()!;
+                var physical = files[0].TryGetProperty("disk_path", out var disk) ? disk.GetString()! : logical;
+                path = Path.Combine(destination, physical);
+                if (logical != physical) extension = Path.GetExtension(logical);
+            }
+            OpenRequested?.Invoke(this, new(path, extension));
         }
         catch (Exception error) { Report(error); }
     }
@@ -276,4 +283,10 @@ public sealed partial class MainViewModel
         Changed(nameof(HasInspector));
         return true;
     }
+}
+
+public sealed class OpenRequestedEventArgs(string path, string? extension = null) : EventArgs
+{
+    public string Path { get; } = path;
+    public string? Extension { get; } = extension;
 }

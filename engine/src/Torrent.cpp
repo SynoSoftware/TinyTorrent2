@@ -122,6 +122,30 @@ std::vector<std::filesystem::path> Paths(lt::torrent_info const& metadata)
     return paths;
 }
 
+std::vector<std::filesystem::path> Torrent::Paths(bool logical) const
+{
+    auto metadata = handle.torrent_file();
+    if (!metadata)
+    {
+        return {};
+    }
+    if (logical)
+    {
+        return tt::Paths(*metadata);
+    }
+    auto renames = handle.get_renamed_files();
+    lt::filenames names(metadata->layout(), renames);
+    std::vector<std::filesystem::path> paths;
+    for (auto index : names.file_range())
+    {
+        if (!metadata->layout().pad_file_at(index))
+        {
+            paths.push_back(Wide(names.file_path(index)));
+        }
+    }
+    return paths;
+}
+
 std::vector<std::string> Urls(std::vector<lt::announce_entry> const& trackers)
 {
     std::vector<std::string> urls;
@@ -238,7 +262,7 @@ std::string Torrent::Folder() const
 {
     std::filesystem::path folder = Wide(facts.savePath);
     auto metadata = handle.torrent_file();
-    auto paths = metadata ? Paths(*metadata) : std::vector<std::filesystem::path>{};
+    auto paths = metadata ? tt::Paths(*metadata) : std::vector<std::filesystem::path>{};
     if (paths.size() == 1)
     {
         return Utf8((folder / paths.front()).parent_path().wstring());
@@ -512,9 +536,12 @@ Json DescribeFiles(lt::torrent_handle const& handle,
     }
     auto priorities = handle.get_file_priorities();
     auto progress = handle.file_progress();
+    auto renames = handle.get_renamed_files();
+    lt::filenames names(metadata->layout(), renames);
     for (auto& file : data["files"])
     {
         auto index = file.at("index").get<size_t>();
+        file["disk_path"] = names.file_path(lt::file_index_t(static_cast<int>(index)));
         file["downloaded"] = index < progress.size() ? progress[index] : 0;
         if (index < priorities.size())
         {
@@ -634,7 +661,8 @@ void Torrent::ApplyIntent()
 {
     handle.set_flags(facts.sequential ? lt::torrent_flags::sequential_download : lt::torrent_flags_t{},
         lt::torrent_flags::sequential_download);
-    if (!conflict.empty() || moving || !facts.moveDestination.empty())
+    if (!conflict.empty() || moving || !facts.moveDestination.empty() ||
+        (handle.torrent_file() && !namesReady))
     {
         handle.unset_flags(lt::torrent_flags::auto_managed);
         handle.pause();
@@ -642,6 +670,8 @@ void Torrent::ApplyIntent()
     }
     auto metadata = handle.torrent_file();
     auto priorities = facts.priorities;
+    if (!metadata)
+        std::fill(priorities.begin(), priorities.end(), lt::dont_download);
     if (priorities.empty() && metadata)
     {
         priorities = DefaultPriorities(metadata->layout());

@@ -70,7 +70,7 @@
       <LanguageStandard>stdcpp23</LanguageStandard>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <AdditionalIncludeDirectories>$(MSBuildThisFileDirectory)..\inc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>NOMINMAX;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NOMINMAX;TT_VERSION=&quot;$(Version)&quot;;TT_VERSION_MAJOR=$([System.Version]::Parse('$(Version)').Major);TT_VERSION_MINOR=$([System.Version]::Parse('$(Version)').Minor);TT_VERSION_BUILD=$([System.Version]::Parse('$(Version)').Build);TT_VERSION_REVISION=$([System.Math]::Max(0, $([System.Version]::Parse('$(Version)').Revision)));%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>Precompiled.h</PrecompiledHeaderFile>
       <ForcedIncludeFiles>Precompiled.h;%(ForcedIncludeFiles)</ForcedIncludeFiles>

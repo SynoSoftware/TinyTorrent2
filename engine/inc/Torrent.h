@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <optional>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -70,6 +71,13 @@ struct Torrent
     std::string diskError;
     std::string notifiedError;
     bool receivedPayload = false;
+    lt::torrent_status::state_t fileState = lt::torrent_status::checking_resume_data;
+    bool namesReady = false;
+    bool preparingNames = false;
+    bool needsRecheck = false;
+    std::set<lt::file_index_t> completedFiles;
+    std::set<lt::file_index_t> renaming;
+    std::chrono::steady_clock::time_point renameAt{};
     // The torrent finished downloading, and libtorrent is still writing its
     // data to disk; until it ends, the torrent does not show as complete.
     bool flushing = false;
@@ -81,6 +89,7 @@ struct Torrent
     // Every hash the torrent is known by: its own and those the document saved.
     std::vector<std::string> Hashes() const;
     std::string Folder() const;
+    std::vector<std::filesystem::path> Paths(bool logical = false) const;
     std::optional<Problem> Error() const;
     std::optional<Problem> Diagnose() const;
     Status Classify(bool allPaused) const;

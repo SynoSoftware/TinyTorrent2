@@ -50,6 +50,7 @@ public:
         std::function<void(Outcome, Added)> done;
         lt::torrent_handle handle;
         AdditionPhase phase = AdditionPhase::Adding;
+        std::set<lt::file_index_t> renaming;
     };
 
     // The person's settings, saved in the document. A document that lacks a
@@ -183,6 +184,7 @@ public:
         // through another of them.
         std::vector<std::string> shared;
         std::vector<std::filesystem::path> files;
+        std::vector<std::filesystem::path> holds;
         // The selection's files that an outside torrent also uses.
         std::vector<std::filesystem::path> kept;
     };
@@ -208,6 +210,22 @@ public:
     };
     std::optional<Relocation> relocation;
     std::optional<Deletion> deletion;
+    struct Rename
+    {
+        struct Owner
+        {
+            std::string torrentId;
+            lt::file_index_t index;
+            std::string name;
+        };
+        std::vector<Owner> owners;
+        std::vector<lt::torrent_handle> waiting;
+        std::size_t current = 0;
+        std::filesystem::path source;
+        std::filesystem::path target;
+        RenamePhase phase = RenamePhase::Waiting;
+    };
+    std::optional<Rename> rename;
 
     using Resumes = std::map<std::string, lt::add_torrent_params>;
 
@@ -265,6 +283,8 @@ public:
         std::vector<lt::download_priority_t> chosen, std::shared_ptr<lt::torrent_info const> const& metadata);
     static bool IsChoice(lt::download_priority_t priority);
     void SaveAddition(std::string id, lt::torrent_handle handle);
+    static void PrepareNames(lt::add_torrent_params& params);
+    void PrepareAddition(std::string const& id, lt::torrent_handle handle);
     void CommitAddition(std::string const& id);
     void Abandon(std::string id, Outcome outcome, Added added = {});
     std::string MovingAddition(lt::torrent_handle const& handle) const;
@@ -287,7 +307,7 @@ public:
     static std::vector<std::filesystem::path> FilePaths(lt::torrent_info const& metadata,
         std::string const& folder);
     std::vector<std::filesystem::path> FilePaths(Torrent const& torrent,
-        std::string const& destination = {}) const;
+        std::string const& destination = {}, bool logical = true) const;
     Scope FileScope(std::vector<std::string> const& ids) const;
     Json Describe(std::vector<std::string> const& ids, Scope const& scope) const;
     bool FilesReady(std::vector<std::string> const& ids, Reply const& reply) const;
@@ -299,6 +319,16 @@ public:
     void On(lt::torrent_deleted_alert const& alert);
     void On(lt::torrent_delete_failed_alert const& alert);
     void RecoverFiles();
+    void PrepareFiles(Torrent& torrent);
+    void ContinueNames();
+    void FinishNames(Torrent& torrent);
+    void CompleteFiles(Torrent& torrent);
+    void FinishFiles(Torrent& torrent);
+    void ContinueRename();
+    void EndRename();
+    void On(lt::file_completed_alert const& alert);
+    void On(lt::file_renamed_alert const& alert);
+    void On(lt::file_rename_failed_alert const& alert);
     bool HoldsFiles(std::shared_ptr<lt::torrent_info const> const& metadata,
         std::string const& destination) const;
     void SetIntent(std::vector<std::string> const& ids, Intent intent, Reply reply);

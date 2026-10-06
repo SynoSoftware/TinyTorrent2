@@ -107,10 +107,98 @@ void Engine::State::Add(Preview& preview, Facts choices, std::function<void(Outc
     }
     else
     {
-        pending.params.userdata = &pending;
-        session->async_add_torrent(pending.params);
+        auto prepared = std::make_shared<lt::add_torrent_params>(pending.params);
+        payload.Run([prepared] { PrepareNames(*prepared); },
+            [this, id = pending.identity, prepared](StorageOutcome outcome)
+        {
+            auto found = additions.find(id);
+            if (found == additions.end())
+                return;
+            if (!outcome.succeeded)
+            {
+                Abandon(id, {ErrorCode::AddFailed, outcome.detail});
+                return;
+            }
+            auto& addition = found->second;
+            addition.params = std::move(*prepared);
+            addition.params.userdata = &addition;
+            session->async_add_torrent(addition.params);
+        });
     }
     previews.erase(previews.find(preview.identity));
+}
+
+void Engine::State::PrepareNames(lt::add_torrent_params& params)
+{
+    if (!params.ti)
+        return;
+    auto const& files = params.ti->layout();
+    for (auto index : files.file_range())
+    {
+        if (files.pad_file_at(index))
+            continue;
+        auto name = files.file_path(index);
+        auto root = std::filesystem::path(Wide(params.save_path));
+        auto path = root / Wide(name);
+        if (auto renamed = params.renamed_files.find(index); renamed != params.renamed_files.end())
+        {
+            if (renamed->second == name + ".!tt" &&
+                std::filesystem::symlink_status(root / Wide(renamed->second)).type() ==
+                    std::filesystem::file_type::not_found &&
+                std::filesystem::symlink_status(path).type() != std::filesystem::file_type::not_found)
+            {
+                params.renamed_files.erase(renamed);
+            }
+            continue;
+        }
+        if (std::filesystem::symlink_status(path).type() == std::filesystem::file_type::not_found)
+        {
+            params.renamed_files[index] = name + ".!tt";
+        }
+    }
+}
+
+void Engine::State::PrepareAddition(std::string const& id, lt::torrent_handle handle)
+{
+    auto& addition = additions.at(id);
+    addition.handle = handle;
+    addition.phase = AdditionPhase::Naming;
+    auto prepared = std::make_shared<lt::add_torrent_params>(addition.params);
+    if (!prepared->ti)
+        prepared->ti = handle.torrent_file();
+    if (!prepared->ti)
+    {
+        SaveAddition(id, handle);
+        return;
+    }
+    prepared->renamed_files = handle.get_renamed_files().export_filenames(prepared->ti->layout());
+    payload.Run([prepared] { PrepareNames(*prepared); }, [this, id, prepared](StorageOutcome outcome)
+    {
+        auto found = additions.find(id);
+        if (found == additions.end() || found->second.phase != AdditionPhase::Naming)
+            return;
+        if (!outcome.succeeded)
+        {
+            Abandon(id, {ErrorCode::AddFailed, outcome.detail});
+            return;
+        }
+        auto& addition = found->second;
+        addition.params.ti = prepared->ti;
+        addition.params.renamed_files = prepared->renamed_files;
+        auto current = addition.handle.get_renamed_files();
+        for (auto index : prepared->ti->layout().file_range())
+        {
+            auto desired = prepared->renamed_files.find(index);
+            auto name = desired == prepared->renamed_files.end() ? prepared->ti->layout().file_path(index) : desired->second;
+            if (current.file_path(prepared->ti->layout(), index) != name)
+            {
+                addition.renaming.insert(index);
+                addition.handle.rename_file(index, name);
+            }
+        }
+        if (addition.renaming.empty())
+            SaveAddition(id, addition.handle);
+    });
 }
 
 // Previews and adds a source as the window does when the person accepts the
@@ -236,6 +324,12 @@ void Engine::State::RecoverAdditions()
     std::vector<std::string> lost;
     for (auto& [id, addition] : additions)
     {
+        if (addition.phase == AdditionPhase::Naming)
+        {
+            if (!addition.renaming.empty())
+                lost.push_back(id);
+            continue;
+        }
         if (addition.phase == AdditionPhase::Saving)
         {
             continue;
@@ -246,7 +340,7 @@ void Engine::State::RecoverAdditions()
             if (addition.handle.is_valid() &&
                 SameFolder(addition.handle.status().save_path, addition.params.save_path))
             {
-                SaveAddition(id, addition.handle);
+                PrepareAddition(id, addition.handle);
             }
             else
             {
@@ -261,7 +355,7 @@ void Engine::State::RecoverAdditions()
             { return handle.userdata().get<Addition>() == &addition && !Find(handle); });
         if (found != live.end())
         {
-            SaveAddition(id, *found);
+            PrepareAddition(id, *found);
         }
         else
         {
@@ -289,7 +383,7 @@ void Engine::State::On(lt::add_torrent_alert const& alert)
     }
     if (!alert.error)
     {
-        SaveAddition(found->first, alert.handle);
+        PrepareAddition(found->first, alert.handle);
         return;
     }
     auto duplicate = Duplicate(alert.params.info_hashes);
@@ -313,7 +407,7 @@ void Engine::State::On(lt::storage_moved_alert const& alert)
     auto id = MovingAddition(alert.handle);
     if (!id.empty())
     {
-        SaveAddition(id, alert.handle);
+        PrepareAddition(id, alert.handle);
     }
 }
 
