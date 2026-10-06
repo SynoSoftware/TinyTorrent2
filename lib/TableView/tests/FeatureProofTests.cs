@@ -809,6 +809,8 @@ public class FeatureProofTests
         SelectionHarness h = await SelectionHarness.LoadAsync(6, height: 400);
         ListView list = h.HostedList();
         double rowHeight = ((FrameworkElement)list.ContainerFromItem(h[0])).ActualHeight;
+        h.Click(h[0]);
+        h.Click(h[1], shift: true);
 
         // Reordering is off by default, so no row can be dragged and the press selects the row as
         // a click would.
@@ -831,13 +833,38 @@ public class FeatureProofTests
             "the rectangle covers the row it started on and the rows swept below it");
 
         Assert.IsTrue((bool)Proof.Call(h.Table, "CancelCommittedGesture")!, "Escape ends it");
-        Assert.AreEqual(
-            0, h.SelectedKeys().Length, "and the selection the gesture started from comes back");
+        CollectionAssert.AreEqual(new[] { "k0", "k1" }, h.SelectedKeys());
+        Assert.AreSame(h[1], h.Table.Selection.Current, "Escape restores the pre-press current row.");
+        h.Click(h[2], shift: true);
+        CollectionAssert.AreEqual(new[] { "k0", "k1", "k2" }, h.SelectedKeys(),
+            "The next range still starts at the pre-press anchor.");
 
         // Once reordering is on the same press is the drag: the rule never guesses between the two.
         h.Table.CanReorder = true;
         Gesture.Press(h, row: h[2], item: h[2], originY: rowHeight * 2.5);
         Assert.AreEqual("RowDrag", Proof.Call(h.Table, "GestureAtThreshold")!.ToString());
+        Proof.Call(h.Table, "CancelGesture");
+    });
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public Task DeferredRelease(bool replace) => TestHost.RunAsync(async () =>
+    {
+        SelectionHarness h = await SelectionHarness.LoadAsync(4);
+        Row pressed = h[1];
+        h.Click(pressed);
+        Gesture.Press(h, pressed, pressed);
+
+        Row? replacement = replace ? new Row(pressed.Key) : null;
+        if (replacement is not null) h.Rows[1] = replacement;
+        else h.Rows.Remove(pressed);
+
+        Proof.Call(h.Table, "DispatchClick");
+        Assert.AreSame(replacement, h.Table.Selection.Current,
+            "A release uses the current row instance, or keeps a removed row cleared.");
+        Assert.AreEqual(replace ? 1 : 0, h.Table.Selection.Items.Count);
+        if (replacement is not null) Assert.AreSame(replacement, h.Table.Selection.Items[0]);
         Proof.Call(h.Table, "CancelGesture");
     });
 
@@ -1518,7 +1545,6 @@ public class FeatureProofTests
             Proof.SetField(h.Table, "_gestureItem", item);
             Proof.SetField(h.Table, "_gestureCtrl", ctrl);
             Proof.SetField(h.Table, "_gestureShift", shift);
-            Proof.SetField(h.Table, "_gestureSelection", h.Table.Selection.Items);
 
             bool couldDrag = item is not null
                 && (bool)Proof.Call(h.Table, "CanBeginRowDrag", item)!;

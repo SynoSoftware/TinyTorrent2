@@ -2,6 +2,15 @@
 
 ## Current continuation — 2026-10-06
 
+The remaining #54 marquee rollback and stale deferred-click defects are fixed.
+Three focused gesture cases and four existing in-process UIA selection cases
+pass; source adversarial review and the app build pass. No visual layout changed.
+Exact evidence is at the top of [morning-report.md](morning-report.md). A fresh
+broader capture review is in progress, and whole-product release acceptance stays
+open. Keep the owner's concurrent UI work out of this selection-only commit.
+
+## Keyboard and contrast continuation — 2026-10-06
+
 The TableView keyboard/header and caption contrast corrections are settled.
 One app build passes, the complete 300-torrent library capture passes, and native
 focus reveals the last header in LTR/RTL without moving the rows. Bounded source

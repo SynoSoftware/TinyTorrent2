@@ -67,6 +67,16 @@ internal sealed class SelectionState
     /// <summary>Logical row focus. Not the same thing as physical keyboard focus.</summary>
     internal object? Focus { get; private set; }
 
+    internal sealed record Checkpoint(object[] Items, object? Current, object? Anchor, object? Focus);
+
+    internal Checkpoint Capture() => new(_selected.ToArray(), Current, Anchor, Focus);
+
+    internal void Restore(Checkpoint checkpoint, IReadOnlyList<object> view)
+    {
+        Apply(new List<object>(checkpoint.Items), checkpoint.Current, checkpoint.Anchor, checkpoint.Focus);
+        Reconcile(view);
+    }
+
     internal bool AllowsMultiple =>
         Mode is ListViewSelectionMode.Multiple or ListViewSelectionMode.Extended;
 

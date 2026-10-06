@@ -1,5 +1,48 @@
 # Morning report
 
+## Selection cancellation milestone — 2026-10-06
+
+The remaining concrete #54 gesture defects are corrected. A press captures the
+selection's items, current row, range anchor and logical focus together.
+Cancelling a marquee restores that checkpoint through the existing reconciliation
+owner, so unavailable rows are pruned and replacement instances are resolved.
+Escape, withdrawal, unload and system cancellation share this restore path.
+Completion and capture loss retain the result; an explicit host selection still
+wins. Deferred release uses the existing current-row resolver, so a removed or
+replaced pressed row cannot become stale current selection.
+
+The strengthened existing marquee check starts with different current and anchor
+rows, cancels a rectangle, and checks both the restored current and the next
+Shift range. Its old selected-items-only assertion missed this failure. The new
+two-case `DeferredRelease` check covers removal and same-key replacement while
+pressed, which source reconciliation alone did not protect from a later release.
+Both checks call the existing private gesture operations in the native test host;
+they do not inject pointer or keyboard input or claim physical gesture coverage.
+
+- `artifacts/selection-cancel-tests-build.log`: 25.94 seconds, zero warnings or
+  errors; TableView and its test host compiled, Lucide was reused.
+- `artifacts/TestResults/selection-cancel/selection-cancel.trx`: all three cases
+  passed, 2.03 seconds for the run.
+- Four existing, previously unverified UIA selection checks passed in
+  `artifacts/TestResults/selection-automation/selection-automation.trx`, 1.80
+  seconds, using the same binary. They prove in-process native provider behavior
+  for unrealized rows, replacement, Single/None modes and unavailable rows.
+  This closes that bounded #40 evidence gap; Narrator and external UIA clients
+  remain unverified. No new automation tests were added.
+- `artifacts/selection-cancel-app.log`: 41.20 seconds, zero warnings or errors;
+  only the app compiled, reusing the current TableView and Lucide outputs.
+- Adversarial source review found zero counted defects. No layout or visual
+  styling changed, so no new image matrix was justified. All test hosts exited;
+  output-location scans were empty. No engine build, engine check, full suite
+  or external desktop automation ran.
+
+The prior keyboard/contrast milestone is committed as `245479e`. A fresh broader
+capture review is now in progress; this selection checkpoint does not claim
+whole-product release acceptance. Preserve the owner's concurrent UI diff.
+Advisory #56's dynamic padding and programmatic hidden-column sorting are not
+exposed application operations (the app sets only its initial Queue sort), so
+they remain library concerns rather than expanding this release correction.
+
 ## Table keyboard and contrast milestone — 2026-10-06
 
 TableView now reveals a focused header or cell through its existing horizontal

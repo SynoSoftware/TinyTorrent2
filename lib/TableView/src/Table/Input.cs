@@ -56,7 +56,7 @@ public sealed partial class Table
     private bool _gestureCouldDrag;
 
     /// <summary>The selection as it stood at press, restored if a committed gesture is cancelled.</summary>
-    private IReadOnlyList<object> _gestureSelection = Array.Empty<object>();
+    private SelectionState.Checkpoint? _gestureSelection;
 
     /// <summary>
     /// Section 16's moving packet, resolved once when the drag begins. Nothing can move the
@@ -164,8 +164,6 @@ public sealed partial class Table
         _gestureItem = item;
         _gestureCtrl = IsDown(VirtualKey.Control);
         _gestureShift = IsDown(VirtualKey.Shift);
-        _gestureSelection = SelectedItems;
-
         _gestureCouldDrag = item is not null && CanBeginRowDrag(item);
 
         ApplyPress();
@@ -308,7 +306,8 @@ public sealed partial class Table
     {
         if (_gesture == RowGesture.Marquee && e.Pointer.PointerId == _gesturePointerId)
         {
-            Selection = new(_gestureSelection, _selection.Current);
+            RestoreSelectionBeforeMarquee();
+            CommitSelection();
         }
 
         CancelGesture();
@@ -356,6 +355,7 @@ public sealed partial class Table
     /// </remarks>
     private void ApplyPress()
     {
+        _gestureSelection = _selection.Capture();
         _gestureDeferred = _gestureItem is null
             || (!_gestureCtrl && !_gestureShift
                 && (_selection.IsSelected(_gestureItem) || _gestureCouldDrag));
@@ -400,8 +400,9 @@ public sealed partial class Table
     /// <summary>Section 13's click, tap, and Space selection, applied through one model operation.</summary>
     private void SelectItem(object item, bool ctrl, bool shift)
     {
+        if (ResolveItem(item) is not { } current) return;
         SyncSelectionPolicy();
-        _selection.Select(item, ctrl, shift, View);
+        _selection.Select(current, ctrl, shift, View);
         CommitSelection();
     }
 
@@ -476,7 +477,7 @@ public sealed partial class Table
         _gestureItem = null;
         _gestureDeferred = false;
         _gestureCouldDrag = false;
-        _gestureSelection = Array.Empty<object>();
+        _gestureSelection = null;
         _movingPacket = Array.Empty<object>();
 
         if (wasDragging)
@@ -534,7 +535,7 @@ public sealed partial class Table
     /// <summary>Ctrl: each covered row flips against the selection as it stood at press.</summary>
     private List<object> MarqueeToggledAgainstStart()
     {
-        HashSet<object> started = new(_gestureSelection, _identity);
+        HashSet<object> started = new(_gestureSelection!.Items, _identity);
         HashSet<object> covered = new(MarqueeCovered(), _identity);
 
         List<object> items = new();
@@ -555,7 +556,7 @@ public sealed partial class Table
         int anchor = IndexInView(_selection.Anchor);
         if (anchor < 0 || _marquee.CoveredIndices.Count == 0)
         {
-            return new List<object>(_gestureSelection);
+            return new List<object>(_gestureSelection!.Items);
         }
 
         int low = Math.Min(anchor, _marquee.LowestCovered);
@@ -584,9 +585,10 @@ public sealed partial class Table
             return;
         }
 
-        List<object> restored = new(_gestureSelection);
+        SelectionState.Checkpoint restored = _gestureSelection!;
         CancelGesture();
-        _selection.SetMarqueeSelection(restored, View);
+        SyncSelectionPolicy();
+        _selection.Restore(restored, View);
     }
 
     // ------------------------------------------------------------------ row drag
