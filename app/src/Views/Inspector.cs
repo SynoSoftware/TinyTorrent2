@@ -71,7 +71,14 @@ public sealed class Inspector : INotifyPropertyChanged
     public string TrackerInput
     {
         get => _trackerInput;
-        set { if (_trackerInput == value) return; _trackerInput = value; _editFailure = null; Refresh(); }
+        set
+        {
+            value = value.ReplaceLineEndings("\n");
+            if (_trackerInput == value) return;
+            _trackerInput = value;
+            _editFailure = null;
+            Refresh();
+        }
     }
     // The engine keeps a five-minute and a day history; the longer ranges all
     // show part of the day history, so switching among them reads nothing new.
@@ -300,8 +307,8 @@ public sealed class Inspector : INotifyPropertyChanged
 
     private void BeginTrackers()
     {
-        _trackerOriginal = string.Join(Environment.NewLine + Environment.NewLine, Trackers.GroupBy(tracker => tracker.Tier)
-            .OrderBy(group => group.Key).Select(group => string.Join(Environment.NewLine, group.Select(tracker => tracker.Url))));
+        _trackerOriginal = string.Join("\n\n", Trackers.GroupBy(tracker => tracker.Tier)
+            .OrderBy(group => group.Key).Select(group => string.Join("\n", group.Select(tracker => tracker.Url))));
         _trackerInput = _trackerOriginal;
         _editingTrackers = true;
         _editFailure = null;
@@ -314,7 +321,7 @@ public sealed class Inspector : INotifyPropertyChanged
         if (_trackerInput == _trackerOriginal) { CancelTrackerDraft(); return; }
         var trackers = new List<object>();
         var tier = 0;
-        foreach (var line in _trackerInput.Replace("\r", string.Empty).Split('\n'))
+        foreach (var line in _trackerInput.Split('\n'))
         {
             var url = line.Trim();
             if (url.Length == 0) { tier++; continue; }

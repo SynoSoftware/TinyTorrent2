@@ -1,5 +1,20 @@
 # Implementation handover — 2026-10-05
 
+## Multiline tracker save milestone — 2026-10-06
+
+The native multiline tracker editor was joining CR-separated URLs on Save.
+Inspector now normalizes its draft to LF; the exact four-URL/two-tier Save,
+untouched reopen, language/focus retention and original-list restore pass.
+Source review passes. Build and run IDs are recorded at the top of
+[morning-report.md](morning-report.md).
+
+Fresh review of the twelve populated Trackers captures found narrow inspector
+clipping behind the footer. Correct its sizing from available parent space,
+preserving the owner's accepted toolbar and visual design, then recapture and
+re-review only that correction. The ordinary build was interrupted, so its
+output is not current evidence. Preserve concurrent Pieces, pipe, hierarchy,
+toolbar and engine edits; none are made release-ready by this tracker check.
+
 ## Native row selection milestone — 2026-10-06
 
 The owner rejected the selected-row stripe. It is removed; native selection

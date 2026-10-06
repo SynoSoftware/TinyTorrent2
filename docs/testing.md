@@ -70,8 +70,7 @@ Failures worth watching:
   every field or enum.
 - An invariant, pinned once. One test of the rule beats twelve rows of examples.
 - A defect already paid for, that a plausible simplification would bring back.
-  The selected-row cue that measured 1.08:1 against its 3:1 requirement is one.
-  These tests are the memory of a measured failure, and they stay.
+  These tests preserve the evidence while the protected behavior remains required.
 - A rule that nothing else guards.
 
 **Presentation is reviewed in the product, never asserted.** Screen text, labels,
@@ -233,7 +232,10 @@ Its restart handshake affects only the launcher's own fixture engine; it does
 not automate the desktop or establish native notification/power behavior.
 Use `TINYTORRENT_CAPTURE_REVIEW=details` for the native priority, tracker,
 live-language and preference recovery journeys without repeating the full
-layout matrix.
+layout matrix. It captures populated Trackers in both languages and themes at
+the three review sizes after saving several URLs and tiers through the real
+editor, then restores the original list. The disposable fixture stays paused;
+this establishes populated layout and edit outcomes, not live tracker responses.
 `details-files` limits correction captures to Files and localized selected
 Settings choices; it does not repeat those behavioral journeys.
 Use `TINYTORRENT_CAPTURE_REVIEW=files` with the disposable files launcher for

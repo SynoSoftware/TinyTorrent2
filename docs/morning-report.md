@@ -1,5 +1,40 @@
 # Morning report
 
+## Multiline tracker save milestone — 2026-10-06
+
+The populated details journey exposed a product bug: WinUI's multiline TextBox
+returned CR-only separators, and the tracker parser deleted them. Four entered
+URLs became one concatenated URL in the disposable store. The failed run is
+`UiSelfCapture-e9d66782-86da-49f5-a048-e782510e110b`; it recorded four CRs and
+zero LFs. Inspector now normalizes input to LF at its existing draft boundary,
+constructs the original text in that same form, and splits on LF when saving.
+Opening an unchanged multiline list also no longer creates a false draft.
+
+Source review found no remaining defect. `trackers-line-endings-app.log` passed
+in 69.98 seconds with zero warnings/errors. It compiled the app and TableView's
+two WinUI passes each: concurrent hierarchy sources arrived before the build.
+Source hashes stayed unchanged throughout it. The focused run
+`UiSelfCapture-44e1e715-9e3c-47b6-b3c0-ed5760bab8d6` passed in 13.37 seconds:
+four exact URLs/two tiers saved, language/input/model/focus retained, untouched
+reopening created no draft, and the original tracker list and preference were
+restored. Its own UI/engine exited; output scans were empty. No suite ran and
+no engine was rebuilt. This proves the app correction with the existing engine
+binary, not the owner's subsequent engine edits or live tracker responses.
+
+The fresh image-only reviewer inspected all twelve populated Trackers variants
+and the draft. It found one narrow-layout defect: the inspector extends behind
+the footer, hiding lower rows and its horizontal scrollbar. Captured bounds
+confirm that the inner grid reports 486 DIPs while its workspace has only 397.
+That correction is in progress separately; the tracker data fix is verified.
+Requested 720 widths remain clamped to 837 English / 863 Spanish client widths.
+Physical keyboard, Narrator and High Contrast remain unverified.
+
+The ordinary `trackers-line-endings-release.log` stopped during TableView XAML
+compilation without a completion record; its execution handle is gone and no
+build controller remains. Do not count it as a pass. The successful capture
+build supplies compilation evidence for this milestone. Concurrent owner
+toolbar, Pieces, pipe, hierarchy and engine work remains separate.
+
 ## Native row selection milestone — 2026-10-06
 
 The owner rejected the vertical selected-row stripe. It was already in initial

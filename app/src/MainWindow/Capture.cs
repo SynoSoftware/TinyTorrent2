@@ -682,24 +682,62 @@ public sealed partial class MainWindow
         await CaptureLayout();
         var editor = CaptureElements(InspectorContent).OfType<TextBox>().Single(control => control.Name == "TrackerInput");
         var originalInput = editor.Text;
-        const string trackerInput = "https://example.invalid/details";
+        var populated = new (string Url, int Tier)[]
+        {
+            ("https://example.invalid/announce", 0),
+            ("https://example.invalid/private/trackers/announce?passkey=0123456789abcdef0123456789abcdef&source=tinytorrent&region=western-europe", 0),
+            ("udp://example.invalid:6969/announce", 1),
+            ("https://example.invalid/backup/announce", 1)
+        }.ToHashSet();
+        var trackerInput = string.Join(Environment.NewLine + Environment.NewLine, populated.GroupBy(tracker => tracker.Tier)
+            .OrderBy(tier => tier.Key).Select(tier => string.Join(Environment.NewLine, tier.Select(tracker => tracker.Url))));
         editor.Focus(FocusState.Programmatic);
         editor.Text = trackerInput;
+        await CaptureLayout();
+        var nativeInput = editor.Text;
+        var modelInput = Model.Inspector.TrackerInput;
         var language = Model.Text.Language == "en" ? "es" : "en";
         Model.SelectLanguage(language);
         await CaptureReady(Model, () => Model.CanClose && Model.Text.Language == language);
         await CaptureLayout();
-        if (editor.Text != trackerInput || Model.Inspector.TrackerInput != trackerInput || !Model.Inspector.HasDraft ||
-            !ReferenceEquals(FocusManager.GetFocusedElement(Root.XamlRoot), editor))
+        var inputRetained = editor.Text == nativeInput;
+        var modelRetained = Model.Inspector.TrackerInput == modelInput;
+        var focusRetained = ReferenceEquals(FocusManager.GetFocusedElement(Root.XamlRoot), editor);
+        outcomes.Add(new { journey = "language switch with tracker draft", inputRetained, modelRetained, focusRetained,
+            draftRetained = Model.Inspector.HasDraft, inputCanonicalized = nativeInput != trackerInput,
+            carriageReturns = nativeInput.Count(character => character == '\r'), lineFeeds = nativeInput.Count(character => character == '\n'),
+            focusSource = "programmatic native focus", language });
+        if (!inputRetained || !modelRetained || !Model.Inspector.HasDraft || !focusRetained)
             throw new InvalidOperationException("The live language switch lost tracker input or focus.");
-        outcomes.Add(new { journey = "language switch with tracker draft", inputRetained = true, focusRetained = true, focusSource = "programmatic native focus", language });
         await CapturePage("details-live-tracker-draft", InspectorContent.Content as FrameworkElement);
+        if (!Model.AllPaused) throw new InvalidOperationException("The tracker capture requires a globally paused fixture.");
         CaptureInvoke(FindButton("SaveTrackers"));
         await CaptureReady(Model.Inspector, () => !Model.Inspector.IsEditingTrackers && !Model.Inspector.IsPending && !Model.Inspector.IsLoading &&
-            Model.Inspector.Trackers.Any(tracker => tracker.Url == trackerInput));
-        outcomes.Add(new { journey = "native tracker save", confirmed = true });
+            populated.SetEquals(Model.Inspector.Trackers.Select(tracker => (tracker.Url, tracker.Tier))));
+        outcomes.Add(new { journey = "native tracker save", confirmed = true, count = populated.Count, tiers = new[] { 0, 1 }, globalPaused = Model.AllPaused });
+        foreach (var captureLanguage in new[] { "en", "es" })
+        foreach (var theme in new[] { "light", "dark" })
+        {
+            await Model.Preferences.SelectTheme(theme);
+            await CaptureReady(Model, () => Model.CanClose && Model.Theme == theme);
+            Model.SelectLanguage(captureLanguage);
+            await CaptureReady(Model, () => Model.CanClose && Model.Text.Language == captureLanguage);
+            await CaptureLayout();
+            foreach (var size in new[] { new SizeInt32(720, 560), new SizeInt32(1040, 680), new SizeInt32(1280, 800) })
+            {
+                if (!Model.AllPaused) throw new InvalidOperationException("The populated tracker capture lost global pause.");
+                var scale = Root.XamlRoot.RasterizationScale;
+                var minimum = ((Microsoft.UI.Windowing.OverlappedPresenter)AppWindow.Presenter).PreferredMinimumWidth ?? 0;
+                AppWindow.Resize(new SizeInt32(Math.Max((int)Math.Round(size.Width * scale), minimum), (int)Math.Round(size.Height * scale)));
+                await CapturePage($"details-{captureLanguage}-{theme}-{size.Width}x{size.Height}-trackers", InspectorContent.Content as FrameworkElement);
+                outcomes.Add(new { journey = "populated tracker capture", language = captureLanguage, theme, requestedWidth = size.Width,
+                    requestedHeight = size.Height, clientWidth = AppWindow.ClientSize.Width, count = Model.Inspector.Trackers.Count, globalPaused = Model.AllPaused });
+            }
+        }
         CaptureInvoke(FindButton("EditTrackers"));
         await CaptureLayout();
+        if (Model.Inspector.HasDraft) throw new InvalidOperationException("Reopening the saved tracker list created an untouched draft.");
+        outcomes.Add(new { journey = "untouched populated tracker editor", draftCreated = false, count = Model.Inspector.Trackers.Count });
         editor = CaptureElements(InspectorContent).OfType<TextBox>().Single(control => control.Name == "TrackerInput");
         editor.Text = originalInput;
         CaptureInvoke(FindButton("SaveTrackers"));
