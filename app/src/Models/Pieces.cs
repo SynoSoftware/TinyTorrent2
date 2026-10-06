@@ -60,8 +60,9 @@ public sealed class Pieces
         return counts;
     }
 
-    internal static string Label(Strings text, PieceKind kind, int count) =>
-        text.Format("pieces", "count", text.Get("pieces", kind.ToString().ToLowerInvariant()), count);
+    internal static string Name(Strings text, PieceKind kind) => text.Get("pieces", kind.ToString().ToLowerInvariant());
+
+    private static string Label(Strings text, PieceKind kind, int count) => text.Format("pieces", "count", Name(text, kind), count);
 
     internal string Summary(Strings text)
     {

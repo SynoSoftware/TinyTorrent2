@@ -1,5 +1,13 @@
 # Implementation handover — 2026-10-05
 
+## Pieces presentation checkpoint — 2026-10-06
+
+Startup is committed as `dbb67d1`. The owner's Pieces presentation changes pass
+source review, current app compilation and twelve image reviews; preserve the
+accepted tiles and legend layout. Current rendered evidence covers one missing
+piece only. Mixed/aggregate states, progress fills and actual High Contrast remain
+unverified, as do the broader release gaps. Exact evidence is in the morning report.
+
 ## Desktop startup checkpoint — 2026-10-06
 
 Registration is committed as `1706002`; Files hierarchy is `d23778a`. The settled

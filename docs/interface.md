@@ -945,9 +945,9 @@ detail work.
 
 The Pieces map answers two questions: how far the download has come, and whether
 it can finish. It states the answer in words, because a grid of colours alone
-leaves the user to work out the conclusion. Square size, the drawing of squares
-that cover several pieces, the rare limit, and the colours follow the previous
-TinyTorrent map; change them only when the
+leaves the user to work out the conclusion. Square size and the rare limit
+follow the previous TinyTorrent map, and the squares are filled tiles without
+outlines, as that map's were; change them only when the
 [implementation review](#implementation-review) shows a better choice in use.
 
 - **States.** A piece is *verified* when the engine has checked it, and
@@ -963,27 +963,36 @@ TinyTorrent map; change them only when the
   number of unavailable pieces and the files they belong to. Naming the files
   lets the user skip them and let the rest finish. A list of files, here and in
   the tooltip, names the first three and counts the rest, so a long list cannot
-  push the map out of view or fill the screen; Files lists every file.
-- **Legend.** Under the status, one row shows each state with its swatch and its
-  count, then the piece count and piece size. The counts are the legend, so the
-  two cannot disagree. The row wraps when the panel is narrow.
+  push the map out of view or fill the screen; Files lists every file. Under the
+  sentence, in secondary text, are the piece count and piece size.
+- **Legend.** Under the status, one row shows each state with its swatch, its
+  name, and its count in semibold, as the Speed legend shows its values. The
+  counts are the legend, so the two cannot disagree. Entries share one width, so
+  they line up in columns when the row wraps in a narrow panel.
 - **Squares.** Squares keep one readable size and sit in groups, so the eye
   keeps its place. They never shrink: when the torrent has more pieces than fit,
-  each square covers an equal, contiguous range of pieces. The map is centred
-  and aligned to the top. In a
-  right-to-left language the first piece is at the top right, as a progress bar
-  starts at the right.
+  the squares fill the space under the legend completely, and each covers a
+  contiguous range of pieces that differs from the others by at most one piece.
+  The map starts at the same edge as the status and legend and is aligned to the
+  top. In a right-to-left language the first piece is at the top right, as a
+  progress bar starts at the right.
 - **Squares that cover several pieces** show the state most of their pieces
   have; on a tie the worse state wins, in the order unavailable, rare, common,
   missing, downloading, verified. A square that holds more than one state gets a
-  small triangle in its top-right corner, so the user knows its colour does not
+  small dot in its top-right corner, so the user knows its colour does not
   describe every piece. A square that holds an unavailable piece but shows
-  another state also gets a triangle in its bottom-left corner in the
-  unavailable colour, so a piece that can stop the download is never hidden by
-  a healthier majority. Its corner carries the meaning without colour.
-- **Drawing.** Use Fluent theme colours. A downloading square shows how much
-  of it has arrived, so progress moves while the user watches. Fill, hatching,
-  and border keep every state readable without colour.
+  another state also gets a dot in its bottom-left corner in the unavailable
+  colour, so a piece that can stop the download is never hidden by a healthier
+  majority. Its corner carries the meaning without colour.
+- **Drawing.** Squares are tiles with the Fluent control corner radius, filled
+  with Fluent theme colours and drawn without outlines: verified is solid, a
+  downloading square fills as its data arrives, so progress moves while the user
+  watches, common is a light accent tint, missing is neutral, rare is hatched,
+  and unavailable is crossed. The solid fill, the partial fill, the hatching,
+  and the cross keep the states apart without colour; missing needs no mark of
+  its own, because it appears only while common, rare, and unavailable cannot.
+  In High Contrast, system colours replace the fills, so every square also gets
+  an outline, as Fluent controls do there.
 - **Pointer and keyboard.** The map is one focus stop with one selected square,
   which the arrow keys, Home, End, and a click move; it shows the focus outline
   while the map has focus. Pointing at a square gives it a thinner outline

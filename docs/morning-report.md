@@ -1,5 +1,20 @@
 # Morning report
 
+## Pieces presentation checkpoint — 2026-10-06
+
+The owner's Pieces changes share one palette between legend and map, align legend
+entries when wrapping, and use the available map cells for near-equal contiguous
+ranges. The accepted filled tiles and corner dots replace outlines and triangles
+in ordinary themes; High Contrast retains system-color outlines. Source review
+found zero concrete blockers and the current capture build includes these files.
+
+The twelve Pieces views from
+`LibraryCapture-5cc7b53c-434a-4cf1-9f43-d46f9adf9213` passed independent visual review
+in EN/ES, Light/Dark and all three sizes. This is one missing piece with no peers:
+mixed/aggregate states, progress fills and High Contrast still need current
+rendered evidence. No live transfer or broad test was run for this presentation
+checkpoint. Startup is committed as `dbb67d1`.
+
 ## Desktop startup checkpoint — 2026-10-06
 
 Registration is committed as `1706002`. The owner's settled startup changes keep

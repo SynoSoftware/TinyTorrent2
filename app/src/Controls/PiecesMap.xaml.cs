@@ -1,9 +1,11 @@
+using System.Globalization;
 using System.Runtime.InteropServices.WindowsRuntime;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Automation.Provider;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Documents;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
@@ -51,7 +53,8 @@ public sealed partial class PiecesMap : UserControl
     }
 
     private Border[] Swatches() => [UnavailableSwatch, RareSwatch, CommonSwatch, MissingSwatch, DownloadingSwatch, VerifiedSwatch];
-    private TextBlock[] Labels() => [UnavailableLabel, RareLabel, CommonLabel, MissingLabel, DownloadingLabel, VerifiedLabel];
+    private Run[] Labels() => [UnavailableLabel, RareLabel, CommonLabel, MissingLabel, DownloadingLabel, VerifiedLabel];
+    private Run[] Totals() => [UnavailableCount, RareCount, CommonCount, MissingCount, DownloadingCount, VerifiedCount];
 
     internal void Show(Pieces? data, Strings text)
     {
@@ -67,8 +70,12 @@ public sealed partial class PiecesMap : UserControl
             Summary.Text = data?.Summary(text) ?? text.Get("pieces", "metadata");
             var counts = data?.Counts(0, data.Count);
             var labels = Labels();
+            var totals = Totals();
             foreach (var kind in Enum.GetValues<PieceKind>())
-                labels[(int)kind].Text = Pieces.Label(text, kind, counts?[(int)kind] ?? 0);
+            {
+                labels[(int)kind].Text = Pieces.Name(text, kind);
+                totals[(int)kind].Text = (counts?[(int)kind] ?? 0).ToString("N0", CultureInfo.CurrentCulture);
+            }
             PieceCount.Text = text.FormatCount("pieces", "size", data?.Count ?? 0, text.Bytes(data?.PieceSize ?? 0));
             MeasureLegend();
             AutomationProperties.SetName(this, text.Get("inspector", "pieces"));
@@ -129,11 +136,20 @@ public sealed partial class PiecesMap : UserControl
         var revision = _revision;
         try
         {
-            var palette = Swatches().Select(swatch => ((SolidColorBrush)swatch.Background).Color)
-                .Append(((SolidColorBrush)Ink.Foreground).Color).ToArray();
-            palette[(int)PieceKind.Unavailable] = ((SolidColorBrush)UnavailableSwatch.BorderBrush).Color;
+            var palette = new Palette
+            {
+                Fills = [.. Swatches().Select(swatch => Read(swatch.Background))],
+                Received = Read(Received.Background),
+                Hatch = Read(Hatch.Stroke),
+                Cross = Read(Cross.Stroke),
+                Ink = Read(Ink.Foreground),
+                Outline = VerifiedSwatch.BorderThickness.Left > 0 ? Read(VerifiedSwatch.BorderBrush) : default
+            };
+            var radius = VerifiedSwatch.CornerRadius.TopLeft;
+            Hover.CornerRadius = new CornerRadius(radius + 1);
+            Selection.CornerRadius = new CornerRadius(radius + 2);
             var space = new Space(new Size(Viewport.ActualWidth, Viewport.ActualHeight),
-                XamlRoot.RasterizationScale, FlowDirection == FlowDirection.RightToLeft);
+                XamlRoot.RasterizationScale, FlowDirection == FlowDirection.RightToLeft, radius);
             var layout = await Task.Run(() => Render(data, space, palette));
             if (revision != _revision || !IsLoaded) return;
             var bitmap = new WriteableBitmap(layout.PixelWidth, layout.PixelHeight);
@@ -156,18 +172,16 @@ public sealed partial class PiecesMap : UserControl
     private static int Start(int position) => position * (Square + Gap) + position / Band * Gutter;
     private static int Extent(int count) => count == 0 ? 0 : Start(count - 1) + Square;
 
-    private static Raster Render(Pieces data, Space space, Color[] palette)
+    private static Raster Render(Pieces data, Space space, Palette palette)
     {
         var scale = space.Scale;
         var rtl = space.IsRightToLeft;
-        var ink = palette[^1];
         var maxColumns = 1;
         while (Extent(maxColumns + 1) <= space.Size.Width) maxColumns++;
         if (maxColumns >= Band) maxColumns = maxColumns / Band * Band;
         var maxRows = 1;
         while (Extent(maxRows + 1) <= space.Size.Height) maxRows++;
-        var perBlock = Math.Max(1, (int)Math.Ceiling((double)data.Count / (maxColumns * maxRows)));
-        var count = (data.Count + perBlock - 1) / perBlock;
+        var count = Math.Min(data.Count, maxColumns * maxRows);
         var columns = Math.Min(maxColumns, count);
         if (columns >= Band) columns = Math.Min(maxColumns, (columns + Band - 1) / Band * Band);
         var rows = (count + columns - 1) / columns;
@@ -179,12 +193,13 @@ public sealed partial class PiecesMap : UserControl
         var blocks = new Block[count];
         for (var index = 0; index < count; index++)
         {
-            var first = index * perBlock;
-            var end = Math.Min(data.Count, first + perBlock);
+            var first = (int)((long)index * data.Count / count);
+            var end = (int)((long)(index + 1) * data.Count / count);
             var counts = data.Counts(first, end);
             var received = 0.0;
             for (var piece = first; piece < end; piece++)
                 received += data.States[piece] == PieceKind.Verified ? 1 : data.Downloading.GetValueOrDefault(piece);
+            var share = received / (end - first);
             var dominant = 0;
             for (var kind = 1; kind < counts.Length; kind++)
                 if (counts[kind] > counts[dominant]) dominant = kind;
@@ -201,41 +216,55 @@ public sealed partial class PiecesMap : UserControl
             for (var py = 0; py < side && top + py < pixelHeight; py++)
                 for (var px = 0; px < side && left + px < pixelWidth; px++)
                 {
-                    var dx = px / scale;
-                    var dy = py / scale;
-                    var border = dx < 1 || dy < 1 || dx >= Square - 1 || dy >= Square - 1;
-                    var color = palette[dominant];
-                    switch ((PieceKind)dominant)
+                    var dx = (px + 0.5) / scale;
+                    var dy = (py + 0.5) / scale;
+                    var edge = Edge(dx, dy, space.Radius);
+                    var coverage = Math.Clamp(edge * scale + 0.5, 0, 1);
+                    if (coverage <= 0) continue;
+                    var color = (PieceKind)dominant switch
                     {
-                        case PieceKind.Downloading:
-                            var filled = rtl ? dx >= Square * (1 - received / (end - first)) : dx < Square * received / (end - first);
-                            color = filled ? palette[dominant] : palette[(int)PieceKind.Missing];
-                            if (border) color = ink;
-                            break;
-                        case PieceKind.Common:
-                            if (border || Math.Abs(dy - Square / 2.0) < 1) color = ink;
-                            break;
-                        case PieceKind.Rare:
-                            if ((int)(dx + dy) % 6 == 0) color = ink;
-                            break;
-                        case PieceKind.Unavailable:
-                            color = palette[(int)PieceKind.Missing];
-                            if (border || Math.Abs(dx - dy) < 1 || Math.Abs(dx + dy - Square + 1) < 1) color = palette[(int)PieceKind.Unavailable];
-                            break;
-                        case PieceKind.Missing:
-                            if (border) color = ink;
-                            break;
-                    }
-                    if (mixed && dx >= Square - 4 && dy < dx - Square + 4) color = ink;
-                    if (hidesUnavailable && dx < 4 && dy > Square - 4 + dx) color = palette[(int)PieceKind.Unavailable];
+                        PieceKind.Downloading when (rtl ? dx >= Square * (1 - share) : dx < Square * share) => palette.Received,
+                        PieceKind.Rare when Math.Abs((dx + dy) % 5 - 1) < 0.75 => palette.Hatch,
+                        PieceKind.Unavailable when Math.Min(dx, dy) > 4 && Math.Max(dx, dy) < Square - 4
+                            && (Math.Abs(dx - dy) < 0.75 || Math.Abs(dx + dy - Square) < 0.75) => palette.Cross,
+                        _ => palette.Fills[dominant]
+                    };
+                    if (edge < 1 && palette.Outline.A > 0) color = palette.Outline;
+                    if (mixed) color = Mix(color, palette.Ink, Dot(dx - (Square - 4), dy - 4, scale));
+                    if (hidesUnavailable) color = Mix(color, palette.Cross, Dot(dx - 4, dy - (Square - 4), scale));
+                    var alpha = color.A * coverage;
                     var offset = ((top + py) * pixelWidth + left + px) * 4;
-                    pixels[offset] = (byte)(color.B * color.A / 255);
-                    pixels[offset + 1] = (byte)(color.G * color.A / 255);
-                    pixels[offset + 2] = (byte)(color.R * color.A / 255);
-                    pixels[offset + 3] = color.A;
+                    pixels[offset] = (byte)(color.B * alpha / 255);
+                    pixels[offset + 1] = (byte)(color.G * alpha / 255);
+                    pixels[offset + 2] = (byte)(color.R * alpha / 255);
+                    pixels[offset + 3] = (byte)alpha;
                 }
         }
         return new Raster(space with { Size = new Size(mapWidth, mapHeight) }, columns, pixels, blocks);
+    }
+
+    // Distance in DIPs from a point inside the square to its rounded edge; negative outside.
+    private static double Edge(double x, double y, double radius)
+    {
+        var cornerX = Math.Max(radius - x, x - (Square - radius));
+        var cornerY = Math.Max(radius - y, y - (Square - radius));
+        if (cornerX > 0 && cornerY > 0) return radius - Math.Sqrt(cornerX * cornerX + cornerY * cornerY);
+        return Math.Min(Math.Min(x, Square - x), Math.Min(y, Square - y));
+    }
+
+    // Coverage of a 2-DIP-radius corner mark whose centre is the given offset away.
+    private static double Dot(double x, double y, double scale) => Math.Clamp((2 - Math.Sqrt(x * x + y * y)) * scale + 0.5, 0, 1);
+
+    private static Color Mix(Color under, Color over, double amount) => amount <= 0 ? under : Color.FromArgb(
+        (byte)(under.A + (over.A - under.A) * amount), (byte)(under.R + (over.R - under.R) * amount),
+        (byte)(under.G + (over.G - under.G) * amount), (byte)(under.B + (over.B - under.B) * amount));
+
+    private static Color Read(Brush brush)
+    {
+        var solid = (SolidColorBrush)brush;
+        var color = solid.Color;
+        color.A = (byte)Math.Round(color.A * solid.Opacity);
+        return color;
     }
 
     private int Find(PointerRoutedEventArgs args)
@@ -376,7 +405,17 @@ public sealed partial class PiecesMap : UserControl
     }
 
     private sealed record Block(int First, int End, int X, int Y);
-    private sealed record Space(Size Size, double Scale, bool IsRightToLeft);
+    private sealed record Space(Size Size, double Scale, bool IsRightToLeft, double Radius);
+    private sealed record Palette
+    {
+        public required Color[] Fills { get; init; }
+        public required Color Received { get; init; }
+        public required Color Hatch { get; init; }
+        public required Color Cross { get; init; }
+        public required Color Ink { get; init; }
+        // Transparent except in High Contrast, where system colours replace the fills and squares need an edge.
+        public required Color Outline { get; init; }
+    }
     private sealed record Raster(Space Space, int Columns, byte[] Pixels, Block[] Blocks)
     {
         public double Width => Space.Size.Width;

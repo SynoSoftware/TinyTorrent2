@@ -1126,9 +1126,14 @@ wheel shortcut, averages samples in buckets aligned to clock time, and draws
 monotone cubic native paths with separate figures across unknown time gaps. Its
 marker exposes the marked point as a read-only UI Automation value. PiecesMap uses one BGRA
 bitmap, 16-pixel squares, 4-pixel gaps and 6-pixel gutters after each group of
-eight, matching the previous native map. Geometry and theme changes invalidate
-the raster; equal data does not. Grouped squares use the documented state tie
-order, received fill, a mixed-state corner and an unavailable corner. Hover
+eight, matching the previous native map. Squares are anti-aliased tiles with the
+theme's control corner radius; their colours, hatch and cross come from the
+legend swatches, so the legend and the map share one palette, and the swatch
+outline appears only in High Contrast. When pieces outnumber the squares that
+fit, every fitting square is used and each covers a near-equal range. Geometry
+and theme changes invalidate the raster; equal data does not. Grouped squares
+use the documented state tie order, received fill, a mixed-state dot and an
+unavailable dot. Hover
 outlines a square without moving the selected square, which a click and
 Arrow/Home/End move; a read-only UI Automation value and Ctrl+C expose the
 selected square's range facts, the same text its tooltip shows.
