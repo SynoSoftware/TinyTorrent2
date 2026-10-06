@@ -2,7 +2,7 @@
 
 ## Notification preferences and whole-tree checkpoint — 2026-10-06
 
-The owner requested the whole diff be committed before continuing. This checkpoint
+The owner requested the whole diff be committed before continuing. `3f6de13`
 includes the owner's concurrent shared-control, Add, inspector, table automation,
 download-order and build changes, plus the earlier header corrections below.
 It is not release approval of every feature in that combined diff.

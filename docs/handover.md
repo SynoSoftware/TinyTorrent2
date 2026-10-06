@@ -2,7 +2,7 @@
 
 ## Whole-tree and notifications checkpoint — 2026-10-06
 
-The owner authorized committing the whole working diff, including concurrent
+`3f6de13` commits the owner's authorized whole working diff, including concurrent
 shared controls, Add, inspector, table automation and engine download-order work.
 The notification feature now has its three switches, existing saved-choice
 compatibility, in-window completion action, closed-window Windows delivery and
