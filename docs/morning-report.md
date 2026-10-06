@@ -1,5 +1,67 @@
 # Morning report
 
+## Files review and theme-close correction — 2026-10-06
+
+The selected-row stripe remains removed in `b1a21e0`; current source has not
+reintroduced it. The owner's current Files integration received a bounded
+source review. Its model-replacement findings were corrected concurrently by
+the owner before the capture build: Roots now uses OneWay binding, and the
+model callback transfers subscriptions and clears obsolete selection. The
+successful capture therefore includes the corrections, not a pre-fix baseline.
+
+`UiSelfCapture-05dddca8-5dc0-4b5d-8561-20b40b4b9091` passed in 10.218 seconds:
+an empty Add dialog acquired a local one-byte torrent preview through the real
+engine, displayed its file in the current table, and cancelled normally. The
+existing native priority save/restore and tracker journeys also passed. This
+bounded preview check catches a stale file list that compilation cannot detect;
+it starts no payload transfer. Its Capture.cs addition remains with the owner's
+pending hierarchy work because it expects that new table-based Files control.
+
+The fresh Files image review found one defect: the selected priority text was
+hard-clipped in both languages at every size. Increasing that column's default
+width from 150 to 200 makes “Do not download” and “No descargar” readable.
+The first correction review inspected all twelve variants from
+`UiSelfCapture-c63635f3-3f8e-41c6-9269-bc21e56243f9` and found zero remaining
+counted defects in that scope. The width change stays with the pending Files
+integration, without changing its controls or styling. Dropdown popup images
+were black, so option pixels remain unverified; this is not evidence that the
+real dropdown is blank. Physical input, Narrator and High Contrast remain gaps.
+
+The initial Files matrix falsely failed its final comparison because it
+deliberately changed the theme from system to light, then compared every
+preference with the original snapshot. The diagnostic now restores the original
+theme and language through their owners and records individual comparison
+results. It still compares every field and priority; none is excluded.
+
+That restoration exposed a real shutdown crash, twice: a queued ActualThemeChanged
+callback entered UpdateColors after the native window was destroyed. WinApp's
+debugger identified a NullReferenceException at Chrome.cs:94 during dispatcher
+shutdown. Its log is `debug-9464-20261006-185902.log` under the local temporary
+`winapp-dumps` directory. UpdateColors now uses the same `_allowClose` guard as
+UpdateChrome. Cancelled closes still update normally. Source re-review found
+zero defects; no new state or exception suppression was introduced.
+
+The final run `UiSelfCapture-464e3040-2e1a-450e-9d94-fadc20e79d07` passed in
+17.792 seconds, including all twelve Files scenes, exact preference/priority
+retention, no remaining draft or pending operation, and process exit zero.
+Earlier `c63635f3` and debugger run `4528c6f6` proved the state checks but crashed
+during shutdown; do not count their process completion as passes.
+
+Debug capture builds `files-preview-before-app.log`,
+`files-priority-width-app.log` and `theme-close-app.log` passed in 57.40, 48.79
+and 51.30 seconds with zero warnings/errors. Each compiled only the app's two
+WinUI passes; libraries were up to date and source hashes stayed unchanged.
+Output scans were empty and all launched app/engine processes closed. No suite,
+Transfer peer or engine build ran. Earlier engine safety evidence predates the
+owner's subsequent registration edits; this checkpoint does not verify those
+changes or complete whole-product release acceptance.
+
+This checkpoint commits the independent theme-close fix and the diagnostic's
+appearance restoration. Preserve the owner's pending hierarchy/Files (including
+the reviewed width), Pieces, registration, startup, shortcut and documentation
+work. Do not commit a partial hierarchy implementation merely to include the
+column width. The broader native desktop and release evidence gaps remain open.
+
 ## Current engine startup and safety evidence — 2026-10-06
 
 The inspector/toolbar checkpoint is `74c35e9`. Read the current root instructions

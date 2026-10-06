@@ -1066,14 +1066,23 @@ public sealed partial class MainWindow
                     await ShowPreferences(new(section));
                     await CapturePage("details-en-light-720x560-reverse-settings-" + section, _preferencesForm);
                 }
-                if (priorities is null ||
-                    !priorities.SequenceEqual(Model.Inspector.Files.Roots.SelectMany(root => root.Nodes())
-                        .Where(file => file.Index >= 0).Select(file => (file.Index, file.Priority)).OrderBy(file => file.Index)) ||
-                    !preferences.SequenceEqual(Model.Preferences.Fields.Select(field => (field.Name, field.Input, field.IsOn))) ||
-                    Model.Inspector.HasFileDraft || Model.Preferences.HasDraft || Model.Preferences.IsPending)
-                    throw new InvalidOperationException("Changing the capture language altered file priorities or preferences.");
+                var originalTheme = preferences.Single(field => field.Name == Model.Preferences.Theme.Name).Input;
+                var originalLanguage = preferences.Single(field => field.Name == Model.Preferences.Language.Name).Input;
+                await Model.Preferences.SelectTheme(originalTheme);
+                await CaptureReady(Model, () => Model.CanClose && Model.Theme == originalTheme);
+                Model.SelectLanguage(originalLanguage);
+                await CaptureReady(Model, () => Model.CanClose && Model.Text.Language == originalLanguage);
+                var prioritiesRetained = priorities is not null &&
+                    priorities.SequenceEqual(Model.Inspector.Files.Roots.SelectMany(root => root.Nodes())
+                        .Where(file => file.Index >= 0).Select(file => (file.Index, file.Priority)).OrderBy(file => file.Index));
+                var preferencesRetained = preferences.SequenceEqual(Model.Preferences.Fields.Select(field => (field.Name, field.Input, field.IsOn)));
+                var fileDraft = Model.Inspector.HasFileDraft;
+                var preferenceDraft = Model.Preferences.HasDraft;
+                var pending = Model.Preferences.IsPending;
                 outcomes.Add(new { journey = "live language selected choices", languages = new[] { "en", "es", "en" },
-                    prioritiesRetained = true, preferencesRetained = true });
+                    prioritiesRetained, preferencesRetained, fileDraft, preferenceDraft, pending });
+                if (!prioritiesRetained || !preferencesRetained || fileDraft || preferenceDraft || pending)
+                    throw new InvalidOperationException("Changing the capture language altered file priorities or preferences.");
                 return;
             }
             if (completed.Count > 0)

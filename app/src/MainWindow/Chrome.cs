@@ -91,6 +91,7 @@ public sealed partial class MainWindow
 
     private void UpdateColors()
     {
+        if (_allowClose) return;
         var titleBar = AppWindow.TitleBar;
         titleBar.PreferredTheme = Root.ActualTheme == ElementTheme.Dark ? TitleBarTheme.Dark : TitleBarTheme.Light;
         titleBar.BackgroundColor = Colors.Transparent;

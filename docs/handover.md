@@ -1,5 +1,29 @@
 # Implementation handover — 2026-10-05
 
+## Files review and theme-close correction — 2026-10-06
+
+The stripe remains removed in `b1a21e0`. Current owner Files model-replacement
+corrections pass the native Add-preview journey and scoped source review. Its
+priority column now shows the full selected value; the first image correction
+review found zero remaining counted defects across twelve EN/ES Light/Dark views.
+Those Files changes and their Add-preview diagnostic remain with the owner's
+pending hierarchy integration. Keep that coherent group intact.
+
+The Files matrix now restores the appearance it deliberately changed before
+comparing all preferences. This exposed a real late theme callback during
+window teardown. UpdateColors now respects the existing accepted-close flag;
+the exact failing journey passes, including exit zero, after this correction.
+The independent shutdown fix and appearance-restoration diagnostic are the
+current checkpoint. Exact builds, run IDs and limits are at the top of
+[morning-report.md](morning-report.md).
+
+All launched processes are closed; no suite or engine build ran. Pending owner
+Pieces/registration/startup/shortcut work, dropdown pixel evidence, native
+desktop/accessibility checks and the earlier release gaps remain open. The
+previous Release engine safety results predate subsequent registration edits;
+do not present them as verification of those later changes. Whole-product
+release acceptance is still incomplete.
+
 ## Current engine startup and safety evidence — 2026-10-06
 
 `74c35e9` contains the inspector/toolbar checkpoint. The pending engine startup
