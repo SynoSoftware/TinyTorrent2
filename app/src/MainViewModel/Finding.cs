@@ -166,7 +166,7 @@ public sealed partial class MainViewModel
         {
             yield return PreferenceSuggestion(new(field.Section, field.Name), field.Label);
         }
-        foreach (var key in new[] { "start_signin", "startup_settings", "open_defaults", "remove_handler" })
+        foreach (var key in new[] { "start_signin", "startup_settings", "open_defaults" })
             yield return PreferenceSuggestion(new(PreferenceSection.General, key), Text.Get("preferences", key));
         yield return PreferenceSuggestion(new(PreferenceSection.Schedule, "add_period"), Text.Get("preferences", "add_period"));
     }

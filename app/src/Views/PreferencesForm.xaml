@@ -26,6 +26,10 @@
                 <Setter Property="TextWrapping" Value="Wrap" />
                 <Setter Property="AutomationProperties.LiveSetting" Value="Assertive" />
             </Style>
+            <Style x:Key="PreferencesCautionStyle" TargetType="TextBlock" BasedOn="{StaticResource BodyTextBlockStyle}">
+                <Setter Property="Foreground" Value="{ThemeResource SystemFillColorCautionBrush}" />
+                <Setter Property="TextWrapping" Value="Wrap" />
+            </Style>
             <Style x:Key="PreferencesMarkStyle" TargetType="FontIcon">
                 <Setter Property="FontSize" Value="320" />
                 <Setter Property="Foreground" Value="{ThemeResource AccentTextFillColorSecondaryBrush}" />
@@ -161,7 +165,10 @@
                                     <controls:SettingsRow x:Name="SignInRow">
                                         <ToggleSwitch OnContent="{x:Bind Model.OnText, Mode=OneWay}" OffContent="{x:Bind Model.OffText, Mode=OneWay}" x:Name="Startup" IsOn="{x:Bind Model.Startup, Mode=OneWay}" IsEnabled="{x:Bind Model.CanRegister, Mode=OneWay}" Toggled="OnStartup" AutomationProperties.AutomationId="Startup" />
                                         <controls:SettingsRow.Detail>
-                                            <HyperlinkButton x:Name="StartupSettings" Padding="0" Command="{x:Bind Model.OpenStartup}" AutomationProperties.AutomationId="StartupSettings" />
+                                            <StackPanel Spacing="4">
+                                                <TextBlock Style="{StaticResource PreferencesCautionStyle}" Text="{x:Bind Model.StartupOtherMessage, Mode=OneWay}" Visibility="{x:Bind Model.StartupOther, Mode=OneWay}" />
+                                                <HyperlinkButton x:Name="StartupSettings" Padding="0" Command="{x:Bind Model.OpenStartup}" AutomationProperties.AutomationId="StartupSettings" />
+                                            </StackPanel>
                                         </controls:SettingsRow.Detail>
                                     </controls:SettingsRow>
                                     <controls:SettingsRow x:Name="TrayRow" Header="{x:Bind Model.StartInTray.Label, Mode=OneWay}" Error="{x:Bind Model.StartInTray.Message, Mode=OneWay}">
@@ -176,10 +183,15 @@
                             </controls:SettingsSection>
                             <controls:SettingsSection x:Name="DefaultsSection" Glyph="{x:Bind icons:Lucide.Link}" Description="{x:Bind Model.DefaultsMessage, Mode=OneWay}">
                                 <StackPanel Spacing="8">
-                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
-                                        <Button x:Name="Unregister" Command="{x:Bind Model.RemoveHandler}" Visibility="{x:Bind Model.HandlersRegistered, Mode=OneWay}" AutomationProperties.AutomationId="RemoveHandler" />
-                                        <Button x:Name="OpenDefaults" Style="{StaticResource AccentButtonStyle}" Command="{x:Bind Model.OpenDefaults}" AutomationProperties.AutomationId="OpenDefaults" />
-                                    </StackPanel>
+                                    <controls:SettingsRow x:Name="HandlersRow">
+                                        <ToggleSwitch OnContent="{x:Bind Model.OnText, Mode=OneWay}" OffContent="{x:Bind Model.OffText, Mode=OneWay}" x:Name="Handlers" IsOn="{x:Bind Model.HandlersRegistered, Mode=OneWay}" IsEnabled="{x:Bind Model.CanRegister, Mode=OneWay}" Toggled="OnHandlers" AutomationProperties.AutomationId="Handlers" />
+                                        <controls:SettingsRow.Detail>
+                                            <StackPanel Spacing="4">
+                                                <TextBlock Style="{StaticResource PreferencesCautionStyle}" Text="{x:Bind Model.HandlersOtherMessage, Mode=OneWay}" Visibility="{x:Bind Model.HandlersOther, Mode=OneWay}" />
+                                                <HyperlinkButton x:Name="OpenDefaults" Padding="0" Command="{x:Bind Model.OpenDefaults}" Visibility="{x:Bind Model.NeedsDefaults, Mode=OneWay}" AutomationProperties.AutomationId="OpenDefaults" />
+                                            </StackPanel>
+                                        </controls:SettingsRow.Detail>
+                                    </controls:SettingsRow>
                                     <TextBlock Style="{StaticResource PreferencesErrorStyle}" Text="{x:Bind Model.RegistrationMessage, Mode=OneWay}" Visibility="{x:Bind Model.HasRegistrationError, Mode=OneWay}" />
                                 </StackPanel>
                             </controls:SettingsSection>

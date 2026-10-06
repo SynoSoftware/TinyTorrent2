@@ -1,5 +1,21 @@
 # Implementation handover — 2026-10-05
 
+## Registration observation and engine safety checkpoint — 2026-10-06
+
+Files hierarchy is committed as `d23778a`. The current registration integration
+passes source review and a targeted native Settings capture: observed absent
+entries produce enabled Off switches. All 24 registration views pass independent
+image review. Product layout is unchanged; the capture diagnostic now brings
+Startup and Default app sections into view instead of assuming top/bottom images
+cover them. Exact evidence is at the top of [morning-report.md](morning-report.md).
+
+The current Release engine compiles; FilesSafety and CheckpointRetry each passed
+once after the registration changes. Do not repeat them for app-only work. All
+owned processes closed, no suite ran, and Windows registrations were untouched.
+Actual registration repair/writes, other-copy states, default-app choice, sign-in,
+physical desktop/accessibility and earlier live-download gaps remain unverified.
+Whole-product release acceptance remains incomplete.
+
 ## Files hierarchy checkpoint — 2026-10-06
 
 The shared TableView hierarchy, Files integration, sample and four compiled

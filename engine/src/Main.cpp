@@ -121,6 +121,9 @@ int WINAPI wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ PWSTR, _In_ int)
         {
             throw std::runtime_error("Torrent sources exceed the supported count or length.");
         }
+        // An engine with its own store, such as a test's, is not the person's
+        // copy, so only the default store moves the registrations to it.
+        bool personal = directory.empty();
         if (directory.empty())
         {
             PWSTR local = nullptr;
@@ -180,6 +183,10 @@ int WINAPI wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ PWSTR, _In_ int)
         }
         else
         {
+            if (personal)
+            {
+                tt::Registration().Repair();
+            }
             tt::desktop::Application application(directory, sid, headless);
             result = application.Run(background, std::move(sources));
         }

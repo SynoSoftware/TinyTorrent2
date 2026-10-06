@@ -7,6 +7,7 @@ class Registration
 {
 public:
     Json Execute(std::string const& name) const;
+    void Repair() const;
 private:
     Json Observe() const;
     void RegisterHandlers() const;

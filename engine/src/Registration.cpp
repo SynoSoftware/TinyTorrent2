@@ -132,9 +132,9 @@ Json IsDefault(wchar_t const* extension, ASSOCIATIONTYPE type, wchar_t const* pr
     auto choice = Default(extension, type);
     return choice.is_null() ? Json() : Json(choice == Utf8(progId));
 }
-}
 
-Json Registration::Observe() const
+// Every handler entry is present and names this executable.
+bool HandlersMatch()
 {
     bool handlers = Read(registered, productName) == capabilities &&
         Read(capabilities, L"ApplicationName") == productName &&
@@ -148,14 +148,65 @@ Json Registration::Observe() const
         handlers = handlers && Read(Key(progId) + L"\\shell\\open\\command") == OpenCommand() &&
             Read(Key(progId) + L"\\DefaultIcon") == Icon();
     }
+    return handlers;
+}
+
+// The open command of any TinyTorrent handler, whichever copy registered it.
+std::wstring HandlerCommand()
+{
+    auto command = Read(Key(torrentClass) + L"\\shell\\open\\command");
+    return command.empty() ? Read(Key(magnetClass) + L"\\shell\\open\\command") : command;
+}
+
+// The executable a command starts, which every TinyTorrent command quotes.
+std::wstring Target(std::wstring const& command)
+{
+    auto end = command.find(L'"', 1);
+    return command.starts_with(L'"') && end != std::wstring::npos ? command.substr(1, end - 1) : command;
+}
+
+// Another TinyTorrent copy's entry is still a registration, so it is "other",
+// never "none".
+std::string Owner(std::wstring const& command, bool current)
+{
+    return command.empty() ? "none" : current ? "this" : "other";
+}
+}
+
+Json Registration::Observe() const
+{
+    auto handlers = HandlerCommand();
     auto startup = Read(run, productName);
     return {
-        {"handlers_registered", handlers},
-        {"startup_enabled", startup == Launch()},
-        {"startup_target", Utf8(startup)},
+        {"handlers", Owner(handlers, HandlersMatch())},
+        {"handlers_target", Utf8(Target(handlers))},
+        {"startup", Owner(startup, startup == Launch())},
+        {"startup_target", Utf8(Target(startup))},
         {"torrent_default", IsDefault(L".torrent", AT_FILEEXTENSION, torrentClass)},
         {"magnet_default", IsDefault(L"magnet", AT_URLPROTOCOL, magnetClass)}
     };
+}
+
+// Moves TinyTorrent's existing entries to this executable, so they follow the
+// copy the person runs; an entry the person removed stays removed. Observe
+// reports the actual entries, including a partially completed repair.
+void Registration::Repair() const
+{
+    try
+    {
+        if (!HandlerCommand().empty() && !HandlersMatch())
+        {
+            RegisterHandlers();
+        }
+        auto startup = Read(run, productName);
+        if (!startup.empty() && startup != Launch())
+        {
+            Write(run, productName, Launch());
+        }
+    }
+    catch (std::exception const&)
+    {
+    }
 }
 
 void Registration::RegisterHandlers() const

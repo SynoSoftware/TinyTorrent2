@@ -1,5 +1,44 @@
 # Morning report
 
+## Registration observation and final engine safety — 2026-10-06
+
+The Files hierarchy checkpoint is committed as `d23778a`. Registration source
+review found zero everyday functional blockers: engine registration remains the
+single owner, both this-copy and other-copy entries count as on, and Settings
+refreshes observation rather than storing another preference. The repair comment
+now acknowledges partial writes; no runtime repair behavior changed in review.
+
+`registration-capture-app.log` passed Debug/x64 in 61.55 seconds with zero warnings
+or errors, compiling only the app's two WinUI passes. Source hashes stayed stable
+and the output-path scan was empty. Initial run
+`UiSelfCapture-9a080fd0-4550-4ea9-b32b-600cb040c9fb` passed, but its top/bottom views
+missed the narrow registration controls. Targeted Startup and Default app views
+close that coverage gap without changing product layout.
+
+`UiSelfCapture-2b863117-f4fb-41ce-a6de-22a156b58197` passed in 29.387 seconds.
+The engine observed both registrations as `none`; both native switches were off
+and enabled, matching that observation. The notification toggle saved and restored
+its value; completion feedback postponed during editing, returned afterwards and
+expired. Independent image review found zero counted defects across all 24
+targeted EN/ES Light/Dark registration views at the three supported sizes. UI exit
+was zero and both owned processes closed. No Windows registration was changed.
+
+`registration-final-engine.log` passed Release/x64 in 25.58 seconds, zero warnings
+or errors. Only Registration.cpp, Main.cpp and Application.cpp compiled; the last
+includes Registration.h through its own header. Engine source hashes stayed
+stable and the output-path scan was empty. The engine SHA256 is
+`0C3A31A2F52AD3CFA8F7CBBDB205C7C344DB66865A620C5B6B633CD8726355E4`.
+FilesSafety passed once in `FilesSafety-163b2c97-add0-48e1-892e-a5b40187ec70` and
+CheckpointRetry passed once in `CheckpointRetry-f52b8197-1b52-468c-b69d-680102a32767`.
+Both used disposable stores, closed their engines and left the output-path scan
+empty. No full suite, transfer peer or dependency build ran.
+
+Registration writes/repair, other-copy caution states, actual Windows default-app
+choice and sign-in remain unverified at runtime. These captures establish the
+observed unregistered state only; they do not establish physical keys, Narrator
+or High Contrast. Keep those release gaps explicit rather than treating source
+review or file-safety checks as desktop integration approval.
+
 ## Files hierarchy checkpoint — 2026-10-06
 
 The owner's TableView hierarchy and shared Files integration are ready for a

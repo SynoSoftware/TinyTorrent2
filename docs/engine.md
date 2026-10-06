@@ -522,15 +522,23 @@ startup. Provide access to Windows Startup settings without trying to reverse
 its override through undocumented keys. Neither registration nor observation
 creates a second saved preference.
 
+**Owner ruling:** registrations follow the copy the person runs. Every start
+of an engine on the default store moves TinyTorrent's existing handler and
+sign-in entries to its own executable, so a moved, rebuilt or upgraded copy
+keeps working and no entry points to a deleted folder. It never re-registers
+what the person turned off. An engine started with its own store (`--data`),
+such as a test's, is not the person's copy and leaves the entries alone.
+Observation reports each registration as starting this copy, another
+TinyTorrent copy (with that executable), or nothing.
+
 The installer registers on first installation and unregisters before removing
 program files, through the engine's maintenance commands, with individual
 operations for any deselected setup choice. Preferences sends the same
 operations through the pipe. Maintenance
 launches forward to a running engine or use the same owner in a short-lived
 native process under instance exclusion, without starting transfers or WinUI.
-On upgrade, repair only registrations still requested; never re-register what
-the person turned off. Registration is completed for the
-installing user, not an administrator account used to install a prerequisite.
+Registration is completed for the installing user, not an administrator account
+used to install a prerequisite.
 
 ## Closing and shutdown
 

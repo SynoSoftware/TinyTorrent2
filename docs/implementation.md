@@ -1295,9 +1295,10 @@ its command and preserves individual torrent intent. The desktop host records
 refuses it.
 `registration` takes an `operation` string: `observe`, `register_handlers`,
 `unregister_handlers`, `enable_startup`, `disable_startup`, `open_defaults`, or
-`open_startup`. Its data contains `handlers_registered`, `startup_enabled`,
-`startup_target`, `torrent_default` and `magnet_default`; an unavailable default
-query is null. A partial failure includes the observed data with the refusal.
+`open_startup`. Its data contains `handlers`, `handlers_target`, `startup`,
+`startup_target`, `torrent_default` and `magnet_default`. The two registration
+states are `none`, `this` or `other`; an unavailable default query is null.
+A partial failure includes the observed data with the refusal.
 The same operations are available through `Engine.exe --registration OPERATION`
 without starting transfers or WinUI.
 Snapshot settings contain the live language, with `language_saved` indicating

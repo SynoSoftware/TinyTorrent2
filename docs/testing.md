@@ -198,7 +198,9 @@ input and establishes only top-level hit classification, not physical pointer
 delivery, child input routing or native caption-button actions.
 Use `TINYTORRENT_CAPTURE_REVIEW=preferences-layout` for General Settings and
 completion feedback in English and Spanish, Light and Dark, at the three review
-sizes. It commits and restores one notification switch through its native
+sizes. It reveals Startup and Default app sections, checks native registration
+switches against their observed model state, and leaves Windows registrations
+unchanged. It commits and restores one notification switch through its native
 control. Completion captures feed a simulated engine notice into the production
 UI handler; they do not prove Windows delivery, a real completed download or
 Explorer launch.

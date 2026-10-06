@@ -54,9 +54,20 @@ public sealed class Preferences : INotifyPropertyChanged
     public bool CanRegister => CanEdit && !_registering;
     public bool HasRegistrationError => _registrationError is not null;
     public string RegistrationMessage => _registrationError is null ? string.Empty : Text.Error(_registrationError);
-    public bool Startup => _registration.ValueKind == JsonValueKind.Object && _registration.GetProperty("startup_enabled").GetBoolean();
     public bool HasRegistration => _registration.ValueKind == JsonValueKind.Object;
-    public bool HandlersRegistered => HasRegistration && _registration.GetProperty("handlers_registered").GetBoolean();
+    // Another TinyTorrent copy's entry is still TinyTorrent's registration, so
+    // it counts as on and the Other message names that copy.
+    public bool Startup => Registered("startup") != "none";
+    public bool StartupOther => Registered("startup") == "other";
+    public string StartupOtherMessage => Other("startup");
+    public bool HandlersRegistered => Registered("handlers") != "none";
+    public bool HandlersOther => Registered("handlers") == "other";
+    public string HandlersOtherMessage => Other("handlers");
+    // Windows lets only the person choose the default app, so a registration
+    // that is not the default yet offers Windows Default apps.
+    public bool NeedsDefaults => HandlersRegistered &&
+        (_registration.GetProperty("torrent_default").ValueKind == JsonValueKind.False ||
+        _registration.GetProperty("magnet_default").ValueKind == JsonValueKind.False);
     public string DefaultsMessage
     {
         get
@@ -73,8 +84,14 @@ public sealed class Preferences : INotifyPropertyChanged
         }
     }
     public ICommand OpenDefaults { get; }
-    public ICommand RemoveHandler { get; }
     public ICommand OpenStartup { get; }
+
+    // "this", "other" or "none": whether TinyTorrent's entry starts this copy,
+    // another TinyTorrent copy, or nothing.
+    private string Registered(string name) => HasRegistration ? _registration.GetProperty(name).GetString() ?? "none" : "none";
+    private string Other(string name) => HasRegistration
+        ? Text.Format("preferences", name + "_other", _registration.GetProperty(name + "_target").GetString() ?? string.Empty)
+        : string.Empty;
     public bool CanSelectLanguage => CanEdit;
     public string OnText => Text.Get("preferences", "on");
     public string OffText => Text.Get("preferences", "off");
@@ -129,7 +146,6 @@ public sealed class Preferences : INotifyPropertyChanged
             ProblemNotifications, FinishedNotifications, AddedNotifications, PreventSleep, SeedingSleep, Updates,
             Schedule.Enabled, ShowSplash, StartInTray, Language, Theme];
         OpenDefaults = new Command(() => Register("open_defaults"), () => CanRegister);
-        RemoveHandler = new Command(() => Register("unregister_handlers"), () => CanRegister && HandlersRegistered);
         OpenStartup = new Command(() => Register("open_startup"), () => CanRegister);
     }
 
@@ -202,6 +218,7 @@ public sealed class Preferences : INotifyPropertyChanged
 
     public Task ObserveRegistration() => Register("observe");
     public Task SetStartup(bool enabled) => Register(enabled ? "enable_startup" : "disable_startup");
+    public Task SetHandlers(bool enabled) => Register(enabled ? "open_defaults" : "unregister_handlers");
     public void SelectLanguage(string language)
     {
         if (CanSelectLanguage) _owner.SelectLanguage(language);
@@ -344,7 +361,7 @@ public sealed class Preferences : INotifyPropertyChanged
     internal void Changed()
     {
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
-        foreach (Command command in new[] { OpenDefaults, RemoveHandler, OpenStartup }) command.Refresh();
+        foreach (Command command in new[] { OpenDefaults, OpenStartup }) command.Refresh();
     }
 
 }

@@ -76,6 +76,8 @@ public sealed partial class PreferencesForm : UserControl
         AutomationProperties.SetName(Startup, SignInRow.Header);
         TrayRow.Description = Model.Text.Get("preferences", "start_in_tray_hint");
         DefaultsSection.Header = Model.Text.Get("preferences", "defaults");
+        HandlersRow.Header = Model.Text.Get("preferences", "open_defaults");
+        AutomationProperties.SetName(Handlers, HandlersRow.Header);
         Label(PowerSection, "power", "power_hint");
         Label(SpeedSection, "speed", "speed_hint");
         Label(AlternativeSection, "alternative", "alternative_hint");
@@ -88,8 +90,7 @@ public sealed partial class PreferencesForm : UserControl
         ConnectionsRow.Description = Model.Text.Get("preferences", "connections_hint");
         Label(Browse, "browse", "add");
         Label(StartupSettings, "startup_settings");
-        Label(OpenDefaults, "open_defaults");
-        Label(Unregister, "remove_handler");
+        Label(OpenDefaults, "defaults_settings");
         Label(ScheduleSection, "weekly_schedule", "schedule_hint");
         Label(AppearanceSection, "appearance", "appearance_hint");
         LanguageRow.Header = Model.Text.Get("preferences", "language");
@@ -181,8 +182,7 @@ public sealed partial class PreferencesForm : UserControl
     {
         "start_signin" => Startup,
         "startup_settings" => StartupSettings,
-        "open_defaults" => OpenDefaults,
-        "remove_handler" => Unregister,
+        "open_defaults" => Handlers,
         "network_interface" => Interfaces,
         "language" => Languages,
         "theme" => Theme,
@@ -205,6 +205,10 @@ public sealed partial class PreferencesForm : UserControl
     private async void OnStartup(object sender, RoutedEventArgs args)
     {
         if (!_refreshing && Model.HasRegistration && Startup.IsOn != Model.Startup) await Model.SetStartup(Startup.IsOn);
+    }
+    private async void OnHandlers(object sender, RoutedEventArgs args)
+    {
+        if (!_refreshing && Model.HasRegistration && Handlers.IsOn != Model.HandlersRegistered) await Model.SetHandlers(Handlers.IsOn);
     }
     private async void OnInterface(object sender, SelectionChangedEventArgs args)
     {

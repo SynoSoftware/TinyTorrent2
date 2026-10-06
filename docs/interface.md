@@ -828,13 +828,20 @@ a person who opens TinyTorrent often and finds the splash in the way. All catego
 share one viewport-constrained, centred content column, so a change of
 category cannot move the form or push its actions outside the viewport.
 
-Preferences offers one Start when I sign in switch and an Open torrents with
-TinyTorrent action covering `.torrent` files and magnet links. These call the
-engine's [registration owner](engine.md#windows-registration). The latter
-finishes automatically when TinyTorrent is already the default; otherwise it
-takes the person to the supported Windows choice and refreshes on return. Keep
-Remove TinyTorrent as a handler available too. Present mixed file/link defaults
-in ordinary language only when they need action, without a registry-status panel.
+Preferences offers a Start when I sign in switch and an Open torrents with
+TinyTorrent switch covering `.torrent` files and magnet links. Both call the
+engine's [registration owner](engine.md#windows-registration) and show its
+observed state. Turning the handler switch on finishes automatically when
+TinyTorrent is already the default; otherwise it takes the person to the
+supported Windows choice and refreshes on return. While Windows still opens
+either kind with another app, a Windows Default apps link sits under the
+switch. Turning it off removes TinyTorrent as a handler. Present mixed
+file/link defaults in ordinary language only when they need action, without a
+registry-status panel.
+
+**Owner ruling:** an entry that starts another TinyTorrent copy is still
+TinyTorrent's registration, so its switch shows on, with a caution line naming
+that copy's executable; it never shows as unregistered.
 
 Keep a Windows Startup settings link beside the sign-in control for Windows'
 independent override. Open the relevant [Windows Settings page](https://learn.microsoft.com/en-us/windows/apps/develop/launch/launch-settings),

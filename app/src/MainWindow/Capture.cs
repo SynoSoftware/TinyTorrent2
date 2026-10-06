@@ -819,8 +819,28 @@ public sealed partial class MainWindow
                         AppWindow.Resize(new SizeInt32(Math.Max((int)(size.Width * scale), minimum), (int)(size.Height * scale)));
                         await ShowPreferences(new(PreferenceSection.General));
                         var form = _preferencesForm ?? throw new InvalidOperationException("The preferences form did not open.");
+                        await CaptureReady(Model.Preferences, () => Model.Preferences.HasRegistration && !Model.Preferences.IsPending);
                         var name = "preferences-" + language + "-" + theme + "-" + size.Width + "x" + size.Height;
                         await CapturePage(name, form);
+                        if (language == "en" && theme == "light" && size.Width == 720)
+                        {
+                            var startup = (ToggleSwitch)form.FindName("Startup");
+                            var handlers = (ToggleSwitch)form.FindName("Handlers");
+                            var matches = startup.IsOn == Model.Preferences.Startup && handlers.IsOn == Model.Preferences.HandlersRegistered &&
+                                startup.IsEnabled == Model.Preferences.CanRegister && handlers.IsEnabled == Model.Preferences.CanRegister;
+                            outcomes.Add(new { journey = "observed native registration", startup = startup.IsOn, handlers = handlers.IsOn,
+                                observedStartup = Model.Preferences.Startup, observedHandlers = Model.Preferences.HandlersRegistered,
+                                startupEnabled = startup.IsEnabled, handlersEnabled = handlers.IsEnabled,
+                                canRegister = Model.Preferences.CanRegister, matches });
+                            if (!matches) throw new InvalidOperationException("Native registration switches do not match their settled observed state.");
+                        }
+                        foreach (var section in new[] { "StartupSection", "DefaultsSection" })
+                        {
+                            var element = form.FindName(section) as FrameworkElement ?? throw new InvalidOperationException("The registration section did not load.");
+                            element.StartBringIntoView(new BringIntoViewOptions { AnimationDesired = false, VerticalAlignmentRatio = 0 });
+                            await CaptureLayout();
+                            await CaptureUi(name + "-" + section.Replace("Section", string.Empty).ToLowerInvariant());
+                        }
                         if (form.FindName("NotificationsSection") is FrameworkElement notifications)
                         {
                             notifications.StartBringIntoView(new BringIntoViewOptions { AnimationDesired = false, VerticalAlignmentRatio = 0 });
