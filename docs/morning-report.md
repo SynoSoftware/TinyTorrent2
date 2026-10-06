@@ -1,5 +1,52 @@
 # Morning report
 
+## Search and minimum-width evidence checkpoint — 2026-10-06
+
+File lifecycle and client defaults are committed as `007dcde`. The owner's
+concurrent UI changes remain uncommitted and preserved. This checkpoint adds
+evidence only; it does not change or approve every part of that design work.
+
+The already-built capture app ran two isolated, offscreen reviews. No rebuild,
+full suite, Transfer peer or external desktop input was needed. Both reviews
+closed their UI and engine; generated-output scans found no stray output.
+
+- `artifacts/evidence/UiSelfCapture-c5a0a06f-d9a8-4c3a-8e62-6e516246143f`:
+  Add/layout capture passed in 37.98 seconds. All twelve header captures were
+  inspected across English/Spanish, Light/Dark and the three requested sizes.
+  The inspector card, table labels and caption groups remain distinct and fit.
+  The overlay preserves workspace bounds; Add, magnet and theme actions retain
+  their shared 48-pixel width. Minimum-width Add and long-magnet samples were
+  also inspected; this is not a new full Add acceptance review.
+- `artifacts/evidence/UiSelfCapture-058843c3-dc47-4cf5-b1fd-3def26a6bc69`:
+  search passed in 17.45 seconds. Native result submission hides unavailable
+  Properties, opens the selected inspector from Settings, routes speed limits
+  from Search and the menu to the same Transfers editor, focuses the named port
+  setting without changing its value, and reopens focused Search. All twelve
+  localized search-result captures were inspected with no overlap finding.
+
+The current interface contract reserves measured translated menus, a 200-pixel
+Search and full caption actions. A requested 720-wide window therefore clamps
+to 837 client pixels in English and 863 in Spanish on this machine. This is the
+deliberate current minimum, not an exact-720 pass. Do not shrink accepted caption
+controls to satisfy the older size request. The 1040/1280 requests produce
+1024/1264 client widths.
+
+The serial role review found no counted visual defect in the inspected samples:
+the first-time user can find destination, magnet input and Add; the large-library
+user has distinct search destinations and the checked navigation routes; the
+accessibility review found full tooltips and names for truncated Add options,
+with full incoming-status text retained in its tooltip; the Fluent review found
+aligned groups and the accepted inspector hierarchy; the UX review found no
+hidden primary action or overlap. Different title/column typography and rounded
+inspector framing are the owner's intentional baseline, not taste findings to
+reverse. Search labels wrapping at the minimum are preserved as owner work.
+
+Limits: images and native provider invocation do not prove physical Ctrl+K,
+300-torrent keyboard use, Narrator, High Contrast, DPI/text scaling, or native
+caption hover, dragging and system-menu gestures. Those remain separate release
+evidence gaps, alongside the file-lifecycle gaps below. No new UI correction or
+fresh final whole-product adversarial approval is claimed by this checkpoint.
+
 ## File lifecycle and client defaults milestone — 2026-10-06
 
 The #128/#129/#131 slice implements fixed behavior, not more Settings switches.

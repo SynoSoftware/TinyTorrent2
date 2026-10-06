@@ -1,5 +1,23 @@
 # Implementation handover — 2026-10-05
 
+## Current evidence checkpoint — 2026-10-06
+
+`007dcde` commits the file-lifecycle milestone below. The following offscreen
+Add/layout and search reviews reused that successful app build and passed;
+their exact runs, visual review scope and limitations are at the top of
+[morning-report.md](morning-report.md). Search now has current native submission
+evidence for Properties from Settings, speed-limit navigation, named-setting
+focus and reopening. This does not prove physical Ctrl+K delivery.
+
+Preserve the owner's uncommitted inspector, file-list, table-header and search
+changes. The current contract deliberately gives translated menus, a 200-pixel
+Search and full caption buttons priority when computing minimum width; requested
+720 captures clamp to 837/863 client pixels for English/Spanish. Do not count
+that as exact-720 evidence or shrink the accepted title bar to obtain it.
+No screen was changed in this evidence checkpoint. Native desktop, accessibility
+and the recorded real-download/file-opening gaps remain; overall releasability
+and final whole-product adversarial acceptance are still open.
+
 ## File lifecycle milestone — 2026-10-06
 
 The fixed-behavior work #128/#129/#131 is now implemented: unfinished filenames
