@@ -1,5 +1,45 @@
 # Morning report
 
+## Current engine startup and safety evidence — 2026-10-06
+
+The inspector/toolbar checkpoint is `74c35e9`. Read the current root instructions
+before another build: Debug is the default, and occupied outputs require the
+lowest free artifacts lane. The Release exception applies to Checks.ps1.
+
+The owner's pending engine startup changes received a scoped source review.
+No concrete regression was found. Store::Drain swaps out its completion queue,
+so deferring resume reads from the settings completion really returns to the
+desktop owner first. The relevant new runtime evidence is Restart; the two
+file-safety checks below also satisfy the owner's explicit final-engine gate.
+
+`startup-candidate-engine.log` passed in 1.00 second with zero warnings/errors;
+all compilation, resources and linking were up to date. No native file or
+dependency was rebuilt. Source hashes stayed unchanged. The checked Release
+Engine.exe SHA-256 is
+`F2780046329698648D7DF5084CFBD048774CAF45508BF6C3DBE50543714E14E3`.
+
+All three existing checks passed once against that candidate:
+
+- `Restart-c2de29e5-be04-412c-b239-729119f5c659`: restored membership, identity,
+  saved pause/session intent, appearance and download-order choices, including
+  damaged-resume fallback through the changed startup sequence.
+- `FilesSafety-36ceea31-8697-4e61-84d1-24af9aa63bd9`: the existing disposable
+  file-operation safety workflow.
+- `CheckpointRetry-f134e84d-b826-481b-befd-d378dace79a3`: failed checkpoint
+  recovery and durable identity/intent after restart.
+
+All used disposable stores. No Transfer peer, full suite, application build or
+desktop automation ran. Output scans after the build and each check were empty;
+the final process query found no Engine.exe or TinyTorrent.exe. The owner's
+Debug instance was closed through its normal window/engine Exit paths using the
+standing authorization, without forced termination.
+
+These checks do not observe native splash visibility, minimum dwell or warm
+suppression, and they do not validate the concurrent file-tree/Pieces changes.
+Keep the engine and other owner edits intact; this evidence checkpoint does not
+commit their unfinished work or establish complete release readiness. Do not
+repeat these checks unless later engine changes affect their proof.
+
 ## Inspector viewport and toolbar checkpoint — 2026-10-06
 
 Tracker data correction `609bbc5` is committed. The subsequent narrow capture

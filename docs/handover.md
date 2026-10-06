@@ -1,5 +1,20 @@
 # Implementation handover — 2026-10-05
 
+## Current engine startup and safety evidence — 2026-10-06
+
+`74c35e9` contains the inspector/toolbar checkpoint. The pending engine startup
+delta now has a clean scoped source review and a current up-to-date Release
+build check. Restart, FilesSafety and CheckpointRetry each passed once against
+the current engine. Exact run IDs, binary hash and limits are at the top of
+[morning-report.md](morning-report.md). Do not repeat them for unrelated app work.
+
+The current root rules require Debug by default and a free artifacts lane when
+the default output is occupied; Checks.ps1 is an explicit Release exception.
+No full suite or dependency build ran. All check-owned processes are closed.
+Preserve the owner's still-pending engine, file-tree, Pieces, pipe, shortcut and
+design-authority work. Native splash timing/visibility, the other recorded OS
+and accessibility gaps, and review of those later app changes remain open.
+
 ## Inspector viewport and toolbar checkpoint — 2026-10-06
 
 `609bbc5` fixes multiline tracker saving. The following viewport correction
