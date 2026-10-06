@@ -111,7 +111,7 @@ public sealed partial class MainViewModel
     public IReadOnlyList<Suggestion> FindSuggestions(string query)
     {
         var words = query.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
-        var commands = CommandSuggestions();
+        var commands = CommandSuggestions().Where(suggestion => suggestion.IsEnabled);
         if (words.Length == 0)
             return commands.Where(suggestion => suggestion.Command == ShowPreferences || suggestion.Command == Add ||
                 suggestion.Command == ShowTorrents || suggestion.Command == ShowAbout || suggestion.Command == AddMagnet ||
@@ -139,7 +139,7 @@ public sealed partial class MainViewModel
         yield return new(Text.Get("commands", "add_file"), application, SuggestionScope.Command, Add);
         yield return new(Text.Get("commands", "add_magnet"), application, SuggestionScope.Command, AddMagnet);
         yield return new(Text.Get("commands", AllPaused ? "resume_all" : "pause_all"), all, SuggestionScope.Command, AllPaused ? ResumeAll : PauseAll);
-        yield return new(Text.Get("commands", "limits"), all, SuggestionScope.Command, Limits);
+        yield return PreferenceSuggestion(new(PreferenceSection.Transfers, "download_limit"), Text.Get("commands", "limits"));
         yield return new(Text.Get("chrome", IsDark ? "light" : "dark"), application, SuggestionScope.Command, SwitchTheme);
         yield return new(Text.Get("commands", "exit"), application, SuggestionScope.Command, Exit);
         yield return new(RestartText, application, SuggestionScope.Command, Restart);
@@ -150,7 +150,8 @@ public sealed partial class MainViewModel
             ("open", Open), ("open_folder", OpenFolder), ("copy_magnet", CopyMagnet), ("copy_hash", CopyHash),
             ("properties", Properties), ("up", Up), ("down", Down), ("top", Top), ("bottom", Bottom)
         })
-            yield return new(Text.Get("commands", key), selection, SuggestionScope.Command, command);
+            yield return new(Text.Get("commands", key), selection,
+                command == Properties ? SuggestionScope.Navigation : SuggestionScope.Command, command);
         foreach (var choice in Filters)
             yield return new(choice.Label, Text.Get("finding", "filter"), SuggestionScope.Navigation,
                 new Command(() => { Filter = choice.Filter; IsFilterOpen = true; return Task.CompletedTask; }, () => true));

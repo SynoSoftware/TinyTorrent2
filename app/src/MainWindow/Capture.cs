@@ -24,7 +24,7 @@ public sealed partial class MainWindow
 {
     private string? _captureDirectory;
     private Task? _capture;
-    internal static bool IsCaptureReview => Environment.GetEnvironmentVariable("TINYTORRENT_CAPTURE_REVIEW") is "1" or "smoke" or "shell" or "schedule" or "desktop" or "details" or "details-files" or "files" or "files-layout";
+    internal static bool IsCaptureReview => Environment.GetEnvironmentVariable("TINYTORRENT_CAPTURE_REVIEW") is "1" or "smoke" or "shell" or "schedule" or "desktop" or "details" or "details-files" or "files" or "files-layout" or "search" or "library";
 
     internal void ShowCaptureReview()
     {
@@ -684,7 +684,17 @@ public sealed partial class MainWindow
                 await CaptureFiles(outcomes, completed);
                 return;
             }
+            if (Environment.GetEnvironmentVariable("TINYTORRENT_CAPTURE_REVIEW") == "library")
+            {
+                await CaptureLibrary(outcomes, completed);
+                return;
+            }
             var target = Model.Torrents.FirstOrDefault() ?? throw new InvalidOperationException("The review store has no torrent.");
+            if (Environment.GetEnvironmentVariable("TINYTORRENT_CAPTURE_REVIEW") == "search")
+            {
+                await CaptureSearch(target, outcomes, completed);
+                return;
+            }
             if (Environment.GetEnvironmentVariable("TINYTORRENT_CAPTURE_REVIEW") == "desktop")
             {
                 await CaptureDesktop(target, outcomes, completed);

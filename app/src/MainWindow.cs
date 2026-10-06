@@ -134,9 +134,9 @@ public sealed partial class MainWindow : Window
         AddShortcut(new() { Key = VirtualKey.M, Modifiers = VirtualKeyModifiers.Control, ScopeOwner = Torrents }, () => Run(Model.Force));
         AddShortcut(new() { Key = VirtualKey.R, Modifiers = VirtualKeyModifiers.Control, ScopeOwner = Torrents }, () => Run(Model.Verify));
         AddShortcut(new() { Key = VirtualKey.V, Modifiers = VirtualKeyModifiers.Control, ScopeOwner = Torrents }, () => _ = PasteSources());
-        AddShortcut(new() { Key = VirtualKey.F, Modifiers = VirtualKeyModifiers.Control }, () => Search.Focus(FocusState.Keyboard));
-        AddShortcut(new() { Key = VirtualKey.E, Modifiers = VirtualKeyModifiers.Control }, () => Search.Focus(FocusState.Keyboard));
-        AddShortcut(new() { Key = VirtualKey.K, Modifiers = VirtualKeyModifiers.Control }, () => Search.Focus(FocusState.Keyboard));
+        AddShortcut(new() { Key = VirtualKey.F, Modifiers = VirtualKeyModifiers.Control }, FocusSearch);
+        AddShortcut(new() { Key = VirtualKey.E, Modifiers = VirtualKeyModifiers.Control }, FocusSearch);
+        AddShortcut(new() { Key = VirtualKey.K, Modifiers = VirtualKeyModifiers.Control }, FocusSearch);
         AddShortcut(new() { Key = VirtualKey.O, Modifiers = VirtualKeyModifiers.Menu }, () => Run(Model.ShowPreferences));
         AddShortcut(new() { Key = VirtualKey.Left, Modifiers = VirtualKeyModifiers.Menu }, () => Run(Model.ShowTorrents));
         AddShortcut(new() { Key = VirtualKey.O, Modifiers = VirtualKeyModifiers.Control | VirtualKeyModifiers.Shift }, () => Run(Model.AddMagnet));

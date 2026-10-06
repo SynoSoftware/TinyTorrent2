@@ -174,8 +174,9 @@ public sealed partial class PreferencesForm : UserControl
     internal void Navigate(PreferenceTarget target)
     {
         Categories.SelectedItem = new[] { GeneralCategory, TransfersCategory, NetworkCategory, ScheduleCategory, AppearanceCategory }[(int)target.Section];
-        DispatcherQueue.TryEnqueue(() =>
+        DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
         {
+            UpdateLayout();
             if (target.Field == "add_period") { _scheduler.FocusAdd(); return; }
             Control? control = target.Field switch
             {
@@ -191,7 +192,8 @@ public sealed partial class PreferencesForm : UserControl
             };
             if (control is null) return;
             control.StartBringIntoView();
-            control.Focus(FocusState.Programmatic);
+            if (control is NumberBox && TextEditor.Find(control) is { } editor) editor.Focus(FocusState.Programmatic);
+            else control.Focus(FocusState.Programmatic);
         });
     }
 

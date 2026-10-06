@@ -171,6 +171,14 @@ Use `TINYTORRENT_CAPTURE_REVIEW=smoke` to rerun the recovery journeys and settin
 viewports without repeating the full themes-and-sizes batch.
 Use `TINYTORRENT_CAPTURE_REVIEW=shell` for the title-bar menus, narrow layouts,
 themes, selection commands, secondary pages and retained filter state.
+Use `TINYTORRENT_CAPTURE_REVIEW=search` for native AutoSuggestBox result
+submission: unavailable commands, Properties from Settings, speed-limit
+navigation, named-setting focus and reopening suggestions. It captures localized
+results across themes and sizes; it does not synthesize Ctrl+K keyboard input.
+Use `TINYTORRENT_CAPTURE_REVIEW=library` only with the disposable library
+launcher's `library-capture.json` manifest. It checks native filter and named
+torrent selection with 300 real paused torrents, then captures the populated
+workspace, filter drawer and multi-file inspector. No live traffic is implied.
 Use `TINYTORRENT_CAPTURE_REVIEW=schedule` for exact-minute overnight editing,
 validation, cancellation, moving and removal, with the schedule overview,
 selection and editor at all three sizes in English and Spanish, Light and Dark.

@@ -142,7 +142,15 @@ public sealed partial class MainWindow
         if (!_refreshingFilters && Filters.SelectedItem is FilterChoice choice) Model.Filter = choice.Filter;
     }
 
-    private void OnSearchFocus(object sender, RoutedEventArgs args)
+    private void FocusSearch()
+    {
+        Search.Focus(FocusState.Keyboard);
+        ShowSuggestions();
+    }
+
+    private void OnSearchFocus(object sender, RoutedEventArgs args) => ShowSuggestions();
+
+    private void ShowSuggestions()
     {
         Search.ItemsSource = Model.FindSuggestions(Search.Text);
         Search.IsSuggestionListOpen = true;

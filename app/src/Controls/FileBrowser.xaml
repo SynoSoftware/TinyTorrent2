@@ -31,7 +31,9 @@
                     <TreeViewItem ItemsSource="{x:Bind Children}" IsExpanded="True" HorizontalContentAlignment="Stretch">
                         <Grid ColumnSpacing="8">
                             <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="84" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="180" /></Grid.ColumnDefinitions>
-                            <CheckBox Content="{x:Bind Name}" IsChecked="{x:Bind Wanted, Mode=TwoWay}" IsEnabled="{x:Bind IsEnabled, Mode=OneWay}" AutomationProperties.HelpText="{x:Bind Path}" />
+                            <CheckBox MinWidth="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" IsChecked="{x:Bind Wanted, Mode=TwoWay}" IsEnabled="{x:Bind IsEnabled, Mode=OneWay}" AutomationProperties.Name="{x:Bind Name}" AutomationProperties.HelpText="{x:Bind Path}" ToolTipService.ToolTip="{x:Bind Path}">
+                                <TextBlock Text="{x:Bind Name}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
+                            </CheckBox>
                             <TextBlock Grid.Column="1" Text="{x:Bind SizeText, Mode=OneWay}" VerticalAlignment="Center" TextAlignment="Right" />
                             <Grid Grid.Column="2" Width="108" VerticalAlignment="Center" RowSpacing="4" Visibility="{x:Bind ShowsProgress, Mode=OneWay}">
                                 <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
