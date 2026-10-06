@@ -43,8 +43,8 @@ updates now stop once the existing close owner commits to closing.
   scroll the accepted page rather than hiding actions. Decorative watermarks
   are an accepted taste choice, not a defect to redesign.
 - Every post-build/run output-location check returned no paths. All launched
-  UI and engine processes closed. Fresh milestone reviews remain ahead;
-  subsequent current-engine safety evidence follows below.
+  UI and engine processes closed. Fresh milestone verdicts and subsequent
+  current-engine safety evidence follow below.
 
 ### Current engine safety evidence
 
@@ -71,7 +71,7 @@ These directories are under `artifacts/evidence/`. The real-interruption probe
 took under five seconds, with 2 MiB of local fixture payload and no transfer
 peer. It does not manipulate or delete the owner's data. Every launched process
 closed and each required output-location check printed nothing. No full suite
-or engine build ran. Actual UI move/delete submissions remain for milestone 5.
+or engine build ran. Actual UI move/delete submissions are recorded below.
 
 ### Background and desktop behavior gate
 
@@ -261,6 +261,12 @@ Remaining plan checks were assessed against a likely failure a person would see:
 
 ### Final review and completion
 
+Completion commits: `0f3ff54` retains the owner's app folders and finishes the
+schedule; `43e47eb` completes the background/desktop gate; `c9e3995` completes
+Details/preferences and Move/delete with the reviewed corrections and diagnostics.
+The last two milestones share that commit because their settled app edits were
+compiled and reviewed together; reverting it removes that coherent correction.
+
 The fresh final reviewer checked the handover plan, current source and evidence
 after its capture-only review. Milestone 3's lifecycle/background owners,
 milestone 4's inspector/preferences and milestone 5's file operations match the
@@ -273,6 +279,9 @@ The final correction gates leave zero counted defects. The evidence limits
 above remain limits, not claims of physical verification. All owned app/engine
 processes are closed, the final output-location check prints no paths, and no
 engine code, dependency, distribution work or full test suite was included.
+The fresh reviewer confirmed final acceptance against the committed source and
+this ledger; no further implementation or verification was required for that
+scoped acceptance.
 
 ## Earlier handover evidence
 

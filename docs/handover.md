@@ -103,8 +103,8 @@ no `TinyTorrent.exe` or `Engine.exe`. No desktop automation remains active.
 | First usable download | Completed previously, `e0a5a92` | Historical journeys and first resource measurements are recorded. |
 | Everyday torrent actions | Completed previously, `6afbf65` | Historical evidence is recorded, with stated physical Explorer/drop and accessibility gaps. |
 | Background and desktop behavior | Completed, `43e47eb`; current process journey and fresh correction review passed | Native notifications, physical sleep and logon are source-reviewed, not physically exercised; see morning report. |
-| Details and preferences | Completed; current captures, native input journeys and second correction review passed | EN/ES, Light/Dark and requested sizes reviewed; exact narrow width, physical accessibility and populated-traffic limitations remain documented. |
-| Move and delete files | Completed; current engine safety, actual UI submissions, interrupted move and second correction review passed | Collision/shared ownership preserve bytes; physical picker, cross-volume/device failures and dropped alerts remain unverified. |
+| Details and preferences | Completed, `c9e3995`; current captures, native input journeys and second correction review passed | EN/ES, Light/Dark and requested sizes reviewed; exact narrow width, physical accessibility and populated-traffic limitations remain documented. |
+| Move and delete files | Completed, `c9e3995`; current engine safety, actual UI submissions, interrupted move and second correction review passed | Collision/shared ownership preserve bytes; physical picker, cross-volume/device failures and dropped alerts remain unverified. |
 
 The final reviewer also checked the current plan, source and evidence for
 completeness; its only counted correction findings are resolved. No further
