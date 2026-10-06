@@ -316,7 +316,7 @@ internal sealed class SelectionState
     /// Section 5.3's reconciliation. One pass over the new view rehydrates every tracked identity
     /// onto the new instances, prunes what left or became non-interactive, and repairs current.
     /// </summary>
-    internal void Reconcile(IReadOnlyList<object> view)
+    internal void Reconcile(IReadOnlyList<object> view, object? currentFallback = null, object? focusFallback = null)
     {
         List<object> kept = new();
         object? current = null;
@@ -352,6 +352,9 @@ internal sealed class SelectionState
         }
 
         kept = Limit(kept);
+
+        current ??= currentFallback;
+        focus ??= focusFallback;
 
         // A lost current falls back to the first retained selected item in current visual order.
         if (Current is not null && current is null && kept.Count > 0)

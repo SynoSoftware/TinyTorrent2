@@ -159,8 +159,9 @@ Capture journeys are excluded from ordinary builds. Build the app with
 `/p:EnableCapture=true` to include them; its output and intermediates use the
 `_capture` suffix under `artifacts/`, so a diagnostic build cannot replace the
 ordinary product. The option does not launch anything.
-For Release x64, launch `artifacts/bin/TinyTorrent/release_win-x64_capture/TinyTorrent.exe`
-with the `Engine.exe` beside it. Historical disposable launchers that name
+Launch `artifacts/bin/TinyTorrent/debug_win-x64_capture/TinyTorrent.exe`, or
+`release_win-x64_capture` for a Release build, with the `Engine.exe` beside it.
+Historical disposable launchers that name
 `release_win-x64` must have both executable paths changed before reuse; capture
 environment variables do not enable diagnostics in an ordinary binary.
 
@@ -215,9 +216,12 @@ refusal.
 Use `TINYTORRENT_CAPTURE_REVIEW=library` only with the disposable library
 launcher's `library-capture.json` manifest. It checks native filter and named
 torrent selection with 300 real paused torrents, then captures the populated
-workspace, filter drawer and multi-file inspector. Native focus also reveals the
-last header in both flow directions without changing vertical scroll. This does
-not deliver physical arrow/End keys. No live traffic is implied.
+workspace, filter drawer, multi-file inspector and Pieces. Native hierarchy
+providers check that collapsing a folder prunes its hidden selected child while
+retaining outside selection, and expansion leaves priorities unchanged. Native
+focus also reveals the last header in both flow directions without changing
+vertical scroll. This does not deliver physical arrow/End keys. No live traffic
+or mixed Pieces state is implied by this paused fixture.
 Use `TINYTORRENT_CAPTURE_REVIEW=traffic` only with the disposable loopback
 launcher's `traffic-capture.json` manifest. It captures the active workspace,
 General, populated Peers, mixed Pieces and nonzero Speed history across the

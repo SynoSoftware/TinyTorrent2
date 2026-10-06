@@ -12,9 +12,11 @@ for this documentation review.
 | --- | --- |
 | Public control, template lifetime, composition | [Table](../src/Table.cs) and its parts in [Table/](../src/Table/). |
 | Source subscription and coherent source capture | [Body.Source](../src/Body/Source.cs). |
+| Optional child membership, subscriptions and sibling projection | [Hierarchy](../src/Hierarchy.cs), configured by `Schema<TRow>.Hierarchy`. |
 | Displayed sequence and collection reconciliation | [Body.View](../src/Body/View.cs). |
 | Effective column geometry and horizontal offset | [ResolvedLayout](../src/ResolvedLayout.cs). |
 | Shared header and row arrangement | [CellsPanel](../src/CellsPanel.cs). |
+| Hierarchy cell indentation and disclosure | [Body.Branch](../src/Body/Branch.cs), created only for the hierarchy column. |
 | Selection, current item, anchor, and logical focus | [SelectionState](../src/SelectionState.cs). |
 | Row pointer arbitration | [Table input](../src/Table/Input.cs). |
 | Marquee geometry and row insertion feedback | [Body.Marquee](../src/Body/Marquee.cs) and [Body.Drag](../src/Body/Drag.cs), driven by the arbiter. |
@@ -25,6 +27,14 @@ The source capture and displayed sequence serve different roles: one receives
 host items, the other presents the private view. Neither owns domain records or
 executes host commands. New behavior goes to its existing owner; the table above
 does not set a quota of classes or files.
+
+The [hierarchy extension](hierarchy.md) keeps host expansion state outside the
+control. Captured child membership feeds the same private view, sorting cadence
+and selection reconciliation as flat rows. `Table/Hierarchy.cs` integrates
+navigation and collapse focus; `Body.Surface` adds hierarchy automation to its
+existing item peers. Flat schemas do not allocate this source state or cell
+chrome. The sample's Project plan page supplies a non-torrent hierarchy with a
+large collapsed branch.
 
 ## Rendering and interaction
 

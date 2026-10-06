@@ -1,5 +1,37 @@
 # Morning report
 
+## Files hierarchy checkpoint — 2026-10-06
+
+The owner's TableView hierarchy and shared Files integration are ready for a
+coherent checkpoint. Source review found zero counted defects across the library,
+Files host, sample and focused checks. The selected-row stripe remains absent.
+The priority-width and metadata-ready Add-preview corrections described below
+belong to this same integration.
+
+`hierarchy-journey-app.log` passed Debug/x64 capture compilation in 47.30 seconds
+with zero warnings or errors. Only the app compiled, in its two WinUI passes;
+TableView and Lucide were current. Source hashes were unchanged during the build
+and the Everything output-path check was empty. The owner's current
+`files-table-tests-build.log` already compiled all four hierarchy checks in
+27.00 seconds; that test host was not launched or rebuilt.
+
+`LibraryCapture-5cc7b53c-434a-4cf1-9f43-d46f9adf9213` passed in 25.879 seconds.
+Native automation providers selected a child and an outside file, collapsed the
+folder, and expanded it again. Collapse hid descendants, removed the hidden child
+from selection, retained the outside file and moved current to the folder.
+Expansion restored descendants without reselecting them or changing priorities.
+The existing filter, named-torrent search and LTR/RTL header-focus journeys also
+passed. All 300 paused torrents and 307 payload hashes were retained; UI exit was
+zero and both owned processes closed. No transfer peer or full suite ran.
+
+The run produced 48 scenes at the three supported sizes in EN/ES and Light/Dark.
+An independent image-only reviewer inspected all twelve Files and twelve Pieces
+views plus representative search/filter scenes and found zero counted defects.
+Pieces evidence covers one missing piece with no peers, not mixed states or
+aggregation. Physical keyboard input, Narrator, actual High Contrast, exact bulk
+file-priority targets and flat-table performance comparison remain unverified.
+This checkpoint does not close whole-product release acceptance.
+
 ## Files review and theme-close correction — 2026-10-06
 
 The selected-row stripe remains removed in `b1a21e0`; current source has not

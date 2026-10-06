@@ -11,6 +11,9 @@ known gaps; the contract does not claim that every requirement is implemented.
 [Product architecture](../../../docs/architecture.md) owns application scope, and
 [testing](../../../docs/testing.md) owns validation scope.
 
+The [hierarchical rows extension](hierarchy.md) is the authority for optional
+child rows. This contract continues to govern shared behavior and flat tables.
+
 `Table` is a reusable WinUI 3 control for large, changing collections whose
 cells need arbitrary XAML content. It combines native collection virtualization
 and selection with shared column layout, sorting, layout persistence, and
@@ -128,7 +131,7 @@ This is a dense item table, not a spreadsheet. Version 1 does not include:
 - in-place spreadsheet-style cell navigation;
 - column grouping, frozen columns, summaries, formulas, or pagination;
 - multi-column sorting;
-- arbitrary grouping or tree rows;
+- arbitrary grouping (optional child rows follow the [hierarchy extension](hierarchy.md));
 - local text search, text-match semantics, a built-in search box, or a
   domain-filter editor;
 - data export;
@@ -842,10 +845,10 @@ clipping for its content and declares a sufficient MinWidth when it contains a
 control or essential value that must remain directly usable. The table does not
 make a rich cell reachable merely by shrinking it below its usable width.
 
-The visual baseline is WinUI and the surrounding application's existing visual
-language. This applies Fluent's platform-native, focused, and inclusive
-principles by giving data and interaction states priority over decorative table
-chrome:
+The visual baseline is WinUI. This section owns TableView's appearance across
+hosts; the host owns page composition and its cell content. This applies
+Fluent's platform-native, focused, and inclusive principles by giving data and
+interaction states priority over decorative table chrome:
 
 - use built-in WinUI collection, flyout, text, icon, focus, and control states
   before adding any custom appearance;
@@ -863,6 +866,11 @@ chrome:
   Cell templates must not replace these with a competing row backdrop;
 - adapt when Light, Dark, or High Contrast changes at runtime. A custom
   host cell remains responsible for using equivalent accessible resources.
+
+The column header uses a `ControlAltFillColorTertiaryBrush` band, the platform
+fill that differs from both the window and a card by a similar visible step in
+Light and Dark. A table hosted inside another surface retains this header,
+so its column headings have the same appearance wherever the table is used.
 
 The retained row appearance has specific exceptions awaiting the
 [hands-on Fluent review](../../../docs/architecture.md#decisions-still-open): no hover

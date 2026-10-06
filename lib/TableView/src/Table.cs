@@ -291,7 +291,7 @@ public sealed partial class Table : Control
         _resolved.Clear();
         foreach (Column column in Columns)
         {
-            _resolved.Add(new ResolvedColumn(column));
+            _resolved.Add(new ResolvedColumn(column, IsHierarchyColumn(column)));
         }
 
         _schemaCaptured = true;
@@ -303,6 +303,11 @@ public sealed partial class Table : Control
         _selection.RehashIdentity();
 
         Geometry.SetOrder(_resolved);
+        if (_hierarchy is not null)
+        {
+            _resolved.Clear();
+            _resolved.AddRange(Geometry.Order);
+        }
 
         if (_pendingLayout is not null)
         {
@@ -327,6 +332,8 @@ public sealed partial class Table : Control
 
     private void ValidateColumns()
     {
+        if (_hierarchy is not null && !Columns.Contains(_hierarchy.Column))
+            throw ConfigurationError("The hierarchy column must belong to this table.");
         HashSet<string> ids = new(StringComparer.Ordinal);
         bool anyVisible = false;
 
@@ -385,7 +392,7 @@ public sealed partial class Table : Control
 
             // Sortability is no longer two properties that had to agree: a column carries a sort
             // key from the schema or it does not, so there is nothing left here to contradict.
-            if (column.IsVisible)
+            if (column.IsVisible || IsHierarchyColumn(column))
             {
                 anyVisible = true;
             }
@@ -492,7 +499,7 @@ public sealed partial class Table : Control
                 }
 
                 // A required column saved as hidden is restored.
-                if (!entry.Value && !column.Column.CanHide)
+                if (!entry.Value && !column.CanHide)
                 {
                     continue;
                 }

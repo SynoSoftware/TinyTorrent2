@@ -1,5 +1,20 @@
 # Implementation handover — 2026-10-05
 
+## Files hierarchy checkpoint — 2026-10-06
+
+The shared TableView hierarchy, Files integration, sample and four compiled
+checks have passed source review. Native collapse/expand selection reconciliation
+and unchanged priorities passed in the 300-torrent library journey; all payloads
+and membership were retained. The 48-scene capture and independent image review
+found zero counted defects. Exact evidence and limits are recorded at the top of
+[morning-report.md](morning-report.md). Reuse this evidence rather than rebuilding
+or running the suite merely for the checkpoint.
+
+Physical keyboard/Narrator/High Contrast, exact bulk file targets and comparative
+flat-table performance remain unverified. Pieces captures show one missing piece
+only. Pending owner Pieces/registration/startup/shortcut work and the earlier
+desktop/live-download gaps remain; whole-product release acceptance is incomplete.
+
 ## Files review and theme-close correction — 2026-10-06
 
 The stripe remains removed in `b1a21e0`. Current owner Files model-replacement

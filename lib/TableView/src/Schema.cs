@@ -23,6 +23,24 @@ public sealed class Schema<TRow> where TRow : class
     internal Schema(Table table) => _table = table;
 
     /// <summary>
+    /// Setup-only. Keep this column first and visible, with child rows and expansion owned by
+    /// the host. Children must be finite with globally unique row identities. After changing
+    /// expansion in the host, call <see cref="Table.RefreshView"/> once for the batch.
+    /// </summary>
+    public Schema<TRow> Hierarchy(Column column, Func<TRow, IEnumerable<TRow>> children,
+        Func<TRow, bool> isExpanded, Action<TRow, bool> setExpanded)
+    {
+        ArgumentNullException.ThrowIfNull(column);
+        ArgumentNullException.ThrowIfNull(children);
+        ArgumentNullException.ThrowIfNull(isExpanded);
+        ArgumentNullException.ThrowIfNull(setExpanded);
+        _table.RequireSetup();
+        _table.SetHierarchy(new Hierarchy(column, item => children((TRow)item),
+            item => isExpanded((TRow)item), (item, value) => setExpanded((TRow)item, value)));
+        return this;
+    }
+
+    /// <summary>
     /// A stable, non-null, unique key per row, used to reconcile selection, current item, anchor
     /// and focus across a source change. Without one, identity is object reference.
     /// </summary>

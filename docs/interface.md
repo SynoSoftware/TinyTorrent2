@@ -853,6 +853,10 @@ a native TreeView with wanted, size, progress, and priority content, because
 folders require hierarchy and TableView's contract excludes tree rows. Reuse the
 file browser in Add; do not extend TableView with torrent-specific tree behavior.
 
+The accepted [hierarchical rows extension](../lib/TableView/docs/hierarchy.md#files-browser-integration)
+supersedes this TreeView choice for both Files hosts and keeps torrent-specific
+file commands in the application.
+
 **Owner ruling:** the six inspector sections use a native SelectorBar, centred
 in one header row between the torrent name and an icon Close button. The owner
 could not get used to a left navigation pane, and one row keeps the sections
@@ -866,10 +870,9 @@ edge and `OverlayCornerRadius` corners, inset from the window edges so the base
 acrylic shows between it and the table. These two tokens are chosen because they
 stay visible on the dark acrylic base, where `LayerFillColorDefaultBrush` and
 `CardStrokeColorDefaultBrush` differ from it by too little to see. Its header sits on that layer with a
-`DividerStrokeColorDefaultBrush` bottom edge. A table inside it keeps the table
-header, so every column header in the product looks the same: a
-`ControlAltFillColorTertiaryBrush` band, the one platform fill that differs from
-both the window and the card by a similar visible step in Light and Dark.
+`DividerStrokeColorDefaultBrush` bottom edge. Tables inside it follow the
+[TableView visual contract](../lib/TableView/docs/tableview-contract.md#8-rendering-layout-and-visual-language),
+so the inspector does not define a second table appearance.
 
 Apply individual choices and explicit file commands through the same commit
 rules. When a coherent edit needs a draft, keep one active editor bound to the

@@ -17,6 +17,8 @@ internal sealed class Source
     private IReadOnlyList<object> _snapshot = Array.Empty<object>();
     private bool _suspended = true;
 
+    internal Hierarchy? Hierarchy { get; set; }
+
     internal Source(DispatcherQueue dispatcher) => _dispatcher = dispatcher;
 
     internal event EventHandler<IReadOnlyList<object>>? SnapshotChanged;
@@ -31,6 +33,7 @@ internal sealed class Source
         RequireUiThread();
 
         IReadOnlyList<object> next = Capture(source);
+        Hierarchy?.Invalidate();
         Detach();
         _source = source;
         if (!_suspended) Attach();
@@ -40,6 +43,7 @@ internal sealed class Source
     internal void Suspend()
     {
         _suspended = true;
+        Hierarchy?.Suspend();
         Detach();
     }
 
@@ -47,9 +51,12 @@ internal sealed class Source
     {
         if (!_suspended) return;
         _suspended = false;
+        Hierarchy?.Resume();
         Attach();
         if (_source is INotifyCollectionChanged)
             SnapshotChanged?.Invoke(this, Capture(_source));
+        else if (Hierarchy is not null)
+            SnapshotChanged?.Invoke(this, _snapshot);
     }
 
     private void Attach()

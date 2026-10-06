@@ -8,8 +8,12 @@ interface follows the [architecture](../../docs/architecture.md).
 
 ## Read for the change
 
-- Before designing or changing a product surface, read
-  [interface guidance](../../docs/interface.md).
+- Before designing or changing TableView's appearance, read its
+  [visual contract](docs/tableview-contract.md#8-rendering-layout-and-visual-language).
+  The library owns table design so every host uses the same control.
+- When integrating TableView into a product surface, read
+  [interface guidance](../../docs/interface.md) for host content and page layout;
+  table appearance and interaction remain defined by this library's contract.
 - Before changing TableView behavior or its public API, read the relevant sections
   of the [contract](docs/tableview-contract.md), using the
   [table vocabulary](CONTEXT.md).

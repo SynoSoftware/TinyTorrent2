@@ -25,16 +25,13 @@
             </TitleBar.IconSource>
         </TitleBar>
 
-        <!--
-            Two consumers, deliberately of different shapes. AGENTS.md: one consumer proves
-            nothing, so the control is built against a downloads list and a departures board.
-        -->
         <SelectorBar x:Name="Pages"
                      Grid.Row="1"
                      Margin="12,0,12,0"
                      SelectionChanged="OnPageSelected">
             <SelectorBarItem Text="Render queue" IsSelected="True" />
             <SelectorBarItem Text="Departures" />
+            <SelectorBarItem Text="Project plan" />
         </SelectorBar>
 
         <Frame x:Name="RootFrame" Grid.Row="2" />

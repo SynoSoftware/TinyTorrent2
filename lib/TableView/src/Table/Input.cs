@@ -611,7 +611,7 @@ public sealed partial class Table
         // The rows ask this for their cursor as soon as they load, which can be before any press
         // or reconcile has copied the host's eligibility predicate into the model.
         SyncSelectionPolicy();
-        return CanReorder && ShowsRowOrder && _selection.IsEligible(item) &&
+        return _hierarchy is null && CanReorder && ShowsRowOrder && _selection.IsEligible(item) &&
             (CanReorderItem is null || (CanReorderItem(item) &&
                 (!_selection.IsSelected(item) || SelectedItems.All(CanReorderItem))));
     }
@@ -648,7 +648,7 @@ public sealed partial class Table
     /// </remarks>
     private void RequestReorder(IReadOnlyList<object> moving, int boundary)
     {
-        if (moving.Count == 0 || boundary < 0 || !ShowsRowOrder)
+        if (_hierarchy is not null || moving.Count == 0 || boundary < 0 || !ShowsRowOrder)
         {
             return;
         }
@@ -965,6 +965,7 @@ public sealed partial class Table
 
         e.Handled = e.Key switch
         {
+            VirtualKey.Left or VirtualKey.Right => NavigateHierarchy(e.Key, shift, ctrl),
             VirtualKey.Up => MoveCurrentBy(-1, shift, ctrl),
             VirtualKey.Down => MoveCurrentBy(1, shift, ctrl),
             VirtualKey.PageUp => MoveCurrentBy(-RowsPerPage(), shift, ctrl),

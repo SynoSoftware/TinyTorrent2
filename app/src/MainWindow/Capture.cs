@@ -653,6 +653,30 @@ public sealed partial class MainWindow
 
     private async Task CaptureDetails(Torrent target, List<object> outcomes)
     {
+        var directory = Model.DataDirectory ?? throw new InvalidOperationException("The detail capture has no store.");
+        var preview = Path.Combine(directory, "preview.torrent");
+        var metadata = System.Text.Encoding.ASCII.GetBytes("d4:infod6:lengthi1e4:name11:preview.bin12:piece lengthi16384e6:pieces20:");
+        await File.WriteAllBytesAsync(preview, metadata.Concat(Convert.FromHexString("11f6ad8ec52a2984abaafd7c3b516503785c2072"))
+            .Concat(System.Text.Encoding.ASCII.GetBytes("ee")).ToArray());
+        await Model.Draft.Cancel();
+        Model.Draft.EditingMagnet = true;
+        var closed = ShowAdd();
+        await CaptureLayout();
+        var dialog = _interaction?.Dialog ?? throw new InvalidOperationException("The preview review Add dialog did not open.");
+        try
+        {
+            Model.Draft.Own([preview]);
+            await Model.Draft.PrepareAll().WaitAsync(TimeSpan.FromSeconds(20));
+            await CaptureReady(Model.Draft, () => Model.Draft.HasFiles && !Model.Draft.IsPending);
+            await CapturePage("details-add-file-preview", dialog.Content as FrameworkElement);
+            var table = CaptureElements(dialog).OfType<Syno.TableView.Table>().Single(control => control.Name == "Files");
+            var sourceRetained = ReferenceEquals(table.ItemsSource, Model.Draft.Files.Roots);
+            var fileDisplayed = CaptureElements(table).OfType<TextBlock>().Any(control => control.Text == "preview.bin");
+            outcomes.Add(new { journey = "native Add file preview", sourceRetained, fileDisplayed, files = Model.Draft.Files.Roots.Count });
+            if (!sourceRetained || !fileDisplayed)
+                throw new InvalidOperationException("The native file browser did not follow the metadata-ready Add draft.");
+        }
+        finally { dialog.Hide(); await closed; }
         await ShowTorrents();
         Torrents.Selection = new Syno.TableView.Selection([target], target);
         await SelectTorrent();

@@ -6,13 +6,16 @@ namespace Syno.TableView;
 /// </summary>
 internal sealed class ResolvedColumn
 {
-    internal ResolvedColumn(Column column)
+    internal ResolvedColumn(Column column, bool hierarchy = false)
     {
         Column = column;
+        IsHierarchy = hierarchy;
         BaselineWidth = Clamp(column.Width, column.MinWidth, column.MaxWidth);
     }
 
     internal Column Column { get; }
+    internal bool IsHierarchy { get; }
+    internal bool CanHide => !IsHierarchy && Column.CanHide;
 
     /// <summary>The persistence key, or null for a column the host does not persist.</summary>
     internal string? Id => Column.Id;
@@ -20,7 +23,7 @@ internal sealed class ResolvedColumn
     /// <summary>Declared default width after the column's own bounds are applied.</summary>
     internal double BaselineWidth { get; }
 
-    internal bool BaselineVisibility => Column.IsVisible;
+    internal bool BaselineVisibility => IsHierarchy || Column.IsVisible;
 
     internal double? WidthOverride { get; set; }
 
@@ -28,7 +31,7 @@ internal sealed class ResolvedColumn
 
     internal double Width => WidthOverride ?? BaselineWidth;
 
-    internal bool IsVisible => VisibilityOverride ?? BaselineVisibility;
+    internal bool IsVisible => IsHierarchy || (VisibilityOverride ?? BaselineVisibility);
 
     internal static double Clamp(double value, double min, double max)
     {
@@ -169,6 +172,13 @@ internal sealed class ResolvedLayout
     {
         _order.Clear();
         _order.AddRange(columns);
+        int index = _order.FindIndex(column => column.IsHierarchy);
+        if (index > 0)
+        {
+            var first = _order[index];
+            _order.RemoveAt(index);
+            _order.Insert(0, first);
+        }
 
         // Always the structural reason, whatever the new order turns out to look like. This call is
         // also what re-applies each header cell's sort indicator, and both a reset and a restored

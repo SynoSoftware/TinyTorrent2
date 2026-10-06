@@ -2,6 +2,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Syno.TableViewSample.Board;
 using Syno.TableViewSample.Jobs;
+using Syno.TableViewSample.Planning;
 
 // To learn more about WinUI, the WinUI project structure,
 // and more about our project templates, see: http://aka.ms/winui-project-info.
@@ -9,8 +10,7 @@ using Syno.TableViewSample.Jobs;
 namespace Syno.TableViewSample;
 
 /// <summary>
-/// The application window. It hosts the sample's two consumers: a render farm's job list and a
-/// departures board, which share nothing but the control.
+/// Hosts the flat and hierarchical consumers of the control.
 /// </summary>
 public sealed partial class MainWindow : Window
 {
@@ -31,7 +31,10 @@ public sealed partial class MainWindow : Window
     }
 
     private void OnPageSelected(SelectorBar sender, SelectorBarSelectionChangedEventArgs args) =>
-        RootFrame.Navigate(sender.Items.IndexOf(sender.SelectedItem) == 1
-            ? typeof(DeparturesPage)
-            : typeof(JobsPage));
+        RootFrame.Navigate(sender.Items.IndexOf(sender.SelectedItem) switch
+        {
+            1 => typeof(DeparturesPage),
+            2 => typeof(PlanPage),
+            _ => typeof(JobsPage)
+        });
 }

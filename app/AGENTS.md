@@ -5,6 +5,11 @@ TinyTorrent product UI described by the [architecture](../docs/architecture.md).
 The reusable table and its development hosts live in
 [lib/TableView](../lib/TableView/AGENTS.md).
 
+Table design belongs to the
+[TableView visual contract](../lib/TableView/docs/tableview-contract.md#8-rendering-layout-and-visual-language).
+The app consumes that design rather than defining another table appearance,
+so its tables remain consistent with every other library host.
+
 Before changing product screens, read the [interface contract](../docs/interface.md).
 Text and formatting follow [localisation](../docs/localisation.md); test scope
 follows [testing](../docs/testing.md).

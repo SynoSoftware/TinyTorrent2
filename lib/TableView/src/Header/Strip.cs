@@ -615,6 +615,7 @@ public sealed partial class Strip : Control
 
     private bool BeginColumnDrag(Pointer pointer)
     {
+        if (_column?.IsHierarchy == true) return false;
         // Without the capture the drop would be lost as soon as the pointer left the strip.
         if (!CapturePointer(pointer))
         {
@@ -666,7 +667,7 @@ public sealed partial class Strip : Control
         {
             if (contentX < visible[i].Offset + (visible[i].Width / 2))
             {
-                return i;
+                return _owner.Hierarchy is null ? i : Math.Max(1, i);
             }
         }
 

@@ -1,88 +1,141 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Syno.TableView;
+using Windows.Foundation;
 using Windows.System;
 
 namespace Syno.TinyTorrent.Controls;
 
 public sealed partial class FileBrowser : UserControl
 {
-    public static readonly DependencyProperty ModelProperty = DependencyProperty.Register(nameof(Model), typeof(FileSelection), typeof(FileBrowser), new PropertyMetadata(null));
+    public static readonly DependencyProperty ModelProperty = DependencyProperty.Register(nameof(Model), typeof(FileSelection), typeof(FileBrowser), new PropertyMetadata(null, OnModelChanged));
     public FileSelection Model { get => (FileSelection)GetValue(ModelProperty); set => SetValue(ModelProperty, value); }
 
     public FileBrowser(FileSelection model)
     {
         Model = model;
         InitializeComponent();
+        if (!Model.ShowsProgress) Files.Columns.Remove(ProgressColumn);
+        var schema = Files.Schema<FileNode>()
+            .Key(node => node.Path)
+            .Hierarchy(NameColumn, node => node.Children, node => node.IsExpanded,
+                (node, expanded) => node.IsExpanded = expanded)
+            .SortKey(NameColumn, node => node.Name)
+            .SortKey(SizeColumn, node => node.TotalSize)
+            .SortKey(PriorityColumn, node => node.Priority);
+        if (Model.ShowsProgress) schema.SortKey(ProgressColumn, node => node.Progress);
+        Files.SelectionChanged += (_, _) => RefreshActions();
+        Files.ItemContextRequested += (_, args) =>
+            ShowPriority(args.Target, args.SelectedItems.OfType<FileNode>().ToArray(), args.Position);
+        Loaded += (_, _) => { Model.Changed += OnChanged; RefreshActions(); };
+        Unloaded += (_, _) => Model.Changed -= OnChanged;
         RefreshText();
+    }
+
+    private static void OnModelChanged(DependencyObject sender, DependencyPropertyChangedEventArgs args)
+    {
+        var browser = (FileBrowser)sender;
+        if (browser.Files is null) return;
+        if (browser.IsLoaded)
+        {
+            if (args.OldValue is FileSelection previous) previous.Changed -= browser.OnChanged;
+            browser.Model.Changed += browser.OnChanged;
+        }
+        browser.Files.Selection = Selection.Empty;
+        browser.RefreshText();
+        browser.RefreshActions();
     }
 
     internal void RefreshText()
     {
         Bindings.Update();
-        ToolTipService.SetToolTip(All, Model.Text.Get("files", "all_matching"));
-        AutomationProperties.SetHelpText(All, Model.Text.Get("files", "all_matching"));
+        Files.Strings = Model.Text.Table;
+        NameColumn.DisplayName = Model.Text.Get("files", "name");
+        SizeColumn.DisplayName = Model.Text.Get("columns", "size");
+        ProgressColumn.DisplayName = Model.Text.Get("columns", "progress");
+        PriorityColumn.DisplayName = Model.Text.Get("files", "priority");
+        string matching = Model.Text.Get("files", "all_matching");
+        ToolTipService.SetToolTip(All, matching);
+        AutomationProperties.SetName(All, matching);
         Model.Refresh();
     }
 
-    // The TableView's own default, so this list's cells cannot drift from the
-    // product's tables.
-    public static Thickness Cell { get; } = (Thickness)Table.CellPaddingProperty.GetMetadata(typeof(Table)).DefaultValue;
-    public static Thickness Trail { get; } = new(0, 0, Cell.Right, 0);
+    private void OnChanged(object? sender, EventArgs args)
+    {
+        RefreshActions();
+        if (Files.Sort is not null) Files.RefreshView();
+    }
 
-    // WinUI's TreeViewItem insets a row by 4 pixels and reserves a 40-pixel
-    // expander column (14 + 12 + 14). A list without folders never shows an
-    // expander, so its rows move left over that column. Either way a top-level
-    // row's check box starts one cell inset past the expanders it shows.
-    private const double Inset = 4;
-    private const double Expander = 40;
-
-    public static Thickness Lead(bool folders) => new(Cell.Left + (folders ? Expander : 0), 0, Cell.Right, 0);
-
-    public static Thickness Indent(bool folders) => new(Lead(folders).Left - Inset - Expander, 0, 0, 0);
+    private void RefreshActions()
+    {
+        Files.IsEnabled = Model.IsEnabled;
+        Priority.IsEnabled = Model.IsEnabled && Files.Selection.Items.Count > 0;
+    }
 
     private void OnAll(object sender, RoutedEventArgs args)
     {
         Model.SelectMatching(Model.AllMatching != true);
-        // The click has already toggled the box; show the selection that resulted.
         All.IsChecked = Model.AllMatching;
     }
 
-    private void OnExpand(object sender, RoutedEventArgs args) => Model.Expand(true);
-    private void OnCollapse(object sender, RoutedEventArgs args) => Model.Expand(false);
+    private void OnExpand(object sender, RoutedEventArgs args)
+    {
+        Model.Expand(true);
+        Files.RefreshView();
+    }
 
-    // The tree owns the keyboard: arrows move between rows, Space toggles the
-    // focused row as its check box would, and F2 opens its priority. The check
-    // box stays out of the Tab order, so Tab crosses a long list in two stops.
+    private void OnCollapse(object sender, RoutedEventArgs args)
+    {
+        Model.Expand(false);
+        Files.RefreshView();
+    }
+
+    private void OnPriority(object sender, RoutedEventArgs args) =>
+        ShowPriority(Priority, Files.Selection.Items.OfType<FileNode>().ToArray());
+
+    private void ShowPriority(FrameworkElement target, FileNode[] nodes, Point? position = null)
+    {
+        if (!Model.IsEnabled || nodes.Length == 0) return;
+        MenuFlyout menu = new();
+        foreach (var (key, priority) in new[] { ("skip", 0), ("low", 1), ("normal", 4), ("high", 7) })
+        {
+            MenuFlyoutItem item = new() { Text = Model.Text.Get("files", key) };
+            item.Click += (_, _) => Model.Change(nodes, priority);
+            menu.Items.Add(item);
+        }
+        FlyoutShowOptions options = new();
+        if (position is { } point) options.Position = point;
+        menu.ShowAt(target, options);
+    }
+
     private void OnFilesKey(object sender, KeyRoutedEventArgs args)
     {
-        if (args.Key is not (VirtualKey.F2 or VirtualKey.Space)) return;
-        var element = FocusManager.GetFocusedElement(XamlRoot) as DependencyObject;
-        while (element is not null && !ReferenceEquals(element, sender))
+        if (args.Key != VirtualKey.F2) return;
+        FrameworkElement? target = null;
+        for (var element = FocusManager.GetFocusedElement(XamlRoot) as DependencyObject;
+             element is not null;
+             element = VisualTreeHelper.GetParent(element))
         {
-            if (element is ComboBox) return;
-            if (element is TreeViewItem item)
+            if (element is ListViewItem row)
             {
-                if (args.Key == VirtualKey.Space)
-                {
-                    if (item.DataContext is FileNode { IsEnabled: true } node)
-                    {
-                        node.Wanted = node.Wanted != true;
-                        args.Handled = true;
-                    }
-                }
-                else if (item.Content is Grid row && row.Children.OfType<ComboBox>().FirstOrDefault() is { IsEnabled: true } priority)
-                {
-                    priority.Focus(FocusState.Keyboard);
-                    priority.IsDropDownOpen = true;
-                    args.Handled = true;
-                }
-                return;
+                target = row;
+                break;
             }
-            element = VisualTreeHelper.GetParent(element);
+            if (ReferenceEquals(element, Files) || element is ListView)
+            {
+                target = Files;
+                break;
+            }
+            if (element is ButtonBase or ComboBox or TextBox or PasswordBox or Slider) return;
         }
+        if (target is null || Files.Selection.Current is not FileNode current) return;
+        FileNode[] nodes = Files.Selection.Items.Contains(current)
+            ? Files.Selection.Items.OfType<FileNode>().ToArray() : [current];
+        ShowPriority(target, nodes);
+        args.Handled = true;
     }
 }

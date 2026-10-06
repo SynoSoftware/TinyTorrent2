@@ -238,6 +238,7 @@ public sealed partial class Table
     /// </remarks>
     private IReadOnlyList<object> ViewOrder(IReadOnlyList<object> snapshot)
     {
+        if (_hierarchy is not null && _sortColumn is null) return snapshot;
         // Natural order belongs to the host, which reorders when it means to, and the row-order
         // column shows that same order, so holding it would delay the person's own reorder; an
         // empty view has no established order to preserve; and a zero interval is the host asking
@@ -368,9 +369,11 @@ public sealed partial class Table
     /// stable, so equal values keep the exact base-sequence order they arrived in — descending
     /// included, because only the comparison is reversed and never the tie-break.
     /// </summary>
-    private static IReadOnlyList<object> SortedSnapshot(IReadOnlyList<object> snapshot,
+    private IReadOnlyList<object> SortedSnapshot(IReadOnlyList<object> snapshot,
         ResolvedColumn? column, SortDirection direction)
     {
+        if (_hierarchy is not null && (_preparedHierarchy ?? _hierarchy.Captured) is { } hierarchy)
+            return _hierarchy.Project(hierarchy, column?.Column.Comparer, direction);
         if (column is null)
         {
             return snapshot;

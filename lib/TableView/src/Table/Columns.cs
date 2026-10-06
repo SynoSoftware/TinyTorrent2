@@ -110,7 +110,7 @@ public sealed partial class Table
     /// a state with no visible column.
     /// </summary>
     internal bool CanHideColumn(ResolvedColumn column) =>
-        column.IsVisible && column.Column.CanHide && Geometry.VisibleColumns.Count > 1;
+        column.IsVisible && column.CanHide && Geometry.VisibleColumns.Count > 1;
 
     internal void SetColumnVisibility(ResolvedColumn column, bool visible)
     {
@@ -147,12 +147,12 @@ public sealed partial class Table
     internal bool MoveColumnTo(ResolvedColumn column, int boundary, FocusState? focus)
     {
         int index = Geometry.IndexOfVisible(column);
-        if (index < 0)
+        if (index < 0 || column.IsHierarchy)
         {
             return false;
         }
 
-        boundary = Math.Clamp(boundary, 0, Geometry.VisibleColumns.Count - 1);
+        boundary = Math.Clamp(boundary, _hierarchy is null ? 0 : 1, Geometry.VisibleColumns.Count - 1);
         if (boundary == index)
         {
             return false;
@@ -187,7 +187,8 @@ public sealed partial class Table
     internal bool CanMoveColumnBy(ResolvedColumn column, int step)
     {
         int index = Geometry.IndexOfVisible(column);
-        return index >= 0 && Math.Clamp(index + step, 0, Geometry.VisibleColumns.Count - 1) != index;
+        return !column.IsHierarchy && index >= 0 &&
+            Math.Clamp(index + step, _hierarchy is null ? 0 : 1, Geometry.VisibleColumns.Count - 1) != index;
     }
 
     /// <summary>

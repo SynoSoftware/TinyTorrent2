@@ -103,7 +103,6 @@ public sealed class FileSelection(Strings strings) : INotifyPropertyChanged
     public void Expand(bool expanded)
     {
         foreach (var node in _roots.SelectMany(root => root.Nodes()).Where(node => node.IsFolder)) node.IsExpanded = expanded;
-        Refresh();
     }
 
     internal void Apply(JsonElement files, bool preserveChoices)
@@ -137,13 +136,14 @@ public sealed class FileSelection(Strings strings) : INotifyPropertyChanged
         if (changes.Count > 0) Edited?.Invoke(this, changes);
     }
 
-    internal void Change(FileNode node, int priority)
+    internal void Change(IEnumerable<FileNode> nodes, int priority)
     {
         if (!IsEnabled || priority < 0) return;
         var changes = new Dictionary<int, int>();
-        foreach (var file in node.Files())
+        var current = _files.ToHashSet();
+        foreach (var file in nodes.SelectMany(node => node.Files()).DistinctBy(file => file.Index))
         {
-            if (file.Priority == priority) continue;
+            if (!current.Contains(file) || file.Priority == priority) continue;
             file.SetPriority(priority);
             changes.Add(file.Index, priority);
         }
@@ -202,7 +202,8 @@ public sealed class FileNode : INotifyPropertyChanged
         ".zip" or ".rar" or ".7z" or ".tar" or ".gz" or ".iso" => Lucide.FileArchive,
         _ => Lucide.File
     };
-    public string SizeText => _owner.Text.Bytes(Files().Sum(file => file.Size));
+    public long TotalSize => Files().Sum(file => file.Size);
+    public string SizeText => _owner.Text.Bytes(TotalSize);
     public double Progress
     {
         get
@@ -213,8 +214,6 @@ public sealed class FileNode : INotifyPropertyChanged
         }
     }
     public string ProgressText => Progress.ToString("P1", CultureInfo.CurrentCulture);
-    public bool ShowsProgress => _owner.ShowsProgress;
-    public bool HasFolders => _owner.HasFolders;
     public bool IsEnabled => _owner.IsEnabled;
     public bool? Wanted
     {
@@ -233,7 +232,7 @@ public sealed class FileNode : INotifyPropertyChanged
             var priorities = Files().Select(file => file._priority).Distinct().Take(2).ToArray();
             return priorities.Length == 1 ? priorities[0] : -1;
         }
-        set => _owner.Change(this, value);
+        set => _owner.Change([this], value);
     }
     public int PriorityIndex
     {
@@ -264,5 +263,5 @@ public sealed class FileNode : INotifyPropertyChanged
         return Index >= 0 ? !IsPadding && matches(this) : Children.Count > 0;
     }
     internal void Refresh() => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
-    public override string ToString() => Name;
+    public override string ToString() => Path;
 }

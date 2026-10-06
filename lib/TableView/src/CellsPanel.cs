@@ -143,6 +143,7 @@ public sealed partial class CellsPanel : Panel
             {
                 presenter.Content = args.NewValue;
             }
+            else if (child is Body.Branch branch) branch.Item = args.NewValue;
         }
     }
 
@@ -257,8 +258,10 @@ public sealed partial class CellsPanel : Panel
             Padding = padding,
             Content = DataContext,
         };
-        presenter.SetValue(ColumnProperty, column);
-        return presenter;
+        UIElement child = _owner?.IsHierarchyColumn(column) == true
+            ? new Body.Branch(_owner, presenter) : presenter;
+        child.SetValue(ColumnProperty, column);
+        return child;
     }
 
     /// <summary>
@@ -282,6 +285,7 @@ public sealed partial class CellsPanel : Panel
         {
             presenter.Content = DataContext;
         }
+        else if (child is Body.Branch branch) branch.Item = DataContext;
     }
 
     /// <summary>

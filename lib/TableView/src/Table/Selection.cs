@@ -269,6 +269,13 @@ public sealed partial class Table
             return -1;
         }
 
+        if (_positions is not null && !_reconcilingView)
+        {
+            int index = _positions.TryGetValue(item, out var position) ? position.Index : -1;
+            if (index < 0) return -1;
+            if (index >= 0 && index < View.Count && _selection.IsSame(View[index], item)) return index;
+        }
+
         for (int i = 0; i < View.Count; i++)
         {
             if (_selection.IsSame(View[i], item))
@@ -318,6 +325,7 @@ public sealed partial class Table
     /// </summary>
     private void RebuildView(IReadOnlyList<object>? snapshot = null, IReadOnlyList<object>? preparedOrder = null)
     {
+        bool capture = snapshot is not null;
         snapshot ??= _source.Snapshot;
         if (!_schemaCaptured)
         {
@@ -327,8 +335,16 @@ public sealed partial class Table
         IReadOnlyList<object> order;
         if (preparedOrder is null)
         {
-            ValidateRows(snapshot);
-            order = ViewOrder(snapshot);
+            if (_hierarchy is null)
+            {
+                ValidateRows(snapshot);
+                order = ViewOrder(snapshot);
+            }
+            else
+            {
+                try { order = ViewOrder(PrepareHierarchy(snapshot, capture)); }
+                catch { _preparedHierarchy = null; throw; }
+            }
         }
         else
         {
@@ -336,6 +352,7 @@ public sealed partial class Table
             _orderSettledAt = DateTimeOffset.UtcNow;
         }
         _source.Accept(snapshot);
+        AcceptHierarchy(order);
         if (_detached)
         {
             _view.Reconcile(order, Array.Empty<int>());
@@ -356,6 +373,12 @@ public sealed partial class Table
         FocusState rowFocus = RowSurfaceFocusState();
         object? focusedItem = rowFocus != FocusState.Unfocused && FocusManager.GetFocusedElement(XamlRoot) is ListViewItem focusedRow
             ? _itemsView?.ItemFromContainer(focusedRow) : null;
+        var collapsing = CollapsingFocus();
+        if (collapsing.Item is not null)
+        {
+            focusedItem = collapsing.Item;
+            rowFocus = collapsing.State;
+        }
         // Remove keyboard focus before containers leave so native focus rescue cannot
         // carry a row's keyboard cue onto an unrelated control.
         if (rowFocus != FocusState.Unfocused) _itemsView?.Focus(FocusState.Pointer);
@@ -405,7 +428,9 @@ public sealed partial class Table
         }
 
         UpdateStateLayer();
-        object? retained = focusedItem is null ? null : View.FirstOrDefault(item => _selection.IsSame(item, focusedItem));
+        object? retained = focusedItem is null ? null :
+            View.FirstOrDefault(item => _selection.IsSame(item, focusedItem)) ?? CollapsedAncestor(focusedItem);
+        if (collapsing.Item is not null && rowFocus != FocusState.Unfocused) ScrollIntoView(collapsing.Item);
         ReconcileSelection(rowFocus, retained);
     }
 
@@ -439,7 +464,7 @@ public sealed partial class Table
         }
         else
         {
-            _selection.Reconcile(View);
+            _selection.Reconcile(View, CollapsedAncestor(_selection.Current), CollapsedAncestor(_selection.Focus));
         }
         if (_gesture == RowGesture.Marquee)
         {
@@ -449,6 +474,7 @@ public sealed partial class Table
 
         if (!_detached) RestoreRowFocus(rowFocus, focusedItem);
         CommitSelection();
+        if (_hierarchy is not null && _itemsView is Body.Surface surface) surface.RefreshHierarchy();
     }
 
     // ------------------------------------------------------------------ commit

@@ -181,7 +181,52 @@ public sealed partial class MainWindow
             throw new InvalidOperationException("The multi-file inspector did not load the fixture's nonzero files.");
         outcomes.Add(new { journey = "multi-file inspector", target = bundle.TorrentId, files = files.Length,
             scope = "Engine-backed library and native filter/search providers; file priorities remain unchanged, using existing priority evidence." });
+        await CaptureLayout();
+        var table = CaptureElements(InspectorContent).OfType<Syno.TableView.Table>().Single(control => control.Name == "Files");
+        var list = CaptureElements(table).OfType<Syno.TableView.Body.Surface>().Single();
+        var folder = Model.Inspector.Files.Roots.SelectMany(node => node.Nodes()).First(node =>
+            node.IsFolder && node.IsExpanded && node.Children.Count > 0 && node.Children.All(child => !child.IsFolder));
+        var descendants = folder.Children.ToArray();
+        var child = descendants.First(file => list.Items.Contains(file));
+        var outside = files.First(file => !descendants.Contains(file) && list.Items.Contains(file));
+        var priorities = Model.Inspector.Files.Priorities();
+        var expanded = folder.IsExpanded;
+        var parent = (ItemsControlAutomationPeer)FrameworkElementAutomationPeer.CreatePeerForElement(list);
+        var branch = (IExpandCollapseProvider)parent.CreateItemAutomationPeer(folder).GetPattern(PatternInterface.ExpandCollapse);
+        try
+        {
+            ((ISelectionItemProvider)parent.CreateItemAutomationPeer(outside).GetPattern(PatternInterface.SelectionItem)).Select();
+            ((ISelectionItemProvider)parent.CreateItemAutomationPeer(child).GetPattern(PatternInterface.SelectionItem)).AddToSelection();
+            if (table.Selection.Items.Count != 2 || !table.Selection.Items.Contains(child) || !table.Selection.Items.Contains(outside) ||
+                !ReferenceEquals(table.Selection.Current, child))
+                throw new InvalidOperationException("Native hierarchy selection did not establish the child and outside file.");
+            branch.Collapse();
+            await CaptureLayout();
+            var hidden = descendants.All(file => !list.Items.Contains(file));
+            var reconciled = table.Selection.Items.Count == 1 && ReferenceEquals(table.Selection.Items.Single(), outside) &&
+                ReferenceEquals(table.Selection.Current, folder);
+            outcomes.Add(new { journey = "native folder collapse", descendantsHidden = hidden, selectionReconciled = reconciled });
+            if (!hidden || !reconciled)
+                throw new InvalidOperationException("Native folder collapse did not reconcile the selected child and retain the outside file.");
+            branch.Expand();
+            await CaptureLayout();
+            var visible = descendants.All(file => list.Items.Contains(file));
+            var retained = table.Selection.Items.Count == 1 && ReferenceEquals(table.Selection.Items.Single(), outside);
+            var unchanged = priorities.SequenceEqual(Model.Inspector.Files.Priorities());
+            outcomes.Add(new { journey = "native folder expand", descendantsVisible = visible, selectionRetained = retained, prioritiesUnchanged = unchanged });
+            if (!visible || !retained || !unchanged)
+                throw new InvalidOperationException("Native folder expansion did not restore children without changing selection or priorities.");
+        }
+        finally
+        {
+            table.Selection = new Syno.TableView.Selection([], null);
+            if (folder.IsExpanded != expanded) branch.Expand();
+            await CaptureLayout();
+        }
         await Matrix("multi-file-inspector", bundle);
+        Model.Inspector.Select(InspectorSection.Pieces);
+        await CaptureReady(Model.Inspector, () => !Model.Inspector.IsLoading && Model.Inspector.Pieces is not null);
+        await Matrix("pieces", bundle);
         Model.CloseInspector();
     }
 }
