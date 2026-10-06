@@ -4,10 +4,19 @@ Work resumed on 2026-10-05 under the current goal below. The first coherent step
 retains the owner's app role folders, verifies the finished schedule, corrects
 clipped short-period labels and fixes a reproduced window-shutdown crash.
 Current evidence is at the top of [morning-report.md](morning-report.md).
-Milestones 3–5 passed their current implementation and fresh adversarial gates
-after correcting clipped tracker actions, file controls, localized selected
-choices and Move feedback. Zero counted defects remain. Completion commits and
-native desktop evidence limitations are recorded in the morning report.
+The owner reopened product acceptance after finding command-search failures.
+The earlier milestone reviews did not establish release readiness: they missed
+actual search-result selection and used sparse fixtures. Their commits and
+evidence remain useful, but the current release goal below supersedes their
+completion claim. Commit `8af777e` corrects native search result routing,
+numeric-setting focus, reopening search and narrow file-name clipping. Its
+focused behavior checks and fresh visual correction review passed. Commit
+`6b13ac9` corrects live inspector rate consistency, Spanish range selection and
+rate headings. Its live-traffic journey and fresh correction review passed with
+zero counted findings. Concurrent owner edits to list projection, table sorting,
+status rates and graph width arrived during finalisation and remain uncommitted
+by this pass; release acceptance of that changing candidate remains open. Read
+the current evidence and precise limits in the morning report.
 
 At the earlier handover, work stopped at the owner's request to move to another project. The pending app
 recovery smoke check finished and passed. The five-milestone implementation is
@@ -67,7 +76,7 @@ freezing the surrounding structure.
 
 ## Current goal
 
-TinyTorrent2 looks and feels like a polished, first-class Windows 11 app: every screen in milestones 3–5 is clear, calm, compact and consistent in alignment, spacing, type and hierarchy, in Light and Dark, in English and Spanish, at 720x560, 1040x680 and 1280x800. Every feature in those milestones works and is committed, the accepted Settings, title bar and schedule screens have not regressed, and a fresh adversarial reviewer looking at the captures finds no counted defect, or the defects left after its second re-review are recorded in docs/morning-report.md.
+Make TinyTorrent2 releasable within the existing Windows desktop product scope: every everyday feature works reliably and comfortably; Ctrl+K results act predictably and navigate to the authoritative surface; commonly needed libtorrent settings have deliberate, documented coverage; populated screens are clear, calm, compact and consistent in English and Spanish, Light and Dark, at the supported normal and narrow sizes; accepted Settings, custom title bar and schedule designs do not regress; concrete release blockers are fixed and verified with proportionate focused checks and fresh adversarial review; coherent changes are committed, with honest remaining limitations recorded. Preserve the owner's concurrent edits. Do not run the full suite, rebuild dependencies, modify 3rdParty, automate the owner's desktop, or perform Distribution work.
 
 The desired result is an application people can comfortably understand and use,
 not merely compiled XAML or a pixel copy of the prototype. Task completion,
@@ -106,11 +115,17 @@ no `TinyTorrent.exe` or `Engine.exe`. No desktop automation remains active.
 | Details and preferences | Completed, `c9e3995`; current captures, native input journeys and second correction review passed | EN/ES, Light/Dark and requested sizes reviewed; exact narrow width, physical accessibility and populated-traffic limitations remain documented. |
 | Move and delete files | Completed, `c9e3995`; current engine safety, actual UI submissions, interrupted move and second correction review passed | Collision/shared ownership preserve bytes; physical picker, cross-volume/device failures and dropped alerts remain unverified. |
 
-The final reviewer also checked the current plan, source and evidence for
-completeness; its only counted correction findings are resolved. No further
-implementation is queued for this goal. Read the current continuation in the
-morning report for completion commits, exact evidence and honest limits. The
-sections below retain the earlier handover's history, not new completion gates.
+These statuses describe the earlier milestone gates, not release acceptance.
+The current goal additionally requires actual command-search journeys,
+deliberate settings coverage, populated-screen review and an independent release
+review. Search, the 300-torrent paused library and file-name correction now have
+those checks; the live inspector now has a loopback transfer, populated peers,
+mixed pieces and nonzero history across the same matrix, with zero remaining
+counted visual findings after correction. The current release goal remains
+active because concurrent owner edits postdate that candidate. Next, verify
+only the outcomes affected by those settled edits; retain valid prior evidence.
+Read the current continuation in the morning report for the files and limits.
+The sections below retain the earlier handover's history.
 
 ## Earlier handover: pending task finished
 

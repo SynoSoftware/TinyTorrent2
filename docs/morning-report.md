@@ -2,11 +2,211 @@
 
 ## Current continuation — 2026-10-06
 
-The exact current goal is in [handover.md](handover.md#current-goal). Milestones
-3–5 have completed their scoped implementation, current captures and fresh
-adversarial gates, with zero counted defects remaining. Completion commits are
-recorded below. The entries under Earlier handover evidence describe earlier
-candidates and are not evidence for the owner's engine refactor.
+The current release goal is in [handover.md](handover.md#current-goal).
+**Release acceptance is open for the changing shared candidate.** This pass
+fixed the reported Ctrl+K routes and the concrete defects found in populated
+captures. Fresh visual correction reviews have zero remaining counted findings.
+Concurrent owner edits to list projection, sorting, status rates and graph width
+arrived during finalisation; the captures do not establish those edits' behavior
+or appearance. Prior scoped milestone reviews are not blanket release approval.
+
+Release work proceeds by concrete user failures:
+
+- Command search: verify native result submission, unavailable commands,
+  Properties from Settings, setting navigation and reopening with Ctrl+K.
+- Everyday journeys: examine populated torrent and detail views, addition,
+  selection, filtering and recovery; retain valid existing data-safety evidence.
+- Settings: compare current controls with common tasks and record explicit
+  coverage or exclusions rather than claiming every libtorrent option is needed.
+- Acceptance: review changed surfaces in EN/ES, Light/Dark at the three sizes;
+  run a fresh adversarial review of the settled candidate and document real gaps.
+
+The owner's concurrent schedule, list, table and presentation changes remain
+separate and are preserved. This pass committed `8af777e` and `6b13ac9` only;
+in the shared Spanish resource, only the rate-heading hunk belongs to this pass.
+The historical milestone evidence and commits follow below. Entries under
+Earlier handover evidence describe older candidates, not the engine refactor.
+
+### Release corrections — `8af777e`
+
+Native search baseline:
+`artifacts/evidence/UiSelfCapture-727fe009-a787-4908-a3e5-74f9467c23ed/captures/review.json`.
+The generated AutoSuggestBox item's Invoke provider raised QuerySubmitted in
+all four journeys. Unavailable Properties did nothing; Properties from Settings
+opened an inspector behind the page; Speed limits opened the separate dialog;
+the listening-port result navigated without focusing its editor. Its value was
+preserved. These are confirmed defects, not taste findings. The earlier partial
+run exposed a diagnostic focus-order error, corrected before this complete
+baseline. No external desktop input was used.
+
+Search correction evidence:
+`artifacts/evidence/UiSelfCapture-8872cc4a-d429-4283-a430-9333deb60a46/captures/review.json`
+passed all four native submissions plus the reopen-handler check in 20,311 ms.
+Unavailable commands are omitted, Properties reveals its workspace, speed-limit
+search opens Transfers, and the named numeric setting focuses its inner editor
+without changing its value. Reopening proves the shortcut's shared handler and
+actual popup; synthetic/physical Ctrl+K delivery remains unverified.
+The app-only build `search-library-build.log` passed in 33.99 seconds with zero
+warnings/errors. Engine and referenced libraries were not rebuilt.
+
+All 12 search size/theme/language captures were reviewed sequentially: the new
+user has labeled result scopes, the keyboard user reaches the actual setting,
+the accessibility review finds text labels and visible focus but cannot infer
+Narrator/High Contrast behavior, and the Fluent/UX reviews find no new collision
+or unreadable search content. Narrow captions retain their existing language-
+dependent minimum width; this is not an exact 720-pixel client-width claim.
+The accepted Settings composition is retained; scrolling and bounded content
+width are not counted as taste defects. The fresh capture-only reviewer also
+found no counted search defect.
+
+Populated-library evidence:
+`artifacts/evidence/LibraryCapture-bf12b05a-0db1-487c-aaec-dd6dd20e0503` passed
+in 18,736 ms with 300 real, private, paused torrents and 307 payload files.
+Native filter selection hid the rows without removing membership; native search
+submission revealed the long-named torrent at ordinal 299 and cleared the
+filter. The eight-file inspector loaded its engine-backed file list. The
+launcher confirmed unchanged membership and payload bytes and clean process
+exit. Its exact disposable fixture launcher is retained as `check.ps1`.
+The app-only `library-selection-build.log` passed in 38.24 seconds with zero
+warnings/errors; its only intervening correction concerned the diagnostic's
+native filter selection provider, not production search.
+
+Parent review covered all 36 library size/theme/language images in the five
+requested roles. The first-time user can identify paused state and file counts;
+the large-library user can see the revealed last row and retained filter state;
+the accessibility role can inspect visible labels but cannot establish spoken
+output or High Contrast; the Fluent and UX roles found no additional collision.
+The fresh reviewer independently inspected all 37 library images, including
+the baseline, and counted one defect: narrow Files hard-clips names/extensions
+inside the checkbox and wraps the root into clipped lines. This was fixed
+at the shared FileBrowser owner. Table ellipses, viewport-boundary rows and
+normal scrolling were not counted as defects; no taste-driven restyling follows.
+
+Correction evidence:
+`artifacts/evidence/LibraryCapture-b1a80e78-b886-4f92-b0f6-db3fcab0682a` passed
+in 19,402 ms, retaining all 300 torrents and 307 payload hashes, with clean exit.
+The final app-only `file-names-build.log` passed in 40.86 seconds, zero warnings
+or errors. Only app compilation ran; referenced libraries supplied packaging
+metadata. The required output-location and process checks were empty.
+Parent and fresh reviewer inspected all 12 corrected Files images; correction
+round one passed with zero remaining counted defects. Narrow names now mark
+truncation and no longer wrap into clipped lines. Full names/paths remain in
+automation and native tooltip properties; actual hover/focus tooltip display
+was not captured. The independent source review found no additional concrete
+blocker in the scoped changes.
+
+Live-transfer baseline:
+`artifacts/evidence/TrafficCapture-4f36594c-77c0-49f5-8176-d86d70b8374a` passed
+its 60-state journey in 46,077 ms, with 12 additional General-bottom images.
+A disposable loopback-bound engine downloaded from the existing Transfer peer
+at a 64 KiB/s limit. Downloaded bytes advanced from 589,701 to 3,473,295 while
+the inspector showed a real peer, mixed states among 65 pieces and nonzero
+history. All three owned processes closed; seed hashes and membership stayed
+unchanged. The app-only build passed in 36.62 seconds with zero warnings/errors;
+no engine or dependency build ran and the output-location check was empty.
+
+The fresh reviewer inspected all 72 images and counted two defects: Spanish
+Speed retained the English selected range, and both Spanish peer-rate headers
+truncated to the same text. Parent review also confirmed a summary inconsistency:
+Speed compared an instantaneous snapshot rate with peaks from asynchronous
+history, visibly allowing 66.5 KiB/s current against 61.5 KiB/s peak. Corrections
+use live TextBlock range labels, concise distinct Spanish rate headers, and the
+same sampled history for graph summary and peak. The status bar retains its
+instantaneous rate.
+
+Live-transfer correction evidence — `6b13ac9`:
+`artifacts/evidence/TrafficCapture-89ec6e75-705f-445a-ba36-a1933b8a19b4` passed
+the 60-state journey in 51,277 ms and retained 12 General-bottom images.
+Downloaded bytes advanced from 606,082 to 3,899,292. The fixture retained its
+membership and seed hashes; all launched UI, engine and peer processes exited.
+The capture build `traffic-corrections-build.log` passed in 39.01 seconds with
+zero warnings/errors.
+
+The fresh capture-only reviewer inspected all 24 correction images: 12 Speed,
+six Spanish Peers and six Spanish workspace images. Correction round one passed
+with zero counted findings. Parent review confirmed all 12 Speed and six Spanish
+Peers corrections, in addition to the earlier baseline task review. The new
+user sees distinct rate labels; the large-library user retains the existing
+table and inspector routes; the accessibility role can establish visible names
+but not speech or High Contrast; the Fluent and UX roles find no new clipping
+or unclear state. Historical graph samples and instantaneous status values have
+different sampling times; the graph's own summary, peak and axis now agree.
+
+Independent source review caught one correction-induced failure: retaining
+history after disconnect would display a stale rate as current. Current rates
+now use the existing `Inspector.IsAvailable` condition; graph history and peaks
+remain. Its bounded re-review passed with no remaining finding. This final
+two-line guard was source-reviewed and compiled, not given another live capture:
+the connected branch produces the same images, while the unavailable branch
+passes null to the existing unknown-value formatter.
+
+The final app build `traffic-final-build.log` passed in 66.44 seconds with zero
+warnings/errors. Its two C# invocations, three PRI calls and five copy entries
+match the preceding app build; only the app compiled and referenced libraries
+provided packaging metadata. The longer duration is not explained by expanded
+compile/copy scope; the log has no per-stage timing to attribute it further.
+The post-build output-location query and app/engine/peer process check were
+empty. No engine build, dependency build or full suite ran.
+
+The owner-mentioned `winui-ui-testing` skill was read. Its native automation
+principles informed in-process provider invocation and focus checks. No
+`winapp ui` external desktop input was sent; actual Ctrl+K key delivery, hover,
+Narrator, High Contrast and native window gestures retain their stated gaps.
+
+Next acceptance work is bounded to the concurrent changes once settled. The
+later `SpeedGraph.xaml`, `MainWindow.xaml`, list projection and TableView sorting
+edits are outside these commits and postdate all or part of this evidence. Do
+not claim the current working tree is the captured candidate, replay unchanged
+engine checks, or discard the owner's changes to recreate it. Verify the user
+outcomes those edits can affect, then obtain correction review if needed.
+
+The current engine's earlier transfer evidence predated the owner refactor, so
+two existing focused loopback checks ran once against engine SHA-256
+`70BDA19FBB2BC266238B74CE066BAE913AE09261F1ED29912BCD947E770D4AFC`:
+
+- `SelectedTransfer-b6c74131-cd58-44d5-9c12-9d745c1677e5` passed. Selected payload
+  matched the seed; skipped content stayed unwritten. Actual normal/alternative
+  rates were 134,188/466,862 B/s against 131,072/524,288 B/s configured limits,
+  within the existing check's measurement bounds. Tracker merge and restart
+  preservation passed in the same focused journey.
+- `MagnetDownload-a07d4d96-b869-439e-a0b8-f6bb58c740e3` passed. An unknown magnet
+  acquired metadata and downloaded its four-megabyte payload; Verify and Resume
+  repaired offline corruption to the original SHA-256. The disposable source
+  fixture was generated by the existing Transfer utility.
+
+All engine/UI/peer processes started for these checks exited. The required
+output-location checks printed no paths. No engine build or full suite ran;
+the existing current-binary FilesSafety and CheckpointRetry passes remain valid.
+
+Settings coverage audit, before further product changes:
+
+| Everyday need | Current coverage |
+| --- | --- |
+| Keep other apps usable on a limited connection | Global download/upload limits, alternative limits and weekly schedule. |
+| Control simultaneous work and seeding | Active download/seed limits, global peer connections, ratio/time stops, queue order and force start. |
+| Choose where traffic goes | Listen port, automatic port mapping and explicit network-interface binding. |
+| Give one torrent a bandwidth allowance | No per-torrent rate controls; this is a real capability gap, not an undiscovered setting. |
+| Choose peer-discovery or encryption policy | No app controls for DHT, PEX, LSD or encryption; libtorrent defaults apply. |
+| Use a proxy | Explicitly outside the initial product scope. Interface binding is not a proxy implementation. |
+
+Sequential product roles: a first-time user needs sensible defaults and clear
+global limits; a large-library user needs predictable selection and queue
+actions, with per-torrent rates a useful missing capability; a network specialist
+needs honest descriptions of interface binding and discovery rather than implied
+anonymity; a maintainer rejects an indiscriminate advanced-settings dump. The
+release review must distinguish these missing controls from broken existing
+features. No usage telemetry establishes a ranking of “most used” settings.
+
+Scope decision: retain the initial product's existing global/alternative limits,
+queue and seeding controls, and interface binding. Per-torrent limits and
+discovery/encryption policy controls are explicit capability limitations for
+this candidate; they are not represented as implemented or as proven demand.
+Proxy remains outside the initial scope. An advanced-settings expansion would
+need a coherent product change rather than incidental additions to this defect
+pass. No claim of qBittorrent feature parity or complete libtorrent configuration
+is made.
+
+### Earlier milestone continuation
 
 The first coherent step retains the owner's role folders and finishes the
 accepted schedule. The current source compiled without a schedule compiler
@@ -500,9 +700,10 @@ No TableView source changed in the schedule, background, details, or file pass.
 Milestone 2's small setup-only row reorder predicate remains the reported library
 change, accessed through the public API.
 
-## Remaining checks and what to try by hand
+## Earlier handover's remaining checks (historical)
 
-These are pending work, not requests to unlock the computer or approve a launch.
+This list predates the completion evidence above; it is retained as history,
+not the current release checklist. These were not requests to unlock the computer or approve a launch.
 Before any data-loss journey, use disposable torrent payloads and an isolated
 store; avoid driving a running personal engine through the shared logon endpoint.
 
