@@ -34,7 +34,8 @@ addition, including several sources at once and drag-and-drop, metadata preview,
 destination and file choices, paused addition, duplicate detection with tracker
 merging, pause/resume, force start, queue order, global and alternative speed
 limits, scheduled pauses and speed limits, peer limits, seeding policies,
-verification, relocation, and distinct
+verification, relocation, a `.!tt` suffix on unfinished files so a file with
+its real name is always finished, and distinct
 remove versus delete-data actions. It opens downloaded files and folders, copies
 magnet links and info hashes, and finds torrents by text or isolates errors. It exposes
 useful errors and on-demand files, peers, trackers, pieces, and speed
@@ -43,15 +44,24 @@ accessibility, shell activation, and recovery after restart are part of the prod
 
 Design the interface around these tasks and libtorrent's capabilities. Remote
 servers, browser access, interchangeable engines, other platforms, a search
-panel, and torrent creation are outside scope. History, automation, and
-blocklists need an identified user requirement before they become implementation
+panel, and torrent creation are outside scope. History, blocklists, and
+automation, such as a watched folder or running a program when a download
+finishes, need an identified user requirement before they become implementation
 work. The initial release includes automatic port mapping (UPnP/NAT-PMP), an
 editable listen port, binding torrent traffic to one network interface such as a
-VPN, completion notifications, preventing idle sleep while downloading on mains
-power, and an update check. Port mapping, notifications, idle-sleep prevention
-while downloading, and the update check start enabled and can be turned off.
+VPN, notifications, preventing idle sleep while downloading on mains power, and
+an update check. Port mapping, notifications about problems, idle-sleep
+prevention while downloading, and the update check start enabled and can be
+turned off; notifications about finished and added downloads start disabled.
 Encryption follows libtorrent's defaults without a separate setting. Proxy
 configuration is outside the initial scope.
+
+A setting exists only where people need different behavior. When one answer
+is right for nearly everyone, it is fixed behavior; when no one has shown a
+problem, there is neither. Engine tuning, diagnostics, cosmetic choices, and
+protocol internals therefore stay fixed until a demonstrated workflow needs
+otherwise, because every setting is read by everyone and its saved key is
+permanent.
 
 Several torrents can use the same files, so the same content can be seeded from
 several trackers, as established clients allow. The

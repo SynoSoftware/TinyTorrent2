@@ -241,6 +241,17 @@ Payload disk errors retain their own reason; checkpoint failures do not replace
 the actual transfer status. Resume clears libtorrent's disk error and upload
 mode before applying the saved running intent.
 
+Mark each payload file as downloaded from the internet when it completes while
+its torrent is downloading, by writing the internet zone to the file's
+`Zone.Identifier` stream, as browsers do. Windows then shows its SmartScreen or
+Protected View warning before the person runs or edits a file from a torrent.
+Files that verification finds already complete are not marked, because they may
+be the person's own files. There is no setting: the protection shows nothing
+until it is needed, and a person who trusts a file unblocks it in its
+Properties, as for any download. Marking is best effort. A volume, network
+share, or permission that refuses the stream is written to diagnostics and
+never fails the download, because the finished file matters more than the mark.
+
 ### Shared files
 
 Several torrents can use the same files, for example the same content seeded
@@ -327,6 +338,31 @@ no pieces that the current checked torrent lacks, and checking has ended. This
 also covers Use the files there in the same folder: matching names and sizes do
 not establish that the bytes match the torrent.
 
+### Unfinished files
+
+A file that is still downloading has the `.!tt` suffix after its real name, such
+as `movie.mkv.!tt`, so a file with its real name is always a finished file.
+People, media libraries, and other programs then never take a partial file for
+a finished one. Nearly everyone wants this, so it is fixed behavior with no
+setting.
+
+- When a torrent is added, each file that does not exist at the destination
+  gets its suffixed name through `add_torrent_params::renamed_files`. A file
+  that already exists there keeps its name, so verification finds it instead of
+  downloading it again.
+- When a file completes, `rename_file` gives it its real name in the same
+  folder, so finishing is always a rename and never a copy. If another program
+  has the file open, Windows refuses the rename; the file keeps its suffix and
+  the engine tries again later, without reporting a download error.
+- libtorrent saves the current names in the resume data, so they survive a
+  restart.
+- The shared-files comparison ignores the suffix, so a file is the same file
+  before and after it finishes.
+- Open on a file that is still downloading starts the program registered for
+  its real extension, through `ShellExecuteEx` with `SEE_MASK_CLASSNAME`, so
+  watching a video during a sequential download still works in players that
+  read the content.
+
 ## Startup and activation
 
 Opening TinyTorrent starts or activates the engine and opens WinUI. Optional
@@ -376,7 +412,11 @@ Background startup and status changes do not take focus.
 
 The tray uses standard Win32 menus, keyboard behavior, accessibility, and system
 colors. Restore its icon after Explorer restarts. Its tooltip shows the total
-download and upload speed, or why transfers are stopped. The complete menu has
+download and upload speed, or why transfers are stopped. While any torrent has
+an error, the tooltip starts with the error count and, while Notify about
+problems is on, the icon shows its error variant, so the problem stays visible
+after its notification has gone. Both follow the error count and clear when no
+torrent has an error. The complete menu has
 two live, nonclickable status rows, a separator, Show window and Pause Transfers,
 a separator, and Exit. The first status row shows aggregate download and upload
 speed; the second shows active and queued counts. While the session is paused,
@@ -588,33 +628,62 @@ The ratio denominator is the greater of downloaded and verified bytes; seeding
 time excludes paused time. Explicit Resume or Force of completed content saves a
 per-torrent exemption, so it does not pause again immediately or after restart.
 
+## libtorrent settings
+
+The engine keeps the defaults of the pinned libtorrent release, v2.1.2, because
+they are tuned and a changed value can slow transfers without a visible
+benefit. Preferences change only the settings in
+[Network preferences](#network-preferences), and the disk backend stays at its
+default ([Disk write caching](#disk-write-caching)). The engine changes three
+more defaults:
+
+- `user_agent` is `TinyTorrent/<version>`, and `peer_fingerprint` is
+  `lt::generate_fingerprint("TY", ...)` with the version. Trackers and peers
+  then see TinyTorrent instead of a generic libtorrent client, and a private
+  tracker that admits only known clients can admit it by name.
+- `dht_bootstrap_nodes` lists `dht.libtorrent.org:25401`,
+  `dht.transmissionbt.com:6881` and `router.bittorrent.com:6881`. The default
+  names only the first, so when that host is unreachable DHT cannot start and a
+  magnet link without trackers never gets its metadata.
+- `active_dht_limit`, `active_lsd_limit` and `active_tracker_limit` are `-1`,
+  as `active_limit` already is. Running torrents are auto-managed, so the
+  default limits would stop all but 88 of them announcing on DHT.
+
 ## Notifications and sleep
 
-Completion notifications are enabled by default and use the existing tray's
+By default, success is quiet and problems interrupt. A person who asked for a
+download does not need to be told that it happened, but does need to know when
+it stopped. Three switches let a person choose otherwise, including turning
+every notification off: Notify when a download finishes and Notify when a
+torrent is added start off; Notify about problems starts on.
+
+A Windows notification uses the existing tray's
 [`Shell_NotifyIcon`](https://learn.microsoft.com/en-us/windows/win32/shell/notification-area)
 path. Respect Windows notification suppression and quiet time; delivery is best
-effort and needs no WinUI process or new notification runtime. Notify when the
-currently wanted files finish downloading, not when an existing seed is restored
-or rechecked. A torrent shows as complete, and is notified, only after libtorrent
-has written the finished data to disk, so a file opened from the notification is
-whole. Coalesce a burst of completions instead of flooding the desktop.
-Clicking a single completion opens its current folder; a combined notification
-opens the application. Never execute a downloaded file. Keep only bounded pending
-notification context, identified by durable torrent identity rather than a stale
-path. Completion state remains visible in WinUI when Windows suppresses feedback.
+effort and needs no WinUI process or new notification runtime. Send one only
+while no window is open, because the open window shows the same events, and
+only when its switch is on:
 
-When direct addition adds a torrent while no window is open, notify that it was
-added, or that it could not be added and why, coalesced like completions.
-Without the window, nothing else shows that a double-click on a torrent file
-worked. With the window open, the new row is the feedback.
+- **Finished.** Clicking a single notification opens the torrent's current
+  folder; a combined one opens the application.
+- **Added.** A direct addition, such as a double-click on a torrent file, added
+  the torrent.
+- **Problems.** A torrent stopped by an error, such as a full disk or a missing
+  folder, with its name and the reason; a direct addition that could not be
+  added, with the reason, because the person believes it is downloading; and a
+  file deletion that fails, fully or in part, which is also written to the log,
+  because the torrent has already left the list.
 
-When a torrent stops on an error, such as a full disk or a missing folder, while
-no window is open, notify its name and the reason, coalesced like completions.
-Without the window, a stopped download would otherwise go unnoticed for days.
+Coalesce a burst instead of flooding the desktop. Never execute a downloaded
+file. Keep only bounded pending notification context, identified by durable
+torrent identity rather than a stale path. While the window is open, problems
+appear in it instead, following
+[feedback placement](interface.md#feedback-placement).
 
-A file deletion that fails, fully or in part, is notified with the torrent name
-and the reason, with the window open or closed, and written to the log. The
-deletion runs after the torrent has left the list, so nothing else shows it.
+In the open window, a finished download shows a short message with Open folder.
+A torrent finishes when its currently wanted files finish downloading, not when
+an existing seed is restored or rechecked, and only after libtorrent has written
+the finished data to disk, so a file opened from that folder is whole.
 
 The first time the window closes while the engine keeps running, show one
 notification that TinyTorrent is still running in the notification area and that

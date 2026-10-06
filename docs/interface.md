@@ -447,7 +447,8 @@ message cannot be the only explanation of unfinished or failed work.
 | Failed command without an editor, such as Pause or Open folder | A dismissible app-level error message, separate from connection status; no timed disappearance. Retain the existing policy for clearing it after later command outcomes. |
 | Connection loss or unavailable storage affecting the application | Persistent app-level status reachable across pages; an inline InfoBar is appropriate. Recovery clears the condition. |
 | Useful, noncritical event elsewhere in the open application | A temporary overlay in one consistent corner of the window, without moving page content. Add this only for a named event whose existing presentation is insufficient. |
-| Completion, background failure or deletion failure after removal | The existing engine-owned [notification policy](engine.md#notifications-and-sleep), including its delivery conditions and completion preference. |
+| A finished download | The temporary overlay, with the torrent name and Open folder, as the [notification policy](engine.md#notifications-and-sleep) defines a finished download. |
+| A torrent stopped by an error, or a deletion that failed after removal | The dismissible app-level error message; a stopped torrent also stays in the Errors count. With the window closed, the engine's [notification policy](engine.md#notifications-and-sleep) sends a Windows notification instead. |
 | A decision requiring consent | The existing dialog for that operation. |
 
 Native control state notifications can satisfy routine accessible feedback;
@@ -574,7 +575,8 @@ Preferences choice.
 Include, grouped by task: the default download folder and Show the Add form;
 global and alternative speed limits; queue limits for active downloads and
 seeds; seeding ratio and time limits; connection limits; the network interface,
-port mapping, and listen port; completion notifications; preventing idle sleep
+port mapping, and listen port; the
+[notification switches](engine.md#notifications-and-sleep); preventing idle sleep
 while downloading on mains power, and also while seeding; Check for updates,
 following the [update model](architecture.md#installation-and-updates); and
 language. Each uses the existing settings path. Reaching a seeding limit pauses
@@ -582,6 +584,14 @@ the torrent; nothing is removed without a request. Resuming that torrent by
 hand lifts the limit for it, so it seeds on as asked instead of pausing again.
 The sleep switch names its mains-power condition, so a laptop that sleeps on
 battery does not surprise its owner.
+
+General has a Notifications section with three switches in order of
+importance: Notify about problems, Notify when a download finishes, and Notify
+when a torrent is added. The order shows which notifications matter most.
+Turning all three off stops every Windows notification except the one-time
+notice that TinyTorrent keeps running in the notification area. Problems are
+one switch, because no one needs to silence one kind of problem and keep
+another.
 
 Scheduler presents one weekly overview with normal limits, alternative limits,
 and paused periods, because separate schedules obscure their combined effect.
