@@ -1,6 +1,7 @@
 #include "Desktop/Splash.h"
 #include "Resources.h"
 #include <algorithm>
+#include <numeric>
 #include <utility>
 #include <dwmapi.h>
 #include <uxtheme.h>
@@ -10,13 +11,10 @@ namespace tt::desktop
 namespace
 {
 constexpr wchar_t windowClass[] = L"TinyTorrent.Startup";
-constexpr UINT_PTR showTimer = 1;
-constexpr UINT_PTR dwellTimer = 2;
-// A cold launch waits for the engine to load, so its splash shows at once; a
-// warm window that is ready within the delay appears without one.
-constexpr UINT coldDelay = 0;
-constexpr UINT warmDelay = 400;
+constexpr UINT_PTR dwellTimer = 1;
 constexpr UINT minimumDwell = 1000;
+// The recent warm launches whose average predicts the next one.
+constexpr std::size_t launchSamples = 5;
 // The blur shows through a layer of the theme's background at this opacity, so
 // the text keeps its contrast in either theme.
 constexpr BYTE tintOpacity = 0x99;
@@ -99,9 +97,18 @@ Splash::~Splash()
     Close();
 }
 
+// A cold launch also waits for the engine to load, so it always shows the
+// splash. A warm launch shows it unless recent warm launches were ready
+// within the splash's minimum time, which avoids a splash that only delays
+// the window.
 void Splash::Show(Launch launch)
 {
     if (window_)
+    {
+        return;
+    }
+    if (launch == Launch::Warm && !launches_.empty() &&
+        std::accumulate(launches_.begin(), launches_.end(), ULONGLONG{0}) / launches_.size() <= minimumDwell)
     {
         return;
     }
@@ -125,17 +132,36 @@ void Splash::Show(Launch launch)
         work.top + (work.bottom - work.top - height) / 2, width, height,
         SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
     ApplyDpi(dpi, nullptr);
-    SetTimer(window_, showTimer, launch == Launch::Cold ? coldDelay : warmDelay, nullptr);
+    buffered_ = SUCCEEDED(BufferedPaintInit());
+    ApplyTheme();
+    Translate();
+    shownAt_ = GetTickCount64();
+    ShowWindow(window_, SW_SHOW);
+    // ShowWindow brings only a new process's first window to the front. A
+    // running engine uses the foreground right that the tray click or the
+    // forwarding launch granted it.
+    SetForegroundWindow(window_);
+    // WM_PAINT waits until no other message is queued.
+    UpdateWindow(window_);
 }
 
-// The product window is drawn and waits to appear. A splash not yet on screen
-// never appears. One on screen is seen for its minimum time before `show` lets
-// the window appear, and stays until the window has appeared over it.
+// The time from starting a warm launch's window process until it was ready.
+void Splash::Record(ULONGLONG duration)
+{
+    launches_.push_back(duration);
+    if (launches_.size() > launchSamples)
+    {
+        launches_.pop_front();
+    }
+}
+
+// The product window is drawn and waits to appear. A splash is seen for its
+// minimum time before `show` lets the window appear, and stays until the
+// window has appeared over it.
 void Splash::Finish(std::function<void()> show)
 {
     if (!shownAt_)
     {
-        Close();
         show();
         return;
     }
@@ -326,15 +352,6 @@ LRESULT Splash::Handle(HWND window, UINT message, WPARAM first, LPARAM second)
         {
             KillTimer(window, dwellTimer);
             std::exchange(show_, nullptr)();
-        }
-        else if (first == showTimer)
-        {
-            KillTimer(window, showTimer);
-            buffered_ = SUCCEEDED(BufferedPaintInit());
-            ApplyTheme();
-            Translate();
-            shownAt_ = GetTickCount64();
-            ShowWindow(window, SW_SHOW);
         }
         return 0;
     case WM_NCCALCSIZE:

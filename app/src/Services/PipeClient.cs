@@ -147,9 +147,13 @@ internal sealed class PipeClient : IDisposable
         }
     }
 
+    // How long an engine this window started may take to accept the pipe; until
+    // then a timeout is a cold start, not a failure that reveals the window.
+    private static readonly TimeSpan StartGrace = TimeSpan.FromSeconds(5);
+
     private async Task Run()
     {
-        var launched = false;
+        long? launchedAt = null;
         Exception? launchFailure = null;
         string? lastFailure = null;
         var token = _lifetime.Token;
@@ -163,9 +167,9 @@ internal sealed class PipeClient : IDisposable
                 try
                 {
                     try { await pipe.ConnectAsync(1000, token); }
-                    catch (TimeoutException) when (!launched && !_hasConnected)
+                    catch (TimeoutException) when (launchedAt is null && !_hasConnected)
                     {
-                        launched = true;
+                        launchedAt = Environment.TickCount64;
                         try { LaunchEngine(); }
                         catch (Exception error) { launchFailure = error; throw; }
                         throw;
@@ -186,10 +190,15 @@ internal sealed class PipeClient : IDisposable
                 catch (Exception error) when (!token.IsCancellationRequested)
                 {
                     Disconnect(error);
-                    // A timeout adds nothing to the window's own disconnected message.
-                    var message = error is TimeoutException ? launchFailure?.Message ?? string.Empty : error.Message;
-                    if (message != lastFailure) Disconnected?.Invoke(message);
-                    lastFailure = message;
+                    var starting = error is TimeoutException && launchFailure is null &&
+                        launchedAt is { } launched && Environment.TickCount64 - launched < StartGrace.TotalMilliseconds;
+                    if (!starting)
+                    {
+                        // A timeout adds nothing to the window's own disconnected message.
+                        var message = error is TimeoutException ? launchFailure?.Message ?? string.Empty : error.Message;
+                        if (message != lastFailure) Disconnected?.Invoke(message);
+                        lastFailure = message;
+                    }
                     try { await Task.Delay(1000, token); } catch (OperationCanceledException) { }
                 }
                 catch (OperationCanceledException) when (token.IsCancellationRequested) { break; }

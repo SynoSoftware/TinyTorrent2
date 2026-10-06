@@ -1,5 +1,20 @@
 # Morning report
 
+## Desktop startup checkpoint — 2026-10-06
+
+Registration is committed as `1706002`. The owner's settled startup changes keep
+the settings completion ahead of transfer loading, show a cold splash promptly,
+and use recent warm-launch durations to avoid an unnecessary splash dwell.
+The window's pipe client gives its own newly started engine five seconds before
+showing a connection failure. This is a separate checkpoint from registration.
+
+These sources passed the previously recorded scoped source review and are in
+the current successful app/engine builds. The recorded Restart journey and the
+latest FilesSafety/CheckpointRetry runs cover startup with saved state. They do
+not prove visible splash timing, foreground behavior or the window's cold-start
+failure presentation. Those remain explicit desktop verification gaps; no extra
+build or repeated check was run merely to commit unchanged, compiled sources.
+
 ## Registration observation and final engine safety — 2026-10-06
 
 The Files hierarchy checkpoint is committed as `d23778a`. Registration source

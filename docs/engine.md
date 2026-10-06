@@ -470,15 +470,21 @@ the transfers have loaded, so a large library delays a cold start's first frame;
 showing the window earlier needs a protocol state for loaded settings.
 
 The engine owns only the splash timing, and shows a splash only while it waits
-for a window to appear and the Show the splash screen preference allows it. A
-cold launch, where the engine still loads, shows the splash at once. A warm
-launch waits briefly and shows no splash if `ready` comes first. A splash on
-screen stays for a minimum time: the engine answers `ready` only then, the
-window appears, and the window's activate reply closes the splash, so the window
-always appears over it. `coldDelay`, `warmDelay` and `minimumDwell` in the
-splash source hold the durations. Failure or Exit closes the splash immediately,
-and a window whose connection fails appears at once with that failure. Sign-in
-with WinUI closed shows no splash.
+for a window to appear and the Show the splash screen preference allows it. The
+splash never waits before it appears. A cold launch, where the engine still
+loads, always shows it. A warm launch shows it unless the average of the recent
+warm launches, each timed from starting the window process to `ready`, is
+within the splash's minimum time; then a splash would only delay the window.
+The engine keeps those times in memory, so its first warm launch shows the
+splash. A splash on screen stays for a minimum time: the engine answers `ready`
+only then, the window appears, and the window's activate reply closes the
+splash, so the window always appears over it. `minimumDwell` and
+`launchSamples` in the splash source hold the values. Failure or Exit closes
+the splash immediately, and a window whose connection fails appears at once
+with that failure. An engine the window started itself has five seconds to
+accept the connection before a timeout counts as that failure; showing the
+window earlier would show it in the system theme and switch to the saved one
+moments later. Sign-in with WinUI closed shows no splash.
 
 On process-creation failure or unexpected exit before window readiness, close
 the splash and report the reason through the existing tray notification path.

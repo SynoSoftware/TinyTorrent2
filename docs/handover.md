@@ -1,5 +1,14 @@
 # Implementation handover — 2026-10-05
 
+## Desktop startup checkpoint — 2026-10-06
+
+Registration is committed as `1706002`; Files hierarchy is `d23778a`. The settled
+owner startup/splash and pipe cold-start changes form the next coherent commit,
+using the current successful builds and recorded state-recovery checks. Native
+splash timing/foreground and cold-start failure presentation remain unverified.
+Do not rerun file-safety checks for later app-only work. Pieces, the Settings
+shortcut and owner instruction/document changes remain to checkpoint separately.
+
 ## Registration observation and engine safety checkpoint — 2026-10-06
 
 Files hierarchy is committed as `d23778a`. The current registration integration

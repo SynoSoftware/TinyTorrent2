@@ -1,6 +1,7 @@
 #pragma once
 #include "Enums.h"
 #include "Strings.h"
+#include <deque>
 #include <functional>
 #include <string>
 #include <windows.h>
@@ -15,6 +16,7 @@ public:
     Splash(Splash const&) = delete;
     Splash& operator=(Splash const&) = delete;
     void Show(Launch launch);
+    void Record(ULONGLONG duration);
     void Finish(std::function<void()> show);
     void Close();
     void Translate();
@@ -30,6 +32,7 @@ private:
     HFONT font_ = nullptr;
     ULONGLONG shownAt_ = 0;
     std::function<void()> show_;
+    std::deque<ULONGLONG> launches_;
     std::string theme_ = "system";
     bool buffered_ = false;
     bool acrylic_ = false;

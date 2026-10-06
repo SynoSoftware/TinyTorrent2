@@ -71,6 +71,8 @@ private:
     ULONGLONG waitingSince_ = 0;
     // Cold when the current wait for a window began while the engine loaded.
     Launch launch_ = Launch::Warm;
+    // When the warm launch now waiting for `ready` started its window process.
+    ULONGLONG launchedAt_ = 0;
     TrayClick trayClick_ = TrayClick::Idle;
     POINT trayPoint_{};
     UINT taskbarCreated_ = RegisterWindowMessageW(L"TaskbarCreated");

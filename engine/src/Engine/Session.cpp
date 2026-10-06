@@ -42,7 +42,6 @@ Engine::State::State(std::filesystem::path path, std::function<void()> notificat
     // Without a saved document the engine starts from the default settings.
     auto saved = std::make_shared<Document>();
     saved->settings = settings;
-    auto resumes = std::make_shared<Resumes>();
     store.Run([this, saved]
     {
         std::filesystem::create_directories(directory);
@@ -64,37 +63,35 @@ Engine::State::State(std::filesystem::path path, std::function<void()> notificat
         settings = saved->settings;
         language = settings.language;
         startup = Startup::Transfers;
-    });
-    // The store runs this after the settings job and completes it after
-    // that job's completion.
-    store.Run([this, saved, resumes]
-    {
-        for (auto const& [id, facts] : saved->torrents)
+        // Queued only now, so the settings completion drains alone and the
+        // desktop shows the splash before Start loads the transfers on the
+        // same thread.
+        auto resumes = std::make_shared<Resumes>();
+        store.Run([this, saved, resumes]
         {
-            try
+            for (auto const& [id, facts] : saved->torrents)
             {
-                auto bytes = Store::Read(ResumeFile(id));
-                (*resumes)[id] = lt::read_resume_data(lt::span<char const>(bytes.data(), bytes.size()));
+                try
+                {
+                    auto bytes = Store::Read(ResumeFile(id));
+                    (*resumes)[id] = lt::read_resume_data(lt::span<char const>(bytes.data(), bytes.size()));
+                }
+                catch (std::exception const&)
+                {
+                    // Start adds this torrent again from its saved hashes.
+                }
             }
-            catch (std::exception const&)
+        }, [this, saved, resumes](StorageOutcome outcome)
+        {
+            if (!outcome.succeeded)
             {
-                // Start adds this torrent again from its saved hashes.
+                startupError = outcome.detail;
+                startup = Startup::Ready;
+                diagnostics.Write("startup", "", "storage_failed");
+                return;
             }
-        }
-    }, [this, saved, resumes](StorageOutcome outcome)
-    {
-        if (startup == Startup::Ready)
-        {
-            return;
-        }
-        if (!outcome.succeeded)
-        {
-            startupError = outcome.detail;
-            startup = Startup::Ready;
-            diagnostics.Write("startup", "", "storage_failed");
-            return;
-        }
-        Start(*saved, *resumes);
+            Start(*saved, *resumes);
+        });
     });
 }
 

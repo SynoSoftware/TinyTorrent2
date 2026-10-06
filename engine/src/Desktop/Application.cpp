@@ -589,6 +589,11 @@ void Application::OnReady(Pipe::Client const& client, Reply const& reply)
     }
     waitingSince_ = 0;
     reopen_ = false;
+    if (launchedAt_)
+    {
+        splash_.Record(GetTickCount64() - launchedAt_);
+        launchedAt_ = 0;
+    }
     // The reply lets the drawn window appear, and its activate reply closes
     // the splash.
     splash_.Finish([this, client, reply]
@@ -774,10 +779,17 @@ bool Application::Open()
     }
     process_.reset();
     reopen_ = false;
+    // Starting the window process takes time, so the splash appears first.
+    waitingSince_ = GetTickCount64();
+    launch_ = engine_->IsLoading() ? Launch::Cold : Launch::Warm;
+    ShowSplash();
     auto executable = WindowExecutable();
     std::wstring arguments = L"\"" + executable.wstring() + L"\"";
     STARTUPINFOW startup{sizeof(startup)};
     PROCESS_INFORMATION process{};
+    // Only a warm launch times the window alone; a cold one also waits for the
+    // engine to load.
+    launchedAt_ = launch_ == Launch::Warm ? GetTickCount64() : 0;
     if (!CreateProcessW(executable.c_str(), arguments.data(), nullptr, nullptr, FALSE, 0, nullptr,
         executable.parent_path().c_str(), &startup, &process))
     {
@@ -790,9 +802,6 @@ bool Application::Open()
     CloseHandle(process.hThread);
     process_.reset(process.hProcess);
     AllowSetForegroundWindow(process.dwProcessId);
-    waitingSince_ = GetTickCount64();
-    launch_ = engine_->IsLoading() ? Launch::Cold : Launch::Warm;
-    ShowSplash();
     return true;
 }
 
