@@ -14,6 +14,9 @@ using Windows.Storage.Pickers;
 using Windows.System;
 using Windows.ApplicationModel.DataTransfer;
 using Windows.Storage;
+using Syno.TinyTorrent.Models;
+using Syno.TinyTorrent.Services;
+using Syno.TinyTorrent.Views;
 
 namespace Syno.TinyTorrent;
 

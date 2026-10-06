@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Windows.Input;
+using Syno.TinyTorrent.Models;
 
 namespace Syno.TinyTorrent;
 

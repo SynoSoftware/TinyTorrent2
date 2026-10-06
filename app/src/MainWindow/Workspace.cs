@@ -3,6 +3,8 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Windows.System;
+using Syno.TinyTorrent.Models;
+using Syno.TinyTorrent.Views;
 
 namespace Syno.TinyTorrent;
 

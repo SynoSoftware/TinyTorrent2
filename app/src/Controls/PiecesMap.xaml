@@ -1,0 +1,26 @@
+<UserControl x:Class="Syno.TinyTorrent.Controls.PiecesMap"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    IsTabStop="True" UseSystemFocusVisuals="True" KeyDown="OnKey" GotFocus="OnFocus">
+    <Grid RowSpacing="8">
+        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+        <TextBlock x:Name="Summary" TextWrapping="Wrap" />
+        <ItemsControl x:Name="Legend" Grid.Row="1" IsTabStop="False">
+            <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapGrid Orientation="Horizontal" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+            <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,16,4"><Border x:Name="VerifiedSwatch" Width="16" Height="16" Background="{ThemeResource SystemFillColorSuccessBrush}" /><TextBlock x:Name="VerifiedLabel" /></StackPanel>
+            <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,16,4"><Border x:Name="DownloadingSwatch" Width="16" Height="16" BorderThickness="1" BorderBrush="{ThemeResource TextFillColorPrimaryBrush}" Background="{ThemeResource AccentFillColorDefaultBrush}"><Border Width="7" HorizontalAlignment="Right" Background="{ThemeResource ControlAltFillColorSecondaryBrush}" /></Border><TextBlock x:Name="DownloadingLabel" /></StackPanel>
+            <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,16,4"><Border x:Name="MissingSwatch" Width="16" Height="16" BorderThickness="1" BorderBrush="{ThemeResource TextFillColorPrimaryBrush}" Background="{ThemeResource ControlAltFillColorSecondaryBrush}" /><TextBlock x:Name="MissingLabel" /></StackPanel>
+            <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,16,4"><Border x:Name="CommonSwatch" Width="16" Height="16" BorderThickness="1" BorderBrush="{ThemeResource TextFillColorPrimaryBrush}" Background="{ThemeResource AccentFillColorDefaultBrush}"><Path Data="M0,7 L14,7" Stroke="{ThemeResource TextFillColorPrimaryBrush}" /></Border><TextBlock x:Name="CommonLabel" /></StackPanel>
+            <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,16,4"><Border x:Name="RareSwatch" Width="16" Height="16" Background="{ThemeResource SystemFillColorCautionBrush}"><Path Data="M0,6 L6,0 M0,12 L12,0 M2,16 L16,2 M8,16 L16,8 M14,16 L16,14" Stroke="{ThemeResource TextFillColorPrimaryBrush}" /></Border><TextBlock x:Name="RareLabel" /></StackPanel>
+            <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,16,4"><Border x:Name="UnavailableSwatch" Width="16" Height="16" BorderThickness="1" BorderBrush="{ThemeResource SystemFillColorCriticalBrush}" Background="{ThemeResource ControlAltFillColorSecondaryBrush}"><Path Data="M0,0 L14,14 M14,0 L0,14" Stroke="{ThemeResource SystemFillColorCriticalBrush}" /></Border><TextBlock x:Name="UnavailableLabel" /></StackPanel>
+            <TextBlock x:Name="PieceCount" Margin="0,0,16,4" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+        </ItemsControl>
+        <Grid x:Name="Viewport" Grid.Row="2" SizeChanged="OnSize">
+            <Grid x:Name="Drawing" HorizontalAlignment="Center" VerticalAlignment="Top" PointerMoved="OnPointer" PointerPressed="OnPressed" PointerExited="OnPointerExit" FlowDirection="LeftToRight">
+                <Image x:Name="Bitmap" Stretch="Fill" AutomationProperties.AccessibilityView="Raw" />
+                <Border x:Name="Selection" Width="20" Height="20" BorderThickness="2" BorderBrush="{ThemeResource FocusStrokeColorOuterBrush}" HorizontalAlignment="Left" VerticalAlignment="Top" IsHitTestVisible="False" Visibility="Collapsed" />
+                <TextBlock x:Name="Ink" Foreground="{ThemeResource TextFillColorPrimaryBrush}" Visibility="Collapsed" />
+            </Grid>
+        </Grid>
+    </Grid>
+</UserControl>

@@ -1,5 +1,6 @@
 using Microsoft.UI.Xaml;
 using System.Runtime.InteropServices;
+using Syno.TinyTorrent.Services;
 
 namespace Syno.TinyTorrent;
 

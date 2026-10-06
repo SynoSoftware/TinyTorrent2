@@ -4,6 +4,9 @@ using System.Text.Json;
 using System.Windows.Input;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml.Controls;
+using Syno.TinyTorrent.Models;
+using Syno.TinyTorrent.Services;
+using Syno.TinyTorrent.Views;
 
 namespace Syno.TinyTorrent;
 

@@ -8,6 +8,9 @@ using Windows.ApplicationModel.DataTransfer;
 using Windows.Foundation;
 using Windows.Storage;
 using Windows.System;
+using Syno.TinyTorrent.Helpers;
+using Syno.TinyTorrent.Models;
+using Syno.TinyTorrent.Views;
 
 namespace Syno.TinyTorrent;
 

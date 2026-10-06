@@ -129,10 +129,11 @@ member, file, folder, namespace, or resource key, or before adding an interface
 or a signature, and run its naming review on every new or changed name. One
 policy serves every project.
 
-Each project or library has its own `Enums.cs` beside its project file, and
-every enum that project declares lives there, one member per line, including
-enums only one type uses. This gives each project's vocabulary one discoverable
-home instead of scattering declarations among their current consumers.
+Each project or library has one `Enums.cs`, and every enum that project
+declares lives there, one member per line, including enums only one type uses.
+The product app keeps it in `Models/`; a library keeps it beside its project
+file. This gives each project's vocabulary one discoverable home instead of
+scattering declarations among their current consumers.
 
 ## Code comments
 

@@ -1,0 +1,106 @@
+<UserControl
+    x:Class="Syno.TinyTorrent.Controls.Scheduler"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:Syno.TinyTorrent.Controls"
+    xmlns:views="using:Syno.TinyTorrent.Views">
+    <UserControl.Resources>
+        <DataTemplate x:Key="SchedulerPeriodTemplate" x:DataType="views:SchedulePeriod">
+            <Button Command="{x:Bind Edit}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                AutomationProperties.Name="{x:Bind EditName, Mode=OneWay}" Margin="0,2">
+                <TextBlock Text="{x:Bind Summary, Mode=OneWay}" TextWrapping="Wrap" />
+                <ToolTipService.ToolTip><ToolTip Content="{x:Bind EditName, Mode=OneWay}" /></ToolTipService.ToolTip>
+            </Button>
+        </DataTemplate>
+    </UserControl.Resources>
+    <StackPanel Spacing="12">
+        <Grid ColumnSpacing="12">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+            <StackPanel Spacing="4">
+                <ToggleSwitch x:Name="Enabled" Header="{x:Bind Model.Schedule.Label, Mode=OneWay}" Tag="{x:Bind Model.Schedule}"
+                    OnContent="{x:Bind Model.OnText, Mode=OneWay}" OffContent="{x:Bind Model.OffText, Mode=OneWay}"
+                    IsOn="{x:Bind Model.Schedule.IsOn, Mode=OneWay}" IsEnabled="{x:Bind Model.Schedule.CanEdit, Mode=OneWay}"
+                    Toggled="OnToggle" AutomationProperties.Name="{x:Bind Model.Schedule.Label, Mode=OneWay}" AutomationProperties.AutomationId="ScheduleEnabled" />
+            </StackPanel>
+            <Button x:Name="AddPeriod" Grid.Column="1" VerticalAlignment="Top" Style="{StaticResource AccentButtonStyle}" Command="{x:Bind Model.AddPeriod}" AutomationProperties.AutomationId="AddPeriod" />
+        </Grid>
+        <TextBlock Text="{x:Bind Model.WeekStatus, Mode=OneWay}" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" />
+        <TextBlock Text="{x:Bind Model.Schedule.Message, Mode=OneWay}" TextWrapping="Wrap" Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+            Visibility="{x:Bind local:Scheduler.MessageVisibility(Model.Schedule.Message), Mode=OneWay}" AutomationProperties.LiveSetting="Assertive" />
+        <ContentControl x:Name="Timeline" HorizontalContentAlignment="Stretch" IsTabStop="False" />
+        <TextBlock x:Name="PreviewHint" Visibility="{x:Bind Model.IsEditing, Mode=OneWay}" TextWrapping="Wrap"
+            Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" />
+        <Grid ColumnSpacing="12">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+            <TextBlock x:Name="NormalLegend" TextWrapping="Wrap" Style="{StaticResource CaptionTextBlockStyle}" />
+            <TextBlock x:Name="AlternativeLegend" Grid.Column="1" TextWrapping="Wrap" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+            <TextBlock x:Name="PausedLegend" Grid.Column="2" TextWrapping="Wrap" Style="{StaticResource CaptionTextBlockStyle}" />
+        </Grid>
+        <Border Padding="12" BorderThickness="1" BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
+            CornerRadius="{ThemeResource ControlCornerRadius}" Visibility="{x:Bind Model.ShowsSelection, Mode=OneWay}">
+            <Grid x:Name="SelectionLayout" ColumnSpacing="12" RowSpacing="8" SizeChanged="ArrangeSelection">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                <StackPanel x:Name="SelectionText" Spacing="4" Grid.ColumnSpan="2">
+                    <TextBlock Text="{x:Bind Model.Selection.ModeLabel, Mode=OneWay}" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                    <TextBlock Text="{x:Bind Model.Selection.Summary, Mode=OneWay}" TextWrapping="Wrap" />
+                </StackPanel>
+                <StackPanel x:Name="SelectionActions" Grid.Row="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                    <Button Content="{x:Bind Model.Selection.EditText, Mode=OneWay}" Command="{x:Bind Model.Selection.Edit, Mode=OneWay}"
+                        AutomationProperties.Name="{x:Bind Model.Selection.EditName, Mode=OneWay}" AutomationProperties.AutomationId="EditPeriod" />
+                    <Button Content="{x:Bind Model.Selection.RemoveText, Mode=OneWay}" Command="{x:Bind Model.Selection.Remove, Mode=OneWay}"
+                        AutomationProperties.Name="{x:Bind Model.Selection.RemoveName, Mode=OneWay}" AutomationProperties.AutomationId="RemovePeriod" />
+                </StackPanel>
+            </Grid>
+        </Border>
+        <TextBlock x:Name="Hint" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" />
+        <TextBlock Text="{x:Bind Model.ScheduleMessage, Mode=OneWay}" Visibility="{x:Bind Model.HasScheduleError, Mode=OneWay}"
+            TextWrapping="Wrap" Foreground="{ThemeResource SystemFillColorCriticalBrush}" AutomationProperties.LiveSetting="Assertive" />
+        <Border x:Name="PeriodEditor" Padding="16" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+            BorderThickness="1" CornerRadius="{ThemeResource ControlCornerRadius}" Visibility="{x:Bind Model.IsEditing, Mode=OneWay}">
+            <StackPanel Spacing="12">
+                <TextBlock Text="{x:Bind Model.EditorTitle, Mode=OneWay}" Style="{StaticResource BodyStrongTextBlockStyle}" AutomationProperties.HeadingLevel="Level3" />
+                <TextBlock x:Name="DaysTitle" />
+                <ContentControl IsEnabled="{x:Bind Model.CanSchedule, Mode=OneWay}">
+                    <ItemsRepeater ItemsSource="{x:Bind Model.Draft.Days, Mode=OneWay}">
+                        <ItemsRepeater.Layout><UniformGridLayout Orientation="Horizontal" MinItemWidth="136" MinItemHeight="32" MaximumRowsOrColumns="7" /></ItemsRepeater.Layout>
+                        <ItemsRepeater.ItemTemplate>
+                            <DataTemplate x:DataType="views:DayChoice">
+                                <CheckBox Content="{x:Bind Label, Mode=OneWay}" IsChecked="{x:Bind IsChecked, Mode=TwoWay}"
+                                    AutomationProperties.Name="{x:Bind Label, Mode=OneWay}" AutomationProperties.AutomationId="{x:Bind AutomationId}" />
+                            </DataTemplate>
+                        </ItemsRepeater.ItemTemplate>
+                    </ItemsRepeater>
+                </ContentControl>
+                <Grid x:Name="Times" ColumnSpacing="12" RowSpacing="8" SizeChanged="ArrangeTimes">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                    <TimePicker x:Name="StartTime" SelectedTime="{x:Bind Model.Draft.Start, Mode=TwoWay}" IsEnabled="{x:Bind Model.CanSchedule, Mode=OneWay}" AutomationProperties.AutomationId="PeriodStart" />
+                    <TimePicker x:Name="EndTime" Grid.Row="1" SelectedTime="{x:Bind Model.Draft.End, Mode=TwoWay}" IsEnabled="{x:Bind Model.CanSchedule, Mode=OneWay}" AutomationProperties.AutomationId="PeriodEnd" />
+                </Grid>
+                <TextBlock Text="{x:Bind Model.PreviewLabel, Mode=OneWay}" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" />
+                <RadioButtons x:Name="PeriodMode" MaxColumns="2" SelectedIndex="{x:Bind local:Scheduler.ModeIndex(Model.Draft.IsPaused), Mode=OneWay}" SelectionChanged="OnPeriodMode"
+                    IsEnabled="{x:Bind Model.CanSchedule, Mode=OneWay}" AutomationProperties.AutomationId="PeriodMode">
+                    <RadioButtons.Items><RadioButton x:Name="AlternativeMode" AutomationProperties.AutomationId="AlternativeMode" /><RadioButton x:Name="PausedMode" AutomationProperties.AutomationId="PausedMode" /></RadioButtons.Items>
+                </RadioButtons>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+                    <Button x:Name="CancelPeriod" Command="{x:Bind Model.CancelPeriod}" AutomationProperties.AutomationId="CancelPeriod" />
+                    <Button x:Name="SavePeriod" Style="{StaticResource AccentButtonStyle}" Command="{x:Bind Model.SavePeriod}" AutomationProperties.AutomationId="SavePeriod" />
+                </StackPanel>
+            </StackPanel>
+        </Border>
+        <Expander Header="{x:Bind Model.PeriodSummary, Mode=OneWay}" Visibility="{x:Bind Model.HasPeriods, Mode=OneWay}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+            <StackPanel Spacing="12">
+                <StackPanel Spacing="4" Visibility="{x:Bind Model.HasAlternative, Mode=OneWay}">
+                    <TextBlock Text="{x:Bind Model.AlternativeSummary, Mode=OneWay}" Style="{StaticResource BodyStrongTextBlockStyle}" AutomationProperties.HeadingLevel="Level3" />
+                    <ItemsRepeater x:Name="AlternativePeriods" ItemTemplate="{StaticResource SchedulerPeriodTemplate}" />
+                </StackPanel>
+                <StackPanel Spacing="4" Visibility="{x:Bind Model.HasPaused, Mode=OneWay}">
+                    <TextBlock Text="{x:Bind Model.PausedSummary, Mode=OneWay}" Style="{StaticResource BodyStrongTextBlockStyle}" AutomationProperties.HeadingLevel="Level3" />
+                    <ItemsRepeater x:Name="PausedPeriods" ItemTemplate="{StaticResource SchedulerPeriodTemplate}" />
+                </StackPanel>
+            </StackPanel>
+        </Expander>
+        <Button x:Name="SpeedLimits" Click="OnSpeedLimits" AutomationProperties.AutomationId="ScheduleSpeedLimits" />
+    </StackPanel>
+</UserControl>

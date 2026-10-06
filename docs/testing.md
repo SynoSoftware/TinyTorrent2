@@ -171,6 +171,9 @@ Use `TINYTORRENT_CAPTURE_REVIEW=smoke` to rerun the recovery journeys and settin
 viewports without repeating the full themes-and-sizes batch.
 Use `TINYTORRENT_CAPTURE_REVIEW=shell` for the title-bar menus, narrow layouts,
 themes, selection commands, secondary pages and retained filter state.
+Use `TINYTORRENT_CAPTURE_REVIEW=schedule` for exact-minute overnight editing,
+validation, cancellation, moving and removal, with the schedule overview,
+selection and editor at all three sizes in English and Spanish, Light and Dark.
 
 First review functionality and recovery through the existing owners. Then use
 the images to examine hierarchy, spacing, alignment, typography, grouping,

@@ -1,5 +1,51 @@
 # Morning report
 
+## Current continuation — 2026-10-05
+
+The exact current goal is in [handover.md](handover.md#current-goal). Work has
+resumed; milestones 3–5 remain open. The entries below this section describe
+earlier candidates and are not evidence for the owner's engine refactor.
+
+The first coherent step retains the owner's role folders and finishes the
+accepted schedule. The current source compiled without a schedule compiler
+error; the initial failure was an intermediate DLL held by another MSBuild
+process, which exited without intervention. No Settings or title-bar restyling
+was needed. A short period's labels wrapped and clipped in the actual capture;
+explicit single-line trimming fixes that defect while selection and tooltips
+retain its full description. An unrelated shutdown failure was reproduced in
+the existing recovery journey. Local native symbols identified a minimum-width
+setter reached through `AppWindow.Changed` during window destruction. Caption
+updates now stop once the existing close owner commits to closing.
+
+- Final app build: `artifacts/evidence/schedule-final-build.log`, 39.02 seconds,
+  zero warnings/errors. Only TinyTorrent compiled, in its two XAML passes;
+  Lucide and TableView reused their outputs. No engine build or full suite ran.
+- Schedule before: `artifacts/evidence/UiSelfCapture-c3581096-4f3e-4c48-b47e-8f3da7e0ceb5/captures`.
+  After: `artifacts/evidence/UiSelfCapture-a9f107d9-53a7-4f4d-a183-23fde4350157/captures`.
+  All 12 size/theme/language combinations completed in 24,269 ms. Native controls
+  retained invalid input, saved Monday 22:17–01:43, cancelled edits without
+  changing saved data, preserved its 206-minute duration when moved, and removed
+  only the review period. The timeline uses its production reschedule owner;
+  this does not claim physical pointer-drag coverage.
+- Original recovery-and-close journey: `artifacts/evidence/UiSelfCapture-5bad8e3a-c93b-4eaf-bc53-26835bcca86f/captures/review.json`,
+  7,717 ms, all three recovery outcomes passed and the process exited normally.
+  Rejected limit/magnet input stayed editable; a removed torrent's tracker
+  draft remained with Save disabled and Cancel enabled.
+- Sequential visual review: the first-time user can find Add and distinguish
+  disabled scheduling from saved periods; the keyboard user has native fields,
+  actions and a timeline focus route; the accessibility review finds text
+  descriptions alongside colors but does not substitute for Narrator or a real
+  contrast theme; the Fluent and UX reviews retain the accepted hierarchy and
+  find no further counted defect in the reviewed schedule states. All three
+  viewport sizes, both themes and both languages were captured. Narrow windows
+  scroll the accepted page rather than hiding actions. Decorative watermarks
+  are an accepted taste choice, not a defect to redesign.
+- Every post-build/run output-location check returned no paths. All launched
+  UI and engine processes closed. The fresh milestone reviews and the two
+  mandated current-engine safety checks remain ahead.
+
+## Earlier handover evidence
+
 Status checked on 2026-10-05. Work stopped at the owner's request; resume from
 [handover.md](handover.md). This is an interim report: the five-milestone goal
 is **not complete**. The first two milestones have commits and recorded runtime

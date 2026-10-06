@@ -127,11 +127,12 @@ fragmentation minimum; keep it concise rather than padding it or scattering enum
 Split code by authority, lifetime, thread ownership or transaction boundary, not by screen, action
 or file length: those splits scatter one decision across files that must change together. Code
 lives with its owner. Add no dumping-ground file such as `Utils.cs`, `Common.cs` or
-`TableHelper.cs`, and no folder by kind such as `Helpers/`, `Models/` or `Converters/`; each
-separates code from the decision it serves. The fixed `Themes/` and `Resources/` folders below and
-the package folders `Assets/` and `Properties/` are the only folders by kind, apart from the
-native engine's `engine/inc/`, which holds its headers by the repository owner's ruling. Extension methods
-stay technical and hold no product rule.
+`TableHelper.cs`. A library adds no folder by kind such as `Helpers/`, `Models/` or
+`Converters/`, because each separates code from the decision it serves. The product app groups by
+role instead, as [app folders](#app-folders) describes. Apart from those, the fixed `Themes/` and
+`Resources/` folders below and the package folders `Assets/` and `Properties/` are the only folders
+by kind, with the native engine's `engine/inc/`, which holds its headers by the repository owner's
+ruling. Extension methods stay technical and hold no product rule.
 
 A filename follows the type it holds. A type split across files keeps `Table.cs`, and a folder
 named after the type holds the other parts, each named by the aspect it holds: `Table/Sorting.cs`,
@@ -202,3 +203,22 @@ has them, its tests in `tests/` and a demonstration host in `sample/`. A project
 contains another project, because an SDK project compiles every source file under its folder.
 Project names are unique in the repository, because each project writes to
 `artifacts/bin/<project name>/`.
+
+### App folders
+
+The product app in `app/src` groups its files by role, the way the repository owner's other WinUI
+apps do, so the same folder answers the same question in each of them:
+
+- The root holds `App`, `MainWindow` and `MainViewModel` with their parts folders. The main view
+  model owns every other view model, so the owner sits above the folders that hold what it owns.
+- `Views/` holds each form beside the view model it binds to. The forms are user controls that the
+  main window hosts; the app has no navigation frame, so the folder is not `Pages/`.
+- `Controls/` holds the custom controls that a form or the main window places in its layout, with
+  the state a control owns, such as `FileSelection` for `FileBrowser`.
+- `Models/` holds the data the views show, value types such as `PeriodSpan`, and `Enums.cs`.
+- `Services/` holds input and output: the engine pipe and the language catalogues.
+- `Helpers/` holds UI-framework mechanics with no product rule. A product rule, such as how a
+  torrent formats its size, stays with its owner.
+
+Each role folder is a namespace (`Syno.TinyTorrent.Views`). A record that only one type creates
+stays in that type's file.

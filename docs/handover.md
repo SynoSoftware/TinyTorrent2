@@ -1,6 +1,12 @@
 # Implementation handover — 2026-10-05
 
-Work stopped at the owner's request to move to another project. The pending app
+Work resumed on 2026-10-05 under the current goal below. The first coherent step
+retains the owner's app role folders, verifies the finished schedule, corrects
+clipped short-period labels and fixes a reproduced window-shutdown crash.
+Current evidence is at the top of [morning-report.md](morning-report.md).
+Milestones 3–5 and their fresh adversarial gates remain open.
+
+At the earlier handover, work stopped at the owner's request to move to another project. The pending app
 recovery smoke check finished and passed. The five-milestone implementation is
 still incomplete: milestones 1–2 have completion commits; milestones 3–5 have
 substantial implementation and evidence but remain open. Distribution is outside
@@ -56,35 +62,9 @@ that improvement. Preserve other contributors' ongoing changes while making
 deliberate, coordinated improvements; preserving their work does not require
 freezing the surrounding structure.
 
-## Goal to set in Codex when execution resumes
+## Current goal
 
-Use this objective for the executing agent's Codex goal. Resume an existing
-unfinished goal where applicable rather than starting competing goals. This
-handover records the objective; it does not resume the paused implementation.
-
-> Finish TinyTorrent2's first five implementation milestones and deliver a
-> functional, coherent, polished native WinUI 3 application with a Fluent 2
-> experience. Preserve the completed download and everyday-action work; finish
-> Background and desktop behavior, Details and preferences, and Move and delete
-> files in order. Preserve ongoing changes, MVVM and TableView's public API;
-> keep one authority for each command and decision. Pursue easy-to-read,
-> low-bloat code with minimum cleverness: use intelligent design and useful
-> abstractions whose names and scope make their behavior clear. Refactor current
-> and deferred work when it materially
-> simplifies code, removes duplication, clarifies ownership or responsibilities.
-> Avoid abstractions and function splits that add indirection, ceremony or
-> navigation cost; do not preserve bad structure merely to avoid a redesign.
-> Use the HTML prototype as an imperfect design reference,
-> adapting useful information and interactions to native Windows behavior.
-> Apply efficiency and common sense as prime directives: use the plan as a map,
-> finish coherent changes before expensive review, and obtain proportionate
-> evidence for real user failures. Complete the relevant functional, visual,
-> keyboard, accessibility and persistence journeys; resolve concrete findings
-> from the required settled milestone reviews. Commit each remaining milestone
-> when its completion evidence is satisfied. Update docs/morning-report.md and
-> docs/handover.md with results, commits, measurements and honest limitations.
-> Close every process launched for verification. Exclude Distribution, dependency
-> rebuilds and a separate project to perfect the plan.
+TinyTorrent2 looks and feels like a polished, first-class Windows 11 app: every screen in milestones 3–5 is clear, calm, compact and consistent in alignment, spacing, type and hierarchy, in Light and Dark, in English and Spanish, at 720x560, 1040x680 and 1280x800. Every feature in those milestones works and is committed, the accepted Settings, title bar and schedule screens have not regressed, and a fresh adversarial reviewer looking at the captures finds no counted defect, or the defects left after its second re-review are recorded in docs/morning-report.md.
 
 The desired result is an application people can comfortably understand and use,
 not merely compiled XAML or a pixel copy of the prototype. Task completion,
@@ -100,15 +80,15 @@ The shared checkout is `main`. The owner moved it there; this pass did not switc
 branches. Inspect `git status` and preserve uncommitted work, including concurrent
 engine edits. Account for ownership before staging a milestone commit.
 
-Start the verified candidate without elevation:
+The last verified candidate,
+`C:\SynoSoftware\TinyTorrent2\artifacts\checks\ui-review-build\TinyTorrent.exe`,
+predates commits `3c1d765` to `3a1c5bb`, so it shows none of their changes.
+Build a new candidate before collecting runtime evidence. Keep the engine,
+managed assemblies and runtime files together: each executable starts only the
+other one beside it. A running engine owns the logon-scoped endpoint; another
+data directory alone does not isolate a test.
 
-`C:\SynoSoftware\TinyTorrent2\artifacts\checks\ui-review-build\TinyTorrent.exe`
-
-Keep its adjacent engine, managed assemblies and runtime files together. The
-adjacent engine SHA-256 is
-`68AA3BDFE6FE57566D3630ED2F9538ED4CDC1F688F482E15B82B4495BDE23FE3`.
-Concurrent native source edits may postdate that binary. A running engine owns
-the logon-scoped endpoint; another data directory alone does not isolate a test.
+`app/src` is grouped by role; [naming](naming.md#app-folders) lists the folders.
 
 All processes launched by this pass are closed. The final process check found
 no `TinyTorrent.exe` or `Engine.exe`. No desktop automation remains active.
@@ -119,9 +99,9 @@ no `TinyTorrent.exe` or `Engine.exe`. No desktop automation remains active.
 | --- | --- | --- |
 | First usable download | Completed previously, `e0a5a92` | Historical journeys and first resource measurements are recorded. |
 | Everyday torrent actions | Completed previously, `6afbf65` | Historical evidence is recorded, with stated physical Explorer/drop and accessibility gaps. |
-| Background and desktop behavior | Working-tree implementation; no completion commit | Current Open/Close/Exit/restart and protected input; notifications and sleep with WinUI closed; source acknowledgement during Close. |
-| Details and preferences | Working-tree implementation; no completion commit | Adopted-surface acceptance, failed edits, live language/focus/RTL and closed-window speed history. |
-| Move and delete files | Engine safety checks passed; UI implemented and compiled; no completion commit | Actual UI submissions with disposable payloads, relevant failures and a real interrupted move. |
+| Background and desktop behavior | Implementation committed (`3c1d765` to `bb44cb2`); no completion commit | Current Open/Close/Exit/restart and protected input; notifications and sleep with WinUI closed; tray failure reports and startup in the notification area. |
+| Details and preferences | Implementation committed (`3c1d765` to `3a1c5bb`); no completion commit | Adopted-surface acceptance, failed edits, live language/focus/RTL and closed-window speed history. |
+| Move and delete files | Engine safety checks passed; UI committed in `3c1d765`; no completion commit | Actual UI submissions with disposable payloads, relevant failures and a real interrupted move. |
 
 Finish and commit the remaining milestones in order. Use the requested fresh
 adversarial review when each implementation is stable, and fix its concrete
@@ -146,7 +126,8 @@ That run saved 13 scenes: all five Settings sections, overflowing sections at
 their bottom, Pieces and recovery states. The Pieces image confirms its legend
 labels and counts fit after measuring the native WrapGrid cells. Schedule labels
 now stay on one line rather than splitting short segments into uneven rows.
-Further visual acceptance remains open.
+Further visual acceptance remains open. These images predate the Settings cards
+and title bar menus (`23af87a`, `3a1c5bb`), so they do not show those surfaces.
 
 The latest app Release/x64 build passed with zero warnings/errors in **112.55 s**,
 including the coordinated PipeClient changes. Log:
@@ -220,7 +201,8 @@ The remaining work is to compose them deliberately and verify actual states.
 
 Some concrete regressions have now been corrected: the real timeline is back,
 Settings allocation changed, NavigationView replaced the application context
-menu, Exit moved to its footer, and input recovery passed. These corrections
+menu, Exit moved to its footer (both later replaced by the title bar menus), and
+input recovery passed. These corrections
 do not establish that the current app matches the prototype's overall quality.
 Complete visual acceptance remains open.
 
@@ -354,46 +336,44 @@ rewrites, not producing a more elaborate plan or a longer review report.
 - The prototype informs information and interactions; native Fluent 2 design and
   common sense guide the adaptation. The schedule has a proportional timeline,
   ruler, saved periods, legend, segment editing and period actions.
-- NavigationView owns app navigation and footer Exit. Language and theme remain
-  caption commands without flags. Caption and content intend one acrylic surface;
-  XAML render capture cannot prove native chrome or desktop acrylic.
+- A menu bar in the title bar holds File (add, Settings, Exit), Torrent, View
+  and Help, beside search and the theme button. Language is set in Settings,
+  Appearance. Caption and content intend one acrylic surface; XAML render
+  capture cannot prove native chrome or desktop acrylic.
 - Engine checkpoint writes are serialized per torrent, retaining the newest
   pending result. Completion waits for disk readiness. Exit retains process
-  coordination after UI disconnect and offers Wait/Cancel for file work. Scoped
-  Astra re-review passed for these corrections.
+  coordination after UI disconnect and waits for a running move or deletion
+  without asking. Startup, save and unresponsive-window failures are tray
+  notifications; the splash has no buttons.
 - SpeedLimits validates raw input before saving. Inspector retains an unavailable
   torrent's draft. TextEditor supplies one native editor lookup for direct callers.
 - Finding avoids repeated membership scans and unnecessary IndexOf calls on
   unchanged torrent projections (#105). It compiled; no large-list measurement
   is claimed.
-- The coordinated PipeClient pass addresses greeting/command deadlines and
-  shutdown/admission (#101, #102 and part of #103). It compiled in the integrated
-  build. Silent-peer, reconnect and disposal fault scenarios still need focused
-  runtime evidence. Optional-read scheduling remains advisory.
+- PipeClient bounds the greeting and each write-plus-reply exchange, disposal
+  settles every queued command, and each view keeps at most one unsent read
+  (#101, #102, #103, closed). A closing window takes no more sources, so they
+  stay with the engine (#13, closed). Silent-peer, reconnect and disposal fault
+  scenarios still need focused runtime evidence.
 
 ## Resume sequence
 
 1. Inspect the shared diff and concurrent work. Apply the coding standard above
    to current work and deferred issues: simplify bad structure where the benefit
    is material, preserve ongoing edits, and keep each decision at one clear owner.
-2. Resolve possible acknowledged-source loss during Close (#13).
-   `MainViewModel/Actions.cs:ReceiveSources` can own and acknowledge incoming
-   sources while `MainWindow.CloseWindow` finishes its last draft check.
-   `_receivingSources` is absent from CanClose. No correction or reproduction was
-   completed. Coordinate admission with closing at existing owners and retain
-   unacknowledged sources at the engine.
-3. Finish milestone 3's affected lifecycle evidence, then its settled review and
+2. Finish milestone 3's affected lifecycle evidence, then its settled review and
    commit. Avoid global power changes or driving an unrelated live engine.
-4. Examine existing capture images before adjusting layouts. The larger batch
+3. Examine existing capture images before adjusting layouts. The larger batch
    has 121 scenes at three sizes in Light/Dark plus Spanish Schedule under
    `artifacts/evidence/UiSelfCapture-c11d60b6-5d6f-45f7-bb91-b1f865579d09/captures`.
    Its later recovery smoke failed before the fix. Some early frames caught native
    animations; current captures record pixel stability. Open popup images for
-   dialogs: window.png alone can show only the underlying page.
-5. Finish milestone 4's functional/visual evidence, then review and commit.
+   dialogs: window.png alone can show only the underlying page. The batch
+   predates the Settings cards and title bar menus, so capture those again.
+4. Finish milestone 4's functional/visual evidence, then review and commit.
    Native chrome/acrylic, Narrator, High Contrast, text scaling, RTL, populated
    peers/trackers and active-transfer views remain incompletely verified.
-6. Finish milestone 5's actual UI submissions and relevant recovery evidence,
+5. Finish milestone 5's actual UI submissions and relevant recovery evidence,
    then review and commit. Update the morning report with completion commits and
    honest remaining limitations.
 

@@ -6,6 +6,7 @@ using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Windows.Foundation;
 using Windows.Graphics;
+using Syno.TinyTorrent.Models;
 
 namespace Syno.TinyTorrent;
 
@@ -13,7 +14,7 @@ public sealed partial class MainWindow
 {
     private void UpdateChrome()
     {
-        if (Root.XamlRoot is null) return;
+        if (_allowClose || Root.XamlRoot is null) return;
         var scale = Root.XamlRoot.RasterizationScale;
         var left = Math.Max(0, AppWindow.TitleBar.LeftInset) / scale;
         var right = Math.Max(0, AppWindow.TitleBar.RightInset) / scale;

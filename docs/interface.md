@@ -525,12 +525,41 @@ battery does not surprise its owner.
 Scheduler presents one weekly overview with normal limits, alternative limits,
 and paused periods, because separate schedules obscure their combined effect.
 Time runs left to right beneath a 00–24 hour ruler; each day has one row, and
-segments occupy widths proportional to their duration. The bounded Weekly
-schedule group places its state and switch together, followed by the timeline,
-legend, saved Periods with Edit and Remove, and Speed limits and Add period.
-Switching the schedule off preserves the saved geometry and mode labels, so the
-person can understand what enabling it will do. Scheduled segments edit their
-original period through the same command as Edit; normal gaps are read-only.
+segments occupy widths proportional to their duration. The week stays visible
+when empty or switched off, so the person can discover and prepare a schedule.
+Its state, switch and Add period sit above the timeline. Normal time is quiet
+background; selecting a period reveals its exact times, duration, Edit and Remove.
+One collapsed Saved periods expander groups compact day/time entries by mode;
+each opens the exact editor, so covered periods remain accessible without nested
+disclosure or a separate selection step. Empty groups stay hidden.
+The scheduler is one control embedded in Preferences, sharing its period and
+save owner with the exact editor rather than implementing scheduling rules twice.
+
+Dragging empty time opens Add with that day and range selected; an ordinary click
+only focuses the week. Dragging a period horizontally preserves its duration;
+selected start/end handles resize it. Gestures snap to 15 minutes and show a
+live time/duration preview. Release saves a move or resize; Escape or lost pointer
+capture cancels it. The native time fields retain exact minute precision.
+Blocks show their effective time ranges as well as their modes; hover and selection
+expose the complete source period, so an overlap does not obscure its saved times.
+The ruler reduces its tick count at narrow widths, and calendar geometry follows
+Windows text size so labels do not collide. Exact time fields and selection actions
+sit side by side when they fit, and stack when space is limited.
+Keyboard arrows navigate days and times, Space selects, and Enter adds or edits,
+so dragging is never required. Add period and the details list remain native
+keyboard and accessibility routes to every operation.
+Keyboard navigation displays the current day and exact time. Drafts identify their
+unsaved preview and next-day endpoints; Save and Cancel return focus to the week or
+Add period. Escape cancels the exact editor as well as an active drag.
+
+Selecting a repeating period outlines every occurrence, including portions
+covered by Pause, so moving one occurrence cannot silently change other days.
+An overnight period shows its following-day portion and handles at its actual
+endpoints. The fill still shows the effective mode, with Pause taking precedence.
+Reject exact duplicate submissions; preserve distinct overlapping rules so a
+later Edit or Remove retains its meaning. Switching off stops application of
+the periods while leaving the editor usable. Save failures preserve the attempted
+times in the exact editor beside an error, so the person can retry or cancel.
 Full-day descriptions say All day rather than midnight to midnight.
 Each period has start days, start/end times, and a choice of alternative limits
 or pause, edited with native checkboxes, TimePicker controls, and radio buttons.

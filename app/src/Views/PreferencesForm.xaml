@@ -1,0 +1,301 @@
+<UserControl x:Class="Syno.TinyTorrent.Views.PreferencesForm"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:icons="using:Syno"
+    xmlns:local="using:Syno.TinyTorrent.Views"
+    xmlns:controls="using:Syno.TinyTorrent.Controls">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Light">
+                    <x:Double x:Key="PreferencesMarkOpacity">0.04</x:Double>
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Dark">
+                    <x:Double x:Key="PreferencesMarkOpacity">0.03</x:Double>
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="HighContrast">
+                    <x:Double x:Key="PreferencesMarkOpacity">0</x:Double>
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+            <Style x:Key="PreferencesHintStyle" TargetType="TextBlock" BasedOn="{StaticResource BodyTextBlockStyle}">
+                <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+                <Setter Property="TextWrapping" Value="Wrap" />
+            </Style>
+            <Style x:Key="PreferencesErrorStyle" TargetType="TextBlock" BasedOn="{StaticResource BodyTextBlockStyle}">
+                <Setter Property="Foreground" Value="{ThemeResource SystemFillColorCriticalBrush}" />
+                <Setter Property="TextWrapping" Value="Wrap" />
+                <Setter Property="AutomationProperties.LiveSetting" Value="Assertive" />
+            </Style>
+            <Style x:Key="PreferencesMarkStyle" TargetType="FontIcon">
+                <Setter Property="FontSize" Value="320" />
+                <Setter Property="Foreground" Value="{ThemeResource AccentTextFillColorSecondaryBrush}" />
+                <Setter Property="Opacity" Value="{ThemeResource PreferencesMarkOpacity}" />
+                <Setter Property="IsHitTestVisible" Value="False" />
+                <Setter Property="AutomationProperties.AccessibilityView" Value="Raw" />
+            </Style>
+            <Style TargetType="controls:SettingsSection">
+                <Setter Property="Padding" Value="24" />
+                <Setter Property="Background" Value="{ThemeResource LayerOnMicaBaseAltFillColorDefaultBrush}" />
+                <Setter Property="CornerRadius" Value="{ThemeResource ControlCornerRadius}" />
+                <Setter Property="HorizontalAlignment" Value="Stretch" />
+                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                <Setter Property="IsTabStop" Value="False" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="controls:SettingsSection">
+                            <StackPanel Padding="{TemplateBinding Padding}" Spacing="20" Background="{TemplateBinding Background}" CornerRadius="{TemplateBinding CornerRadius}">
+                                <Grid ColumnSpacing="16">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                    <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{TemplateBinding Glyph}" FontSize="32" VerticalAlignment="Center"
+                                        Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" AutomationProperties.AccessibilityView="Raw" />
+                                    <StackPanel Grid.Column="1" Spacing="4" VerticalAlignment="Center">
+                                        <TextBlock Text="{TemplateBinding Header}" FontSize="16" FontWeight="SemiBold" TextWrapping="Wrap" AutomationProperties.HeadingLevel="Level2" />
+                                        <TextBlock x:Name="DescriptionText" Text="{TemplateBinding Description}" Style="{StaticResource PreferencesHintStyle}" />
+                                    </StackPanel>
+                                </Grid>
+                                <ContentPresenter Content="{TemplateBinding Content}" HorizontalContentAlignment="Stretch" />
+                            </StackPanel>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+            <Style TargetType="controls:SettingsRow">
+                <Setter Property="HorizontalAlignment" Value="Stretch" />
+                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                <Setter Property="IsTabStop" Value="False" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="controls:SettingsRow">
+                            <Grid ColumnSpacing="16">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                                <StackPanel VerticalAlignment="Center" Spacing="2">
+                                    <TextBlock Text="{TemplateBinding Header}" Style="{StaticResource BodyTextBlockStyle}" TextWrapping="Wrap" />
+                                    <TextBlock x:Name="DescriptionText" Text="{TemplateBinding Description}" Style="{StaticResource CaptionTextBlockStyle}"
+                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
+                                    <TextBlock x:Name="ErrorText" Text="{TemplateBinding Error}" Style="{StaticResource PreferencesErrorStyle}" />
+                                </StackPanel>
+                                <ContentPresenter Grid.Column="1" VerticalAlignment="Center" HorizontalAlignment="Right" Content="{TemplateBinding Content}" />
+                                <ContentPresenter x:Name="DetailPresenter" Grid.Row="1" Grid.ColumnSpan="2" Margin="0,8,0,0" Content="{TemplateBinding Detail}" />
+                            </Grid>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+        </ResourceDictionary>
+    </UserControl.Resources>
+    <Grid x:Name="Root" SizeChanged="OnRootSize">
+        <FontIcon Style="{StaticResource PreferencesMarkStyle}" FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Cog}"
+            HorizontalAlignment="Left" VerticalAlignment="Top" Margin="-120,-100,0,0" />
+        <FontIcon Style="{StaticResource PreferencesMarkStyle}" FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Cog}"
+            HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,-160,-140" />
+        <ScrollViewer x:Name="Body" HorizontalScrollMode="Disabled" HorizontalScrollBarVisibility="Disabled">
+            <!-- The middle column takes up to 800 pixels and the side columns
+                 share the rest, so every category has the same width and
+                 position. A centred MaxWidth panel instead moves with the width
+                 its content asks for. -->
+            <Grid Margin="16,16,16,32">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="100*" MaxWidth="800" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <StackPanel Grid.Column="1">
+                    <TextBlock x:Name="PageTitle" Margin="0,0,0,24" Style="{StaticResource TitleTextBlockStyle}" AutomationProperties.HeadingLevel="Level1" />
+                    <SelectorBar x:Name="Categories" Margin="0,0,0,8" SelectionChanged="OnCategory" AutomationProperties.AutomationId="PreferenceCategories">
+                        <SelectorBarItem x:Name="GeneralCategory" Tag="General" AutomationProperties.AutomationId="GeneralCategory">
+                            <SelectorBarItem.Icon><FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.SlidersHorizontal}" FontSize="16" /></SelectorBarItem.Icon>
+                        </SelectorBarItem>
+                        <SelectorBarItem x:Name="TransfersCategory" Tag="Transfers" AutomationProperties.AutomationId="TransfersCategory">
+                            <SelectorBarItem.Icon><FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.ArrowDownUp}" FontSize="16" /></SelectorBarItem.Icon>
+                        </SelectorBarItem>
+                        <SelectorBarItem x:Name="NetworkCategory" Tag="Network" AutomationProperties.AutomationId="NetworkCategory">
+                            <SelectorBarItem.Icon><FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Globe}" FontSize="16" /></SelectorBarItem.Icon>
+                        </SelectorBarItem>
+                        <SelectorBarItem x:Name="ScheduleCategory" Tag="Schedule" AutomationProperties.AutomationId="ScheduleCategory">
+                            <SelectorBarItem.Icon><FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.CalendarDays}" FontSize="16" /></SelectorBarItem.Icon>
+                        </SelectorBarItem>
+                        <SelectorBarItem x:Name="AppearanceCategory" Tag="Appearance" AutomationProperties.AutomationId="AppearanceCategory">
+                            <SelectorBarItem.Icon><FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Palette}" FontSize="16" /></SelectorBarItem.Icon>
+                        </SelectorBarItem>
+                    </SelectorBar>
+                    <Grid>
+                        <StackPanel x:Name="General" Spacing="16">
+                            <controls:SettingsSection x:Name="DownloadsSection" Glyph="{x:Bind icons:Lucide.FolderDown}">
+                                <StackPanel Spacing="16">
+                                    <controls:SettingsRow Header="{x:Bind Model.Destination.Label, Mode=OneWay}" Error="{x:Bind Model.Destination.Message, Mode=OneWay}">
+                                        <Button x:Name="Browse" Click="OnDestination" IsEnabled="{x:Bind Model.Destination.CanEdit, Mode=OneWay}" AutomationProperties.AutomationId="BrowseDestination" />
+                                        <controls:SettingsRow.Detail>
+                                            <TextBox x:Name="Destination" Tag="{x:Bind Model.Destination}" FlowDirection="LeftToRight"
+                                                Text="{x:Bind Model.Destination.Input, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                IsEnabled="{x:Bind Model.Destination.CanEdit, Mode=OneWay}" PreviewKeyDown="OnFieldKey" LostFocus="OnFieldDeparture"
+                                                AutomationProperties.Name="{x:Bind Model.Destination.Label, Mode=OneWay}" AutomationProperties.AutomationId="DefaultDestination" />
+                                        </controls:SettingsRow.Detail>
+                                    </controls:SettingsRow>
+                                    <controls:SettingsRow x:Name="ShowAddRow" Header="{x:Bind Model.ShowAdd.Label, Mode=OneWay}" Error="{x:Bind Model.ShowAdd.Message, Mode=OneWay}">
+                                        <ToggleSwitch OnContent="{x:Bind Model.OnText, Mode=OneWay}" OffContent="{x:Bind Model.OffText, Mode=OneWay}" Tag="{x:Bind Model.ShowAdd}" IsOn="{x:Bind Model.ShowAdd.IsOn, Mode=OneWay}"
+                                            IsEnabled="{x:Bind Model.ShowAdd.CanEdit, Mode=OneWay}" Toggled="OnToggle" AutomationProperties.Name="{x:Bind Model.ShowAdd.Label, Mode=OneWay}" AutomationProperties.AutomationId="ShowAdd" />
+                                    </controls:SettingsRow>
+                                    <controls:SettingsRow Header="{x:Bind Model.Notifications.Label, Mode=OneWay}" Error="{x:Bind Model.Notifications.Message, Mode=OneWay}">
+                                        <ToggleSwitch OnContent="{x:Bind Model.OnText, Mode=OneWay}" OffContent="{x:Bind Model.OffText, Mode=OneWay}" Tag="{x:Bind Model.Notifications}" IsOn="{x:Bind Model.Notifications.IsOn, Mode=OneWay}"
+                                            IsEnabled="{x:Bind Model.Notifications.CanEdit, Mode=OneWay}" Toggled="OnToggle" AutomationProperties.Name="{x:Bind Model.Notifications.Label, Mode=OneWay}" AutomationProperties.AutomationId="Notifications" />
+                                    </controls:SettingsRow>
+                                </StackPanel>
+                            </controls:SettingsSection>
+                            <controls:SettingsSection x:Name="StartupSection" Glyph="{x:Bind icons:Lucide.Rocket}">
+                                <StackPanel Spacing="16">
+                                    <controls:SettingsRow x:Name="SignInRow">
+                                        <ToggleSwitch OnContent="{x:Bind Model.OnText, Mode=OneWay}" OffContent="{x:Bind Model.OffText, Mode=OneWay}" x:Name="Startup" IsOn="{x:Bind Model.Startup, Mode=OneWay}" IsEnabled="{x:Bind Model.CanRegister, Mode=OneWay}" Toggled="OnStartup" AutomationProperties.AutomationId="Startup" />
+                                        <controls:SettingsRow.Detail>
+                                            <HyperlinkButton x:Name="StartupSettings" Padding="0" Command="{x:Bind Model.OpenStartup}" AutomationProperties.AutomationId="StartupSettings" />
+                                        </controls:SettingsRow.Detail>
+                                    </controls:SettingsRow>
+                                    <controls:SettingsRow x:Name="TrayRow" Header="{x:Bind Model.StartInTray.Label, Mode=OneWay}" Error="{x:Bind Model.StartInTray.Message, Mode=OneWay}">
+                                        <ToggleSwitch OnContent="{x:Bind Model.OnText, Mode=OneWay}" OffContent="{x:Bind Model.OffText, Mode=OneWay}" Tag="{x:Bind Model.StartInTray}" IsOn="{x:Bind Model.StartInTray.IsOn, Mode=OneWay}"
+                                            IsEnabled="{x:Bind Model.StartInTray.CanEdit, Mode=OneWay}" Toggled="OnToggle" AutomationProperties.Name="{x:Bind Model.StartInTray.Label, Mode=OneWay}" AutomationProperties.AutomationId="StartInTray" />
+                                    </controls:SettingsRow>
+                                    <controls:SettingsRow Header="{x:Bind Model.ShowSplash.Label, Mode=OneWay}" Error="{x:Bind Model.ShowSplash.Message, Mode=OneWay}">
+                                        <ToggleSwitch OnContent="{x:Bind Model.OnText, Mode=OneWay}" OffContent="{x:Bind Model.OffText, Mode=OneWay}" Tag="{x:Bind Model.ShowSplash}" IsOn="{x:Bind Model.ShowSplash.IsOn, Mode=OneWay}"
+                                            IsEnabled="{x:Bind Model.ShowSplash.CanEdit, Mode=OneWay}" Toggled="OnToggle" AutomationProperties.Name="{x:Bind Model.ShowSplash.Label, Mode=OneWay}" AutomationProperties.AutomationId="ShowSplash" />
+                                    </controls:SettingsRow>
+                                </StackPanel>
+                            </controls:SettingsSection>
+                            <controls:SettingsSection x:Name="DefaultsSection" Glyph="{x:Bind icons:Lucide.Link}" Description="{x:Bind Model.DefaultsMessage, Mode=OneWay}">
+                                <StackPanel Spacing="8">
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+                                        <Button x:Name="Unregister" Command="{x:Bind Model.RemoveHandler}" Visibility="{x:Bind Model.HandlersRegistered, Mode=OneWay}" AutomationProperties.AutomationId="RemoveHandler" />
+                                        <Button x:Name="OpenDefaults" Style="{StaticResource AccentButtonStyle}" Command="{x:Bind Model.OpenDefaults}" AutomationProperties.AutomationId="OpenDefaults" />
+                                    </StackPanel>
+                                    <TextBlock Style="{StaticResource PreferencesErrorStyle}" Text="{x:Bind Model.RegistrationMessage, Mode=OneWay}" Visibility="{x:Bind Model.HasRegistrationError, Mode=OneWay}" />
+                                </StackPanel>
+                            </controls:SettingsSection>
+                            <controls:SettingsSection x:Name="PowerSection" Glyph="{x:Bind icons:Lucide.BatteryCharging}">
+                                <StackPanel Spacing="16">
+                                    <controls:SettingsRow Header="{x:Bind Model.PreventSleep.Label, Mode=OneWay}" Error="{x:Bind Model.PreventSleep.Message, Mode=OneWay}">
+                                        <ToggleSwitch OnContent="{x:Bind Model.OnText, Mode=OneWay}" OffContent="{x:Bind Model.OffText, Mode=OneWay}" Tag="{x:Bind Model.PreventSleep}" IsOn="{x:Bind Model.PreventSleep.IsOn, Mode=OneWay}"
+                                            IsEnabled="{x:Bind Model.PreventSleep.CanEdit, Mode=OneWay}" Toggled="OnToggle" AutomationProperties.Name="{x:Bind Model.PreventSleep.Label, Mode=OneWay}" AutomationProperties.AutomationId="PreventSleep" />
+                                    </controls:SettingsRow>
+                                    <controls:SettingsRow Header="{x:Bind Model.SeedingSleep.Label, Mode=OneWay}" Error="{x:Bind Model.SeedingSleep.Message, Mode=OneWay}" Visibility="{x:Bind Model.PreventSleep.IsOn, Mode=OneWay}">
+                                        <ToggleSwitch OnContent="{x:Bind Model.OnText, Mode=OneWay}" OffContent="{x:Bind Model.OffText, Mode=OneWay}" Tag="{x:Bind Model.SeedingSleep}" IsOn="{x:Bind Model.SeedingSleep.IsOn, Mode=OneWay}"
+                                            IsEnabled="{x:Bind Model.SeedingSleep.CanEdit, Mode=OneWay}" Toggled="OnToggle" AutomationProperties.Name="{x:Bind Model.SeedingSleep.Label, Mode=OneWay}" AutomationProperties.AutomationId="SeedingSleep" />
+                                    </controls:SettingsRow>
+                                    <controls:SettingsRow Header="{x:Bind Model.Updates.Label, Mode=OneWay}" Error="{x:Bind Model.Updates.Message, Mode=OneWay}">
+                                        <ToggleSwitch OnContent="{x:Bind Model.OnText, Mode=OneWay}" OffContent="{x:Bind Model.OffText, Mode=OneWay}" Tag="{x:Bind Model.Updates}" IsOn="{x:Bind Model.Updates.IsOn, Mode=OneWay}"
+                                            IsEnabled="{x:Bind Model.Updates.CanEdit, Mode=OneWay}" Toggled="OnToggle" AutomationProperties.Name="{x:Bind Model.Updates.Label, Mode=OneWay}" AutomationProperties.AutomationId="CheckUpdates" />
+                                    </controls:SettingsRow>
+                                </StackPanel>
+                            </controls:SettingsSection>
+                        </StackPanel>
+                        <StackPanel x:Name="Transfers" Spacing="16" Visibility="Collapsed">
+                            <controls:SettingsSection x:Name="SpeedSection" Glyph="{x:Bind icons:Lucide.Gauge}">
+                                <StackPanel Spacing="16">
+                                    <controls:SettingsRow Header="{x:Bind Model.Download.Label, Mode=OneWay}" Error="{x:Bind Model.Download.Message, Mode=OneWay}">
+                                        <NumberBox Width="160" Tag="{x:Bind Model.Download}" Text="{x:Bind Model.Download.Input, Mode=TwoWay}"
+                                            IsEnabled="{x:Bind Model.Download.CanEdit, Mode=OneWay}" ValidationMode="Disabled" Loaded="OnNumberLoaded" PreviewKeyDown="OnFieldKey" LostFocus="OnFieldDeparture"
+                                            AutomationProperties.Name="{x:Bind Model.Download.Label, Mode=OneWay}" AutomationProperties.AutomationId="DownloadLimit" />
+                                    </controls:SettingsRow>
+                                    <controls:SettingsRow Header="{x:Bind Model.Upload.Label, Mode=OneWay}" Error="{x:Bind Model.Upload.Message, Mode=OneWay}">
+                                        <NumberBox Width="160" Tag="{x:Bind Model.Upload}" Text="{x:Bind Model.Upload.Input, Mode=TwoWay}"
+                                            IsEnabled="{x:Bind Model.Upload.CanEdit, Mode=OneWay}" ValidationMode="Disabled" Loaded="OnNumberLoaded" PreviewKeyDown="OnFieldKey" LostFocus="OnFieldDeparture"
+                                            AutomationProperties.Name="{x:Bind Model.Upload.Label, Mode=OneWay}" AutomationProperties.AutomationId="UploadLimit" />
+                                    </controls:SettingsRow>
+                                </StackPanel>
+                            </controls:SettingsSection>
+                            <controls:SettingsSection x:Name="AlternativeSection" Glyph="{x:Bind icons:Lucide.Turtle}">
+                                <StackPanel Spacing="16">
+                                    <controls:SettingsRow Header="{x:Bind Model.AlternativeDownload.Label, Mode=OneWay}" Error="{x:Bind Model.AlternativeDownload.Message, Mode=OneWay}">
+                                        <NumberBox Width="160" Tag="{x:Bind Model.AlternativeDownload}" Text="{x:Bind Model.AlternativeDownload.Input, Mode=TwoWay}"
+                                            IsEnabled="{x:Bind Model.AlternativeDownload.CanEdit, Mode=OneWay}" ValidationMode="Disabled" Loaded="OnNumberLoaded" PreviewKeyDown="OnFieldKey" LostFocus="OnFieldDeparture"
+                                            AutomationProperties.Name="{x:Bind Model.AlternativeDownload.Label, Mode=OneWay}" AutomationProperties.AutomationId="AlternativeDownload" />
+                                    </controls:SettingsRow>
+                                    <controls:SettingsRow Header="{x:Bind Model.AlternativeUpload.Label, Mode=OneWay}" Error="{x:Bind Model.AlternativeUpload.Message, Mode=OneWay}">
+                                        <NumberBox Width="160" Tag="{x:Bind Model.AlternativeUpload}" Text="{x:Bind Model.AlternativeUpload.Input, Mode=TwoWay}"
+                                            IsEnabled="{x:Bind Model.AlternativeUpload.CanEdit, Mode=OneWay}" ValidationMode="Disabled" Loaded="OnNumberLoaded" PreviewKeyDown="OnFieldKey" LostFocus="OnFieldDeparture"
+                                            AutomationProperties.Name="{x:Bind Model.AlternativeUpload.Label, Mode=OneWay}" AutomationProperties.AutomationId="AlternativeUpload" />
+                                    </controls:SettingsRow>
+                                </StackPanel>
+                            </controls:SettingsSection>
+                            <controls:SettingsSection x:Name="QueueSection" Glyph="{x:Bind icons:Lucide.ListOrdered}">
+                                <StackPanel Spacing="16">
+                                    <controls:SettingsRow Header="{x:Bind Model.Downloads.Label, Mode=OneWay}" Error="{x:Bind Model.Downloads.Message, Mode=OneWay}">
+                                        <NumberBox Width="160" Tag="{x:Bind Model.Downloads}" Text="{x:Bind Model.Downloads.Input, Mode=TwoWay}"
+                                            IsEnabled="{x:Bind Model.Downloads.CanEdit, Mode=OneWay}" ValidationMode="Disabled" Loaded="OnNumberLoaded" PreviewKeyDown="OnFieldKey" LostFocus="OnFieldDeparture"
+                                            AutomationProperties.Name="{x:Bind Model.Downloads.Label, Mode=OneWay}" AutomationProperties.AutomationId="ActiveDownloads" />
+                                    </controls:SettingsRow>
+                                    <controls:SettingsRow Header="{x:Bind Model.Seeds.Label, Mode=OneWay}" Error="{x:Bind Model.Seeds.Message, Mode=OneWay}">
+                                        <NumberBox Width="160" Tag="{x:Bind Model.Seeds}" Text="{x:Bind Model.Seeds.Input, Mode=TwoWay}"
+                                            IsEnabled="{x:Bind Model.Seeds.CanEdit, Mode=OneWay}" ValidationMode="Disabled" Loaded="OnNumberLoaded" PreviewKeyDown="OnFieldKey" LostFocus="OnFieldDeparture"
+                                            AutomationProperties.Name="{x:Bind Model.Seeds.Label, Mode=OneWay}" AutomationProperties.AutomationId="ActiveSeeds" />
+                                    </controls:SettingsRow>
+                                </StackPanel>
+                            </controls:SettingsSection>
+                            <controls:SettingsSection x:Name="SeedingSection" Glyph="{x:Bind icons:Lucide.Sprout}">
+                                <StackPanel Spacing="16">
+                                    <controls:SettingsRow Header="{x:Bind Model.Ratio.Label, Mode=OneWay}" Error="{x:Bind Model.Ratio.Message, Mode=OneWay}">
+                                        <NumberBox Width="160" Tag="{x:Bind Model.Ratio}" Text="{x:Bind Model.Ratio.Input, Mode=TwoWay}"
+                                            IsEnabled="{x:Bind Model.Ratio.CanEdit, Mode=OneWay}" ValidationMode="Disabled" Loaded="OnNumberLoaded" PreviewKeyDown="OnFieldKey" LostFocus="OnFieldDeparture"
+                                            AutomationProperties.Name="{x:Bind Model.Ratio.Label, Mode=OneWay}" AutomationProperties.AutomationId="RatioLimit" />
+                                    </controls:SettingsRow>
+                                    <controls:SettingsRow Header="{x:Bind Model.SeedingMinutes.Label, Mode=OneWay}" Error="{x:Bind Model.SeedingMinutes.Message, Mode=OneWay}">
+                                        <NumberBox Width="160" Tag="{x:Bind Model.SeedingMinutes}" Text="{x:Bind Model.SeedingMinutes.Input, Mode=TwoWay}"
+                                            IsEnabled="{x:Bind Model.SeedingMinutes.CanEdit, Mode=OneWay}" ValidationMode="Disabled" Loaded="OnNumberLoaded" PreviewKeyDown="OnFieldKey" LostFocus="OnFieldDeparture"
+                                            AutomationProperties.Name="{x:Bind Model.SeedingMinutes.Label, Mode=OneWay}" AutomationProperties.AutomationId="SeedingMinutes" />
+                                    </controls:SettingsRow>
+                                </StackPanel>
+                            </controls:SettingsSection>
+                        </StackPanel>
+                        <StackPanel x:Name="Network" Spacing="16" Visibility="Collapsed">
+                            <controls:SettingsSection x:Name="NetworkSection" Glyph="{x:Bind icons:Lucide.Network}">
+                                <StackPanel Spacing="16">
+                                    <controls:SettingsRow x:Name="PortRow" Header="{x:Bind Model.Port.Label, Mode=OneWay}" Error="{x:Bind Model.Port.Message, Mode=OneWay}">
+                                        <NumberBox Width="160" Tag="{x:Bind Model.Port}" Text="{x:Bind Model.Port.Input, Mode=TwoWay}"
+                                            IsEnabled="{x:Bind Model.Port.CanEdit, Mode=OneWay}" ValidationMode="Disabled" Loaded="OnNumberLoaded" PreviewKeyDown="OnFieldKey" LostFocus="OnFieldDeparture"
+                                            AutomationProperties.Name="{x:Bind Model.Port.Label, Mode=OneWay}" AutomationProperties.AutomationId="ListenPort" />
+                                    </controls:SettingsRow>
+                                    <controls:SettingsRow x:Name="MappingRow" Header="{x:Bind Model.PortMapping.Label, Mode=OneWay}" Error="{x:Bind Model.PortMapping.Message, Mode=OneWay}">
+                                        <ToggleSwitch OnContent="{x:Bind Model.OnText, Mode=OneWay}" OffContent="{x:Bind Model.OffText, Mode=OneWay}" Tag="{x:Bind Model.PortMapping}" IsOn="{x:Bind Model.PortMapping.IsOn, Mode=OneWay}"
+                                            IsEnabled="{x:Bind Model.PortMapping.CanEdit, Mode=OneWay}" Toggled="OnToggle" AutomationProperties.Name="{x:Bind Model.PortMapping.Label, Mode=OneWay}" AutomationProperties.AutomationId="PortMapping" />
+                                    </controls:SettingsRow>
+                                    <controls:SettingsRow x:Name="InterfaceRow" Header="{x:Bind Model.Interface.Label, Mode=OneWay}" Error="{x:Bind Model.Interface.Message, Mode=OneWay}">
+                                        <ComboBox x:Name="Interfaces" Width="240" SelectionChanged="OnInterface"
+                                            IsEnabled="{x:Bind Model.Interface.CanEdit, Mode=OneWay}" AutomationProperties.Name="{x:Bind Model.Interface.Label, Mode=OneWay}" AutomationProperties.AutomationId="NetworkInterface" />
+                                    </controls:SettingsRow>
+                                    <controls:SettingsRow x:Name="ConnectionsRow" Header="{x:Bind Model.Connections.Label, Mode=OneWay}" Error="{x:Bind Model.Connections.Message, Mode=OneWay}">
+                                        <NumberBox Width="160" Tag="{x:Bind Model.Connections}" Text="{x:Bind Model.Connections.Input, Mode=TwoWay}"
+                                            IsEnabled="{x:Bind Model.Connections.CanEdit, Mode=OneWay}" ValidationMode="Disabled" Loaded="OnNumberLoaded" PreviewKeyDown="OnFieldKey" LostFocus="OnFieldDeparture"
+                                            AutomationProperties.Name="{x:Bind Model.Connections.Label, Mode=OneWay}" AutomationProperties.AutomationId="ConnectionLimit" />
+                                    </controls:SettingsRow>
+                                </StackPanel>
+                            </controls:SettingsSection>
+                        </StackPanel>
+                        <StackPanel x:Name="Schedule" Visibility="Collapsed">
+                            <controls:SettingsSection x:Name="ScheduleSection" Glyph="{x:Bind icons:Lucide.CalendarClock}">
+                                <ContentControl x:Name="ScheduleContent" HorizontalContentAlignment="Stretch" IsTabStop="False" />
+                            </controls:SettingsSection>
+                        </StackPanel>
+                        <StackPanel x:Name="Appearance" Spacing="16" Visibility="Collapsed">
+                            <controls:SettingsSection x:Name="AppearanceSection" Glyph="{x:Bind icons:Lucide.Palette}">
+                                <StackPanel Spacing="16">
+                                    <controls:SettingsRow x:Name="LanguageRow">
+                                        <ComboBox x:Name="Languages" MinWidth="200" SelectionChanged="OnLanguage" IsEnabled="{x:Bind Model.CanSelectLanguage, Mode=OneWay}" AutomationProperties.AutomationId="Language">
+                                            <ComboBox.Items><ComboBoxItem x:Name="English" Tag="en" AutomationProperties.AutomationId="EnglishLanguage" /><ComboBoxItem x:Name="Spanish" Tag="es" AutomationProperties.AutomationId="SpanishLanguage" /></ComboBox.Items>
+                                        </ComboBox>
+                                    </controls:SettingsRow>
+                                    <controls:SettingsRow x:Name="ThemeRow">
+                                        <ComboBox x:Name="Theme" MinWidth="200" SelectionChanged="OnTheme" IsEnabled="{x:Bind Model.CanSelectTheme, Mode=OneWay}" AutomationProperties.AutomationId="Theme">
+                                            <ComboBox.Items>
+                                                <ComboBoxItem x:Name="SystemTheme" Tag="system" />
+                                                <ComboBoxItem x:Name="LightTheme" Tag="light" />
+                                                <ComboBoxItem x:Name="DarkTheme" Tag="dark" />
+                                            </ComboBox.Items>
+                                        </ComboBox>
+                                    </controls:SettingsRow>
+                                </StackPanel>
+                            </controls:SettingsSection>
+                        </StackPanel>
+                    </Grid>
+                </StackPanel>
+            </Grid>
+        </ScrollViewer>
+    </Grid>
+</UserControl>

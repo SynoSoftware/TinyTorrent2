@@ -3,6 +3,7 @@ using System.Text.Json;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml.Media;
 using Windows.Graphics;
+using Syno.TinyTorrent.Views;
 
 namespace Syno.TinyTorrent;
 
@@ -71,6 +72,7 @@ public sealed partial class MainWindow
 
     private void OnWindowChanged(AppWindow sender, AppWindowChangedEventArgs args)
     {
+        if (_allowClose) return;
         RememberBounds();
         UpdateChrome();
     }

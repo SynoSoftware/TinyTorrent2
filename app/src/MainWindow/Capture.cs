@@ -15,6 +15,8 @@ using Windows.Graphics.Imaging;
 using Windows.Storage;
 using Windows.System;
 using Windows.Graphics;
+using Syno.TinyTorrent.Models;
+using Syno.TinyTorrent.Views;
 
 namespace Syno.TinyTorrent;
 
@@ -22,7 +24,7 @@ public sealed partial class MainWindow
 {
     private string? _captureDirectory;
     private Task? _capture;
-    internal static bool IsCaptureReview => Environment.GetEnvironmentVariable("TINYTORRENT_CAPTURE_REVIEW") is "1" or "smoke" or "shell";
+    internal static bool IsCaptureReview => Environment.GetEnvironmentVariable("TINYTORRENT_CAPTURE_REVIEW") is "1" or "smoke" or "shell" or "schedule";
 
     internal void ShowCaptureReview()
     {
@@ -180,10 +182,15 @@ public sealed partial class MainWindow
     private static void CaptureInvoke(ContentDialog dialog)
     {
         var button = CaptureElements(dialog).OfType<Button>().First(control => control.Name == "PrimaryButton");
+        CaptureInvoke(button);
+    }
+
+    private static void CaptureInvoke(Button button)
+    {
         button.Focus(FocusState.Programmatic);
         var peer = FrameworkElementAutomationPeer.CreatePeerForElement(button);
         if (peer.GetPattern(PatternInterface.Invoke) is not IInvokeProvider invoke)
-            throw new InvalidOperationException("The dialog primary button cannot be invoked.");
+            throw new InvalidOperationException("The review button cannot be invoked.");
         invoke.Invoke();
     }
 
@@ -345,6 +352,107 @@ public sealed partial class MainWindow
         await CaptureDialog("shell-add", () => { Run(Model.AddMagnet); return _dialogClosed?.Task ?? Task.CompletedTask; }, () => _addDialog);
     }
 
+    private async Task CaptureSchedule(List<object> outcomes, List<string> completed)
+    {
+        var preferences = Model.Preferences;
+        var existing = preferences.Periods.ToArray();
+        SchedulePeriod? created = null;
+        await ShowPreferences(new(PreferenceSection.Schedule));
+        await CaptureLayout();
+        var form = _preferencesForm ?? throw new InvalidOperationException("The review preferences did not open.");
+        Button FindButton(string id) => CaptureElements(form).OfType<Button>()
+            .Single(control => AutomationProperties.GetAutomationId(control) == id);
+        TimePicker FindTime(string id) => CaptureElements(form).OfType<TimePicker>()
+            .Single(control => AutomationProperties.GetAutomationId(control) == id);
+        try
+        {
+            CaptureInvoke(FindButton("AddPeriod"));
+            await CaptureLayout();
+            var draft = preferences.Draft ?? throw new InvalidOperationException("Add period did not open the editor.");
+            FindTime("PeriodStart").SelectedTime = TimeSpan.FromMinutes(1337);
+            FindTime("PeriodEnd").SelectedTime = TimeSpan.FromMinutes(103);
+            foreach (var day in CaptureElements(form).OfType<CheckBox>())
+                if (AutomationProperties.GetAutomationId(day).StartsWith("PeriodDay", StringComparison.Ordinal)) day.IsChecked = false;
+            await CaptureLayout();
+            if (draft.Start?.TotalMinutes != 1337 || draft.End?.TotalMinutes != 103 || draft.Days.Any(day => day.IsChecked))
+                throw new InvalidOperationException("The native period fields did not update their draft.");
+            CaptureInvoke(FindButton("SavePeriod"));
+            await CaptureReady(preferences, () => preferences.HasScheduleError);
+            if (preferences.Draft != draft || draft.Start?.TotalMinutes != 1337 || draft.End?.TotalMinutes != 103 || preferences.Periods.Count != existing.Length)
+                throw new InvalidOperationException("An empty-day save changed the saved schedule or lost its draft.");
+            outcomes.Add(new { journey = "empty schedule days", rejected = true, draftRetained = true, exactMinutesRetained = true });
+            await CapturePage("schedule-invalid-period", form);
+            CaptureElements(form).OfType<CheckBox>().Single(control => AutomationProperties.GetAutomationId(control) == "PeriodDay0").IsChecked = true;
+            await CaptureLayout();
+            CaptureInvoke(FindButton("SavePeriod"));
+            await CaptureReady(preferences, () => !preferences.IsPending && !preferences.IsEditing);
+            created = preferences.Periods.Single(period => period.Days.SequenceEqual(new[] { 0 }) && period.Start == 1337 && period.End == 103 && period.Mode == ScheduleMode.Alternative);
+            if (created.Span.Duration != 206 || created.Occurrences(0).Single().End != 1543 || created.Occurrences(1).Single().End != 103 ||
+                preferences.Ranges(1).First(range => range.Start <= 60 && range.End > 60).Mode != ScheduleMode.Paused)
+                throw new InvalidOperationException("The overnight period lost exact minutes or pause precedence.");
+            outcomes.Add(new { journey = "save overnight period", start = created.Start, end = created.End, duration = created.Span.Duration, nextDayOccurrence = true, pausePrecedence = true });
+
+            foreach (var language in new[] { "en", "es" })
+            {
+                Model.SelectLanguage(language);
+                await CaptureReady(Model, () => Model.CanClose && Model.Text.Language == language);
+                foreach (var theme in new[] { "light", "dark" })
+                {
+                    await Model.SelectTheme(theme);
+                    await CaptureReady(Model, () => Model.CanClose && Model.Theme == theme);
+                    foreach (var size in new[] { new SizeInt32(720, 560), new SizeInt32(1040, 680), new SizeInt32(1280, 800) })
+                    {
+                        var scale = Root.XamlRoot.RasterizationScale;
+                        var minimum = ((Microsoft.UI.Windowing.OverlappedPresenter)AppWindow.Presenter).PreferredMinimumWidth ?? 0;
+                        AppWindow.Resize(new SizeInt32(Math.Max((int)(size.Width * scale), minimum), (int)(size.Height * scale)));
+                        var prefix = "schedule-" + language + "-" + theme + "-" + size.Width + "x" + size.Height;
+                        preferences.Select(null);
+                        await CapturePage(prefix + "-overview", form);
+                        preferences.Select(created);
+                        await CapturePage(prefix + "-selected", form);
+                        CaptureInvoke(FindButton("EditPeriod"));
+                        await CaptureLayout();
+                        await CapturePage(prefix + "-editor", form);
+                        CaptureInvoke(FindButton("CancelPeriod"));
+                        await CaptureReady(preferences, () => !preferences.IsEditing);
+                        completed.Add(prefix);
+                    }
+                }
+            }
+
+            CaptureInvoke(FindButton("EditPeriod"));
+            await CaptureLayout();
+            FindTime("PeriodStart").SelectedTime = TimeSpan.FromMinutes(1273);
+            await CaptureLayout();
+            if (preferences.Draft?.Start?.TotalMinutes != 1273)
+                throw new InvalidOperationException("The edited native time did not reach the draft.");
+            CaptureInvoke(FindButton("CancelPeriod"));
+            await CaptureReady(preferences, () => !preferences.IsEditing);
+            if (!preferences.Periods.Contains(created) || created.Start != 1337 || created.End != 103)
+                throw new InvalidOperationException("Cancel changed the saved period.");
+            outcomes.Add(new { journey = "cancel period edit", savedPeriodRetained = true });
+
+            await preferences.Reschedule(created, created.Span.Adjust(PeriodAction.Move, 15));
+            created = preferences.Selection ?? throw new InvalidOperationException("The moved period was not selected.");
+            if (preferences.HasScheduleError || created.Start != 1350 || created.End != 116 || created.Span.Duration != 206)
+                throw new InvalidOperationException("Moving the period did not preserve its duration and snap its start.");
+            outcomes.Add(new { journey = "move period", start = created.Start, end = created.End, duration = created.Span.Duration });
+            await CapturePage("schedule-moved-period", form);
+            CaptureInvoke(FindButton("RemovePeriod"));
+            await CaptureReady(preferences, () => !preferences.IsPending && preferences.Periods.Count == existing.Length);
+            if (!existing.All(period => preferences.Periods.Any(candidate => candidate.Matches(period))))
+                throw new InvalidOperationException("Removing the review period changed an existing period.");
+            created = null;
+            outcomes.Add(new { journey = "remove review period", existingPeriodsRetained = true });
+        }
+        finally
+        {
+            if (preferences.IsEditing) Run(preferences.CancelPeriod);
+            if (created is { } saved && preferences.Periods.FirstOrDefault(period => period.Matches(saved)) is { } remaining)
+                await preferences.Remove(remaining);
+        }
+    }
+
     private async Task CaptureReview()
     {
         var clock = Stopwatch.StartNew();
@@ -360,6 +468,11 @@ public sealed partial class MainWindow
             if (!string.Equals(Path.GetFullPath(store).TrimEnd(Path.DirectorySeparatorChar),
                     Path.GetFullPath(Model.DataDirectory ?? string.Empty).TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase))
                 throw new InvalidOperationException("The connected engine does not own the capture store.");
+            if (Environment.GetEnvironmentVariable("TINYTORRENT_CAPTURE_REVIEW") == "schedule")
+            {
+                await CaptureSchedule(outcomes, completed);
+                return;
+            }
             var target = Model.Torrents.FirstOrDefault() ?? throw new InvalidOperationException("The review store has no torrent.");
             if (Environment.GetEnvironmentVariable("TINYTORRENT_CAPTURE_REVIEW") == "shell")
             {
@@ -444,7 +557,7 @@ public sealed partial class MainWindow
                 await File.WriteAllTextAsync(Path.Combine(_captureDirectory, "review.json"), JsonSerializer.Serialize(new
                 {
                     completed, outcomes, milliseconds = clock.ElapsedMilliseconds, failure = failure?.ToString(),
-                    scope = "Real XAML views, cancelled dialogs and recovery smoke cases in a disposable store; no desktop input or capture"
+                    scope = "Real XAML views and bounded review journeys in a disposable store; no desktop input or capture"
                 }));
             }
             await Model.CancelDraft();

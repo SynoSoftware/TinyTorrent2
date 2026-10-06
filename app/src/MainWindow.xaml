@@ -2,6 +2,8 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:local="using:Syno.TinyTorrent"
+    xmlns:controls="using:Syno.TinyTorrent.Controls"
+    xmlns:models="using:Syno.TinyTorrent.Models"
     xmlns:icons="using:Syno"
     xmlns:table="using:Syno.TableView">
     <Window.SystemBackdrop><DesktopAcrylicBackdrop /></Window.SystemBackdrop>
@@ -77,17 +79,17 @@
             </table:Table.EmptyContent>
             <table:Table.Columns>
                 <table:Column x:Name="QueueColumn" Id="queue" Width="48" CellAlignment="Right" DefinesRowOrder="True">
-                    <table:Column.CellTemplate><DataTemplate x:DataType="local:Torrent"><TextBlock Text="{x:Bind QueueText, Mode=OneWay}" VerticalAlignment="Center" /></DataTemplate></table:Column.CellTemplate>
+                    <table:Column.CellTemplate><DataTemplate x:DataType="models:Torrent"><TextBlock Text="{x:Bind QueueText, Mode=OneWay}" VerticalAlignment="Center" /></DataTemplate></table:Column.CellTemplate>
                 </table:Column>
                 <table:Column x:Name="NameColumn" Id="name" Width="280" MinWidth="160" CanHide="False">
-                    <table:Column.CellTemplate><DataTemplate x:DataType="local:Torrent"><TextBlock Text="{x:Bind Name, Mode=OneWay}" VerticalAlignment="Center" AutomationProperties.HelpText="{x:Bind ErrorText, Mode=OneWay}" TextTrimming="CharacterEllipsis" /></DataTemplate></table:Column.CellTemplate>
+                    <table:Column.CellTemplate><DataTemplate x:DataType="models:Torrent"><TextBlock Text="{x:Bind Name, Mode=OneWay}" VerticalAlignment="Center" AutomationProperties.HelpText="{x:Bind ErrorText, Mode=OneWay}" TextTrimming="CharacterEllipsis" /></DataTemplate></table:Column.CellTemplate>
                 </table:Column>
                 <table:Column x:Name="SizeColumn" Id="size" Width="110" CellAlignment="Right">
-                    <table:Column.CellTemplate><DataTemplate x:DataType="local:Torrent"><TextBlock Text="{x:Bind SizeText, Mode=OneWay}" VerticalAlignment="Center" TextAlignment="Right" /></DataTemplate></table:Column.CellTemplate>
+                    <table:Column.CellTemplate><DataTemplate x:DataType="models:Torrent"><TextBlock Text="{x:Bind SizeText, Mode=OneWay}" VerticalAlignment="Center" TextAlignment="Right" /></DataTemplate></table:Column.CellTemplate>
                 </table:Column>
                 <table:Column x:Name="ProgressColumn" Id="progress" Width="148" CellAlignment="Stretch">
                     <table:Column.CellTemplate>
-                        <DataTemplate x:DataType="local:Torrent">
+                        <DataTemplate x:DataType="models:Torrent">
                             <Grid VerticalAlignment="Center" RowSpacing="4">
                                 <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
                                 <ProgressBar Minimum="0" Maximum="1" Height="4" Value="{x:Bind Progress, Mode=OneWay}" Visibility="{x:Bind IsProgressNormal, Mode=OneWay}" AutomationProperties.AccessibilityView="Raw" />
@@ -100,7 +102,7 @@
                 </table:Column>
                 <table:Column x:Name="StatusColumn" Id="status" Width="160">
                     <table:Column.CellTemplate>
-                        <DataTemplate x:DataType="local:Torrent">
+                        <DataTemplate x:DataType="models:Torrent">
                             <Grid VerticalAlignment="Center" ColumnSpacing="6">
                                 <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                                 <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind StatusGlyph, Mode=OneWay}" FontSize="14" Foreground="{ThemeResource TextFillColorSecondaryBrush}" AutomationProperties.AccessibilityView="Raw" />
@@ -110,26 +112,26 @@
                     </table:Column.CellTemplate>
                 </table:Column>
                 <table:Column x:Name="DownColumn" Id="down" Width="130" CellAlignment="Right">
-                    <table:Column.CellTemplate><DataTemplate x:DataType="local:Torrent"><TextBlock Text="{x:Bind DownloadText, Mode=OneWay}" VerticalAlignment="Center" TextAlignment="Right" /></DataTemplate></table:Column.CellTemplate>
+                    <table:Column.CellTemplate><DataTemplate x:DataType="models:Torrent"><TextBlock Text="{x:Bind DownloadText, Mode=OneWay}" VerticalAlignment="Center" TextAlignment="Right" /></DataTemplate></table:Column.CellTemplate>
                 </table:Column>
                 <table:Column x:Name="UpColumn" Id="up" Width="130" CellAlignment="Right">
-                    <table:Column.CellTemplate><DataTemplate x:DataType="local:Torrent"><TextBlock Text="{x:Bind UploadText, Mode=OneWay}" VerticalAlignment="Center" TextAlignment="Right" /></DataTemplate></table:Column.CellTemplate>
+                    <table:Column.CellTemplate><DataTemplate x:DataType="models:Torrent"><TextBlock Text="{x:Bind UploadText, Mode=OneWay}" VerticalAlignment="Center" TextAlignment="Right" /></DataTemplate></table:Column.CellTemplate>
                 </table:Column>
                 <table:Column x:Name="EtaColumn" Id="eta" Width="90" CellAlignment="Right">
-                    <table:Column.CellTemplate><DataTemplate x:DataType="local:Torrent"><TextBlock Text="{x:Bind EtaText, Mode=OneWay}" VerticalAlignment="Center" /></DataTemplate></table:Column.CellTemplate>
+                    <table:Column.CellTemplate><DataTemplate x:DataType="models:Torrent"><TextBlock Text="{x:Bind EtaText, Mode=OneWay}" VerticalAlignment="Center" /></DataTemplate></table:Column.CellTemplate>
                 </table:Column>
                 <table:Column x:Name="RatioColumn" Id="ratio" Width="80" CellAlignment="Right">
-                    <table:Column.CellTemplate><DataTemplate x:DataType="local:Torrent"><TextBlock Text="{x:Bind RatioText, Mode=OneWay}" VerticalAlignment="Center" /></DataTemplate></table:Column.CellTemplate>
+                    <table:Column.CellTemplate><DataTemplate x:DataType="models:Torrent"><TextBlock Text="{x:Bind RatioText, Mode=OneWay}" VerticalAlignment="Center" /></DataTemplate></table:Column.CellTemplate>
                 </table:Column>
                 <table:Column x:Name="PeersColumn" Id="peers" Width="100" CellAlignment="Right">
-                    <table:Column.CellTemplate><DataTemplate x:DataType="local:Torrent"><TextBlock Text="{x:Bind PeersText, Mode=OneWay}" VerticalAlignment="Center" /></DataTemplate></table:Column.CellTemplate>
+                    <table:Column.CellTemplate><DataTemplate x:DataType="models:Torrent"><TextBlock Text="{x:Bind PeersText, Mode=OneWay}" VerticalAlignment="Center" /></DataTemplate></table:Column.CellTemplate>
                 </table:Column>
                 <table:Column x:Name="AddedColumn" Id="added" Width="160">
-                    <table:Column.CellTemplate><DataTemplate x:DataType="local:Torrent"><TextBlock Text="{x:Bind AddedText, Mode=OneWay}" VerticalAlignment="Center" /></DataTemplate></table:Column.CellTemplate>
+                    <table:Column.CellTemplate><DataTemplate x:DataType="models:Torrent"><TextBlock Text="{x:Bind AddedText, Mode=OneWay}" VerticalAlignment="Center" /></DataTemplate></table:Column.CellTemplate>
                 </table:Column>
             </table:Table.Columns>
         </table:Table>
-        <local:InspectorSplit x:Name="Split" Grid.Row="1" Visibility="{x:Bind Model.HasInspector, Mode=OneWay}" />
+        <controls:InspectorSplit x:Name="Split" Grid.Row="1" Visibility="{x:Bind Model.HasInspector, Mode=OneWay}" />
         <Grid Grid.Row="2" Visibility="{x:Bind Model.HasInspector, Mode=OneWay}" BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}" BorderThickness="0,1,0,0">
             <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
             <Grid ColumnSpacing="12" Padding="16,4">
