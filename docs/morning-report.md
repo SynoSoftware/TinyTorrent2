@@ -1,5 +1,32 @@
 # Morning report
 
+## Settings departure correction — 2026-10-06
+
+Adversarial review found a concrete loss of an ordinary edit: Download could
+change while the departure loop awaited Upload, after Download had already been
+visited. The first navigation then hid the unapplied value. Departure now revisits
+only fields that still cannot leave, using the same acceptance predicate as an
+individual field. Existing offline and refusal behavior is preserved. Scoped
+source re-review found zero remaining defects; no screen was restyled.
+
+`UiSelfCapture-032e8aa2-fbf1-4798-af6d-9ad2ea0ddfef` passed in 6.404 seconds.
+Its native Download editor changed to 161 when Upload began saving 32. The first
+navigation applied both values with no prompt, draft or pending save. All eleven
+edit journeys passed, including invalid input, pending acknowledgements and
+schedule Save/Discard/Cancel. Original Download, Upload, port and periods were
+restored; UI exit was zero and both owned processes closed.
+
+`departure-pieces-corrected-app.log` passed capture compilation in 46.72 seconds;
+`release-readiness-product-app.log` passed ordinary Debug/x64 compilation in
+40.56 seconds. Both had zero warnings/errors and compiled only the app's two
+WinUI passes, reusing current libraries. Source hashes stayed stable and the
+Everything output-path scans were empty. The initial diagnostic build failed
+on two span comparisons crossing an await; awaiting the arrays before comparing
+them corrected the capture code. No engine build or full suite ran.
+
+The selected-row stripe remains removed in `b1a21e0` and in this ordinary build.
+Its historical contrast rationale does not override the owner's rejection.
+
 ## Checkpoint summary — 2026-10-06
 
 Committed coherent steps: Files hierarchy `d23778a`, registration observation

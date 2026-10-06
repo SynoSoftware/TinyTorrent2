@@ -254,7 +254,10 @@ public sealed class Preferences : INotifyPropertyChanged
         var saved = true;
         foreach (var field in Fields)
             if (!await Depart(field)) saved = false;
-        return saved;
+        if (!saved) return false;
+        while (Fields.FirstOrDefault(field => !CanLeave(field)) is { } remaining)
+            if (!await Depart(remaining)) return false;
+        return true;
     }
 
     public async Task<bool> Depart(Preference field)
@@ -265,9 +268,11 @@ public sealed class Preferences : INotifyPropertyChanged
         if (!_owner.CanSave) return !_owner.IsPicking;
         if (field.Failure is CommandFailure) return false;
         await Submit(field, value);
-        return !field.HasDraft || !_owner.CanSave && !_owner.IsPicking ||
-            field.Failure is not null and not CommandFailure;
+        return CanLeave(field);
     }
+
+    private bool CanLeave(Preference field) => !field.HasDraft || !_owner.CanSave && !_owner.IsPicking ||
+        field.Failure is not null and not CommandFailure;
 
     public async Task Toggle(Preference field, bool value)
     {

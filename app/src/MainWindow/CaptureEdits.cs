@@ -30,8 +30,10 @@ public sealed partial class MainWindow
         if (preferences.Schedule.IsEditing || preferences.IsPending || preferences.Fields.Any(field => field.HasDraft))
             throw new InvalidOperationException("The edit review requires confirmed fixture preferences.");
         var rate = preferences.Download;
+        var upload = preferences.Upload;
         var port = preferences.Port;
         var originalRate = rate.Input;
+        var originalUpload = upload.Input;
         var originalPort = port.Input;
         var originalPeriods = preferences.Schedule.Periods.ToArray();
         SchedulePeriod? created = null;
@@ -116,6 +118,31 @@ public sealed partial class MainWindow
                 throw new InvalidOperationException("Leaving a valid native rate edit did not apply it and navigate.");
             outcomes.Add(new { journey = "valid rate departure", applied = true, navigated = true, prompted = false, input = rate.Input });
             completed.Add("edits-valid-rate-departure");
+
+            var downloadEditor = await Edit(rate, PreferenceSection.Transfers, "160");
+            var uploadValue = originalUpload == "32" ? "33" : "32";
+            await Edit(upload, PreferenceSection.Transfers, uploadValue);
+            await CaptureReady(rate, () => !rate.IsPending && !rate.HasDraft);
+            var injected = false;
+            void OnUpload(object? sender, System.ComponentModel.PropertyChangedEventArgs args)
+            {
+                if (injected || !upload.IsPending) return;
+                injected = true;
+                downloadEditor.Text = "161";
+            }
+            upload.PropertyChanged += OnUpload;
+            try
+            {
+                var left = await Leave();
+                var applied = rate.Input == "161" && upload.Input == uploadValue && !rate.HasDraft && !upload.HasDraft &&
+                    !rate.IsPending && !upload.IsPending && rate.Message.Length == 0 && upload.Message.Length == 0;
+                outcomes.Add(new { journey = "late earlier-field departure", injectedDuringUpload = injected, applied,
+                    navigated = left, prompted = false, download = rate.Input, upload = upload.Input });
+                if (!injected || !left || Model.Page != WindowPage.Torrents || !applied)
+                    throw new InvalidOperationException("The first departure did not apply the native Download edit made during Upload's save.");
+                completed.Add("edits-late-earlier-field-departure");
+            }
+            finally { upload.PropertyChanged -= OnUpload; }
 
             var invalidEditor = await Edit(port, PreferenceSection.Network, "70000");
             var connections = CaptureElements(_preferencesForm!).OfType<NumberBox>()
@@ -242,14 +269,21 @@ public sealed partial class MainWindow
                 await preferences.Schedule.Remove(remaining);
             port.Cancel();
             rate.Cancel();
+            upload.Cancel();
             if (rate.Input != originalRate)
             {
                 await Edit(rate, PreferenceSection.Transfers, originalRate);
                 await preferences.Commit(rate);
             }
-            if (rate.Input != originalRate || rate.HasDraft || port.Input != originalPort || port.HasDraft || !PeriodsRetained())
+            if (upload.Input != originalUpload)
+            {
+                await Edit(upload, PreferenceSection.Transfers, originalUpload);
+                await preferences.Commit(upload);
+            }
+            if (rate.Input != originalRate || rate.HasDraft || upload.Input != originalUpload || upload.HasDraft ||
+                port.Input != originalPort || port.HasDraft || !PeriodsRetained())
                 throw new InvalidOperationException("The edit review did not restore its fixture preferences and schedule.");
         }
-        outcomes.Add(new { journey = "restore edit review fixture", rateRestored = true, portRetained = true, originalPeriodsRetained = true });
+        outcomes.Add(new { journey = "restore edit review fixture", rateRestored = true, uploadRestored = true, portRetained = true, originalPeriodsRetained = true });
     }
 }
