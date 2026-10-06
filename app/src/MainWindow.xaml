@@ -276,7 +276,7 @@
                 <TextBlock x:Name="Rates" Text="{x:Bind Model.Rates, Mode=OneWay}" VerticalAlignment="Center" TextWrapping="Wrap" />
                 <ToggleButton x:Name="Alternative" Grid.Column="1" IsChecked="{x:Bind Model.AlternativeLimits, Mode=TwoWay}" IsEnabled="{x:Bind Model.CanEdit, Mode=OneWay}"><TextBlock x:Name="AlternativeText" MaxWidth="160" TextWrapping="Wrap" /></ToggleButton>
                 <ToggleButton Grid.Column="2" Margin="12,0,0,0" Content="{x:Bind Model.ErrorCount, Mode=OneWay}" IsChecked="{x:Bind Model.ErrorsOnly, Mode=TwoWay}" />
-                <TextBlock Grid.Column="3" Text="{x:Bind Model.Incoming, Mode=OneWay}" VerticalAlignment="Center" TextWrapping="Wrap" TextAlignment="Right" />
+                <TextBlock Grid.Column="3" Text="{x:Bind Model.Incoming, Mode=OneWay}" ToolTipService.ToolTip="{x:Bind Model.Incoming, Mode=OneWay}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" TextAlignment="Right" />
             </Grid>
         </StackPanel>
             </Grid>

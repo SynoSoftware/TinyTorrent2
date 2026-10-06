@@ -3,7 +3,6 @@ using System.ComponentModel;
 using System.Globalization;
 using System.Text.Json;
 using System.Windows.Input;
-using Microsoft.UI.Xaml.Controls;
 
 namespace Syno.TinyTorrent;
 
@@ -66,14 +65,15 @@ public sealed class Preferences : INotifyPropertyChanged
     {
         get
         {
-            if (!HandlersRegistered) return string.Empty;
+            var detail = Text.Get("preferences", "defaults_detail");
+            if (!HandlersRegistered) return detail;
             var torrent = _registration.GetProperty("torrent_default");
             var magnet = _registration.GetProperty("magnet_default");
             if (torrent.ValueKind == JsonValueKind.True && magnet.ValueKind == JsonValueKind.False)
                 return Text.Get("preferences", "magnet_default");
             if (magnet.ValueKind == JsonValueKind.True && torrent.ValueKind == JsonValueKind.False)
                 return Text.Get("preferences", "torrent_default");
-            return string.Empty;
+            return detail;
         }
     }
     public ICommand AddPeriod { get; }
@@ -82,13 +82,11 @@ public sealed class Preferences : INotifyPropertyChanged
     public ICommand OpenDefaults { get; }
     public ICommand RemoveHandler { get; }
     public ICommand OpenStartup { get; }
-    public ICommand Restart => _owner.Restart;
-    public bool CanRestart => _owner.CanRestart;
-    public string RestartText => _owner.RestartText;
     public string Language => Text.Language;
     public bool CanSelectLanguage => _owner.SwitchLanguage.CanExecute(null);
     public string OnText => Text.Get("preferences", "on");
     public string OffText => Text.Get("preferences", "off");
+    public string UnlimitedText => Text.Get("preferences", "unlimited");
     public string Theme => _owner.Theme;
     public bool CanSelectTheme => _owner.SwitchTheme.CanExecute(null);
     public Task SelectTheme(string theme) => _owner.SelectTheme(theme);
@@ -189,14 +187,14 @@ public sealed class Preferences : INotifyPropertyChanged
 
     public async Task Commit(Preference field)
     {
-        if (!field.CanEdit || !field.HasDraft) return;
+        if (!field.CanEdit || field.IsPending || !field.HasDraft) return;
         if (!TryValue(field, out var value)) { field.Invalid(); return; }
         await Submit(field, value);
     }
 
     public async Task Toggle(Preference field, bool value)
     {
-        if (!field.CanEdit || field.IsOn == value) return;
+        if (!field.CanEdit || field.IsPending || field.IsOn == value) return;
         field.Choose(value);
         if (!field.HasDraft) { field.Cancel(); return; }
         await Submit(field, value);
@@ -380,12 +378,10 @@ public sealed class Preference(Preferences owner, string name) : INotifyProperty
     public bool IsOn => _choice ?? _confirmed.ValueKind == JsonValueKind.True;
     public bool HasDraft => _input != _confirmedInput || _choice is { } choice && choice != (_confirmed.ValueKind == JsonValueKind.True);
     public bool IsPending { get; private set; }
-    public bool CanEdit => owner.CanEdit && !IsPending;
-    public bool HasError => _failure is not null || _invalid;
-    public bool HasFeedback => HasError || IsPending;
-    public InfoBarSeverity Severity => HasError ? InfoBarSeverity.Error : InfoBarSeverity.Informational;
-    public string Message => IsPending ? owner.Text.Get("preferences", "applying") :
-        _invalid ? owner.Text.Get(IsRate ? "errors" : "preferences", IsRate ? "invalid_limits" : Name == "listen_port" ? "invalid_port" : "invalid_number") :
+    // A save stays enabled, so the control keeps focus; Commit and Toggle ignore
+    // input until it completes. Saves are too quick to need a pending display.
+    public bool CanEdit => owner.CanEdit;
+    public string Message => _invalid ? owner.Text.Get(IsRate ? "errors" : "preferences", IsRate ? "invalid_limits" : Name == "listen_port" ? "invalid_port" : "invalid_number") :
         _failure is null ? string.Empty :
         _failure is CommandFailure ? _failure.Message : owner.Text.Error("unknown", _failure.Message);
     public event PropertyChangedEventHandler? PropertyChanged;

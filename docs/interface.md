@@ -231,7 +231,9 @@ Apply independent choices when the user commits them. A switch applies when
 flipped; a selection applies when chosen. Validate text and numbers before
 committing on Enter or an appropriate focus departure. Escape cancels unfinished
 field input; typing, IME composition, or clicking Cancel must not accidentally
-submit partial text. Show pending work and field errors in place. This follows
+submit partial text. Show pending work and field errors in place. A setting
+saves too quickly for a pending display to help, so its control stays enabled,
+keeps focus, and shows nothing until the save fails. This follows
 the distinction in Microsoft's [toggle guidance](https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/toggles).
 
 Use an explicit Save/Cancel editor only when values form one coherent change,
@@ -489,6 +491,9 @@ and scrolling handle smaller windows. Preferences uses a full page with horizont
 category selection and grouped sections, so settings have room without obscuring
 the task. Returning to torrents preserves selection and the inspector view.
 Preferences keeps this LabForms layout independently of the torrent inspector.
+Each setting is one card in the Windows Settings pattern: its name and a short
+description on the left, its control on the right, and its error inside the
+same card, so feedback never moves the rest of the page.
 Put Browse beside the default download path,
 and beside Add's destination, using the native Windows folder picker. Cancelling
 the picker preserves the current path and other unfinished input.
@@ -525,12 +530,13 @@ periods end on the following day. The schedule is disabled by default and repeat
 in local time. Its engine owner preserves individually paused torrents and manual
 Pause all, so a scheduled boundary cannot undo the person's explicit pause.
 
-Appearance offers Follow Windows, Light, and Dark through the existing theme
-owner, and a Show the splash screen while opening switch, on by default, for a
-person who opens TinyTorrent often and finds the splash in the way. A Start in
-the notification area switch, off by default, makes starting TinyTorrent start
-only the engine in the tray; opening TinyTorrent while it runs still shows the
-window. The caption's quick light/dark action remains available. All categories
+Appearance offers the application language and Follow Windows, Light, and Dark
+through the existing theme owner. General's Startup group holds Start when I
+sign in, a Start in the notification area switch, and a Show the splash screen
+while opening switch. Start in the notification area, off by default, makes
+starting TinyTorrent start only the engine in the tray; opening TinyTorrent
+while it runs still shows the window. The splash switch, on by default, serves
+a person who opens TinyTorrent often and finds the splash in the way. The caption's quick light/dark action remains available. All categories
 share one viewport-constrained, left-aligned content column, so a change of
 category cannot move the form or push its actions outside the viewport.
 

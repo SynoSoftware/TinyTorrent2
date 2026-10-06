@@ -179,7 +179,6 @@ public sealed partial class MainViewModel
                     "active_downloads" or "active_seeds" or "ratio_limit" or "seeding_minutes" => PreferenceSection.Transfers,
                 "connection_limit" or "network_interface" or "port_mapping" or "listen_port" => PreferenceSection.Network,
                 "schedule_enabled" => PreferenceSection.Schedule,
-                "show_splash" or "start_in_tray" => PreferenceSection.Appearance,
                 _ => PreferenceSection.General
             };
             yield return PreferenceSuggestion(new(section, field.Name), field.Label);
