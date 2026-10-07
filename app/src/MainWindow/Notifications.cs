@@ -13,6 +13,13 @@ public sealed partial class MainWindow
 
     private void ConfigureNotifications()
     {
+        Feedback.RegisterPropertyChangedCallback(InfoBar.MessageProperty, (_, _) =>
+        {
+            if (!Feedback.IsOpen || Feedback.Message.Length == 0) return;
+            // InfoBar does not announce message changes while it stays open.
+            Feedback.IsOpen = false;
+            Feedback.IsOpen = true;
+        });
         Model.PropertyChanged += (_, args) =>
         {
             if (args.PropertyName == nameof(MainViewModel.CompletionText))

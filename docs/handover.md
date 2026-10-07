@@ -1,5 +1,21 @@
 # Implementation handover — 2026-10-05
 
+## Current release continuation — 2026-10-06
+
+Committed milestones: `3d3f977` hidden-sort rejection, `e584b91` stable command
+feedback, and `6be4a69` stable magnet-validation actions. The native connection
+InfoBar announcement correction compiles in ordinary Debug/x64; physical
+Narrator verification remains open in #20. Initial startup already cloaks the
+window until ready. #52's extra footer access keys were declined in favour of
+the native Enter/Escape routes, not implemented as another shortcut system.
+
+Sixteen issues remain open. Treat the new AI investigations as candidates,
+preserve current owner decisions, and continue from the verified gaps recorded
+in [morning-report.md](morning-report.md). Current FilesSafety and CheckpointRetry
+passes remain valid: no engine edit followed them. The broader release goal is
+active; scoped visual acceptance is not a claim that every feature is release
+verified. Preserve the owner's uncommitted Add, Pieces, Speed and engine work.
+
 ## Magnet validation and safety checkpoint — 2026-10-06
 
 `e584b91` commits command-feedback stability. The next narrow correction keeps

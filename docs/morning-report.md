@@ -1,5 +1,36 @@
 # Morning report
 
+## Connection announcements and report triage — 2026-10-06
+
+Magnet-validation stability is committed as `6be4a69`. The remaining #20
+announcement correction uses the native InfoBar: an open connection bar with
+a changed nonempty message closes/reopens synchronously, as
+[Microsoft documents](https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/infobar#updating-the-infobar).
+The existing notification owner registers the callback; there is no second
+announcement path or saved message state. Closed bars and cleared text do not
+reopen. Source review and ordinary Debug/x64 compilation pass in 45.26 seconds
+with zero warnings/errors (`artifacts/connection-announcement-app.log`), reusing
+both libraries. The output-location scan is empty. No additional UI journey or
+test ran for this native event wiring; actual Narrator delivery remains unverified.
+
+The startup-warning claim in #20 is outdated: ordinary startup is cloaked until
+the first usable frame, with a failure revealing its recovery surface. The
+capture mode deliberately bypasses that cloak. No second startup timer or
+notification policy was added. Keep #20 open for physical announcement evidence.
+
+#52 is closed as an unnecessary AI requirement: native Enter and Escape already
+supply the Add/Cancel footer routes, alongside access keys for working controls.
+User and keyboard perspectives favour those familiar keys; the developer and
+WinUI perspectives favour retaining native dialog behavior without extra
+shortcut plumbing. This is a source/design disposition, not new physical-input
+evidence. Reopen for a reproduced broken native route.
+
+Sixteen GitHub reports remain open, including the eight new investigations and
+the narrowed #20, #22, #113, #121, #125 and #128–130. The last two commits' layout
+fixes narrow #132 and #136 rather than claiming every case in either is fixed.
+Whole-product release acceptance remains open. Existing engine safety passes
+remain current; no engine edit followed them in this continuation.
+
 ## Magnet validation and current engine safety — 2026-10-06
 
 Command-feedback milestone is committed as `e584b91`. The confirmed part of
