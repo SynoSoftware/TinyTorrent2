@@ -1,5 +1,47 @@
 # Morning report
 
+## Latest diff review and Add disclosure — 2026-10-07
+
+Reviewed `aece8ae` and `d77471d` against AGENTS, naming, comments and the
+current contracts. Add choices remain in AddDraft and Engine::State::Addition;
+queue placement uses the existing saved queue and ApplyQueue. SpeedGraph and
+PiecesMap own their rendering and input, Inspector owns detail collection, and
+File/search/Ctrl+W use the same window-close operation. No additional owner,
+type, state or abstraction is justified by this review.
+
+The focused Add baseline is
+`artifacts/evidence/UiSelfCapture-8ec88d1a-f77f-4f92-8b2e-b612d662e3c7/captures`.
+Twelve native file-choice journeys refused an empty selection and recovered
+after selection was restored, preserving destination, focus and the disposable
+paused fixture. The no-files message allocates space inside its editor; a
+trial overlay covered the horizontal file scrollbar and was removed. The fresh
+reviewer rejected combining sharing and free-space facts because the other
+torrent's identity disappeared before the ellipsis. That trial and its derived
+property were removed too. Clarity takes precedence over saving that status row.
+
+The retained change is one XAML line: the dedicated sharing value stays on one
+line and permits full native text selection, keeping its existing complete
+tooltip and AddDraft.Shared authority. The correction capture is
+`artifacts/evidence/UiSelfCapture-5e3fe3df-b988-423f-a54d-b212ae4cd09d/captures`;
+all twelve sharing variants pass full-text selection and matching tooltip checks
+in 39.68 seconds, with destination, focus and paused fixture retained. The fresh
+reviewer inspects all twelve images and, after its second scoped re-review against
+the owner's ellipsis/full-value rule and captured native metadata, finds no
+remaining counted disclosure defect. Root's serial user, keyboard, accessibility,
+Fluent and UX reviews keep the dedicated line for clarity. Sharing publication is
+simulated through the real AddSource.Apply path using real private preview
+metadata; it does not verify engine file sharing or transfer behavior.
+
+Temporary probes are removed. Ordinary Debug/x64 compilation passes in 33.77
+seconds with no warnings or errors; only the app compiles and both libraries
+reuse their outputs. Engine code is unchanged, so FilesSafety, CheckpointRetry and QueueOrder
+evidence remains valid; no engine check or full suite is warranted. Physical
+keyboard, Narrator, OS High Contrast and the wider release gates remain open.
+The accepted title bar minimum still clamps the requested 720-wide captures;
+this pass does not prove a literal 720-wide main window.
+Everything's IPC server is unavailable; an equivalent directory walk excluding
+artifacts, 3rdParty and .git finds no stray generated output.
+
 ## Chart and menu ownership review — 2026-10-07
 
 Reviewed the settled diff against AGENTS, naming, comments and the active

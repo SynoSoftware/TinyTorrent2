@@ -1,8 +1,19 @@
 # Implementation handover — 2026-10-05
 
+## Latest diff review checkpoint — 2026-10-07
+
+The ownership review of `aece8ae` and `d77471d` keeps their existing command,
+queue and chart owners. Add's sharing disclosure retains its dedicated status
+line and gains full native text selection. A trial overlay and combined status
+were rejected by capture review and removed; neither merits a new mechanism.
+The twelve correction captures and native full-value checks pass. The fresh
+reviewer leaves no counted disclosure defect after its second scoped re-review.
+See [morning-report.md](morning-report.md#latest-diff-review-and-add-disclosure--2026-10-07)
+for the focused evidence and remaining gaps. The broader release goal is active.
+
 ## Chart and menu review checkpoint — 2026-10-07
 
-The pending Speed/Pieces and window/engine Exit changes retain their existing
+The Speed/Pieces and window/engine Exit changes in `d77471d` retain their existing
 owners and command paths. A confirmed native menu defect is corrected in
 RefreshMenus: individual removals keep WinUI's cached flyouts in sync during
 language changes. All four menus match their current items in twelve variants;

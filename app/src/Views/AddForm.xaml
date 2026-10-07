@@ -57,7 +57,7 @@
                                         IsTextSelectionEnabled="True" AutomationProperties.Name="{x:Bind Model.Draft.DestinationMessage, Mode=OneWay}"
                                         ToolTipService.ToolTip="{x:Bind Model.Draft.DestinationMessage, Mode=OneWay}" Visibility="{x:Bind Model.Draft.HasDestinationError, Mode=OneWay}" />
                                 </Grid>
-                                <TextBlock Text="{x:Bind Model.Draft.Shared, Mode=OneWay}" Style="{StaticResource BodyTextStyle}" ToolTipService.ToolTip="{x:Bind Model.Draft.Shared, Mode=OneWay}" Visibility="{x:Bind local:AddForm.Shown(Model.Draft.Shared), Mode=OneWay}" />
+                                <TextBlock Text="{x:Bind Model.Draft.Shared, Mode=OneWay}" Style="{StaticResource BodyTextStyle}" ToolTipService.ToolTip="{x:Bind Model.Draft.Shared, Mode=OneWay}" MaxLines="1" IsTextSelectionEnabled="True" Visibility="{x:Bind local:AddForm.Shown(Model.Draft.Shared), Mode=OneWay}" />
                             </StackPanel>
                         </StackPanel>
                     </Border>
