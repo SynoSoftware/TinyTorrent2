@@ -1,5 +1,55 @@
 # Morning report
 
+## General metadata stability — 2026-10-06
+
+#137's General layout concern is confirmed on the current accepted inspector.
+Baseline `artifacts/evidence/UiSelfCapture-a2b1eb39-60fa-421e-ab4b-bd6eee6d97fd/captures`
+contains 48 scenes in 15.49 seconds. Long creator, folder, multiline comment and
+magnet values grow the content from 424 pixels to 611–721 pixels, pushing later
+fields away. The temporary probe changes displayed text only, not model or engine
+metadata. Some baseline top images scroll toward the previously focused Magnet;
+the correction run moves focus to the header before capturing each top view.
+The measured content growth is independent of that capture-focus limitation.
+
+The correction changes seven General XAML lines: reuse BodyTextStyle with one
+maximum line and native selection for the formerly wrapping values, expose their
+full bound values in tooltips, and keep the read-only Magnet on its native single
+line. No raw value is shortened; no new control, resource, model or formatting
+implementation is introduced. Hashes retain their intentional separate entries.
+The accepted header, Settings and schedule remain unchanged.
+
+After evidence: `artifacts/evidence/UiSelfCapture-ea936b82-7fb5-4c03-ac13-c78465b7dd72/captures`.
+All 48 scenes completed in 17.87 seconds. Across English/Spanish, Light/Dark and
+the three requested sizes, short and long values retain identical field heights
+and 424-pixel content height. Native SelectAll returns every complete value in
+all twelve variants, including the comment's second line and full magnet. Focus
+and retained-text checks also pass. No clipboard or desktop input was used.
+
+Root visual review covered all twelve long-value bottom views and representative
+top views through the requested user/design roles. The fresh adversarial reviewer
+examined all 48 corrected images and found zero counted defects. Ellipses are
+intentional; partial rows at scroll boundaries are ordinary scrolling. This is
+scoped visual acceptance, not physical keyboard, Narrator, High Contrast, tooltip
+display, or real metadata-arrival verification. The requested minimum size still
+uses the current window minimum. Tracker hints and empty states in #137 remain
+separate investigation candidates.
+
+Capture builds passed with zero warnings/errors and both libraries reused:
+`artifacts/inspector-baseline.log` (56.17 seconds) and
+`artifacts/inspector-correction.log` (61.43 seconds). The diagnostic was removed
+after obtaining evidence; the normal Debug/x64 build also passes in 67.69 seconds
+(`artifacts/inspector-final.log`). All launched processes closed and generated-output
+scans were empty. No full suite ran.
+
+Concurrent owner edits to Engine/Alerts.cpp, the pipe version and Checks.ps1
+arrived after the recorded FilesSafety/CheckpointRetry passes. Those passes are now historical;
+run each once after the owner's last engine change and matching build. The
+inspector captures prove presentation and do not depend on the new queue behavior.
+The matching app/engine build must include the concurrent pipe-version changes;
+this milestone does not certify that evolving pair.
+Owner changes remain unstaged by this milestone. GitHub updates remain pending
+publication approval, and the broader release goal stays active.
+
 ## Settings port validation investigation — 2026-10-06
 
 The port-validation claim in AI report #134 does not justify a UI change.

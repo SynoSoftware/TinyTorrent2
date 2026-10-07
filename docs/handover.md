@@ -1,5 +1,28 @@
 # Implementation handover — 2026-10-05
 
+## General metadata checkpoint — 2026-10-06
+
+Settings validation evidence is committed as `3e77528`. Current captures confirm
+#137's General metadata growth: long creator/folder/comment/magnet values add
+187–297 pixels to the content. Seven XAML lines now reuse the existing body-text
+style and native read-only editor to keep those values on one line. Raw values,
+native selection and the accepted inspector header remain intact.
+
+All twelve variants retain identical short/long row heights and content height.
+Full-value native selection passes, including the multiline comment. A fresh
+captures-only reviewer found zero counted defects in all 48 corrected images.
+The temporary diagnostic was removed; normal Debug/x64 compilation passes.
+Exact evidence and remaining physical-input/accessibility limits are recorded
+in [morning-report.md](morning-report.md). Tracker and empty-state parts of #137
+remain separate investigations, not approval to redesign those surfaces.
+
+Concurrent owner edits to Engine/Alerts.cpp, the pipe version and Checks.ps1
+followed the recorded safety passes. Those earlier passes no longer establish the current engine;
+build the settled engine and run FilesSafety and CheckpointRetry once after its
+last change. Do not repeat them for this XAML correction. Preserve all owner
+changes. The full release goal, #140 and Windows integration checks remain open;
+GitHub publication is still awaiting the previously requested approval.
+
 ## Settings validation checkpoint — 2026-10-06
 
 Metadata investigation is committed as `cb0588e`. The port-validation part of
