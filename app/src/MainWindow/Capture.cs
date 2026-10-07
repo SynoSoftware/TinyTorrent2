@@ -1048,15 +1048,18 @@ public sealed partial class MainWindow
                             await CapturePage(prefix + "long-magnet", dialog.Content as FrameworkElement);
                             if (Model.Draft.Magnet != magnet)
                                 throw new InvalidOperationException("The wrapped magnet editor changed its input.");
+                            editor.Text = "invalid magnet";
+                            var preview = CaptureElements(dialog).OfType<Button>().Single(control => control.Name == "Preview");
+                            var previewTop = preview.TransformToVisual(dialog).TransformPoint(new Windows.Foundation.Point()).Y;
+                            CaptureInvoke(preview);
+                            await CaptureReady(Model.Draft, () => Model.Draft.HasMagnetError && !Model.Draft.IsPending);
+                            if (editor.Text != "invalid magnet" || Model.Draft.Magnet != "invalid magnet")
+                                throw new InvalidOperationException("The magnet editor lost its rejected input.");
+                            await CapturePage(prefix + "magnet-error", dialog.Content as FrameworkElement);
+                            outcomes.Add(new { journey = prefix + "magnet validation", before = previewTop,
+                                after = preview.TransformToVisual(dialog).TransformPoint(new Windows.Foundation.Point()).Y, rejectedInputRetained = true });
                             if (language == "es" && theme == "dark" && size.Width == 720)
                             {
-                                editor.Text = "invalid magnet";
-                                var preview = CaptureElements(dialog).OfType<Button>().Single(control => control.Name == "Preview");
-                                CaptureInvoke(preview);
-                                await CaptureReady(Model.Draft, () => Model.Draft.HasMagnetError && !Model.Draft.IsPending);
-                                if (editor.Text != "invalid magnet" || Model.Draft.Magnet != "invalid magnet")
-                                    throw new InvalidOperationException("The magnet editor lost its rejected input.");
-                                await CapturePage(prefix + "magnet-error", dialog.Content as FrameworkElement);
                                 editor.Text = "magnet:?xt=urn:btih:" + target.Hashes[0];
                                 CaptureInvoke(preview);
                                 await CaptureReady(Model.Draft, () => Model.Draft.HasSources && !Model.Draft.IsPending);

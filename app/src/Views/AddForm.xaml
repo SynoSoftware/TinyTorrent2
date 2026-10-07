@@ -90,12 +90,12 @@
                         </StackPanel>
                         <TextBox x:Name="MagnetInput" AccessKey="{x:Bind Model.Text.Get('add', 'magnet_key'), Mode=OneWay}" Grid.Row="1" TextWrapping="Wrap" AcceptsReturn="False" ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto"
                             Text="{x:Bind Model.Draft.Magnet, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{x:Bind Model.Draft.CanEdit, Mode=OneWay}" AutomationProperties.LabeledBy="{x:Bind MagnetLabel}" />
-                        <Grid Grid.Row="2" HorizontalAlignment="Center">
+                        <InfoBar Grid.Row="2" IsClosable="False" Severity="Error" IsOpen="{x:Bind Model.Draft.HasMagnetError, Mode=OneWay}" Visibility="{x:Bind Model.Draft.HasMagnetError, Mode=OneWay}" Message="{x:Bind Model.Draft.MagnetMessage, Mode=OneWay}" />
+                        <Grid Grid.Row="3" HorizontalAlignment="Center">
                             <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="{ThemeResource ContentDialogButtonSpacing}" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                             <controls:ActionButton Glyph="{x:Bind icons:Lucide.ClipboardPaste}" ToolTipService.ToolTip="{x:Bind Model.Text.Get('add', 'paste_tip'), Mode=OneWay}" x:Name="Paste" AccessKey="{x:Bind Model.Text.Get('add', 'paste_key'), Mode=OneWay}" Text="{x:Bind Model.Text.Get('add', 'paste'), Mode=OneWay}" IsEnabled="{x:Bind Model.Draft.CanEdit, Mode=OneWay}" Click="OnPaste" />
                             <controls:ActionButton Grid.Column="2" Glyph="{x:Bind icons:Lucide.ScanSearch}" ToolTipService.ToolTip="{x:Bind Model.Text.Get('add', 'review_tip'), Mode=OneWay}" x:Name="Preview" AccessKey="{x:Bind Model.Text.Get('add', 'review_key'), Mode=OneWay}" Text="{x:Bind Model.Text.Get('add', 'review'), Mode=OneWay}" IsEnabled="{x:Bind Model.Draft.CanEdit, Mode=OneWay}" Click="OnPreview" />
                         </Grid>
-                        <InfoBar Grid.Row="3" IsClosable="False" Severity="Error" IsOpen="{x:Bind Model.Draft.HasMagnetError, Mode=OneWay}" Visibility="{x:Bind Model.Draft.HasMagnetError, Mode=OneWay}" Message="{x:Bind Model.Draft.MagnetMessage, Mode=OneWay}" />
                     </Grid>
                     <Grid Grid.Row="1" Visibility="{x:Bind Model.Draft.HasSources, Mode=OneWay}">
                         <ListView ItemsSource="{x:Bind Model.Draft.Sources}" SelectionMode="None" IsEnabled="{x:Bind Model.Draft.CanEdit, Mode=OneWay}" Visibility="{x:Bind local:AddForm.Hidden(Model.Draft.HasFiles), Mode=OneWay}">

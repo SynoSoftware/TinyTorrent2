@@ -1,5 +1,47 @@
 # Morning report
 
+## Magnet validation and current engine safety — 2026-10-06
+
+Command-feedback milestone is committed as `e584b91`. The confirmed part of
+#136 is now corrected: the inline magnet error precedes the existing action
+row, keeping Paste/Preview at the bottom of the pane. No reserved error slab,
+new control, styling or command implementation was added. The owner's QueueTop
+addition and other concurrent work are preserved separately.
+
+`artifacts/magnet-layout-after.log` passes Debug/x64 capture compilation in
+49.75 seconds with zero warnings/errors; only the app compiled. In
+`artifacts/evidence/UiSelfCapture-43cdd2bf-33e2-46c7-8273-35f827c24d5c/captures`,
+all 12 English/Spanish, Light/Dark, requested-size combinations retain Preview's
+position after native invalid-input submission (y=349, 469 or 589). Rejected
+input remains editable and retained; the existing valid-preview recovery
+journey also passes. Earlier current evidence moved the narrow actions 53
+pixels. Sequential task reviews and the independent capture-only reviewer found
+no counted defect in the changed surface. Minimum-width error text trims under
+the owner ruling; the existing shared message remains selectable with its full
+text. Physical keyboard, screen-reader and High Contrast verification remain
+open. #136's other metadata/refusal transitions remain investigations.
+
+The requested engine safety checks each passed once against the current engine,
+including the owner's uncommitted queue changes:
+
+- FilesSafety: `artifacts/evidence/FilesSafety-b2725e21-f46e-461a-9723-fb4420e281d0`.
+  Shared-owner protection, collision refusal, grouped move, interrupted-move
+  recovery and deletion preserve the expected payload and unrelated bytes.
+- CheckpointRetry:
+  `artifacts/evidence/CheckpointRetry-06e016b4-0379-443e-ae88-e5d99670fb23`.
+  A blocked checkpoint reports failure, retries after release, and preserves
+  membership and running intent across restart.
+
+`artifacts/release-safety-engine.log` passes Release/x64 in 25.33 seconds with
+zero warnings/errors. Its 16 compiled source files correspond to changes since
+the previous Release build and consumers of the changed State header; dependency
+libraries were reused. The engine diff stayed unchanged through both checks.
+All launched processes closed and every output-location scan was empty. Do not
+repeat these checks for later app-only or documentation work; a later relevant
+engine change invalidates this evidence. No full suite or real-transfer peer ran.
+The release goal is still active; these scoped passes do not close the remaining
+desktop, accessibility, live-download and worklist investigations.
+
 ## Command-feedback milestone — 2026-10-06
 
 `3d3f977` committed the hidden-sort correction and its two focused checks. The

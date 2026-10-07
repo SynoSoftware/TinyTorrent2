@@ -1,5 +1,24 @@
 # Implementation handover — 2026-10-05
 
+## Magnet validation and safety checkpoint — 2026-10-06
+
+`e584b91` commits command-feedback stability. The next narrow correction keeps
+Paste/Preview stationary when the inline magnet error appears. All 12 current
+language/theme/size captures and invalid-input journeys pass, with no counted
+visual finding. The owner's QueueTop and other ongoing changes remain separate.
+See [morning-report.md](morning-report.md) for exact evidence and limitations.
+
+FilesSafety and CheckpointRetry each passed once on the current Release engine,
+including its uncommitted owner changes. The engine diff was unchanged through
+both checks. Do not repeat them for subsequent app-only work; run them again
+only if a later relevant engine change invalidates this evidence. All launched
+processes are closed, dependencies were reused, and no full suite ran.
+
+#132 and #136 remain open for their other investigation cases. Other AI reports
+are still hypotheses, not approved design changes. The whole-product release
+goal remains active, with the earlier physical desktop/accessibility and real
+download verification limits still open.
+
 ## Command-feedback checkpoint — 2026-10-06
 
 Hidden-sort milestone `3d3f977` is committed. Current captures confirmed #132's
