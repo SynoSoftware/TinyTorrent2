@@ -6,9 +6,14 @@ The full release goal is not achieved. The libtorrent fork and `Dependencies.ps1
 now select `627695bf2026faebbc0c1ec8575e2a8700af7f27`. The
 [upstream review](morning-report.md#upstream-pause-review--2026-10-07) records two
 regular and two adversarial reviews, including the additional hard-pause fix.
-The owner requested source review only: these follow-up changes are not built
-or tested. Upstream regression coverage and execution remain outstanding; the
-separate existing extension-override inconsistency is not fixed or claimed fixed.
+The later authorized upstream Debug run passed 113/114 native executables;
+`test_upnp` failed three assertions, also reproduced in isolation. Ten simulation
+executables passed, including all eight pause cases; three transfer matrices
+timed out. The owner stopped the remaining build/tests and their retry and
+decided against an upstream PR. See the
+[test record and fork explanation](morning-report.md#fork-documentation-and-upstream-tests--2026-10-07).
+Dedicated regression coverage for the additional interleavings remains absent;
+the separate existing extension-override inconsistency is not fixed or claimed fixed.
 
 The [modified-path review](morning-report.md#modified-path-review--2026-10-07)
 also fixes checkout-root validation in the updater and makes the Pause check

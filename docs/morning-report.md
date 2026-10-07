@@ -1,5 +1,46 @@
 # Morning report
 
+## Fork documentation and upstream tests — 2026-10-07
+
+The owner stopped further test execution and decided against an upstream PR.
+The remaining simulation build, transfer runs, and longer timeout retry were
+terminated; a process check found no remaining executables from this run.
+The fork now explains its purpose, confirmed reproduction steps, root cause,
+correction, and verification limits in
+[FORK.rst](https://github.com/SynoSoftware/libtorrent/blob/codex/paused-tick/FORK.rst),
+linked prominently from its README.
+The documentation is published as fork commit `e22067d`; `codex/paused-tick`
+is now the fork's default branch so its explanation appears on the landing page.
+
+Fresh upstream Windows x64 Debug binaries at code commit `627695b`, built with
+assertions and invariant checks enabled, produced these results:
+
+- Native suite: 113 of 114 executables passed. `test_upnp` failed three
+  callback-count assertions in `upnp_wipconn`; an isolated rerun reproduced
+  them. The cause remains unconfirmed.
+- Simulations: 10 executables passed, including all eight pause cases,
+  auto-management, torrent status, and session tests. Three transfer-matrix
+  executables exceeded the initial 400-second timeout. Their longer retry and
+  the remaining suite were stopped, so the simulation suite is incomplete.
+
+Logs are under `artifacts/checks/libtorrent-627695b`: `test-build.log`,
+`test.log`, `upnp-isolated.log`, `simulation.log`, and
+`simulation-matrix-retry.log`. The native build compiled 309 C++ files and
+linked 114 test executables; the following native run compiled none. The
+simulation variant compiled 311 C++ files before cancellation; its simulated
+networking backend requires its own library objects and test support code.
+All builds used a source copy under artifacts because upstream helper projects
+ignore `--build-dir`. No dependency update or application relink ran.
+
+The required final Everything query was unavailable (`Everything IPC not
+found`); a direct directory scan found no `bin`, `obj`, `bin-fl`, or
+`TestResults` outside artifacts and 3rdParty. Earlier build/run scans were empty.
+Installed dependencies remain at `21aec1b`; the source pin remains `627695b`.
+No new regression cases cover the additional pause interleavings, and the
+existing extension-override limitation remains. These results supersede the
+earlier statements that upstream tests had not run, but do not establish a
+clean complete suite or full product release acceptance.
+
 ## Readability review — 2026-10-07
 
 The pause owner now handles effective transitions first and returns, leaving
