@@ -1,5 +1,16 @@
 # Implementation handover — 2026-10-05
 
+## Tracker editor checkpoint — 2026-10-06
+
+The diff-review checkpoint is committed as `6251dc2`. #137's tracker editor
+format guidance now belongs to the existing native input's tooltip and HelpText,
+returning 27 pixels to editable content without changing tracker behavior.
+All twelve focused variants retain draft text, focus and full selection. A fresh
+captures-only review found zero counted defects. Evidence and limits are in
+[morning-report.md](morning-report.md#tracker-editor-help-and-space--2026-10-06).
+The temporary probe is removed. Empty states and the wider release goal remain
+separate work; accepted Settings, title bar and schedule are preserved.
+
 ## Current diff-review checkpoint — 2026-10-06
 
 Settings feedback is committed as `b38601f`, following General metadata

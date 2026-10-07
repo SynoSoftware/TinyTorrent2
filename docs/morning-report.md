@@ -1,5 +1,38 @@
 # Morning report
 
+## Tracker editor help and space — 2026-10-06
+
+Baseline `artifacts/evidence/UiSelfCapture-b9352fc7-fedd-4794-9da6-d07489356826/captures`
+shows a format-help row above the tracker input, while the native focused editor
+has no HelpText. The format instructions now bind directly to that same editor's
+native tooltip and HelpText. Removing the helper row returns 27 pixels to the
+input in all twelve variants: 116 to 143 pixels at the supported minimum,
+231 to 258 at the other heights. No parser, tracker command, resource, style or
+draft implementation changes; explicit line breaks and tier separators remain
+editable data.
+
+After: `artifacts/evidence/UiSelfCapture-74e9c73a-b0bf-49d2-9296-81949c2e10ca/captures`.
+All twelve English/Spanish, Light/Dark and requested-size variants retain the
+complete draft in both native input and model, focus, full native selection and
+enabled editing. The localized instructions now reach the native editor peer.
+The isolated run completed in 19.87 seconds without saving tracker changes.
+Capture compilation passed in 37.56 seconds with zero warnings/errors; unchanged
+libraries were reused (`artifacts/trackers-layout-after.log`).
+
+Root reviewed the images in series: the first-time user can identify Save and
+Cancel; the keyboard user retains visible focus and complete editable URLs;
+the accessibility review distinguishes measured HelpText from unverified speech;
+the Fluent review keeps native input and existing spacing; the UX review sees
+more editable space with every required action retained. A fresh adversarial
+reviewer inspected all twelve before/after pairs and found zero counted defects.
+This gate is limited to the tracker correction. Physical keys, Narrator, High
+Contrast and literal 720-pixel content remain unverified. Requested720 still uses
+the accepted 837-pixel English/863-pixel Spanish minimum. All owned processes
+closed, output scans were empty, and the temporary probe was removed. No engine
+check or full suite was repeated. The release goal remains active.
+The ordinary Debug/x64 build also passes in 34.90 seconds with zero
+warnings/errors and both libraries reused (`artifacts/trackers-layout-final.log`).
+
 ## Current safety evidence and diff review — 2026-10-06
 
 Settings feedback is committed as `b38601f`; General metadata is `b244ee8`.

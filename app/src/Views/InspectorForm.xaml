@@ -89,10 +89,10 @@
                         </table:Table.Columns>
                     </table:Table>
                     <Grid x:Name="TrackerEditor" Grid.RowSpan="2" RowSpacing="8" Background="{ThemeResource LayerFillColorDefaultBrush}" Visibility="{x:Bind Model.IsEditingTrackers, Mode=OneWay}">
-                        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
-                        <TextBlock x:Name="TrackerHint" Text="{x:Bind Model.Text.Get('trackers', 'hint'), Mode=OneWay}" TextWrapping="Wrap" />
-                        <TextBox x:Name="TrackerInput" Grid.Row="1" Text="{x:Bind Model.TrackerInput, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="NoWrap" IsEnabled="{x:Bind local:InspectorForm.Not(Model.IsPending), Mode=OneWay}" FlowDirection="LeftToRight" />
-                        <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8"><controls:ActionButton Glyph="{x:Bind icons:Lucide.Save}" ToolTipService.ToolTip="{x:Bind Model.Text.Get('trackers', 'save_tip'), Mode=OneWay}" x:Name="SaveTrackers" Text="{x:Bind Model.Text.Get('trackers', 'save'), Mode=OneWay}" IsEnabled="{x:Bind Model.CanEdit, Mode=OneWay}" /><controls:ActionButton Glyph="{x:Bind icons:Lucide.X}" x:Name="CancelTrackers" Text="{x:Bind Model.Text.Get('add', 'cancel'), Mode=OneWay}" Command="{x:Bind Model.CancelTrackers}" /></StackPanel>
+                        <Grid.RowDefinitions><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                        <TextBox x:Name="TrackerInput" Text="{x:Bind Model.TrackerInput, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="NoWrap" IsEnabled="{x:Bind local:InspectorForm.Not(Model.IsPending), Mode=OneWay}" FlowDirection="LeftToRight"
+                            ToolTipService.ToolTip="{x:Bind Model.Text.Get('trackers', 'hint'), Mode=OneWay}" AutomationProperties.HelpText="{x:Bind Model.Text.Get('trackers', 'hint'), Mode=OneWay}" />
+                        <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8"><controls:ActionButton Glyph="{x:Bind icons:Lucide.Save}" ToolTipService.ToolTip="{x:Bind Model.Text.Get('trackers', 'save_tip'), Mode=OneWay}" x:Name="SaveTrackers" Text="{x:Bind Model.Text.Get('trackers', 'save'), Mode=OneWay}" IsEnabled="{x:Bind Model.CanEdit, Mode=OneWay}" /><controls:ActionButton Glyph="{x:Bind icons:Lucide.X}" x:Name="CancelTrackers" Text="{x:Bind Model.Text.Get('add', 'cancel'), Mode=OneWay}" Command="{x:Bind Model.CancelTrackers}" /></StackPanel>
                     </Grid>
                 </Grid>
                 <controls:SpeedGraph x:Name="Speed" Visibility="Collapsed" Samples="{x:Bind Model.History, Mode=OneWay}" />
