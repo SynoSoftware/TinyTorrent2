@@ -978,11 +978,25 @@ public sealed partial class MainWindow
                         Model.Inspector.Select(InspectorSection.General);
                         await CaptureReady(Model.Inspector, () => !Model.Inspector.IsLoading);
                         await CapturePage(prefix + "headers", InspectorContent.Content as FrameworkElement);
+                        var before = new { height = Torrents.ActualHeight, inspector = InspectorContent.TransformToVisual(Root).TransformPoint(new Windows.Foundation.Point()).Y,
+                            detail = InspectorContent.ActualHeight, footer = StatusBar.TransformToVisual(Root).TransformPoint(new Windows.Foundation.Point()).Y };
+                        if (Model.HasCommandError) throw new InvalidOperationException("The layout fixture already has a command failure.");
+                        try
+                        {
+                            Model.Report(new InvalidOperationException(Model.Text.Get("errors", "invalid_destination")));
+                            await CapturePage(prefix + "command-error", InspectorContent.Content as FrameworkElement);
+                            outcomes.Add(new { journey = prefix + "command-error layout", scope = "Simulated command failure; no engine operation",
+                                before, after = new { height = Torrents.ActualHeight, inspector = InspectorContent.TransformToVisual(Root).TransformPoint(new Windows.Foundation.Point()).Y,
+                                    detail = InspectorContent.ActualHeight, footer = StatusBar.TransformToVisual(Root).TransformPoint(new Windows.Foundation.Point()).Y } });
+                        }
+                        finally { Model.ClearError(); }
+                        await CaptureLayout();
                         var message = Feedback.Message;
                         var severity = Feedback.Severity;
                         var visibility = Feedback.Visibility;
                         var open = Feedback.IsOpen;
                         var action = Feedback.ActionButton.Visibility;
+                        var condition = Model.Message;
                         var workspace = new { width = Torrents.ActualWidth, height = Torrents.ActualHeight, footer = StatusBar.TransformToVisual(Root).TransformPoint(new Windows.Foundation.Point()).Y };
                         try
                         {
@@ -995,9 +1009,24 @@ public sealed partial class MainWindow
                             outcomes.Add(new { journey = prefix + "overlay layout", scope = "Presentation only; the engine remains connected",
                                 before = workspace, after = new { width = Torrents.ActualWidth, height = Torrents.ActualHeight, footer = StatusBar.TransformToVisual(Root).TransformPoint(new Windows.Foundation.Point()).Y },
                                 caption = new { add = AddButton.ActualWidth, magnet = MagnetButton.ActualWidth, theme = ThemeButton.ActualWidth, inset = AppWindow.TitleBar.RightInset } });
+                            Model.Report(new InvalidOperationException(Model.Text.Get("errors", "invalid_destination")));
+                            Feedback.Message = Model.Text.Get("window", "connecting");
+                            Feedback.Severity = InfoBarSeverity.Warning;
+                            Feedback.Visibility = Visibility.Visible;
+                            Feedback.IsOpen = true;
+                            Feedback.ActionButton.Visibility = Visibility.Visible;
+                            await CapturePage(prefix + "combined-errors");
+                            var error = CaptureElements(Root).OfType<InfoBar>().Single(bar => bar.Message == Model.CommandError);
+                            CaptureInvoke(CaptureElements(error).OfType<Button>().Single(button => button.Name == "CloseButton"));
+                            await CaptureLayout();
+                            if (Model.HasCommandError || Model.Message != condition)
+                                throw new InvalidOperationException("Dismissing a command error changed connection state or retained the error.");
+                            outcomes.Add(new { journey = prefix + "error dismissal", scope = "Simulated messages; the engine remains connected",
+                                commandCleared = true, connectionStateUnchanged = true });
                         }
                         finally
                         {
+                            Model.ClearError();
                             Feedback.Message = message;
                             Feedback.Severity = severity;
                             Feedback.Visibility = visibility;

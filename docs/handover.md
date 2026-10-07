@@ -1,5 +1,22 @@
 # Implementation handover — 2026-10-05
 
+## Command-feedback checkpoint — 2026-10-06
+
+Hidden-sort milestone `3d3f977` is committed. Current captures confirmed #132's
+command-error workspace reflow; the existing InfoBar now overlays the workspace
+beside the connection bar, preserving its separate dismissal. Debug/x64 capture
+compilation and all 12 native dismissal journeys pass. All 12 command-error
+layout comparisons retain table, inspector and footer bounds. Fresh visual
+review found no counted defect in this narrow surface; one simulated combined
+state is missing, and physical input/accessibility remains unverified. Exact
+before/after evidence and limits are in [morning-report.md](morning-report.md).
+
+Current captures also confirm #136's 53-pixel Paste/Preview shift on magnet
+validation. Preserve the concurrent owner Add, Pieces, Speed and engine edits.
+The broader release goal remains active; #132's other footer states, the other
+verified worklist gaps and final engine safety checks are not completed by this
+visual milestone. No suite ran, and all self-capture processes are closed.
+
 ## Release continuation resumed — 2026-10-06
 
 The release goal is active; the scoped acceptance below is not a whole-product

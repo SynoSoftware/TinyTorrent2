@@ -1,5 +1,48 @@
 # Morning report
 
+## Command-feedback milestone — 2026-10-06
+
+`3d3f977` committed the hidden-sort correction and its two focused checks. The
+next confirmed part of AI report #132 is command-error reflow: current baseline
+`artifacts/evidence/UiSelfCapture-e7104154-9065-4e06-ab22-74ba11a70650/captures`
+shows the inspector moving upward 45 pixels at 1040x680 and 57 at 1280x800.
+At minimum width, the table minimum instead forces the inspector to shrink.
+
+The existing command-error InfoBar now shares the connection bar's bottom
+workspace overlay. One stack separates simultaneous messages; their existing
+owners, commands and dismissal remain unchanged. No other footer state or
+accepted screen was restyled. Before/after compilation reused the libraries;
+the settled Debug/x64 capture build passed in 47.82 seconds, with no warnings
+or errors (`artifacts/release-layout-after.log`). No engine build or suite ran.
+
+After evidence is
+`artifacts/evidence/UiSelfCapture-adfe7221-e1c4-41b6-bc5f-e4d83f1c9e0d/captures`.
+All 12 language/theme/size combinations retain the table height, inspector
+position and height, and footer position when the command error appears.
+Native close-button invocation clears the error in all 12 and leaves the
+underlying connection state unchanged. Messages are simulated; the isolated
+engine stays connected. This is not a real-disconnection recovery check.
+The accepted native minimum exceeds the requested 720 width; captures record
+837-pixel English and 863-pixel Spanish client widths at that size request.
+
+Sequential user, keyboard, accessibility, Fluent and UX reviews found no new
+counted defect in this changed surface. The fresh visual reviewer agrees after
+examining all 24 command/combined-error images. Eleven show both bars; English
+Light 1040x680 contains only the command error because a model refresh cleared
+the simulated connection state. That simultaneous-state image remains
+unverified. The earlier diagnostic run failed for that same simulation mistake;
+its assertion was corrected to check the actual connection state rather than
+a manually forced view property. Physical keyboard use, screen-reader output
+and High Contrast remain unverified. All launched processes closed; the
+required output-location scan was empty.
+
+The same current baseline reproduces #136: Spanish minimum-width invalid-magnet
+feedback moves Paste/Preview upward 53 pixels. The owner's Add work is preserved;
+that correction is separate. #132 remains open for its other footer transitions.
+New AI reports still require evidence rather than automatic implementation.
+The release goal remains active, including final engine safety checks after
+the concurrent engine work settles and the previously recorded release gaps.
+
 ## Release goal resumed — 2026-10-06
 
 The release goal is active. The earlier scoped acceptance does not establish

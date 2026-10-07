@@ -189,14 +189,16 @@
             </StackPanel>
         </ScrollViewer>
             </Grid>
-        <InfoBar x:Name="Feedback" Grid.Row="1" VerticalAlignment="Bottom" Margin="16,0,16,8" IsClosable="False" Severity="{x:Bind Model.Severity, Mode=OneWay}" Message="{x:Bind Model.Message, Mode=OneWay}" IsOpen="{x:Bind Model.HasFeedback, Mode=OneWay}" Visibility="{x:Bind Model.HasFeedback, Mode=OneWay}">
-            <InfoBar.ActionButton><controls:ActionButton Glyph="{x:Bind icons:Lucide.RotateCcw}" ToolTipService.ToolTip="{x:Bind Model.Text.Get('connection', 'restart_tip'), Mode=OneWay}" AutomationProperties.AutomationId="Restart" Text="{x:Bind Model.RestartText, Mode=OneWay}" Command="{x:Bind Model.Restart}" Visibility="{x:Bind Model.CanRestart, Mode=OneWay}" /></InfoBar.ActionButton>
-        </InfoBar>
-        <StackPanel Grid.Row="2" Margin="16,8,16,12" Spacing="4">
-            <TextBlock Text="{x:Bind Model.FilterLabel, Mode=OneWay}" Visibility="{x:Bind Model.HasFilter, Mode=OneWay}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+        <StackPanel Grid.Row="1" VerticalAlignment="Bottom" Margin="16,0,16,8" Spacing="8">
+            <InfoBar x:Name="Feedback" IsClosable="False" Severity="{x:Bind Model.Severity, Mode=OneWay}" Message="{x:Bind Model.Message, Mode=OneWay}" IsOpen="{x:Bind Model.HasFeedback, Mode=OneWay}" Visibility="{x:Bind Model.HasFeedback, Mode=OneWay}">
+                <InfoBar.ActionButton><controls:ActionButton Glyph="{x:Bind icons:Lucide.RotateCcw}" ToolTipService.ToolTip="{x:Bind Model.Text.Get('connection', 'restart_tip'), Mode=OneWay}" AutomationProperties.AutomationId="Restart" Text="{x:Bind Model.RestartText, Mode=OneWay}" Command="{x:Bind Model.Restart}" Visibility="{x:Bind Model.CanRestart, Mode=OneWay}" /></InfoBar.ActionButton>
+            </InfoBar>
             <InfoBar Severity="Error" IsClosable="True" CloseButtonClick="OnDismissError"
                 Message="{x:Bind Model.CommandError, Mode=OneWay}" IsOpen="{x:Bind Model.HasCommandError, Mode=OneWay}"
                 Visibility="{x:Bind Model.HasCommandError, Mode=OneWay}" />
+        </StackPanel>
+        <StackPanel Grid.Row="2" Margin="16,8,16,12" Spacing="4">
+            <TextBlock Text="{x:Bind Model.FilterLabel, Mode=OneWay}" Visibility="{x:Bind Model.HasFilter, Mode=OneWay}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
             <TextBlock x:Name="TorrentError" TextWrapping="Wrap" Text="{x:Bind Model.TorrentError, Mode=OneWay}" Visibility="{x:Bind Model.HasTorrentError, Mode=OneWay}" />
             <controls:ActionButton Glyph="{x:Bind icons:Lucide.CircleFadingArrowUp}" ToolTipService.ToolTip="{x:Bind Model.Text.Get('about', 'update_tip'), Mode=OneWay}" Text="{x:Bind Model.UpdateText, Mode=OneWay}" Command="{x:Bind Model.OpenUpdate}" Visibility="{x:Bind Model.HasUpdate, Mode=OneWay}" />
             <Grid x:Name="StatusBar" ColumnSpacing="12">
