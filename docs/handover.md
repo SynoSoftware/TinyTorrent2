@@ -1,5 +1,22 @@
 # Implementation handover — 2026-10-05
 
+## Metadata investigation checkpoint — 2026-10-06
+
+File dialogs are committed as `4d72ba2`; #133 is closed. #136's proposed metadata
+collapse does not reproduce at the current supported widths: the twelve delayed
+publication cases retain pane visibility, editor focus and control bounds. The
+initially-ready case also stays above the hide threshold. The proposed behavior
+change and temporary diagnostic were discarded; no UI change is being accepted.
+The capture has rendering and inner-ComboBox-input limitations, recorded with
+the exact evidence in [morning-report.md](morning-report.md). Do not promote the
+first image's apparent blank pane to a proven collapse against its control tree.
+
+Continue with concrete remaining failures and the shared-file/other-refusal
+parts of #136, rather than automatically implementing AI issue proposals. The
+owner's separate changes are preserved. No engine edit invalidates the current
+safety evidence, no owned process remains, and the broader release goal stays
+active. Ordinary binaries were not replaced by this opt-in capture build.
+
 ## File-dialog stability checkpoint — 2026-10-06
 
 Footer stability is committed as `b2fe823`; #132 is closed. The next milestone

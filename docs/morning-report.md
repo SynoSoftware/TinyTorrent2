@@ -1,5 +1,50 @@
 # Morning report
 
+## Add metadata investigation — 2026-10-06
+
+File-dialog milestone `4d72ba2` is committed and #133 is closed. The remaining
+metadata claim in AI report #136 was checked before accepting a product change.
+The report's possible automatic collapse does not reproduce at current supported
+window sizes: all twelve English/Spanish, Light/Dark and requested-size cases
+retain the settings pane and destination-editor focus when files appear.
+Body, settings, destination and both dialog actions retain their bounds in all
+60 before/after observations. All twelve file browsers follow the real draft's
+file source and display the one-file preview; native settings toggling also works.
+
+Evidence: `artifacts/evidence/UiSelfCapture-abf006c3-dd8f-4f21-953b-7523bcac9e25`.
+The 27 scenes completed in 91.10 seconds. A temporary opt-in diagnostic acquired
+a real local engine preview and delayed its publication through AddSource.Apply;
+it did not download metadata from peers or submit Add. The current English
+minimum produces a 741-pixel form body, already above the automatic-hide
+threshold; Spanish has more room. The initially-ready narrow case also keeps
+settings visible. Requested 720 is constrained by the existing window minimum.
+
+The first image appeared to lose the settings content, but the captured control
+tree and recorded focus contradict interpreting that as a collapsed pane. It is
+not accepted as evidence of a product visibility defect. Directly changing the
+editable ComboBox's inner TextBox also failed to establish the proposed folder
+in nine cases; the three established edits survive publication. This probe does
+not prove physical typing or rendering, and that capture discrepancy remains
+unresolved. Do not claim twelve successful folder-edit journeys from it.
+
+The proposed one-time visibility change and its temporary diagnostic were
+discarded: neither the captured states nor current reachable widths justify
+changing the accepted behavior. No UI change remains, so no visual acceptance
+gate or second build is warranted. #136 remains an investigation of shared-file
+information and other refusal states, not permission to redesign Add.
+
+The capture-only Debug build passed with zero warnings/errors in 45.76 seconds,
+reusing both libraries (`artifacts/add-metadata-baseline.log`). All launched
+processes closed and generated-output scans were empty. No engine code changed;
+the recorded safety checks remain current. The owner's separate working changes
+are untouched. The release goal remains active, including #140 and the recorded
+Windows integration, accessibility and real-transfer verification gaps.
+
+The GitHub #136 update is pending: automatic approval review rejected both the
+detailed evidence and a minimal behavior-only summary as unauthorized disclosure.
+The repository matches this checkout's origin, but no external update succeeded;
+an explicit approval question is pending. Keep the local findings authoritative.
+
 ## File-dialog stability investigation — 2026-10-06
 
 Footer correction `b2fe823` is committed and #132 is closed. #133 was checked
