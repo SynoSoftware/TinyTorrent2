@@ -1,5 +1,60 @@
 # Morning report
 
+## Upstream pause review — 2026-10-07
+
+Two independent regular reviews (correctness and upstream conventions) and two
+adversarial reviews (state transitions and observers/extensions) reviewed the
+fork against upstream `6da363d`, then re-reviewed the settled correction. The
+scope is the proposed libtorrent pause fix and its TinyTorrent entry paths,
+not an audit of every unrelated libtorrent subsystem or concurrent app edit.
+
+The reviews found another preexisting bug: graceful pause, session pause,
+individual resume, then ordinary pause could leave outstanding downloads
+draining. The last request changed individual intent but not effective pause,
+so it missed graceful-to-hard completion. Disk/hash/file-priority error paths
+can reach the same omission. `set_paused()` now owns that completion in one
+branch for both changed and unchanged individual intent. A resume request with
+live peers still preserves graceful draining; final-peer completion retains the
+individual flag.
+
+The source trace covered these paths and their state consumers:
+
+| Path | Reviewed owners and outcome |
+| --- | --- |
+| Individual Pause/Resume/Force and flags | `Torrent::ApplyIntent`, handle APIs, `set_paused`, `resume`; individual intent survives session pause. |
+| Session pause, schedule, interface policy | `RefreshPolicy`, session pause/resume, `set_session_paused`; effective transitions reach `do_pause`/`do_resume`. |
+| Add, preview promotion, startup restore | Guarded add parameters, `Add`, `Install`, session restoration and `ApplyIntent`; no constructor notification before shared ownership. |
+| Queue and checking management | `auto_manage_torrents`, `auto_manage_checking_torrents`; resume with live peers does not accidentally harden graceful pause. |
+| Graceful completion | `on_remove_peers`, both orderings of final disconnect and session resume; individual flag retained and graceful mode cleared on effective resume. |
+| Errors and file work | Disk/hash/file-priority errors, checking completion, recheck, stop-when-ready, move/conflict pauses; ordinary pause reaches hard completion. |
+| Removal and shutdown | Abort, delayed callbacks, subscription clearing and list unlinking; added state notifications do not normally reinsert aborted torrents. |
+| Bookkeeping | Tick/scrape/peer/auto-management list predicates, gauges, state notifications, timers, alerts and saved flags. |
+| Extensions | Both interception exits traced; existing override/invariant inconsistency remains separately unresolved, as described below. |
+
+Regular correctness review found the hard-pause omission; the independent state
+adversarial review confirmed it. Standards review found no upstream-convention
+violation but identified missing upstream regression coverage. The observer
+adversarial review found an existing extension issue: a hook returning true can
+bypass bookkeeping after pause flags change, violating Debug invariants even for
+a peerless torrent. An attempted pre-hook refresh was rejected during re-review:
+adding a resumed torrent to peer lists could allow connections after a plugin
+intercepts the standard handler. Those edits were removed. Repairing that
+extension contract needs its own behavior and regression review; this patch
+does not claim to fix arbitrary plugin overrides.
+
+All four reviewers inspected the final retained diff and reported no remaining
+introduced defect within its pause/session/graceful scope. The fix is saved in
+[fork commit 8dadd5e](https://github.com/SynoSoftware/libtorrent/commit/8dadd5e9f31aa1415f7434221919989a91ff0444)
+and pinned by `Dependencies.ps1`. No upstream PR was opened.
+
+This remains source-review evidence only. No compilation, tests, dependency
+update or application launch ran. The installed libraries remain at `21aec1b`.
+The fork has no new upstream regression tests; existing simulations do not cover
+individual intent changes under session pause or overlapping graceful drain.
+Before presenting this as ready to merge, add focused upstream cases and obtain
+execution evidence for the final revision. Earlier TinyTorrent checks do not
+establish those additional behaviors.
+
 ## Pause path review — 2026-10-07
 
 Source review of `f8916c4` and its libtorrent correction traced individual

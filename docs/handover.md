@@ -3,15 +3,17 @@
 ## Release acceptance checkpoint — 2026-10-07
 
 The full release goal is not achieved. The libtorrent fork and `Dependencies.ps1`
-now select `a84871f1e8d50472232e242db9bf4881367fd58e`. The
-[pause path review](morning-report.md#pause-path-review--2026-10-07) corrects
-additional bookkeeping, graceful-pause and updater recovery issues. The owner
-requested source review only: these follow-up changes are not built or tested.
+now select `8dadd5e9f31aa1415f7434221919989a91ff0444`. The
+[upstream review](morning-report.md#upstream-pause-review--2026-10-07) records two
+regular and two adversarial reviews, including the additional hard-pause fix.
+The owner requested source review only: these follow-up changes are not built
+or tested. Upstream regression coverage and execution remain outstanding; the
+separate existing extension-override inconsistency is not fixed or claimed fixed.
 
 The earlier #140 correction at `21aec1b` has the approved rebuild evidence:
 Debug's `Pause` check passes magnet addition and individual Resume/Pause while
-Pause all stays active,
-including persisted intent at restart. Release's FilesSafety and CheckpointRetry
+Pause all stays active, including persisted intent at restart. Release's
+FilesSafety and CheckpointRetry
 checks also pass against the rebuilt engine. See the
 [correction evidence](morning-report.md#pause-correction--2026-10-07).
 Native Windows and current live-transfer evidence remains incomplete as listed in
