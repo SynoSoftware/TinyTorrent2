@@ -15,7 +15,7 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
 $libtorrentUrl = 'https://github.com/SynoSoftware/libtorrent.git'
-$libtorrentCommit = '8dadd5e9f31aa1415f7434221919989a91ff0444'
+$libtorrentCommit = '627695bf2026faebbc0c1ec8575e2a8700af7f27'
 $opensslTag = 'openssl-3.6.4'
 $boostTag = 'boost-1.92.0'
 $jsonTag = 'v3.12.0'
@@ -107,7 +107,11 @@ function Sync-Checkout([string] $name, [string] $url, [string] $revision, [switc
         if ($changes) { throw "$directory has uncommitted changes." }
         Invoke-Native git -C $directory remote set-url origin $url
         $commit = git -C $directory rev-parse --verify --quiet "$revision^{commit}"
-        $atRevision = $LASTEXITCODE -eq 0 -and (git -C $directory rev-parse HEAD) -eq $commit
+        if ($LASTEXITCODE -eq 0) {
+            $head = git -C $directory rev-parse HEAD
+            if ($LASTEXITCODE -ne 0) { throw "Cannot read HEAD in $directory." }
+            $atRevision = $head -eq $commit
+        }
     }
     else {
         # Prepared separately and moved when complete, so an interrupted fetch

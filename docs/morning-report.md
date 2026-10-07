@@ -1,5 +1,20 @@
 # Morning report
 
+## Readability review — 2026-10-07
+
+The pause owner now handles effective transitions first and returns, leaving
+unchanged-state bookkeeping and graceful completion without another nesting
+level. The same conditions and operation order remain. This is saved in
+[fork commit 627695b](https://github.com/SynoSoftware/libtorrent/commit/627695bf2026faebbc0c1ec8575e2a8700af7f27)
+and pinned by `Dependencies.ps1`.
+
+The updater now reads and checks HEAD explicitly before comparing revisions.
+The Pause check spells out Add, verification, Resume, Pause and verification;
+one `Assert-Paused` function owns the repeated tick observation instead of a
+Boolean phase loop. Independent source re-review found no issue with these
+changes. No compilation or tests ran; the existing execution and extension
+limitations below remain unchanged.
+
 ## Modified-path review — 2026-10-07
 
 The follow-up source trace included the dependency updater and the added Pause

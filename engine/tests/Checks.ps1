@@ -160,6 +160,18 @@ function Payload-Hash([string] $path) {
     finally { $hasher.Dispose(); $stream.Dispose() }
 }
 
+function Assert-Paused([string] $torrentId) {
+    # The stale libtorrent tick list asserts on the next one-second tick.
+    $until = [DateTime]::UtcNow.AddSeconds(3)
+    do {
+        $snapshot = (Send-Command @{ command = 'snapshot' }).data
+        Assert ($snapshot.all_paused -and $snapshot.torrents.Count -eq 1 -and
+            $snapshot.torrents[0].torrent_id -eq $torrentId -and $snapshot.torrents[0].paused) `
+            'Pause all lost the accepted magnet or its individual paused intent'
+        Start-Sleep -Milliseconds 100
+    } while ([DateTime]::UtcNow -lt $until)
+}
+
 try {
     $initial = Start-Engine
     switch ($Check) {
@@ -171,25 +183,16 @@ try {
             $reply = Send-Command @{ command = 'add'; preview_id = $preview.data.preview_id; destination = $payload; paused = $true }
             Assert $reply.ok 'The paused-session magnet could not be added'
             $torrentId = $reply.data.torrent_id
-            foreach ($changeIntent in $false, $true) {
-                if ($changeIntent) {
-                    $reply = Send-Command @{ command = 'resume'; torrent_ids = @($torrentId) }
-                    Assert $reply.ok 'Individual Resume was refused while all paused'
-                    $snapshot = (Send-Command @{ command = 'snapshot' }).data
-                    Assert ($snapshot.all_paused -and -not $snapshot.torrents[0].paused) 'Individual Resume changed Pause all or lost its intent'
-                    $reply = Send-Command @{ command = 'pause'; torrent_ids = @($torrentId) }
-                    Assert $reply.ok 'Individual Pause was refused while all paused'
-                }
-                # The stale libtorrent tick list asserts on the next one-second tick.
-                $until = [DateTime]::UtcNow.AddSeconds(3)
-                do {
-                    $snapshot = (Send-Command @{ command = 'snapshot' }).data
-                    Assert ($snapshot.all_paused -and $snapshot.torrents.Count -eq 1 -and
-                        $snapshot.torrents[0].torrent_id -eq $torrentId -and $snapshot.torrents[0].paused) `
-                        'Pause all lost the accepted magnet or its individual paused intent'
-                    Start-Sleep -Milliseconds 100
-                } while ([DateTime]::UtcNow -lt $until)
-            }
+            Assert-Paused $torrentId
+
+            $reply = Send-Command @{ command = 'resume'; torrent_ids = @($torrentId) }
+            Assert $reply.ok 'Individual Resume was refused while all paused'
+            $snapshot = (Send-Command @{ command = 'snapshot' }).data
+            Assert ($snapshot.all_paused -and -not $snapshot.torrents[0].paused) 'Individual Resume changed Pause all or lost its intent'
+            $reply = Send-Command @{ command = 'pause'; torrent_ids = @($torrentId) }
+            Assert $reply.ok 'Individual Pause was refused while all paused'
+            Assert-Paused $torrentId
+
             Stop-Engine
             $snapshot = Start-Engine
             Assert ($snapshot.all_paused -and $snapshot.torrents.Count -eq 1 -and

@@ -3,7 +3,7 @@
 ## Release acceptance checkpoint — 2026-10-07
 
 The full release goal is not achieved. The libtorrent fork and `Dependencies.ps1`
-now select `8dadd5e9f31aa1415f7434221919989a91ff0444`. The
+now select `627695bf2026faebbc0c1ec8575e2a8700af7f27`. The
 [upstream review](morning-report.md#upstream-pause-review--2026-10-07) records two
 regular and two adversarial reviews, including the additional hard-pause fix.
 The owner requested source review only: these follow-up changes are not built
@@ -13,6 +13,9 @@ separate existing extension-override inconsistency is not fixed or claimed fixed
 The [modified-path review](morning-report.md#modified-path-review--2026-10-07)
 also fixes checkout-root validation in the updater and makes the Pause check
 select Debug by default. These script changes have source-review evidence only.
+The [readability review](morning-report.md#readability-review--2026-10-07) makes
+the retained pause transitions and regression scenario explicit without changing
+their behavior.
 
 The earlier #140 correction at `21aec1b` has the approved rebuild evidence:
 Debug's `Pause` check passes magnet addition and individual Resume/Pause while
