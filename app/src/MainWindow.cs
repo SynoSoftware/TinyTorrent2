@@ -133,7 +133,7 @@ public sealed partial class MainWindow : Window
         AppWindow.Closing += OnClosing;
         Closed += (_, _) => { _uiSettings.TextScaleFactorChanged -= OnTextScaling; Model.Dispose(); };
         AddShortcut(new() { Key = VirtualKey.O, Modifiers = VirtualKeyModifiers.Control }, Model.Add);
-        AddShortcut(new() { Key = VirtualKey.W, Modifiers = VirtualKeyModifiers.Control }, () => _ = CloseWindow(engineExit: false));
+        AddShortcut(new() { Key = VirtualKey.W, Modifiers = VirtualKeyModifiers.Control }, Model.CloseWindow);
         AddShortcut(new() { Key = VirtualKey.P, Modifiers = VirtualKeyModifiers.Control, ScopeOwner = Torrents }, Model.Pause);
         AddShortcut(new() { Key = VirtualKey.S, Modifiers = VirtualKeyModifiers.Control, ScopeOwner = Torrents }, Model.Resume);
         AddShortcut(new() { Key = VirtualKey.M, Modifiers = VirtualKeyModifiers.Control, ScopeOwner = Torrents }, Model.Force);

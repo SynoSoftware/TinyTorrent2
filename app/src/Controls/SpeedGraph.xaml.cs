@@ -19,7 +19,7 @@ public sealed partial class SpeedGraph : UserControl
     public static readonly DependencyProperty SamplesProperty = DependencyProperty.Register(nameof(Samples),
         typeof(IReadOnlyList<SpeedSample>), typeof(SpeedGraph), new PropertyMetadata(Array.Empty<SpeedSample>(), (graph, _) => ((SpeedGraph)graph).OnSamples()));
 
-    // Zoom levels, in seconds. Each view draws 60 averages.
+    // Zoom levels, in seconds. Each view averages its samples in 60 buckets.
     private static readonly long[] Lengths = [300, 900, 1800, 3600, 21600, 86400];
     // Older history has one sample a minute, so a view shorter than this shows
     // only the present, where per-second samples exist.
@@ -42,6 +42,7 @@ public sealed partial class SpeedGraph : UserControl
     private double? _pointer;
     private Drag? _drag;
     private string _value = string.Empty;
+    private string _announced = string.Empty;
     private int _wheel;
 
     public SpeedGraph()
@@ -80,14 +81,15 @@ public sealed partial class SpeedGraph : UserControl
         Update();
     }
 
-    // A view stays inside the retained history, and a view that reaches the
-    // newest sample follows it again.
+    // A view stays inside the retained history, and a view that ends within one
+    // bucket of the newest sample follows it again, so a click's jitter or a
+    // zoom near the right edge does not stop the live view.
     private void SetView(long length, double end)
     {
         var newest = Newest;
         var oldest = Samples.Count == 0 ? newest : Samples[0].Time;
         var clamped = (long)Math.Max(end, oldest + length);
-        long? past = length >= PastMinimum && clamped < newest ? clamped : null;
+        long? past = length >= PastMinimum && clamped < newest - length / 60 ? clamped : null;
         if (length == _length && past == _end)
         {
             return;
@@ -115,9 +117,14 @@ public sealed partial class SpeedGraph : UserControl
 
     private void OnSamples()
     {
+        // An engine restart or the passing day can take a past view's samples.
+        if (_end is { } end)
+        {
+            SetView(_length, end);
+        }
         if (_pointer is { } x)
         {
-            _marker = Nearest(Averages(), TimeAt(x))?.Time;
+            _marker = TimeAt(x);
         }
         Update();
     }
@@ -136,15 +143,17 @@ public sealed partial class SpeedGraph : UserControl
         var averages = runs.SelectMany(run => run).ToArray();
         var marked = Nearest(averages, _marker);
         var shown = marked ?? averages.LastOrDefault();
-        var downloadPeak = averages.Select(average => average.Download).DefaultIfEmpty().Max();
-        var uploadPeak = averages.Select(average => average.Upload).DefaultIfEmpty().Max();
-        var top = Ceiling(Math.Max(downloadPeak, uploadPeak));
+        double? downloadPeak = averages.Length == 0 ? null : averages.Max(average => average.Download);
+        double? uploadPeak = averages.Length == 0 ? null : averages.Max(average => average.Upload);
+        var top = Ceiling(Math.Max(downloadPeak ?? 0, uploadPeak ?? 0));
         // The legend names the time of any value that is not the present one.
         var at = shown is not null && (marked is not null || _end is not null) ? text.Format("speed", "at", Time(shown.Time, format)) : null;
         DownloadValue.Text = Rate(text, shown?.Download);
         UploadValue.Text = Rate(text, shown?.Upload);
         DownloadDetail.Text = at ?? text.Format("speed", "peak", Rate(text, downloadPeak));
         UploadDetail.Text = at ?? text.Format("speed", "peak", Rate(text, uploadPeak));
+        ToolTipService.SetToolTip(DownloadLegend, $"{DownloadLabel.Text} {DownloadValue.Text} · {DownloadDetail.Text}");
+        ToolTipService.SetToolTip(UploadLegend, $"{UploadLabel.Text} {UploadValue.Text} · {UploadDetail.Text}");
         Maximum.Text = averages.Length == 0 ? string.Empty : Rate(text, top);
         NoHistory.Visibility = averages.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
         _value = marked is null ? string.Empty : text.Format("speed", "point", Time(marked.Time, format),
@@ -244,8 +253,8 @@ public sealed partial class SpeedGraph : UserControl
         var upload = new PathGeometry();
         foreach (var run in runs)
         {
-            var downloads = run.Select(average => extent.At(average.Time, average.Download)).ToArray();
-            var uploads = run.Select(average => extent.At(average.Time, average.Upload)).ToArray();
+            var downloads = Widen(run.Select(average => extent.At(average.Time, average.Download)).ToArray(), extent.Width);
+            var uploads = Widen(run.Select(average => extent.At(average.Time, average.Upload)).ToArray(), extent.Width);
             var fill = new PathFigure { StartPoint = new Point(downloads[0].X, extent.Height), IsClosed = true };
             fill.Segments.Add(new LineSegment { Point = downloads[0] });
             fill.Segments.Add(Curve(downloads));
@@ -257,6 +266,18 @@ public sealed partial class SpeedGraph : UserControl
         DownloadArea.Data = area;
         DownloadLine.Data = download;
         UploadLine.Data = upload;
+    }
+
+    // A lone average needs a visible stroke, but a bucket-wide stroke would
+    // paint across unknown time.
+    private static Point[] Widen(Point[] points, double width)
+    {
+        if (points.Length > 1)
+        {
+            return points;
+        }
+        var point = points[0];
+        return [new(Math.Max(point.X - 1, 0), point.Y), new(Math.Min(point.X + 1, width), point.Y)];
     }
 
     // Marks round local clock times, at most about six per view. A label that
@@ -371,10 +392,6 @@ public sealed partial class SpeedGraph : UserControl
         return slopes;
     }
 
-    // Moves the marker to the nearest average and reports the change to
-    // assistive technology. Pointer moves within one average redraw nothing,
-    // and data updates under a fixed marker stay silent, so no transfer tick is
-    // announced.
     private void Mark(double? time)
     {
         var snapped = Nearest(Averages(), time)?.Time;
@@ -382,13 +399,19 @@ public sealed partial class SpeedGraph : UserControl
         {
             return;
         }
-        var previous = _value;
         _marker = snapped;
         Update();
-        if (previous != _value)
+    }
+
+    // Input and focus changes announce the value; incoming samples stay silent.
+    private void Announce()
+    {
+        if (_announced == _value)
         {
-            FrameworkElementAutomationPeer.FromElement(this)?.RaisePropertyChangedEvent(ValuePatternIdentifiers.ValueProperty, previous, _value);
+            return;
         }
+        FrameworkElementAutomationPeer.FromElement(this)?.RaisePropertyChangedEvent(ValuePatternIdentifiers.ValueProperty, _announced, _value);
+        _announced = _value;
     }
 
     private double TimeAt(double x) => Start + x / Plot.ActualWidth * _length;
@@ -398,6 +421,7 @@ public sealed partial class SpeedGraph : UserControl
         var x = args.GetCurrentPoint(Plot).Position.X;
         _pointer = x;
         Mark(TimeAt(x));
+        Announce();
     }
 
     private void OnRange(SelectorBar sender, SelectorBarSelectionChangedEventArgs args)
@@ -408,7 +432,16 @@ public sealed partial class SpeedGraph : UserControl
         }
     }
 
-    private void OnLive(object sender, RoutedEventArgs args) => SetView(_length, Newest);
+    // Now hides itself, so focus that was on it moves to the chart.
+    private void OnLive(object sender, RoutedEventArgs args)
+    {
+        var focus = Live.FocusState;
+        SetView(_length, Newest);
+        if (focus != FocusState.Unfocused)
+        {
+            Focus(focus);
+        }
+    }
 
     private void OnPressed(object sender, PointerRoutedEventArgs args)
     {
@@ -455,6 +488,7 @@ public sealed partial class SpeedGraph : UserControl
         if (FocusState != FocusState.Keyboard)
         {
             Mark(null);
+            Announce();
         }
     }
 
@@ -487,16 +521,26 @@ public sealed partial class SpeedGraph : UserControl
         if (FocusState == FocusState.Keyboard && _marker is null)
         {
             Mark(Averages().LastOrDefault()?.Time);
+            Announce();
         }
     }
 
-    private void OnBlur(object sender, RoutedEventArgs args) => Mark(null);
+    // The range bar and Now report their focus changes here too, and a pointer
+    // resting on the plot keeps its marker.
+    private void OnBlur(object sender, RoutedEventArgs args)
+    {
+        if (ReferenceEquals(args.OriginalSource, this) && _pointer is null)
+        {
+            Mark(null);
+            Announce();
+        }
+    }
 
     // The arrow keys move the marker, + and - zoom around it, and Page Up and
     // Page Down pan half a view, so the keyboard reaches what the pointer does.
     private void OnKey(object sender, KeyRoutedEventArgs args)
     {
-        if (args.OriginalSource != this)
+        if (!ReferenceEquals(args.OriginalSource, this))
         {
             return;
         }
@@ -528,6 +572,7 @@ public sealed partial class SpeedGraph : UserControl
         }
         _pointer = null;
         args.Handled = true;
+        Announce();
     }
 
     private void Step(VirtualKey key)

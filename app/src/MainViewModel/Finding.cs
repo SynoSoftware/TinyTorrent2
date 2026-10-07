@@ -133,7 +133,8 @@ public sealed partial class MainViewModel
         yield return new(Text.Get("commands", "limits"), Text.Format("finding", "preference_detail", Text.Get("preferences", "transfers")),
             SuggestionScope.Settings, Limits);
         yield return new(Text.Get("chrome", IsDark ? "light" : "dark"), string.Empty, SuggestionScope.Command, SwitchTheme);
-        yield return new(Text.Get("commands", "exit"), string.Empty, SuggestionScope.Command, Exit);
+        yield return new(Text.Get("commands", "exit"), string.Empty, SuggestionScope.Command, CloseWindow);
+        yield return new(Text.Get("commands", "exit_all"), string.Empty, SuggestionScope.Command, Exit);
         yield return new(RestartText, string.Empty, SuggestionScope.Command, Restart);
         foreach (var (key, command) in new (string, ICommand)[]
         {

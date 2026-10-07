@@ -1,16 +1,29 @@
 # Implementation handover — 2026-10-05
 
+## Chart and menu review checkpoint — 2026-10-07
+
+The pending Speed/Pieces and window/engine Exit changes retain their existing
+owners and command paths. A confirmed native menu defect is corrected in
+RefreshMenus: individual removals keep WinUI's cached flyouts in sync during
+language changes. All four menus match their current items in twelve variants;
+File Exit closes the window while the disposable engine keeps answering.
+The fresh capture reviewer finds no counted defect in Speed/Pieces or the
+corrected visible menus. Light flyout pixels remain unavailable to self-capture.
+See [morning-report.md](morning-report.md#chart-and-menu-ownership-review--2026-10-07)
+for evidence and remaining gaps. Temporary probes are removed; the release goal
+remains active.
+
 ## Add-to-top checkpoint — 2026-10-07
 
-The owner's Add-to-top implementation is ready to commit with paired protocol
+The owner's Add-to-top implementation is committed as `aece8ae` with paired protocol
 version 3. Its native paused-batch submission preserves displayed source order,
 saved and snapshot queue positions, prior membership and paused intent. The
 existing QueueOrder restart check and current FilesSafety/CheckpointRetry passes
 cover the unchanged engine. Independent source review and the corrected Add
 capture gate pass. See
 [morning-report.md](morning-report.md#add-to-top-milestone--2026-10-07) for evidence
-and limits. Speed/Pieces and the separate window/engine Exit commands still need
-their focused runtime gates. The wider release goal remains active.
+and limits. The subsequent chart/menu checkpoint above records the focused
+Speed/Pieces and Exit gates. The wider release goal remains active.
 
 ## Latest ownership review — 2026-10-07
 

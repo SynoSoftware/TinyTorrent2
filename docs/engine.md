@@ -566,9 +566,10 @@ detail collection stop or are released with their last consumer; tray status,
 queue policy, swarm activity, [speed history](#state-and-work), and persistence
 continue.
 
-Exit is in the tray menu and in the window. It first closes the window by the
-same rules as Close: a prompt appears only for actual unfinished input, and
-Cancel in that prompt cancels Exit. If a move or file deletion is running, Exit
+Exit is in the tray menu and, as Exit and stop transfers, in the window's File
+menu; the window's own Exit only closes the window. Engine Exit first closes
+the window by the same rules as Close: a prompt appears only for actual unfinished
+input, and Cancel in that prompt cancels Exit. If a move or file deletion is running, Exit
 waits for it to finish without a second prompt, because stopping it midway leaves
 files in two places. Then:
 

@@ -57,14 +57,14 @@
     <Grid RowSpacing="8">
         <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
         <Grid ColumnSpacing="8">
-            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
             <!-- One sign per InfoBarSeverity, in its order, so the conclusion reads at a glance. -->
             <FontIcon x:Name="InformationalSign" Style="{StaticResource PiecesMapSignStyle}" FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Hourglass}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
             <FontIcon x:Name="SuccessSign" Style="{StaticResource PiecesMapSignStyle}" FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.CircleCheck}" Foreground="{ThemeResource SystemFillColorSuccessBrush}" />
             <FontIcon x:Name="WarningSign" Style="{StaticResource PiecesMapSignStyle}" FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.TriangleAlert}" Foreground="{ThemeResource SystemFillColorCautionBrush}" />
             <FontIcon x:Name="ErrorSign" Style="{StaticResource PiecesMapSignStyle}" FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.CircleAlert}" Foreground="{ThemeResource SystemFillColorCriticalBrush}" />
-            <TextBlock x:Name="Summary" Grid.Column="1" Style="{StaticResource BodyStrongTextBlockStyle}" />
-            <TextBlock x:Name="PieceCount" Grid.Column="2" Margin="4,0,0,0" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextTrimming="CharacterEllipsis" />
+            <TextBlock x:Name="Summary" Grid.Column="1" Style="{StaticResource BodyStrongTextBlockStyle}" TextTrimming="CharacterEllipsis" IsTextSelectionEnabled="True" />
+            <TextBlock x:Name="PieceCount" Grid.Column="2" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
         </Grid>
         <ItemsControl x:Name="Legend" Grid.Row="1" IsTabStop="False">
             <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapGrid Orientation="Horizontal" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>

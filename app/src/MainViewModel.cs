@@ -89,6 +89,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     public ICommand Pause { get; }
     public ICommand Resume { get; }
     public ICommand Exit { get; }
+    public ICommand CloseWindow { get; }
     public ICommand SwitchTheme { get; }
     public bool IsToolbarOpen
     {
@@ -163,6 +164,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         Pause = new Command(() => ActOnSelection("pause"), () => CanEdit && _selected.Length > 0);
         Resume = new Command(() => ActOnSelection("resume"), () => CanEdit && _selected.Length > 0);
         Exit = new Command(ExitEngine, () => CanExit);
+        CloseWindow = new Command(() => { CloseRequested?.Invoke(this, false); return Task.CompletedTask; }, () => true);
         SwitchTheme = new Command(async () =>
         {
             await Preferences.SelectTheme(_dark ? "light" : "dark");

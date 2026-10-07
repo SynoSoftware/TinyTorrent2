@@ -83,7 +83,8 @@ public sealed class Inspector : INotifyPropertyChanged
     public ICommand SaveTrackers { get; }
     public ICommand CancelTrackers { get; }
     public ICommand Retry { get; }
-    public string RetryToolTip => Text.Get("inspector", HasFileDraft ? "retry_files_tip" : "retry_tip");
+    public string RetryToolTip => Text.Get("inspector",
+        HasFileDraft ? "retry_files_tip" : _section == InspectorSection.Speed ? "retry_speed_tip" : "retry_tip");
     public ICommand Restart => _owner.Restart;
     public bool CanRestart => _owner.CanRestart;
     public string RestartText => _owner.RestartText;
@@ -130,6 +131,7 @@ public sealed class Inspector : INotifyPropertyChanged
         _target = null;
         Invalidate();
         Clear();
+        History = [];
         Refresh();
         return true;
     }
@@ -373,7 +375,6 @@ public sealed class Inspector : INotifyPropertyChanged
         _confirmedFiles = null;
         Peers = [];
         Trackers = [];
-        History = [];
         Pieces = null;
         Folder = Comment = Creator = Magnet = string.Empty;
         Created = PieceSize = 0;

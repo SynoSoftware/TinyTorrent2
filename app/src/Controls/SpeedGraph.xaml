@@ -38,12 +38,12 @@
             <Grid ColumnSpacing="8">
                 <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                 <Line X2="18" VerticalAlignment="Center" Stroke="{ThemeResource AccentFillColorDefaultBrush}" StrokeThickness="2" />
-                <TextBlock Grid.Column="1" TextWrapping="Wrap"><Run x:Name="DownloadLabel" /><Run Text=" " /><Run x:Name="DownloadValue" FontWeight="SemiBold" /><Run Text=" · " Foreground="{ThemeResource TextFillColorSecondaryBrush}" /><Run x:Name="DownloadDetail" Foreground="{ThemeResource TextFillColorSecondaryBrush}" /></TextBlock>
+                <TextBlock x:Name="DownloadLegend" Grid.Column="1" Style="{StaticResource BodyTextStyle}" IsTextSelectionEnabled="True"><Run x:Name="DownloadLabel" /><Run Text=" " /><Run x:Name="DownloadValue" FontWeight="SemiBold" /><Run Text=" · " Foreground="{ThemeResource TextFillColorSecondaryBrush}" /><Run x:Name="DownloadDetail" Foreground="{ThemeResource TextFillColorSecondaryBrush}" /></TextBlock>
             </Grid>
             <Grid Grid.Column="1" ColumnSpacing="8">
                 <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                 <Line X2="18" VerticalAlignment="Center" Stroke="{ThemeResource TextFillColorPrimaryBrush}" StrokeThickness="2" StrokeDashArray="3,2.25" />
-                <TextBlock Grid.Column="1" TextWrapping="Wrap"><Run x:Name="UploadLabel" /><Run Text=" " /><Run x:Name="UploadValue" FontWeight="SemiBold" /><Run Text=" · " Foreground="{ThemeResource TextFillColorSecondaryBrush}" /><Run x:Name="UploadDetail" Foreground="{ThemeResource TextFillColorSecondaryBrush}" /></TextBlock>
+                <TextBlock x:Name="UploadLegend" Grid.Column="1" Style="{StaticResource BodyTextStyle}" IsTextSelectionEnabled="True"><Run x:Name="UploadLabel" /><Run Text=" " /><Run x:Name="UploadValue" FontWeight="SemiBold" /><Run Text=" · " Foreground="{ThemeResource TextFillColorSecondaryBrush}" /><Run x:Name="UploadDetail" Foreground="{ThemeResource TextFillColorSecondaryBrush}" /></TextBlock>
             </Grid>
         </Grid>
         <TextBlock x:Name="Maximum" Grid.Row="2" HorizontalAlignment="Right" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />

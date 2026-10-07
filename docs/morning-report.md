@@ -1,5 +1,58 @@
 # Morning report
 
+## Chart and menu ownership review — 2026-10-07
+
+Reviewed the settled diff against AGENTS, naming, comments and the active
+contracts. SpeedGraph retains chart state, drawing and input; PiecesMap retains
+piece rendering. Inspector keeps session-wide history until it closes. File,
+search and Ctrl+W share CloseWindow; stopping transfers still uses the existing
+engine Exit and draft guards. No new type, abstraction, parallel implementation
+or permanent diagnostic is needed. Add-to-top is committed as `aece8ae`.
+The reused independent source reviewer finds no counted correctness, ownership,
+naming or comment defect in the final tracked diff.
+
+The 61-scene focused capture in
+`artifacts/evidence/UiSelfCapture-b5303428-d2e6-4984-bc92-6f7cfd95a678/captures`
+passes in 84.74 seconds. Native Now returns keyboard focus to the chart; a past
+view survives incoming samples, near-live views resume following, empty values
+remain unknown and a lone average has finite visible geometry. Full legend
+values remain selectable and available through tooltips. Root's serial user,
+keyboard, accessibility, Fluent and UX review retains the layout: marked/live
+headers stay aligned, narrow legends retain every state, and patterns distinguish
+piece states without colour. A fresh captures-only reviewer inspected all 73
+images and found no counted Speed/Pieces defect. Graph and map data are synthetic
+production-renderer fixtures; this does not establish live engine accuracy.
+
+That review exposed duplicated native File-menu groups. WinUI MenuBarItem
+mirrors insertion/removal into its cached flyout but ignores Clear's Reset
+([Microsoft source](https://github.com/microsoft/microsoft-ui-xaml/blob/main/controls/dev/MenuBar/MenuBarItem.cpp)).
+RefreshMenus now removes individual entries before repopulating all four menus,
+so localisation cannot leave earlier commands behind. The correction adds no
+menu owner or custom menu control.
+
+After evidence:
+`artifacts/evidence/UiSelfCapture-6a223d5b-a0df-47b2-98ab-b08bcc7fbb54/captures`.
+The 26.02-second journey records all 48 native flyout comparisons before bitmap
+rendering: exact identity/order/count matches, with no stale entries. All twelve
+File menus have distinct access keys and the correct search routes. Native File
+Exit closes the UI normally; the engine remains alive and answers a snapshot
+(`after-window-exit.json`), then exits normally during fixture cleanup. The
+fresh reviewer rechecked only the correction's 24 images: all six visible Dark
+menus show one complete, correctly localised group, with zero counted defects.
+All six Light flyout bitmaps remain blank; their pixels are unverified, although
+native items and bounds are correct. No product restyling hides this limitation.
+
+Capture compilation passes in 37.85 seconds, with zero warnings/errors and both
+libraries reused (`artifacts/menu-refresh-capture.log`). Temporary probes are
+removed. No engine changes, safety reruns or full suite accompany this UI review.
+Owned processes close and generated-output scans are empty. Physical keyboard
+delivery, Narrator, OS High Contrast and native desktop surfaces remain outside
+these captures; requested720 uses the accepted title-bar minimum. The release
+goal remains active, including #140 and the Windows/real-transfer gaps below.
+The ordinary Debug/x64 build passes in 34.85 seconds with zero warnings/errors,
+both libraries reused and capture disabled
+(`artifacts/charts-menu-review-final.log`).
+
 ## Add-to-top milestone — 2026-10-07
 
 The owner's finished Add-to-top path has passed independent source review and

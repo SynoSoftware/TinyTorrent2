@@ -414,7 +414,11 @@ Language selection retains its immediate, in-place behavior.
 ### Main window
 
 The download window extends acrylic content into its custom title bar.
-The File menu contains Add torrent file, Add magnet link, Settings and Exit.
+The File menu contains Add torrent file, Add magnet link, Settings, Exit and
+Exit and stop transfers. **Owner ruling:** Exit closes the window, as Ctrl+W
+does, and transfers continue in the tray; Exit and stop transfers is the
+tray's Exit, which stops the engine. Exit is the everyday way to leave the
+window, and stopping every download is the separate, named decision.
 Torrent contains the existing selection commands, queue actions, Pause all,
 Resume all and Speed limits. **Owner ruling:** Speed limits opens Settings at
 the speed limits, as its search result does; there is no separate limits dialog,
@@ -450,10 +454,11 @@ there is one filter owner. The drawer starts closed so the table keeps its full
 width until the person asks to filter. Status and progress remain visible and
 sortable in the table. Tracker information
 belongs in the selected torrent's inspector. TableView owns generic interaction.
-Settings opens from File and About from Help. Exit is a File command and keeps
-its existing pending-work and draft guards. Keyboard and search paths invoke
-the same owners. About shows the product identity and running version on the
-same acrylic surface. The current page belongs to the main view model.
+Settings opens from File and About from Help. Exit and Exit and stop transfers
+are File commands and keep their existing pending-work and draft guards.
+Keyboard and search paths invoke the same owners. About shows the product
+identity and running version on the same acrylic surface. The current page
+belongs to the main view model.
 Leaving Settings follows the two owner rulings in
 [Committing edits](#committing-edits). The inspector keeps its target and draft
 while another page is visible. The Torrent menu and row context menu share
@@ -496,8 +501,8 @@ the native picker, and Add magnet
 link opens a field for the link even when the Add form is turned off; the
 source then follows the Show the Add form preference. Pause all and Resume all
 are in the window and the tray, and keep each torrent's own
-[paused or running state](engine.md#state-and-work). Exit is in the window as
-well as the tray.
+[paused or running state](engine.md#state-and-work). Exit and stop transfers is
+in the window as well as the tray, where it is named Exit.
 
 The toolbar, a row above the table that View shows or hides, holds Resume,
 Pause, Open folder, Properties, Verify, Remove and Delete files, as subtle
@@ -543,10 +548,10 @@ editor keeps its own keys.
 | Delete | Remove |
 | Shift+Delete | Delete files |
 | Ctrl+, | Settings |
-| Ctrl+W | Close the window |
+| Ctrl+W | Exit (close the window) |
 
-Alt+F4 closes the window, as Ctrl+W does. Exit has no shortcut, as in other
-Windows applications; Alt+F, X reaches it.
+Alt+F4 closes the window, as Ctrl+W does. Exit and stop transfers has no
+shortcut, because it stops every download; Alt+F, T reaches it.
 
 Remove keeps data; delete-data is an explicit, distinct decision. Each confirms
 once with the affected torrent names or count, a specific action such as Remove
@@ -931,8 +936,9 @@ present. A view of the past stays still while new data arrives, and Now returns
 to the present.
 
 The chart shows the trend, not every sample: per-second rates jump with each
-burst from a peer. Every view draws 60 averages as a smooth curve that never
-rises above or falls below them. Download is a filled area and upload a dashed
+burst from a peer. Every view divides its time into 60 equal parts and draws
+the average of each part that has samples as a smooth curve that never rises
+above or falls below those averages. Download is a filled area and upload a dashed
 line, so the two differ without colour. Round clock times are marked under the
 chart.
 
@@ -973,10 +979,12 @@ outlines, as that map's were; change them only when the
   user skip them and let the rest finish. A list of files, here and in the
   detail line, names the first three and counts the rest, so a long list cannot
   push the map out of view or fill the screen; Files lists every file. The piece
-  count, the piece size, and how many pieces each square holds follow the
-  sentence on the same line in secondary text, because the inspector is short
-  and every header line costs a row of squares; without that number, a merged
-  square's size is a guess.
+  count, the piece size, and how many pieces each square holds sit at the right
+  end of the status line in secondary text, as the Speed header places its range
+  choice; a long sentence trims beside them, with its full text available through
+  selection, automation and a tooltip, instead of pushing them out of view.
+  Keeping them on the status line saves a row of squares in the short inspector,
+  and the per-square number tells the user how much a merged square covers.
 - **Legend.** Under the status, one row shows each state with its swatch, its
   name, and its count in semibold, as the Speed legend shows its values. The
   counts are the legend, so the two cannot disagree. Entries share one width, so

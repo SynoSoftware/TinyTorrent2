@@ -71,6 +71,7 @@ public sealed partial class PiecesMap : UserControl
         {
             var (summary, severity) = data?.Summary(text) ?? (text.Get("pieces", "metadata"), InfoBarSeverity.Informational);
             Summary.Text = summary;
+            ToolTipService.SetToolTip(Summary, summary);
             var signs = Signs();
             for (var index = 0; index < signs.Length; index++)
                 signs[index].Visibility = index == (int)severity ? Visibility.Visible : Visibility.Collapsed;
@@ -207,9 +208,9 @@ public sealed partial class PiecesMap : UserControl
                 if (counts[kind] > counts[dominant]) dominant = kind;
             var mixed = counts.Count(value => value > 0) > 1;
             var hidesUnavailable = counts[(int)PieceKind.Unavailable] > 0 && dominant != (int)PieceKind.Unavailable;
-            var column = index % columns;
-            if (rtl) column = columns - 1 - column;
-            var x = Start(column);
+            var x = Start(index % columns);
+            // Mirror positions so a shorter last group stays at the reading end.
+            if (rtl) x = mapWidth - x - Square;
             var y = Start(index / columns);
             blocks[index] = new Block(first, end, x, y);
             var left = (int)Math.Round(x * scale);

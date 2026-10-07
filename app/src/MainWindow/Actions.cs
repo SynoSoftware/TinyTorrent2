@@ -48,7 +48,10 @@ public sealed partial class MainWindow
         HelpMenu.Title = Model.Text.Get("menus", "help");
         HelpMenu.AccessKey = MenuKey("help");
         AutomationProperties.SetName(Menus, Model.Text.Get("commands", "menu"));
-        FileMenu.Items.Clear();
+        // MenuBarItem mirrors individual removals into its flyout, but ignores
+        // Clear's reset, leaving old entries behind after a language change.
+        foreach (var menu in new[] { FileMenu, TorrentMenu, ViewMenu, HelpMenu })
+            while (menu.Items.Count > 0) menu.Items.RemoveAt(menu.Items.Count - 1);
         FileMenu.Items.Add(Menu("add_file", Model.Add, Syno.Lucide.FilePlus));
         FileMenu.Items.Add(Menu("add_magnet", Model.AddMagnet, Syno.Lucide.Link));
         FileMenu.Items.Add(new MenuFlyoutSeparator());
@@ -56,8 +59,8 @@ public sealed partial class MainWindow
             Command = Model.ShowPreferences, Icon = Icon(Syno.Lucide.Settings), AccessKey = MenuKey("settings"),
             KeyboardAcceleratorTextOverride = ShortcutText(Model.ShowPreferences) });
         FileMenu.Items.Add(new MenuFlyoutSeparator());
-        FileMenu.Items.Add(Menu("exit", Model.Exit, Syno.Lucide.Power));
-        TorrentMenu.Items.Clear();
+        FileMenu.Items.Add(Menu("exit", Model.CloseWindow, Syno.Lucide.X));
+        FileMenu.Items.Add(Menu("exit_all", Model.Exit, Syno.Lucide.Power));
         var selection = new MenuFlyoutItem { IsEnabled = false };
         selection.SetBinding(MenuFlyoutItem.TextProperty, new Binding { Source = Model,
             Path = new PropertyPath(nameof(MainViewModel.SelectionText)), Mode = BindingMode.OneWay });
@@ -68,12 +71,10 @@ public sealed partial class MainWindow
         TorrentMenu.Items.Add(Menu("pause_all", Model.PauseAll, Syno.Lucide.Pause));
         TorrentMenu.Items.Add(Menu("resume_all", Model.ResumeAll, Syno.Lucide.Play));
         TorrentMenu.Items.Add(Menu("limits", Model.Limits, Syno.Lucide.Gauge));
-        ViewMenu.Items.Clear();
         ViewMenu.Items.Add(Toggle(() => Model.FilterLabel, "filters", Model.SwitchFilters, () => Model.IsFilterOpen, Syno.Lucide.Funnel));
         ViewMenu.Items.Add(Toggle(() => Model.Text.Get("menus", "toolbar"), "toolbar", Model.SwitchToolbar, () => Model.IsToolbarOpen, Syno.Lucide.PanelTop));
         ClearFiltersButton.Text = Model.Text.Get("window", "clear_filters");
         ToolTipService.SetToolTip(ClearFiltersButton, Model.Text.Get("window", "clear_filters_tip"));
-        HelpMenu.Items.Clear();
         HelpMenu.Items.Add(new MenuFlyoutItem { Text = Model.Text.Get("about", "title"), Command = Model.ShowAbout, Icon = Icon(Syno.Lucide.Info),
             AccessKey = MenuKey("about") });
         AutomationProperties.SetName(Toolbar, Model.Text.Get("commands", "selection"));
