@@ -1,5 +1,76 @@
 # Morning report
 
+## File-dialog stability investigation — 2026-10-06
+
+Footer correction `b2fe823` is committed and #132 is closed. #133 was checked
+against current code instead of accepting its AI-authored proposal as a design
+requirement. The existing disposable `files-layout` journey reused the current
+Debug capture build; no compile or engine suite was needed for the baseline.
+
+Evidence: `artifacts/evidence/FilesCapture-f348dd6d-3f2f-4a24-a01b-b4bd00229008`.
+All 36 scenes completed in 146.72 seconds, including a native ownership refusal
+that preserved the destination and both choices. Source, collision and unrelated
+file hashes and all four torrent entries were preserved. Both owned processes
+exited; the generated-output scan was empty.
+
+The dialog movement is real in all twelve language/theme/size combinations:
+choosing the destination, shared scope and Use files there moves the primary
+button down by 37 pixels at the requested minimum size, 97 at 1040x680 and 130 at
+1280x800. At English 1040x680 the destination field then moves from Y424 to Y250
+when refusal feedback triggers automatic scrolling. The correction is scoped to
+the existing FileForm layout and ShowFiles coordination; engine semantics and
+the owner's separate menu changes remain outside it.
+
+The first correction fixes the dialog/body size, places progress and recovery in
+overlays, and removes forced scrolling on errors. Shared owners remain in their
+own list rather than being duplicated into selected locations when checked.
+Full values retain selection and tooltips; the visible Use files there warning
+now states the overwrite risk briefly in both languages.
+
+The focused full file journey passed on that correction:
+`artifacts/evidence/FilesCapture-0a31d9b0-a5dd-46da-b36e-3d95c539018b/captures`.
+All 72 scenes completed in 218 seconds. The native ownership refusal retained
+choices and bytes; the asynchronous occupied-file collision retained both
+payloads; all three shared owners moved successfully; removing one shared owner
+kept the shared payload; removing the final owners deleted only that payload.
+Collision and unrelated file hashes stayed unchanged, and final membership was
+saved correctly. The accepted asynchronous collision clears its preflight marker,
+so reopening requires choosing the folder again, as already recorded in the
+file-lifecycle evidence. This is distinct from a refused submission retaining
+its choices. Both processes closed and the output scan was empty.
+
+Fresh visual review found one counted defect: the refusal overlay obscured the
+resulting-folder preview at the requested minimum size in all four language/theme
+combinations. No other finding appeared in its sixty Move/Delete dialog images.
+The correction pairs the Use files there checkbox with its visible warning and
+the result label with its path, freeing the required vertical space without
+moving the dialog, destination field or native actions. Delete layout and
+operation behavior are unchanged by this second correction; only the Move layout
+journey needs repeating. The initial Debug/x64 build passed in 42.67 seconds with
+zero warnings/errors and both libraries reused (`artifacts/files-stable.log`).
+
+Final correction evidence:
+`artifacts/evidence/FilesCapture-a6c9f0fe-6439-487f-8549-a861340d3d93/captures`.
+All 36 Move scenes completed in 120.52 seconds. Across all twelve variants,
+dialog, primary button, destination and Use files there bounds are identical
+between initial, chosen and refused states (144 observations). The refusal again
+retained choices, all four entries and every fixture hash. The root's role-based
+image review found the next action and warning clear; the fresh reviewer
+rechecked all corrected Move variants and found zero remaining counted defects.
+The prior 24 Delete images remain accepted. Long paths trim under the owner rule;
+keyboard access to full values, Narrator, High Contrast, increased text scale,
+native picker interaction and device/cross-volume failures remain unverified.
+Requested 720 still uses the current minimum window width, not literal 720 client
+pixels. These are scoped file-dialog results, not whole-product acceptance.
+
+The final Debug/x64 build passed in 38.32 seconds with zero warnings/errors and
+both libraries reused (`artifacts/files-correction.log`). Only the Move rows
+changed after the successful file-operation journey, so destructive operations
+were not repeated. No product source changed after the final build. All owned
+processes closed and the output scan remained empty. Engine source is unchanged;
+the existing FilesSafety and CheckpointRetry results are still current. No full
+suite, dependency build or new diagnostic implementation was added.
+
 ## Stable workspace footer — 2026-10-06
 
 Destination recovery is committed as `d904615`; #22 is closed and #136 retains

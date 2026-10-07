@@ -37,8 +37,8 @@ public sealed class FileOperation : INotifyPropertyChanged
     public string SubmitGlyph => IsMove ? Lucide.FolderInput : Lucide.Trash2;
     public string SubmitToolTip => owner.Text.Get("file_operation", IsMove ? "move_tip" : "delete_tip");
     public string Warning => owner.Text.Get("file_operation", "delete_warning");
-    public string Locations => string.Join(Environment.NewLine + Environment.NewLine,
-        _torrents.Concat(IncludeShared ? _shared : []).Select(torrent => torrent.Name + Environment.NewLine + torrent.Folder));
+    public string Locations => string.Join(Environment.NewLine,
+        _torrents.Select(torrent => torrent.Name + Environment.NewLine + torrent.Folder));
     public string ResultingFolders => !HasDestination ? string.Empty : string.Join(Environment.NewLine,
         _torrents.Concat(IncludeShared ? _shared : []).Select(torrent =>
         {

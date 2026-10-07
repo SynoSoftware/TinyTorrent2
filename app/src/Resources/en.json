@@ -110,7 +110,7 @@
     "delete_shared": "Files used by these other torrents will be kept:\n{0}",
     "include_shared": "Include these torrents in the move",
     "use_existing": "Use files there",
-    "existing_warning": "Use and verify the destination files instead of moving source files. Mismatched pieces will be downloaded again over the destination files.",
+    "existing_warning": "Data that does not match will be overwritten.",
     "refresh": "Refresh",
     "kept_one": "{0:N0} shared file will be kept.",
     "kept_other": "{0:N0} shared files will be kept.", "move": "Move", "delete": "Delete", "refresh_tip": "Check the files' current locations again", "browse_tip": "Choose the destination folder", "move_tip": "Move these torrents' own files. Other files in their folders stay where they are.", "delete_tip": "Delete these torrents' files and remove the torrents from the list", "delete_warning": "Deleted files don't go to the Recycle Bin."

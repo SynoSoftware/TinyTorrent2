@@ -279,39 +279,16 @@ public sealed partial class MainWindow
                 var folder = await PickFolder();
                 if (folder is not null) Model.Files.Destination = folder;
             };
-            var body = new ScrollViewer { Content = form, Width = Math.Min(560, Root.ActualWidth - 80),
-                MaxHeight = Math.Max(220, Root.ActualHeight - 180), VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
-            void ResizeBody(object sender, SizeChangedEventArgs args)
+            void ResizeForm(object? sender = null, SizeChangedEventArgs? args = null)
             {
-                var atEnd = body.VerticalOffset >= body.ScrollableHeight - 1;
-                body.Width = Math.Min(560, Root.ActualWidth - 80);
-                body.MaxHeight = Math.Max(220, Root.ActualHeight - 180);
-                body.UpdateLayout();
-                if (Model.Files.HasError && atEnd) body.ChangeView(null, body.ScrollableHeight, null, true);
+                form.Width = Math.Min(560, Root.ActualWidth - 80);
+                form.Height = Math.Clamp(Root.ActualHeight - 180, 220, 440);
             }
-            body.SizeChanged += (_, args) =>
-            {
-                if (Model.Files.HasError && body.VerticalOffset + args.PreviousSize.Height >= body.ExtentHeight - 1)
-                    body.ChangeView(null, body.ScrollableHeight, null, true);
-            };
-            form.SizeChanged += (_, args) =>
-            {
-                if (Model.Files.HasError && body.VerticalOffset + body.ViewportHeight >= args.PreviousSize.Height - 1)
-                {
-                    body.UpdateLayout();
-                    body.ChangeView(null, body.ScrollableHeight, null, true);
-                }
-            };
-            Root.SizeChanged += ResizeBody;
-            var dialog = new Dialog { XamlRoot = Root.XamlRoot, Content = body,
+            ResizeForm();
+            Root.SizeChanged += ResizeForm;
+            var dialog = new Dialog { XamlRoot = Root.XamlRoot, Content = form,
                 DefaultButton = action == FileAction.Delete ? ContentDialogButton.Close : ContentDialogButton.Primary };
             dialog.Resources["ContentDialogMaxWidth"] = 608d;
-            dialog.Opened += (_, _) =>
-            {
-                if (!Model.Files.HasError) return;
-                body.UpdateLayout();
-                body.ChangeView(null, body.ScrollableHeight, null, true);
-            };
             dialog.SetBinding(ContentDialog.IsPrimaryButtonEnabledProperty, new Binding { Source = Model.Files,
                 Path = new PropertyPath(nameof(FileOperation.CanSubmit)), Mode = BindingMode.OneWay });
             dialog.PrimaryButtonClick += async (_, args) =>
@@ -322,11 +299,6 @@ public sealed partial class MainWindow
                 {
                     args.Cancel = !await Model.Files.Submit();
                     if (!args.Cancel) interaction.IsResolved = true;
-                    if (args.Cancel)
-                    {
-                        body.UpdateLayout();
-                        body.ChangeView(null, body.ScrollableHeight, null, true);
-                    }
                 }
                 finally { deferral.Complete(); }
             };
@@ -349,8 +321,8 @@ public sealed partial class MainWindow
             finally
             {
                 await scope;
-                Root.SizeChanged -= ResizeBody;
-                body.Content = null;
+                Root.SizeChanged -= ResizeForm;
+                dialog.Content = null;
                 _filesForm = null;
                 if (!Model.IsClosing) Model.Files.Cancel();
             }

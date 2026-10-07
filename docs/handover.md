@@ -1,5 +1,25 @@
 # Implementation handover — 2026-10-05
 
+## File-dialog stability checkpoint — 2026-10-06
+
+Footer stability is committed as `b2fe823`; #132 is closed. The next milestone
+corrects #133's measured file-dialog movement at the existing FileForm and
+ShowFiles owners. The dialog and viewport stay fixed, feedback overlays the body,
+and native actions no longer move or force-scroll after a refusal. A fresh
+captures-only review found one narrow preview overlap; its correction passed
+re-review with zero counted findings remaining. All 36 final Move scenes retain
+dialog, destination, choice and primary-button bounds. The earlier 72-scene
+functional journey passed actual disposable Move/Delete submissions, retained
+shared bytes when required, and preserved collision/unrelated files. Exact
+evidence, builds and native/accessibility limits are in
+[morning-report.md](morning-report.md).
+
+Only this milestone's ShowFiles and overwrite-warning hunks belong in its commit;
+preserve the owner's other Actions and English/Spanish resource edits, along with
+the separate Add, Pieces, Speed and engine work. No engine code changed, and its
+recorded safety checks remain current. #140 and the broader release verification
+gaps remain open. AI-authored issues continue to require evidence before changes.
+
 ## Footer stability checkpoint — 2026-10-06
 
 Destination recovery is committed as `d904615`. The next coherent milestone
