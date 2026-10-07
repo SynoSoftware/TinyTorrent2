@@ -22,6 +22,18 @@ payload and unrelated bytes survive. After unlocking and restarting, membership
 stays empty, the payload remains and the deletion outcome is not replayed.
 This establishes diagnostic notice generation, not Windows notification delivery.
 
+The current engine also passes the cross-volume probe in 2.66 seconds:
+`artifacts/evidence/CrossVolume-e0dedd71-7edf-4515-bfce-fb75553ffbb3/result.json`.
+The retained `check.ps1` uses the existing pipe helpers and verifies its own
+server PID. A private 2 KiB payload moves from C: NTFS to V: ReFS and back;
+both restarts retain exactly one unchanged payload, identity, saved path,
+paused intent and pending verification. An unrelated source sentinel is unchanged.
+A source handle without delete sharing makes the cross-volume move fail with
+`move_failed`, retaining the source and saved destination marker without creating
+a second payload. Every owned engine exits normally; the Everything query and
+process audit return no results. Only the disposable C-side payload lives in
+Windows Temp; the probe, store and results stay under artifacts.
+
 The first probe, `FileFailure-da1328fd-4d60-48fa-8ed9-2a37fd089e2d`, stops after
 successful move recovery because it incorrectly requires hashing to finish while
 the torrent and session are paused. The corrected probe checks the saved
@@ -31,8 +43,13 @@ byte, identity, path and restart checks remain. No product fix is needed.
 Every owned engine exits normally; the process audit and documented Everything
 generated-output query return no results. Product code is unchanged, so no build,
 FilesSafety/CheckpointRetry rerun, capture gate or full suite is justified.
-Cross-volume/device failures, native picker and notification delivery, and the
+Device/disconnect failures, native picker and notification delivery, and the
 confirmed paused-magnet dependency assertion #140 remain open release evidence.
+The read-only `powercfg /requests` query requires administrator privileges here,
+so it cannot establish Windows sleep-request behavior in this session. No power
+configuration is changed and no extra engine is launched for that blocked query.
+GitHub's current thirteen open AI reports add no new issue to the recorded list;
+their older source claims remain hypotheses checked against current code.
 
 ## Latest diff review and Add disclosure — 2026-10-07
 
@@ -90,6 +107,8 @@ Owned processes close normally and the documented Everything query returns no
 results. Engine code is unchanged, so its safety evidence remains valid; no
 engine build, repeated engine check or full suite is warranted. Physical input,
 Windows integration, #140 and the other release gaps remain open.
+The recorded CheckBox glyphs are AnimatedIcon controls; these off-screen bitmaps
+do not establish their checked/unchecked animation appearance on the desktop.
 
 The focused Add baseline is
 `artifacts/evidence/UiSelfCapture-8ec88d1a-f77f-4f92-8b2e-b612d662e3c7/captures`.

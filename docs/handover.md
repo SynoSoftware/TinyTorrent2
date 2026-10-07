@@ -9,8 +9,10 @@ without restoring membership or replaying deletion after restart. Paused hashing
 keeps its saved verification requirement. No product change or build is needed.
 See [morning-report.md](morning-report.md#open-file-move-and-delete-safety--2026-10-07)
 for exact evidence, the corrected probe expectation and remaining release gaps.
-This closes the open-file failure check, not cross-volume/device or native
-Windows checks. The broader release goal remains active.
+The cross-volume check also passes: C: NTFS to V: ReFS and back retain one
+unchanged payload and paused state across restart; a held source fails safely
+with its recovery marker retained. This closes those move cases, not device
+disconnect or native Windows checks. The broader release goal remains active.
 
 ## Latest diff review checkpoint — 2026-10-07
 
@@ -840,7 +842,7 @@ no `TinyTorrent.exe` or `Engine.exe`. No desktop automation remains active.
 | Everyday torrent actions | Completed previously, `6afbf65` | Historical evidence is recorded, with stated physical Explorer/drop and accessibility gaps. |
 | Background and desktop behavior | `43e47eb`; later close/recovery journeys and `3f6de13` notification preferences | Actual Windows notification delivery, physical sleep/logon and native caption gestures remain unverified. |
 | Details and preferences | `c9e3995`, later canonical Settings/search routing, `1eaf391` Add access keys, `245479e` header/contrast, `6b6163b` selection recovery; schedule feedback corrected after fresh visual review | Supplied-image gate closes with zero remaining counted defects. Physical keys, Narrator, OS High Contrast and scaling remain unverified; requested720 uses the documented current minimum. |
-| Move and delete files | `c9e3995`; `007dcde` file lifecycle and final FileNames, FilesSafety and CheckpointRetry checks | Physical picker, cross-volume/device failures, dropped alerts, real-download marking and native unfinished-file launch remain unverified. |
+| Move and delete files | `c9e3995`; `007dcde` file lifecycle and final FileNames, FilesSafety and CheckpointRetry checks; current open-file and cross-volume checks pass | Physical picker, device/disconnect failures, dropped alerts, real-download marking and native unfinished-file launch remain unverified. |
 
 These checkpoints do not claim release acceptance. Native search submission
 currently reaches the authoritative Settings editor and selected inspector.
