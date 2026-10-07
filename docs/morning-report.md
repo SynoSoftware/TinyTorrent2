@@ -39,8 +39,9 @@ evidence remains valid; no engine check or full suite is warranted. Physical
 keyboard, Narrator, OS High Contrast and the wider release gates remain open.
 The accepted title bar minimum still clamps the requested 720-wide captures;
 this pass does not prove a literal 720-wide main window.
-Everything's IPC server is unavailable; an equivalent directory walk excluding
-artifacts, 3rdParty and .git finds no stray generated output.
+The sandbox blocks Everything's IPC connection; the equivalent directory walk
+finds no stray generated output. Repeating the documented read-only Everything
+query outside that boundary succeeds with no results.
 
 ## Chart and menu ownership review — 2026-10-07
 
