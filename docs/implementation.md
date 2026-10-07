@@ -1254,9 +1254,9 @@ records the ruling and the arrangement that replaced vcpkg.
 
 ## Wire representation
 
-Protocol version 1 uses a four-byte little-endian UTF-8 JSON frame length,
+Protocol version 3 uses a four-byte little-endian UTF-8 JSON frame length,
 bounded to 16 MiB. The endpoint is `TinyTorrent.<logon SID>`; each connecting
-client first receives `{type:"hello",version:1,session_id:"...",data_directory:"..."}`. The absolute data directory
+client first receives `{type:"hello",version:3,session_id:"...",data_directory:"..."}`. The absolute data directory
 keeps the same store for explicit Restart, which starts the engine beside the
 window rather than a path a pipe peer reports. Requests are
 `{request_id:integer,command:string,...}`. Replies repeat `request_id` and have
@@ -1274,7 +1274,7 @@ closed window and obeys the corresponding notification preference.
 
 Commands are `snapshot`, `preview` (source, destination), `preview_detail`
 (preview_id, destination), `add` (preview_id, destination, paused, optional
-priorities, optional sequential and first_last booleans that default to false),
+priorities, optional sequential, first_last and queue_top booleans that default to false),
 `cancel_preview` (preview_id), `merge_trackers` (preview_id,
 torrent_id), `torrent` (torrent_id), `pause`, `resume`, `force`, `verify`, and
 `remove` (torrent_ids), `queue` (torrent_ids with direction: up/down/top/bottom,

@@ -20,7 +20,11 @@ void Engine::State::Handle(lt::alert* alert)
     else if (auto state = lt::alert_cast<lt::state_changed_alert>(alert))
     {
         if (auto torrent = Find(state->handle))
+        {
             torrent->fileState = state->state;
+            if (state->state == lt::torrent_status::downloading)
+                ApplyQueue();
+        }
     }
     else if (auto file = lt::alert_cast<lt::file_completed_alert>(alert))
     {
@@ -302,6 +306,7 @@ void Engine::State::On(lt::alerts_dropped_alert const&)
         RecordHashes(torrent, torrent.handle.info_hashes());
     }
     RecoverAdditions();
+    ApplyQueue();
     diagnostics.Write("alerts", "", "dropped");
 }
 }

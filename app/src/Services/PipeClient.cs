@@ -351,7 +351,7 @@ internal sealed class PipeClient : IDisposable
         try
         {
             var hello = await Read(pipe, deadline.Token);
-            if (hello.GetProperty("type").GetString() != "hello" || hello.GetProperty("version").GetInt32() != 2)
+            if (hello.GetProperty("type").GetString() != "hello" || hello.GetProperty("version").GetInt32() != 3)
                 throw new InvalidDataException(strings.Get("connection", "version"));
             return hello;
         }

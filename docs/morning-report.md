@@ -1,5 +1,31 @@
 # Morning report
 
+## Add-to-top milestone — 2026-10-07
+
+The owner's finished Add-to-top path has passed independent source review and
+the existing focused behavior checks. AddDraft captures the choice once and
+uses its single submission path; reverse prepending preserves the displayed
+batch order. The engine commits placement with membership before applying
+intent, through its existing queue and checkpoint owners. Protocol version 3
+ships the paired app and engine change together.
+
+The native Add journey in
+`artifacts/evidence/UiSelfCapture-3377ea4c-d088-4948-a41b-92c319dd2b10/captures`
+adds two disposable paused torrents once through the actual form. Their saved
+and snapshot positions are 0 and 1 in displayed order; existing membership,
+per-torrent paused intent and global pause stay intact. Native Toggle follows
+the draft through all twelve language/theme/size variants. The corrected Add
+captures and fresh visual review are recorded below. QueueOrder verifies saved
+placement through restart and subsequent reordering; FilesSafety and
+CheckpointRetry cover the unchanged engine diff recorded below.
+
+The existing final Debug/x64 build includes these exact sources. No rebuild or
+repeat test is warranted for staging and this documentation. The expanded
+QueueOrder scenario catches a newly prepended torrent losing its position after
+restart, a failure its earlier append-only fixture could not detect. No new test
+framework or production test seam was introduced. Speed/Pieces and Exit remain
+separate pending changes; this milestone does not establish release readiness.
+
 ## Latest diff review and destination correction — 2026-10-07
 
 Reviewed the four recent commits and the pending Add, queue, Exit, Speed and

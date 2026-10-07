@@ -140,12 +140,13 @@ void Engine::State::Execute(Json const& request, std::string const& connection, 
             reply(Failure(ErrorCode::PreviewExpired));
             return;
         }
-        Facts choices;
-        choices.savePath = request.at("destination").get<std::string>();
+        Addition::Choices choices;
+        choices.destination = request.at("destination").get<std::string>();
         choices.intent = request.value("paused", false) ? Intent::Paused : Intent::Resumed;
         choices.priorities = ReadPriorities(request.value("priorities", Json::array()));
         choices.sequential = request.value("sequential", false);
         choices.firstLast = request.value("first_last", false);
+        choices.queueTop = request.value("queue_top", false);
         Add(*preview, std::move(choices), [reply](Outcome outcome, Added added)
         {
             reply(outcome.error ? Failure(*outcome.error, outcome.detail) :

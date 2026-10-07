@@ -44,9 +44,20 @@ public:
 
     struct Addition
     {
+        struct Choices
+        {
+            std::string destination;
+            Intent intent = Intent::Resumed;
+            std::vector<lt::download_priority_t> priorities;
+            bool sequential = false;
+            bool firstLast = false;
+            bool queueTop = false;
+        };
+
         std::string identity;
         lt::add_torrent_params params;
         Facts facts;
+        bool queueTop = false;
         std::function<void(Outcome, Added)> done;
         lt::torrent_handle handle;
         AdditionPhase phase = AdditionPhase::Adding;
@@ -274,9 +285,7 @@ public:
         std::vector<std::string> known);
     void On(lt::metadata_failed_alert const& alert);
 
-    // choices holds the person's save path, intent, file priorities and piece
-    // order; Add records the rest.
-    void Add(Preview& preview, Facts choices, std::function<void(Outcome, Added)> done);
+    void Add(Preview& preview, Addition::Choices choices, std::function<void(Outcome, Added)> done);
     void AddSource(std::string source, std::function<void(Outcome, Added)> done);
     static void Guard(lt::add_torrent_params& params);
     static std::optional<std::vector<lt::download_priority_t>> Priorities(

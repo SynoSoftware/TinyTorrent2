@@ -167,6 +167,13 @@ accepts priorities 0 (unwanted), 1 (low), 4 (normal), and 7 (high), with at leas
 one wanted file. A batch shares destination and paused intent; individual file
 choices belong to a single-source form or the Files inspector after addition.
 
+Add to top of queue commits the new torrent at the front of the saved download
+order before releasing its payload guard. The queue owner reapplies that order
+when a torrent enters downloading, because libtorrent appends a torrent whose
+wanted files change it from finished to downloading. The option defaults to off
+and changes neither paused intent nor automatic queue limits. A duplicate keeps
+its existing position, because it is not a new addition.
+
 An accepted running magnet acquires metadata before entering automatic queue
 management. When metadata arrives, the same intent owner applies normal priority
 to every non-padding file for the saved all-files choice, then restores queue

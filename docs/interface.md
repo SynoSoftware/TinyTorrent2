@@ -612,6 +612,9 @@ so making every message float would hide useful context rather than improve it.
 ### Add
 
 The task answers: what is being added, which files are wanted, and where they go.
+Add to top of queue is an always-visible option, initially unchecked. For a batch,
+it places the new torrents first in their displayed source order, so choosing
+the option does not reverse the list the person reviewed.
 Use native source/destination pickers and an editable magnet input with an
 explicit Paste action. Read the clipboard only after the relevant user action.
 Preserve accepted input and choices when a picker is cancelled or a replacement

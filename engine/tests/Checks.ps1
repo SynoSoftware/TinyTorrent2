@@ -91,7 +91,7 @@ function Connect-Pipe {
         throw 'TinyTorrent is already running. The check refuses to command an engine it did not start.'
     }
     $hello = Read-Frame $stream
-    Assert ($hello.type -eq 'hello' -and $hello.version -eq 2) 'Invalid version handshake'
+    Assert ($hello.type -eq 'hello' -and $hello.version -eq 3) 'Invalid version handshake'
     return $stream
 }
 
@@ -811,19 +811,19 @@ try {
             $metadata = [Text.Encoding]::Latin1.GetString([IO.File]::ReadAllBytes($TorrentFile))
             Assert (($metadata.Split('12:transfer.bin').Length - 1) -eq 1) 'Queue fixture requires the single-file transfer torrent'
             $ids = @()
-            foreach ($index in 1..3) {
+            foreach ($index in 1..4) {
                 $name = 'queue' + $index + '.bin'
                 $source = Join-Path $directory ($name + '.torrent')
                 [IO.File]::WriteAllBytes($source, [Text.Encoding]::Latin1.GetBytes($metadata.Replace('12:transfer.bin', ($name.Length.ToString() + ':' + $name))))
                 $reply = Send-Command @{ command = 'preview'; source = $source; destination = $payload }
                 Assert $reply.ok 'Queue fixture did not preview'
-                $reply = Send-Command @{ command = 'add'; preview_id = $reply.data.preview_id; destination = $payload; paused = $true }
+                $addition = @{ command = 'add'; preview_id = $reply.data.preview_id; destination = $payload; paused = $true }
+                if ($index -eq 4) { $addition.queue_top = $true }
+                $reply = Send-Command $addition
                 Assert $reply.ok 'Queue fixture addition failed'
                 $ids += $reply.data.torrent_id
             }
-            $reply = Send-Command @{ command = 'queue'; torrent_ids = @($ids[0]); direction = 'down' }
-            Assert $reply.ok 'Move down was refused'
-            $expected = @($ids[1], $ids[0], $ids[2]) -join ','
+            $expected = @($ids[3], $ids[0], $ids[1], $ids[2]) -join ','
             $until = [DateTime]::UtcNow.AddSeconds(5)
             do {
                 $snapshot = Send-Command @{ command = 'snapshot' }
@@ -831,12 +831,25 @@ try {
                 if (($order -join ',') -eq $expected) { break }
                 [Threading.Thread]::Sleep(50)
             } while ([DateTime]::UtcNow -lt $until)
-            Assert (($order -join ',') -eq (@($ids[1], $ids[0], $ids[2]) -join ',')) 'Move down left the queue unchanged or moved the wrong torrent'
+            Assert (($order -join ',') -eq $expected) 'Add to top did not apply the chosen order'
+            Stop-Engine
+            $null = Start-Engine
+            $reply = Send-Command @{ command = 'queue'; torrent_ids = @($ids[0]); direction = 'down' }
+            Assert $reply.ok 'Move down was refused'
+            $expected = @($ids[3], $ids[1], $ids[0], $ids[2]) -join ','
+            $until = [DateTime]::UtcNow.AddSeconds(5)
+            do {
+                $snapshot = Send-Command @{ command = 'snapshot' }
+                $order = @($snapshot.data.torrents | Sort-Object queue | ForEach-Object torrent_id)
+                if (($order -join ',') -eq $expected) { break }
+                [Threading.Thread]::Sleep(50)
+            } while ([DateTime]::UtcNow -lt $until)
+            Assert (($order -join ',') -eq $expected) 'Add to top or move down placed a torrent incorrectly'
             $reply = Send-Command @{ command = 'queue'; torrent_ids = @($ids[2]); before_torrent_id = $ids[0] }
             Assert $reply.ok 'Atomic row drop was refused'
             Stop-Engine
             $snapshot = Start-Engine
-            $expected = @($ids[1], $ids[2], $ids[0]) -join ','
+            $expected = @($ids[3], $ids[1], $ids[2], $ids[0]) -join ','
             $until = [DateTime]::UtcNow.AddSeconds(5)
             do {
                 $order = @($snapshot.torrents | Sort-Object queue | ForEach-Object torrent_id)
@@ -844,7 +857,7 @@ try {
                 [Threading.Thread]::Sleep(50)
                 $snapshot = (Send-Command @{ command = 'snapshot' }).data
             } while ([DateTime]::UtcNow -lt $until)
-            Assert (($order -join ',') -eq (@($ids[1], $ids[2], $ids[0]) -join ',')) 'Saved queue order was lost after restart'
+            Assert (($order -join ',') -eq $expected) 'Saved queue order was lost after restart'
         }
     }
     Stop-Engine

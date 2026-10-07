@@ -1,5 +1,17 @@
 # Implementation handover — 2026-10-05
 
+## Add-to-top checkpoint — 2026-10-07
+
+The owner's Add-to-top implementation is ready to commit with paired protocol
+version 3. Its native paused-batch submission preserves displayed source order,
+saved and snapshot queue positions, prior membership and paused intent. The
+existing QueueOrder restart check and current FilesSafety/CheckpointRetry passes
+cover the unchanged engine. Independent source review and the corrected Add
+capture gate pass. See
+[morning-report.md](morning-report.md#add-to-top-milestone--2026-10-07) for evidence
+and limits. Speed/Pieces and the separate window/engine Exit commands still need
+their focused runtime gates. The wider release goal remains active.
+
 ## Latest ownership review — 2026-10-07
 
 The latest source review finds no competing owner or naming defect in the

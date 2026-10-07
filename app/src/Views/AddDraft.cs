@@ -17,6 +17,7 @@ public sealed class AddDraft : INotifyPropertyChanged
     private string _destination;
     private string _defaultDestination;
     private bool _paused;
+    private bool _queueTop;
     private bool _sequential;
     private bool _firstLast;
     private bool _neverShow;
@@ -52,6 +53,7 @@ public sealed class AddDraft : INotifyPropertyChanged
         }
     }
     public bool Paused { get => _paused; set { _paused = value; Refresh(); } }
+    public bool QueueTop { get => _queueTop; set { _queueTop = value; Refresh(); } }
     public bool Sequential { get => _sequential; set { _sequential = value; Refresh(); } }
     public bool FirstLast { get => _firstLast; set { _firstLast = value; Refresh(); } }
     public bool NeverShow { get => _neverShow; set { _neverShow = value; Refresh(); } }
@@ -230,12 +232,15 @@ public sealed class AddDraft : INotifyPropertyChanged
         Refresh();
         var destination = _destination;
         var paused = _paused;
+        var queueTop = _queueTop;
         var sequential = _sequential;
         var firstLast = _firstLast;
         try
         {
             await _pass;
             var captured = Sources.ToArray();
+            // Prepending in reverse preserves the order shown in the form.
+            if (queueTop) Array.Reverse(captured);
             var revealed = new List<string>();
             if (_neverShow) await _owner.Preferences.HideAddForm();
             foreach (var source in captured)
@@ -262,10 +267,12 @@ public sealed class AddDraft : INotifyPropertyChanged
                 JsonElement addition;
                 try
                 {
-                    var priorities = source.MetadataReady ? source.Files.Priorities() : null;
-                    addition = priorities is null ?
-                        await _client.Send("add", new { preview_id = previewId, destination, paused, sequential, first_last = firstLast }) :
-                        await _client.Send("add", new { preview_id = previewId, destination, paused, sequential, first_last = firstLast, priorities });
+                    var priorities = source.MetadataReady ? source.Files.Priorities() : [];
+                    addition = await _client.Send("add", new
+                    {
+                        preview_id = previewId, destination, paused, queue_top = queueTop,
+                        sequential, first_last = firstLast, priorities
+                    });
                 }
                 catch (Exception error)
                 {
@@ -398,7 +405,7 @@ public sealed class AddDraft : INotifyPropertyChanged
         Files.Clear();
         Magnet = string.Empty;
         EditingMagnet = false;
-        _paused = _sequential = _firstLast = _neverShow = false;
+        _paused = _queueTop = _sequential = _firstLast = _neverShow = false;
         _failure = null;
         _defaultDestination = _destination;
         Refresh();

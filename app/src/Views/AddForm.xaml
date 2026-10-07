@@ -71,6 +71,9 @@
                                 <CheckBox x:Name="Paused" AccessKey="{x:Bind Model.Text.Get('add', 'paused_key'), Mode=OneWay}" IsChecked="{x:Bind Model.Draft.Paused, Mode=TwoWay}" IsEnabled="{x:Bind Model.Draft.CanEdit, Mode=OneWay}" AutomationProperties.Name="{x:Bind Model.Text.Get('add', 'paused'), Mode=OneWay}" ToolTipService.ToolTip="{x:Bind Model.Text.Get('add', 'paused'), Mode=OneWay}">
                                     <TextBlock Text="{x:Bind Model.Text.Get('add', 'paused'), Mode=OneWay}" Style="{StaticResource BodyTextStyle}" />
                                 </CheckBox>
+                                <CheckBox x:Name="QueueTop" AccessKey="{x:Bind Model.Text.Get('add', 'queue_top_key'), Mode=OneWay}" IsChecked="{x:Bind Model.Draft.QueueTop, Mode=TwoWay}" IsEnabled="{x:Bind Model.Draft.CanEdit, Mode=OneWay}" AutomationProperties.Name="{x:Bind Model.Text.Get('add', 'queue_top'), Mode=OneWay}" ToolTipService.ToolTip="{x:Bind Model.Text.Get('add', 'queue_top'), Mode=OneWay}">
+                                    <TextBlock Text="{x:Bind Model.Text.Get('add', 'queue_top'), Mode=OneWay}" Style="{StaticResource BodyTextStyle}" />
+                                </CheckBox>
                                 <CheckBox x:Name="Sequential" AccessKey="{x:Bind Model.Text.Get('add', 'sequential_key'), Mode=OneWay}" IsChecked="{x:Bind Model.Draft.Sequential, Mode=TwoWay}" IsEnabled="{x:Bind Model.Draft.CanEdit, Mode=OneWay}" AutomationProperties.Name="{x:Bind Model.Text.Get('commands', 'sequential'), Mode=OneWay}" ToolTipService.ToolTip="{x:Bind Model.Text.Get('commands', 'sequential'), Mode=OneWay}">
                                     <TextBlock Text="{x:Bind Model.Text.Get('commands', 'sequential'), Mode=OneWay}" Style="{StaticResource BodyTextStyle}" />
                                 </CheckBox>

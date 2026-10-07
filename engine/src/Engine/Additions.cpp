@@ -60,7 +60,7 @@ bool Engine::State::IsChoice(lt::download_priority_t priority)
 
 // Starts adding the previewed content. The preview ends here, and its
 // guarded torrent, if any, becomes the new torrent.
-void Engine::State::Add(Preview& preview, Facts choices, std::function<void(Outcome, Added)> done)
+void Engine::State::Add(Preview& preview, Addition::Choices choices, std::function<void(Outcome, Added)> done)
 {
     UpdatePreview(preview);
     if (FilesBusy())
@@ -74,7 +74,7 @@ void Engine::State::Add(Preview& preview, Facts choices, std::function<void(Outc
         done({}, {AdditionKind::Duplicate, duplicate});
         return;
     }
-    if (!IsAbsolute(choices.savePath))
+    if (!IsAbsolute(choices.destination))
     {
         done({ErrorCode::InvalidDestination}, {});
         return;
@@ -89,13 +89,17 @@ void Engine::State::Add(Preview& preview, Facts choices, std::function<void(Outc
     Addition addition;
     addition.identity = Identity();
     addition.params = preview.params;
-    addition.params.save_path = choices.savePath;
+    addition.params.save_path = choices.destination;
     Guard(addition.params);
     addition.params.flags |= lt::torrent_flags::paused;
-    addition.facts = std::move(choices);
+    addition.facts.savePath = std::move(choices.destination);
+    addition.facts.intent = choices.intent;
+    addition.facts.sequential = choices.sequential;
+    addition.facts.firstLast = choices.firstLast;
     addition.facts.added = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
     addition.facts.priorities = std::move(*chosen);
     addition.facts.hashes = Hashes(preview.InfoHashes());
+    addition.queueTop = choices.queueTop;
     addition.done = std::move(done);
     auto& pending = additions.emplace(addition.identity, std::move(addition)).first->second;
     if (preview.handle.is_valid())
@@ -224,8 +228,8 @@ void Engine::State::AddSource(std::string source, std::function<void(Outcome, Ad
             finish({}, {AdditionKind::Mergeable, Duplicate(preview->InfoHashes())});
             return;
         }
-        Facts choices;
-        choices.savePath = settings.destination;
+        Addition::Choices choices;
+        choices.destination = settings.destination;
         Add(*preview, std::move(choices), finish);
     });
 }
@@ -256,10 +260,18 @@ void Engine::State::SaveAddition(std::string id, lt::torrent_handle handle)
 
 void Engine::State::CommitAddition(std::string const& id)
 {
+    auto const& addition = additions.at(id);
     auto document = Saved();
-    document.torrents.emplace(id, additions.at(id).facts);
-    document.queueOrder.push_back(id);
-    changes.Commit(document.ToJson(), [this, id](StorageOutcome outcome)
+    document.torrents.emplace(id, addition.facts);
+    if (addition.queueTop)
+    {
+        document.queueOrder.insert(document.queueOrder.begin(), id);
+    }
+    else
+    {
+        document.queueOrder.push_back(id);
+    }
+    changes.Commit(document.ToJson(), [this, id, order = document.queueOrder](StorageOutcome outcome)
     {
         if (!outcome.succeeded)
         {
@@ -268,7 +280,8 @@ void Engine::State::CommitAddition(std::string const& id)
         }
         auto found = additions.find(id);
         auto& torrent = Install(id, found->second.handle, found->second.facts, found->second.params);
-        queueOrder.push_back(id);
+        queueOrder = order;
+        ApplyQueue();
         torrent.ApplyIntent();
         diagnostics.Write("add", id, "saved");
         auto done = std::move(found->second.done);
