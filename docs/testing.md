@@ -193,6 +193,12 @@ disposable store. These cases do not run unrelated journeys.
 The English 1040-wide case also captures caption hover, pressed and disabled
 visual states in Light and Dark through WinUI's state manager. This checks the
 custom template's appearance, not pointer input or OS High Contrast rendering.
+Use `TINYTORRENT_CAPTURE_REVIEW=footer` to capture filter, selected-torrent error
+and update presentation at fixed window sizes, including their combined state.
+The Paused/All filter changes use the real owner with an idle disposable torrent;
+error and update states are presentation overrides retained through binding
+refresh. The report records their survival and workspace bounds for review,
+not layout assertions. It does not trigger an engine failure or open an update.
 Use `TINYTORRENT_CAPTURE_REVIEW=shell` for the title-bar menus, narrow layouts,
 themes, selection commands, secondary pages and retained filter state.
 It also queries the review window's native `WM_NCHITTEST` response at the app

@@ -16,24 +16,23 @@ public sealed partial class MainWindow
     private readonly UISettings _uiSettings = new();
 
     private void OnTextScaling(UISettings sender, object args) => DispatcherQueue.TryEnqueue(UpdateStatus);
+    private void OnStatusSize(object sender, SizeChangedEventArgs args) => UpdateStatus();
 
     private void UpdateStatus()
     {
         if (StatusBar.ActualWidth <= 0) return;
         var scale = _uiSettings.TextScaleFactor;
         var width = 224 * scale;
-        var narrow = StatusBar.ActualWidth < 960 * scale;
+        var narrow = StatusBar.ActualWidth < 1200 * scale;
         DownloadRate.Width = UploadRate.Width = width;
-        Rates.Orientation = StatusBar.ActualWidth < 2 * width + Rates.Spacing ? Orientation.Vertical : Orientation.Horizontal;
-        Grid.SetColumnSpan(Rates, narrow ? 3 : 1);
-        Grid.SetRow(StatusActions, narrow ? 1 : 0);
-        Grid.SetColumn(StatusActions, narrow ? 0 : 1);
-        Grid.SetColumnSpan(StatusActions, narrow ? 3 : 1);
-        StatusActions.Margin = new Thickness(0, narrow ? 8 : 0, 0, 0);
-        Grid.SetRow(Incoming, narrow ? 2 : 0);
-        Grid.SetColumn(Incoming, narrow ? 0 : 2);
-        Grid.SetColumnSpan(Incoming, narrow ? 3 : 1);
-        Incoming.Margin = new Thickness(0, narrow ? 8 : 0, 0, 0);
+        Rates.Orientation = narrow && 2 * width + Rates.Spacing + StatusActions.ActualWidth + StatusBar.ColumnSpacing > StatusBar.ActualWidth ?
+            Orientation.Vertical : Orientation.Horizontal;
+        Grid.SetColumnSpan(StatusActions, narrow ? 2 : 1);
+        StatusActions.HorizontalAlignment = narrow ? HorizontalAlignment.Right : HorizontalAlignment.Left;
+        Grid.SetRow(StatusContext, narrow ? 1 : 0);
+        Grid.SetColumn(StatusContext, narrow ? 0 : 2);
+        Grid.SetColumnSpan(StatusContext, narrow ? 3 : 1);
+        StatusContext.Margin = new Thickness(0, narrow ? 8 : 0, 0, 0);
         Incoming.TextAlignment = narrow ? TextAlignment.Left : TextAlignment.Right;
     }
 

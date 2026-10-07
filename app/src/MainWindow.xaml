@@ -196,24 +196,35 @@
             <InfoBar Severity="Error" IsClosable="True" CloseButtonClick="OnDismissError"
                 Message="{x:Bind Model.CommandError, Mode=OneWay}" IsOpen="{x:Bind Model.HasCommandError, Mode=OneWay}"
                 Visibility="{x:Bind Model.HasCommandError, Mode=OneWay}" />
+            <InfoBar x:Name="TorrentError" Severity="Error" IsClosable="False" Message="{x:Bind Model.TorrentError, Mode=OneWay}"
+                IsOpen="{x:Bind Model.HasTorrentError, Mode=OneWay}" Visibility="{x:Bind Model.HasTorrentError, Mode=OneWay}" />
         </StackPanel>
         <StackPanel Grid.Row="2" Margin="16,8,16,12" Spacing="4">
-            <TextBlock Text="{x:Bind Model.FilterLabel, Mode=OneWay}" Visibility="{x:Bind Model.HasFilter, Mode=OneWay}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-            <TextBlock x:Name="TorrentError" TextWrapping="Wrap" Text="{x:Bind Model.TorrentError, Mode=OneWay}" Visibility="{x:Bind Model.HasTorrentError, Mode=OneWay}" />
-            <controls:ActionButton Glyph="{x:Bind icons:Lucide.CircleFadingArrowUp}" ToolTipService.ToolTip="{x:Bind Model.Text.Get('about', 'update_tip'), Mode=OneWay}" Text="{x:Bind Model.UpdateText, Mode=OneWay}" Command="{x:Bind Model.OpenUpdate}" Visibility="{x:Bind Model.HasUpdate, Mode=OneWay}" />
             <Grid x:Name="StatusBar" ColumnSpacing="12">
-                <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
                 <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                 <StackPanel x:Name="Rates" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
-                    <TextBlock x:Name="DownloadRate" Text="{x:Bind Model.DownloadText, Mode=OneWay}" />
-                    <TextBlock x:Name="UploadRate" Text="{x:Bind Model.UploadText, Mode=OneWay}" />
+                    <TextBlock x:Name="DownloadRate" Text="{x:Bind Model.DownloadText, Mode=OneWay}" Style="{StaticResource TinyTorrentStatusTextStyle}"
+                        ToolTipService.ToolTip="{x:Bind Model.DownloadText, Mode=OneWay}" IsTextSelectionEnabled="True" />
+                    <TextBlock x:Name="UploadRate" Text="{x:Bind Model.UploadText, Mode=OneWay}" Style="{StaticResource TinyTorrentStatusTextStyle}"
+                        ToolTipService.ToolTip="{x:Bind Model.UploadText, Mode=OneWay}" IsTextSelectionEnabled="True" />
                 </StackPanel>
-                <StackPanel x:Name="StatusActions" Grid.Column="1" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
-                    <TextBlock Text="{x:Bind Model.PausedText, Mode=OneWay}" />
+                <StackPanel x:Name="StatusActions" Grid.Column="1" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center" SizeChanged="OnStatusSize">
                     <ToggleButton x:Name="Alternative" IsChecked="{x:Bind Model.AlternativeLimits, Mode=TwoWay}" IsEnabled="{x:Bind Model.CanEdit, Mode=OneWay}"><TextBlock x:Name="AlternativeText" MaxWidth="160" TextWrapping="Wrap" /></ToggleButton>
                     <ToggleButton Content="{x:Bind Model.ErrorCount, Mode=OneWay}" IsChecked="{x:Bind Model.ErrorsOnly, Mode=TwoWay}" />
                 </StackPanel>
-                <TextBlock x:Name="Incoming" Grid.Column="2" Text="{x:Bind Model.Incoming, Mode=OneWay}" ToolTipService.ToolTip="{x:Bind Model.Incoming, Mode=OneWay}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" TextAlignment="Right" />
+                <Grid x:Name="StatusContext" Grid.Column="2" ColumnSpacing="12" MinHeight="{ThemeResource ContentDialogButtonMinHeight}">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                    <TextBlock x:Name="Incoming" Text="{x:Bind Model.Incoming, Mode=OneWay}" Style="{StaticResource TinyTorrentStatusTextStyle}"
+                        ToolTipService.ToolTip="{x:Bind Model.Incoming, Mode=OneWay}" IsTextSelectionEnabled="True" TextAlignment="Right" />
+                    <TextBlock Grid.Column="1" Text="{x:Bind Model.PausedText, Mode=OneWay}" Style="{StaticResource TinyTorrentStatusTextStyle}"
+                        ToolTipService.ToolTip="{x:Bind Model.PausedText, Mode=OneWay}" IsTextSelectionEnabled="True" />
+                    <TextBlock Grid.Column="2" MaxWidth="160" Text="{x:Bind Model.FilterLabel, Mode=OneWay}" Style="{StaticResource TinyTorrentStatusTextStyle}"
+                        Visibility="{x:Bind Model.HasFilter, Mode=OneWay}" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        ToolTipService.ToolTip="{x:Bind Model.FilterLabel, Mode=OneWay}" IsTextSelectionEnabled="True" />
+                    <controls:ActionButton Grid.Column="3" Glyph="{x:Bind icons:Lucide.CircleFadingArrowUp}" ToolTipService.ToolTip="{x:Bind Model.Text.Get('about', 'update_tip'), Mode=OneWay}"
+                        Text="{x:Bind Model.UpdateText, Mode=OneWay}" Command="{x:Bind Model.OpenUpdate}" Visibility="{x:Bind Model.HasUpdate, Mode=OneWay}" />
+                </Grid>
             </Grid>
         </StackPanel>
         <InfoBar x:Name="CompletionNotice" Grid.Row="1" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="16" MaxWidth="560"

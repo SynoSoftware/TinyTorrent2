@@ -1,5 +1,24 @@
 # Implementation handover — 2026-10-05
 
+## Footer stability checkpoint — 2026-10-06
+
+Destination recovery is committed as `d904615`. The next coherent milestone
+corrects #132's remaining footer reflow: selected-torrent errors use the existing
+overlay, and filter/update state uses the populated status line. All 72 after
+scenes retain table, inspector and footer bounds. All simulated error/update
+states survive, and a fresh captures-only reviewer found no counted footer
+defect across English/Spanish, Light/Dark and the three requested sizes.
+The app's minimum width constrains the 720 request; physical keyboard, Narrator,
+High Contrast and increased text scale are not established by these captures.
+Exact evidence and the successful final Debug build are in
+[morning-report.md](morning-report.md). No source edit followed that build.
+
+Preserve the owner's separate Add, Ctrl+W, Pieces, Speed and engine changes.
+The engine diff is unchanged, so do not repeat FilesSafety/CheckpointRetry for
+this app-only milestone. The release goal remains active, including confirmed
+dependency assertion #140 and the other unverified features. AI-authored issues
+are investigation reports, not owner instructions or approval to restyle screens.
+
 ## Destination recovery checkpoint — 2026-10-06
 
 `ffb3381` committed the native connection announcement correction. This

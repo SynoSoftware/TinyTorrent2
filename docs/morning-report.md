@@ -1,5 +1,62 @@
 # Morning report
 
+## Stable workspace footer — 2026-10-06
+
+Destination recovery is committed as `d904615`; #22 is closed and #136 retains
+its separate metadata/recovery investigation. New GitHub reports remain AI
+hypotheses, not owner requirements.
+
+#132's remaining footer movement is confirmed. Baseline capture
+`artifacts/evidence/UiSelfCapture-75c98876-0543-448e-995b-2b0968daddcc/captures`
+contains 72 scenes across the twelve language/theme/size combinations. The real
+Paused filter adds 23 pixels to the footer in every case: it reduces the short
+inspector's height or moves the larger inspector and reduces the table height.
+Some images also show the selected error and update rows displacing content.
+Live binding refresh overwrote those simulated properties before the recorded
+outcome in all 24 requested error and 24 requested update cases, so their recorded
+bounds do not establish complete simultaneous-state coverage. The production
+filter evidence is unaffected. The correction capture retains those
+presentation overrides through refresh before claiming that coverage.
+
+An initial diagnostic lookup ran before layout and failed without any capture
+(`UiSelfCapture-fa0a3e93-0edb-41b4-a6c0-0cd87e4cb1d6`). Only that disposable UI
+was stopped after its terminal report; its launcher exited the engine normally.
+The corrected baseline completed in 82.45 seconds. Both Debug capture builds
+passed with zero warnings/errors in 41.89 and 40.99 seconds, reusing the two
+libraries (`footer-before.log`, `footer-baseline.log`). All owned processes
+closed and the output-location scan was empty. No production layout had changed.
+
+The correction puts selected-torrent errors in the existing bottom overlay and
+keeps filter status and Update in the status line. One shared status-text style
+owns vertical alignment; existing commands, state and responsive layout remain
+their owners. Narrow and medium windows use two populated footer rows; wide
+windows use one. No accepted title bar, Settings or schedule styling changed.
+
+Final evidence:
+`artifacts/evidence/UiSelfCapture-730cf9db-9ddb-42cb-a2c6-b4626d8d63dd/captures`.
+All 72 scenes completed in 77.22 seconds. Every table, inspector, footer and
+status bound matches its size/theme/language baseline across the six states.
+All 24 requested error and 24 requested update states survived capture. Root
+review and the fresh captures-only adversarial reviewer found no counted footer
+defect in the twelve combined-state images. The selected error overlays some
+bottom inspector content; it does not resize that content. Long text trims under
+the owner ruling, with the existing full-text tooltip and selection routes.
+
+Requested 720x560 is constrained by the current minimum window width (captured
+client widths 837 English and 863 Spanish); this is not evidence at a literal
+720-pixel client width. Physical keyboard, Narrator, High Contrast, increased text
+scale and a 300-torrent session remain unverified by this visual gate. Error and
+update states verify presentation, not an engine failure or update invocation.
+
+The final Debug/x64 capture build passed with zero warnings/errors in 41.37
+seconds (`artifacts/footer-after.log`), compiling the changed app and reusing both
+libraries. No source changed after that build; no redundant build or full suite
+ran. Both disposable processes exited, and the output-location scan was empty.
+The owner's engine diff remains unchanged, so existing FilesSafety and
+CheckpointRetry passes remain applicable. This closes #132's measured reflow
+work, not the broader release goal; confirmed dependency assertion #140 and the
+other recorded verification gaps remain open.
+
 ## Destination recovery and a confirmed Debug assertion — 2026-10-06
 
 #22's engine refusal was reproduced in the Add form. The old presentation

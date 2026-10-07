@@ -126,6 +126,7 @@ internal enum CaptureMode
     Traffic,
     Edits,
     AddLayout,
-    PreferencesLayout
+    PreferencesLayout,
+    Footer
 }
 #endif

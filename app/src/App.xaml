@@ -347,6 +347,10 @@
                 <Setter Property="TextWrapping" Value="NoWrap" />
                 <Setter Property="TextTrimming" Value="CharacterEllipsis" />
             </Style>
+            <Style x:Key="TinyTorrentStatusTextStyle" TargetType="TextBlock" BasedOn="{StaticResource BodyTextStyle}">
+                <Setter Property="TextLineBounds" Value="Tight" />
+                <Setter Property="VerticalAlignment" Value="Center" />
+            </Style>
             <Style x:Key="TitleDetailTextStyle" TargetType="TextBlock" BasedOn="{StaticResource BodyTextBlockStyle}">
                 <Setter Property="TextLineBounds" Value="Tight" />
                 <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />

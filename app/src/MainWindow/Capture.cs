@@ -43,6 +43,7 @@ public sealed partial class MainWindow
         "edits" => CaptureMode.Edits,
         "add-layout" => CaptureMode.AddLayout,
         "preferences-layout" => CaptureMode.PreferencesLayout,
+        "footer" => CaptureMode.Footer,
         _ => CaptureMode.None
     };
     static MainWindow() => IsCaptureReview = ReviewMode != CaptureMode.None;
@@ -144,12 +145,12 @@ public sealed partial class MainWindow
         }
     }
 
-    private static IEnumerable<FrameworkElement> CaptureElements(DependencyObject parent)
+    private static IEnumerable<FrameworkElement> CaptureElements(DependencyObject parent, bool includeCollapsed = false)
     {
-        if (parent is UIElement { Visibility: Visibility.Collapsed }) yield break;
+        if (!includeCollapsed && parent is UIElement { Visibility: Visibility.Collapsed }) yield break;
         if (parent is FrameworkElement element) yield return element;
         for (var index = 0; index < VisualTreeHelper.GetChildrenCount(parent); index++)
-            foreach (var child in CaptureElements(VisualTreeHelper.GetChild(parent, index))) yield return child;
+            foreach (var child in CaptureElements(VisualTreeHelper.GetChild(parent, index), includeCollapsed)) yield return child;
     }
 
     private async Task CaptureLayout()
@@ -652,6 +653,107 @@ public sealed partial class MainWindow
         Model.CloseInspector();
     }
 
+    private async Task CaptureFooter(Torrent target, List<object> outcomes, List<string> completed)
+    {
+        var filter = Model.Filter;
+        var language = Model.Text.Language;
+        var theme = Model.Theme;
+        try
+        {
+            if (!target.IsPaused) throw new InvalidOperationException("The footer fixture must be paused.");
+            Model.Filter = TorrentFilter.All;
+            await ShowTorrents();
+            Torrents.Selection = new Syno.TableView.Selection([target], target);
+            await SelectTorrent();
+            Run(Model.Properties);
+            Model.Inspector.Select(InspectorSection.General);
+            await CaptureReady(Model.Inspector, () => !Model.Inspector.IsLoading);
+            await CaptureLayout();
+            var footer = VisualTreeHelper.GetParent(StatusBar) as Panel ?? throw new InvalidOperationException("The status footer did not load.");
+            var update = CaptureElements(Root, includeCollapsed: true).OfType<Controls.ActionButton>().Single(button => ReferenceEquals(button.Command, Model.OpenUpdate));
+            await CaptureMatrix(async (suffix, _) =>
+            {
+                var error = Model.Text.Format("errors", "torrent", target.Name, Model.Text.Get("errors", "move_failed"));
+                object Bounds(FrameworkElement element)
+                {
+                    var position = element.TransformToVisual(Root).TransformPoint(new Windows.Foundation.Point());
+                    return new { x = position.X, y = position.Y, width = element.ActualWidth, height = element.ActualHeight };
+                }
+                async Task Scene(string state, string scope)
+                {
+                    var name = "footer-" + suffix + "-" + state;
+                    var message = TorrentError.Message;
+                    var visibility = TorrentError.Visibility;
+                    var open = TorrentError.IsOpen;
+                    var updateVisibility = update.Visibility;
+                    var errorRequested = state is "torrent-error" or "combined";
+                    var updateRequested = state is "update" or "combined";
+                    void Present()
+                    {
+                        if (errorRequested)
+                        {
+                            TorrentError.Message = error;
+                            TorrentError.IsOpen = true;
+                            TorrentError.Visibility = Visibility.Visible;
+                        }
+                        if (updateRequested) update.Visibility = Visibility.Visible;
+                    }
+                    PropertyChangedEventHandler changed = (_, _) => Present();
+                    Model.PropertyChanged += changed;
+                    try
+                    {
+                        Present();
+                        await CaptureLayout();
+                        await CaptureUi(name);
+                        var retained = Model.Torrents.Any(torrent => torrent.TorrentId == target.TorrentId) && Model.Inspector.Target?.TorrentId == target.TorrentId;
+                        outcomes.Add(new { journey = name, scope, table = Bounds(Torrents), inspector = Bounds(InspectorContent),
+                            footer = Bounds(footer), status = Bounds(StatusBar), filter = Model.Filter.ToString(), fixtureRetained = retained,
+                            errorVisible = TorrentError.Visibility == Visibility.Visible, errorText = TorrentError.Message, errorOpen = TorrentError.IsOpen,
+                            updateVisible = update.Visibility == Visibility.Visible, errorRequested,
+                            errorRetained = TorrentError.Message == error && TorrentError.IsOpen && TorrentError.Visibility == Visibility.Visible, updateRequested });
+                        completed.Add(name);
+                        if (!retained) throw new InvalidOperationException("The footer capture lost its fixture or inspector target.");
+                    }
+                    finally
+                    {
+                        Model.PropertyChanged -= changed;
+                        TorrentError.Message = message;
+                        TorrentError.Visibility = visibility;
+                        TorrentError.IsOpen = open;
+                        update.Visibility = updateVisibility;
+                        Bindings.Update();
+                    }
+                }
+                try
+                {
+                    await Scene("baseline", "Real paused fixture; no presentation overrides");
+                    Model.Filter = TorrentFilter.Paused;
+                    await Scene("filtered", "Real Paused filter setter");
+                    Model.Filter = TorrentFilter.All;
+                    await Scene("filter-cleared", "Real All filter setter");
+                    await Scene("torrent-error", "Simulated selected-torrent error presentation; no engine command");
+                    await Scene("update", "Simulated update-action visibility; no action invocation");
+                    Model.Filter = TorrentFilter.Paused;
+                    await Scene("combined", "Real Paused filter with simulated torrent-error and update presentation; no engine command or launch");
+                }
+                finally
+                {
+                    Model.Filter = TorrentFilter.All;
+                    Bindings.Update();
+                }
+            });
+        }
+        finally
+        {
+            Model.Filter = filter;
+            Bindings.Update();
+            await Model.Preferences.SelectTheme(theme);
+            await CaptureReady(Model, () => Model.CanClose && Model.Theme == theme);
+            Model.SelectLanguage(language);
+            await CaptureReady(Model, () => Model.CanClose && Model.Text.Language == language);
+        }
+    }
+
     private async Task CaptureDetails(Torrent target, List<object> outcomes)
     {
         var directory = Model.DataDirectory ?? throw new InvalidOperationException("The detail capture has no store.");
@@ -902,6 +1004,11 @@ public sealed partial class MainWindow
                 return;
             }
             var target = Model.Torrents.FirstOrDefault() ?? throw new InvalidOperationException("The review store has no torrent.");
+            if (ReviewMode == CaptureMode.Footer)
+            {
+                await CaptureFooter(target, outcomes, completed);
+                return;
+            }
             if (ReviewMode == CaptureMode.Details)
             {
                 await CaptureDetails(target, outcomes);
