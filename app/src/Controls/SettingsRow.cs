@@ -4,9 +4,7 @@ using Microsoft.UI.Xaml.Controls;
 
 namespace Syno.TinyTorrent.Controls;
 
-// One setting inside a SettingsSection: title and description on the left, the
-// control on the right, and an optional full-width detail below them. The
-// implicit style in PreferencesForm.xaml draws it.
+// PreferencesForm.xaml supplies the shared template for each setting.
 public sealed partial class SettingsRow : ContentControl
 {
     public static readonly DependencyProperty HeaderProperty = Text(nameof(Header));
@@ -51,14 +49,22 @@ public sealed partial class SettingsRow : ContentControl
     // Empty parts collapse, because an empty TextBlock still takes a line.
     private void Update()
     {
-        Show("DescriptionText", Description.Length > 0);
         Show("ErrorText", Error.Length > 0);
         Show("CautionText", Caution.Length > 0);
         Show("DetailPresenter", Detail is not null and not UIElement { Visibility: Visibility.Collapsed });
         // A screen reader on the control also hears the caution, which says
         // what the control's state means.
+        var help = string.Join(" ", new[] { Error, Description, Caution }.Where(text => text.Length > 0));
         if (Content is UIElement control)
-            AutomationProperties.SetHelpText(control, string.Join(" ", new[] { Description, Caution }.Where(text => text.Length > 0)));
+        {
+            AutomationProperties.SetHelpText(control, help);
+            ToolTipService.SetToolTip(control, help);
+        }
+        if (Detail is UIElement detail)
+        {
+            AutomationProperties.SetHelpText(detail, help);
+            ToolTipService.SetToolTip(detail, help);
+        }
     }
 
     private void Show(string part, bool visible)

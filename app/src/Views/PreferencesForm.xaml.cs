@@ -229,6 +229,10 @@ public sealed partial class PreferencesForm : UserControl
     {
         if (sender is NumberBox { Tag: Preference field } number && TextEditor.Find(number) is { } editor && _editors.Add(editor))
         {
+            // NumberBox's focused TextBox does not inherit its HelpText.
+            void ForwardHelp() => AutomationProperties.SetHelpText(editor, AutomationProperties.GetHelpText(number));
+            number.RegisterPropertyChangedCallback(AutomationProperties.HelpTextProperty, (_, _) => ForwardHelp());
+            ForwardHelp();
             Watch(editor);
             editor.TextChanged += (_, _) => { if (number.IsEnabled) field.Input = editor.Text; };
         }

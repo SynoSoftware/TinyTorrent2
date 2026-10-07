@@ -17,18 +17,16 @@
                     <x:Double x:Key="PreferencesMarkOpacity">0</x:Double>
                 </ResourceDictionary>
             </ResourceDictionary.ThemeDictionaries>
-            <Style x:Key="PreferencesHintStyle" TargetType="TextBlock" BasedOn="{StaticResource BodyTextBlockStyle}">
-                <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
-                <Setter Property="TextWrapping" Value="Wrap" />
-            </Style>
-            <Style x:Key="PreferencesErrorStyle" TargetType="TextBlock" BasedOn="{StaticResource BodyTextBlockStyle}">
+            <Style x:Key="PreferencesErrorStyle" TargetType="TextBlock" BasedOn="{StaticResource BodyTextStyle}">
                 <Setter Property="Foreground" Value="{ThemeResource SystemFillColorCriticalBrush}" />
-                <Setter Property="TextWrapping" Value="Wrap" />
+                <Setter Property="IsTextSelectionEnabled" Value="True" />
+                <Setter Property="Margin" Value="0,4,0,0" />
                 <Setter Property="AutomationProperties.LiveSetting" Value="Assertive" />
             </Style>
-            <Style x:Key="PreferencesCautionStyle" TargetType="TextBlock" BasedOn="{StaticResource BodyTextBlockStyle}">
+            <Style x:Key="PreferencesCautionStyle" TargetType="TextBlock" BasedOn="{StaticResource BodyTextStyle}">
                 <Setter Property="Foreground" Value="{ThemeResource SystemFillColorCautionBrush}" />
-                <Setter Property="TextWrapping" Value="Wrap" />
+                <Setter Property="IsTextSelectionEnabled" Value="True" />
+                <Setter Property="Margin" Value="0,4,0,0" />
             </Style>
             <Style x:Key="PreferencesMarkStyle" TargetType="FontIcon">
                 <Setter Property="FontSize" Value="320" />
@@ -51,10 +49,8 @@
                                 <Grid ColumnSpacing="16">
                                     <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                                     <FontIcon Style="{StaticResource GroupIconStyle}" FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{TemplateBinding Glyph}" />
-                                    <StackPanel Grid.Column="1" Spacing="4" VerticalAlignment="Center">
-                                        <TextBlock Text="{TemplateBinding Header}" Style="{StaticResource GroupTitleTextStyle}" AutomationProperties.HeadingLevel="Level2" />
-                                        <TextBlock x:Name="DescriptionText" Text="{TemplateBinding Description}" Style="{StaticResource PreferencesHintStyle}" />
-                                    </StackPanel>
+                                    <TextBlock Grid.Column="1" Text="{TemplateBinding Header}" Style="{StaticResource GroupTitleTextStyle}" AutomationProperties.HeadingLevel="Level2"
+                                        IsTextSelectionEnabled="True" ToolTipService.ToolTip="{TemplateBinding Description}" AutomationProperties.HelpText="{TemplateBinding Description}" />
                                 </Grid>
                                 <ContentPresenter Content="{TemplateBinding Content}" HorizontalContentAlignment="Stretch" />
                             </StackPanel>
@@ -71,16 +67,15 @@
                         <ControlTemplate TargetType="controls:SettingsRow">
                             <Grid ColumnSpacing="16">
                                 <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                                <Grid.RowDefinitions><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
-                                <StackPanel VerticalAlignment="Center" Spacing="2">
-                                    <TextBlock Text="{TemplateBinding Header}" Style="{StaticResource BodyTextBlockStyle}" TextWrapping="Wrap" />
-                                    <TextBlock x:Name="DescriptionText" Text="{TemplateBinding Description}" Style="{StaticResource CaptionTextBlockStyle}"
-                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
-                                    <TextBlock x:Name="ErrorText" Text="{TemplateBinding Error}" Style="{StaticResource PreferencesErrorStyle}" />
-                                    <TextBlock x:Name="CautionText" Text="{TemplateBinding Caution}" Style="{StaticResource PreferencesCautionStyle}" />
-                                </StackPanel>
+                                <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                                <TextBlock Text="{TemplateBinding Header}" Style="{StaticResource BodyTextStyle}" VerticalAlignment="Center"
+                                    IsTextSelectionEnabled="True" ToolTipService.ToolTip="{TemplateBinding Header}" />
                                 <ContentPresenter Grid.Column="1" VerticalAlignment="Center" HorizontalAlignment="Right" Content="{TemplateBinding Content}" />
-                                <ContentPresenter x:Name="DetailPresenter" Grid.Row="1" Grid.ColumnSpan="2" Margin="0,8,0,0" Content="{TemplateBinding Detail}" />
+                                <StackPanel Grid.Row="1" Grid.ColumnSpan="2">
+                                    <TextBlock x:Name="ErrorText" Text="{TemplateBinding Error}" Style="{StaticResource PreferencesErrorStyle}" ToolTipService.ToolTip="{TemplateBinding Error}" />
+                                    <TextBlock x:Name="CautionText" Text="{TemplateBinding Caution}" Style="{StaticResource PreferencesCautionStyle}" ToolTipService.ToolTip="{TemplateBinding Caution}" />
+                                </StackPanel>
+                                <ContentPresenter x:Name="DetailPresenter" Grid.Row="2" Grid.ColumnSpan="2" Margin="0,8,0,0" Content="{TemplateBinding Detail}" />
                             </Grid>
                         </ControlTemplate>
                     </Setter.Value>
@@ -144,26 +139,23 @@
                             </controls:SettingsSection>
                             <controls:SettingsSection x:Name="NotificationsSection" Glyph="{x:Bind icons:Lucide.Bell}">
                                 <StackPanel Spacing="16">
-                                    <controls:SettingsRow Header="{x:Bind Model.ProblemNotifications.Label, Mode=OneWay}" Error="{x:Bind Model.ProblemNotifications.Message, Mode=OneWay}">
+                                    <controls:SettingsRow Header="{x:Bind Model.ProblemNotifications.Label, Mode=OneWay}" Error="{x:Bind Model.ProblemNotifications.Message, Mode=OneWay}" Description="{x:Bind Model.Text.Get('preferences', 'notifications_hint'), Mode=OneWay}">
                                         <ToggleSwitch OnContent="{x:Bind Model.OnText, Mode=OneWay}" OffContent="{x:Bind Model.OffText, Mode=OneWay}" Tag="{x:Bind Model.ProblemNotifications}" IsOn="{x:Bind Model.ProblemNotifications.IsOn, Mode=OneWay}"
-                                            IsEnabled="{x:Bind Model.ProblemNotifications.CanEdit, Mode=OneWay}" Toggled="OnToggle" AutomationProperties.Name="{x:Bind Model.ProblemNotifications.Label, Mode=OneWay}" AutomationProperties.AutomationId="ProblemNotifications"
-                                            ToolTipService.ToolTip="{x:Bind Model.Text.Get('preferences', 'notifications_hint'), Mode=OneWay}" AutomationProperties.HelpText="{x:Bind Model.Text.Get('preferences', 'notifications_hint'), Mode=OneWay}" />
+                                            IsEnabled="{x:Bind Model.ProblemNotifications.CanEdit, Mode=OneWay}" Toggled="OnToggle" AutomationProperties.Name="{x:Bind Model.ProblemNotifications.Label, Mode=OneWay}" AutomationProperties.AutomationId="ProblemNotifications" />
                                     </controls:SettingsRow>
-                                    <controls:SettingsRow Header="{x:Bind Model.FinishedNotifications.Label, Mode=OneWay}" Error="{x:Bind Model.FinishedNotifications.Message, Mode=OneWay}">
+                                    <controls:SettingsRow Header="{x:Bind Model.FinishedNotifications.Label, Mode=OneWay}" Error="{x:Bind Model.FinishedNotifications.Message, Mode=OneWay}" Description="{x:Bind Model.Text.Get('preferences', 'notifications_hint'), Mode=OneWay}">
                                         <ToggleSwitch OnContent="{x:Bind Model.OnText, Mode=OneWay}" OffContent="{x:Bind Model.OffText, Mode=OneWay}" Tag="{x:Bind Model.FinishedNotifications}" IsOn="{x:Bind Model.FinishedNotifications.IsOn, Mode=OneWay}"
-                                            IsEnabled="{x:Bind Model.FinishedNotifications.CanEdit, Mode=OneWay}" Toggled="OnToggle" AutomationProperties.Name="{x:Bind Model.FinishedNotifications.Label, Mode=OneWay}" AutomationProperties.AutomationId="FinishedNotifications"
-                                            ToolTipService.ToolTip="{x:Bind Model.Text.Get('preferences', 'notifications_hint'), Mode=OneWay}" AutomationProperties.HelpText="{x:Bind Model.Text.Get('preferences', 'notifications_hint'), Mode=OneWay}" />
+                                            IsEnabled="{x:Bind Model.FinishedNotifications.CanEdit, Mode=OneWay}" Toggled="OnToggle" AutomationProperties.Name="{x:Bind Model.FinishedNotifications.Label, Mode=OneWay}" AutomationProperties.AutomationId="FinishedNotifications" />
                                     </controls:SettingsRow>
-                                    <controls:SettingsRow Header="{x:Bind Model.AddedNotifications.Label, Mode=OneWay}" Error="{x:Bind Model.AddedNotifications.Message, Mode=OneWay}">
+                                    <controls:SettingsRow Header="{x:Bind Model.AddedNotifications.Label, Mode=OneWay}" Error="{x:Bind Model.AddedNotifications.Message, Mode=OneWay}" Description="{x:Bind Model.Text.Get('preferences', 'notifications_hint'), Mode=OneWay}">
                                         <ToggleSwitch OnContent="{x:Bind Model.OnText, Mode=OneWay}" OffContent="{x:Bind Model.OffText, Mode=OneWay}" Tag="{x:Bind Model.AddedNotifications}" IsOn="{x:Bind Model.AddedNotifications.IsOn, Mode=OneWay}"
-                                            IsEnabled="{x:Bind Model.AddedNotifications.CanEdit, Mode=OneWay}" Toggled="OnToggle" AutomationProperties.Name="{x:Bind Model.AddedNotifications.Label, Mode=OneWay}" AutomationProperties.AutomationId="AddedNotifications"
-                                            ToolTipService.ToolTip="{x:Bind Model.Text.Get('preferences', 'notifications_hint'), Mode=OneWay}" AutomationProperties.HelpText="{x:Bind Model.Text.Get('preferences', 'notifications_hint'), Mode=OneWay}" />
+                                            IsEnabled="{x:Bind Model.AddedNotifications.CanEdit, Mode=OneWay}" Toggled="OnToggle" AutomationProperties.Name="{x:Bind Model.AddedNotifications.Label, Mode=OneWay}" AutomationProperties.AutomationId="AddedNotifications" />
                                     </controls:SettingsRow>
                                 </StackPanel>
                             </controls:SettingsSection>
                             <controls:SettingsSection x:Name="StartupSection" Glyph="{x:Bind icons:Lucide.Rocket}">
                                 <StackPanel Spacing="16">
-                                    <controls:SettingsRow x:Name="SignInRow" Caution="{x:Bind Model.StartupOtherMessage, Mode=OneWay}">
+                                    <controls:SettingsRow x:Name="SignInRow" Caution="{x:Bind Model.StartupOtherMessage, Mode=OneWay}" Error="{x:Bind Model.StartupMessage, Mode=OneWay}">
                                         <ToggleSwitch OnContent="{x:Bind Model.OnText, Mode=OneWay}" OffContent="{x:Bind Model.OffText, Mode=OneWay}" x:Name="Startup" IsOn="{x:Bind Model.Startup, Mode=OneWay}" IsEnabled="{x:Bind Model.CanRegister, Mode=OneWay}" Toggled="OnStartup" AutomationProperties.AutomationId="Startup" />
                                         <controls:SettingsRow.Detail>
                                             <HyperlinkButton x:Name="StartupSettings" Padding="0" Command="{x:Bind Model.OpenStartup}" AutomationProperties.AutomationId="StartupSettings" />
@@ -179,15 +171,14 @@
                                     </controls:SettingsRow>
                                 </StackPanel>
                             </controls:SettingsSection>
-                            <controls:SettingsSection x:Name="DefaultsSection" Glyph="{x:Bind icons:Lucide.Link}" Description="{x:Bind Model.DefaultsMessage, Mode=OneWay}">
+                            <controls:SettingsSection x:Name="DefaultsSection" Glyph="{x:Bind icons:Lucide.Link}">
                                 <StackPanel Spacing="8">
-                                    <controls:SettingsRow x:Name="HandlersRow" Caution="{x:Bind Model.HandlersOtherMessage, Mode=OneWay}">
+                                    <controls:SettingsRow x:Name="HandlersRow" Caution="{x:Bind Model.HandlersOtherMessage, Mode=OneWay}" Error="{x:Bind Model.HandlersMessage, Mode=OneWay}" Description="{x:Bind Model.DefaultsMessage, Mode=OneWay}">
                                         <ToggleSwitch OnContent="{x:Bind Model.OnText, Mode=OneWay}" OffContent="{x:Bind Model.OffText, Mode=OneWay}" x:Name="Handlers" IsOn="{x:Bind Model.HandlersRegistered, Mode=OneWay}" IsEnabled="{x:Bind Model.CanRegister, Mode=OneWay}" Toggled="OnHandlers" AutomationProperties.AutomationId="Handlers" />
                                         <controls:SettingsRow.Detail>
                                             <HyperlinkButton x:Name="OpenDefaults" Padding="0" Command="{x:Bind Model.OpenDefaults}" Visibility="{x:Bind Model.NeedsDefaults, Mode=OneWay}" AutomationProperties.AutomationId="OpenDefaults" />
                                         </controls:SettingsRow.Detail>
                                     </controls:SettingsRow>
-                                    <TextBlock Style="{StaticResource PreferencesErrorStyle}" Text="{x:Bind Model.RegistrationMessage, Mode=OneWay}" Visibility="{x:Bind Model.HasRegistrationError, Mode=OneWay}" />
                                 </StackPanel>
                             </controls:SettingsSection>
                             <controls:SettingsSection x:Name="PowerSection" Glyph="{x:Bind icons:Lucide.BatteryCharging}">

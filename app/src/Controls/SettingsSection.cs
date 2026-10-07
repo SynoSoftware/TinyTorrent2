@@ -3,9 +3,7 @@ using Microsoft.UI.Xaml.Controls;
 
 namespace Syno.TinyTorrent.Controls;
 
-// One LabForms settings section: a card headed by a large icon, a title and a
-// description, holding its SettingsRow content. The implicit style in
-// PreferencesForm.xaml draws it.
+// PreferencesForm.xaml supplies the shared template for each settings group.
 public sealed partial class SettingsSection : ContentControl
 {
     public static readonly DependencyProperty GlyphProperty = Text(nameof(Glyph));
@@ -17,18 +15,5 @@ public sealed partial class SettingsSection : ContentControl
     public string Description { get => (string)GetValue(DescriptionProperty); set => SetValue(DescriptionProperty, value); }
 
     private static DependencyProperty Text(string name) => DependencyProperty.Register(name, typeof(string),
-        typeof(SettingsSection), new PropertyMetadata(string.Empty, (section, _) => ((SettingsSection)section).Update()));
-
-    protected override void OnApplyTemplate()
-    {
-        base.OnApplyTemplate();
-        Update();
-    }
-
-    // An empty TextBlock still takes a line.
-    private void Update()
-    {
-        if (GetTemplateChild("DescriptionText") is UIElement text)
-            text.Visibility = Description.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
-    }
+        typeof(SettingsSection), new PropertyMetadata(string.Empty));
 }

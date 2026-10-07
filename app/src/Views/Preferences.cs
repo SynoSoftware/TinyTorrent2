@@ -13,7 +13,7 @@ public sealed class Preferences : INotifyPropertyChanged
     private readonly MainViewModel _owner;
     private readonly PipeClient _client;
     private JsonElement _registration;
-    private Exception? _registrationError;
+    private (string Operation, Exception Error)? _registrationError;
     private bool _registering;
     private InterfaceChoice? _unavailableInterface;
     public Strings Text => _owner.Text;
@@ -52,8 +52,10 @@ public sealed class Preferences : INotifyPropertyChanged
     public bool CanEdit => _owner.CanEdit;
     internal bool CanSave => _owner.CanSave;
     public bool CanRegister => CanEdit && !_registering;
-    public bool HasRegistrationError => _registrationError is not null;
-    public string RegistrationMessage => _registrationError is null ? string.Empty : Text.Error(_registrationError);
+    private bool HasStartupError => _registrationError?.Operation is "enable_startup" or "disable_startup" or "open_startup";
+    private string RegistrationMessage => _registrationError is { } failure ? Text.Error(failure.Error) : string.Empty;
+    public string StartupMessage => HasStartupError ? RegistrationMessage : string.Empty;
+    public string HandlersMessage => !HasStartupError ? RegistrationMessage : string.Empty;
     public bool HasRegistration => _registration.ValueKind == JsonValueKind.Object;
     // Another TinyTorrent copy's entry is still TinyTorrent's registration, so
     // it counts as on and the Other message names that copy.
@@ -229,11 +231,11 @@ public sealed class Preferences : INotifyPropertyChanged
         _registrationError = null;
         // Every property would also refresh the switches, which would show the
         // state before this change until the engine answers.
-        Changed(nameof(CanRegister), nameof(IsPending), nameof(HasRegistrationError), nameof(RegistrationMessage));
+        Changed(nameof(CanRegister), nameof(IsPending), nameof(StartupMessage), nameof(HandlersMessage));
         try { _registration = await _client.Send("registration", new { operation }); }
         catch (Exception error)
         {
-            _registrationError = error;
+            _registrationError = (operation, error);
             if (error is CommandFailure && operation != "observe")
                 try { _registration = await _client.Send("registration", new { operation = "observe" }); }
                 catch (Exception) { }

@@ -1,5 +1,17 @@
 # Implementation handover — 2026-10-05
 
+## Settings feedback review checkpoint — 2026-10-06
+
+Settings changes now have one row-help owner and one registration
+failure store with operation-specific placement. The native focused NumberBox
+editor receives the same accessibility help. Debug/x64 compilation and the
+48-scene focused journey pass; a fresh visual reviewer found no counted defect.
+The temporary diagnostic is removed. Details and limitations are in
+[morning-report.md](morning-report.md#settings-feedback-ownership-review--2026-10-06).
+The concurrent Settings layout edits have settled and passed the same review;
+the ordinary Debug/x64 build also passes. The combined five-file Settings change
+is one coherent milestone. The release goal and engine safety recheck remain open.
+
 ## General metadata checkpoint — 2026-10-06
 
 Settings validation evidence is committed as `3e77528`. Current captures confirm

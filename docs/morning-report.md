@@ -1,5 +1,43 @@
 # Morning report
 
+## Settings feedback ownership review — 2026-10-06
+
+Reviewed the pending feedback changes against AGENTS.md, naming, comments and
+the existing owners. SettingsRow composes error, description and caution once
+for its controls. Notification hints now use that owner. The concurrent Settings
+pass removed visible descriptions, allowing reuse of Description instead of the
+initial extra HelpText property. NumberBox's native focused TextBox receives the
+same help through its existing editor hookup. Registration keeps one operation
+and exception together; StartupMessage and HandlersMessage derive the correct
+placement without another registration implementation or error store.
+
+The first capture build overlapped concurrent Settings/SpeedGraph edits and
+failed with inconsistent generated XAML and missing legend members. After those
+edits settled, `artifacts/preferences-help-retry.log` records Debug/x64 success
+in 51.31 seconds, zero warnings/errors, and both libraries reused. The focused
+journey completed 48 scenes in 12.77 seconds:
+`artifacts/evidence/UiSelfCapture-60f22e1b-9428-45b5-97b8-e621bdf3c9a8/captures`.
+All twelve language/theme/size variants retain notification hints, expose and
+clear row errors, and expose Port validation on both NumberBox and its focused
+editor. Correcting 70000 to the original value clears the error, retains focus,
+and leaves the confirmed value unchanged. Registration and destination errors
+were presentation overrides; no Windows registration command ran.
+
+Root inspection and a fresh captures-only reviewer found no counted feedback
+defect; the fresh reviewer inspected all 48 images. This is not Narrator,
+physical keyboard, High Contrast or actual registration-failure evidence.
+The minimum requested size remains subject to the accepted window minimum.
+The temporary diagnostic was removed. All launched processes closed, output
+scans were empty, and no suite or engine check ran for this Settings review.
+The concurrent Settings layout changes have settled and are reviewed together
+with the feedback ownership change: explanatory text is available through the
+existing descriptions and tooltips, while visible errors stay beside their
+controls on one line. The ordinary Debug/x64 build passes in 40.31 seconds with
+zero warnings/errors and unchanged libraries reused
+(`artifacts/preferences-help-final.log`). These five Settings files form one
+coherent milestone; unrelated concurrent work stays separate. This review does
+not complete the release goal or renew the historical engine safety passes.
+
 ## General metadata stability — 2026-10-06
 
 #137's General layout concern is confirmed on the current accepted inspector.
