@@ -11,6 +11,9 @@ See [the current audit](morning-report.md#release-acceptance-audit--2026-10-07)
 and [the #140 evidence](morning-report.md#destination-recovery-and-a-confirmed-debug-assertion--2026-10-06)
 before continuing. Do not repeat unchanged captures or the full suite, treat the
 candidate as a fix, or mark the goal complete from the supplied-image gates.
+The subsequent workaround check also reproduces #140 through ordinary individual
+Resume/Pause while Pause all remains active. An Add-only workaround would leave
+that command sequence exposed; no partial workaround is implemented.
 
 ## Open-file safety checkpoint — 2026-10-07
 

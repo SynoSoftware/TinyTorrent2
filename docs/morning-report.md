@@ -754,6 +754,22 @@ compiled or tested, and the dependency checkout remains unchanged. An approved
 dependency correction must pass the paused-magnet reproduction against the
 rebuilt Debug engine and renew affected file-safety evidence before release acceptance.
 
+The owner's workaround question prompted one focused check against the unchanged
+Debug executable: `V:/temp/TinyTorrentPausedIntentCheck.ps1` first adds a paused
+magnet with the session running, then performs Pause all, individual Resume and
+individual Pause. The engine fails at the same `on_tick` assertion in 3.89 seconds;
+stderr is retained in
+`artifacts/evidence/PausedIntent-afc19001-abaa-4187-9c3f-a05326cbae53/stderr.log`.
+The fixture remains globally paused during individual changes, uses no Transfer
+peer, and verifies its own pipe-server PID. The process exits at the assertion;
+the subsequent process and generated-output checks return no results.
+This confirms that recreating a preview through the existing paused-addition
+path would only avoid one caller, leaving ordinary Pause/Resume exposed. No such
+partial workaround is added. Temporarily resuming the session would violate
+Pause all; maintaining a second application pause policy would duplicate the
+existing authority. The dependency correction remains the proposed resolution.
+No product or dependency source changes or builds are needed for this evidence.
+
 #139 is closed as unconfirmed after source review: folder controls follow a new
 file tree, horizontal scrolling follows deliberate viewport/column changes,
 InfoBars have no changing Title caller, and dialog button sets are established
