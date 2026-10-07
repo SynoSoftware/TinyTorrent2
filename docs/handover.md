@@ -2,10 +2,15 @@
 
 ## Release acceptance checkpoint — 2026-10-07
 
-The full release goal is not achieved. #140 is corrected in the libtorrent fork
-at `21aec1be33464f2ea5c01f05c6f7ab25de638f34`, pinned by `Dependencies.ps1`.
-The owner approved the targeted dependency rebuild. Debug's `Pause` check now
-passes magnet addition and individual Resume/Pause while Pause all stays active,
+The full release goal is not achieved. The libtorrent fork and `Dependencies.ps1`
+now select `a84871f1e8d50472232e242db9bf4881367fd58e`. The
+[pause path review](morning-report.md#pause-path-review--2026-10-07) corrects
+additional bookkeeping, graceful-pause and updater recovery issues. The owner
+requested source review only: these follow-up changes are not built or tested.
+
+The earlier #140 correction at `21aec1b` has the approved rebuild evidence:
+Debug's `Pause` check passes magnet addition and individual Resume/Pause while
+Pause all stays active,
 including persisted intent at restart. Release's FilesSafety and CheckpointRetry
 checks also pass against the rebuilt engine. See the
 [correction evidence](morning-report.md#pause-correction--2026-10-07).

@@ -1,5 +1,38 @@
 # Morning report
 
+## Pause path review — 2026-10-07
+
+Source review of `f8916c4` and its libtorrent correction traced individual
+Pause/Resume/Force, session policy, preview promotion, restoration, queue
+auto-management, errors, file-operation pauses, graceful disconnect completion,
+removal/abort and shutdown. A separate updater review traced fresh checkout,
+matching pins, source changes, recursive submodules, interruption and retry.
+
+Four findings are corrected:
+
+- A torrent's own pause flag also controls scrape membership and statistics.
+  Both unchanged-effective-pause paths now refresh their affected bookkeeping
+  and publish state changes, alongside the original tick-list correction.
+- Graceful completion could overwrite Resume/Force during Pause all; Resume all
+  before the final peer disconnected could instead leave graceful mode active
+  and assert. Completion now retains the individual flag through the existing
+  pause-transition owner, and effective resume clears graceful mode.
+- An interrupted submodule update could be refused as dirty or skipped on retry
+  when the parent already matched. The updater distinguishes actual edits from
+  clean child revision differences and always completes requested submodule
+  synchronization. Staged gitlink changes and nested source edits are refused.
+- Perl and NASM records omitted archive hashes, so checksum-only changes were
+  skipped. Their pins now include the hashes; the next owner-run update refreshes
+  those two legacy tool records once. This alone does not rebuild native libraries.
+
+The pause changes are saved in
+[fork commit a84871f](https://github.com/SynoSoftware/libtorrent/commit/a84871f1e8d50472232e242db9bf4881367fd58e),
+and `Dependencies.ps1` pins that revision. Follow-up source review found no
+remaining defect in the corrected paths. No compilation, test, application
+launch or dependency update ran for this review, as requested. Installed
+libraries and the earlier runtime evidence below still describe `21aec1b`;
+the new corrections have source-review evidence only.
+
 ## Pause correction — 2026-10-07
 
 The owner authorized the libtorrent correction and explicitly approved running

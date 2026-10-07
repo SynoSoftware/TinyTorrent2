@@ -15,7 +15,7 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
 $libtorrentUrl = 'https://github.com/SynoSoftware/libtorrent.git'
-$libtorrentCommit = '21aec1be33464f2ea5c01f05c6f7ab25de638f34'
+$libtorrentCommit = 'a84871f1e8d50472232e242db9bf4881367fd58e'
 $opensslTag = 'openssl-3.6.4'
 $boostTag = 'boost-1.92.0'
 $jsonTag = 'v3.12.0'
@@ -85,11 +85,23 @@ function Save-Archive([string] $url, [string] $sha256) {
 function Sync-Checkout([string] $name, [string] $url, [string] $revision, [switch] $Submodules) {
     $directory = Join-Path $root $name
     $checkout = $directory
+    $atRevision = $false
     if (Test-Path $directory) {
-        if (git -C $directory status --porcelain) { throw "$directory has uncommitted changes." }
+        # A failed submodule update can leave clean children at their previous
+        # revisions. Refuse source edits, but allow those checkouts to catch up.
+        $changes = @(git -C $directory status --porcelain --ignore-submodules=all)
+        if ($LASTEXITCODE -ne 0) { throw "Cannot inspect $directory." }
+        $changes += @(git -C $directory diff --cached --name-only --ignore-submodules=none)
+        if ($LASTEXITCODE -ne 0) { throw "Cannot inspect staged changes in $directory." }
+        if ($Submodules) {
+            $changes += @(git -C $directory submodule foreach --quiet --recursive `
+                'git status --porcelain --ignore-submodules=all && git diff --cached --name-only --ignore-submodules=none')
+            if ($LASTEXITCODE -ne 0) { throw "Cannot inspect submodules in $directory." }
+        }
+        if ($changes) { throw "$directory has uncommitted changes." }
         Invoke-Native git -C $directory remote set-url origin $url
         $commit = git -C $directory rev-parse --verify --quiet "$revision^{commit}"
-        if ($LASTEXITCODE -eq 0 -and (git -C $directory rev-parse HEAD) -eq $commit) { return }
+        $atRevision = $LASTEXITCODE -eq 0 -and (git -C $directory rev-parse HEAD) -eq $commit
     }
     else {
         # Prepared separately and moved when complete, so an interrupted fetch
@@ -98,9 +110,14 @@ function Sync-Checkout([string] $name, [string] $url, [string] $revision, [switc
         Invoke-Native git init --quiet $checkout
         Invoke-Native git -C $checkout remote add origin $url
     }
-    Invoke-Native git -C $checkout fetch --quiet --depth 1 origin $revision
-    Invoke-Native git -C $checkout checkout --quiet --detach FETCH_HEAD
-    if ($Submodules) { Invoke-Native git -C $checkout submodule update --quiet --init --recursive --depth 1 }
+    if (-not $atRevision) {
+        Invoke-Native git -C $checkout fetch --quiet --depth 1 origin $revision
+        Invoke-Native git -C $checkout checkout --quiet --detach FETCH_HEAD
+    }
+    if ($Submodules) {
+        Invoke-Native git -C $checkout submodule sync --quiet --recursive
+        Invoke-Native git -C $checkout submodule update --quiet --init --recursive --depth 1
+    }
     if ($checkout -ne $directory) { Move-Item $checkout $directory }
 }
 
@@ -142,7 +159,7 @@ $ninja = Join-Path $visualStudio 'Common7\IDE\CommonExtensions\Microsoft\CMake\N
 # OpenSSL's Configure finds NASM on the path.
 $env:PATH = (Join-Path $tools 'nasm') + ';' + $env:PATH
 
-Invoke-Step 'perl' $perlUrl {
+Invoke-Step 'perl' "$perlUrl $perlSha256" {
     $extracted = Save-Archive $perlUrl $perlSha256
     $directory = Join-Path $tools 'perl'
     Remove-Item $directory -Recurse -Force -ErrorAction SilentlyContinue
@@ -150,7 +167,7 @@ Invoke-Step 'perl' $perlUrl {
     Move-Item (Join-Path $extracted 'perl\bin'), (Join-Path $extracted 'perl\lib'), (Join-Path $extracted 'licenses') $directory
 }
 
-Invoke-Step 'nasm' $nasmUrl {
+Invoke-Step 'nasm' "$nasmUrl $nasmSha256" {
     $extracted = Save-Archive $nasmUrl $nasmSha256
     $directory = Join-Path $tools 'nasm'
     Remove-Item $directory -Recurse -Force -ErrorAction SilentlyContinue
