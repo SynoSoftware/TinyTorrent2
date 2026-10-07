@@ -1,5 +1,39 @@
 # Morning report
 
+## Open-file Move and Delete safety — 2026-10-07
+
+The focused current Debug-engine journey passes in 3.26 seconds:
+`artifacts/evidence/FileFailure-0ed54747-c5cf-43b3-8ca9-19090eebbcf4/result.json`.
+Its retained `check.ps1` reuses the existing engine-check helpers and verifies
+the pipe server's process identity before commanding its disposable store.
+The payload and unrelated sentinel have known SHA-256 hashes; no Transfer peer,
+owner data or desktop automation is involved.
+
+A read handle without delete sharing makes Move fail with `move_failed`.
+The saved source, membership, paused intent and unresolved destination remain,
+and both files are unchanged. Explicit Use the files there at the actual source
+clears the marker. An ordinary retry and restart leave exactly one unchanged
+payload at the destination and preserve the unrelated source file. Paused hashing
+retains its saved verification requirement rather than claiming checked pieces.
+
+Holding the moved file makes Delete fail after membership removal commits.
+The engine records one deletion failure and one failure notice, while the locked
+payload and unrelated bytes survive. After unlocking and restarting, membership
+stays empty, the payload remains and the deletion outcome is not replayed.
+This establishes diagnostic notice generation, not Windows notification delivery.
+
+The first probe, `FileFailure-da1328fd-4d60-48fa-8ed9-2a37fd089e2d`, stops after
+successful move recovery because it incorrectly requires hashing to finish while
+the torrent and session are paused. The corrected probe checks the saved
+verification guard instead, as the current intent owner and libtorrent require;
+byte, identity, path and restart checks remain. No product fix is needed.
+
+Every owned engine exits normally; the process audit and documented Everything
+generated-output query return no results. Product code is unchanged, so no build,
+FilesSafety/CheckpointRetry rerun, capture gate or full suite is justified.
+Cross-volume/device failures, native picker and notification delivery, and the
+confirmed paused-magnet dependency assertion #140 remain open release evidence.
+
 ## Latest diff review and Add disclosure — 2026-10-07
 
 Reviewed `aece8ae` and `d77471d` against AGENTS, naming, comments and the

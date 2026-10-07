@@ -1,5 +1,17 @@
 # Implementation handover — 2026-10-05
 
+## Open-file safety checkpoint — 2026-10-07
+
+The current Debug engine passes the disposable locked-file Move/Delete journey.
+Move retains bytes and unresolved recovery state; explicit recovery and retry
+leave one unchanged payload after restart. Failed Delete preserves locked bytes
+without restoring membership or replaying deletion after restart. Paused hashing
+keeps its saved verification requirement. No product change or build is needed.
+See [morning-report.md](morning-report.md#open-file-move-and-delete-safety--2026-10-07)
+for exact evidence, the corrected probe expectation and remaining release gaps.
+This closes the open-file failure check, not cross-volume/device or native
+Windows checks. The broader release goal remains active.
+
 ## Latest diff review checkpoint — 2026-10-07
 
 The ownership review of `aece8ae` and `d77471d` keeps their existing command,
