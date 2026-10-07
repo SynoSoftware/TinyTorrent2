@@ -1,5 +1,21 @@
 # Implementation handover — 2026-10-05
 
+## Settings validation checkpoint — 2026-10-06
+
+Metadata investigation is committed as `cb0588e`. The port-validation part of
+AI report #134 passes in all twelve language/theme/size variants: rejected input
+stays visible and focused, the confirmed value does not change, and correcting
+the native editor clears the error. A fresh captures-only reviewer found zero
+counted defects in the 36 baseline/invalid/corrected scenes. The modest row
+expansion provides readable field feedback; preserve the accepted Settings UI.
+The temporary diagnostic was removed, with no product change retained.
+
+Exact evidence and limits are in [morning-report.md](morning-report.md). Other
+refusal states still require evidence before changes. The owner's separate work
+is preserved, engine safety evidence remains current, and all launched processes
+are closed. GitHub publication approval remains unresolved; local dispositions
+are not claims that the issues were updated. The release goal remains active.
+
 ## Metadata investigation checkpoint — 2026-10-06
 
 File dialogs are committed as `4d72ba2`; #133 is closed. #136's proposed metadata

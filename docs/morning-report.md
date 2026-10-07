@@ -1,5 +1,61 @@
 # Morning report
 
+## Settings port validation investigation — 2026-10-06
+
+The port-validation claim in AI report #134 does not justify a UI change.
+Evidence: `artifacts/evidence/UiSelfCapture-ca4f1446-b968-474e-84d8-84995a700d27/captures`.
+All 36 baseline/invalid/corrected scenes completed in 46.47 seconds across
+English/Spanish, Light/Dark and the three requested sizes. Editing the native
+NumberBox text to 70000 reaches the existing preference owner; its canonical
+Commit rejects it without changing the confirmed 6881 or starting a save.
+Input and focus remain, and correcting the editor clears the error and draft.
+
+The root reviewed the invalid states through the requested user/design roles;
+a fresh captures-only reviewer examined all 36 scenes and found zero counted
+defects. The localized correction is readable beside the active field. Its
+modest row expansion is useful field feedback, not a reason to redesign the
+accepted cards. At the minimum window size, subsequent content continues below
+the scrollable viewport; the active field and correction remain visible.
+
+Requested 720 uses the existing minimum window width (837 English / 863 Spanish
+client pixels), not a literal 720-pixel client. This verifies native text binding,
+validation and focus state, not physical keystrokes, scrolling, Narrator or High
+Contrast. Other #134 refusal states remain investigations. The temporary capture
+mode was removed and no product change retained; no second build is warranted.
+
+The opt-in Debug/x64 build passed in 42.88 seconds with zero warnings/errors,
+reusing both libraries (`artifacts/preferences-feedback-baseline.log`). All
+launched processes closed and the generated-output scan was empty. Engine code
+did not change; the existing safety passes remain current. No full suite ran.
+Owner changes remain separate, and the broader release goal is still active.
+
+## Remaining work assessed against current evidence — 2026-10-06
+
+- #113: the existing attached-table library run verifies filtering to zero and
+  restoring all 300 torrents with the requested selection revealed. Current
+  Project publishes one completed array, Source.SetSource captures it once, and
+  SnapshotApplied skips a second refresh after publication. No additional
+  instrumentation or repeated run is justified without a measured stall;
+  dispatcher timings and rebuild counts are not claimed.
+- #125: current ViewOrder bypasses settling for DefinesRowOrder, and the queue
+  column sets it. Both menu moves and dragging use the same queue command and
+  request a snapshot. The separate live-value settling path remains intact.
+  Source review finds no likely remaining failure that warrants a new timing
+  check; the specific two-moves-in-one-second comparison remains unmeasured.
+- #121: remaining mechanical translation assignments are cleanup, not a current
+  user-visible failure. They do not justify broadening release work or rewriting
+  accepted screens without a broken live-language route.
+- #138: editor/selection/Expander transitions are deliberate; the existing
+  rejected-save captures already passed correction review. Preserve that
+  behavior. Enabled-state refusal and longer live text remain investigation
+  candidates, not approved layout changes.
+
+The library evidence is
+`artifacts/evidence/LibraryCapture-88080534-8c7b-4f9e-843d-cc7bf429e73e`;
+its report was reread, including the actual native filter and reveal outcomes.
+No new build or test was run for these assessments. GitHub dispositions are
+unchanged while publication approval is unresolved.
+
 ## Add metadata investigation — 2026-10-06
 
 File-dialog milestone `4d72ba2` is committed and #133 is closed. The remaining
