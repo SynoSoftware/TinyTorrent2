@@ -1,5 +1,27 @@
 # Morning report
 
+## Release acceptance audit — 2026-10-07
+
+The full release goal is not achieved. The current milestone requirements remain
+those in [the architecture plan](architecture.md#first-implementation), with
+their implementation checkpoints and open evidence in
+[the handover table](handover.md#plan-status). The Add correction and overlapping
+Settings reports still have no failure; their capture reviews establish the
+recorded layouts, not native Windows interaction or complete feature behavior.
+Current open-file and cross-volume results each retain five completed outcomes
+with no failure or cleanup error. Engine sources are unchanged since `aece8ae`,
+so the final FilesSafety and CheckpointRetry evidence remains applicable.
+
+Release acceptance is blocked by confirmed #140. The current Debug executable
+still has the same SHA-256 as the failing paused-magnet reproduction below.
+Fixing it requires a dependency change and rebuild, which the owner prohibits.
+No application pause workaround or assertion suppression is an acceptable fix.
+Windows notification, sleep/logon, caption/input/accessibility and picker checks
+remain unverified; current live-transfer evidence also remains incomplete, and
+Transfer checks require the owner's explicit request. Repeating unchanged
+captures or the full suite cannot resolve these gaps. No product edit, build,
+app launch or runtime test is performed for this audit.
+
 ## Open-file Move and Delete safety — 2026-10-07
 
 The focused current Debug-engine journey passes in 3.26 seconds:
@@ -720,6 +742,17 @@ normal Exit. They do not prove later transfer behavior. The disposable script is
 folder. Dependencies stay untouched under the owner's ruling. No app pause
 workaround or assertion suppression was added. UI correction captures use a
 running session with individually paused torrents; they do not claim #140 fixed.
+
+Read-only inspection confirms a clean `v2.1.2` dependency checkout at
+`6da363d2994f17c0b3c0450d124cf73a31a73847`. An unapplied candidate is retained at
+`artifacts/evidence/PauseInvariant-f7faea9c-cdfa-484a-9812-b8ad95c35b26/candidate.patch`.
+It calls the existing `update_want_tick()` before the unchanged-effective-pause
+early return, because `want_tick()` depends on the changed per-torrent flag.
+`git apply --check` passes against an identical disposable source copy outside
+`3rdParty`; this verifies patch context only. The candidate has not been applied,
+compiled or tested, and the dependency checkout remains unchanged. An approved
+dependency correction must pass the paused-magnet reproduction against the
+rebuilt Debug engine and renew affected file-safety evidence before release acceptance.
 
 #139 is closed as unconfirmed after source review: folder controls follow a new
 file tree, horizontal scrolling follows deliberate viewport/column changes,

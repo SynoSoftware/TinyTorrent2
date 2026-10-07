@@ -1,5 +1,17 @@
 # Implementation handover — 2026-10-05
 
+## Release acceptance checkpoint — 2026-10-07
+
+The full release goal is not achieved. Confirmed #140 still affects the unchanged
+Debug engine; an unapplied dependency candidate passes a context check against
+a disposable source copy, not a runtime check. The dependency-edit/rebuild
+restriction prevents completing that correction. Native Windows and current
+live-transfer evidence also remains incomplete as listed in [Plan status](#plan-status).
+See [the current audit](morning-report.md#release-acceptance-audit--2026-10-07)
+and [the #140 evidence](morning-report.md#destination-recovery-and-a-confirmed-debug-assertion--2026-10-06)
+before continuing. Do not repeat unchanged captures or the full suite, treat the
+candidate as a fix, or mark the goal complete from the supplied-image gates.
+
 ## Open-file safety checkpoint — 2026-10-07
 
 The current Debug engine passes the disposable locked-file Move/Delete journey.
