@@ -2,18 +2,16 @@
 
 ## Release acceptance checkpoint — 2026-10-07
 
-The full release goal is not achieved. Confirmed #140 still affects the unchanged
-Debug engine; an unapplied dependency candidate passes a context check against
-a disposable source copy, not a runtime check. The dependency-edit/rebuild
-restriction prevents completing that correction. Native Windows and current
-live-transfer evidence also remains incomplete as listed in [Plan status](#plan-status).
-See [the current audit](morning-report.md#release-acceptance-audit--2026-10-07)
-and [the #140 evidence](morning-report.md#destination-recovery-and-a-confirmed-debug-assertion--2026-10-06)
-before continuing. Do not repeat unchanged captures or the full suite, treat the
-candidate as a fix, or mark the goal complete from the supplied-image gates.
-The subsequent workaround check also reproduces #140 through ordinary individual
-Resume/Pause while Pause all remains active. An Add-only workaround would leave
-that command sequence exposed; no partial workaround is implemented.
+The full release goal is not achieved. #140 is corrected in the libtorrent fork
+at `21aec1be33464f2ea5c01f05c6f7ab25de638f34`, pinned by `Dependencies.ps1`.
+The owner approved the targeted dependency rebuild. Debug's `Pause` check now
+passes magnet addition and individual Resume/Pause while Pause all stays active,
+including persisted intent at restart. Release's FilesSafety and CheckpointRetry
+checks also pass against the rebuilt engine. See the
+[correction evidence](morning-report.md#pause-correction--2026-10-07).
+Native Windows and current live-transfer evidence remains incomplete as listed in
+[Plan status](#plan-status); this correction does not establish full release
+acceptance. Do not repeat unchanged captures or the full suite.
 
 ## Open-file safety checkpoint — 2026-10-07
 

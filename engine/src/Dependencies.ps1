@@ -1,5 +1,5 @@
 # Creates 3rdParty at the repository root: the engine's dependencies as git
-# checkouts at the pinned tags below, the build tools that Visual Studio lacks,
+# checkouts at the pinned revisions below, the build tools that Visual Studio lacks,
 # and the static libraries and headers the engine builds against. The
 # arrangement and its reasons are in docs/architecture.md, "Third-party
 # dependencies".
@@ -14,7 +14,8 @@ param([switch] $Update)
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
-$libtorrentTag = 'v2.1.2'
+$libtorrentUrl = 'https://github.com/SynoSoftware/libtorrent.git'
+$libtorrentCommit = '21aec1be33464f2ea5c01f05c6f7ab25de638f34'
 $opensslTag = 'openssl-3.6.4'
 $boostTag = 'boost-1.92.0'
 $jsonTag = 'v3.12.0'
@@ -81,21 +82,26 @@ function Save-Archive([string] $url, [string] $sha256) {
     return $extracted
 }
 
-function Sync-Checkout([string] $name, [string] $url, [string] $tag, [switch] $Submodules) {
+function Sync-Checkout([string] $name, [string] $url, [string] $revision, [switch] $Submodules) {
     $directory = Join-Path $root $name
-    $recursion = @(if ($Submodules) { '--recurse-submodules', '--shallow-submodules' })
-    if (-not (Test-Path $directory)) {
-        # Cloned beside the target and moved when complete, so an interrupted
-        # clone never stands in for a checkout.
-        $partial = Join-Path $build $name
-        Invoke-Native git -c advice.detachedHead=false clone --quiet --depth 1 --branch $tag @recursion $url $partial
-        Move-Item $partial $directory
-        return
+    $checkout = $directory
+    if (Test-Path $directory) {
+        if (git -C $directory status --porcelain) { throw "$directory has uncommitted changes." }
+        Invoke-Native git -C $directory remote set-url origin $url
+        $commit = git -C $directory rev-parse --verify --quiet "$revision^{commit}"
+        if ($LASTEXITCODE -eq 0 -and (git -C $directory rev-parse HEAD) -eq $commit) { return }
     }
-    if ((git -C $directory tag --points-at HEAD) -contains $tag) { return }
-    Invoke-Native git -C $directory fetch --quiet --depth 1 origin tag $tag
-    Invoke-Native git -C $directory checkout --quiet $tag
-    if ($Submodules) { Invoke-Native git -C $directory submodule update --quiet --init --recursive --depth 1 }
+    else {
+        # Prepared separately and moved when complete, so an interrupted fetch
+        # never stands in for a checkout.
+        $checkout = Join-Path $build $name
+        Invoke-Native git init --quiet $checkout
+        Invoke-Native git -C $checkout remote add origin $url
+    }
+    Invoke-Native git -C $checkout fetch --quiet --depth 1 origin $revision
+    Invoke-Native git -C $checkout checkout --quiet --detach FETCH_HEAD
+    if ($Submodules) { Invoke-Native git -C $checkout submodule update --quiet --init --recursive --depth 1 }
+    if ($checkout -ne $directory) { Move-Item $checkout $directory }
 }
 
 # Writes libtorrent's public compile definitions for one configuration, from
@@ -192,8 +198,8 @@ Invoke-Step 'openssl' $opensslPin {
 
 # libtorrent compiles against OpenSSL's and Boost's headers, so their pins are
 # part of its record and changing them rebuilds it.
-Invoke-Step 'libtorrent' "$libtorrentTag $libtorrentOptions; $opensslPin; $boostTag" {
-    Sync-Checkout 'libtorrent' 'https://github.com/arvidn/libtorrent.git' $libtorrentTag -Submodules
+Invoke-Step 'libtorrent' "$libtorrentUrl $libtorrentCommit $libtorrentOptions; $opensslPin; $boostTag" {
+    Sync-Checkout 'libtorrent' $libtorrentUrl $libtorrentCommit -Submodules
     foreach ($configuration in $configurations) {
         $prefix = Join-Path $root $configuration
         $directory = Join-Path $build "libtorrent-$configuration"

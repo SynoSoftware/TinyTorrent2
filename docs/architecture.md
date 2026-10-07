@@ -277,7 +277,7 @@ deletes every installed library and compiles Boost, OpenSSL and libtorrent again
 in the middle of an ordinary build. This happened and destroyed the installed
 libraries.
 
-The engine's dependencies are therefore git checkouts at pinned tags. They are
+The engine's dependencies are therefore git checkouts at pinned revisions. They are
 compiled once and are never downloaded or compiled again until someone changes a
 pin. [Dependencies.ps1](../engine/src/Dependencies.ps1) owns the pins and creates
 `3rdParty/` at the repository root:
@@ -300,6 +300,14 @@ update. The libraries are compiled without `/GL`, because a library compiled wit
 `/GL` refuses to link after a compiler update and a library compiled without it
 links with every later compiler.
 
+libtorrent uses the [SynoSoftware fork](https://github.com/SynoSoftware/libtorrent),
+pinned to an exact commit in `Dependencies.ps1`. The fork owns the pause tick-list
+correction; `3rdParty/libtorrent` is its local Git checkout and stays ignored by
+TinyTorrent. Commit source changes in the fork, merge upstream updates there,
+verify the resulting revision, then update TinyTorrent's pin. This preserves the
+correction through updates without copied source or a separately applied patch.
+Return to upstream when a verified upstream revision includes the correction.
+
 The engine takes libtorrent's compile definitions from the libtorrent build in
 `3rdParty/` instead of keeping its own list. A definition that differs from the
 library's changes libtorrent's types under the engine and corrupts memory at
@@ -307,7 +315,7 @@ runtime with no build error.
 
 To change a pinned version:
 
-1. Change the tag, the build options, or a tool's URL and SHA-256 in
+1. Change the source revision, the build options, or a tool's URL and SHA-256 in
    `Dependencies.ps1`.
 2. Run `powershell -ExecutionPolicy Bypass -File engine\src\Dependencies.ps1 -Update`.
    It fetches the new version and rebuilds that library and every library built

@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory)]
-    [ValidateSet('Frames', 'FailedCommit', 'CheckpointRetry', 'Restart', 'DiskError', 'PreviewGuard', 'RemoveKeepFiles', 'QueueOrder', 'SelectedTransfer', 'MagnetDownload', 'SettingsPolicy', 'CommittedFiles', 'FilesSafety', 'FileNames')]
+    [ValidateSet('Frames', 'FailedCommit', 'CheckpointRetry', 'Restart', 'DiskError', 'PreviewGuard', 'RemoveKeepFiles', 'QueueOrder', 'SelectedTransfer', 'MagnetDownload', 'SettingsPolicy', 'CommittedFiles', 'FilesSafety', 'FileNames', 'Pause')]
     [string] $Check,
     [Parameter(Mandatory)]
     [string] $TorrentFile,
@@ -162,6 +162,44 @@ function Payload-Hash([string] $path) {
 try {
     $initial = Start-Engine
     switch ($Check) {
+        'Pause' {
+            $reply = Send-Command @{ command = 'session_pause'; paused = $true }
+            Assert $reply.ok 'Pause all was refused'
+            $preview = Send-Command @{ command = 'preview'; source = 'magnet:?xt=urn:btih:0123456789012345678901234567890123456789'; destination = $payload }
+            Assert $preview.ok 'The paused-session magnet did not preview'
+            $reply = Send-Command @{ command = 'add'; preview_id = $preview.data.preview_id; destination = $payload; paused = $true }
+            Assert $reply.ok 'The paused-session magnet could not be added'
+            $torrentId = $reply.data.torrent_id
+            foreach ($changeIntent in $false, $true) {
+                if ($changeIntent) {
+                    $reply = Send-Command @{ command = 'resume'; torrent_ids = @($torrentId) }
+                    Assert $reply.ok 'Individual Resume was refused while all paused'
+                    $snapshot = (Send-Command @{ command = 'snapshot' }).data
+                    Assert ($snapshot.all_paused -and -not $snapshot.torrents[0].paused) 'Individual Resume changed Pause all or lost its intent'
+                    $reply = Send-Command @{ command = 'pause'; torrent_ids = @($torrentId) }
+                    Assert $reply.ok 'Individual Pause was refused while all paused'
+                }
+                # The stale libtorrent tick list asserts on the next one-second tick.
+                $until = [DateTime]::UtcNow.AddSeconds(3)
+                do {
+                    $snapshot = (Send-Command @{ command = 'snapshot' }).data
+                    Assert ($snapshot.all_paused -and $snapshot.torrents.Count -eq 1 -and
+                        $snapshot.torrents[0].torrent_id -eq $torrentId -and $snapshot.torrents[0].paused) `
+                        'Pause all lost the accepted magnet or its individual paused intent'
+                    Start-Sleep -Milliseconds 100
+                } while ([DateTime]::UtcNow -lt $until)
+            }
+            Stop-Engine
+            $snapshot = Start-Engine
+            Assert ($snapshot.all_paused -and $snapshot.torrents.Count -eq 1 -and
+                $snapshot.torrents[0].torrent_id -eq $torrentId -and $snapshot.torrents[0].paused) `
+                'Restart lost the magnet or either paused intent'
+            $reply = Send-Command @{ command = 'session_pause'; paused = $false }
+            Assert $reply.ok 'Resume all was refused'
+            $snapshot = (Send-Command @{ command = 'snapshot' }).data
+            Assert (-not $snapshot.all_paused -and $snapshot.torrents[0].paused) 'Resume all changed individual paused intent'
+            Assert (@(Get-ChildItem -LiteralPath $payload -Recurse -File).Count -eq 0) 'The paused magnet created payload'
+        }
         'FileNames' {
             $content = [Text.Encoding]::ASCII.GetBytes(('x' * 2048))
             $digest = [Security.Cryptography.SHA1]::HashData($content)

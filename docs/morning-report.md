@@ -1,5 +1,54 @@
 # Morning report
 
+## Pause correction — 2026-10-07
+
+The owner authorized the libtorrent correction and explicitly approved running
+`Dependencies.ps1 -Update` for its Debug and Release rebuild. The correction is
+saved in [SynoSoftware/libtorrent commit 21aec1b](https://github.com/SynoSoftware/libtorrent/commit/21aec1be33464f2ea5c01f05c6f7ab25de638f34)
+and applied in the existing ignored checkout. `Dependencies.ps1` pins that exact
+commit and fork URL; it accepts both commit and tag revisions and refuses an
+uncommitted checkout. No separate patch file is required to reproduce the fix.
+
+The current baseline reproduces the `session_impl.cpp:3754`, `t.want_tick()`
+assertion in `artifacts/evidence/MagnetAssertion-0caa239c-0eb3-44ca-a805-7febcb68882e`.
+The temporary probe explicitly selects protocol 3 for that existing binary;
+the current source and tracked checks use protocol 4. The earlier attempt
+stopped at that handshake mismatch and does not establish pause behavior.
+
+The new `Pause` check exercises magnet addition during Pause all and individual
+Resume/Pause while the session stays paused. It also checks restart persistence,
+Resume all retaining individual paused intent, and absence of payload files.
+This watches the confirmed engine crash that the previous checks did not cover.
+
+The correction passes all focused checks:
+
+- Debug `Pause`: `artifacts/evidence/Pause-83a3dd88-c8bc-46ce-b219-a8ee8c1aaed4`.
+- Original paused-magnet probe: `artifacts/evidence/MagnetAssertion-1eea6147-fb41-4d3c-babc-bf516d62123b`.
+- Original individual Resume/Pause probe: `artifacts/evidence/PausedIntent-23dc1fbe-d852-44ff-933f-675aa016ab9f`.
+- Release FilesSafety: `artifacts/evidence/FilesSafety-d7fa5fbd-79e7-48c3-8055-84319919d373`.
+- Release CheckpointRetry: `artifacts/evidence/CheckpointRetry-dcaba265-0412-47f9-aeb5-3e173c5ae2f4`.
+
+Both libtorrent configurations compile; only its dependency step runs. OpenSSL's
+installed libraries retain their prior sizes and timestamps, and all other pins
+remain unchanged. The recipe had discarded libtorrent's object cache, so each
+configuration compiles its 179 translation units and links once. Native engine
+builds pass with zero warnings/errors in 44.95 seconds (Debug) and 48.99 seconds
+(Release); Debug retains assertions. The Debug app build passes with zero
+warnings/errors in 67.66 seconds and copies the corrected engine beside the UI.
+The existing global version change and concurrent header/source changes require
+compilation beyond the dependency relink; Release also regenerates its full
+optimization cache. Logs are in `artifacts/evidence/PauseFix`.
+
+The tested Debug engine and its app-adjacent copy both have SHA-256
+`E5CD87464E46E6F9CB251A05FBD5892917A9726FE92855E826AC42DACA509E6C`;
+the tested native Release engine has
+`CDD9EC1065B2FA27006BD28404303A153D3DF7B483195149C0D9ACA8BF215B1D`.
+All check engines exit normally and the required generated-output scans are
+empty. No desktop UI or Transfer peer is launched. Subsequent concurrent
+per-torrent speed-limit source edits are outside these binary-specific results;
+the existing Release app output is not refreshed. #140's crash is fixed, while
+the broader Windows and live-transfer release gaps remain open.
+
 ## Release acceptance audit — 2026-10-07
 
 The full release goal is not achieved. The current milestone requirements remain
