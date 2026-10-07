@@ -87,6 +87,12 @@ function Sync-Checkout([string] $name, [string] $url, [string] $revision, [switc
     $checkout = $directory
     $atRevision = $false
     if (Test-Path $directory) {
+        # Git searches parent directories when this folder has no checkout.
+        $toplevel = git -C $directory rev-parse --show-toplevel
+        if ($LASTEXITCODE -ne 0 -or
+            [IO.Path]::GetFullPath($toplevel) -ne [IO.Path]::GetFullPath($directory)) {
+            throw "$directory is not a Git checkout root."
+        }
         # A failed submodule update can leave clean children at their previous
         # revisions. Refuse source edits, but allow those checkouts to catch up.
         $changes = @(git -C $directory status --porcelain --ignore-submodules=all)

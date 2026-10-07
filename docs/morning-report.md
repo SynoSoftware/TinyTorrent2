@@ -1,5 +1,33 @@
 # Morning report
 
+## Modified-path review — 2026-10-07
+
+The follow-up source trace included the dependency updater and the added Pause
+check, as well as the retained libtorrent changes. Two additional defects are
+corrected:
+
+- An existing dependency folder without its own Git checkout let `git -C`
+  discover TinyTorrent's parent repository. With a clean parent, the updater
+  could change its origin and check out the dependency revision there.
+  `Sync-Checkout` now verifies the resolved worktree root before any mutation
+  and refuses a folder that is not the intended checkout root.
+- `Checks.ps1 -Check Pause` inherited the harness's Release default, although
+  the reproduced crash is a Debug assertion. Pause now selects Debug by default;
+  other checks retain Release and an explicit `EnginePath` still takes precedence.
+  The earlier recorded Debug run used an explicit path and remains valid.
+
+Independent re-review accepted both source corrections. The libtorrent trace
+also checked bulk and deferred peer removal, hard pause before pending removal,
+abort, the auto-manager's session-pause guard, resume's announcement guard and
+timer transitions. It found no additional defect in the retained C++ diff;
+the fork remains at `8dadd5e`.
+
+No compilation, tests, dependency scripts or applications ran. The Pause check
+asserts saved intent and engine survival; its sentinel magnet and empty payload
+directory do not establish live-transfer suppression or graceful-drain behavior.
+Upstream regression coverage and execution, and the separate preexisting
+extension-override issue recorded below, remain outstanding.
+
 ## Upstream pause review — 2026-10-07
 
 Two independent regular reviews (correctness and upstream conventions) and two

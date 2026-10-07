@@ -17,7 +17,8 @@ if ($Check -in $transferChecks -and -not $Transfer) {
 }
 $repository = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $engineName = ([xml](Get-Content (Join-Path $repository 'Directory.Build.props'))).Project.PropertyGroup.EngineTargetName | Where-Object { $_ }
-$executable = Join-Path $repository "artifacts/bin/Engine/Release/$engineName.exe"
+$configuration = if ($Check -eq 'Pause') { 'Debug' } else { 'Release' }
+$executable = Join-Path $repository "artifacts/bin/Engine/$configuration/$engineName.exe"
 if ($EnginePath) { $executable = [IO.Path]::GetFullPath($EnginePath) }
 $directory = Join-Path $repository ('artifacts/evidence/' + $Check + '-' + [guid]::NewGuid())
 $null = New-Item -ItemType Directory -Path $directory

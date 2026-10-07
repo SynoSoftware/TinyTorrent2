@@ -10,6 +10,10 @@ The owner requested source review only: these follow-up changes are not built
 or tested. Upstream regression coverage and execution remain outstanding; the
 separate existing extension-override inconsistency is not fixed or claimed fixed.
 
+The [modified-path review](morning-report.md#modified-path-review--2026-10-07)
+also fixes checkout-root validation in the updater and makes the Pause check
+select Debug by default. These script changes have source-review evidence only.
+
 The earlier #140 correction at `21aec1b` has the approved rebuild evidence:
 Debug's `Pause` check passes magnet addition and individual Resume/Pause while
 Pause all stays active, including persisted intent at restart. Release's
