@@ -1,5 +1,51 @@
 # Morning report
 
+## Latest diff review and destination correction — 2026-10-07
+
+Reviewed the four recent commits and the pending Add, queue, Exit, Speed and
+Pieces changes against ownership, naming and comments. The reused independent
+source reviewer found no concrete duplication or naming defect in Settings,
+General, tracker editing or Add-to-top. Keep the existing implementations;
+no speculative abstraction, rename or restyling is warranted. The owner's
+pending features remain separate from this correction.
+
+The review exposed a real destination defect: refreshing the Add form's
+localised bindings replaces its recent-folder list and clears the editable
+ComboBox's display and inner-editor focus. The draft and native input retain
+the path. A run without bitmap rendering establishes that this is not a
+capture artifact: `artifacts/evidence/UiSelfCapture-fbf2f679-2789-4ac4-b985-4c1a5fa9d243`.
+The same editor survives; no lifecycle rehook is needed. Its TextChanged event
+dispatches asynchronously, so an earlier immediate assertion was premature.
+
+The form now assigns recent suggestions once when it is created. AddDraft still
+owns destination generation, editing, validation and submission; its Text
+binding and native editor hookup stay intact. Reopening gets fresh suggestions,
+and typing or Browse remains available while the form is open. The correction
+adds one assignment and changes one XAML line, with no new type or state.
+
+Before: `artifacts/evidence/UiSelfCapture-acdc61f8-3168-4094-b2f6-1797d2e250c6/captures`.
+After: `artifacts/evidence/UiSelfCapture-27ade0ab-c9cb-4ce7-827e-58c05e0046ba/captures`.
+All twelve English/Spanish, Light/Dark and requested-size variants retain the
+native displayed path, draft and editor identity. A focused refresh retains
+focus and the selected range; native typing updates the draft before blur.
+The isolated journey passes in 52.11 seconds. Capture compilation passes in
+37.87 seconds with zero warnings/errors and unchanged libraries reused
+(`artifacts/add-folder-stable.log`). Root's sequential task review finds the
+destination visible, input stable, and existing layout and actions preserved.
+A fresh captures-only adversarial reviewer inspected every before/after variant
+and the focus extras, finding zero counted defects within this correction.
+
+Bitmap checkbox glyphs remain ambiguous, although native Toggle reports the
+correct Off/On states. Physical glyphs, keyboard delivery, Narrator and High
+Contrast remain unverified; requested720 still uses the accepted minimum widths.
+No native-control restyling is justified by that capture limitation. No engine
+change or full suite accompanies this correction; existing safety evidence stays
+valid. All owned processes close, output scans are empty, and the temporary
+diagnostic is removed. The wider release goal remains active.
+The ordinary Debug/x64 build passes in 34.58 seconds with zero warnings/errors,
+both libraries reused and capture disabled
+(`artifacts/diff-review-destination-final.log`).
+
 ## Tracker editor help and space — 2026-10-06
 
 Baseline `artifacts/evidence/UiSelfCapture-b9352fc7-fedd-4794-9da6-d07489356826/captures`

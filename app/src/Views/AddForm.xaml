@@ -41,7 +41,7 @@
                             <StackPanel Spacing="4">
                                 <Grid ColumnSpacing="8">
                                     <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                                    <ComboBox x:Name="Destination" AccessKey="{x:Bind Model.Text.Get('add', 'destination_key'), Mode=OneWay}" IsEditable="True" HorizontalAlignment="Stretch" ItemsSource="{x:Bind Model.Draft.Folders}"
+                                    <ComboBox x:Name="Destination" AccessKey="{x:Bind Model.Text.Get('add', 'destination_key'), Mode=OneWay}" IsEditable="True" HorizontalAlignment="Stretch"
                                         Text="{x:Bind Model.Draft.Destination, Mode=OneWay}" IsEnabled="{x:Bind Model.Draft.CanEdit, Mode=OneWay}" Loaded="OnDestinationLoaded"
                                         AutomationProperties.LabeledBy="{x:Bind DestinationLabel}" ToolTipService.ToolTip="{x:Bind Model.Draft.Destination, Mode=OneWay}" />
                                     <controls:ActionButton Glyph="{x:Bind icons:Lucide.FolderSearch}" ToolTipService.ToolTip="{x:Bind Model.Text.Get('add', 'browse_tip'), Mode=OneWay}" x:Name="Browse" AccessKey="{x:Bind Model.Text.Get('add', 'browse_key'), Mode=OneWay}" Text="{x:Bind Model.Text.Get('add', 'browse'), Mode=OneWay}" Grid.Column="1" IsEnabled="{x:Bind Model.Draft.CanEdit, Mode=OneWay}" Click="OnDestination" />

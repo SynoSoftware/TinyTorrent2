@@ -1,5 +1,19 @@
 # Implementation handover — 2026-10-05
 
+## Latest ownership review — 2026-10-07
+
+The latest source review finds no competing owner or naming defect in the
+recent Settings, General and tracker commits or the pending Add-to-top path.
+One native Add defect is corrected: recent folder suggestions are assigned
+once per form, preventing localisation refresh from clearing the destination
+display and inner-editor focus. AddDraft retains all destination authority.
+The twelve capture variants and focused selection/edit route pass. The temporary
+probe is removed; owner's pending Add, queue, Exit, Speed and Pieces work stays
+intact. Evidence and capture limitations are in
+[morning-report.md](morning-report.md#latest-diff-review-and-destination-correction--2026-10-07).
+This is a focused correction, not completion of the release goal or its remaining
+Windows integration and real-transfer checks.
+
 ## Tracker editor checkpoint — 2026-10-06
 
 The diff-review checkpoint is committed as `6251dc2`. #137's tracker editor

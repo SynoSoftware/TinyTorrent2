@@ -25,6 +25,9 @@ public sealed partial class AddForm : UserControl
         Model = model;
         _hasFiles = model.Draft.HasFiles;
         InitializeComponent();
+        // Resetting recent folders during localisation clears the editable
+        // ComboBox's display and focus, so they stay fixed while the form is open.
+        Destination.ItemsSource = model.Draft.Folders;
         _browser = new FileBrowser(model.Draft.Files);
         _browser.SetBinding(FileBrowser.ModelProperty, new Binding { Source = model.Draft, Path = new PropertyPath(nameof(AddDraft.Files)), Mode = BindingMode.OneWay });
         FileHost.Content = _browser;
