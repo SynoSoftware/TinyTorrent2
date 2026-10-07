@@ -1,5 +1,20 @@
 # Implementation handover — 2026-10-05
 
+## Current diff-review checkpoint — 2026-10-06
+
+Settings feedback is committed as `b38601f`, following General metadata
+`b244ee8`. The latest review preserves their existing ownership and accepted
+layouts. The temporary tracker capture mode is removed; its baseline does not
+approve a product change. Owner changes outside this review remain intact.
+
+FilesSafety and CheckpointRetry now each pass once on the current Release engine,
+after the owner refactor and queue changes. The focused QueueOrder check also
+passes. Engine sources stayed unchanged across these runs, so UI or documentation
+edits do not justify repeating them. Evidence and scope are in
+[morning-report.md](morning-report.md#current-safety-evidence-and-diff-review--2026-10-06).
+This supersedes the earlier request to renew those safety passes; #140 and the
+remaining Windows/real-transfer gaps are still open. The release goal is active.
+
 ## Settings feedback review checkpoint — 2026-10-06
 
 Settings changes now have one row-help owner and one registration

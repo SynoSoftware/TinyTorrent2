@@ -52,8 +52,6 @@ public sealed partial class SettingsRow : ContentControl
         Show("ErrorText", Error.Length > 0);
         Show("CautionText", Caution.Length > 0);
         Show("DetailPresenter", Detail is not null and not UIElement { Visibility: Visibility.Collapsed });
-        // A screen reader on the control also hears the caution, which says
-        // what the control's state means.
         var help = string.Join(" ", new[] { Error, Description, Caution }.Where(text => text.Length > 0));
         if (Content is UIElement control)
         {

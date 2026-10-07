@@ -1,5 +1,45 @@
 # Morning report
 
+## Current safety evidence and diff review — 2026-10-06
+
+Settings feedback is committed as `b38601f`; General metadata is `b244ee8`.
+The review keeps their existing owners, shared styles and native editors rather
+than adding another help store, formatter or command path. The temporary tracker
+capture mode is removed. Its twelve baseline scenes retain draft text, native
+selection and focus, but expose no native editor HelpText; they establish an
+investigation baseline, not an accepted tracker redesign:
+`artifacts/evidence/UiSelfCapture-b9352fc7-fedd-4794-9da6-d07489356826/captures`.
+
+An independent review of the Settings changes found no concrete ownership,
+naming or lifetime defect. The only code polish removes a stale caution-only
+comment above the already explicit combined help composition. General's
+one-line values retain their full underlying data. The pending Add, queue, Exit,
+Speed and Pieces changes were source-reviewed against their existing owners;
+this does not replace their remaining behavior or visual checks. No new type,
+state, dependency or alternate implementation was added for this review.
+The ordinary Debug/x64 build passes in 34.24 seconds with zero warnings/errors
+(`artifacts/diff-polish-final.log`); only the app recompiles and both libraries
+are reused. Capture is not enabled. No additional test run is needed for the
+comment-only polish; no app was launched for it.
+
+The settled current engine built in Release/x64 in 22.41 seconds with zero
+warnings/errors (`artifacts/release-safety-current.log`). Its changed headers
+account for the seventeen compiled engine sources; dependencies were reused.
+FilesSafety and CheckpointRetry each passed once after that build, followed by
+the focused QueueOrder check for the owner's Add-to-top change. Evidence stores:
+
+- `artifacts/evidence/FilesSafety-b635b79a-3713-46cd-b8dc-b996ac50c5ff`
+- `artifacts/evidence/CheckpointRetry-797dd6f8-1919-4b47-9b76-9cc9f2b75b84`
+- `artifacts/evidence/QueueOrder-f5aaabfc-a53c-4ca0-ad48-2fe1a12410e0`
+
+The engine diff remained unchanged through all three checks (SHA-256
+`C41E0A996A55AE1554F70D6E6C3C6C478190404AAD0C805EB9EDC274A544221E`). They cover the
+existing file-safety scenarios, failed-checkpoint retry and saved queue ordering;
+they do not prove real peer downloads, physical Windows integration or every
+move failure. No full suite or Transfer check ran. All launched processes closed
+and generated-output scans were empty. The release goal remains active; #140's
+Debug assertion and the previously recorded integration gaps remain unresolved.
+
 ## Settings feedback ownership review — 2026-10-06
 
 Reviewed the pending feedback changes against AGENTS.md, naming, comments and
