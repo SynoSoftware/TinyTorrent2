@@ -1,5 +1,30 @@
 # Implementation handover — 2026-10-05
 
+## Destination recovery checkpoint — 2026-10-06
+
+`ffb3381` committed the native connection announcement correction. This
+milestone addresses #22 at Add's existing destination status line, retaining
+input, clearing the specific refusal on edits and restoring editor focus.
+All twelve destination journeys pass; the fresh reviewer found no counted
+visual defect in the 24 refusal/correction captures. Final ordinary Debug/x64
+compilation passes. Evidence and physical-input/accessibility limits are in
+[morning-report.md](morning-report.md). #136 retains its separate metadata and
+other recovery investigations; this is not whole-product release acceptance.
+Preserve the owner's separate QueueTop, Ctrl+W, Pieces, Speed and engine edits.
+
+The successful paused-magnet retry exposed confirmed #140: Debug libtorrent
+asserts after accepting a magnet while Pause all is active. A three-second
+headless reproduction fails; Debug with the session running and Release with
+the session paused pass the same membership/Exit probe. Dependencies remain
+untouched. Do not hide this with app pause-policy workarounds or describe the
+Release probe as proof of all transfer behavior. The Add visual matrix uses
+individually paused fixtures with the session running to isolate its UI changes.
+
+#139's speculative shared-control rewrite was declined after current-source
+review. The remaining investigations still need concrete failures before edits.
+The release goal remains active. No engine source changed, so the previous
+FilesSafety and CheckpointRetry passes remain current; no suite was rerun.
+
 ## Current release continuation — 2026-10-06
 
 Committed milestones: `3d3f977` hidden-sort rejection, `e584b91` stable command

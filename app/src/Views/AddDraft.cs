@@ -41,7 +41,15 @@ public sealed class AddDraft : INotifyPropertyChanged
     public string Destination
     {
         get => _destination;
-        set { if (_destination == value) return; _destination = value; Refresh(); }
+        set
+        {
+            if (_destination == value) return;
+            _destination = value;
+            if (IsDestinationError(_failure)) _failure = null;
+            foreach (var source in Sources)
+                if (IsDestinationError(source.Failure)) source.Failure = null;
+            Refresh();
+        }
     }
     public bool Paused { get => _paused; set { _paused = value; Refresh(); } }
     public bool Sequential { get => _sequential; set { _sequential = value; Refresh(); } }
@@ -74,8 +82,12 @@ public sealed class AddDraft : INotifyPropertyChanged
         .Prepend(_defaultDestination).Select(folder => Path.TrimEndingDirectorySeparator(folder.Trim()))
         .Where(folder => folder.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).Take(6).ToArray();
     public string Shared => string.Join(Environment.NewLine, Sources.Select(source => source.Shared).Where(text => text.Length > 0));
-    internal Exception? Failure => _failure ?? Sources.Select(source => source.Failure).FirstOrDefault(error => error is not null);
-    public string Message => !_owner.IsConnected ? _owner.Message : Failure is { } failure ? _strings.Error(failure) :
+    private IEnumerable<Exception> Failures => Sources.Select(source => source.Failure).Prepend(_failure).OfType<Exception>();
+    internal Exception? Failure => Failures.FirstOrDefault();
+    internal static bool IsDestinationError(Exception? error) => error is CommandFailure { Code: "invalid_destination" };
+    public bool HasDestinationError => Failures.Any(IsDestinationError);
+    public string DestinationMessage => Failures.FirstOrDefault(IsDestinationError) is { } failure ? _strings.Error(failure) : string.Empty;
+    public string Message => !_owner.IsConnected ? _owner.Message : Failures.FirstOrDefault(error => !IsDestinationError(error)) is { } failure ? _strings.Error(failure) :
         HasFiles && !Files.HasWanted ? _strings.Get("add", "no_files") : string.Empty;
     public bool HasError => Message.Length > 0;
     public InfoBarSeverity Severity => InfoBarSeverity.Error;
@@ -276,7 +288,8 @@ public sealed class AddDraft : INotifyPropertyChanged
             if (Sources.Count > 0)
             {
                 _failure = Sources.Select(source => source.Failure).FirstOrDefault(error => error is not null);
-                if (Message.Length > 0) _owner.Announce(Message);
+                var message = Message.Length > 0 ? Message : DestinationMessage;
+                if (message.Length > 0) _owner.Announce(message);
                 return false;
             }
             Clear();
@@ -435,7 +448,7 @@ public sealed class AddSource : INotifyPropertyChanged
     internal string? PreviewId { get; set; }
     internal Exception? Failure { get; set; }
     internal bool Uncertain { get; set; }
-    public string Description => Failure is not null ? _strings.Error(Failure) :
+    public string Description => Failure is not null && !AddDraft.IsDestinationError(Failure) ? _strings.Error(Failure) :
         Duplicate.Length > 0 ? _strings.Get("add", "already_added") :
         !MetadataReady ? _strings.Get("add", "metadata") : !Files.HasWanted ? _strings.Get("add", "no_files") : _strings.Bytes(Size);
     // An already added source adds no files, so it shares none.

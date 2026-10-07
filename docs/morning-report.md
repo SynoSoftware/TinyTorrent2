@@ -1,5 +1,74 @@
 # Morning report
 
+## Destination recovery and a confirmed Debug assertion — 2026-10-06
+
+#22's engine refusal was reproduced in the Add form. The old presentation
+duplicated the destination error in the source preview and bottom bar, displaced
+Options content, and left focus on Cancel. The correction uses the existing
+status line under Download folder, clears only that refusal on folder edits,
+and restores the native editor's focus. Engine validation remains authoritative;
+the wire code is retained on CommandFailure rather than inferred from translated
+text. Automatic-add reporting and unrelated source errors keep their existing
+owners. No accepted screen was restyled.
+
+All twelve English/Spanish, Light/Dark, requested 720x560, 1040x680 and 1280x800
+journeys retained the rejected folder and source, focused EditableText, and
+cleared the error after correction. One corrected journey successfully retried
+Add paused. Evidence is in
+`artifacts/evidence/UiSelfCapture-2b8ed539-cd2c-47b4-a747-482908ffbdb5/captures`.
+The real refusal before correction is in
+`artifacts/evidence/UiSelfCapture-5f3f337c-73f8-407d-b666-4fc8bf6a17ef/captures`.
+The accepted minimum window size clamps the requested 720 case: actual client
+width is 837 in English and 863 in Spanish. The other client widths are 1024
+and 1264. No narrower-window support is claimed.
+
+The fresh capture-only reviewer examined all 24 refusal/correction images and
+found no counted visual defect. The existing single-line policy retains full
+text through selection, tooltip and automation name. Physical keyboard input,
+Narrator, High Contrast and reopening a retained failed draft remain unverified.
+A final source-reviewed focus priority preserves magnet validation before an
+older destination refusal; that combined-error case was not separately run.
+No accepted screen was restyled and no general Add metadata transition is
+claimed verified by this scoped review.
+
+`artifacts/destination-after.log` records Debug/x64 capture compilation in
+42.37 seconds; `artifacts/destination-final.log` records ordinary Debug/x64
+compilation after the focus correction in 43.97 seconds. Both have zero warnings
+and errors, compile the app and reuse both libraries. All launched processes
+are closed and the generated-output scan is empty. The engine diff is unchanged;
+the existing FilesSafety and CheckpointRetry passes remain current. No suite ran.
+
+That successful retry exposed a separate, repeatable dependency assertion,
+tracked in #140. With Pause all active, accepting an unknown-metadata magnet
+crashes the Debug engine at libtorrent's `session_impl.cpp:3754`,
+`t.want_tick()`. `torrent::set_paused` changes its per-torrent pause flag while
+the session is already paused and returns before refreshing the tick list.
+The app calls the normal `torrent_handle.pause()` API. The same assertion
+appeared in two UI runs and a minimized headless reproduction.
+
+Three short probes reused the existing binaries, without compiling the engine:
+
+- Debug, session paused: fails in
+  `artifacts/evidence/MagnetAssertion-8c7a7909-fae2-40a7-b6e2-5fdfd28dc555`.
+- Debug, session running and torrent added paused: passes in
+  `artifacts/evidence/MagnetAssertion-a8a74023-b39b-4fe3-a8d9-a4bfb689dc8a`.
+- Release, session paused: passes in
+  `artifacts/evidence/MagnetAssertion-b738a582-4b0c-4148-9901-c7cbea6f79b9`.
+
+The probes check accepted membership through snapshots for three seconds and
+normal Exit. They do not prove later transfer behavior. The disposable script is
+`V:/temp/TinyTorrentMagnetCheck.ps1`; assertion stderr is retained in each evidence
+folder. Dependencies stay untouched under the owner's ruling. No app pause
+workaround or assertion suppression was added. UI correction captures use a
+running session with individually paused torrents; they do not claim #140 fixed.
+
+#139 is closed as unconfirmed after source review: folder controls follow a new
+file tree, horizontal scrolling follows deliberate viewport/column changes,
+InfoBars have no changing Title caller, and dialog button sets are established
+when opened. No additional mechanism or test is justified without a concrete
+displaced interaction. Actual Add/file-operation transitions retain their own
+issues. This is a source disposition, not fresh runtime/accessibility evidence.
+
 ## Connection announcements and report triage — 2026-10-06
 
 Magnet-validation stability is committed as `6be4a69`. The remaining #20

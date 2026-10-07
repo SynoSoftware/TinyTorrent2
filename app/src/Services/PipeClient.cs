@@ -464,6 +464,7 @@ internal sealed class PipeClient : IDisposable
 
 internal sealed class CommandFailure(string code, string? detail, Strings strings, string? command = null) : Exception
 {
+    public string Code { get; } = code;
     public string? Command { get; } = command;
-    public override string Message => strings.Error(code, detail);
+    public override string Message => strings.Error(Code, detail);
 }

@@ -256,6 +256,7 @@ public sealed partial class MainWindow : Window
             Bind(dialog, ContentDialog.PrimaryButtonTextProperty, nameof(AddDraft.SubmitText));
             Bind(dialog, Dialog.PrimaryToolTipProperty, nameof(AddDraft.SubmitToolTip));
             dialog.PrimaryButtonClick += OnSubmit;
+            dialog.Opened += (_, _) => _form?.FocusError();
             dialog.Closing += (_, args) => { if ((Model.Draft.IsSubmitting || Model.IsPicking) && !Model.IsClosing) args.Cancel = true; };
             var completed = false;
             try
@@ -333,7 +334,7 @@ public sealed partial class MainWindow : Window
         {
             args.Cancel = !await Model.Draft.Submit();
             if (!args.Cancel && _interaction is { } interaction) interaction.IsResolved = true;
-            if (args.Cancel) _form?.FocusMagnetError();
+            if (args.Cancel) _form?.FocusError();
         }
         finally
         {

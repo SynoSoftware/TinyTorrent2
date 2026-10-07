@@ -185,9 +185,11 @@ magnet Add form in English and Spanish, Light and Dark, at the three review size
 It also captures the connection overlay with its action at the right and records
 workspace bounds before and after; this is presentation evidence with a connected
 engine, not a simulated connection failure.
-One short-window case also invokes Preview with invalid input and a fixture
-magnet to inspect the error and preview areas. It does not submit a torrent or
-run unrelated journeys.
+The Add cases invoke Preview with invalid input and retain that input for correction.
+They also submit a disposable magnet with a relative download folder, capture the
+engine refusal and focus recovery, then correct the folder. One short-window case
+retries Add paused successfully; every source and destination belongs to the
+disposable store. These cases do not run unrelated journeys.
 The English 1040-wide case also captures caption hover, pressed and disabled
 visual states in Light and Dark through WinUI's state manager. This checks the
 custom template's appearance, not pointer input or OS High Contrast rendering.

@@ -180,11 +180,20 @@ public sealed partial class AddForm : UserControl
     private async void OnPreview(object sender, RoutedEventArgs args)
     {
         await Model.Draft.PrepareMagnet();
-        FocusMagnetError();
+        FocusError();
     }
 
-    internal void FocusMagnetError()
+    internal void FocusError()
     {
         if (Model.Draft.HasMagnetError) MagnetInput.Focus(FocusState.Programmatic);
+        else if (Model.Draft.HasDestinationError)
+        {
+            _settingsShown = true;
+            ShowSettings();
+            UpdateLayout();
+            Destination.StartBringIntoView();
+            if (Editor(Destination) is { } editor) editor.Focus(FocusState.Programmatic);
+            else Destination.Focus(FocusState.Programmatic);
+        }
     }
 }

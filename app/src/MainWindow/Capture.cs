@@ -17,6 +17,7 @@ using Windows.Storage;
 using Windows.System;
 using Windows.Graphics;
 using Syno.TinyTorrent.Models;
+using Syno.TinyTorrent.Services;
 using Syno.TinyTorrent.Views;
 
 namespace Syno.TinyTorrent;
@@ -1065,6 +1066,42 @@ public sealed partial class MainWindow
                                 await CaptureReady(Model.Draft, () => Model.Draft.HasSources && !Model.Draft.IsPending);
                                 await CapturePage(prefix + "magnet-preview", dialog.Content as FrameworkElement);
                                 outcomes.Add(new { journey = "magnet preview", rejectedInputRetained = true, previewVisible = Model.Draft.HasSources });
+                            }
+                            await Model.Draft.Cancel();
+                            Model.Draft.EditingMagnet = true;
+                            Model.Draft.Paused = true;
+                            var hash = Guid.NewGuid().ToString("N") + "01234567";
+                            editor.Text = "magnet:?xt=urn:btih:" + hash;
+                            await CaptureLayout();
+                            var destination = CaptureElements(dialog).OfType<ComboBox>().Single(control => control.Name == "Destination");
+                            var folder = CaptureElements(destination).OfType<TextBox>().Single(control => control.Name == "EditableText");
+                            var original = Model.Draft.Destination;
+                            folder.Focus(FocusState.Programmatic);
+                            destination.Text = "relative-download-folder";
+                            await CaptureLayout();
+                            if (Model.Draft.Destination != "relative-download-folder")
+                                throw new InvalidOperationException($"The folder edit did not reach the draft: editor={folder.Text}, control={destination.Text}, draft={Model.Draft.Destination}.");
+                            CaptureInvoke(dialog);
+                            await CaptureReady(Model.Draft, () => !Model.Draft.IsPending && Model.Draft.Failure is not null);
+                            if (Model.Draft.Failure is not CommandFailure { Command: "add", Code: "invalid_destination" })
+                                throw new InvalidOperationException("The destination fixture failed before its Add command.");
+                            await CaptureLayout();
+                            if (FocusManager.GetFocusedElement(Root.XamlRoot) is not DependencyObject focused ||
+                                !CaptureElements(destination).Contains(focused))
+                                throw new InvalidOperationException("A destination refusal did not focus the folder editor.");
+                            await CapturePage(prefix + "destination-error", dialog.Content as FrameworkElement);
+                            outcomes.Add(new { journey = prefix + "destination refusal", message = Model.Draft.Failure.Message,
+                                focus = (FocusManager.GetFocusedElement(Root.XamlRoot) as FrameworkElement)?.Name,
+                                folderRetained = folder.Text == "relative-download-folder", sources = Model.Draft.Sources.Count });
+                            destination.Text = original;
+                            await CaptureReady(Model.Draft, () => Model.Draft.CanSubmit && Model.Draft.Failure is null);
+                            await CapturePage(prefix + "destination-corrected", dialog.Content as FrameworkElement);
+                            if (language == "en" && theme == "light" && size.Width == 720)
+                            {
+                                CaptureInvoke(dialog);
+                                await closed.WaitAsync(TimeSpan.FromSeconds(20));
+                                await CaptureReady(Model, () => Model.Torrents.Any(torrent => torrent.Hashes.Contains(hash)));
+                                outcomes.Add(new { journey = "destination correction retry", accepted = true });
                             }
                         }
                         finally { dialog.Hide(); await closed; }

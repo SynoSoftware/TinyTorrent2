@@ -46,10 +46,17 @@
                                         AutomationProperties.LabeledBy="{x:Bind DestinationLabel}" ToolTipService.ToolTip="{x:Bind Model.Draft.Destination, Mode=OneWay}" />
                                     <controls:ActionButton Glyph="{x:Bind icons:Lucide.FolderSearch}" ToolTipService.ToolTip="{x:Bind Model.Text.Get('add', 'browse_tip'), Mode=OneWay}" x:Name="Browse" AccessKey="{x:Bind Model.Text.Get('add', 'browse_key'), Mode=OneWay}" Text="{x:Bind Model.Text.Get('add', 'browse'), Mode=OneWay}" Grid.Column="1" IsEnabled="{x:Bind Model.Draft.CanEdit, Mode=OneWay}" Click="OnDestination" />
                                 </Grid>
-                                <TextBlock Text="{x:Bind Model.Draft.Space, Mode=OneWay}" Style="{StaticResource BodyTextStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" ToolTipService.ToolTip="{x:Bind Model.Draft.Space, Mode=OneWay}"
-                                    Visibility="{x:Bind local:AddForm.Hidden(Model.Draft.LacksSpace), Mode=OneWay}" />
-                                <TextBlock Text="{x:Bind Model.Draft.Space, Mode=OneWay}" Style="{StaticResource BodyTextStyle}" Foreground="{ThemeResource SystemFillColorCautionBrush}" ToolTipService.ToolTip="{x:Bind Model.Draft.Space, Mode=OneWay}"
-                                    Visibility="{x:Bind Model.Draft.LacksSpace, Mode=OneWay}" />
+                                <Grid>
+                                    <Grid Visibility="{x:Bind local:AddForm.Hidden(Model.Draft.HasDestinationError), Mode=OneWay}">
+                                        <TextBlock Text="{x:Bind Model.Draft.Space, Mode=OneWay}" Style="{StaticResource BodyTextStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" ToolTipService.ToolTip="{x:Bind Model.Draft.Space, Mode=OneWay}"
+                                            Visibility="{x:Bind local:AddForm.Hidden(Model.Draft.LacksSpace), Mode=OneWay}" />
+                                        <TextBlock Text="{x:Bind Model.Draft.Space, Mode=OneWay}" Style="{StaticResource BodyTextStyle}" Foreground="{ThemeResource SystemFillColorCautionBrush}" ToolTipService.ToolTip="{x:Bind Model.Draft.Space, Mode=OneWay}"
+                                            Visibility="{x:Bind Model.Draft.LacksSpace, Mode=OneWay}" />
+                                    </Grid>
+                                    <TextBlock Text="{x:Bind Model.Draft.DestinationMessage, Mode=OneWay}" Style="{StaticResource BodyTextStyle}" Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                                        IsTextSelectionEnabled="True" AutomationProperties.Name="{x:Bind Model.Draft.DestinationMessage, Mode=OneWay}"
+                                        ToolTipService.ToolTip="{x:Bind Model.Draft.DestinationMessage, Mode=OneWay}" Visibility="{x:Bind Model.Draft.HasDestinationError, Mode=OneWay}" />
+                                </Grid>
                                 <TextBlock Text="{x:Bind Model.Draft.Shared, Mode=OneWay}" Style="{StaticResource BodyTextStyle}" ToolTipService.ToolTip="{x:Bind Model.Draft.Shared, Mode=OneWay}" Visibility="{x:Bind local:AddForm.Shown(Model.Draft.Shared), Mode=OneWay}" />
                             </StackPanel>
                         </StackPanel>
