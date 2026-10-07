@@ -40,6 +40,9 @@ struct Facts
     std::optional<std::vector<lt::announce_entry>> trackers;
     bool sequential = false;
     bool firstLast = false;
+    // In bytes a second; 0 means no limit.
+    int downloadLimit = 0;
+    int uploadLimit = 0;
 
     Json ToJson() const;
     static Facts Read(Json const& saved);
@@ -56,6 +59,9 @@ struct Torrent
     std::string identity;
     lt::torrent_handle handle;
     Facts facts;
+    // A conflicting restored identity keeps its parameters until its other
+    // owner is removed; it must never borrow that owner's live handle.
+    std::optional<lt::add_torrent_params> restore;
     std::string comment;
     std::string creator;
     std::int64_t created = 0;
@@ -72,8 +78,7 @@ struct Torrent
     std::string notifiedError;
     bool receivedPayload = false;
     lt::torrent_status::state_t fileState = lt::torrent_status::checking_resume_data;
-    bool namesReady = false;
-    bool preparingNames = false;
+    NamePhase namePhase = NamePhase::Pending;
     bool needsRecheck = false;
     std::set<lt::file_index_t> completedFiles;
     std::set<lt::file_index_t> renaming;
@@ -84,6 +89,9 @@ struct Torrent
     Reply priorityReply;
     bool moving = false;
     std::optional<Problem> moveError;
+    // The person deleted the torrent before the engine could remove it. It is
+    // out of the list, stays paused, and refuses commands until it is removed.
+    bool deleted = false;
 
     std::string Name() const;
     // Every hash the torrent is known by: its own and those the document saved.
@@ -92,6 +100,8 @@ struct Torrent
     std::vector<std::filesystem::path> Paths(bool logical = false) const;
     std::optional<Problem> Error() const;
     std::optional<Problem> Diagnose() const;
+    // The torrent's own files are being prepared, renamed or moved.
+    bool FilesBusy() const;
     Status Classify(bool allPaused) const;
     bool IsChanged() const;
     // Takes the newest status, and remembers when it shows new payload.

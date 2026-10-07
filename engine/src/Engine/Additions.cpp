@@ -132,36 +132,6 @@ void Engine::State::Add(Preview& preview, Addition::Choices choices, std::functi
     previews.erase(previews.find(preview.identity));
 }
 
-void Engine::State::PrepareNames(lt::add_torrent_params& params)
-{
-    if (!params.ti)
-        return;
-    auto const& files = params.ti->layout();
-    for (auto index : files.file_range())
-    {
-        if (files.pad_file_at(index))
-            continue;
-        auto name = files.file_path(index);
-        auto root = std::filesystem::path(Wide(params.save_path));
-        auto path = root / Wide(name);
-        if (auto renamed = params.renamed_files.find(index); renamed != params.renamed_files.end())
-        {
-            if (renamed->second == name + ".!tt" &&
-                std::filesystem::symlink_status(root / Wide(renamed->second)).type() ==
-                    std::filesystem::file_type::not_found &&
-                std::filesystem::symlink_status(path).type() != std::filesystem::file_type::not_found)
-            {
-                params.renamed_files.erase(renamed);
-            }
-            continue;
-        }
-        if (std::filesystem::symlink_status(path).type() == std::filesystem::file_type::not_found)
-        {
-            params.renamed_files[index] = name + ".!tt";
-        }
-    }
-}
-
 void Engine::State::PrepareAddition(std::string const& id, lt::torrent_handle handle)
 {
     auto& addition = additions.at(id);
@@ -189,17 +159,7 @@ void Engine::State::PrepareAddition(std::string const& id, lt::torrent_handle ha
         auto& addition = found->second;
         addition.params.ti = prepared->ti;
         addition.params.renamed_files = prepared->renamed_files;
-        auto current = addition.handle.get_renamed_files();
-        for (auto index : prepared->ti->layout().file_range())
-        {
-            auto desired = prepared->renamed_files.find(index);
-            auto name = desired == prepared->renamed_files.end() ? prepared->ti->layout().file_path(index) : desired->second;
-            if (current.file_path(prepared->ti->layout(), index) != name)
-            {
-                addition.renaming.insert(index);
-                addition.handle.rename_file(index, name);
-            }
-        }
+        ApplyNames(addition.handle, *prepared, addition.renaming);
         if (addition.renaming.empty())
             SaveAddition(id, addition.handle);
     });
@@ -428,6 +388,10 @@ void Engine::State::On(lt::storage_moved_failed_alert const& alert)
 {
     if (relocation)
     {
+        if (relocation->phase != RelocationPhase::Moving && relocation->phase != RelocationPhase::Unknown)
+        {
+            return;
+        }
         auto kind = alert.error == boost::system::errc::file_exists ?
             ProblemKind::DestinationExists : ProblemKind::MoveFailed;
         FinishMove(alert.handle, Problem{kind, alert.error.message()});

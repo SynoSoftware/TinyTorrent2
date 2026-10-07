@@ -1,5 +1,6 @@
 #include "Engine/State.h"
 #include <algorithm>
+#include <climits>
 
 namespace tt
 {
@@ -27,7 +28,9 @@ constexpr std::pair<std::string_view, Command> commands[] = {
     {"move", Command::Move},
     {"delete_files", Command::DeleteFiles},
     {"queue", Command::Queue},
-    {"piece_order", Command::PieceOrder}};
+    {"piece_order", Command::PieceOrder},
+    {"speed_limit", Command::SpeedLimit},
+    {"check_proxy", Command::CheckProxy}};
 
 constexpr std::pair<std::string_view, QueueMove> moves[] = {
     {"up", QueueMove::Up},
@@ -96,6 +99,37 @@ void Engine::State::Execute(Json const& request, std::string const& connection, 
     case Command::Settings:
         Configure(request.at("changes"), reply);
         break;
+    case Command::CheckProxy:
+    {
+        // The proxy is read as the settings command reads it, so a proxy the
+        // engine would refuse to save is refused here too.
+        auto checked = settings.With(request.at("proxy"));
+        if (!checked || checked->proxy.type == ProxyType::None || checked->proxy.host.empty() ||
+            checked->proxy.port == 0)
+        {
+            reply(Failure(ErrorCode::InvalidRequest));
+            return;
+        }
+        auto id = Identity();
+        requestedCheck = RequestedCheck{id};
+        CheckProxy(checked->proxy, [this, id](std::optional<ProxyCheck> check)
+        {
+            if (!requestedCheck || requestedCheck->id != id)
+            {
+                return;
+            }
+            if (check)
+            {
+                requestedCheck->result = check;
+            }
+            else
+            {
+                requestedCheck.reset();
+            }
+        });
+        reply(Success({{"check_id", id}}));
+        break;
+    }
     case Command::SessionPause:
         PauseSession(request.at("paused").get<bool>(), [reply](Outcome outcome)
         {
@@ -168,9 +202,14 @@ void Engine::State::Execute(Json const& request, std::string const& connection, 
     case Command::Torrent:
     {
         auto found = torrents.find(request.at("torrent_id").get<std::string>());
-        if (found == torrents.end())
+        if (found == torrents.end() || found->second.deleted)
         {
             reply(Failure(ErrorCode::TorrentRemoved));
+            return;
+        }
+        if (found->second.restore)
+        {
+            reply(Failure(ProblemKind::AliasConflict, found->second.conflict));
             return;
         }
         if (!request.contains("view"))
@@ -195,6 +234,11 @@ void Engine::State::Execute(Json const& request, std::string const& connection, 
     case Command::Reannounce:
         Act({request.at("torrent_id").get<std::string>()}, reply, [this](auto const& ids, Reply reply)
         {
+            if (torrents.at(ids.front()).restore)
+            {
+                reply(Failure(ProblemKind::AliasConflict));
+                return;
+            }
             torrents.at(ids.front()).handle.force_reannounce();
             reply(Success());
         });
@@ -243,11 +287,8 @@ void Engine::State::Execute(Json const& request, std::string const& connection, 
     case Command::FileScope:
         Act(TargetIds(request), reply, [this](auto const& ids, Reply reply)
         {
-            if (FilesReady(ids, reply))
-            {
-                reply(Success(Describe(ids, FileScope(ids))));
-            }
-        });
+            reply(Success(Describe(ids, FileScope(ids))));
+        }, BusyFiles::Accepted);
         break;
     case Command::Move:
         Act(TargetIds(request), reply, [this, destination = request.at("destination").get<std::string>(),
@@ -259,20 +300,8 @@ void Engine::State::Execute(Json const& request, std::string const& connection, 
     case Command::DeleteFiles:
         Act(TargetIds(request), reply, [this](auto const& ids, Reply reply)
         {
-            if (!FilesReady(ids, reply))
-            {
-                return;
-            }
-            for (auto const& id : ids)
-            {
-                if (!torrents.at(id).facts.moveDestination.empty())
-                {
-                    reply(Failure(ProblemKind::MoveInterrupted));
-                    return;
-                }
-            }
             Remove(ids, reply, true);
-        });
+        }, BusyFiles::Accepted);
         break;
     case Command::Queue:
     {
@@ -308,7 +337,43 @@ void Engine::State::Execute(Json const& request, std::string const& connection, 
         }
         Act(TargetIds(request), reply, [this, sequential, firstLast](auto const& ids, Reply reply)
         {
-            SetPieceOrder(ids, sequential, firstLast, reply);
+            ChangeFacts(ids, [sequential, firstLast](Facts& facts)
+            {
+                facts.sequential = sequential.value_or(facts.sequential);
+                facts.firstLast = firstLast.value_or(facts.firstLast);
+            }, reply);
+        });
+        break;
+    }
+    case Command::SpeedLimit:
+    {
+        auto limit = [&request](char const* key) -> std::optional<int>
+        {
+            if (!request.contains(key))
+            {
+                return std::nullopt;
+            }
+            auto const& value = request.at(key);
+            if (!value.is_number_integer() || value < 0 || value > INT_MAX)
+            {
+                throw std::invalid_argument("A speed limit is not a whole number of bytes a second.");
+            }
+            return value.get<int>();
+        };
+        auto download = limit("download_limit");
+        auto upload = limit("upload_limit");
+        if (!download && !upload)
+        {
+            reply(Failure(ErrorCode::InvalidRequest));
+            return;
+        }
+        Act(TargetIds(request), reply, [this, download, upload](auto const& ids, Reply reply)
+        {
+            ChangeFacts(ids, [download, upload](Facts& facts)
+            {
+                facts.downloadLimit = download.value_or(facts.downloadLimit);
+                facts.uploadLimit = upload.value_or(facts.uploadLimit);
+            }, reply);
         });
         break;
     }
@@ -325,9 +390,14 @@ void Engine::State::MergeTrackers(Preview& preview, std::string const& id, Reply
     }
     if (!changes.Queue([this, id, urls = preview.params.trackers, reply]
     {
-        if (!torrents.contains(id))
+        if (!torrents.contains(id) || torrents.at(id).deleted)
         {
             reply(Failure(ErrorCode::TorrentRemoved));
+            return;
+        }
+        if (torrents.at(id).restore)
+        {
+            reply(Failure(ProblemKind::AliasConflict));
             return;
         }
         auto trackers = torrents.at(id).handle.trackers();
@@ -344,24 +414,25 @@ void Engine::State::MergeTrackers(Preview& preview, std::string const& id, Reply
 
 // Runs the action after the changes queued before it, once every listed
 // torrent still exists.
-void Engine::State::Act(std::vector<std::string> ids, Reply reply, Action action)
+void Engine::State::Act(std::vector<std::string> ids, Reply reply, Action action, BusyFiles busy)
 {
-    if (ids.empty() || ids.size() > targetLimit)
+    if (ids.empty() || ids.size() > targetLimit ||
+        std::set<std::string>(ids.begin(), ids.end()).size() != ids.size())
     {
         reply(Failure(ErrorCode::InvalidTargets));
         return;
     }
-    if (!changes.Queue([this, ids, reply, action]
+    if (!changes.Queue([this, ids, reply, action, busy]
     {
         for (auto const& id : ids)
         {
-            if (!torrents.contains(id))
+            auto found = torrents.find(id);
+            if (found == torrents.end() || found->second.deleted)
             {
                 reply(Failure(ErrorCode::TorrentRemoved));
                 return;
             }
-            auto const& torrent = torrents.at(id);
-            if (torrent.moving || torrent.preparingNames || !torrent.renaming.empty())
+            if (busy == BusyFiles::Refused && found->second.FilesBusy())
             {
                 reply(Failure(ErrorCode::FilesBusy));
                 return;
@@ -378,7 +449,7 @@ void Engine::State::Verify(std::vector<std::string> const& ids, Reply reply)
 {
     for (auto const& id : ids)
     {
-        if (!torrents.at(id).handle.torrent_file())
+        if (torrents.at(id).restore || !torrents.at(id).handle.torrent_file())
         {
             reply(Failure(ErrorCode::MetadataUnavailable));
             return;
@@ -393,99 +464,189 @@ void Engine::State::Verify(std::vector<std::string> const& ids, Reply reply)
     reply(Success());
 }
 
+// Removes the torrents from the list. With deleteData it also deletes their
+// files; a torrent that CanRemove refuses leaves the list at once and is
+// removed when CanRemove allows it.
 void Engine::State::Remove(std::vector<std::string> const& ids, Reply reply, bool deleteData)
 {
+    std::vector<std::string> ready;
+    std::vector<std::string> later;
+    for (auto const& id : ids)
+    {
+        (!deleteData || CanRemove(torrents.at(id)) ? ready : later).push_back(id);
+    }
     std::size_t kept = 0;
+    auto deletion = deleteData ? PrepareDeletion(ready) : deletions.end();
     if (deleteData)
     {
-        auto scope = FileScope(ids);
-        Deletion deleting;
-        deleting.holds = scope.holds;
-        for (auto const& file : scope.files)
-        {
-            if (!std::binary_search(scope.kept.begin(), scope.kept.end(), file, PathBefore))
-            {
-                deleting.files.push_back(file);
-            }
-        }
-        for (auto const& id : ids)
-        {
-            auto const& torrent = torrents.at(id);
-            deleting.roots.push_back(FullPath(Wide(torrent.facts.savePath)));
-            if (!deleting.names.empty())
-            {
-                deleting.names += ", ";
-            }
-            deleting.names += torrent.Name();
-        }
-        kept = scope.kept.size();
-        deletion = std::move(deleting);
+        kept = FileScope(ids).kept.size();
     }
     auto removed = [&ids](std::string const& id) { return Contains(ids, id); };
     auto document = Saved();
     std::erase_if(document.torrents, [&removed](auto const& entry) { return removed(entry.first); });
     std::erase_if(document.queueOrder, removed);
-    auto complete = [this, deleteData, reply](Json outcome)
+    changes.Commit(document.ToJson(),
+        [this, ready, later, order = document.queueOrder, deletion, kept, reply](StorageOutcome outcome)
     {
-        if (deleteData && !outcome.at("ok").get<bool>())
+        if (!outcome.succeeded)
         {
-            deletion.reset();
+            if (deletion != deletions.end())
+            {
+                deletions.erase(deletion);
+                ContinueDeletion();
+            }
+            reply(Failure(ErrorCode::StorageFailed, outcome.detail));
+            return;
         }
-        reply(std::move(outcome));
-    };
-    changes.Commit(document.ToJson(), complete, [this, ids, order = document.queueOrder, deleteData, kept]
-    {
         queueOrder = order;
-        std::vector<std::filesystem::path> files;
-        for (auto const& id : ids)
+        RemoveHandles(ready, deletion);
+        for (auto const& id : later)
         {
-            auto found = torrents.find(id);
-            if (found == torrents.end())
+            auto& torrent = torrents.at(id);
+            torrent.deleted = true;
+            torrent.ApplyIntent();
+        }
+        // A move takes its torrents one at a time, so a deleted one still
+        // waiting its turn leaves the move and its files are deleted where they
+        // are. A move that is saving its end, success or failure, has no
+        // torrent waiting.
+        if (!later.empty() && relocation && relocation->phase != RelocationPhase::Saving)
+        {
+            for (auto const& id : later)
             {
-                continue;
+                auto& members = relocation->ids;
+                auto member = std::find(members.begin() + relocation->current + 1, members.end(), id);
+                if (member == members.end())
+                {
+                    continue;
+                }
+                members.erase(member);
+                auto& torrent = torrents.at(id);
+                std::erase(relocation->waiting, torrent.handle);
+                torrent.moving = false;
+                torrent.facts.moveDestination.clear();
             }
-            if (found->second.priorityReply)
+            ContinueMove();
+        }
+        reply(Success({{"kept_files", kept}}));
+    });
+}
+
+std::list<Engine::State::Deletion>::iterator Engine::State::PrepareDeletion(std::vector<std::string> const& ids)
+{
+    if (ids.empty())
+    {
+        return deletions.end();
+    }
+    auto scope = FileScope(ids);
+    Deletion deleting;
+    deleting.holds = std::move(scope.holds);
+    for (auto const& file : scope.files)
+    {
+        if (!std::binary_search(scope.kept.begin(), scope.kept.end(), file, PathBefore))
+        {
+            deleting.files.push_back(file);
+        }
+    }
+    for (auto const& id : ids)
+    {
+        auto const& torrent = torrents.at(id);
+        deleting.roots.push_back(FullPath(Wide(torrent.facts.savePath)));
+        if (!deleting.names.empty())
+        {
+            deleting.names += ", ";
+        }
+        deleting.names += torrent.Name();
+    }
+    return deletions.insert(deletions.end(), std::move(deleting));
+}
+
+// Membership has already committed; cleanup failure must not restore it.
+void Engine::State::RemoveHandles(std::vector<std::string> const& ids, std::list<Deletion>::iterator deletion)
+{
+    if (ids.empty())
+    {
+        return;
+    }
+    std::vector<std::filesystem::path> files;
+    for (auto const& id : ids)
+    {
+        auto found = torrents.find(id);
+        if (found->second.priorityReply)
+        {
+            std::exchange(found->second.priorityReply, nullptr)(Failure(ErrorCode::TorrentRemoved));
+        }
+        if (!found->second.restore)
+        {
+            if (deletion != deletions.end())
             {
-                std::exchange(found->second.priorityReply, nullptr)(Failure(ErrorCode::TorrentRemoved));
-            }
-            if (deleteData)
-            {
-                deletion->waiting.push_back(found->second.handle);
                 session->remove_torrent(found->second.handle, lt::session::delete_partfile);
+                deletion->waiting.push_back(found->second.handle);
             }
             else
             {
                 session->remove_torrent(found->second.handle);
             }
             handles.erase(found->second.handle);
-            torrents.erase(found);
-            files.push_back(ResumeFile(id));
         }
-        store.Run([files]
+        torrents.erase(found);
+        files.push_back(ResumeFile(id));
+    }
+    if (deletion != deletions.end())
+    {
+        deletion->phase = DeletionPhase::Waiting;
+        ContinueDeletion();
+    }
+    store.Run([files]
+    {
+        for (auto const& file : files)
         {
-            for (auto const& file : files)
-            {
-                std::filesystem::remove(file);
-            }
-        }, [this](StorageOutcome removed)
+            std::filesystem::remove(file);
+        }
+    }, [this](StorageOutcome removed)
+    {
+        if (!removed.succeeded)
         {
-            if (!removed.succeeded)
-            {
-                diagnostics.Write("remove", "", "metadata_cleanup_failed");
-            }
-        });
-        return Success({{"kept_files", kept}});
+            diagnostics.Write("remove", "", "metadata_cleanup_failed");
+        }
     });
+}
+
+// A deleted torrent is removed once libtorrent has finished its own move or
+// rename, which it cannot stop halfway, and once no addition runs, because
+// FileScope cannot see the files an addition shares.
+bool Engine::State::CanRemove(Torrent const& torrent) const
+{
+    return !torrent.FilesBusy() && additions.empty();
+}
+
+void Engine::State::RemoveDeferred()
+{
+    // A pending membership change may have kept files for these handles.
+    if (!changes.IsIdle())
+    {
+        return;
+    }
+    std::vector<std::string> ready;
+    for (auto const& [id, torrent] : torrents)
+    {
+        if (torrent.deleted && CanRemove(torrent))
+        {
+            ready.push_back(id);
+        }
+    }
+    RemoveHandles(ready, PrepareDeletion(ready));
 }
 
 void Engine::State::SetIntent(std::vector<std::string> const& ids, Intent intent, Reply reply)
 {
     if (intent != Intent::Paused)
     {
+        RestorePending();
         for (auto const& id : ids)
         {
-            if (!torrents.at(id).conflict.empty() &&
-                !Duplicate(torrents.at(id).handle.info_hashes(), id).empty())
+            if (torrents.at(id).restore || (!torrents.at(id).conflict.empty() &&
+                !Duplicate(torrents.at(id).status.info_hashes, id).empty()))
             {
                 reply(Failure(ProblemKind::AliasConflict));
                 return;
@@ -527,28 +688,39 @@ void Engine::State::SetIntent(std::vector<std::string> const& ids, Intent intent
     });
 }
 
-void Engine::State::SetPieceOrder(std::vector<std::string> const& ids, std::optional<bool> sequential,
-    std::optional<bool> firstLast, Reply reply)
+void Engine::State::ChangeFacts(std::vector<std::string> const& ids,
+    std::function<void(Facts&)> const& change, Reply reply)
 {
     auto document = Saved();
     std::map<std::string, Facts> next;
     for (auto const& id : ids)
     {
         auto& facts = document.torrents.at(id);
-        facts.sequential = sequential.value_or(facts.sequential);
-        facts.firstLast = firstLast.value_or(facts.firstLast);
-        next.emplace(id, facts);
+        change(facts);
+        if (facts.ToJson() != torrents.at(id).facts.ToJson())
+        {
+            next.emplace(id, facts);
+        }
     }
-    changes.Commit(document.ToJson(), reply, [this, ids, next]
+    if (next.empty())
     {
-        for (auto const& id : ids)
+        reply(Success());
+        return;
+    }
+    changes.Commit(document.ToJson(), reply, [this, next]
+    {
+        for (auto const& [id, facts] : next)
         {
             auto& torrent = torrents.at(id);
-            torrent.facts = next.at(id);
+            auto firstLast = torrent.facts.firstLast;
+            torrent.facts = facts;
             torrent.ApplyIntent();
             // The file_prio_alert after ApplyIntent raises the end pieces only
             // while firstLast is on, so turning it off lowers them here.
-            torrent.PrioritizePieces();
+            if (firstLast && !torrent.facts.firstLast)
+            {
+                torrent.PrioritizePieces();
+            }
         }
         return Success();
     });

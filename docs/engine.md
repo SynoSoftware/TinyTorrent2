@@ -133,6 +133,23 @@ verification, which can recreate libtorrent's piece picker. Startup
 discards the piece priorities in resume files, so a resume file older than the
 choice cannot override it.
 
+A torrent's download limit and upload limit are choices saved with it in
+`settings.json`, in bytes a second, where 0 means no limit. A command sets
+either or both for selected torrents; a limit the command does not carry keeps
+each torrent's own value. The engine applies them with `torrent_handle`'s
+`set_download_limit` and `set_upload_limit`, which give the torrent a
+[peer class](https://github.com/arvidn/libtorrent/blob/v2.1.2/src/torrent.cpp)
+of its own. libtorrent throttles each peer by every class it belongs to, so the
+lower of the torrent's limit and the current
+[global limit](#network-preferences) applies. The schedule, alternative limits
+and Pause all therefore need no knowledge of torrent limits, and a torrent
+limit above the global one is valid. The class belongs to the torrent, not to a
+socket type, so a torrent's limits include LAN and loopback peers, as the
+global limits do. libtorrent also writes the limits into resume data; startup
+applies the values in `settings.json` instead, so a resume file older than the
+choice cannot override it. Snapshots report each torrent's limits, so the
+window shows the engine's choice rather than its own copy.
+
 ## Addition and identity
 
 libtorrent is the sole metadata parser, including v1, v2, and hybrid torrents.
@@ -321,10 +338,25 @@ match are downloaded again over those files.
 
 One payload operation runs at a time. Its source and destination paths stay held
 until disk work has a known outcome. Add confirmations wait by reporting Files
-busy, including magnets whose paths are still unknown. A file operation also
-waits for pending additions and outside torrents still acquiring metadata: an
-unknown path cannot establish that destructive work is safe. Other torrents and
-settings remain usable.
+busy, including magnets whose paths are still unknown. A move also waits for
+pending additions and outside torrents still acquiring metadata: an unknown
+path cannot establish that the move reaches no other torrent's files. Other
+torrents and settings remain usable.
+
+**Owner ruling:** Delete files never waits for other work and never refuses
+because files are busy. A person who deletes a torrent wants it gone, not a
+problem to solve. A deletion runs beside a move, a rename or another deletion,
+and does not wait for torrents without metadata, which have no files a
+deletion could reach. A torrent still waiting for its turn in a move leaves
+the move, and its files are deleted where they are. A torrent whose own files
+libtorrent is moving or renaming leaves the list at once and is removed when
+that disk work ends, because libtorrent cannot stop it halfway. While an
+addition runs, deleted torrents also leave the list at once and are removed
+when it ends: the addition is not in the list yet, so nothing else shows
+which of its files a deletion would reach. Files that another torrent uses
+are still kept. Such a torrent also leaves the saved list before Delete
+replies, so it does not return after a restart; if the engine stops before
+removing it, its files stay on disk.
 
 For a group with partially overlapping file lists, check the whole destination
 before moving anything. The first member uses `fail_if_exist`; later members
@@ -342,8 +374,9 @@ so an addition cannot enter while the write is pending. If no disk move began,
 a failed destination preflight clears the newly staged markers through the
 same writer. An existing interrupted marker requires explicit Use the files
 there; an ordinary retry cannot replace or clear that unresolved choice. Delete
-files also refuses until this recovery establishes the actual folder, because a
-held destination is not proof that existing files there belong to the torrent.
+files deletes only in the save folder, never at an interrupted destination,
+because a held destination is not proof that existing files there belong to
+the torrent.
 After a crash during a move, that saved destination keeps the
 torrent paused with a Move interrupted error, so it does not download again
 into the old folder. Moving it to the folder that holds the files offers Use the
@@ -555,6 +588,12 @@ used to install a prerequisite.
 
 ## Closing and shutdown
 
+Setup requests the existing coordinated Exit through the engine's `--exit`
+command. It succeeds without starting an engine when none is running, and waits
+up to 30 seconds for a running engine to release instance ownership. A prompt,
+unfinished operation, or failed save that keeps it alive prevents file replacement;
+setup reports the condition and can be retried. No process is force-terminated.
+
 Closing WinUI normally exits without confirmation. Resolve actual unfinished
 edits according to [the interface](interface.md#committing-edits), and do not
 silently drop changes already committed in the UI but still being submitted.
@@ -633,9 +672,37 @@ uses the crash-recovery path. This rule does not require a resident updater.
 
 Use libtorrent's port mapping with UPnP and NAT-PMP enabled by default, one
 on/off preference, and a configurable listen port. The engine applies those
-choices; it does not implement another router client. Keep encryption at the
-pinned [upstream defaults](https://github.com/arvidn/libtorrent/blob/v2.1.2/src/settings_pack.cpp).
-Mapping success is not proof of public reachability or firewall permission.
+choices; it does not implement another router client. Mapping success is not
+proof of public reachability or firewall permission.
+
+The encryption preference shows people that TinyTorrent encrypts, and lets them
+choose how strictly. Each choice sets libtorrent's encryption policy:
+
+- Preferred, the default, encrypts the data with every peer that supports it:
+  `pe_enabled`, `pe_both` and `prefer_rc4`. Without `prefer_rc4`, the side
+  that accepts a connection chooses plaintext, so only the handshake is
+  encrypted.
+- Required connects only to peers that encrypt: `pe_forced` and `pe_rc4`.
+- Allowed is the libtorrent default: `pe_enabled` and `pe_both` without
+  `prefer_rc4`.
+- Disabled uses plain connections only: `pe_disabled`.
+
+The proxy preference sends peer and tracker connections through a SOCKS5,
+SOCKS4 or HTTP proxy. Its type, address, port, user name and password save
+together, and a proxy without its address or port is refused, because it
+would stop every connection. settings.json holds the password encrypted with
+DPAPI for the current Windows user, so a copy of the file does not reveal it.
+The settings reply and the snapshot carry the password as plain text, because
+only the same logon session can open the pipe. While a proxy is in use,
+libtorrent accepts no incoming connections, so the engine also stops port
+mapping.
+
+libtorrent applies encryption and the proxy only to new connections, so a
+change of either pauses and resumes the session, which reconnects every peer.
+libtorrent cannot tell a failing proxy from peers that are offline, so the
+engine checks the proxy itself each time it applies one: it connects, signs in
+and reports the outcome in the snapshot. The `check_proxy` command runs the
+same check on values that are not saved.
 
 The network interface preference, by default any interface, limits torrent
 traffic to one adapter, such as a VPN, through libtorrent's listen and outgoing
@@ -643,9 +710,11 @@ interface settings. While that adapter is absent, no torrent traffic flows and
 the window and the tray tooltip say why, so traffic never leaks onto another
 adapter.
 
-Global download and upload limits and a second, alternative pair of limits use
-libtorrent's session rate limits. One toggle in the window switches between the
-two pairs. Both pairs include LAN and loopback peers: global means all torrent
+Speed limits and a second pair, alternative limits, use libtorrent's session
+rate limits. The window's Limits selector chooses None, which applies neither
+pair, Speed limits, Alternative limits, or the enabled schedule. None is its own
+choice, so turning limits off keeps the caps the person typed. Outside
+scheduled periods, the schedule applies speed limits. Both pairs include LAN and loopback peers: global means all torrent
 traffic, with no undisclosed local-network exemption. The engine assigns every
 peer socket type to libtorrent's global peer class while retaining its other
 class defaults. This makes the displayed limits apply to local transfers too.
@@ -656,10 +725,16 @@ Weekly periods repeat in local time with Monday numbered zero. Equal start and
 end times span a full day beginning at that time; an earlier end spans midnight.
 Pause wins over alternative limits on overlap. Manual Pause all remains saved
 and authoritative. Explicit Resume during a scheduled pause bypasses that pause
-until the next schedule-mode change; an explicit rate-pair choice similarly
-overrides the current mode until that boundary. An absent selected adapter still
-blocks transfers. These temporary schedule overrides are not saved or replayed
-after restart.
+until the next schedule-mode change; an explicit limit choice similarly
+overrides the current mode until that boundary or an explicit Follow schedule.
+Editing periods without changing the current scheduled mode preserves the
+override; changing whether the schedule is enabled clears the rate override.
+A limit choice never resumes paused transfers. An absent selected adapter
+still blocks transfers. These temporary schedule overrides are not saved or
+replayed after restart. The saved limit choice remains the manual default
+when scheduling is disabled. Snapshots report the applied mode and caps, their
+controlling source and the current pause reason together, so the window does not infer
+effective policy from saved preferences or an unfinished Settings edit.
 
 Queue limits start at libtorrent's defaults: three downloads, five seeds and
 200 connections. Zero means unlimited in these controls. Ratio and seeding-time
@@ -678,8 +753,10 @@ default ([Disk write caching](#disk-write-caching)). The engine changes three
 more defaults:
 
 - `user_agent` is `TinyTorrent/<version>`, and `peer_fingerprint` is
-  `lt::generate_fingerprint("TY", ...)` with the version. Trackers and peers
-  then see TinyTorrent instead of a generic libtorrent client, and a private
+  `lt::generate_fingerprint("TY", ...)` with the three-part product version.
+  The incrementing build number remains in `user_agent`; the compact fingerprint's
+  single-character version fields cannot represent an unrestricted build count.
+  Trackers and peers then see TinyTorrent instead of a generic libtorrent client, and a private
   tracker that admits only known clients can admit it by name.
 - `dht_bootstrap_nodes` lists `dht.libtorrent.org:25401`,
   `dht.transmissionbt.com:6881` and `router.bittorrent.com:6881`. The default
@@ -752,6 +829,15 @@ raw magnet/tracker URLs, and payload contents. Do not log every transfer update.
 Bound and coalesce repeated diagnostics, keeping file I/O off the state owner.
 A full or unwritable log must not stop transfers. There is no automatic upload
 or second telemetry pipeline.
+
+The WinUI process records unexpected UI, managed-thread and unobserved task
+exceptions in `%LOCALAPPDATA%\TinyTorrent\ui-error.log`, retaining the previous
+report as `ui-error.previous.log`. Each report stays below 1 MiB and includes the
+build, runtime, exception and stack trace; it does not collect application state
+or upload anything. Fatal failures show a native Windows message with the report
+path and instructions to reopen the window, then retain the runtime's normal
+termination behavior. Unobserved task failures are logged without forcing a
+shutdown. A failed report write must not replace the original failure.
 
 ## Disk write caching
 

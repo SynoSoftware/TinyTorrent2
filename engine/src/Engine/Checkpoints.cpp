@@ -126,7 +126,7 @@ void Engine::State::SaveCheckpoint(Torrent& torrent, lt::add_torrent_params para
                 return;
             }
             auto& torrent = found->second;
-            if (!torrent.facts.verifyFiles || !torrent.namesReady || torrent.moving ||
+            if (torrent.deleted || !torrent.facts.verifyFiles || torrent.namePhase != NamePhase::Ready || torrent.moving ||
                 !torrent.facts.moveDestination.empty() || !SameFolder(path, torrent.facts.savePath))
             {
                 return;

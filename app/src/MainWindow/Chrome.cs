@@ -4,6 +4,7 @@ using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
 using Windows.Foundation;
 using Windows.Graphics;
 using Windows.UI.ViewManagement;
@@ -17,23 +18,45 @@ public sealed partial class MainWindow
 
     private void OnTextScaling(UISettings sender, object args) => DispatcherQueue.TryEnqueue(UpdateStatus);
     private void OnStatusSize(object sender, SizeChangedEventArgs args) => UpdateStatus();
+    private void OnLimitsStatus(object sender, DoubleTappedRoutedEventArgs args) => Run(Model.Limits);
+    private void OnUpdateAvailable(object sender, DoubleTappedRoutedEventArgs args) => Run(Model.OpenUpdate);
 
+    private void OnIncoming(object sender, DoubleTappedRoutedEventArgs args)
+    {
+        if (Model.MissingInterface.Length > 0) Model.ShowSetting(Model.Preferences.Interface);
+        else if (Model.Preferences.Proxy.IsInUse) Model.ShowProxySetting();
+        else Model.ShowSetting(Model.Preferences.Port);
+    }
+
+    private async void OnFilterStatus(object sender, DoubleTappedRoutedEventArgs args)
+    {
+        if (!await ShowTorrents()) return;
+        Model.IsFilterOpen = true;
+        DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () => Filters.Focus(FocusState.Programmatic));
+    }
+
+    // A rate keeps room for its longest text, so live rates never move the
+    // items after it. Other labels shorten to their icons, least important
+    // first, until the line fits.
     private void UpdateStatus()
     {
         if (StatusBar.ActualWidth <= 0) return;
-        var scale = _uiSettings.TextScaleFactor;
-        var width = 224 * scale;
-        var narrow = StatusBar.ActualWidth < 1200 * scale;
-        DownloadRate.Width = UploadRate.Width = width;
-        Rates.Orientation = narrow && 2 * width + Rates.Spacing + StatusActions.ActualWidth + StatusBar.ColumnSpacing > StatusBar.ActualWidth ?
-            Orientation.Vertical : Orientation.Horizontal;
-        Grid.SetColumnSpan(StatusActions, narrow ? 2 : 1);
-        StatusActions.HorizontalAlignment = narrow ? HorizontalAlignment.Right : HorizontalAlignment.Left;
-        Grid.SetRow(StatusContext, narrow ? 1 : 0);
-        Grid.SetColumn(StatusContext, narrow ? 0 : 2);
-        Grid.SetColumnSpan(StatusContext, narrow ? 3 : 1);
-        StatusContext.Margin = new Thickness(0, narrow ? 8 : 0, 0, 0);
-        Incoming.TextAlignment = narrow ? TextAlignment.Left : TextAlignment.Right;
+        DownloadRate.Width = UploadRate.Width = 216 * _uiSettings.TextScaleFactor;
+        TextBlock[] labels = [UpdateLabel, FilterLabel, IncomingLabel, AlternativeLabel, PausedLabel, CountLabel];
+        foreach (var label in labels) label.Visibility = Visibility.Visible;
+        foreach (var label in labels)
+        {
+            if (StatusFits()) return;
+            label.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    private bool StatusFits()
+    {
+        var unlimited = new Size(double.PositiveInfinity, double.PositiveInfinity);
+        TransferStatus.Measure(unlimited);
+        ListStatus.Measure(unlimited);
+        return TransferStatus.DesiredSize.Width + StatusBar.ColumnSpacing + ListStatus.DesiredSize.Width <= StatusBar.ActualWidth;
     }
 
     private void UpdateChrome()
@@ -51,7 +74,7 @@ public sealed partial class MainWindow
         var padding = (int)Math.Ceiling(4 * scale);
         var height = (int)Math.Round(Caption.ActualHeight * scale);
         var rectangles = new List<RectInt32>();
-        var exclusions = new FrameworkElement[] { AppIcon, Menus, Search, AddButtons, ThemeButton }
+        var exclusions = new FrameworkElement[] { BackButton, AppIcon, Menus, Search, AddButtons, ThemeButton }
             .Where(control => control.Visibility == Visibility.Visible && control.ActualWidth > 0)
             .Select(GetRegion).OrderBy(bounds => bounds.X);
         foreach (var bounds in exclusions)
@@ -79,7 +102,7 @@ public sealed partial class MainWindow
     private void UpdateMinimum(double scale)
     {
         if (AppWindow.Presenter is not OverlappedPresenter presenter) return;
-        var content = 48 + Menus.ActualWidth + SearchArea.Margin.Left +
+        var content = 48 + BackButton.ActualWidth + Menus.ActualWidth + SearchArea.Margin.Left +
             Search.MinWidth + SearchArea.Margin.Right + AddButtons.ActualWidth + ThemeButton.Width;
         var frame = AppWindow.Size.Width - AppWindow.ClientSize.Width;
         var width = (int)Math.Ceiling(Math.Max(720, content + LeftInset.Width.Value + RightInset.Width.Value) * scale) + frame;
@@ -125,7 +148,7 @@ public sealed partial class MainWindow
     {
         Title = Model.Text.Get("window", "title");
         RefreshTheme();
-        BackText.Text = Model.Text.Get("menus", "back");
+        NameButton(BackButton, Model.Text.Format("shortcuts", "tip", Model.Text.Get("menus", "back"), ShortcutText(Model.ShowTorrents)));
         RefreshMenus();
         AutomationProperties.SetName(Torrents, Model.Text.Get("window", "torrents"));
         NameColumn.DisplayName = Model.Text.Get("columns", "name");
@@ -134,9 +157,11 @@ public sealed partial class MainWindow
         StatusColumn.DisplayName = Model.Text.Get("columns", "status");
         DownColumn.DisplayName = Model.Text.Get("columns", "down");
         UpColumn.DisplayName = Model.Text.Get("columns", "up");
+        LimitColumn.DisplayName = Model.Text.Get("columns", "limit");
         QueueColumn.DisplayName = Model.Text.Get("columns", "queue");
         EtaColumn.DisplayName = Model.Text.Get("columns", "eta");
         RatioColumn.DisplayName = Model.Text.Get("columns", "ratio");
+        SeedsColumn.DisplayName = Model.Text.Get("columns", "seeds");
         PeersColumn.DisplayName = Model.Text.Get("columns", "peers");
         AddedColumn.DisplayName = Model.Text.Get("columns", "added");
         Search.PlaceholderText = Model.Text.Get("finding", "placeholder");
@@ -146,7 +171,6 @@ public sealed partial class MainWindow
         AutomationProperties.SetName(Filters, Model.Text.Get("filters", "title"));
         NameButton(FiltersClose, Model.Text.Get("filters", "close"));
         AutomationProperties.SetName(Split, Model.Text.Get("inspector", "resize"));
-        AlternativeText.Text = Model.Text.Get("window", "alternative");
         Torrents.Strings = Model.Text.Table;
         Root.FlowDirection = Model.Text.IsRightToLeft ? FlowDirection.RightToLeft : FlowDirection.LeftToRight;
         RefreshDialogs();

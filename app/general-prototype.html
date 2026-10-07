@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>General view prototype</title>
+<!-- PROTOTYPE, throw away. The inspector's General view, variant H, the shipped layout. Open this file
+     directly; all data is sample data in memory. -->
+<style>
+/* Colours follow the app: --line is DividerStrokeColorDefaultBrush and a paused bar uses --muted
+   (TextFillColorSecondaryBrush). Dark --base and --card were sampled from the running app over desktop acrylic,
+   so they vary with the wallpaper. --accent is the default Windows accent; the app uses the system accent. */
+* { box-sizing: border-box; }
+:root { color-scheme:light; --base:#f3f3f3; --card:#fbfbfb; --line:rgb(0 0 0 / .059); --text:#1a1a1a; --muted:#5f5f5f; --accent:#005fb8;
+  --subtle2:rgb(0 0 0 / .06); --track:rgb(0 0 0 / .45); --critical:#c42b1c; }
+body.dark { color-scheme:dark; --base:#273035; --card:#323b40; --line:rgb(255 255 255 / .082); --text:#ffffff; --muted:#c8c8c8; --accent:#60cdff;
+  --subtle2:rgb(255 255 255 / .08); --track:rgb(255 255 255 / .55); --critical:#ff99a4; }
+body { margin:0; background:var(--base); color:var(--text); font:14px/20px 'Segoe UI Variable Text','Segoe UI',sans-serif; }
+.window { width:calc(100vw - 32px); height:340px; margin:16px auto 96px; border:1px solid var(--line); border-radius:8px; background:var(--card); overflow:hidden; display:flex; flex-direction:column; }
+.tabs { display:flex; align-items:center; gap:24px; padding:10px 16px; border-bottom:1px solid var(--line); flex:none; }
+.tabs .name { font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; } .tabs .size { color:var(--muted); margin-right:auto; white-space:nowrap; }
+.tabs .tab { position:relative; white-space:nowrap; } .tabs .tab.on::after { content:''; position:absolute; left:calc(50% - 8px); bottom:-10px; width:16px; height:3px; border-radius:2px; background:var(--accent); }
+.body { flex:1; min-height:0; overflow:auto; padding:8px 16px 12px; container-type:inline-size; }
+.num { font-variant-numeric:tabular-nums; }
+.mono { font-family:'Cascadia Mono',Consolas,monospace; font-size:13px; color:var(--muted); }
+.trim { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
+svg.i { width:16px; height:16px; flex:none; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; vertical-align:-3px; }
+.btn { display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px; margin-left:-8px; border-radius:4px; border:0; background:transparent; color:var(--text); flex:none; cursor:default; }
+.btn:hover { background:var(--subtle2); }
+.progress { height:3px; border-radius:2px; position:relative; margin:8px 0; background:linear-gradient(var(--track),var(--track)) 0 50%/100% 1px no-repeat; }
+.progress > i { position:absolute; left:0; top:0; height:3px; border-radius:2px; background:var(--accent); }
+.progress.error > i { background:var(--critical); } .progress.paused > i { background:var(--muted); }
+.progress.indeterminate { overflow:hidden; } .progress.indeterminate > i { width:30%; animation:slide 2s linear infinite; }
+@keyframes slide { from { left:-30%; } to { left:100%; } }
+
+/* H: two groups on the pane's own surface. Each opens with a 20px accent icon and a BodyStrong title, as the
+   app's Settings and Add groups do. Statistics are Caption labels over BodyLarge values in one row, or two rows
+   of three when narrow; their columns fit their content and share the free width. Detail labels are Body. One
+   divider separates the groups; space, not a line, separates the speeds from the statistics. */
+.view { display:flex; flex-direction:column; gap:16px; padding-top:4px; }
+.title { display:flex; align-items:center; gap:8px; margin:0 0 12px; font-size:14px; line-height:20px; font-weight:600; }
+.title svg.i { width:20px; height:20px; color:var(--accent); }
+.properties .title { margin-bottom:6px; }
+.head { display:flex; align-items:center; gap:16px; }
+.head .state, .head .pct { font-family:'Segoe UI Variable Display','Segoe UI',sans-serif; font-size:20px; line-height:28px; font-weight:600; }
+.head .state { flex:1; }
+.meta { display:flex; align-items:center; gap:24px; }
+.meta .trim { flex:1; } .meta .trim.error { color:var(--critical); }
+.rate { display:inline-flex; align-items:center; justify-content:flex-end; gap:4px; min-width:112px; }
+.divider { border:0; margin:8px 0; }
+.strip { display:grid; grid-template-columns:repeat(3,minmax(0,max-content)); justify-content:space-between; gap:12px 32px; }
+.stat { display:grid; grid-template-columns:20px minmax(0,1fr); column-gap:12px; align-items:center; min-width:0; }
+.stat > svg.i { grid-row:1 / span 2; width:20px; height:20px; color:var(--muted); }
+.stat .k { font-size:12px; line-height:16px; color:var(--muted); }
+.stat .v { font-size:18px; line-height:24px; }
+.details { display:grid; grid-template-columns:minmax(0,1fr); column-gap:48px; align-items:start; }
+@container (min-width:760px) { .strip { grid-template-columns:repeat(6,minmax(0,max-content)); } .details { grid-template-columns:minmax(0,3fr) minmax(0,2fr); } }
+.row { display:flex; align-items:center; gap:12px; min-height:32px; min-width:0; }
+.row > .k { display:inline-flex; align-items:center; gap:8px; width:140px; flex:none; color:var(--muted); }
+.row > .trim { flex:0 1 auto; }
+
+.properties { border-top:1px solid var(--line); padding-top:16px; }
+
+/* prototype controls, not part of the design */
+.proto { position:fixed; left:50%; bottom:16px; transform:translateX(-50%); display:flex; gap:10px; align-items:center; padding:8px 12px; border-radius:999px;
+  background:#111; color:#fff; font:12px/16px 'Segoe UI',sans-serif; box-shadow:0 8px 24px rgb(0 0 0 / .4); white-space:nowrap; z-index:9; }
+.proto button,.proto select { background:#2a2a2a; color:#fff; border:1px solid #444; border-radius:999px; padding:4px 10px; font:inherit; }
+.proto strong { min-width:220px; text-align:center; } .proto input { width:90px; vertical-align:middle; }
+</style>
+</head>
+<body class="dark">
+<div class="window" id="window">
+  <div class="tabs"><span id="glyph"></span><span class="name" id="name"></span><span class="size" id="size"></span>
+    <span class="tab on">General</span><span class="tab">Files</span><span class="tab">Peers</span><span class="tab">Trackers</span><span class="tab">Speed</span><span class="tab">Pieces</span>
+    <span style="margin-left:auto">✕</span></div>
+  <div class="body" id="body"></div>
+</div>
+<div class="proto">
+  <button id="prev">←</button><strong id="label"></strong><button id="next">→</button>
+  <select id="scenario"><option value="down">Downloading</option><option value="seed">Seeding, limited</option><option value="error">Error</option><option value="magnet">Waiting for metadata</option><option value="long">Private, long values</option></select>
+  <label>W <input id="width" type="range" min="640" max="2000" value="1800"></label>
+  <label>H <input id="height" type="range" min="220" max="640" value="540"></label>
+  <button id="theme">Theme</button>
+</div>
+<script>
+const NAMES = { H:'Shipped' };
+const KEYS = Object.keys(NAMES);
+const ICON = {
+  copy:'<svg class="i" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>',
+  folder:'<svg class="i" viewBox="0 0 24 24"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg>',
+  down:'<svg class="i" viewBox="0 0 24 24"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg>',
+  up:'<svg class="i" viewBox="0 0 24 24"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg>',
+  error:'<svg class="i" viewBox="0 0 24 24" style="margin-top:2px"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>',
+  dl:'<svg class="i" viewBox="0 0 24 24"><path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/></svg>',
+  ul:'<svg class="i" viewBox="0 0 24 24"><path d="M12 3v12"/><path d="m17 8-5-5-5 5"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/></svg>',
+  pause:'<svg class="i" viewBox="0 0 24 24"><rect x="14" y="4" width="4" height="16" rx="1"/><rect x="6" y="4" width="4" height="16" rx="1"/></svg>',
+  wait:'<svg class="i" viewBox="0 0 24 24"><path d="M5 22h14"/><path d="M5 2h14"/><path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"/><path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/></svg>',
+  sprout:'<svg class="i" viewBox="0 0 24 24"><path d="M7 20h10"/><path d="M10 20c5.5-2.5.8-6.4 3-10"/><path d="M9.5 9.4c1.1.8 1.8 2.2 2.3 3.7-2 .4-3.5.4-4.8-.3-1.2-.6-2.3-1.9-3-4.2 2.8-.5 4.4 0 5.5.8z"/><path d="M14.1 6a7 7 0 0 0-1.1 4c1.9-.1 3.3-.6 4.3-1.4 1-1 1.6-2.3 1.7-4.6-2.7.1-4 1-4.9 2z"/></svg>',
+  users:'<svg class="i" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
+  scale:'<svg class="i" viewBox="0 0 24 24"><path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="M7 21h10"/><path d="M12 3v18"/><path d="M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2"/></svg>',
+  clock:'<svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>',
+  gauge:'<svg class="i" viewBox="0 0 24 24"><path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></svg>',
+  folderClosed:'<svg class="i" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>',
+  hash:'<svg class="i" viewBox="0 0 24 24"><path d="M4 9h16"/><path d="M4 15h16"/><path d="M10 3 8 21"/><path d="M16 3l-2 18"/></svg>',
+  magnet:'<svg class="i" viewBox="0 0 24 24"><path d="m6 15-4-4 6.75-6.77a7.79 7.79 0 0 1 11 11L13 22l-4-4 6.39-6.36a2.14 2.14 0 0 0-3-3L6 15"/><path d="m5 8 4 4"/><path d="m12 15 4 4"/></svg>',
+  message:'<svg class="i" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
+  grid:'<svg class="i" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M3 15h18"/><path d="M9 3v18"/><path d="M15 3v18"/></svg>',
+  globe:'<svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>',
+  lock:'<svg class="i" viewBox="0 0 24 24"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>',
+  calendar:'<svg class="i" viewBox="0 0 24 24"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></svg>',
+  arrows:'<svg class="i" viewBox="0 0 24 24"><path d="m3 16 4 4 4-4"/><path d="M7 20V4"/><path d="m21 8-4-4-4 4"/><path d="M17 4v16"/></svg>',
+  info:'<svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>',
+  wrench:'<svg class="i" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>',
+};
+const LABEL_ICON = { 'Downloaded':ICON.dl, 'Uploaded':ICON.ul, 'Ratio':ICON.scale, 'Seeds':ICON.sprout, 'Peers':ICON.users, 'Added':ICON.clock, 'Speed limit':ICON.gauge,
+  'Folder':ICON.folderClosed, 'Info hash':ICON.hash, 'Magnet link':ICON.magnet, 'Comment':ICON.message, 'Pieces':ICON.grid, 'Created':ICON.calendar, 'Created by':ICON.wrench };
+const MAGNET = 'magnet:?xt=urn:btih:a1b2c3d4e5f60718293a4b5c6d7e8f9012345678&dn=ubuntu-24.04.3-desktop-amd64.iso&tr=https%3A%2F%2Ftorrent.ubuntu.com%2Fannounce&tr=https%3A%2F%2Fipv6.torrent.ubuntu.com%2Fannounce';
+const SCENARIOS = {
+  down:  { name:'ubuntu-24.04.3-desktop-amd64.iso', glyph:'dl', status:'Downloading', size:6.33e9, progress:.624, uploaded:1.12e9, down:4.4e6, up:3.1e5, seeds:[12,431], peers:[3,57],
+           added:'2 hours ago', addedTime:'07/10/2026 09:14', created:'14/08/2026 18:02', creator:'mktorrent 1.1', piece:4194304, priv:false, comment:'Ubuntu CD releases.ubuntu.com',
+           folder:'D:\\Downloads', hashes:['a1b2c3d4e5f60718293a4b5c6d7e8f9012345678'], magnet:MAGNET, limit:null },
+  seed:  { name:'Big Buck Bunny (2008) 1080p', glyph:'ul', status:'Seeding', size:2.86e9, progress:1, uploaded:6.9e9, down:0, up:9.8e5, seeds:[0,88], peers:[6,14],
+           added:'3 weeks ago', addedTime:'16/09/2026 21:40', created:'02/03/2012 11:20', creator:'uTorrent/3.2', piece:2097152, priv:false, comment:'',
+           folder:'E:\\Media\\Films', hashes:['dd8255ecdc7ca55fb0bbf81323d87062db1f6d1c'], magnet:MAGNET.replace('a1b2','dd82'), limit:{ up:'1.0 MiB/s' } },
+  error: { name:'Linux Mint 22 Cinnamon', glyph:'error', status:'Error', size:2.9e9, progress:.371, uploaded:2.0e8, down:0, up:0, seeds:[0,210], peers:[0,40],
+           added:'Yesterday', addedTime:'06/10/2026 17:02', created:'25/07/2026 10:00', creator:'mktorrent 1.1', piece:2097152, priv:false, comment:'https://linuxmint.com',
+           folder:'F:\\Torrents', hashes:['0f1e2d3c4b5a69788796a5b4c3d2e1f0a9b8c7d6'], magnet:MAGNET.replace('a1b2','0f1e'), limit:null,
+           error:'The disk is full. Free space on F:\\ or move the files, then resume.' },
+  magnet:{ name:'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678', glyph:'wait', status:'Waiting for metadata', size:0, progress:0, uploaded:0, down:0, up:0, seeds:[0,0], peers:[1,1],
+           added:'Just now', addedTime:'07/10/2026 11:30', created:null, creator:'', piece:0, priv:null, comment:'',
+           folder:'D:\\Downloads', hashes:['a1b2c3d4e5f60718293a4b5c6d7e8f9012345678'], magnet:MAGNET, limit:null },
+  long:  { name:'The Complete Archive of Public Domain Radio Dramas, Volumes 1–48, Remastered FLAC with Scans and Liner Notes', glyph:'pause', status:'Paused', size:184.2e9, progress:.083, uploaded:4.1e9, down:0, up:0, seeds:[0,0], peers:[0,0],
+           added:'Last month', addedTime:'28/08/2026 08:05', created:'01/01/2026 00:00', creator:'qBittorrent v5.0.2', piece:16777216, priv:true,
+           comment:'Uploaded by the archive team. Read the README before seeding and keep the folder name unchanged: https://archive.example.org/radio/complete-remaster-2026/readme',
+           folder:'\\\\nas\\archive\\Audio\\Radio Dramas\\Public Domain\\Complete Archive Remaster 2026',
+           hashes:['5c6d7e8f9012345678a1b2c3d4e5f60718293a4b','1220d4e5f60718293a4b5c6d7e8f9012345678a1b2c3d4e5f60718293a4b5c6d7e8f'], magnet:MAGNET.replace('a1b2','5c6d'), limit:{ down:'500 KiB/s', up:'200 KiB/s' } },
+};
+const params = new URLSearchParams(location.search);
+let variant = KEYS.includes(params.get('variant')) ? params.get('variant') : 'H';
+let t = SCENARIOS.down;
+
+const bytes = n => { const u = ['B','KiB','MiB','GiB','TiB']; let i = 0; while (n >= 1024 && i < 4) { n /= 1024; i++; } return i ? n.toFixed(1) + ' ' + u[i] : n + ' B'; };
+const rate = n => bytes(n) + '/s';
+const dash = v => v === null || v === undefined || v === '' ? '—' : v;
+const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+const known = () => t.size > 0;
+const downloaded = () => t.size * t.progress;
+const remaining = () => t.size - downloaded();
+const ratio = () => downloaded() === 0 ? (t.uploaded === 0 ? '0.00' : '∞') : (t.uploaded / downloaded()).toFixed(2);
+const eta = () => t.down <= 0 || remaining() <= 0 ? '—' : Math.round(remaining() / t.down / 60) + ' min';
+const pct = () => known() ? (t.progress * 100).toFixed(1) + '%' : '—';
+const limits = () => !t.limit ? 'None' : [t.limit.down && '↓ ' + t.limit.down, t.limit.up && '↑ ' + t.limit.up].filter(Boolean).join(', ');
+const privacy = () => t.priv === null ? '—' : t.priv ? 'Private torrent' : 'Public torrent';
+const pieces = () => t.piece ? `${Math.ceil(t.size / t.piece).toLocaleString('en-US')} × ${bytes(t.piece)}` : '—';
+const swarm = ([c, s]) => `${c} (${s})`;
+const hashLabel = i => t.hashes.length === 1 ? 'Info hash' : i === 0 ? 'Info hash v1' : 'Info hash v2';
+const barClass = () => t.error ? 'error' : t.status === 'Paused' ? 'paused' : '';
+
+function view() {
+  const waiting = !known(), done = t.progress >= 1;
+  const glyph = k => k === 'Privacy' ? (t.priv ? ICON.lock : ICON.globe) : LABEL_ICON[k.startsWith('Info hash') ? 'Info hash' : k];
+  const summary = t.error ? `<span class="trim error" title="${esc(t.error)}">${esc(t.error)}</span>`
+    : `<span class="trim num">${waiting ? 'Size unknown' : done ? bytes(t.size) : [`${bytes(downloaded())} of ${bytes(t.size)}`, eta() !== '—' && `${eta()} left`].filter(Boolean).join(' · ')}</span>`;
+  const stat = (k, v, tip = v) => `<div class="stat">${glyph(k)}<span class="k">${k}</span><span class="v trim num" title="${esc(tip)}">${esc(v)}</span></div>`;
+  const row = (k, v, action = '', cls = '') => `<div class="row"><span class="k">${glyph(k)}${k}</span><span class="trim ${cls}" title="${esc(v)}">${esc(v)}</span>${action}</div>`;
+  const act = (icon, tip, copy) => `<button class="btn" title="${tip}"${copy ? ` data-copy="${esc(copy)}"` : ''}>${icon}</button>`;
+  return `<div class="view v-${variant}">
+    <section class="transfer">
+      <h3 class="title">${ICON.arrows}Transfer</h3>
+      <div class="head"><span class="state trim">${esc(t.status)}</span><span class="pct num">${waiting ? '' : pct()}</span></div>
+      <div class="progress ${waiting ? 'indeterminate' : barClass()}"><i style="${waiting ? '' : `width:${t.progress * 100}%`}"></i></div>
+      <div class="meta">${summary}<span class="rate num" title="Download speed">${ICON.down}${rate(t.down)}</span><span class="rate num" title="Upload speed">${ICON.up}${rate(t.up)}</span></div>
+      <hr class="divider">
+      <div class="strip">
+        ${stat('Downloaded', bytes(downloaded()))}${stat('Uploaded', bytes(t.uploaded))}${stat('Ratio', ratio())}
+        ${stat('Seeds', swarm(t.seeds), `${t.seeds[0]} connected (${t.seeds[1]} in swarm)`)}${stat('Peers', swarm(t.peers), `${t.peers[0]} connected (${t.peers[1]} in swarm)`)}
+        ${stat('Speed limit', limits())}
+      </div>
+    </section>
+    <section class="properties">
+      <h3 class="title">${ICON.info}Properties</h3>
+      <div class="details">
+        <div>
+          ${row('Folder', t.folder, act(ICON.folder, 'Open folder'))}
+          ${t.hashes.map((h, i) => row(hashLabel(i), h, act(ICON.copy, 'Copy info hash', h), 'mono')).join('')}
+          ${row('Magnet link', t.magnet, act(ICON.copy, 'Copy magnet link', t.magnet), 'mono')}
+          ${row('Comment', dash(t.comment))}
+        </div>
+        <div>
+          ${row('Added', t.addedTime)}${row('Pieces', pieces())}${row('Privacy', privacy())}${row('Created', dash(t.created))}${row('Created by', dash(t.creator))}
+        </div>
+      </div>
+    </section>
+  </div>`;
+}
+
+function render() {
+  document.getElementById('glyph').innerHTML = ICON[t.glyph];
+  document.getElementById('name').textContent = t.name;
+  document.getElementById('size').textContent = known() ? bytes(t.size) : '';
+  document.getElementById('body').innerHTML = view();
+  document.getElementById('label').textContent = `${variant} (${NAMES[variant]})`;
+}
+document.addEventListener('click', ev => {
+  const c = ev.target.closest('[data-copy]');
+  if (c) { try { navigator.clipboard.writeText(c.dataset.copy); } catch { } }
+});
+function setVariant(v) { variant = v; params.set('variant', v); try { history.replaceState(null, '', '?' + params); } catch { } render(); }
+const step = d => setVariant(KEYS[(KEYS.indexOf(variant) + d + KEYS.length) % KEYS.length]);
+document.getElementById('prev').onclick = () => step(-1);
+document.getElementById('next').onclick = () => step(1);
+document.addEventListener('keydown', ev => { if (ev.target.closest('input,select,textarea')) return; if (ev.key === 'ArrowLeft') step(-1); if (ev.key === 'ArrowRight') step(1); });
+document.getElementById('scenario').onchange = ev => { t = SCENARIOS[ev.target.value]; render(); };
+document.getElementById('theme').onclick = () => document.body.classList.toggle('dark');
+const size = () => { const w = document.getElementById('window'); w.style.width = document.getElementById('width').value + 'px'; w.style.height = document.getElementById('height').value + 'px'; };
+document.getElementById('width').oninput = size; document.getElementById('height').oninput = size;
+size();
+render();
+</script>
+</body>
+</html>

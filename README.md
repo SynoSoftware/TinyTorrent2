@@ -10,6 +10,14 @@ Start with the [documentation guide](docs/README.md). It gives the reading order
 the authority for each decision, and the distinction between current code and
 planned work.
 
+## Generate an installer
+
+Double-click `Release.cmd`. It builds and generates an installer, then opens
+`artifacts/release/`. No configuration questions are required; without a signing
+certificate, the installer is labelled unsigned for testing. See the
+[release instructions](installer/README.md) for signing, versions, and prerequisites.
+Each run advances the shared version's build number, starting with `0.1.0.1`.
+
 ## Current baseline
 
 The reusable control, its development hosts, and its documentation are under

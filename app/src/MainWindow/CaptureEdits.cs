@@ -27,7 +27,7 @@ public sealed partial class MainWindow
         await SelectTorrent();
 
         var preferences = Model.Preferences;
-        if (preferences.Schedule.IsEditing || preferences.IsPending || preferences.Fields.Any(field => field.HasDraft))
+        if (preferences.Schedule.IsOpen || preferences.IsPending || preferences.Fields.Any(field => field.HasDraft))
             throw new InvalidOperationException("The edit review requires confirmed fixture preferences.");
         var rate = preferences.Download;
         var upload = preferences.Upload;
@@ -36,7 +36,7 @@ public sealed partial class MainWindow
         var originalUpload = upload.Input;
         var originalPort = port.Input;
         var originalPeriods = preferences.Schedule.Periods.ToArray();
-        SchedulePeriod? created = null;
+        var originalLimits = Model.LimitsIndex;
         Task<bool>? departure = null;
 
         bool PeriodsRetained() => preferences.Schedule.Periods.Count == originalPeriods.Length &&
@@ -56,35 +56,30 @@ public sealed partial class MainWindow
             return editor;
         }
 
-        async Task<bool> Leave(string? button = null, string? scene = null)
+        async Task<bool> Leave()
         {
             departure = ShowTorrents();
             await CaptureLayout();
-            if (button is null)
-            {
-                if (_interaction?.Dialog is not null)
-                    throw new InvalidOperationException("A numeric preference unexpectedly requested a draft decision.");
-            }
-            else
-            {
-                var prompt = _interaction?.Dialog ?? throw new InvalidOperationException("Leaving a schedule draft did not ask for a decision.");
-                await CapturePage(scene ?? throw new InvalidOperationException("The draft decision has no capture name."));
-                CaptureInvoke(CaptureElements(prompt).OfType<Button>().Single(control => control.Name == button));
-            }
+            if (_interaction?.Dialog is not null)
+                throw new InvalidOperationException("Leaving Settings unexpectedly requested a draft decision.");
             var navigated = await departure.WaitAsync(TimeSpan.FromSeconds(20));
             departure = null;
             await CaptureLayout();
-            if (_interaction?.Dialog is not null) throw new InvalidOperationException("The completed departure retained a decision prompt.");
             return navigated;
         }
 
         async Task<SchedulePeriod> AddPeriod()
         {
-            await ShowPreferences(new(PreferenceSection.Schedule));
+            // Periods show and change only under the weekly schedule.
+            await Model.ChooseLimits(LimitMode.Schedule);
+            if (!Model.FollowsSchedule) throw new InvalidOperationException("The edit review could not choose the weekly schedule.");
+            await ShowPreferences(new(PreferenceSection.Limits));
             await CaptureLayout();
             var form = _preferencesForm ?? throw new InvalidOperationException("The native schedule did not open.");
             CaptureInvoke(CaptureElements(form).OfType<Button>().Single(control => AutomationProperties.GetAutomationId(control) == "AddPeriod"));
-            await CaptureLayout();
+            await CaptureReady(preferences.Schedule, () => !preferences.Schedule.IsPending && preferences.Schedule.IsOpen);
+            if (preferences.Schedule.OpenPeriod is not { } opened || originalPeriods.Any(existing => existing.Matches(opened)))
+                throw new InvalidOperationException("The fixture schedule already holds the period that Add creates.");
             var draft = preferences.Schedule.Draft ?? throw new InvalidOperationException("The native Add period did not open its editor.");
             CaptureElements(form).OfType<TimePicker>().Single(control => AutomationProperties.GetAutomationId(control) == "PeriodStart").SelectedTime = TimeSpan.FromMinutes(127);
             CaptureElements(form).OfType<TimePicker>().Single(control => AutomationProperties.GetAutomationId(control) == "PeriodEnd").SelectedTime = TimeSpan.FromMinutes(151);
@@ -100,12 +95,13 @@ public sealed partial class MainWindow
                 toggle.Toggle();
             }
             await CaptureLayout();
-            if (draft.Start?.TotalMinutes != 127 || draft.End?.TotalMinutes != 151 || draft.IsPaused ||
+            if (draft.Start?.TotalMinutes != 127 || draft.End?.TotalMinutes != 151 || draft.Mode != ScheduleMode.Alternative ||
                 !draft.Days.Where(day => day.IsChecked).Select(day => day.Index).SequenceEqual(new[] { 6 }))
                 throw new InvalidOperationException("The native schedule edits did not retain the chosen period.");
             var period = new SchedulePeriod(preferences.Schedule, draft);
             if (originalPeriods.Any(existing => existing.Matches(period)))
                 throw new InvalidOperationException("The review period already exists in the fixture schedule.");
+            await CaptureReady(preferences.Schedule, () => !preferences.Schedule.IsPending && preferences.Schedule.OpenPeriod?.Matches(period) == true);
             return period;
         }
 
@@ -228,45 +224,39 @@ public sealed partial class MainWindow
             if (rate.Input != originalRate || rate.HasDraft) throw new InvalidOperationException("The original rate was not restored.");
 
             var added = await AddPeriod();
-            created = added;
+            var draft = preferences.Schedule.Draft!;
+            draft.Start = TimeSpan.FromMinutes(137);
+            if (!preferences.Schedule.IsPending) throw new InvalidOperationException("The schedule edit did not start a save.");
+            draft.End = TimeSpan.FromMinutes(167);
+            await preferences.Schedule.Close();
+            added = preferences.Schedule.Periods.Single(period => period.Start == 137 && period.End == 167);
+            if (preferences.Schedule.IsOpen || preferences.Schedule.IsPending)
+                throw new InvalidOperationException("Closing the period did not finish its pending edits.");
+            outcomes.Add(new { journey = "close period during pending save", start = added.Start, end = added.End });
             await CapturePage("edits-period-save-before-leaving");
-            if (!await Leave("PrimaryButton", "edits-period-save-prompt") || Model.Page != WindowPage.Torrents || preferences.Schedule.IsEditing ||
+            if (!await Leave() || Model.Page != WindowPage.Torrents ||
                 preferences.Schedule.Periods.Count != originalPeriods.Length + 1 || !preferences.Schedule.Periods.Any(period => period.Matches(added)) ||
                 !originalPeriods.All(existing => preferences.Schedule.Periods.Any(period => period.Matches(existing))))
-                throw new InvalidOperationException("Save on departure did not retain the new period and the original schedule.");
-            outcomes.Add(new { journey = "schedule departure Save", saved = true, navigated = true, days = added.Days, start = added.Start, end = added.End });
+                throw new InvalidOperationException("Leaving Settings did not apply the new period and retain the original schedule.");
+            outcomes.Add(new { journey = "schedule departure applies", saved = true, navigated = true, days = added.Days, start = added.Start, end = added.End });
             completed.Add("edits-period-save-departure");
-            await ShowPreferences(new(PreferenceSection.Schedule));
-            preferences.Schedule.Select(preferences.Schedule.Periods.Single(period => period.Matches(added)));
+            await ShowPreferences(new(PreferenceSection.Limits));
+            await preferences.Schedule.Open(preferences.Schedule.Periods.Single(period => period.Matches(added)));
             await CapturePage("edits-period-saved");
             await preferences.Schedule.Remove(preferences.Schedule.Periods.Single(period => period.Matches(added)));
             if (!PeriodsRetained()) throw new InvalidOperationException("Removing the created review period changed the original schedule.");
-            created = null;
-
-            await AddPeriod();
-            if (!await Leave("SecondaryButton", "edits-period-discard-prompt") || Model.Page != WindowPage.Torrents || preferences.Schedule.IsEditing || !PeriodsRetained())
-                throw new InvalidOperationException("Discard on departure changed the saved schedule or failed to navigate.");
-            outcomes.Add(new { journey = "schedule departure Discard", originalPeriodsRetained = true, navigated = true, editorClosed = true });
-            completed.Add("edits-period-discard-departure");
-
-            var cancelled = await AddPeriod();
-            var retained = preferences.Schedule.Draft;
-            if (await Leave("CloseButton", "edits-period-cancel-prompt") || Model.Page != WindowPage.Preferences ||
-                preferences.Schedule.Draft != retained || retained is null || !retained.HasChanges ||
-                !new SchedulePeriod(preferences.Schedule, retained).Matches(cancelled) || !PeriodsRetained())
-                throw new InvalidOperationException("Cancel on departure lost the native draft or left Settings.");
-            await CapturePage("edits-period-cancel-retained");
-            outcomes.Add(new { journey = "schedule departure Cancel", stayedInSettings = true, draftRetained = true, exactPeriodRetained = true, originalPeriodsRetained = true });
-            completed.Add("edits-period-cancel-departure");
         }
         finally
         {
             _interaction?.Dialog?.Hide();
             if (departure is not null) await departure.WaitAsync(TimeSpan.FromSeconds(20));
             await CaptureReady(preferences, () => !preferences.IsPending);
-            if (preferences.Schedule.IsEditing) Run(preferences.Schedule.CancelPeriod);
-            if (created is { } saved && preferences.Schedule.Periods.SingleOrDefault(period => period.Matches(saved)) is { } remaining)
+            await preferences.Schedule.Close();
+            // Every period change saves at once, so the review period may
+            // remain in any of its intermediate forms.
+            if (preferences.Schedule.Periods.FirstOrDefault(period => !originalPeriods.Any(existing => existing.Matches(period))) is { } remaining)
                 await preferences.Schedule.Remove(remaining);
+            if (originalLimits >= 0) await Model.ChooseLimits((LimitMode)originalLimits);
             port.Cancel();
             rate.Cancel();
             upload.Cancel();
@@ -281,7 +271,7 @@ public sealed partial class MainWindow
                 await preferences.Commit(upload);
             }
             if (rate.Input != originalRate || rate.HasDraft || upload.Input != originalUpload || upload.HasDraft ||
-                port.Input != originalPort || port.HasDraft || !PeriodsRetained())
+                port.Input != originalPort || port.HasDraft || !PeriodsRetained() || Model.LimitsIndex != originalLimits)
                 throw new InvalidOperationException("The edit review did not restore its fixture preferences and schedule.");
         }
         outcomes.Add(new { journey = "restore edit review fixture", rateRestored = true, uploadRestored = true, portRetained = true, originalPeriodsRetained = true });

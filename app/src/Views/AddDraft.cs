@@ -369,10 +369,14 @@ public sealed class AddDraft : INotifyPropertyChanged
         Refresh();
     }
 
-    public async Task Cancel()
+    public Task Cancel() => Cancel(Sources.ToArray());
+
+    internal async Task Cancel(IEnumerable<AddSource> sources)
     {
-        var cancelled = Sources.ToArray();
-        Clear();
+        var cancelled = sources.ToArray();
+        foreach (var source in cancelled) Sources.Remove(source);
+        if (Sources.Count == 0) Clear();
+        else { _failure = null; Refresh(); }
         foreach (var source in cancelled)
             if (source.PreviewId is { } previewId) await Release(previewId);
     }

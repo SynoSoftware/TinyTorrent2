@@ -56,7 +56,7 @@ public:
         void Send(Json message);
     };
     // The protocol version that the hello message announces.
-    static constexpr int version = 3;
+    static constexpr int version = 7;
     using Client = std::shared_ptr<Connection>;
     // Receives each request with the reply that answers it, and a null request
     // with no reply when the client disconnects.

@@ -28,6 +28,8 @@ public sealed class Preferences : INotifyPropertyChanged
     public Preference Downloads { get; }
     public Preference Seeds { get; }
     public Preference Connections { get; }
+    public Preference Encryption { get; }
+    public Proxy Proxy { get; }
     public Preference Ratio { get; }
     public Preference SeedingMinutes { get; }
     public Preference Interface { get; }
@@ -35,17 +37,24 @@ public sealed class Preferences : INotifyPropertyChanged
     public InterfaceChoice? SelectedInterface => Interfaces.FirstOrDefault(choice => choice.InterfaceId == Interface.Input);
     public Preference PortMapping { get; }
     public Preference Port { get; }
+    // Peers cannot connect in through a proxy, so the port and its forwarding
+    // have no effect while one is in use.
+    public bool CanEditPort => Port.CanEdit && !Proxy.IsInUse;
+    public bool CanEditMapping => PortMapping.CanEdit && !Proxy.IsInUse;
+    public string PortHint => Text.Get("preferences", Proxy.IsInUse ? "proxy_port_hint" : "port_hint");
+    public string MappingHint => Text.Get("preferences", Proxy.IsInUse ? "proxy_port_hint" : "mapping_hint");
     public Preference ProblemNotifications { get; }
     public Preference FinishedNotifications { get; }
     public Preference AddedNotifications { get; }
     public Preference PreventSleep { get; }
     public Preference SeedingSleep { get; }
+    // Seeding only extends Prevent sleep, so it has no effect while that is off.
+    public bool CanEditSeedingSleep => SeedingSleep.CanEdit && PreventSleep.IsOn;
     public Preference Updates { get; }
     public Schedule Schedule { get; }
     public Preference Language { get; }
     public Preference Theme { get; }
     public IReadOnlyList<Preference> Fields { get; }
-    public bool HasDraft => Schedule.HasDraft;
     internal Preference? RefusedField => Fields.FirstOrDefault(preference => preference.HasDraft && preference.Failure is CommandFailure);
     public bool HasError => RefusedField is not null || Schedule.HasDraft && Schedule.HasScheduleError;
     public bool IsPending => Fields.Any(preference => preference.IsPending) || _registering || Schedule.IsPending;
@@ -66,16 +75,15 @@ public sealed class Preferences : INotifyPropertyChanged
     // Windows lets only the person choose the default app, so a registration
     // that is not the default yet offers Windows Default apps.
     public bool NeedsDefaults => HandlersRegistered &&
-        (_registration.GetProperty("torrent_default").ValueKind == JsonValueKind.False ||
-        _registration.GetProperty("magnet_default").ValueKind == JsonValueKind.False);
+        (Field("torrent_default").ValueKind == JsonValueKind.False || Field("magnet_default").ValueKind == JsonValueKind.False);
     public string DefaultsMessage
     {
         get
         {
             var detail = Text.Get("preferences", "defaults_detail");
             if (!HandlersRegistered) return detail;
-            var torrent = _registration.GetProperty("torrent_default");
-            var magnet = _registration.GetProperty("magnet_default");
+            var torrent = Field("torrent_default");
+            var magnet = Field("magnet_default");
             if (torrent.ValueKind == JsonValueKind.True && magnet.ValueKind == JsonValueKind.False)
                 return Text.Get("preferences", "magnet_default");
             if (magnet.ValueKind == JsonValueKind.True && torrent.ValueKind == JsonValueKind.False)
@@ -88,10 +96,14 @@ public sealed class Preferences : INotifyPropertyChanged
 
     // "this", "other" or "none": whether TinyTorrent's entry starts this copy,
     // another TinyTorrent copy, or nothing.
-    private string Registered(string name) => HasRegistration ? _registration.GetProperty(name).GetString() ?? "none" : "none";
-    private string Other(string name) => Registered(name) == "other"
-        ? Text.Format("preferences", name + "_other", _registration.GetProperty(name + "_target").GetString() ?? string.Empty)
+    private string Registered(string name) => Field(name) is { ValueKind: JsonValueKind.String } state ? state.GetString() ?? "none" : "none";
+    private string Other(string name) => Registered(name) == "other" && Field(name + "_target") is { ValueKind: JsonValueKind.String } target
+        ? Text.Format("preferences", name + "_other", target.GetString() ?? string.Empty)
         : string.Empty;
+    // An engine from another build can omit a field; a missing field reads as
+    // Undefined, so the page shows the setting as off instead of failing.
+    private JsonElement Field(string name) =>
+        HasRegistration && _registration.TryGetProperty(name, out var value) ? value : default;
     public bool CanSelectLanguage => CanEdit;
     public string OnText => Text.Get("preferences", "on");
     public string OffText => Text.Get("preferences", "off");
@@ -104,8 +116,6 @@ public sealed class Preferences : INotifyPropertyChanged
         await Commit(Theme);
     }
 
-    internal async Task<bool> SaveDraft() => await PrepareLeave() && await Schedule.CommitPeriod();
-
     public event PropertyChangedEventHandler? PropertyChanged;
     public event EventHandler? TextChanged;
 
@@ -117,13 +127,15 @@ public sealed class Preferences : INotifyPropertyChanged
         ShowAdd = new(this, "show_add", PreferenceKind.Boolean, PreferenceSection.General);
         ShowSplash = new(this, "show_splash", PreferenceKind.Boolean, PreferenceSection.General);
         StartInTray = new(this, "start_in_tray", PreferenceKind.Boolean, PreferenceSection.General);
-        Download = new(this, "download_limit", PreferenceKind.Rate, PreferenceSection.Transfers);
-        Upload = new(this, "upload_limit", PreferenceKind.Rate, PreferenceSection.Transfers);
-        AlternativeDownload = new(this, "alternative_download_limit", PreferenceKind.Rate, PreferenceSection.Transfers);
-        AlternativeUpload = new(this, "alternative_upload_limit", PreferenceKind.Rate, PreferenceSection.Transfers);
+        Download = new(this, "download_limit", PreferenceKind.Rate, PreferenceSection.Limits);
+        Upload = new(this, "upload_limit", PreferenceKind.Rate, PreferenceSection.Limits);
+        AlternativeDownload = new(this, "alternative_download_limit", PreferenceKind.Rate, PreferenceSection.Limits);
+        AlternativeUpload = new(this, "alternative_upload_limit", PreferenceKind.Rate, PreferenceSection.Limits);
         Downloads = new(this, "active_downloads", PreferenceKind.Integer, PreferenceSection.Transfers);
         Seeds = new(this, "active_seeds", PreferenceKind.Integer, PreferenceSection.Transfers);
         Connections = new(this, "connection_limit", PreferenceKind.Integer, PreferenceSection.Network);
+        Encryption = new(this, "encryption", PreferenceKind.Text, PreferenceSection.Network);
+        Proxy = new(this, client);
         Ratio = new(this, "ratio_limit", PreferenceKind.Number, PreferenceSection.Transfers);
         SeedingMinutes = new(this, "seeding_minutes", PreferenceKind.Integer, PreferenceSection.Transfers);
         Interface = new(this, "network_interface", PreferenceKind.Text, PreferenceSection.Network);
@@ -140,11 +152,11 @@ public sealed class Preferences : INotifyPropertyChanged
         Schedule = new(this);
         Language = new(this, "language", PreferenceKind.Text, PreferenceSection.Appearance);
         Theme = new(this, "theme", PreferenceKind.Text, PreferenceSection.Appearance);
-        Schedule.PropertyChanged += (_, _) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasDraft)));
+        Schedule.PropertyChanged += (_, _) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsPending)));
         Fields = [Destination, ShowAdd, Download, Upload, AlternativeDownload, AlternativeUpload,
-            Downloads, Seeds, Connections, Ratio, SeedingMinutes, Interface, PortMapping, Port,
+            Downloads, Seeds, Connections, Encryption, Ratio, SeedingMinutes, Interface, PortMapping, Port,
             ProblemNotifications, FinishedNotifications, AddedNotifications, PreventSleep, SeedingSleep, Updates,
-            Schedule.Enabled, ShowSplash, StartInTray, Language, Theme];
+            ShowSplash, StartInTray, Language, Theme];
         OpenDefaults = new Command(() => Register("open_defaults"), () => CanRegister);
         OpenStartup = new Command(() => Register("open_startup"), () => CanRegister);
     }
@@ -183,14 +195,13 @@ public sealed class Preferences : INotifyPropertyChanged
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectedInterface)));
     }
 
-    internal void Apply(JsonElement settings)
+    // The proxy status is the snapshot's check of the proxy in use.
+    internal void Apply(JsonElement settings, JsonElement proxy, JsonElement proxyCheck)
     {
-        var changed = false;
-        var enabled = Schedule.Enabled.IsOn;
+        var changed = Proxy.Apply(settings, proxy, proxyCheck);
         foreach (var field in Fields)
             if (settings.TryGetProperty(field.Name, out var value)) changed |= field.Confirm(value);
         if (settings.TryGetProperty("schedule", out var schedule)) Schedule.Apply(schedule);
-        if (enabled != Schedule.Enabled.IsOn) Schedule.Refresh();
         if (changed) PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
     }
 
@@ -211,8 +222,6 @@ public sealed class Preferences : INotifyPropertyChanged
         await Submit(Language, language);
         if (Language.Failure is { } error) throw error;
     }
-
-    internal Task SetAlternative(bool enabled) => Save(new { alternative_limits = enabled });
 
     internal Task HideAddForm() => Save(new { show_add = false });
 
@@ -259,7 +268,7 @@ public sealed class Preferences : INotifyPropertyChanged
         if (!saved) return false;
         while (Fields.FirstOrDefault(field => !CanLeave(field)) is { } remaining)
             if (!await Depart(remaining)) return false;
-        return true;
+        return await Schedule.Depart();
     }
 
     public async Task<bool> Depart(Preference field)
@@ -305,7 +314,6 @@ public sealed class Preferences : INotifyPropertyChanged
                 {
                     await Save(new Dictionary<string, object> { [field.Name] = submitted.Value });
                     field.Accept(JsonSerializer.SerializeToElement(submitted.Value), submitted);
-                    if (field == Schedule.Enabled) Schedule.Refresh();
                 }
                 catch (Exception error) { failure = error; }
                 if (_owner.CanSave && (failure is null or CommandFailure) && field.TakeIntent() is { } next)
@@ -325,14 +333,19 @@ public sealed class Preferences : INotifyPropertyChanged
         value = field.Input.Trim();
         if (field.Kind == PreferenceKind.Text) return true;
         if (field.Kind == PreferenceKind.Boolean) { value = field.IsOn; return true; }
-        if (!double.TryParse(field.Input, NumberStyles.Float | NumberStyles.AllowThousands,
-                CultureInfo.CurrentCulture, out var number)) return false;
-        if (field.IsRate)
+        if (field.HasUnlimited && field.Input.Trim().Length == 0)
         {
-            if (!double.IsFinite(number) || number < 0 || number > int.MaxValue / 1024.0) return false;
-            value = checked((int)Math.Round(number * 1024));
+            value = field.Kind == PreferenceKind.Number ? 0.0 : (object)0;
             return true;
         }
+        if (field.IsRate)
+        {
+            if (!TryRate(field.Input, out var bytes)) return false;
+            value = bytes;
+            return true;
+        }
+        if (!double.TryParse(field.Input, NumberStyles.Float | NumberStyles.AllowThousands,
+                CultureInfo.CurrentCulture, out var number)) return false;
         if (!double.IsFinite(number) || number < 0) return false;
         if (field.Kind == PreferenceKind.Number) { value = number; return true; }
         if (number != Math.Truncate(number) || number > int.MaxValue ||
@@ -341,10 +354,19 @@ public sealed class Preferences : INotifyPropertyChanged
         return true;
     }
 
-    public void CancelDraft()
+    // A speed limit is typed in KiB/s and sent in bytes a second.
+    internal static bool TryRate(string input, out int bytes)
     {
-        Schedule.CancelDraft();
+        bytes = 0;
+        if (!double.TryParse(input, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.CurrentCulture, out var number) ||
+            !double.IsFinite(number) || number < 0 || number > int.MaxValue / 1024.0) return false;
+        bytes = checked((int)Math.Round(number * 1024));
+        return true;
     }
+
+    internal static string RateInput(int bytes) => (bytes / 1024.0).ToString("G", CultureInfo.CurrentCulture);
+
+    public Task CancelDraft() => Schedule.Close();
 
     public void RefreshText()
     {
@@ -354,6 +376,7 @@ public sealed class Preferences : INotifyPropertyChanged
             unavailable.Text = Text.Format("preferences", "unavailable_interface", unavailable.InterfaceId);
         Changed();
         foreach (var field in Fields) field.Refresh();
+        Proxy.Refresh();
         Schedule.RefreshText();
         TextChanged?.Invoke(this, EventArgs.Empty);
     }
@@ -362,6 +385,7 @@ public sealed class Preferences : INotifyPropertyChanged
     {
         Changed();
         foreach (var field in Fields) field.Refresh();
+        Proxy.Refresh();
         Schedule.Refresh();
     }
 
@@ -391,6 +415,9 @@ public sealed class Preference(Preferences owner, string name, PreferenceKind ki
     public PreferenceKind Kind { get; } = kind;
     public PreferenceSection Section { get; } = section;
     public bool IsRate => Kind == PreferenceKind.Rate;
+    // The engine reads 0 as no limit for every number except the port, so
+    // an empty field shows Unlimited and saves 0.
+    internal bool HasUnlimited => Kind is PreferenceKind.Rate or PreferenceKind.Integer or PreferenceKind.Number;
     internal string ConfirmedText => _confirmedInput;
     internal bool ConfirmedOn => _confirmed.ValueKind == JsonValueKind.True;
     public string Label => owner.Text.Get(IsRate ? "limits" : "preferences", Name);
@@ -406,7 +433,8 @@ public sealed class Preference(Preferences owner, string name, PreferenceKind ki
     internal Task Saving => _saving?.Task ?? Task.CompletedTask;
     // A save keeps its control enabled so later input keeps focus.
     public bool CanEdit => owner.CanEdit;
-    public string Message => _invalid ? owner.Text.Get(IsRate ? "errors" : "preferences", IsRate ? "invalid_limits" : Kind == PreferenceKind.Port ? "invalid_port" : "invalid_number") :
+    public string Message => _invalid ? owner.Text.Get(IsRate ? "errors" : "preferences", IsRate ? "invalid_limits" : Kind == PreferenceKind.Port ? "invalid_port" :
+        Kind == PreferenceKind.Integer ? "invalid_count" : "invalid_number") :
         _failure is null ? string.Empty :
         owner.Text.Error(_failure);
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -419,7 +447,8 @@ public sealed class Preference(Preferences owner, string name, PreferenceKind ki
             var preserve = HasDraft || IsPending;
             _confirmed = value.Clone();
             _confirmedInput = value.ValueKind == JsonValueKind.String ? value.GetString()! :
-                value.ValueKind == JsonValueKind.Number ? (value.GetDouble() / (IsRate ? 1024 : 1)).ToString("G", CultureInfo.CurrentCulture) : string.Empty;
+                value.ValueKind != JsonValueKind.Number || HasUnlimited && value.GetDouble() == 0 ? string.Empty :
+                IsRate ? Preferences.RateInput(value.GetInt32()) : value.GetDouble().ToString("G", CultureInfo.CurrentCulture);
             if (!preserve) { _input = _confirmedInput; _choice = null; }
         }
         if (!IsPending && _uncertain is { } submitted &&

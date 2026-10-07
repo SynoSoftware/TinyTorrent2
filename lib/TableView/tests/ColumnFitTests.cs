@@ -13,8 +13,8 @@ public sealed class FitRow
 }
 
 /// <summary>
-/// Section 10's fit commands and the geometry the resize separator grabs. The point of the section
-/// is what a fit may not do: it measures the header and the cells the current visual layout has
+/// Section 10's fit commands, the first-rows fit, and the geometry the resize separator grabs. The
+/// point of the section is what a fit may not do: it measures the header and the cells the current visual layout has
 /// already realized, and nothing else.
 /// </summary>
 [TestClass]
@@ -109,6 +109,52 @@ public class ColumnFitTests
             "after scrolling, the same command finds it");
     });
 
+    // ------------------------------------------------------------------ the first-rows fit
+
+    [TestMethod]
+    public Task ATableFitsItsFirstRowsWhenTheyArrive() => TestHost.RunAsync(async () =>
+    {
+        Table table = Build(Column("a", 400));
+        await TableHarness.LoadAsync(table);
+        await SettleAsync(table);
+
+        Assert.AreEqual(400d, TableHarness.ResolvedWidth(table, "a"), 0d, "no rows, nothing to fit");
+
+        table.ItemsSource = Rows(20, 100);
+        await SettleAsync(table);
+
+        Assert.AreEqual(100 + Inset(table), TableHarness.ResolvedWidth(table, "a"), 0d);
+    });
+
+    [TestMethod]
+    public Task OnlyTheFirstRowsAreFitted() => TestHost.RunAsync(async () =>
+    {
+        Table table = Build(Column("a", 400));
+        table.ItemsSource = Rows(20, 100);
+        await TableHarness.LoadAsync(table);
+        await SettleAsync(table);
+
+        table.ItemsSource = Rows(20, 300);
+        await SettleAsync(table);
+
+        Assert.AreEqual(100 + Inset(table), TableHarness.ResolvedWidth(table, "a"), 0d,
+            "later rows leave the fitted width alone");
+    });
+
+    [TestMethod]
+    public Task ASavedWidthKeepsTheTableFromFittingItsFirstRows() => TestHost.RunAsync(async () =>
+    {
+        Table table = Build(Column("a", 400), Column("b", 300));
+        table.Layout = TestData.Layout(widths: new Dictionary<string, double> { ["a"] = 250 });
+        table.ItemsSource = Rows(20, 100);
+        await TableHarness.LoadAsync(table);
+        await SettleAsync(table);
+
+        Assert.AreEqual(250d, TableHarness.ResolvedWidth(table, "a"), 0d, "the saved width");
+        Assert.AreEqual(300d, TableHarness.ResolvedWidth(table, "b"), 0d,
+            "one chosen width means the person has sized the columns");
+    });
+
     // ------------------------------------------------------------------ what a fit refuses
 
     [TestMethod]
@@ -190,8 +236,8 @@ public class ColumnFitTests
     // ------------------------------------------------------------------ separator geometry
 
     /// <summary>
-    /// The separator the pointer grabs is centred on a column's trailing edge and moves with the
-    /// table's horizontal offset. This is the arithmetic <c>Header.Strip</c> presses on.
+    /// The separator the pointer grabs is centred on a column's trailing edge. This is the
+    /// arithmetic <c>Header.Strip</c> presses on.
     /// </summary>
     [TestMethod]
     public Task TheSeparatorZoneIsCentredOnEachTrailingEdge() => TestHost.RunAsync(async () =>
@@ -203,11 +249,6 @@ public class ColumnFitTests
         Assert.AreEqual(0, Near(table, 204), "and into b");
         Assert.AreEqual(-1, Near(table, 190), "away from any edge");
         Assert.AreEqual(1, Near(table, 350), "b's edge");
-
-        TableHarness.SetHorizontalOffset(table, 60);
-
-        Assert.AreEqual(0, Near(table, 140), "the zone follows the scrolled header");
-        Assert.AreEqual(-1, Near(table, 200));
     });
 
     /// <summary>
@@ -260,18 +301,31 @@ public class ColumnFitTests
         return rows;
     }
 
+    /// <summary>A table restored with every declared width, so only a fit command fits it.</summary>
     private static async Task<Table> LoadAsync(List<FitRow> rows, params Column[] columns)
+    {
+        Table table = Build(columns);
+        table.Layout = TestData.DeclaredWidths(table);
+        table.ItemsSource = rows;
+
+        await TableHarness.LoadAsync(table);
+        await SettleAsync(table);
+        return table;
+    }
+
+    private static Table Build(params Column[] columns)
     {
         Table table = TestData.Table(columns);
         table.Width = 700;
         table.Height = 220;
-        table.ItemsSource = rows;
+        return table;
+    }
 
-        await TableHarness.LoadAsync(table);
+    private static async Task SettleAsync(Table table)
+    {
         table.UpdateLayout();
         await Task.Delay(250);
         table.UpdateLayout();
-        return table;
     }
 
     /// <summary>Starts counting <c>LayoutChanged</c> now; call the result to read the count.</summary>

@@ -83,7 +83,9 @@ The project files own framework, platform, and package choices. The sample and
 test hosts declare unpackaged deployment. TableView carries its own English
 text in an embedded `en.json`. The target product's
 [installation plan](architecture.md#installation-and-updates) selects unpackaged
-deployment; its installer and prerequisite delivery are not implemented here.
+deployment. [Release.cmd](../Release.cmd) generates an Inno Setup installer with
+prerequisite checks and delivery; installed upgrade and uninstall journeys still
+need verification on a disposable Windows machine.
 
 ## Build integration
 

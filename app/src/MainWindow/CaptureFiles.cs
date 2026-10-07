@@ -71,10 +71,11 @@ public sealed partial class MainWindow
             Torrents.Selection = new Syno.TableView.Selection(torrents, torrents[0]);
             await SelectTorrent();
             Run(action == FileAction.Move ? Model.MoveFiles : Model.DeleteFiles);
+            // Delete opens its dialog only after the scope arrives.
+            await CaptureReady(Model.Files, () => !Model.Files.IsPending);
             await CaptureLayout();
             var dialog = _interaction?.Dialog ?? throw new InvalidOperationException("The file command did not open its dialog.");
             var closed = _interaction?.Completion.Task ?? throw new InvalidOperationException("The file dialog has no completion.");
-            await CaptureReady(Model.Files, () => !Model.Files.IsPending);
             if (Model.Files.HasError) throw new InvalidOperationException("The file scope could not be read: " + Model.Files.Message);
             return (dialog, closed);
         }
@@ -173,7 +174,7 @@ public sealed partial class MainWindow
         (dialog, closed) = await Open([group[0]], FileAction.Delete);
         try
         {
-            if (!Model.Files.HasShared || Model.Files.KeptText.Length == 0 || dialog.DefaultButton != ContentDialogButton.Close)
+            if (!Model.Files.HasShared || dialog.DefaultButton != ContentDialogButton.Close)
                 throw new InvalidOperationException("The partial deletion omitted shared-file protection or safe default.");
             await Matrix("delete-shared-confirm", dialog.Content as FrameworkElement);
             CaptureInvoke(dialog);

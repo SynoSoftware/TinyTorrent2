@@ -180,9 +180,8 @@ expand arrow and is a leaf for navigation and automation.
 Expansion inserts the visible descendant sequence; collapse removes it.
 Expansion changes neither source order nor descendant expansion flags, so
 reopening a parent restores the descendant branches the person left open.
-Neither operation changes column widths, fits columns or resets horizontal
-scroll. Use the existing collection reconciliation and native scroll anchoring;
-expansion must not recreate unaffected rows or jump to the top of the table.
+Neither operation changes column widths or fits columns. Use the existing
+collection reconciliation and native scroll anchoring; expansion must not recreate unaffected rows or jump to the top of the table.
 
 Filtering remains a host projection. TableView receives the surviving hierarchy
 and does not invent search, ancestor retention or forced expansion. A filtered
@@ -392,8 +391,8 @@ The same `FileBrowser` continues to serve Add and the inspector. Replace its
 hand-built header and TreeView rows with the real TableView. Remove the duplicate
 column widths, `Indent`/`Lead`/`Expander` compensation and 960-DIP table width cap.
 Keep its existing search, summary, Expand all/Collapse all and domain state
-owner. Fixed column widths and overflow use TableView's existing behavior;
-removing the cap does not introduce stretch columns or automatic fitting.
+owner. Column widths, the first-rows fit and overflow use TableView's existing
+behavior; removing the cap does not introduce stretch columns.
 
 The Name column is the hierarchy column. Its host content is the wanted
 checkbox, file-type icon and name; the library places the indent and arrow

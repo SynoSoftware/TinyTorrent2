@@ -147,13 +147,17 @@ bool Engine::State::IsPaused() const
         (scheduledMode == ScheduleMode::Paused && !bypassesScheduledPause);
 }
 
-bool Engine::State::UsesAlternative() const
+LimitMode Engine::State::CurrentLimits() const
 {
-    if (alternativeOverride)
+    if (limitOverride)
     {
-        return *alternativeOverride;
+        return *limitOverride;
     }
-    return settings.scheduleEnabled ? scheduledMode == ScheduleMode::Alternative : settings.usesAlternative;
+    if (!settings.scheduleEnabled)
+    {
+        return settings.limitMode;
+    }
+    return scheduledMode == ScheduleMode::Alternative ? LimitMode::Alternative : LimitMode::Speed;
 }
 
 void Engine::State::RefreshPolicy(bool configure)
@@ -163,7 +167,7 @@ void Engine::State::RefreshPolicy(bool configure)
     {
         scheduledMode = mode;
         bypassesScheduledPause = false;
-        alternativeOverride.reset();
+        limitOverride.reset();
     }
     interfaceMissing = !InterfaceAvailable(settings.networkInterface);
     auto adapter = AdapterName(settings.networkInterface);
@@ -174,9 +178,12 @@ void Engine::State::RefreshPolicy(bool configure)
         listen.clear();
     }
     auto paused = IsPaused();
-    auto alternative = UsesAlternative();
-    bool networkChanged = appliedListen != listen;
-    if (!configure && !networkChanged && appliedPause == paused && appliedAlternative == alternative)
+    auto limits = CurrentLimits();
+    bool proxyChanged = appliedProxy != settings.proxy;
+    // libtorrent applies encryption and the proxy only to new connections, so
+    // a change of either reconnects every peer, as a change of interface does.
+    bool networkChanged = appliedListen != listen || proxyChanged || appliedEncryption != settings.encryption;
+    if (!configure && !networkChanged && appliedPause == paused && appliedLimits == limits)
     {
         return;
     }
@@ -184,13 +191,42 @@ void Engine::State::RefreshPolicy(bool configure)
     {
         session->pause();
     }
+    if (proxyChanged)
+    {
+        proxyOutcome.reset();
+    }
     lt::settings_pack pack;
     if (configure || networkChanged)
     {
-        pack.set_bool(lt::settings_pack::enable_upnp, settings.portMapping && !interfaceMissing);
-        pack.set_bool(lt::settings_pack::enable_natpmp, settings.portMapping && !interfaceMissing);
+        auto const& proxy = settings.proxy;
+        // Peers cannot connect in through a proxy, so there is no port to
+        // forward.
+        auto maps = settings.portMapping && !interfaceMissing && proxy.type == ProxyType::None;
+        pack.set_bool(lt::settings_pack::enable_upnp, maps);
+        pack.set_bool(lt::settings_pack::enable_natpmp, maps);
         pack.set_str(lt::settings_pack::listen_interfaces, listen);
         pack.set_str(lt::settings_pack::outgoing_interfaces, adapter);
+        auto encryption = settings.encryption;
+        auto policy = encryption == Encryption::Required ? lt::settings_pack::pe_forced :
+            encryption == Encryption::Disabled ? lt::settings_pack::pe_disabled : lt::settings_pack::pe_enabled;
+        pack.set_int(lt::settings_pack::out_enc_policy, policy);
+        pack.set_int(lt::settings_pack::in_enc_policy, policy);
+        // Without prefer_rc4 the side that accepts the connection chooses
+        // plaintext, so only the handshake is encrypted.
+        pack.set_int(lt::settings_pack::allowed_enc_level,
+            encryption == Encryption::Required ? lt::settings_pack::pe_rc4 : lt::settings_pack::pe_both);
+        pack.set_bool(lt::settings_pack::prefer_rc4,
+            encryption == Encryption::Preferred || encryption == Encryption::Required);
+        auto signsIn = !proxy.username.empty();
+        auto type = proxy.type == ProxyType::Socks5 ? (signsIn ? lt::settings_pack::socks5_pw : lt::settings_pack::socks5) :
+            proxy.type == ProxyType::Socks4 ? lt::settings_pack::socks4 :
+            proxy.type == ProxyType::Http ? (signsIn ? lt::settings_pack::http_pw : lt::settings_pack::http) :
+            lt::settings_pack::none;
+        pack.set_int(lt::settings_pack::proxy_type, type);
+        pack.set_str(lt::settings_pack::proxy_hostname, proxy.host);
+        pack.set_int(lt::settings_pack::proxy_port, proxy.port);
+        pack.set_str(lt::settings_pack::proxy_username, proxy.username);
+        pack.set_str(lt::settings_pack::proxy_password, proxy.password);
     }
     if (configure)
     {
@@ -202,9 +238,9 @@ void Engine::State::RefreshPolicy(bool configure)
         pack.set_int(lt::settings_pack::active_tracker_limit, -1);
         pack.set_int(lt::settings_pack::connections_limit, settings.connections ? settings.connections : INT_MAX);
     }
-    auto const& limits = alternative ? settings.alternative : settings.limits;
-    pack.set_int(lt::settings_pack::download_rate_limit, limits.download);
-    pack.set_int(lt::settings_pack::upload_rate_limit, limits.upload);
+    auto caps = settings.Caps(limits);
+    pack.set_int(lt::settings_pack::download_rate_limit, caps.download);
+    pack.set_int(lt::settings_pack::upload_rate_limit, caps.upload);
     session->apply_settings(pack);
     if (paused)
     {
@@ -215,8 +251,22 @@ void Engine::State::RefreshPolicy(bool configure)
         session->resume();
     }
     appliedListen = std::move(listen);
+    appliedProxy = settings.proxy;
+    appliedEncryption = settings.encryption;
     appliedPause = paused;
-    appliedAlternative = alternative;
+    appliedLimits = limits;
+    // libtorrent cannot tell a proxy that fails from peers that are offline,
+    // so the engine checks the proxy itself.
+    if (proxyChanged && settings.proxy.type != ProxyType::None)
+    {
+        CheckProxy(settings.proxy, [this, checked = settings.proxy](std::optional<ProxyCheck> check)
+        {
+            if (check && settings.proxy == checked)
+            {
+                proxyOutcome = check->outcome;
+            }
+        });
+    }
 }
 
 void Engine::State::LimitSeeds()
@@ -228,7 +278,7 @@ void Engine::State::LimitSeeds()
     std::vector<std::string> ids;
     for (auto const& [id, torrent] : torrents)
     {
-        if (Contains(limitingSeeds, id))
+        if (torrent.deleted || Contains(limitingSeeds, id))
         {
             continue;
         }

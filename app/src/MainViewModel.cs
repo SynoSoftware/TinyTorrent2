@@ -57,11 +57,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     public bool IsStorageFailed => _storageFailed;
     public bool IsEmptyVisible => !_storageFailed;
     public bool IsClosing => _closing;
-    public bool CanClose => !_changingLanguage && !_picking && !_receivingSources && !Draft.IsPending &&
-        !Inspector.IsPending && !Preferences.IsPending && !Files.IsPending;
+    public bool CanClose => !_changingLanguage && !_picking && !_receivingSources && _arrivals.IsCompleted && !Draft.IsPending &&
+        !Inspector.IsPending && !Preferences.IsPending && !Files.IsPending && !SpeedLimit.IsPending && _limitsChoice is null;
     public bool CanExit => _connected && CanClose;
     public string? DataDirectory => _client.DataDirectory;
-    public bool HasDraft => Draft.HasChanges || Inspector.HasDraft || Preferences.HasDraft || Files.HasDraft;
+    public bool HasDraft => Draft.HasChanges || Inspector.HasDraft || Files.HasDraft;
     internal bool CanSave => _connected && !_loading && !_storageFailed && !_stopping && !_picking;
     public bool CanEdit => CanSave && !_closing;
     public bool IsPicking
@@ -97,9 +97,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         set { if (_toolbarOpen == value) return; _toolbarOpen = value; Changed(nameof(IsToolbarOpen)); }
     }
     public ICommand SwitchToolbar { get; }
-    public string DownloadText => Text.Format("window", "download_rate", Rate(_downloadRate));
-    public string UploadText => Text.Format("window", "upload_rate", Rate(_uploadRate));
-    public string PausedText => _connected && AllPaused ? Text.Get("status", "all_paused") : string.Empty;
+    public bool IsSessionPaused => _connected && AllPaused;
     private string Rate(double rate) => _connected && !_loading && !_storageFailed ? Text.Format("units", "rate", Text.Bytes(rate)) : "—";
     public string TorrentError => _current is null || !_current.IsError ? string.Empty :
         Text.Format("errors", "torrent", _current.Name, _current.ErrorText);
@@ -146,6 +144,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         OpenCompletion = new Command(OpenCompleted, () => CanOpenCompletion);
         Draft = new AddDraft(this, _client, strings);
         Files = new FileOperation(this, _client);
+        SpeedLimit = new SpeedLimit(this, _client);
         Inspector = new Inspector(this, _client);
         Preferences = new Preferences(this, _client);
         Filters = Enum.GetValues<TorrentFilter>().Select(filter => new FilterChoice(this, filter)).ToArray();
@@ -153,6 +152,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         Inspector.PropertyChanged += OnTaskChanged;
         Preferences.PropertyChanged += OnTaskChanged;
         Files.PropertyChanged += OnTaskChanged;
+        SpeedLimit.PropertyChanged += OnTaskChanged;
         Restart = new Command(() =>
         {
             try { _client.LaunchEngine(); ClearError(); }
@@ -181,12 +181,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         Force = new Command(() => ActOnSelection("force"), () => CanEdit && _selected.Length > 0);
         SwitchSequential = new Command(() => SetPieceOrder(PieceOrder.Sequential, Sequential != true), () => CanEditSelection);
         SwitchFirstLast = new Command(() => SetPieceOrder(PieceOrder.FirstLast, FirstLast != true), () => CanEditSelection);
+        LimitSpeed = SpeedCommand(() => _selected);
         SwitchFilters = new Command(() => { IsFilterOpen = !IsFilterOpen; return Task.CompletedTask; }, () => true);
         SwitchToolbar = new Command(() => { IsToolbarOpen = !IsToolbarOpen; return Task.CompletedTask; }, () => true);
         Verify = new Command(() => ActOnSelection("verify"), () => CanEdit && _selected.Length > 0);
         Remove = new Command(() => { RemoveRequested?.Invoke(this, _selected.ToArray()); return Task.CompletedTask; }, () => CanEdit && _selected.Length > 0);
-        MoveFiles = new Command(() => { MoveRequested?.Invoke(this, _selected.ToArray()); return Task.CompletedTask; },
-            () => CanEdit && _selected.Length > 0 && _selected.All(torrent => !torrent.IsMoving));
+        MoveFiles = MoveCommand(() => _selected);
         DeleteFiles = new Command(() => { DeleteRequested?.Invoke(this, _selected.ToArray()); return Task.CompletedTask; },
             () => CanEdit && _selected.Length > 0 && _selected.All(torrent => !torrent.IsMoving));
         Up = new Command(() => Queue("up"), () => CanMove);
@@ -195,7 +195,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         Bottom = new Command(() => Queue("bottom"), () => CanMove);
         PauseAll = new Command(() => SessionPause(true), () => CanEdit);
         ResumeAll = new Command(() => SessionPause(false), () => CanEdit);
-        Limits = new Command(() => RequestPreferences(new(PreferenceSection.Transfers, "download_limit")), () => true);
+        Limits = new Command(() => RequestPreferences(new(PreferenceSection.Limits, "limit_mode")), () => true);
         Open = new Command(() => OpenTorrent(false), () => CanEdit && _selected.Length == 1);
         OpenFolder = new Command(() => OpenTorrent(true), () => CanEdit && _selected.Length == 1);
         CopyMagnet = new Command(() => CopyTorrent(false), () => CanEdit && _selected.Length == 1);
@@ -249,6 +249,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     {
         var previousAccess = (_connected, _loading, _storageFailed, _stopping);
         var sessionId = snapshot.GetProperty("session_id").GetString()!;
+        var reconnected = !_connected || _sessionId != sessionId;
+        if (reconnected && _limitsError is not CommandFailure) _limitsError = null;
         if (_sessionId != sessionId) Draft.Invalidate();
         _sessionId = sessionId;
         _connected = true;
@@ -270,11 +272,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             return;
         }
         var settings = snapshot.GetProperty("settings");
-        Preferences.Apply(settings);
+        Preferences.Apply(settings, snapshot.GetProperty("proxy"), snapshot.GetProperty("proxy_check"));
         AllPaused = snapshot.GetProperty("all_paused").GetBoolean();
         HasIncoming = snapshot.GetProperty("has_incoming").GetBoolean();
         MissingInterface = snapshot.TryGetProperty("missing_interface", out var missing) ? missing.GetString() ?? string.Empty : string.Empty;
-        _alternativeLimits = snapshot.GetProperty("alternative_limits").GetBoolean();
+        ApplyLimits(snapshot.GetProperty("limits"));
         if (!_changingLanguage && Preferences.Language.ConfirmedText is { Length: > 0 } tag && tag != _requestedLanguage)
             _languageLoad = LoadLanguage(tag);
         var present = new HashSet<string>();
@@ -308,7 +310,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         _downloadRate = snapshot.GetProperty("download_rate").GetDouble();
         _uploadRate = snapshot.GetProperty("upload_rate").GetDouble();
         var published = Project();
-        if (accessChanged) Refresh(); else RefreshWindow();
+        if (accessChanged) Refresh();
+        else { Files.Refresh(); RefreshWindow(); }
         ObserveUpdates();
         if (first) ShowRequested?.Invoke(this, EventArgs.Empty);
         Inspector.Observe(sessionId);
@@ -487,7 +490,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     {
         await Draft.Cancel();
         Inspector.CancelDraft();
-        Preferences.CancelDraft();
+        await Preferences.CancelDraft();
         Files.Cancel();
     }
 
@@ -526,7 +529,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     internal void Reveal(string[] torrentIds)
     {
         if (torrentIds.Length == 0) return;
-        ErrorsOnly = false;
         Filter = TorrentFilter.All;
         _revealIds = torrentIds;
         _error = null;
@@ -547,6 +549,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         Inspector.Refresh();
         Preferences.Refresh();
         Files.Refresh();
+        SpeedLimit.Refresh();
         RefreshWindow();
     }
 
@@ -555,7 +558,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         if (_closed) return;
         foreach (var choice in Filters) choice.Refresh();
         Changed(string.Empty);
-        foreach (Command command in new[] { Add, AddMagnet, Pause, Resume, Force, SwitchSequential, SwitchFirstLast, SwitchFilters, SwitchToolbar,
+        foreach (Command command in new[] { Add, AddMagnet, Pause, Resume, Force, SwitchSequential, SwitchFirstLast, LimitSpeed, SwitchFilters, SwitchToolbar,
             Verify, Remove, MoveFiles, DeleteFiles,
             Up, Down, Top, Bottom, PauseAll, ResumeAll, Open, OpenFolder, CopyMagnet, CopyHash,
             Properties, Limits, ClearFilters, ShowPreferences, ShowTorrents, ShowAbout, OpenUpdate, Exit, SwitchTheme, Restart, OpenCompletion }) command.Refresh();

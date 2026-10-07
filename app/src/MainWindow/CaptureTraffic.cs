@@ -49,20 +49,20 @@ public sealed partial class MainWindow
                     await CaptureReady(Model.Inspector, () => !Model.Inspector.IsLoading && !Model.Inspector.HasError && (section switch
                     {
                         InspectorSection.General => Model.Inspector.PieceSize > 0 && Model.Inspector.Folder.Length > 0,
-                        InspectorSection.Peers => Model.Inspector.Peers.Count > 0 && Model.Inspector.Peers.Any(peer => peer.DownloadRate > 0),
+                        InspectorSection.Peers => Model.Inspector.Peers is not null && Model.Inspector.Peers.Any(peer => peer.DownloadRate > 0),
                         InspectorSection.Pieces => Model.Inspector.Pieces is { MetadataReady: true, Peers: > 0 } pieces &&
                             pieces.Verified.Any(value => value) && pieces.Verified.Any(value => !value),
-                        InspectorSection.Speed => Model.Inspector.History.Count(sample => sample.DownloadRate > 0) >= 2,
+                        InspectorSection.Speed => Model.Inspector.History is not null && Model.Inspector.History.Count(sample => sample.DownloadRate > 0) >= 2,
                         _ => false
                     }));
                     if (target.IsPaused || target.IsError || target.DownloadRate <= 0 || target.Progress >= 1 ||
-                        Model.Inspector.Peers.Any(peer => !peer.Endpoint.StartsWith("127.0.0.1:", StringComparison.Ordinal)))
+                        Model.Inspector.Peers is not null && Model.Inspector.Peers.Any(peer => !peer.Endpoint.StartsWith("127.0.0.1:", StringComparison.Ordinal)))
                         throw new InvalidOperationException("The inspector capture no longer has an active loopback transfer.");
                     await CapturePage(prefix + "-" + section, InspectorContent.Content as FrameworkElement);
                     completed.Add(prefix + "-" + section);
                     outcomes.Add(new { scene = prefix, section = section.ToString(), target.Downloaded, target.DownloadRate, target.Progress,
-                        peers = Model.Inspector.Peers.Count, pieces = Model.Inspector.Pieces?.Count,
-                        verified = Model.Inspector.Pieces?.Verified.Count(value => value), samples = Model.Inspector.History.Count });
+                        peers = Model.Inspector.Peers?.Count ?? 0, pieces = Model.Inspector.Pieces?.Count,
+                        verified = Model.Inspector.Pieces?.Verified.Count(value => value), samples = Model.Inspector.History?.Count ?? 0 });
                 }
             }
         }

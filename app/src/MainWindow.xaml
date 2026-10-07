@@ -23,9 +23,14 @@
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition x:Name="RightInset" Width="0" />
             </Grid.ColumnDefinitions>
-            <Image x:Name="AppIcon" Grid.Column="1" Width="24" Height="24" Margin="16,0,8,0" AutomationProperties.AccessibilityView="Raw">
-                <Image.Source><SvgImageSource UriSource="ms-appx:///Assets/tinyTorrent.svg" /></Image.Source>
-            </Image>
+            <StackPanel x:Name="CaptionStart" Grid.Column="1" Orientation="Horizontal">
+                <Button x:Name="BackButton" Style="{StaticResource TinyTorrentCaptionButtonStyle}" Visibility="Collapsed" Command="{x:Bind Model.ShowTorrents}">
+                    <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.ArrowLeft}" FontSize="16" />
+                </Button>
+                <Image x:Name="AppIcon" Width="24" Height="24" Margin="16,0,8,0" AutomationProperties.AccessibilityView="Raw">
+                    <Image.Source><SvgImageSource UriSource="ms-appx:///Assets/tinyTorrent.svg" /></Image.Source>
+                </Image>
+            </StackPanel>
             <MenuBar x:Name="Menus" Grid.Column="2" Padding="0" VerticalAlignment="Center">
                 <!-- Without IsAccessKeyScope, a quick Alt+F opens the menu but its
                      items' access keys stay inactive, so Alt+F, X does nothing:
@@ -55,14 +60,6 @@
                 <FontIcon x:Name="ThemeIcon" FontFamily="{x:Bind icons:Lucide.Font}" FontSize="16" />
             </Button>
         </Grid>
-            <Grid Grid.Row="1">
-                <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
-                <Button x:Name="BackButton" Margin="16,8" HorizontalAlignment="Left" Visibility="Collapsed" Command="{x:Bind Model.ShowTorrents}">
-                    <StackPanel Orientation="Horizontal" Spacing="8">
-                        <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.ArrowLeft}" FontSize="16" />
-                        <TextBlock x:Name="BackText" />
-                    </StackPanel>
-                </Button>
         <SplitView x:Name="Workspace" Grid.Row="1" DisplayMode="Inline" OpenPaneLength="196" IsPaneOpen="{x:Bind Model.IsFilterOpen, Mode=TwoWay}" PaneBackground="Transparent" Background="Transparent">
             <SplitView.Pane>
                 <Grid RowSpacing="8" Padding="8,8,8,0" KeyDown="OnFiltersKey">
@@ -101,6 +98,10 @@
                     </Button>
                     <Button x:Name="DeleteButton" Style="{StaticResource SubtleButtonStyle}" Command="{x:Bind Model.DeleteFiles}">
                         <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Trash2}" FontSize="16" />
+                    </Button>
+                    <Border Width="1" Height="16" Margin="4,0" VerticalAlignment="Center" Background="{ThemeResource DividerStrokeColorDefaultBrush}" />
+                    <Button x:Name="SettingsButton" Style="{StaticResource SubtleButtonStyle}" Command="{x:Bind Model.ShowPreferences}">
+                        <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Settings}" FontSize="16" />
                     </Button>
                 </StackPanel>
             <Grid x:Name="TorrentWorkspace" Grid.Row="1" Background="Transparent">
@@ -155,17 +156,23 @@
                 <table:Column x:Name="UpColumn" Id="up" Width="130" CellAlignment="Right">
                     <table:Column.CellTemplate><DataTemplate x:DataType="models:Torrent"><TextBlock Text="{x:Bind UploadText, Mode=OneWay}" VerticalAlignment="Center" TextAlignment="Right" /></DataTemplate></table:Column.CellTemplate>
                 </table:Column>
+                <table:Column x:Name="LimitColumn" Id="limit" Width="180" IsVisible="False">
+                    <table:Column.CellTemplate><DataTemplate x:DataType="models:Torrent"><TextBlock Text="{x:Bind LimitText, Mode=OneWay}" AutomationProperties.Name="{x:Bind LimitName, Mode=OneWay}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" /></DataTemplate></table:Column.CellTemplate>
+                </table:Column>
                 <table:Column x:Name="EtaColumn" Id="eta" Width="90" CellAlignment="Right">
                     <table:Column.CellTemplate><DataTemplate x:DataType="models:Torrent"><TextBlock Text="{x:Bind EtaText, Mode=OneWay}" VerticalAlignment="Center" /></DataTemplate></table:Column.CellTemplate>
                 </table:Column>
                 <table:Column x:Name="RatioColumn" Id="ratio" Width="80" CellAlignment="Right">
                     <table:Column.CellTemplate><DataTemplate x:DataType="models:Torrent"><TextBlock Text="{x:Bind RatioText, Mode=OneWay}" VerticalAlignment="Center" /></DataTemplate></table:Column.CellTemplate>
                 </table:Column>
+                <table:Column x:Name="SeedsColumn" Id="seeds" Width="100" CellAlignment="Right">
+                    <table:Column.CellTemplate><DataTemplate x:DataType="models:Torrent"><TextBlock Text="{x:Bind SeedsText, Mode=OneWay}" VerticalAlignment="Center" /></DataTemplate></table:Column.CellTemplate>
+                </table:Column>
                 <table:Column x:Name="PeersColumn" Id="peers" Width="100" CellAlignment="Right">
                     <table:Column.CellTemplate><DataTemplate x:DataType="models:Torrent"><TextBlock Text="{x:Bind PeersText, Mode=OneWay}" VerticalAlignment="Center" /></DataTemplate></table:Column.CellTemplate>
                 </table:Column>
-                <table:Column x:Name="AddedColumn" Id="added" Width="160">
-                    <table:Column.CellTemplate><DataTemplate x:DataType="models:Torrent"><TextBlock Text="{x:Bind AddedText, Mode=OneWay}" VerticalAlignment="Center" /></DataTemplate></table:Column.CellTemplate>
+                <table:Column x:Name="AddedColumn" Id="added" Width="140">
+                    <table:Column.CellTemplate><DataTemplate x:DataType="models:Torrent"><TextBlock Text="{x:Bind AddedText, Mode=OneWay}" ToolTipService.ToolTip="{x:Bind AddedTip, Mode=OneWay}" VerticalAlignment="Center" /></DataTemplate></table:Column.CellTemplate>
                 </table:Column>
             </table:Table.Columns>
         </table:Table>
@@ -188,7 +195,6 @@
                 <TextBlock Text="{x:Bind Model.VersionText, Mode=OneWay}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
             </StackPanel>
         </ScrollViewer>
-            </Grid>
         <StackPanel Grid.Row="1" VerticalAlignment="Bottom" Margin="16,0,16,8" Spacing="8">
             <InfoBar x:Name="Feedback" IsClosable="False" Severity="{x:Bind Model.Severity, Mode=OneWay}" Message="{x:Bind Model.Message, Mode=OneWay}" IsOpen="{x:Bind Model.HasFeedback, Mode=OneWay}" Visibility="{x:Bind Model.HasFeedback, Mode=OneWay}">
                 <InfoBar.ActionButton><controls:ActionButton Glyph="{x:Bind icons:Lucide.RotateCcw}" ToolTipService.ToolTip="{x:Bind Model.Text.Get('connection', 'restart_tip'), Mode=OneWay}" AutomationProperties.AutomationId="Restart" Text="{x:Bind Model.RestartText, Mode=OneWay}" Command="{x:Bind Model.Restart}" Visibility="{x:Bind Model.CanRestart, Mode=OneWay}" /></InfoBar.ActionButton>
@@ -199,34 +205,57 @@
             <InfoBar x:Name="TorrentError" Severity="Error" IsClosable="False" Message="{x:Bind Model.TorrentError, Mode=OneWay}"
                 IsOpen="{x:Bind Model.HasTorrentError, Mode=OneWay}" Visibility="{x:Bind Model.HasTorrentError, Mode=OneWay}" />
         </StackPanel>
-        <StackPanel Grid.Row="2" Margin="16,8,16,12" Spacing="4">
-            <Grid x:Name="StatusBar" ColumnSpacing="12">
-                <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
-                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                <StackPanel x:Name="Rates" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
-                    <TextBlock x:Name="DownloadRate" Text="{x:Bind Model.DownloadText, Mode=OneWay}" Style="{StaticResource TinyTorrentStatusTextStyle}"
-                        ToolTipService.ToolTip="{x:Bind Model.DownloadText, Mode=OneWay}" IsTextSelectionEnabled="True" />
-                    <TextBlock x:Name="UploadRate" Text="{x:Bind Model.UploadText, Mode=OneWay}" Style="{StaticResource TinyTorrentStatusTextStyle}"
-                        ToolTipService.ToolTip="{x:Bind Model.UploadText, Mode=OneWay}" IsTextSelectionEnabled="True" />
+        <!-- Transfer state at the left, the list and the environment at the
+             right, on one line. UpdateStatus shortens labels to their icons when
+             the line is too narrow; each tooltip still names its item. -->
+        <Grid x:Name="StatusBar" Grid.Row="2" Margin="16,8,16,12" MinHeight="20" ColumnSpacing="24">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+            <StackPanel x:Name="TransferStatus" Orientation="Horizontal" Spacing="20" VerticalAlignment="Center" SizeChanged="OnStatusSize">
+                <StackPanel x:Name="DownloadRate" Orientation="Horizontal" Spacing="6" Background="Transparent" DoubleTapped="OnLimitsStatus" ToolTipService.ToolTip="{x:Bind Model.DownloadTip, Mode=OneWay}">
+                    <FontIcon Style="{StaticResource TinyTorrentStatusIconStyle}" FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.ArrowDown}" />
+                    <TextBlock Text="{x:Bind Model.DownloadStatus, Mode=OneWay}" AutomationProperties.Name="{x:Bind Model.DownloadTip, Mode=OneWay}"
+                        Style="{StaticResource TinyTorrentStatusTextStyle}" />
                 </StackPanel>
-                <StackPanel x:Name="StatusActions" Grid.Column="1" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center" SizeChanged="OnStatusSize">
-                    <ToggleButton x:Name="Alternative" IsChecked="{x:Bind Model.AlternativeLimits, Mode=TwoWay}" IsEnabled="{x:Bind Model.CanEdit, Mode=OneWay}"><TextBlock x:Name="AlternativeText" MaxWidth="160" TextWrapping="Wrap" /></ToggleButton>
-                    <ToggleButton Content="{x:Bind Model.ErrorCount, Mode=OneWay}" IsChecked="{x:Bind Model.ErrorsOnly, Mode=TwoWay}" />
+                <StackPanel x:Name="UploadRate" Orientation="Horizontal" Spacing="6" Background="Transparent" DoubleTapped="OnLimitsStatus" ToolTipService.ToolTip="{x:Bind Model.UploadTip, Mode=OneWay}">
+                    <FontIcon Style="{StaticResource TinyTorrentStatusIconStyle}" FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.ArrowUp}" />
+                    <TextBlock Text="{x:Bind Model.UploadStatus, Mode=OneWay}" AutomationProperties.Name="{x:Bind Model.UploadTip, Mode=OneWay}"
+                        Style="{StaticResource TinyTorrentStatusTextStyle}" />
                 </StackPanel>
-                <Grid x:Name="StatusContext" Grid.Column="2" ColumnSpacing="12" MinHeight="{ThemeResource ContentDialogButtonMinHeight}">
-                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                    <TextBlock x:Name="Incoming" Text="{x:Bind Model.Incoming, Mode=OneWay}" Style="{StaticResource TinyTorrentStatusTextStyle}"
-                        ToolTipService.ToolTip="{x:Bind Model.Incoming, Mode=OneWay}" IsTextSelectionEnabled="True" TextAlignment="Right" />
-                    <TextBlock Grid.Column="1" Text="{x:Bind Model.PausedText, Mode=OneWay}" Style="{StaticResource TinyTorrentStatusTextStyle}"
-                        ToolTipService.ToolTip="{x:Bind Model.PausedText, Mode=OneWay}" IsTextSelectionEnabled="True" />
-                    <TextBlock Grid.Column="2" MaxWidth="160" Text="{x:Bind Model.FilterLabel, Mode=OneWay}" Style="{StaticResource TinyTorrentStatusTextStyle}"
-                        Visibility="{x:Bind Model.HasFilter, Mode=OneWay}" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                        ToolTipService.ToolTip="{x:Bind Model.FilterLabel, Mode=OneWay}" IsTextSelectionEnabled="True" />
-                    <controls:ActionButton Grid.Column="3" Glyph="{x:Bind icons:Lucide.CircleFadingArrowUp}" ToolTipService.ToolTip="{x:Bind Model.Text.Get('about', 'update_tip'), Mode=OneWay}"
-                        Text="{x:Bind Model.UpdateText, Mode=OneWay}" Command="{x:Bind Model.OpenUpdate}" Visibility="{x:Bind Model.HasUpdate, Mode=OneWay}" />
-                </Grid>
-            </Grid>
-        </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="6" Background="Transparent" DoubleTapped="OnLimitsStatus"
+                    Visibility="{x:Bind Model.HasAlternativeLimits, Mode=OneWay}" ToolTipService.ToolTip="{x:Bind Model.AlternativeTip, Mode=OneWay}">
+                    <FontIcon Style="{StaticResource TinyTorrentStatusIconStyle}" FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Turtle}" />
+                    <TextBlock x:Name="AlternativeLabel" Text="{x:Bind Model.Text.Get('window', 'alternative'), Mode=OneWay}" Style="{StaticResource TinyTorrentStatusTextStyle}"
+                        AutomationProperties.LiveSetting="Polite" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="6" Background="Transparent" Visibility="{x:Bind Model.IsSessionPaused, Mode=OneWay}"
+                    ToolTipService.ToolTip="{x:Bind Model.Text.Get('status', 'all_paused_tip'), Mode=OneWay}">
+                    <FontIcon Style="{StaticResource TinyTorrentStatusIconStyle}" FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Pause}" />
+                    <TextBlock x:Name="PausedLabel" Text="{x:Bind Model.Text.Get('status', 'all_paused'), Mode=OneWay}" Style="{StaticResource TinyTorrentStatusTextStyle}" />
+                </StackPanel>
+            </StackPanel>
+            <StackPanel x:Name="ListStatus" Grid.Column="1" Orientation="Horizontal" Spacing="20" HorizontalAlignment="Right" VerticalAlignment="Center" SizeChanged="OnStatusSize">
+                <StackPanel Orientation="Horizontal" Spacing="6" Background="Transparent" ToolTipService.ToolTip="{x:Bind Model.TorrentCount, Mode=OneWay}">
+                    <FontIcon Style="{StaticResource TinyTorrentStatusIconStyle}" FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Files}" />
+                    <TextBlock x:Name="CountLabel" Text="{x:Bind Model.TorrentCount, Mode=OneWay}" Style="{StaticResource TinyTorrentStatusTextStyle}" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="6" Background="Transparent" DoubleTapped="OnFilterStatus" Visibility="{x:Bind Model.HasFilter, Mode=OneWay}"
+                    ToolTipService.ToolTip="{x:Bind Model.FilterLabel, Mode=OneWay}">
+                    <FontIcon Style="{StaticResource TinyTorrentStatusIconStyle}" FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Funnel}" />
+                    <TextBlock x:Name="FilterLabel" MaxWidth="160" Text="{x:Bind Model.FilterStatus, Mode=OneWay}" AutomationProperties.Name="{x:Bind Model.FilterLabel, Mode=OneWay}"
+                        Style="{StaticResource TinyTorrentStatusTextStyle}" />
+                </StackPanel>
+                <StackPanel x:Name="Incoming" Orientation="Horizontal" Spacing="6" Background="Transparent" DoubleTapped="OnIncoming" ToolTipService.ToolTip="{x:Bind Model.Incoming, Mode=OneWay}">
+                    <FontIcon Style="{StaticResource TinyTorrentStatusIconStyle}" FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind Model.IncomingGlyph, Mode=OneWay}" />
+                    <TextBlock x:Name="IncomingLabel" Text="{x:Bind Model.IncomingStatus, Mode=OneWay}" AutomationProperties.Name="{x:Bind Model.Incoming, Mode=OneWay}"
+                        Style="{StaticResource TinyTorrentStatusTextStyle}" />
+                </StackPanel>
+                <StackPanel x:Name="UpdateAvailable" Orientation="Horizontal" Spacing="6" Background="Transparent" DoubleTapped="OnUpdateAvailable" Visibility="{x:Bind Model.HasUpdate, Mode=OneWay}"
+                    ToolTipService.ToolTip="{x:Bind Model.Text.Get('about', 'available_tip'), Mode=OneWay}">
+                    <FontIcon Style="{StaticResource TinyTorrentStatusIconStyle}" FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.CircleFadingArrowUp}" />
+                    <TextBlock x:Name="UpdateLabel" Text="{x:Bind Model.Text.Get('about', 'available'), Mode=OneWay}" Style="{StaticResource TinyTorrentStatusTextStyle}" />
+                </StackPanel>
+            </StackPanel>
+        </Grid>
         <InfoBar x:Name="CompletionNotice" Grid.Row="1" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="16" MaxWidth="560"
             Severity="Success" IsClosable="True" IsOpen="False" Visibility="Collapsed" CloseButtonClick="OnDismissCompletion"
             Message="{x:Bind Model.CompletionText, Mode=OneWay}">

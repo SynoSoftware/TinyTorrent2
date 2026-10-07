@@ -44,12 +44,14 @@ public enum SuggestionScope
     Navigation
 }
 
+// The saved window placement stores the section as its number, so members keep
+// their positions; the tab order on the page is separate.
 public enum PreferenceSection
 {
     General,
     Transfers,
     Network,
-    Schedule,
+    Limits,
     Appearance
 }
 
@@ -90,12 +92,61 @@ public enum ScheduleMode
     Paused
 }
 
+public enum LimitMode
+{
+    None,
+    Speed,
+    Alternative,
+    Schedule
+}
+
+internal enum LimitSource
+{
+    Manual,
+    Schedule,
+    Override
+}
+
+internal enum PauseReason
+{
+    None,
+    Interface,
+    Manual,
+    Schedule
+}
+
+internal enum RefusalReason
+{
+    InvalidPeriod,
+    DuplicatePeriod,
+    SaveFailed
+}
+
 internal enum PeriodAction
 {
     Create,
     Move,
     Start,
     End
+}
+
+// In the order of the Edit proxy server dialog's list.
+public enum ProxyType
+{
+    None,
+    Socks5,
+    Socks4,
+    Http
+}
+
+public enum ProxyOutcome
+{
+    Connected,
+    SignInFailed,
+    Unreachable,
+    NotFound,
+    WrongType,
+    TimedOut
 }
 
 public enum PreferenceKind

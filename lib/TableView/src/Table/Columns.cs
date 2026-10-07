@@ -13,6 +13,8 @@ public sealed partial class Table
 {
     private static readonly Size Unbounded = new(double.PositiveInfinity, double.PositiveInfinity);
 
+    private bool _firstRowsFitted;
+
     /// <summary>
     /// Fit one column to the header and cells the current visual layout has already realized.
     /// A hidden or non-resizable column is a no-op; a column this table does not hold is an
@@ -49,6 +51,27 @@ public sealed partial class Table
     }
 
     /// <summary>
+    /// Section 10's first-rows fit: once rows are on screen, fit every column, unless a column
+    /// already has a width the person chose. That width came from a saved layout, a resize or a
+    /// fit, and the person's choice wins over the content.
+    /// </summary>
+    private void OnRowsLayoutUpdated(object? sender, object e)
+    {
+        if (_itemsView?.ItemsPanelRoot is not ItemsStackPanel { FirstVisibleIndex: >= 0 })
+        {
+            return;
+        }
+
+        _firstRowsFitted = true;
+        _itemsView.LayoutUpdated -= OnRowsLayoutUpdated;
+
+        if (Geometry.Order.All(column => column.WidthOverride is null))
+        {
+            FitColumns();
+        }
+    }
+
+    /// <summary>
     /// Sections 5 and 10: return to the captured baseline. Every width and visibility override is
     /// discarded, the effective order returns to the declared one, and because that baseline
     /// carries no sort criterion the local sort goes with it. It fits nothing to the current data.
@@ -73,7 +96,6 @@ public sealed partial class Table
         // SetOrder republishes the geometry, which re-realizes each header cell and so clears the
         // sort glyph of the column that had one.
         Geometry.SetOrder(_resolved);
-        UpdateHorizontalRange();
 
         if (sorted)
         {

@@ -39,9 +39,6 @@ public enum LayoutChange
 /// </summary>
 internal enum LayoutInvalidationReason
 {
-    /// <summary>Only <see cref="ResolvedLayout.HorizontalOffset"/> moved. Arrange is enough.</summary>
-    Offset,
-
     /// <summary>The same visible columns at new widths. Measure is stale; the cells are not.</summary>
     Widths,
 

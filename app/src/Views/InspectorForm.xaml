@@ -6,7 +6,89 @@
     xmlns:models="using:Syno.TinyTorrent.Models"
     xmlns:table="using:Syno.TableView"
     xmlns:icons="using:Syno">
+    <UserControl.Resources>
+        <Style x:Key="InspectorFormValueStyle" TargetType="TextBlock" BasedOn="{StaticResource TinyTorrentStatusTextStyle}">
+            <Setter Property="IsTextSelectionEnabled" Value="True" />
+        </Style>
+        <Style x:Key="InspectorFormIdentifierStyle" TargetType="TextBlock" BasedOn="{StaticResource InspectorFormValueStyle}">
+            <Setter Property="FontFamily" Value="Cascadia Mono, Consolas" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+            <Setter Property="FlowDirection" Value="LeftToRight" />
+        </Style>
+        <Style x:Key="InspectorFormStatisticValueStyle" TargetType="TextBlock" BasedOn="{StaticResource BodyLargeTextBlockStyle}">
+            <Setter Property="TextWrapping" Value="NoWrap" />
+            <Setter Property="IsTextSelectionEnabled" Value="True" />
+        </Style>
+        <Style x:Key="InspectorFormIconStyle" TargetType="FontIcon" BasedOn="{StaticResource TinyTorrentStatusIconStyle}">
+            <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+            <Setter Property="AutomationProperties.AccessibilityView" Value="Raw" />
+        </Style>
+        <!-- A property: icon, label and value on one row. The value and its action
+             sit in a left-aligned Grid, so its star column fits the value and the
+             action follows it, while a long value still trims before the action. -->
+        <Style TargetType="controls:Field">
+            <Setter Property="IsTabStop" Value="False" />
+            <Setter Property="MinHeight" Value="32" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="controls:Field">
+                        <Grid ColumnSpacing="8">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="16" /><ColumnDefinition Width="120" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                            <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{TemplateBinding Glyph}" Style="{StaticResource InspectorFormIconStyle}" />
+                            <TextBlock Grid.Column="1" Text="{TemplateBinding Label}" Style="{StaticResource TinyTorrentStatusTextStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" ToolTipService.ToolTip="{TemplateBinding Label}" />
+                            <Grid Grid.Column="2" HorizontalAlignment="Left" ColumnSpacing="4">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                <ContentPresenter Content="{TemplateBinding Content}" />
+                                <ContentPresenter Grid.Column="1" Content="{TemplateBinding Action}" />
+                            </Grid>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <!-- A statistic: its icon beside the caption, with the value below the caption.
+             The transparent background makes the whole statistic a double-click target. -->
+        <Style x:Key="InspectorFormStatisticStyle" TargetType="controls:Field">
+            <Setter Property="IsTabStop" Value="False" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="controls:Field">
+                        <StackPanel Orientation="Horizontal" Spacing="12" Background="Transparent">
+                            <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{TemplateBinding Glyph}" Style="{StaticResource InspectorFormIconStyle}" FontSize="20" />
+                            <StackPanel>
+                                <TextBlock Text="{TemplateBinding Label}" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="NoWrap" />
+                                <ContentPresenter Content="{TemplateBinding Content}" />
+                            </StackPanel>
+                        </StackPanel>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
     <Grid>
+        <VisualStateManager.VisualStateGroups>
+            <VisualStateGroup x:Name="TransferStates">
+                <VisualState x:Name="Transferring" />
+                <VisualState x:Name="Paused">
+                    <VisualState.Setters><Setter Target="Progress.Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" /></VisualState.Setters>
+                </VisualState>
+                <VisualState x:Name="Error">
+                    <VisualState.Setters><Setter Target="Summary.Foreground" Value="{ThemeResource SystemFillColorCriticalBrush}" /></VisualState.Setters>
+                </VisualState>
+            </VisualStateGroup>
+            <VisualStateGroup x:Name="WidthStates">
+                <VisualState x:Name="Wide" />
+                <VisualState x:Name="Narrow">
+                    <VisualState.Setters>
+                        <Setter Target="Details.ColumnSpacing" Value="0" />
+                        <Setter Target="MetadataColumn.Width" Value="0" />
+                        <Setter Target="Metadata.(Grid.Column)" Value="0" />
+                        <Setter Target="Metadata.(Grid.Row)" Value="1" />
+                    </VisualState.Setters>
+                </VisualState>
+            </VisualStateGroup>
+        </VisualStateManager.VisualStateGroups>
         <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
         <!-- The empty star column balances the name's, so the sections sit
              centred while Close keeps its width when the inspector is narrow. -->
@@ -29,30 +111,125 @@
                 <SelectorBarItem x:Name="PiecesSection" AutomationProperties.AutomationId="InspectorPieces" />
             </SelectorBar>
             <Button x:Name="Close" x:FieldModifier="internal" Grid.Column="3" Style="{StaticResource SubtleButtonStyle}" VerticalAlignment="Center">
-                <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.X}" FontSize="16" />
+                <FontIcon Style="{StaticResource TinyTorrentStatusIconStyle}" FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.X}" />
             </Button>
         </Grid>
         <Grid Grid.Row="1" Padding="16,8,16,12">
             <Grid>
                 <ScrollViewer x:Name="General" HorizontalScrollMode="Disabled" HorizontalScrollBarVisibility="Disabled">
-                    <StackPanel Spacing="16">
-                        <Grid ColumnSpacing="24" RowSpacing="16">
-                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                            <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
-                            <StackPanel Spacing="4"><TextBlock x:Name="DownloadedLabel" Text="{x:Bind Model.Text.Get('inspector', 'downloaded'), Mode=OneWay}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" /><TextBlock Text="{x:Bind Model.Target.DownloadedText, Mode=OneWay}" IsTextSelectionEnabled="True" /></StackPanel>
-                            <StackPanel Grid.Column="1" Spacing="4"><TextBlock x:Name="RemainingLabel" Text="{x:Bind Model.Text.Get('inspector', 'remaining'), Mode=OneWay}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" /><TextBlock Text="{x:Bind Model.Target.RemainingText, Mode=OneWay}" IsTextSelectionEnabled="True" /></StackPanel>
-                            <StackPanel Grid.Column="2" Spacing="4"><TextBlock x:Name="RatioLabel" Text="{x:Bind Model.Text.Get('columns', 'ratio'), Mode=OneWay}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" /><TextBlock Text="{x:Bind Model.Target.RatioText, Mode=OneWay}" IsTextSelectionEnabled="True" /></StackPanel>
-                            <StackPanel Grid.Row="1" Spacing="4"><TextBlock x:Name="StatusLabel" Text="{x:Bind Model.Text.Get('columns', 'status'), Mode=OneWay}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" /><TextBlock Text="{x:Bind Model.Target.Status, Mode=OneWay}" Style="{StaticResource BodyTextStyle}" MaxLines="1" IsTextSelectionEnabled="True" ToolTipService.ToolTip="{x:Bind Model.Target.Status, Mode=OneWay}" /></StackPanel>
-                            <StackPanel Grid.Row="1" Grid.Column="1" Spacing="4"><TextBlock x:Name="AddedLabel" Text="{x:Bind Model.Text.Get('columns', 'added'), Mode=OneWay}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" /><TextBlock Text="{x:Bind Model.Target.AddedText, Mode=OneWay}" Style="{StaticResource BodyTextStyle}" MaxLines="1" IsTextSelectionEnabled="True" ToolTipService.ToolTip="{x:Bind Model.Target.AddedText, Mode=OneWay}" /></StackPanel>
-                            <StackPanel Grid.Row="1" Grid.Column="2" Spacing="4"><TextBlock x:Name="CreatedLabel" Text="{x:Bind Model.Text.Get('inspector', 'created'), Mode=OneWay}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" /><TextBlock Text="{x:Bind Model.CreatedText, Mode=OneWay}" Style="{StaticResource BodyTextStyle}" MaxLines="1" IsTextSelectionEnabled="True" ToolTipService.ToolTip="{x:Bind Model.CreatedText, Mode=OneWay}" /></StackPanel>
-                            <StackPanel Grid.Row="2" Spacing="4"><TextBlock x:Name="CreatorLabel" Text="{x:Bind Model.Text.Get('inspector', 'creator'), Mode=OneWay}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" /><TextBlock Text="{x:Bind Model.Creator, Mode=OneWay}" Style="{StaticResource BodyTextStyle}" MaxLines="1" IsTextSelectionEnabled="True" ToolTipService.ToolTip="{x:Bind Model.Creator, Mode=OneWay}" /></StackPanel>
-                            <StackPanel Grid.Row="2" Grid.Column="1" Spacing="4"><TextBlock x:Name="PieceSizeLabel" Text="{x:Bind Model.Text.Get('inspector', 'piece_size'), Mode=OneWay}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" /><TextBlock Text="{x:Bind Model.PieceSizeText, Mode=OneWay}" IsTextSelectionEnabled="True" /></StackPanel>
-                            <StackPanel Grid.Row="2" Grid.Column="2" Spacing="4"><TextBlock x:Name="PrivacyLabel" Text="{x:Bind Model.Text.Get('inspector', 'privacy'), Mode=OneWay}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" /><TextBlock Text="{x:Bind Model.PrivacyText, Mode=OneWay}" /></StackPanel>
-                        </Grid>
-                        <StackPanel Spacing="4"><TextBlock x:Name="FolderLabel" Text="{x:Bind Model.Text.Get('add', 'destination'), Mode=OneWay}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" /><TextBlock Text="{x:Bind Model.Folder, Mode=OneWay}" Style="{StaticResource BodyTextStyle}" MaxLines="1" IsTextSelectionEnabled="True" ToolTipService.ToolTip="{x:Bind Model.Folder, Mode=OneWay}" FlowDirection="LeftToRight" /></StackPanel>
-                        <StackPanel Spacing="4"><TextBlock x:Name="CommentLabel" Text="{x:Bind Model.Text.Get('inspector', 'comment'), Mode=OneWay}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" /><TextBlock Text="{x:Bind Model.Comment, Mode=OneWay}" Style="{StaticResource BodyTextStyle}" MaxLines="1" IsTextSelectionEnabled="True" ToolTipService.ToolTip="{x:Bind Model.Comment, Mode=OneWay}" /></StackPanel>
-                        <TextBox x:Name="Hashes" Text="{x:Bind Model.Hashes, Mode=OneWay}" IsReadOnly="True" AcceptsReturn="True" FlowDirection="LeftToRight" />
-                        <TextBox x:Name="Magnet" Text="{x:Bind Model.Magnet, Mode=OneWay}" IsReadOnly="True" FlowDirection="LeftToRight" />
+                    <StackPanel x:Name="GeneralContent" Spacing="16" Margin="0,4,0,0" SizeChanged="OnGeneralSize">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,12">
+                                <FontIcon Style="{StaticResource GroupIconStyle}" FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.ArrowDownUp}" />
+                                <TextBlock Text="{x:Bind Model.Text.Get('inspector', 'transfer'), Mode=OneWay}" Style="{StaticResource GroupTitleTextStyle}" AutomationProperties.HeadingLevel="Level2" />
+                            </StackPanel>
+                            <Grid ColumnSpacing="16">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                <TextBlock Text="{x:Bind Model.Target.Status, Mode=OneWay}" Style="{StaticResource SurfaceTitleTextStyle}" IsTextSelectionEnabled="True" ToolTipService.ToolTip="{x:Bind Model.Target.Status, Mode=OneWay}" />
+                                <TextBlock Grid.Column="1" Text="{x:Bind Model.ProgressText, Mode=OneWay}" Style="{StaticResource SurfaceTitleTextStyle}" />
+                            </Grid>
+                            <ProgressBar x:Name="Progress" Minimum="0" Maximum="1" Margin="0,8,0,8"
+                                Value="{x:Bind Model.Target.Progress, Mode=OneWay}" IsIndeterminate="{x:Bind Model.IsIndeterminate, Mode=OneWay}"
+                                ShowError="{x:Bind Model.Target.IsError, Mode=OneWay}"
+                                AutomationProperties.Name="{x:Bind Model.Text.Get('columns', 'progress'), Mode=OneWay}" />
+                            <Grid ColumnSpacing="24">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" MinWidth="112" /><ColumnDefinition Width="Auto" MinWidth="112" /></Grid.ColumnDefinitions>
+                                <TextBlock x:Name="Summary" Text="{x:Bind Model.Summary, Mode=OneWay}" Style="{StaticResource InspectorFormValueStyle}" ToolTipService.ToolTip="{x:Bind Model.Summary, Mode=OneWay}" />
+                                <StackPanel x:Name="DownloadRate" Grid.Column="1" Orientation="Horizontal" Spacing="4" HorizontalAlignment="Right" Background="Transparent" ToolTipService.ToolTip="{x:Bind Model.Text.Get('columns', 'down'), Mode=OneWay}">
+                                    <FontIcon Style="{StaticResource TinyTorrentStatusIconStyle}" FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.ArrowDown}" AutomationProperties.AccessibilityView="Raw" />
+                                    <TextBlock Text="{x:Bind Model.Target.DownloadText, Mode=OneWay}" Style="{StaticResource InspectorFormValueStyle}" AutomationProperties.Name="{x:Bind Model.Target.DownloadName, Mode=OneWay}" ToolTipService.ToolTip="{x:Bind Model.Target.DownloadText, Mode=OneWay}" />
+                                </StackPanel>
+                                <StackPanel x:Name="UploadRate" Grid.Column="2" Orientation="Horizontal" Spacing="4" HorizontalAlignment="Right" Background="Transparent" ToolTipService.ToolTip="{x:Bind Model.Text.Get('columns', 'up'), Mode=OneWay}">
+                                    <FontIcon Style="{StaticResource TinyTorrentStatusIconStyle}" FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.ArrowUp}" AutomationProperties.AccessibilityView="Raw" />
+                                    <TextBlock Text="{x:Bind Model.Target.UploadText, Mode=OneWay}" Style="{StaticResource InspectorFormValueStyle}" AutomationProperties.Name="{x:Bind Model.Target.UploadName, Mode=OneWay}" ToolTipService.ToolTip="{x:Bind Model.Target.UploadText, Mode=OneWay}" />
+                                </StackPanel>
+                            </Grid>
+                            <controls:Strip Margin="0,16,0,0" ColumnSpacing="32" RowSpacing="12">
+                                <controls:Field Style="{StaticResource InspectorFormStatisticStyle}" Glyph="{x:Bind icons:Lucide.Download}" Label="{x:Bind Model.Text.Get('inspector', 'downloaded'), Mode=OneWay}">
+                                    <TextBlock Text="{x:Bind Model.Target.DownloadedText, Mode=OneWay}" Style="{StaticResource InspectorFormStatisticValueStyle}" />
+                                </controls:Field>
+                                <controls:Field Style="{StaticResource InspectorFormStatisticStyle}" Glyph="{x:Bind icons:Lucide.Upload}" Label="{x:Bind Model.Text.Get('peers', 'uploaded'), Mode=OneWay}">
+                                    <TextBlock Text="{x:Bind Model.Target.UploadedText, Mode=OneWay}" Style="{StaticResource InspectorFormStatisticValueStyle}" />
+                                </controls:Field>
+                                <controls:Field x:Name="Ratio" Style="{StaticResource InspectorFormStatisticStyle}" Glyph="{x:Bind icons:Lucide.Scale}" Label="{x:Bind Model.Text.Get('columns', 'ratio'), Mode=OneWay}">
+                                    <TextBlock Text="{x:Bind Model.Target.RatioText, Mode=OneWay}" Style="{StaticResource InspectorFormStatisticValueStyle}" />
+                                </controls:Field>
+                                <controls:Field x:Name="SeedCount" Style="{StaticResource InspectorFormStatisticStyle}" Glyph="{x:Bind icons:Lucide.Sprout}" Label="{x:Bind Model.Text.Get('columns', 'seeds'), Mode=OneWay}">
+                                    <TextBlock Text="{x:Bind Model.Target.SeedsText, Mode=OneWay}" Style="{StaticResource InspectorFormStatisticValueStyle}" ToolTipService.ToolTip="{x:Bind Model.Target.SeedsName, Mode=OneWay}" AutomationProperties.Name="{x:Bind Model.Target.SeedsName, Mode=OneWay}" />
+                                </controls:Field>
+                                <controls:Field x:Name="PeerCount" Style="{StaticResource InspectorFormStatisticStyle}" Glyph="{x:Bind icons:Lucide.Users}" Label="{x:Bind Model.Text.Get('columns', 'peers'), Mode=OneWay}">
+                                    <TextBlock Text="{x:Bind Model.Target.PeersText, Mode=OneWay}" Style="{StaticResource InspectorFormStatisticValueStyle}" ToolTipService.ToolTip="{x:Bind Model.Target.PeersName, Mode=OneWay}" AutomationProperties.Name="{x:Bind Model.Target.PeersName, Mode=OneWay}" />
+                                </controls:Field>
+                                <controls:Field x:Name="Limit" Style="{StaticResource InspectorFormStatisticStyle}" Glyph="{x:Bind icons:Lucide.Gauge}" Label="{x:Bind Model.Text.Get('columns', 'limit'), Mode=OneWay}">
+                                    <TextBlock Text="{x:Bind Model.LimitText, Mode=OneWay}" Style="{StaticResource InspectorFormStatisticValueStyle}" AutomationProperties.Name="{x:Bind Model.LimitName, Mode=OneWay}" />
+                                </controls:Field>
+                            </controls:Strip>
+                        </StackPanel>
+                        <Border Height="1" Background="{ThemeResource DividerStrokeColorDefaultBrush}" />
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,6">
+                                <FontIcon Style="{StaticResource GroupIconStyle}" FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Info}" />
+                                <TextBlock Text="{x:Bind Model.Text.Get('inspector', 'properties'), Mode=OneWay}" Style="{StaticResource GroupTitleTextStyle}" AutomationProperties.HeadingLevel="Level2" />
+                            </StackPanel>
+                            <Grid x:Name="Details" ColumnSpacing="48">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="3*" /><ColumnDefinition x:Name="MetadataColumn" Width="2*" /></Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                                <StackPanel>
+                                    <controls:Field Glyph="{x:Bind icons:Lucide.Folder}" Label="{x:Bind Model.Text.Get('inspector', 'folder'), Mode=OneWay}">
+                                        <controls:Field.Action>
+                                            <Button Style="{StaticResource SubtleButtonStyle}" Command="{x:Bind Model.OpenFolder}" AutomationProperties.Name="{x:Bind Model.Text.Get('commands', 'open_folder'), Mode=OneWay}" ToolTipService.ToolTip="{x:Bind Model.Text.Get('commands', 'open_folder'), Mode=OneWay}">
+                                                <FontIcon Style="{StaticResource TinyTorrentStatusIconStyle}" FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.FolderOpen}" />
+                                            </Button>
+                                        </controls:Field.Action>
+                                        <TextBlock x:Name="FolderPath" Text="{x:Bind Model.Folder, Mode=OneWay}" Style="{StaticResource InspectorFormValueStyle}" FlowDirection="LeftToRight" ToolTipService.ToolTip="{x:Bind Model.Folder, Mode=OneWay}" />
+                                    </controls:Field>
+                                    <controls:Field Glyph="{x:Bind icons:Lucide.Hash}" Label="{x:Bind Model.HashV1Label, Mode=OneWay}" Visibility="{x:Bind local:InspectorForm.Shown(Model.HashV1), Mode=OneWay}">
+                                        <controls:Field.Action>
+                                            <Button Style="{StaticResource SubtleButtonStyle}" Command="{x:Bind Model.CopyV1}" AutomationProperties.Name="{x:Bind Model.Text.Get('commands', 'copy_hash'), Mode=OneWay}" ToolTipService.ToolTip="{x:Bind Model.Text.Get('commands', 'copy_hash'), Mode=OneWay}">
+                                                <FontIcon Style="{StaticResource TinyTorrentStatusIconStyle}" FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Copy}" />
+                                            </Button>
+                                        </controls:Field.Action>
+                                        <TextBlock Text="{x:Bind Model.HashV1, Mode=OneWay}" Style="{StaticResource InspectorFormIdentifierStyle}" ToolTipService.ToolTip="{x:Bind Model.HashV1, Mode=OneWay}" />
+                                    </controls:Field>
+                                    <controls:Field Glyph="{x:Bind icons:Lucide.Hash}" Label="{x:Bind Model.HashV2Label, Mode=OneWay}" Visibility="{x:Bind local:InspectorForm.Shown(Model.HashV2), Mode=OneWay}">
+                                        <controls:Field.Action>
+                                            <Button Style="{StaticResource SubtleButtonStyle}" Command="{x:Bind Model.CopyV2}" AutomationProperties.Name="{x:Bind Model.Text.Get('commands', 'copy_hash'), Mode=OneWay}" ToolTipService.ToolTip="{x:Bind Model.Text.Get('commands', 'copy_hash'), Mode=OneWay}">
+                                                <FontIcon Style="{StaticResource TinyTorrentStatusIconStyle}" FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Copy}" />
+                                            </Button>
+                                        </controls:Field.Action>
+                                        <TextBlock Text="{x:Bind Model.HashV2, Mode=OneWay}" Style="{StaticResource InspectorFormIdentifierStyle}" ToolTipService.ToolTip="{x:Bind Model.HashV2, Mode=OneWay}" />
+                                    </controls:Field>
+                                    <controls:Field Glyph="{x:Bind icons:Lucide.Magnet}" Label="{x:Bind Model.Text.Get('add', 'magnet'), Mode=OneWay}">
+                                        <controls:Field.Action>
+                                            <Button Style="{StaticResource SubtleButtonStyle}" Command="{x:Bind Model.CopyMagnet}" AutomationProperties.Name="{x:Bind Model.Text.Get('commands', 'copy_magnet'), Mode=OneWay}" ToolTipService.ToolTip="{x:Bind Model.Text.Get('commands', 'copy_magnet'), Mode=OneWay}">
+                                                <FontIcon Style="{StaticResource TinyTorrentStatusIconStyle}" FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Copy}" />
+                                            </Button>
+                                        </controls:Field.Action>
+                                        <TextBlock Text="{x:Bind Model.Magnet, Mode=OneWay}" Style="{StaticResource InspectorFormIdentifierStyle}" ToolTipService.ToolTip="{x:Bind Model.Magnet, Mode=OneWay}" />
+                                    </controls:Field>
+                                    <controls:Field Glyph="{x:Bind icons:Lucide.MessageSquare}" Label="{x:Bind Model.Text.Get('inspector', 'comment'), Mode=OneWay}">
+                                        <TextBlock Text="{x:Bind Model.CommentText, Mode=OneWay}" Style="{StaticResource InspectorFormValueStyle}" ToolTipService.ToolTip="{x:Bind Model.CommentText, Mode=OneWay}" />
+                                    </controls:Field>
+                                </StackPanel>
+                                <StackPanel x:Name="Metadata" Grid.Column="1">
+                                    <controls:Field Glyph="{x:Bind icons:Lucide.Clock}" Label="{x:Bind Model.Text.Get('columns', 'added'), Mode=OneWay}">
+                                        <TextBlock Text="{x:Bind Model.Target.AddedTip, Mode=OneWay, TargetNullValue='—'}" Style="{StaticResource InspectorFormValueStyle}" ToolTipService.ToolTip="{x:Bind Model.Target.AddedText, Mode=OneWay}" />
+                                    </controls:Field>
+                                    <controls:Field Glyph="{x:Bind icons:Lucide.Grid3x3}" Label="{x:Bind Model.Text.Get('inspector', 'pieces'), Mode=OneWay}">
+                                        <TextBlock Text="{x:Bind Model.PiecesText, Mode=OneWay}" Style="{StaticResource InspectorFormValueStyle}" ToolTipService.ToolTip="{x:Bind Model.PiecesText, Mode=OneWay}" />
+                                    </controls:Field>
+                                    <controls:Field Glyph="{x:Bind Model.PrivacyGlyph, Mode=OneWay}" Label="{x:Bind Model.Text.Get('inspector', 'privacy'), Mode=OneWay}">
+                                        <TextBlock Text="{x:Bind Model.PrivacyText, Mode=OneWay}" Style="{StaticResource InspectorFormValueStyle}" ToolTipService.ToolTip="{x:Bind Model.PrivacyText, Mode=OneWay}" />
+                                    </controls:Field>
+                                    <controls:Field Glyph="{x:Bind icons:Lucide.Calendar}" Label="{x:Bind Model.Text.Get('inspector', 'created'), Mode=OneWay}">
+                                        <TextBlock Text="{x:Bind Model.CreatedText, Mode=OneWay}" Style="{StaticResource InspectorFormValueStyle}" ToolTipService.ToolTip="{x:Bind Model.CreatedText, Mode=OneWay}" />
+                                    </controls:Field>
+                                    <controls:Field Glyph="{x:Bind icons:Lucide.Wrench}" Label="{x:Bind Model.Text.Get('inspector', 'creator'), Mode=OneWay}">
+                                        <TextBlock Text="{x:Bind Model.CreatorText, Mode=OneWay}" Style="{StaticResource InspectorFormValueStyle}" ToolTipService.ToolTip="{x:Bind Model.CreatorText, Mode=OneWay}" />
+                                    </controls:Field>
+                                </StackPanel>
+                            </Grid>
+                        </StackPanel>
                     </StackPanel>
                 </ScrollViewer>
                 <Grid x:Name="Files" Visibility="Collapsed">

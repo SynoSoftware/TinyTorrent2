@@ -113,7 +113,7 @@ public class ColumnResizeTests
         CompleteResize(strip);
 
         Assert.AreEqual(1100d, TableHarness.ResolvedWidth(table, "a"));
-        Assert.AreEqual(1500d, TableHarness.TotalWidth(table), "the table scrolls to reach it");
+        Assert.AreEqual(1500d, TableHarness.TotalWidth(table), "the columns run past the right edge");
 
         BeginResizeAt(strip, 1100);
         TrackResize(strip, 20);

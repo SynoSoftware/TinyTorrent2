@@ -4,7 +4,7 @@
 // The resource compiler drops TT_VERSION's escaped quotes, so the text is
 // built from the numeric parts.
 #define TEXT_OF(value) #value
-#define VERSION_TEXT(major, minor, build) TEXT_OF(major.minor.build)
+#define VERSION_TEXT(major, minor, build, revision) TEXT_OF(major.minor.build.revision)
 IDR_ENGLISH_TEXT RCDATA "Resources/en.json"
 IDI_TINYTORRENT ICON "../../resources/TinyTorrent.ico"
 IDR_SPANISH_TEXT RCDATA "Resources/es.json"
@@ -26,8 +26,8 @@ BEGIN
         BEGIN
             VALUE "FileDescription", PRODUCT_NAME
             VALUE "ProductName", PRODUCT_NAME
-            VALUE "FileVersion", VERSION_TEXT(TT_VERSION_MAJOR, TT_VERSION_MINOR, TT_VERSION_BUILD)
-            VALUE "ProductVersion", VERSION_TEXT(TT_VERSION_MAJOR, TT_VERSION_MINOR, TT_VERSION_BUILD)
+            VALUE "FileVersion", VERSION_TEXT(TT_VERSION_MAJOR, TT_VERSION_MINOR, TT_VERSION_BUILD, TT_VERSION_REVISION)
+            VALUE "ProductVersion", VERSION_TEXT(TT_VERSION_MAJOR, TT_VERSION_MINOR, TT_VERSION_BUILD, TT_VERSION_REVISION)
         END
     END
     BLOCK "VarFileInfo"

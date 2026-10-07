@@ -1,6 +1,8 @@
 #include "Engine.h"
 #include "Engine/State.h"
 #include <Windows.h>
+#include <wincrypt.h>
+#include <system_error>
 #include <utility>
 
 namespace tt
@@ -38,6 +40,26 @@ std::wstring Wide(std::string const& value)
     std::wstring text(size, L'\0');
     MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, value.data(),
         static_cast<int>(value.size()), text.data(), size);
+    return text;
+}
+
+std::string Base64(std::string_view bytes)
+{
+    if (bytes.empty())
+    {
+        return {};
+    }
+    constexpr DWORD format = CRYPT_STRING_BASE64 | CRYPT_STRING_NOCRLF;
+    auto data = reinterpret_cast<BYTE const*>(bytes.data());
+    auto count = static_cast<DWORD>(bytes.size());
+    DWORD size = 0;
+    if (!CryptBinaryToStringA(data, count, format, nullptr, &size))
+    {
+        throw std::system_error(static_cast<int>(GetLastError()), std::system_category(), "CryptBinaryToStringA");
+    }
+    std::string text(size, '\0');
+    CryptBinaryToStringA(data, count, format, text.data(), &size);
+    text.resize(size);
     return text;
 }
 

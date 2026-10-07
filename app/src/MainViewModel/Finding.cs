@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Windows.Input;
 using Syno.TinyTorrent.Models;
+using Syno.TinyTorrent.Views;
 
 namespace Syno.TinyTorrent;
 
@@ -24,7 +25,7 @@ public sealed partial class MainViewModel
     }
     public string AboutTitle => Text.Get("window", "title");
     public string AboutDescription => Text.Get("about", "description");
-    public string VersionText => Text.Format("about", "version", typeof(MainViewModel).Assembly.GetName().Version?.ToString(3) ?? string.Empty);
+    public string VersionText => Text.Format("about", "version", RunningVersion.ToString());
 
     public IReadOnlyList<Torrent> VisibleTorrents { get; private set; } = [];
     public string Query { get => _query; set { if (_query == value) return; _query = value; Changed(nameof(Query)); } }
@@ -32,11 +33,6 @@ public sealed partial class MainViewModel
     {
         get => _filter;
         set { if (_filter == value) return; _filter = value; Project(); RefreshWindow(); }
-    }
-    public bool ErrorsOnly
-    {
-        get => Filter == TorrentFilter.Errors;
-        set { if (value) Filter = TorrentFilter.Errors; else if (ErrorsOnly) Filter = TorrentFilter.All; }
     }
     public bool IsFilterOpen
     {
@@ -47,7 +43,9 @@ public sealed partial class MainViewModel
     public IReadOnlyList<FilterChoice> Filters { get; }
     public bool HasFilter => Filter != TorrentFilter.All;
     public string FilterLabel => Filter == TorrentFilter.All ? Text.Get("filters", "title") :
-        Text.Format("filters", "active", Text.Get("filters", Filter.ToString().ToLowerInvariant()), VisibleTorrents.Count);
+        Text.Format("filters", "active", FilterName, VisibleTorrents.Count);
+    public string FilterStatus => Text.Format("filters", "count", FilterName, VisibleTorrents.Count);
+    private string FilterName => Text.Get("filters", Filter.ToString().ToLowerInvariant());
     public ICommand ShowPreferences { get; }
     public ICommand ShowTorrents { get; }
     public ICommand ShowAbout { get; }
@@ -100,6 +98,9 @@ public sealed partial class MainViewModel
         return Task.CompletedTask;
     }
 
+    internal Task ShowSetting(Preference field) => RequestPreferences(new(field.Section, field.Name));
+    internal Task ShowProxySetting() => RequestPreferences(new(PreferenceSection.Network, "proxy"));
+
     public IReadOnlyList<Suggestion> FindSuggestions(string query)
     {
         var words = query.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
@@ -130,7 +131,7 @@ public sealed partial class MainViewModel
         yield return new(Text.Get("commands", "add_file"), string.Empty, SuggestionScope.Command, Add);
         yield return new(Text.Get("commands", "add_magnet"), string.Empty, SuggestionScope.Command, AddMagnet);
         yield return new(Text.Get("commands", AllPaused ? "resume_all" : "pause_all"), all, SuggestionScope.Command, AllPaused ? ResumeAll : PauseAll);
-        yield return new(Text.Get("commands", "limits"), Text.Format("finding", "preference_detail", Text.Get("preferences", "transfers")),
+        yield return new(Text.Get("commands", "limits"), Text.Format("finding", "preference_detail", Text.Get("preferences", "limits")),
             SuggestionScope.Settings, Limits);
         yield return new(Text.Get("chrome", IsDark ? "light" : "dark"), string.Empty, SuggestionScope.Command, SwitchTheme);
         yield return new(Text.Get("commands", "exit"), string.Empty, SuggestionScope.Command, CloseWindow);
@@ -139,7 +140,7 @@ public sealed partial class MainViewModel
         foreach (var (key, command) in new (string, ICommand)[]
         {
             ("pause", Pause), ("resume", Resume), ("force", Force), ("verify", Verify), ("remove", Remove),
-            ("move", MoveFiles), ("delete_files", DeleteFiles),
+            ("move", MoveFiles), ("delete_files", DeleteFiles), ("speed_limit", LimitSpeed),
             ("open", Open), ("open_folder", OpenFolder), ("copy_magnet", CopyMagnet), ("copy_hash", CopyHash),
             ("properties", Properties), ("up", Up), ("down", Down), ("top", Top), ("bottom", Bottom)
         })
@@ -169,7 +170,8 @@ public sealed partial class MainViewModel
         }
         foreach (var key in new[] { "start_signin", "startup_settings", "open_defaults" })
             yield return PreferenceSuggestion(new(PreferenceSection.General, key), Text.Get("preferences", key));
-        yield return PreferenceSuggestion(new(PreferenceSection.Schedule, "add_period"), Text.Get("preferences", "add_period"));
+        yield return PreferenceSuggestion(new(PreferenceSection.Limits, "add_period"), Text.Get("preferences", "add_period"));
+        yield return PreferenceSuggestion(new(PreferenceSection.Network, "proxy"), Text.Get("preferences", "proxy"));
     }
 
     private Suggestion PreferenceSuggestion(PreferenceTarget target, string label) => new(label,

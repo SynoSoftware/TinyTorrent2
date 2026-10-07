@@ -18,9 +18,8 @@ public sealed class Inspector : INotifyPropertyChanged
     private string _session = string.Empty;
     private int _context;
     private bool _fetching;
-    private bool _pending;
+    private TaskCompletionSource? _pending;
     private bool _filesLoaded;
-    private bool _trackersLoaded;
     private bool _editingTrackers;
     private bool _visible = true;
     private Exception? _readFailure;
@@ -37,32 +36,64 @@ public sealed class Inspector : INotifyPropertyChanged
     // Speed shows the engine's session-wide history, so it needs only the
     // connection; every other section reads the selected torrent.
     private bool CanRead => _section == InspectorSection.Speed ? _owner.IsConnected : IsAvailable;
-    private bool CanSave => IsAvailable && _owner.CanSave && !_pending;
+    private bool CanSave => IsAvailable && _owner.CanSave && !IsPending;
     public bool CanEdit => _visible && CanSave && !_owner.IsClosing;
-    public bool IsPending => _pending;
+    public bool IsPending => _pending is not null;
     public bool IsLoading => _fetching;
-    public bool HasDraft => !_pending && (HasFileDraft || HasTrackerDraft);
+    public bool HasDraft => !IsPending && (HasFileDraft || HasTrackerDraft);
     internal bool HasTrackerDraft => _editingTrackers && _trackerInput != _trackerOriginal;
     private bool IsRemoved => _owner.IsConnected && _target is not null && !_owner.Contains(_target);
     public bool HasError => IsRemoved || _readFailure is not null || _editFailure is not null;
     public string Message => IsRemoved ? Text.Get("inspector", "removed") : _editFailure is { } edit ? Text.Error(edit) :
         _readFailure is { } read ? Text.Error(read) : string.Empty;
     public FileSelection Files { get; }
-    public IReadOnlyList<Peer> Peers { get; private set; } = [];
-    public IReadOnlyList<Tracker> Trackers { get; private set; } = [];
-    public IReadOnlyList<SpeedSample> History { get; private set; } = [];
+    // Section data stays while the inspector is open on this torrent and the
+    // engine session lasts, so returning to a section shows it at once. A null
+    // list is unread, not empty.
+    public IReadOnlyList<Peer>? Peers { get; private set; }
+    public IReadOnlyList<Tracker>? Trackers { get; private set; }
+    public IReadOnlyList<SpeedSample>? History { get; private set; }
     public Pieces? Pieces { get; private set; }
     public string Folder { get; private set; } = string.Empty;
     public string Comment { get; private set; } = string.Empty;
     public string Creator { get; private set; } = string.Empty;
     public string Magnet { get; private set; } = string.Empty;
-    public string Hashes => _target is null ? string.Empty : string.Join(Environment.NewLine, _target.Hashes);
+    public string HashV1 => _target?.Hashes.FirstOrDefault(hash => hash.Length == 40) ?? string.Empty;
+    public string HashV2 => _target?.Hashes.FirstOrDefault(hash => hash.Length == 64) ?? string.Empty;
+    public string HashV1Label => Text.Get("inspector", HashV2.Length > 0 ? "hash_v1" : "hash");
+    public string HashV2Label => Text.Get("inspector", HashV1.Length > 0 ? "hash_v2" : "hash");
     public long Created { get; private set; }
     public int PieceSize { get; private set; }
+    public int PieceCount { get; private set; }
     public bool? IsPrivate { get; private set; }
-    public string CreatedText => Created <= 0 ? "—" : DateTimeOffset.FromUnixTimeSeconds(Created).LocalDateTime.ToString("g", CultureInfo.CurrentCulture);
-    public string PieceSizeText => PieceSize <= 0 ? "—" : Text.Bytes(PieceSize);
+    public bool HasMetadata => IsPrivate.HasValue;
+    public bool IsIndeterminate => !HasMetadata || _target is { IsMoving: true };
+    public string ProgressText => HasMetadata ? _target?.ProgressText ?? string.Empty : string.Empty;
+    public string Summary
+    {
+        get
+        {
+            if (_target is not { } torrent) return string.Empty;
+            if (torrent.IsError) return torrent.ErrorText;
+            if (!HasMetadata) return Text.Get("inspector", "size_unknown");
+            if (torrent.IsMoving || torrent.Completed >= torrent.Size) return torrent.SizeText;
+            var progress = Text.Format("inspector", "progress", Text.Bytes(torrent.Completed), torrent.SizeText);
+            return torrent.Eta is null ? progress : Text.Format("inspector", "progress_eta", progress, torrent.EtaText);
+        }
+    }
+    public string CommentText => Comment.Length > 0 ? Comment : "—";
+    public string CreatorText => Creator.Length > 0 ? Creator : "—";
+    public string CreatedText => Created <= 0 ? "—" : Text.Time(DateTimeOffset.FromUnixTimeSeconds(Created));
+    public string PiecesText => HasMetadata ? Text.Format("inspector", "piece_count", PieceCount.ToString("N0", CultureInfo.CurrentCulture), Text.Bytes(PieceSize)) : "—";
     public string PrivacyText => IsPrivate is { } privacy ? Text.Get("inspector", privacy ? "private" : "public") : "—";
+    public string PrivacyGlyph => IsPrivate switch
+    {
+        true => Syno.Lucide.Lock,
+        false => Syno.Lucide.Globe,
+        null => Syno.Lucide.Shield,
+    };
+    public string LimitText => _target is { IsLimited: true } torrent ? torrent.LimitText : Text.Get("speed_limit", "none");
+    public string LimitName => _target is { IsLimited: true } torrent ? torrent.LimitName : LimitText;
     public bool IsEditingTrackers => _editingTrackers;
     public bool HasFileDraft => _fileChanges.Count > 0;
     public bool HasFiles => _filesLoaded;
@@ -90,13 +121,30 @@ public sealed class Inspector : INotifyPropertyChanged
     public string RestartText => _owner.RestartText;
     public event PropertyChangedEventHandler? PropertyChanged;
     public event EventHandler? TextChanged;
+    internal event EventHandler? RecoveryRequested;
     internal event EventHandler<InspectorSection>? RowsUpdated;
     public ICommand Reannounce { get; }
+    public ICommand OpenFolder { get; }
+    public ICommand CopyV1 { get; }
+    public ICommand CopyV2 { get; }
+    public ICommand CopyMagnet { get; }
+    public ICommand LimitSpeed { get; }
+    public ICommand MoveFiles { get; }
+    public ICommand ShowRatioLimit { get; }
+    public ICommand ShowConnectionLimit { get; }
 
     internal Inspector(MainViewModel owner, PipeClient client)
     {
         _owner = owner;
         _client = client;
+        LimitSpeed = owner.SpeedCommand(() => _target is { } target ? [target] : []);
+        MoveFiles = owner.MoveCommand(() => _target is { } target ? [target] : []);
+        OpenFolder = new Command(() => _owner.OpenTorrent(_target!, true), () => IsAvailable && !_owner.IsClosing);
+        CopyV1 = new Command(() => _owner.Copy(HashV1), () => HashV1.Length > 0);
+        CopyV2 = new Command(() => _owner.Copy(HashV2), () => HashV2.Length > 0);
+        CopyMagnet = new Command(() => _owner.Copy(Magnet), () => Magnet.Length > 0);
+        ShowRatioLimit = new Command(() => _owner.ShowSetting(_owner.Preferences.Ratio), () => true);
+        ShowConnectionLimit = new Command(() => _owner.ShowSetting(_owner.Preferences.Connections), () => true);
         Files = new FileSelection(owner.Text) { ShowsProgress = true, IsEnabled = false };
         Files.Edited += (_, changes) =>
         {
@@ -104,9 +152,9 @@ public sealed class Inspector : INotifyPropertyChanged
             _ = SaveFiles();
         };
         EditTrackers = new Command(() => { BeginTrackers(); return Task.CompletedTask; },
-            () => CanEdit && _trackersLoaded && !_editingTrackers);
+            () => CanEdit && Trackers is not null && !_editingTrackers);
         SaveTrackers = new Command(CommitTrackers, () => CanEdit && _editingTrackers);
-        CancelTrackers = new Command(() => { CancelTrackerDraft(); return Task.CompletedTask; }, () => !_pending && _editingTrackers);
+        CancelTrackers = new Command(() => { CancelTrackerDraft(); return Task.CompletedTask; }, () => !IsPending && _editingTrackers);
         Retry = new Command(() => HasFileDraft ? SaveFiles() : Read(),
             () => HasFileDraft ? CanEdit : CanRead && !_fetching);
         Reannounce = new Command(() => Apply("reannounce", new { torrent_id = _target!.TorrentId }),
@@ -116,7 +164,7 @@ public sealed class Inspector : INotifyPropertyChanged
     internal bool Open(Torrent target)
     {
         if (_target == target) return true;
-        if (HasDraft || _pending) return false;
+        if (HasDraft || IsPending) return false;
         Clear();
         _target = target;
         Invalidate();
@@ -127,24 +175,33 @@ public sealed class Inspector : INotifyPropertyChanged
 
     internal bool Close()
     {
-        if (HasDraft || _pending) return false;
+        if (HasDraft || IsPending) return false;
         _target = null;
         Invalidate();
         Clear();
-        History = [];
+        History = null;
         Refresh();
         return true;
     }
 
-    public void Select(InspectorSection section)
+    internal async Task Navigate(InspectorSection section)
+    {
+        if (_owner.IsClosing || _section == section) return;
+        var target = _target;
+        if (!await Depart())
+        {
+            if (_target == target) RecoveryRequested?.Invoke(this, EventArgs.Empty);
+            return;
+        }
+        if (!_owner.IsClosing && _target == target) Select(section);
+    }
+
+    internal void Select(InspectorSection section)
     {
         if (_section == section) return;
         _section = section;
         Invalidate();
         _readFailure = null;
-        if (section != InspectorSection.Peers) Peers = [];
-        if (section != InspectorSection.Speed) History = [];
-        if (section != InspectorSection.Pieces) Pieces = null;
         Refresh();
         _ = Read();
     }
@@ -154,9 +211,10 @@ public sealed class Inspector : INotifyPropertyChanged
         if (_session != session)
         {
             _session = session;
-            Peers = [];
-            Trackers = [];
-            _trackersLoaded = false;
+            Peers = null;
+            Trackers = null;
+            Pieces = null;
+            History = null;
             Invalidate();
             _readFailure = null;
         }
@@ -167,7 +225,7 @@ public sealed class Inspector : INotifyPropertyChanged
     internal void Disconnect()
     {
         Invalidate();
-        History = [];
+        History = null;
         Refresh();
     }
 
@@ -176,7 +234,6 @@ public sealed class Inspector : INotifyPropertyChanged
         if (_visible == visible) return;
         _visible = visible;
         Invalidate();
-        if (!visible) { Peers = []; History = []; Pieces = null; }
         Refresh();
         if (visible) _ = Read();
     }
@@ -207,27 +264,26 @@ public sealed class Inspector : INotifyPropertyChanged
                 case InspectorSection.General: ApplyGeneral(reply); break;
                 case InspectorSection.Files: ApplyFiles(reply); break;
                 case InspectorSection.Peers:
-                    var peers = Peers.ToDictionary(peer => peer.Endpoint);
+                    var peers = (Peers ?? []).ToDictionary(peer => peer.Endpoint);
                     var nextPeers = reply.GetProperty("peers").EnumerateArray().Select(data =>
                     {
                         if (!peers.TryGetValue(data.GetProperty("endpoint").GetString()!, out var peer)) return new Peer(Text, data);
                         peer.Update(data);
                         return peer;
                     }).ToArray();
-                    if (!Peers.SequenceEqual(nextPeers)) Peers = nextPeers;
+                    if (Peers is null || !Peers.SequenceEqual(nextPeers)) Peers = nextPeers;
                     else RowsUpdated?.Invoke(this, InspectorSection.Peers);
                     break;
                 case InspectorSection.Trackers:
-                    var trackers = Trackers.ToDictionary(tracker => tracker.Url);
+                    var trackers = (Trackers ?? []).ToDictionary(tracker => tracker.Url);
                     var nextTrackers = reply.GetProperty("trackers").EnumerateArray().Select(data =>
                     {
                         if (!trackers.TryGetValue(data.GetProperty("url").GetString()!, out var tracker)) return new Tracker(Text, data);
                         tracker.Update(data);
                         return tracker;
                     }).ToArray();
-                    if (!Trackers.SequenceEqual(nextTrackers)) Trackers = nextTrackers;
+                    if (Trackers is null || !Trackers.SequenceEqual(nextTrackers)) Trackers = nextTrackers;
                     else RowsUpdated?.Invoke(this, InspectorSection.Trackers);
-                    _trackersLoaded = true;
                     break;
                 case InspectorSection.Pieces: Pieces = new Pieces(reply, Pieces?.Files ?? []); break;
             }
@@ -237,8 +293,10 @@ public sealed class Inspector : INotifyPropertyChanged
         finally
         {
             _fetching = false;
+            // Start the current section's read before notifying, so observers do
+            // not mistake the end of this stale read for that section loading.
+            if (context != _context) _ = Read();
             Refresh();
-            if (context != _context && _visible && IsOpen && CanRead) _ = Read();
         }
     }
 
@@ -271,6 +329,7 @@ public sealed class Inspector : INotifyPropertyChanged
         Creator = reply.GetProperty("creator").GetString()!;
         Created = reply.GetProperty("created").GetInt64();
         PieceSize = reply.GetProperty("piece_size").GetInt32();
+        PieceCount = reply.GetProperty("piece_count").GetInt32();
         var privacy = reply.GetProperty("private");
         IsPrivate = privacy.ValueKind == JsonValueKind.Null ? null : privacy.GetBoolean();
     }
@@ -282,12 +341,12 @@ public sealed class Inspector : INotifyPropertyChanged
         _confirmedFiles = files.Clone();
         if (!_filesLoaded) { Files.Load(files); _filesLoaded = true; }
         var priorities = files.EnumerateArray().ToDictionary(file => file.GetProperty("index").GetInt32(), file => file.GetProperty("priority").GetInt32());
-        if (!_pending && _fileChanges.Count > 0 && _fileChanges.All(change => priorities.TryGetValue(change.Key, out var priority) && priority == change.Value))
+        if (!IsPending && _fileChanges.Count > 0 && _fileChanges.All(change => priorities.TryGetValue(change.Key, out var priority) && priority == change.Value))
         {
             _fileChanges.Clear();
             _editFailure = null;
         }
-        Files.Apply(files, _pending || HasFileDraft);
+        Files.Apply(files, IsPending || HasFileDraft);
     }
 
     private async Task SaveFiles()
@@ -299,6 +358,7 @@ public sealed class Inspector : INotifyPropertyChanged
 
     private void BeginTrackers()
     {
+        if (Trackers is null) return;
         _trackerOriginal = string.Join("\n\n", Trackers.GroupBy(tracker => tracker.Tier)
             .OrderBy(group => group.Key).Select(group => string.Join("\n", group.Select(tracker => tracker.Url))));
         _trackerInput = _trackerOriginal;
@@ -331,7 +391,8 @@ public sealed class Inspector : INotifyPropertyChanged
     private async Task Apply(string command, object arguments, Action? confirmed = null)
     {
         Invalidate();
-        _pending = true;
+        var pending = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _pending = pending;
         _editFailure = null;
         Refresh();
         try
@@ -340,7 +401,7 @@ public sealed class Inspector : INotifyPropertyChanged
             confirmed?.Invoke();
         }
         catch (Exception error) { _editFailure = error; }
-        finally { _pending = false; Refresh(); _ = Read(); }
+        finally { _pending = null; pending.SetResult(); Refresh(); _ = Read(); }
     }
 
     private void CancelTrackerDraft()
@@ -351,12 +412,28 @@ public sealed class Inspector : INotifyPropertyChanged
         Refresh();
     }
 
-    internal async Task<bool> SaveDraft()
+    // Leaving applies the edits, and an edit that fails keeps the person at its
+    // error. File choices the engine cannot receive are dropped instead,
+    // because they have no Cancel and Retry is unavailable, so keeping them
+    // would trap the person on this torrent.
+    internal async Task<bool> Depart()
     {
+        var target = _target;
+        var session = _session;
+        bool Current() => _target == target && _session == session;
+        while (_pending is { } pending)
+        {
+            await pending.Task;
+            if (!Current() || HasDraft && _editFailure is not null && CanSave) return false;
+        }
         if (_editingTrackers) await CommitTrackers();
-        if (_editingTrackers && _trackerInput != _trackerOriginal) return false;
+        if (!Current() || HasTrackerDraft) return false;
         if (HasFileDraft) await SaveFiles();
-        return !HasDraft;
+        if (!Current()) return false;
+        if (!HasFileDraft) return true;
+        if (CanSave) return false;
+        CancelDraft();
+        return true;
     }
 
     public void CancelDraft()
@@ -371,13 +448,12 @@ public sealed class Inspector : INotifyPropertyChanged
     {
         Files.Clear();
         _filesLoaded = false;
-        _trackersLoaded = false;
         _confirmedFiles = null;
-        Peers = [];
-        Trackers = [];
+        Peers = null;
+        Trackers = null;
         Pieces = null;
         Folder = Comment = Creator = Magnet = string.Empty;
-        Created = PieceSize = 0;
+        Created = PieceSize = PieceCount = 0;
         IsPrivate = null;
         _readFailure = _editFailure = null;
         CancelDraft();
@@ -385,8 +461,8 @@ public sealed class Inspector : INotifyPropertyChanged
 
     internal void RefreshText()
     {
-        foreach (var peer in Peers) peer.RefreshText();
-        foreach (var tracker in Trackers) tracker.RefreshText();
+        foreach (var peer in Peers ?? []) peer.RefreshText();
+        foreach (var tracker in Trackers ?? []) tracker.RefreshText();
         Files.Refresh();
         Refresh();
         TextChanged?.Invoke(this, EventArgs.Empty);
@@ -396,7 +472,7 @@ public sealed class Inspector : INotifyPropertyChanged
     {
         var enabled = CanEdit && _filesLoaded;
         if (Files.IsEnabled != enabled) Files.IsEnabled = enabled;
-        foreach (Command command in new[] { EditTrackers, SaveTrackers, CancelTrackers, Retry, Reannounce }) command.Refresh();
+        foreach (Command command in new[] { EditTrackers, SaveTrackers, CancelTrackers, Retry, Reannounce, OpenFolder, CopyV1, CopyV2, CopyMagnet, LimitSpeed, MoveFiles }) command.Refresh();
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
     }
 }

@@ -148,7 +148,7 @@ public sealed partial class Strip : Control
         RefreshText();
     }
 
-    /// <summary>Cells scrolled past the viewport must not paint outside the strip.</summary>
+    /// <summary>Cells past the right edge must not paint outside the strip.</summary>
     private void OnClipSizeChanged(object sender, SizeChangedEventArgs e)
     {
         if (_clip is null)
@@ -172,9 +172,8 @@ public sealed partial class Strip : Control
     /// <remarks>
     /// The threshold is the button's own width rather than a number chosen here: if the columns
     /// reach far enough right that the button would sit over one, there is nothing to offer and it
-    /// goes. That covers the two cases without a second rule — columns wider than the viewport
-    /// scroll horizontally and leave no trailing space at all, and a narrow set of columns leaves
-    /// plenty.
+    /// goes. That covers the two cases without a second rule — columns wider than the strip leave
+    /// no trailing space at all, and a narrow set of columns leaves plenty.
     /// </remarks>
     internal void UpdateFitButton()
     {
@@ -187,8 +186,7 @@ public sealed partial class Strip : Control
         _fitButton.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
 
         bool offered = _owner is { ShowsFitButton: true, Geometry: { } layout }
-            && _clip.ActualWidth - (layout.TotalWidth - layout.HorizontalOffset)
-                >= _fitButton.DesiredSize.Width;
+            && _clip.ActualWidth - layout.TotalWidth >= _fitButton.DesiredSize.Width;
 
         _fitButton.Visibility = offered ? Visibility.Visible : Visibility.Collapsed;
     }
@@ -549,8 +547,7 @@ public sealed partial class Strip : Control
         int index = _owner!.Geometry.IndexOfVisible(column);
         return index < 0
             ? _originX
-            : _owner.Geometry.VisibleColumns[index].Offset + column.Width
-                - _owner.Geometry.HorizontalOffset;
+            : _owner.Geometry.VisibleColumns[index].Offset + column.Width;
     }
 
     /// <summary>
@@ -661,11 +658,10 @@ public sealed partial class Strip : Control
     private int BoundaryAt(double x)
     {
         IReadOnlyList<VisibleColumn> visible = _owner!.Geometry.VisibleColumns;
-        double contentX = x + _owner.Geometry.HorizontalOffset;
 
         for (int i = 0; i < visible.Count; i++)
         {
-            if (contentX < visible[i].Offset + (visible[i].Width / 2))
+            if (x < visible[i].Offset + (visible[i].Width / 2))
             {
                 return _owner.Hierarchy is null ? i : Math.Max(1, i);
             }
@@ -683,10 +679,10 @@ public sealed partial class Strip : Control
 
         IReadOnlyList<VisibleColumn> visible = _owner!.Geometry.VisibleColumns;
         int boundary = BoundaryAt(x);
-        double contentX = boundary < visible.Count ? visible[boundary].Offset : _owner.Geometry.TotalWidth;
+        double boundaryX = boundary < visible.Count ? visible[boundary].Offset : _owner.Geometry.TotalWidth;
 
         // Held inside the strip so the first and last boundaries do not show half a marker.
-        double centred = contentX - _owner.Geometry.HorizontalOffset - (_marker.Width / 2);
+        double centred = boundaryX - (_marker.Width / 2);
         _markerOffset.X = Math.Clamp(centred, 0, Math.Max(0, ActualWidth - _marker.Width));
         _marker.Visibility = Visibility.Visible;
     }

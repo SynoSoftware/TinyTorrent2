@@ -20,7 +20,12 @@ public sealed partial class MainViewModel
         _selectionPending = true;
         try
         {
-            var changesTarget = Inspector.IsOpen && (selected.Length != 1 || selected[0] != Inspector.Target);
+            // The table drops a row that leaves the view, such as a torrent that
+            // finishes under the Downloading filter. The person did not choose
+            // another torrent, so the selection follows the table while the
+            // inspector, and any unfinished edit in it, stays on its torrent.
+            var dropped = selected.All(_selected.Contains) && !_selected.Except(selected).Any(VisibleTorrents.Contains);
+            var changesTarget = Inspector.IsOpen && (selected.Length != 1 || selected[0] != Inspector.Target) && !dropped;
             if (changesTarget)
             {
                 if (Inspector.IsPending) return false;

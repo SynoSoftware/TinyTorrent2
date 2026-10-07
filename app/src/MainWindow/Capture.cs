@@ -425,35 +425,44 @@ public sealed partial class MainWindow
         var preferences = Model.Preferences.Schedule;
         var existing = preferences.Periods.ToArray();
         SchedulePeriod? created = null;
-        await ShowPreferences(new(PreferenceSection.Schedule));
-        await CaptureLayout();
-        var form = _preferencesForm ?? throw new InvalidOperationException("The review preferences did not open.");
-        Button FindButton(string id) => CaptureElements(form).OfType<Button>()
-            .Single(control => AutomationProperties.GetAutomationId(control) == id);
-        TimePicker FindTime(string id) => CaptureElements(form).OfType<TimePicker>()
-            .Single(control => AutomationProperties.GetAutomationId(control) == id);
+        var limits = Model.LimitsIndex;
         try
         {
-            CaptureInvoke(FindButton("AddPeriod"));
+            // Periods show and change only under the weekly schedule.
+            await Model.ChooseLimits(LimitMode.Schedule);
+            if (!Model.FollowsSchedule) throw new InvalidOperationException("The review could not choose the weekly schedule.");
+            await ShowPreferences(new(PreferenceSection.Limits));
             await CaptureLayout();
-            var draft = preferences.Draft ?? throw new InvalidOperationException("Add period did not open the editor.");
+            var form = _preferencesForm ?? throw new InvalidOperationException("The review preferences did not open.");
+            Button FindButton(string id) => CaptureElements(form).OfType<Button>()
+                .Single(control => AutomationProperties.GetAutomationId(control) == id);
+            TimePicker FindTime(string id) => CaptureElements(form).OfType<TimePicker>()
+                .Single(control => AutomationProperties.GetAutomationId(control) == id);
+            void ClearDays()
+            {
+                foreach (var day in CaptureElements(form).OfType<CheckBox>())
+                    if (AutomationProperties.GetAutomationId(day).StartsWith("PeriodDay", StringComparison.Ordinal)) day.IsChecked = false;
+            }
+            CaptureInvoke(FindButton("AddPeriod"));
+            await CaptureReady(preferences, () => !preferences.IsPending && preferences.IsOpen);
+            created = preferences.OpenPeriod ?? throw new InvalidOperationException("Add period did not open the new period.");
+            if (existing.Any(period => period.Matches(created)))
+                throw new InvalidOperationException("The review schedule already holds the period that Add creates.");
+            var draft = preferences.Draft ?? throw new InvalidOperationException("The new period has no editor.");
             FindTime("PeriodStart").SelectedTime = TimeSpan.FromMinutes(1337);
             FindTime("PeriodEnd").SelectedTime = TimeSpan.FromMinutes(103);
-            foreach (var day in CaptureElements(form).OfType<CheckBox>())
-                if (AutomationProperties.GetAutomationId(day).StartsWith("PeriodDay", StringComparison.Ordinal)) day.IsChecked = false;
-            await CaptureLayout();
-            if (draft.Start?.TotalMinutes != 1337 || draft.End?.TotalMinutes != 103 || draft.Days.Any(day => day.IsChecked))
-                throw new InvalidOperationException("The native period fields did not update their draft.");
-            CaptureInvoke(FindButton("SavePeriod"));
+            await CaptureReady(preferences, () => !preferences.IsPending && preferences.OpenPeriod is { Start: 1337, End: 103 });
+            // Each cleared day saves at once until none is left, so the saved
+            // period keeps whichever days remained before the last.
+            ClearDays();
             await CaptureReady(preferences, () => preferences.HasScheduleError);
-            if (preferences.Draft != draft || draft.Start?.TotalMinutes != 1337 || draft.End?.TotalMinutes != 103 || preferences.Periods.Count != existing.Length)
-                throw new InvalidOperationException("An empty-day save changed the saved schedule or lost its draft.");
+            if (preferences.Draft != draft || draft.Start?.TotalMinutes != 1337 || draft.End?.TotalMinutes != 103 ||
+                preferences.Periods.Count != existing.Length + 1 || preferences.OpenPeriod is not { Days.Count: > 0 })
+                throw new InvalidOperationException("Clearing every day changed the saved schedule or lost the editor input.");
             outcomes.Add(new { journey = "empty schedule days", rejected = true, draftRetained = true, exactMinutesRetained = true });
             await CapturePage("schedule-invalid-period", form);
             CaptureElements(form).OfType<CheckBox>().Single(control => AutomationProperties.GetAutomationId(control) == "PeriodDay0").IsChecked = true;
-            await CaptureLayout();
-            CaptureInvoke(FindButton("SavePeriod"));
-            await CaptureReady(preferences, () => !preferences.IsPending && !preferences.IsEditing);
+            await CaptureReady(preferences, () => !preferences.IsPending && !preferences.HasScheduleError && preferences.OpenPeriod?.Days.Count == 1);
             created = preferences.Periods.Single(period => period.Days.SequenceEqual(new[] { 0 }) && period.Start == 1337 && period.End == 103 && period.Mode == ScheduleMode.Alternative);
             if (created.Span.Duration != 206 || created.Occurrences(0).Single().End != 1543 || created.Occurrences(1).Single().End != 103 ||
                 preferences.Ranges(1).First(range => range.Start <= 60 && range.End > 60).Mode != ScheduleMode.Paused)
@@ -474,41 +483,26 @@ public sealed partial class MainWindow
                         var minimum = ((Microsoft.UI.Windowing.OverlappedPresenter)AppWindow.Presenter).PreferredMinimumWidth ?? 0;
                         AppWindow.Resize(new SizeInt32(Math.Max((int)(size.Width * scale), minimum), (int)(size.Height * scale)));
                         var prefix = "schedule-" + language + "-" + theme + "-" + size.Width + "x" + size.Height;
-                        preferences.Select(null);
+                        await preferences.Close();
                         await CapturePage(prefix + "-overview", form);
-                        preferences.Select(created);
-                        await CapturePage(prefix + "-selected", form);
-                        CaptureInvoke(FindButton("EditPeriod"));
-                        await CaptureLayout();
-                        await CapturePage(prefix + "-editor", form);
-                        foreach (var day in CaptureElements(form).OfType<CheckBox>())
-                            if (AutomationProperties.GetAutomationId(day).StartsWith("PeriodDay", StringComparison.Ordinal)) day.IsChecked = false;
-                        await CaptureLayout();
-                        CaptureInvoke(FindButton("SavePeriod"));
+                        await preferences.Open(created);
+                        await CapturePage(prefix + "-open", form);
+                        ClearDays();
                         await CaptureReady(preferences, () => preferences.HasScheduleError);
                         await CaptureLayout();
                         await CaptureUi(prefix + "-validation");
-                        CaptureInvoke(FindButton("CancelPeriod"));
-                        await CaptureReady(preferences, () => !preferences.IsEditing);
+                        await preferences.Close();
+                        if (!preferences.Periods.Contains(created) || created.Days.Count != 1)
+                            throw new InvalidOperationException("Closing the period changed the saved period.");
                         completed.Add(prefix);
                     }
                 }
             }
-
-            CaptureInvoke(FindButton("EditPeriod"));
-            await CaptureLayout();
-            FindTime("PeriodStart").SelectedTime = TimeSpan.FromMinutes(1273);
-            await CaptureLayout();
-            if (preferences.Draft?.Start?.TotalMinutes != 1273)
-                throw new InvalidOperationException("The edited native time did not reach the draft.");
-            CaptureInvoke(FindButton("CancelPeriod"));
-            await CaptureReady(preferences, () => !preferences.IsEditing);
-            if (!preferences.Periods.Contains(created) || created.Start != 1337 || created.End != 103)
-                throw new InvalidOperationException("Cancel changed the saved period.");
-            outcomes.Add(new { journey = "cancel period edit", savedPeriodRetained = true });
+            outcomes.Add(new { journey = "close invalid period", savedPeriodRetained = true });
 
             await preferences.Reschedule(created, created.Span.Adjust(PeriodAction.Move, 15));
-            created = preferences.Selection ?? throw new InvalidOperationException("The moved period was not selected.");
+            await CaptureReady(preferences, () => !preferences.IsPending && preferences.OpenPeriod?.Start != 1337);
+            created = preferences.OpenPeriod ?? throw new InvalidOperationException("The moved period did not stay open.");
             if (preferences.HasScheduleError || created.Start != 1350 || created.End != 116 || created.Span.Duration != 206)
                 throw new InvalidOperationException("Moving the period did not preserve its duration and snap its start.");
             outcomes.Add(new { journey = "move period", start = created.Start, end = created.End, duration = created.Span.Duration });
@@ -522,9 +516,10 @@ public sealed partial class MainWindow
         }
         finally
         {
-            if (preferences.IsEditing) Run(preferences.CancelPeriod);
+            await preferences.Close();
             if (created is { } saved && preferences.Periods.FirstOrDefault(period => period.Matches(saved)) is { } remaining)
                 await preferences.Remove(remaining);
+            if (limits >= 0) await Model.ChooseLimits((LimitMode)limits);
         }
     }
 
@@ -669,8 +664,7 @@ public sealed partial class MainWindow
             Model.Inspector.Select(InspectorSection.General);
             await CaptureReady(Model.Inspector, () => !Model.Inspector.IsLoading);
             await CaptureLayout();
-            var footer = VisualTreeHelper.GetParent(StatusBar) as Panel ?? throw new InvalidOperationException("The status footer did not load.");
-            var update = CaptureElements(Root, includeCollapsed: true).OfType<Controls.ActionButton>().Single(button => ReferenceEquals(button.Command, Model.OpenUpdate));
+            var update = UpdateAvailable;
             await CaptureMatrix(async (suffix, _) =>
             {
                 var error = Model.Text.Format("errors", "torrent", target.Name, Model.Text.Get("errors", "move_failed"));
@@ -707,7 +701,7 @@ public sealed partial class MainWindow
                         await CaptureUi(name);
                         var retained = Model.Torrents.Any(torrent => torrent.TorrentId == target.TorrentId) && Model.Inspector.Target?.TorrentId == target.TorrentId;
                         outcomes.Add(new { journey = name, scope, table = Bounds(Torrents), inspector = Bounds(InspectorContent),
-                            footer = Bounds(footer), status = Bounds(StatusBar), filter = Model.Filter.ToString(), fixtureRetained = retained,
+                            status = Bounds(StatusBar), filter = Model.Filter.ToString(), fixtureRetained = retained,
                             errorVisible = TorrentError.Visibility == Visibility.Visible, errorText = TorrentError.Message, errorOpen = TorrentError.IsOpen,
                             updateVisible = update.Visibility == Visibility.Visible, errorRequested,
                             errorRetained = TorrentError.Message == error && TorrentError.IsOpen && TorrentError.Visibility == Visibility.Visible, updateRequested });
@@ -732,7 +726,7 @@ public sealed partial class MainWindow
                     Model.Filter = TorrentFilter.All;
                     await Scene("filter-cleared", "Real All filter setter");
                     await Scene("torrent-error", "Simulated selected-torrent error presentation; no engine command");
-                    await Scene("update", "Simulated update-action visibility; no action invocation");
+                    await Scene("update", "Simulated update-status visibility");
                     Model.Filter = TorrentFilter.Paused;
                     await Scene("combined", "Real Paused filter with simulated torrent-error and update presentation; no engine command or launch");
                 }
@@ -804,7 +798,7 @@ public sealed partial class MainWindow
         await CaptureReady(Model.Inspector, () => !Model.Inspector.IsLoading && Model.Inspector.EditTrackers.CanExecute(null));
         await CaptureLayout();
         Button FindButton(string name) => CaptureElements(InspectorContent).OfType<Button>().Single(control => control.Name == name);
-        var trackers = Model.Inspector.Trackers.Select(tracker => (tracker.Url, tracker.Tier)).ToHashSet();
+        var trackers = (Model.Inspector.Trackers ?? []).Select(tracker => (tracker.Url, tracker.Tier)).ToHashSet();
         CaptureInvoke(FindButton("EditTrackers"));
         await CaptureLayout();
         var editor = CaptureElements(InspectorContent).OfType<TextBox>().Single(control => control.Name == "TrackerInput");
@@ -840,7 +834,7 @@ public sealed partial class MainWindow
         if (!Model.AllPaused) throw new InvalidOperationException("The tracker capture requires a globally paused fixture.");
         CaptureInvoke(FindButton("SaveTrackers"));
         await CaptureReady(Model.Inspector, () => !Model.Inspector.IsEditingTrackers && !Model.Inspector.IsPending && !Model.Inspector.IsLoading &&
-            populated.SetEquals(Model.Inspector.Trackers.Select(tracker => (tracker.Url, tracker.Tier))));
+            populated.SetEquals((Model.Inspector.Trackers ?? []).Select(tracker => (tracker.Url, tracker.Tier))));
         outcomes.Add(new { journey = "native tracker save", confirmed = true, count = populated.Count, tiers = new[] { 0, 1 }, globalPaused = Model.AllPaused });
         foreach (var captureLanguage in new[] { "en", "es" })
         foreach (var theme in new[] { "light", "dark" })
@@ -858,18 +852,18 @@ public sealed partial class MainWindow
                 AppWindow.Resize(new SizeInt32(Math.Max((int)Math.Round(size.Width * scale), minimum), (int)Math.Round(size.Height * scale)));
                 await CapturePage($"details-{captureLanguage}-{theme}-{size.Width}x{size.Height}-trackers", InspectorContent.Content as FrameworkElement);
                 outcomes.Add(new { journey = "populated tracker capture", language = captureLanguage, theme, requestedWidth = size.Width,
-                    requestedHeight = size.Height, clientWidth = AppWindow.ClientSize.Width, count = Model.Inspector.Trackers.Count, globalPaused = Model.AllPaused });
+                    requestedHeight = size.Height, clientWidth = AppWindow.ClientSize.Width, count = Model.Inspector.Trackers?.Count ?? 0, globalPaused = Model.AllPaused });
             }
         }
         CaptureInvoke(FindButton("EditTrackers"));
         await CaptureLayout();
         if (Model.Inspector.HasDraft) throw new InvalidOperationException("Reopening the saved tracker list created an untouched draft.");
-        outcomes.Add(new { journey = "untouched populated tracker editor", draftCreated = false, count = Model.Inspector.Trackers.Count });
+        outcomes.Add(new { journey = "untouched populated tracker editor", draftCreated = false, count = Model.Inspector.Trackers?.Count ?? 0 });
         editor = CaptureElements(InspectorContent).OfType<TextBox>().Single(control => control.Name == "TrackerInput");
         editor.Text = originalInput;
         CaptureInvoke(FindButton("SaveTrackers"));
         await CaptureReady(Model.Inspector, () => !Model.Inspector.IsEditingTrackers && !Model.Inspector.IsPending && !Model.Inspector.IsLoading &&
-            trackers.SetEquals(Model.Inspector.Trackers.Select(tracker => (tracker.Url, tracker.Tier))));
+            trackers.SetEquals((Model.Inspector.Trackers ?? []).Select(tracker => (tracker.Url, tracker.Tier))));
         Model.CloseInspector();
 
         var preferences = Model.Preferences;
@@ -937,7 +931,7 @@ public sealed partial class MainWindow
                                 canRegister = Model.Preferences.CanRegister, matches });
                             if (!matches) throw new InvalidOperationException("Native registration switches do not match their settled observed state.");
                         }
-                        foreach (var section in new[] { "StartupSection", "DefaultsSection" })
+                        foreach (var section in new[] { "StartupSection", "DownloadsSection" })
                         {
                             var element = form.FindName(section) as FrameworkElement ?? throw new InvalidOperationException("The registration section did not load.");
                             element.StartBringIntoView(new BringIntoViewOptions { AnimationDesired = false, VerticalAlignmentRatio = 0 });
@@ -1249,12 +1243,12 @@ public sealed partial class MainWindow
                     {
                         await ShowPreferences(new(section));
                         await CapturePage(prefix + "settings-" + section, _preferencesForm);
-                        if (!filesOnly && section == PreferenceSection.Schedule && Model.Preferences.Schedule.Periods.FirstOrDefault() is { } period)
+                        if (!filesOnly && section == PreferenceSection.Limits && Model.FollowsSchedule && Model.Preferences.Schedule.Periods.FirstOrDefault() is { } period)
                         {
-                            Model.Preferences.Schedule.Edit(period);
+                            await Model.Preferences.Schedule.Open(period);
                             await CaptureLayout();
                             await CaptureUi(prefix + "period-editor");
-                            Run(Model.Preferences.Schedule.CancelPeriod);
+                            await Model.Preferences.Schedule.Close();
                         }
                     }
                     if (filesOnly) { completed.Add(prefix); continue; }
@@ -1297,7 +1291,7 @@ public sealed partial class MainWindow
                         .Where(file => file.Index >= 0).Select(file => (file.Index, file.Priority)).OrderBy(file => file.Index));
                 var preferencesRetained = preferences.SequenceEqual(Model.Preferences.Fields.Select(field => (field.Name, field.Input, field.IsOn)));
                 var fileDraft = Model.Inspector.HasFileDraft;
-                var preferenceDraft = Model.Preferences.HasDraft;
+                var preferenceDraft = Model.Preferences.Schedule.HasDraft;
                 var pending = Model.Preferences.IsPending;
                 outcomes.Add(new { journey = "live language selected choices", languages = new[] { "en", "es", "en" },
                     prioritiesRetained, preferencesRetained, fileDraft, preferenceDraft, pending });
@@ -1309,8 +1303,8 @@ public sealed partial class MainWindow
             {
                 Model.SelectLanguage("es");
                 await CaptureReady(Model, () => Model.CanClose && Model.Text.Language == "es");
-                await ShowPreferences(new(PreferenceSection.Schedule));
-                await CapturePage("spanish-schedule", _preferencesForm);
+                await ShowPreferences(new(PreferenceSection.Limits));
+                await CapturePage("spanish-limits", _preferencesForm);
                 Model.SelectLanguage("en");
                 await CaptureReady(Model, () => Model.CanClose && Model.Text.Language == "en");
             }

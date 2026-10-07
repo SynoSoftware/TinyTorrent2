@@ -60,7 +60,7 @@ internal readonly struct VisibleColumn
 
     internal ResolvedColumn Column { get; }
 
-    /// <summary>Cumulative x of this column's left edge, before the horizontal offset.</summary>
+    /// <summary>Cumulative x of this column's left edge.</summary>
     internal double Offset { get; }
 
     internal double Width => Column.Width;
@@ -75,7 +75,6 @@ internal sealed class ResolvedLayout
     private readonly List<ResolvedColumn> _order = new();
     private readonly List<VisibleColumn> _visible = new();
     private double _totalWidth;
-    private double _horizontalOffset;
 
     internal event EventHandler<LayoutInvalidationReason>? Invalidated;
 
@@ -87,22 +86,6 @@ internal sealed class ResolvedLayout
 
     /// <summary>Sum of visible resolved widths.</summary>
     internal double TotalWidth => _totalWidth;
-
-    /// <summary>The table-owned horizontal offset. Panels subtract it at arrange time.</summary>
-    internal double HorizontalOffset
-    {
-        get => _horizontalOffset;
-        set
-        {
-            if (_horizontalOffset == value)
-            {
-                return;
-            }
-
-            _horizontalOffset = value;
-            Invalidated?.Invoke(this, LayoutInvalidationReason.Offset);
-        }
-    }
 
     /// <summary>The resolved column with this ID, or null when no column declares it.</summary>
     internal ResolvedColumn? Find(string id)
@@ -151,14 +134,13 @@ internal sealed class ResolvedLayout
 
     /// <summary>
     /// The visible column whose trailing edge lies within <paramref name="tolerance"/> of
-    /// <paramref name="x"/>, or -1 when none does. <paramref name="x"/> is a header-strip
-    /// coordinate, so the horizontal offset is subtracted here.
+    /// <paramref name="x"/>, or -1 when none does.
     /// </summary>
     internal int TrailingEdgeNear(double x, double tolerance)
     {
         for (int i = 0; i < _visible.Count; i++)
         {
-            double edge = _visible[i].Offset + _visible[i].Width - _horizontalOffset;
+            double edge = _visible[i].Offset + _visible[i].Width;
             if (Math.Abs(x - edge) <= tolerance)
             {
                 return i;

@@ -45,7 +45,7 @@ The component provides:
 - drag reordering of one or more selected rows when its host accepts reorder
   requests;
 - loading, empty, and no-results presentations;
-- aligned, horizontally scrolling headers and rows.
+- aligned headers and rows.
 
 The component deliberately keeps these behaviors cohesive rather than exposing
 a collection of unrelated helpers. The rest of this document defines their
@@ -157,8 +157,8 @@ integrate.
 6. **No additional runtime dependency.** The control relies on WinUI 3 and
    does not require a data-grid, drag, or command-adapter package.
 7. **Pay only for enabled behavior.** Marquee selection and row reordering do
-   no work when disabled or idle. Fit measurement happens only for an explicit
-   fit command.
+   no work when disabled or idle. Fit measurement happens only for a fit
+   command and for the first-rows fit (section 10).
 8. **One local view projection.** Header sort operates on one private view, so
    selection, layout, and visible order have a single authority.
 9. **Be a Windows control, not a visual subsystem.** The control uses the
@@ -197,7 +197,6 @@ host source + columns
 - header sorting, resizing, reordering, and context-menu interaction;
 - drag visuals, insertion feedback, and platform layout continuity for row
   reordering;
-- horizontal header/body synchronization;
 - generation and validation of a serializable layout snapshot;
 - loading, empty, and no-results presentation selection.
 
@@ -262,9 +261,8 @@ public sealed class Table : Control
     public bool ShowsFitButton { get; set; }     // default false
     public void RefreshView();
     public void ScrollIntoView(object item);
-    public double HorizontalOffset { get; }
     public double VerticalOffset { get; }
-    public void ScrollTo(double horizontalOffset, double verticalOffset);
+    public void ScrollTo(double verticalOffset);
     public void Fit(Column column);
     public void FitColumns();
     public void ResetLayout();
@@ -562,14 +560,13 @@ Display-only updates need no call.
 changing selection or keyboard focus. Hosts use it after a confirmed operation
 whose result should be visible, without accessing the control's template parts.
 
-`HorizontalOffset` and `VerticalOffset` report how far the columns and rows are
-scrolled, in DIPs. `ScrollTo` moves both, clamped to the scrollable range,
-without changing selection or keyboard focus; a non-finite offset makes the
-call do nothing. It lays out the current rows first, so a host can restore a
-saved position immediately after supplying the rows. Called before `Loaded`,
-the offsets are held and applied when the table loads. A host restoring a saved
-position calls `ScrollTo` after it restores the layout and source, because
-column widths and row count decide the scrollable range.
+`VerticalOffset` reports how far the rows are scrolled, in DIPs. `ScrollTo`
+moves the rows, clamped to the scrollable range, without changing selection or
+keyboard focus; a non-finite offset makes the call do nothing. It lays out the
+current rows first, so a host can restore a saved position immediately after
+supplying the rows. Called before `Loaded`, the offset is held and applied when
+the table loads. A host restoring a saved position calls `ScrollTo` after it
+restores the source, because the row count decides the scrollable range.
 
 When the schema supplies a key selector, every new source snapshot—including
 assignment, `Add`, `Remove`, `Move`, `Replace`, and `Reset`—reconciles selected
@@ -825,17 +822,18 @@ shared by headers and rows:
 - use one vertical scrolling owner rather than nesting vertical scroll surfaces;
 - render each realized row from its row item and the visible column templates;
 - derive header and row widths from the same resolved column values;
-- keep the header visible during vertical scrolling and horizontally synchronized
-  with the body;
-- retain columns at narrow widths and use horizontal scrolling rather than
-  silently hiding or reflowing data.
+- keep the header visible during vertical scrolling;
+- retain columns at narrow widths rather than silently hiding or reflowing
+  data.
+
+**Owner ruling: the table never scrolls sideways.** Columns that do not fit run
+past the right edge and are cut off. The person decides what the table shows:
+to see a cut-off column, they hide or narrow other columns.
 
 The table is one dense data surface, not a stack of cards or a second command
 bar. Its header provides column actions; its body provides rows. It has no
 window-width breakpoint that silently hides columns or table mechanics. The
-host chooses the supported allocation and any page-level minimum size; within
-that allocation horizontal scrolling keeps the chosen visible columns and
-table-owned header actions available.
+host chooses the supported allocation and any page-level minimum size.
 
 Text overflow is intentional. A generated textual header keeps a stable
 one-line header treatment, trims its visible label when necessary, and exposes
@@ -996,18 +994,26 @@ a real host requires it.
 
 `Table` uses fixed device-independent-pixel (DIP) column widths. Version 1
 has no star, fill, percentage, or viewport-responsive width mode. Extra space at
-the right remains table surface; when visible columns do not fit, the existing
-horizontal scroll surface is used. Resizing the host window never redistributes
-or re-measures column widths.
+the right remains table surface, and columns that do not fit are cut off
+(section 8). Resizing the host window never redistributes or re-measures column
+widths.
 
 Every column has a deterministic baseline width. A declared `Width` is
 used exactly after its `MinWidth`/`MaxWidth` bounds are applied. When a host
-does not declare one, the control's 150-DIP default is used. An unspecified
-width is not an implicit content-fit mode: initial source data, later data,
-property updates, sorting, filtering, scrolling, and visibility changes MUST
-NOT silently widen or narrow a column. This keeps a first-use layout stable and
-independent of which virtualized rows happen to appear first. `Table` never
-invokes a fit command during initialization.
+does not declare one, the control's 150-DIP default is used. The baseline is
+the width a column has before its first rows appear.
+
+**Owner ruling: a table fits its columns to the first rows it shows.** When
+rows first appear on screen and no column has a width override, the table runs
+`FitColumns()` once. A width override is a width the person chose: restored
+from a saved layout, set by a resize, or set by a fit. The person's choice wins
+over the content, so a table restored with saved widths keeps them. The
+declared widths alone would cut off or waste space on first use, and the person
+would have to fit the columns by hand. The fit sees the rows present at the
+first layout pass that shows one, so a host supplies its first rows as one
+list, not one row per update. After that one fit, later data, property
+updates, sorting, filtering, scrolling, and visibility changes MUST NOT
+silently widen or narrow a column.
 
 An applied valid `ColumnLayout.Widths` entry, a completed direct
 resize, or an explicit fit creates a width override.
@@ -1071,10 +1077,10 @@ convenience action, not a promise to discover the widest value in the source.
 
 Hiding or showing a column does not discard, recompute, or fit its width.
 `ResetLayout()` discards width overrides and restores the captured
-baseline widths; it does not fit the current data. A host that wants an initial
-content-based layout can deliberately invoke a fit command after its data is
-available, with the same bounded behavior and persistence semantics as a user
-fit.
+baseline widths; it does not fit the current data. The first-rows fit has the
+same bounded behavior and persistence semantics as a user fit: it raises one
+`LayoutChanged` of kind `Fit`, so a host that saves the layout keeps the fitted
+widths.
 
 ## 11. Column drag reordering
 
@@ -1548,7 +1554,7 @@ Persist:
 Do not persist in the layout snapshot:
 
 - selected/current items (a host stores their keys itself);
-- scroll offsets (a host stores `HorizontalOffset` and `VerticalOffset` itself);
+- the scroll offset (a host stores `VerticalOffset` itself);
 - loading state;
 - hover, drag, resize, marquee, or context-menu state;
 - row data.

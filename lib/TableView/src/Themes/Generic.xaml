@@ -289,7 +289,6 @@
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="*" />
-                            <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
 
                         <header:Strip x:Name="PART_HeaderStrip" Grid.Row="0" />
@@ -436,11 +435,6 @@
                                            Fill="{ThemeResource TableViewMarkerOuterBrush}" />
                             </Grid>
                         </Grid>
-
-                        <primitives:ScrollBar x:Name="PART_HorizontalScrollBar"
-                                              Grid.Row="2"
-                                              Orientation="Horizontal"
-                                              Visibility="Collapsed" />
                     </Grid>
                 </ControlTemplate>
             </Setter.Value>

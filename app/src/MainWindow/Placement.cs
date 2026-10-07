@@ -145,7 +145,7 @@ public sealed partial class MainWindow
         if (placement.InspectorOpen) Run(Model.Properties);
         // After the inspector, which sets how many rows fit, and before another
         // page hides the table.
-        Torrents.ScrollTo(placement.HorizontalOffset, placement.VerticalOffset);
+        Torrents.ScrollTo(placement.VerticalOffset);
         if (placement.Page == WindowPage.Preferences) await ShowPreferences(new(placement.Settings));
         else if (placement.Page == WindowPage.About) await ShowAbout();
     }
@@ -166,7 +166,7 @@ public sealed partial class MainWindow
             Selected = [.. Model.Selected.Select(torrent => torrent.TorrentId)],
             Current = Model.Current?.TorrentId,
             InspectorOpen = Model.HasInspector, Section = Model.Inspector.Section,
-            HorizontalOffset = Torrents.HorizontalOffset, VerticalOffset = Torrents.VerticalOffset
+            VerticalOffset = Torrents.VerticalOffset
         };
         var temporary = _placementPath + ".tmp";
         try
@@ -201,7 +201,6 @@ public sealed partial class MainWindow
         public string? Current { get; init; }
         public bool InspectorOpen { get; init; }
         public InspectorSection Section { get; init; }
-        public double HorizontalOffset { get; init; }
         public double VerticalOffset { get; init; }
     }
 }

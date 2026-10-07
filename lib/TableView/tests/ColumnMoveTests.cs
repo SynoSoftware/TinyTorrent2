@@ -184,18 +184,6 @@ public class ColumnMoveTests
         Assert.AreEqual(3, BoundaryAt(strip, 5000), "past the last column is after the last");
     });
 
-    [TestMethod]
-    public Task ADropFollowsTheScrolledHeader() => TestHost.RunAsync(async () =>
-    {
-        Table table = await LoadAsync(("a", 200), ("b", 100), ("c", 100));
-        Header.Strip strip = Strip(table);
-
-        TableHarness.SetHorizontalOffset(table, 150);
-
-        Assert.AreEqual(1, BoundaryAt(strip, 0), "x 0 is now 150 into a, its right half");
-        Assert.AreEqual(2, BoundaryAt(strip, 110), "and 260 is the right half of b");
-    });
-
     /// <summary>
     /// A drop is counted among the visible columns with the dragged one taken out, which is what
     /// makes both boundaries either side of the dragged column a no-op.

@@ -1,21 +1,15 @@
 using System.Collections;
 using System.Collections.Specialized;
-using Microsoft.UI.Input;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Controls.Primitives;
-using Microsoft.UI.Xaml.Input;
-using Microsoft.UI.Xaml.Media;
-using Windows.Foundation;
-using Windows.System;
-using Windows.UI.Core;
 
 namespace Syno.TableView;
 
 /// <summary>
-/// A generic table surface: one vertical scrolling owner, one effective column layout shared by
-/// the header strip and every realized row, and a table-owned horizontal axis.
+/// A generic table surface: one vertical scrolling owner and one effective column layout shared
+/// by the header strip and every realized row. Columns past the right edge are cut off; the table
+/// never scrolls sideways.
 /// </summary>
 public sealed partial class Table : Control
 {
@@ -24,12 +18,8 @@ public sealed partial class Table : Control
     private const string HeaderStripPartName = "PART_HeaderStrip";
     private const string ItemsViewPartName = "PART_ItemsView";
     private const string StateLayerPartName = "PART_StateLayer";
-    private const string HorizontalScrollBarPartName = "PART_HorizontalScrollBar";
     private const string MarqueeOverlayPartName = "PART_MarqueeOverlay";
     private const string RowInsertionMarkerPartName = "PART_RowInsertionMarker";
-
-    private const double WheelStepDips = 48;
-    private const double WheelNotch = 120;
 
     private readonly Body.Source _source;
     private readonly Body.View _view;
@@ -39,13 +29,12 @@ public sealed partial class Table : Control
     private Header.Strip? _headerStrip;
     private ListView? _itemsView;
     private ContentPresenter? _stateLayer;
-    private ScrollBar? _horizontalScrollBar;
     private FrameworkElement? _marqueeOverlay;
     private FrameworkElement? _rowInsertionMarker;
 
     private bool _schemaCaptured;
     private ColumnLayout? _pendingLayout;
-    private (double Horizontal, double Vertical)? _pendingScroll;
+    private double? _pendingScroll;
 
     private UIElement? _shippedPlaceholder;
     private Placeholder _shippedPlaceholderKind;
@@ -59,8 +48,6 @@ public sealed partial class Table : Control
         _source.SnapshotChanged += OnSnapshotChanged;
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
-        GotFocus += OnElementGotFocus;
-        BringIntoViewRequested += OnBringIntoViewRequested;
     }
 
     /// <summary>
@@ -188,7 +175,6 @@ public sealed partial class Table : Control
         _headerStrip = GetTemplateChild(HeaderStripPartName) as Header.Strip;
         _itemsView = GetTemplateChild(ItemsViewPartName) as ListView;
         _stateLayer = GetTemplateChild(StateLayerPartName) as ContentPresenter;
-        _horizontalScrollBar = GetTemplateChild(HorizontalScrollBarPartName) as ScrollBar;
         _marqueeOverlay = GetTemplateChild(MarqueeOverlayPartName) as FrameworkElement;
         _rowInsertionMarker = GetTemplateChild(RowInsertionMarkerPartName) as FrameworkElement;
 
@@ -197,25 +183,15 @@ public sealed partial class Table : Control
         if (_itemsView is not null)
         {
             _itemsView.ItemsSource = _view;
-            _itemsView.SizeChanged += OnBodySizeChanged;
-            _itemsView.AddHandler(
-                UIElement.PointerWheelChangedEvent,
-                new PointerEventHandler(OnBodyPointerWheelChanged),
-                handledEventsToo: true);
+            if (!_firstRowsFitted)
+            {
+                _itemsView.LayoutUpdated += OnRowsLayoutUpdated;
+            }
         }
-
-        if (_horizontalScrollBar is not null)
-        {
-            _horizontalScrollBar.IndicatorMode = ScrollingIndicatorMode.MouseIndicator;
-            _horizontalScrollBar.ValueChanged += OnHorizontalScrollBarValueChanged;
-        }
-
-        Geometry.Invalidated += OnLayoutInvalidated;
 
         AttachInput();
 
         UpdateStateLayer();
-        UpdateHorizontalRange();
         ApplySelectionToContainers();
     }
 
@@ -225,27 +201,26 @@ public sealed partial class Table : Control
 
         if (_itemsView is not null)
         {
-            _itemsView.SizeChanged -= OnBodySizeChanged;
-            _itemsView.RemoveHandler(
-                UIElement.PointerWheelChangedEvent,
-                new PointerEventHandler(OnBodyPointerWheelChanged));
-        }
-
-        if (_horizontalScrollBar is not null)
-        {
-            _horizontalScrollBar.ValueChanged -= OnHorizontalScrollBarValueChanged;
+            _itemsView.LayoutUpdated -= OnRowsLayoutUpdated;
         }
 
         // A settle waiting to fire would rebuild a view whose template parts have just been taken
         // away, and would hold this table alive to do it.
         _settleDue?.Stop();
-
-        Geometry.Invalidated -= OnLayoutInvalidated;
     }
 
     /// <summary>Suspend external notifications and visual work while retaining logical state.</summary>
     private void OnUnloaded(object sender, RoutedEventArgs e)
     {
+        // WinUI queues Unloaded and can deliver it while the table is still in
+        // the tree, as ContentDialog does to its content
+        // (microsoft/microsoft-ui-xaml#8402). A table still in the tree keeps
+        // its rows.
+        if (IsLoaded)
+        {
+            return;
+        }
+
         _detached = true;
         _source.Suspend();
         if (_itemsView is not null) _itemsView.ItemsSource = null;
@@ -325,7 +300,6 @@ public sealed partial class Table : Control
             _pendingSort = null;
             _hasPendingSort = false;
         }
-        UpdateHorizontalRange();
         RebuildView();
         ApplyPendingScroll();
     }
@@ -514,7 +488,6 @@ public sealed partial class Table : Control
 
         // SetOrder republishes the geometry, which re-applies each header cell's sort indicator.
         Geometry.SetOrder(ordered);
-        UpdateHorizontalRange();
         return sortChanged;
     }
 
@@ -552,153 +525,34 @@ public sealed partial class Table : Control
 
     private void OnSnapshotChanged(object? sender, IReadOnlyList<object> snapshot) => RebuildView(snapshot);
 
-    // ------------------------------------------------------- scroll offsets
-
-    private void OnLayoutInvalidated(object? sender, LayoutInvalidationReason reason)
-    {
-        // Anything but the offset can have moved the total width, a resize included.
-        if (reason != LayoutInvalidationReason.Offset)
-        {
-            UpdateHorizontalRange();
-        }
-    }
-
-    private void OnBodySizeChanged(object sender, SizeChangedEventArgs e) => UpdateHorizontalRange();
-
-    private void UpdateHorizontalRange()
-    {
-        double viewport = _itemsView?.ActualWidth ?? 0;
-        double maximum = Math.Max(0, Geometry.TotalWidth - viewport);
-
-        if (Geometry.HorizontalOffset > maximum)
-        {
-            Geometry.HorizontalOffset = maximum;
-        }
-
-        if (_horizontalScrollBar is null)
-        {
-            return;
-        }
-
-        _horizontalScrollBar.Minimum = 0;
-        _horizontalScrollBar.Maximum = maximum;
-        _horizontalScrollBar.ViewportSize = viewport;
-        _horizontalScrollBar.LargeChange = Math.Max(1, viewport);
-        _horizontalScrollBar.SmallChange = WheelStepDips;
-        _horizontalScrollBar.Value = Geometry.HorizontalOffset;
-        _horizontalScrollBar.Visibility = maximum > 0 ? Visibility.Visible : Visibility.Collapsed;
-    }
-
-    /// <summary>
-    /// Every way the scroll bar's value can change moves the table: thumb drag, track click,
-    /// arrow button, keyboard, and the RangeValue automation pattern. <c>Scroll</c> alone covers
-    /// only the pointer paths, which leaves the bar and the content disagreeing.
-    /// </summary>
-    private void OnHorizontalScrollBarValueChanged(object sender, RangeBaseValueChangedEventArgs e) =>
-        SetHorizontalOffset(e.NewValue);
-
-    /// <summary>
-    /// Shift+wheel and horizontal wheel drive the table's own offset. The inner ScrollViewer's
-    /// horizontal axis is disabled, so the event is marked handled to stop it scrolling.
-    /// </summary>
-    private void OnBodyPointerWheelChanged(object sender, PointerRoutedEventArgs e)
-    {
-        PointerPointProperties properties = e.GetCurrentPoint(this).Properties;
-
-        bool horizontalWheel = properties.IsHorizontalMouseWheel;
-        bool shiftDown = InputKeyboardSource
-            .GetKeyStateForCurrentThread(VirtualKey.Shift)
-            .HasFlag(CoreVirtualKeyStates.Down);
-
-        if (!horizontalWheel && !shiftDown)
-        {
-            return;
-        }
-
-        double notches = properties.MouseWheelDelta / WheelNotch;
-        double delta = horizontalWheel ? notches : -notches;
-        SetHorizontalOffset(Geometry.HorizontalOffset + (delta * WheelStepDips));
-        e.Handled = true;
-    }
-
-    private void SetHorizontalOffset(double value)
-    {
-        double viewport = _itemsView?.ActualWidth ?? 0;
-        double maximum = Math.Max(0, Geometry.TotalWidth - viewport);
-        double clamped = Math.Clamp(value, 0, maximum);
-
-        Geometry.HorizontalOffset = clamped;
-
-        if (_horizontalScrollBar is not null)
-        {
-            _horizontalScrollBar.Value = clamped;
-        }
-    }
-
-    private void OnElementGotFocus(object sender, RoutedEventArgs e)
-    {
-        if (e.OriginalSource is FrameworkElement target)
-        {
-            RevealElement(target, new Rect(0, 0, target.ActualWidth, target.ActualHeight));
-        }
-    }
-
-    private void OnBringIntoViewRequested(UIElement sender, BringIntoViewRequestedEventArgs e)
-    {
-        if (e.TargetElement is FrameworkElement target) RevealElement(target, e.TargetRect);
-    }
-
-    private void RevealElement(FrameworkElement target, Rect rectangle)
-    {
-        DependencyObject child = target;
-        for (DependencyObject? parent = VisualTreeHelper.GetParent(child); parent is not null;
-            child = parent, parent = VisualTreeHelper.GetParent(parent))
-        {
-            if (parent is not CellsPanel panel) continue;
-            if (Body.Row.FindOwner(panel) != this || child is not UIElement cell) return;
-            int index = panel.Children.IndexOf(cell);
-            if (index < 0) return;
-
-            Rect bounds = target.TransformToVisual(cell).TransformBounds(rectangle);
-            double left = Geometry.VisibleColumns[index].Offset + bounds.X;
-            double right = left + bounds.Width;
-            double viewport = _itemsView?.ActualWidth ?? 0;
-            double offset = Geometry.HorizontalOffset;
-            if (left < offset || bounds.Width > viewport) SetHorizontalOffset(left);
-            else if (right > offset + viewport) SetHorizontalOffset(right - viewport);
-            return;
-        }
-    }
-
-    /// <summary>How far the columns are scrolled, in DIPs.</summary>
-    public double HorizontalOffset => _pendingScroll?.Horizontal ?? Geometry.HorizontalOffset;
+    // -------------------------------------------------------- scroll offset
 
     /// <summary>How far the rows are scrolled, in DIPs.</summary>
-    public double VerticalOffset => _pendingScroll?.Vertical ?? InnerScrollViewer()?.VerticalOffset ?? 0;
+    public double VerticalOffset => _pendingScroll ?? InnerScrollViewer()?.VerticalOffset ?? 0;
 
     /// <summary>
-    /// Scroll to the given offsets in DIPs, clamped to the scrollable range, without changing
-    /// selection or keyboard focus. A non-finite offset makes the call do nothing.
+    /// Scroll the rows to the given offset in DIPs, clamped to the scrollable range, without
+    /// changing selection or keyboard focus. A non-finite offset makes the call do nothing.
     /// </summary>
     /// <remarks>
     /// The rows are laid out first, so an offset into rows the host has only just supplied is not
     /// clamped to the shorter extent of the rows before them. Called before the table has loaded,
-    /// the offsets are held and applied when it loads.
+    /// the offset is held and applied when it loads.
     /// </remarks>
-    public void ScrollTo(double horizontalOffset, double verticalOffset)
+    public void ScrollTo(double verticalOffset)
     {
-        if (!double.IsFinite(horizontalOffset) || !double.IsFinite(verticalOffset))
+        if (!double.IsFinite(verticalOffset))
         {
             return;
         }
 
-        _pendingScroll = (horizontalOffset, verticalOffset);
+        _pendingScroll = verticalOffset;
         ApplyPendingScroll();
     }
 
     private void ApplyPendingScroll()
     {
-        if (_pendingScroll is not (double horizontal, double vertical) || !_schemaCaptured || _itemsView is null)
+        if (_pendingScroll is not double offset || !_schemaCaptured || _itemsView is null)
         {
             return;
         }
@@ -710,11 +564,7 @@ public sealed partial class Table : Control
         }
 
         _pendingScroll = null;
-        // The scroll bar clamps its value to its own maximum, so that range
-        // must already match the layout just completed.
-        UpdateHorizontalRange();
-        SetHorizontalOffset(horizontal);
-        scroller.ChangeView(null, vertical, null, disableAnimation: true);
+        scroller.ChangeView(null, offset, null, disableAnimation: true);
     }
 
     // ------------------------------------------------- loading / empty states

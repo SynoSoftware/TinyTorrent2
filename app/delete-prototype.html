@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Delete files prototype</title>
+<!-- PROTOTYPE, throw away. Four layouts of the Delete files confirmation, all grouped by folder, over a mocked
+     main window, switchable via ?variant=D|E|F|G (arrow keys or the bottom bar). Open this file directly; all
+     data is sample data in memory, shaped like the engine's file_scope reply (name, save_path, folder). -->
+<style>
+* { box-sizing: border-box; }
+:root { color-scheme:light; --base:#f3f3f3; --dialog:#f9f9f9; --footer:#f3f3f3; --line:#e5e5e5; --text:#1a1a1a; --muted:#5f5f5f;
+  --accent:#005fb8; --on-accent:#ffffff; --control:#ffffff; --control-line:#e5e5e5; --subtle:rgb(0 0 0 / .04); --smoke:rgb(0 0 0 / .3);
+  --critical:#c42b1c; --bar-error:#fde7e9; }
+body.dark { color-scheme:dark; --base:#1c1f24; --dialog:#2b2b2b; --footer:#202020; --line:#3a3a3a; --text:#ffffff; --muted:#c8c8c8;
+  --accent:#60cdff; --on-accent:#000000; --control:#2d2d2d; --control-line:#3a3a3a; --subtle:rgb(255 255 255 / .05); --smoke:rgb(0 0 0 / .45);
+  --critical:#ff99a4; --bar-error:#442726; }
+body { margin:0; background:var(--base); color:var(--text); font:14px/20px 'Segoe UI Variable Text','Segoe UI',sans-serif; }
+.muted { color:var(--muted); } .num { font-variant-numeric:tabular-nums; }
+.trim { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
+svg.i { width:16px; height:16px; flex:none; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+
+/* mocked main window behind the dialog */
+.app { position:fixed; inset:0 0 72px 0; padding:16px; display:flex; flex-direction:column; gap:2px; overflow:hidden; }
+.app .row { display:grid; grid-template-columns:1fr 100px 120px 120px; gap:16px; height:36px; align-items:center; padding:0 12px; border-radius:4px; }
+.app .row.sel { background:var(--subtle); box-shadow:inset 3px 0 0 var(--accent); }
+.smoke { position:fixed; inset:0; background:var(--smoke); }
+
+/* ContentDialog: 24 px padding, Subtitle title, footer band with the button row */
+.dialog { position:fixed; left:50%; top:50%; transform:translate(-50%,-50%); width:548px; background:var(--dialog); border:1px solid var(--line); border-radius:8px;
+  box-shadow:0 32px 64px rgb(0 0 0 / .37); display:flex; flex-direction:column; max-height:calc(100vh - 160px); overflow:hidden; }
+.content { padding:24px; display:flex; flex-direction:column; gap:12px; min-height:0; }
+.title { display:flex; align-items:center; gap:12px; font-family:'Segoe UI Variable Display','Segoe UI',sans-serif; font-size:20px; line-height:28px; font-weight:600; flex:none; min-width:0; }
+.title svg.i { width:24px; height:24px; color:var(--accent); }
+.footer { flex:none; background:var(--footer); border-top:1px solid var(--line); padding:24px; display:flex; align-items:center; gap:8px; }
+.footer.centred { justify-content:center; } .footer .left { flex:1; min-width:0; display:flex; align-items:center; gap:8px; }
+.btn { display:inline-flex; align-items:center; justify-content:center; gap:8px; height:32px; min-width:120px; padding:0 11px; border-radius:4px;
+  border:1px solid var(--control-line); background:var(--control); color:var(--text); font:inherit; cursor:default; white-space:nowrap; }
+.btn.accent { background:var(--accent); border-color:var(--accent); color:var(--on-accent); }
+.scroll { overflow:auto; min-height:0; }
+
+/* folder groups, shared by every variant */
+.groups { display:flex; flex-direction:column; gap:12px; max-height:300px; }
+.group .head { display:grid; grid-template-columns:16px minmax(0,1fr) auto; column-gap:8px; align-items:center; font-weight:600; min-height:24px; }
+.group .head .size { font-weight:400; }
+.group .line { display:grid; grid-template-columns:minmax(0,1fr) auto; column-gap:16px; padding-left:24px; min-height:24px; align-items:center; }
+.group .line.kind { grid-template-columns:16px minmax(0,1fr) auto; column-gap:8px; }
+.size { text-align:right; }
+
+/* prototype controls, not part of the design */
+.proto { position:fixed; left:50%; bottom:16px; transform:translateX(-50%); display:flex; gap:10px; align-items:center; padding:8px 12px; border-radius:999px;
+  background:#111; color:#fff; font:12px/16px 'Segoe UI',sans-serif; box-shadow:0 8px 24px rgb(0 0 0 / .4); white-space:nowrap; z-index:9; }
+.proto button,.proto select { background:#2a2a2a; color:#fff; border:1px solid #444; border-radius:999px; padding:4px 10px; font:inherit; }
+.proto strong { min-width:220px; text-align:center; }
+</style>
+</head>
+<body class="dark">
+<div class="app" id="app"></div>
+<div class="smoke"></div>
+<div id="dialog"></div>
+<div class="proto">
+  <button id="prev">←</button><strong id="label"></strong><button id="next">→</button>
+  <select id="scenario">
+    <option value="one">One torrent</option><option value="three">Three torrents</option><option value="shared">Shared files kept</option>
+    <option value="many">40 torrents</option><option value="long">Long name and folder</option>
+  </select>
+  <button id="theme">Theme</button>
+</div>
+<script>
+const NAMES = { D:'Grouped by folder', E:'Total beside the buttons', F:'Folder totals', G:'Save folders, file or folder' };
+const KEYS = Object.keys(NAMES);
+const ICON = {
+  trash:'<svg class="i" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>',
+  x:'<svg class="i" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>',
+  folder:'<svg class="i" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>',
+  file:'<svg class="i" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg>',
+};
+// save: the torrent's save folder. folder: where its content is; a subfolder of save when the torrent has its own folder.
+const DL = 'C:\\Users\\user\\Downloads';
+const T = {
+  ubuntu:{ name:'ubuntu-24.04.3-desktop-amd64.iso', size:6.33e9, save:DL, folder:DL },
+  mint:  { name:'linuxmint-22-cinnamon-64bit.iso', size:2.9e9, save:DL, folder:DL },
+  bunny: { name:'Big Buck Bunny (2008) 1080p', size:2.86e9, save:'D:\\Media\\Films', folder:'D:\\Media\\Films\\Big Buck Bunny (2008) 1080p' },
+  debian:{ name:'Debian 12 DVD set', size:11.2e9, save:'D:\\ISO', folder:'D:\\ISO\\debian-12' },
+  archive:{ name:'The Complete Archive of Public Domain Radio Dramas, Volumes 1–48, Remastered FLAC with Scans and Liner Notes', size:184.2e9,
+           save:'\\\\nas\\archive\\Audio\\Radio Dramas\\Public Domain', folder:'\\\\nas\\archive\\Audio\\Radio Dramas\\Public Domain\\The Complete Archive of Public Domain Radio Dramas, Volumes 1–48' },
+};
+const many = Array.from({ length:40 }, (_, i) => {
+  const save = i < 24 ? 'E:\\Courses\\Distributed Systems' : DL;
+  return { name:`Lecture ${String(i + 1).padStart(2, '0')} - Distributed Systems (Fall 2025).mp4`, size:(0.4 + (i * 37 % 11) / 10) * 1e9, save, folder:save };
+});
+const SCENARIOS = {
+  one:{ torrents:[T.ubuntu] }, three:{ torrents:[T.ubuntu, T.bunny, T.mint] },
+  shared:{ torrents:[T.debian], shared:['Debian 12 DVD 1 only', 'Debian 12 netinst + DVD 1'] },
+  many:{ torrents:many }, long:{ torrents:[T.archive] },
+};
+const params = new URLSearchParams(location.search);
+let variant = KEYS.includes(params.get('variant')) ? params.get('variant') : 'D';
+let s = SCENARIOS.three;
+
+const bytes = n => { const u = ['B','KiB','MiB','GiB','TiB']; let i = 0; while (n >= 1024 && i < 4) { n /= 1024; i++; } return i ? n.toFixed(1) + ' ' + u[i] : n + ' B'; };
+const esc = v => String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+const trim = (v, cls = '') => `<span class="trim ${cls}" title="${esc(v)}">${esc(v)}</span>`;
+const sum = list => list.reduce((a, t) => a + t.size, 0);
+const count = () => s.torrents.length === 1 ? '1 torrent' : `${s.torrents.length} torrents`;
+const totals = () => `${count()} · ${bytes(sum(s.torrents))}`;
+const group = key => { const g = {}; for (const t of s.torrents) (g[t[key]] ??= []).push(t); return Object.entries(g); };
+const WARNING = "Deleted files don't go to the Recycle Bin.";
+const sharedLine = () => s.shared ? `<div class="trim" title="${esc(s.shared.join(', '))}">Files used by ${esc(s.shared.join(', '))} will be kept.</div>` : '';
+const buttons = () => `<button class="btn" title="Delete these torrents' files and remove the torrents from the list">${ICON.trash}Delete</button><button class="btn accent">${ICON.x}Cancel</button>`;
+const footer = (left = '') => left ? `<div class="footer"><div class="left">${left}</div>${buttons()}</div>` : `<div class="footer centred">${buttons()}</div>`;
+const dialog = (body, foot = footer()) => `<div class="dialog"><div class="content"><div class="title">${ICON.trash}<span class="trim">Delete files?</span></div>${body}</div>${foot}</div>`;
+const line = t => `<div class="line">${trim(t.name)}<span class="muted num size">${bytes(t.size)}</span></div>`;
+const head = (folder, size = '') => `<div class="head">${ICON.folder}${trim(folder)}<span class="muted num size">${size}</span></div>`;
+const groups = html => `<div class="groups scroll">${html}</div>`;
+
+const VARIANTS = {
+  // Baseline: the total line, then each content folder with its torrents.
+  D: () => dialog(`<div class="num">${totals()}</div>${groups(group('folder').map(([f, list]) => `<div class="group">${head(f)}${list.map(line).join('')}</div>`).join(''))}
+      ${sharedLine()}<div>${WARNING}</div>`),
+  // The total moves to the left of the buttons, the place the shared Dialog's Footer gives, so the body starts with the folders.
+  E: () => dialog(`${groups(group('folder').map(([f, list]) => `<div class="group">${head(f)}${list.map(line).join('')}</div>`).join(''))}
+      ${sharedLine()}<div>${WARNING}</div>`, footer(`<span class="muted num trim">${totals()}</span>`)),
+  // Each folder heading carries its own total. A folder with one torrent is one line: the size moves up to the heading.
+  // The dialog total sits beside the buttons only when there is more than one folder; otherwise the heading already says it.
+  F: () => {
+    const all = group('folder');
+    const html = all.map(([f, list]) => `<div class="group">${head(f, bytes(sum(list)))}${list.map(t => list.length > 1 ? line(t) : `<div class="line">${trim(t.name)}<span></span></div>`).join('')}</div>`).join('');
+    return dialog(`${groups(html)}${sharedLine()}<div>${WARNING}</div>`, all.length > 1 ? footer(`<span class="muted num trim">${totals()}</span>`) : footer());
+  },
+  // Groups are save folders. Each torrent shows whether it is one file there or its own folder, so the user sees exactly
+  // what disappears from the folder they know. The warning comes first, before the list that can scroll.
+  G: () => {
+    const all = group('save');
+    const html = all.map(([save, list]) => `<div class="group">${head(save, all.length > 1 && list.length > 1 ? bytes(sum(list)) : '')}
+      ${list.map(t => { const own = t.folder !== t.save; return `<div class="line kind"><span class="muted" title="${own ? 'Its own folder' : 'A file in this folder'}">${own ? ICON.folder : ICON.file}</span>${trim(own ? t.folder.slice(t.save.length + 1) : t.name)}<span class="muted num size">${bytes(t.size)}</span></div>`; }).join('')}</div>`).join('');
+    return dialog(`<div>${WARNING}</div>${groups(html)}${sharedLine()}`, s.torrents.length > 1 ? footer(`<span class="muted num trim">${totals()}</span>`) : footer());
+  },
+};
+
+function renderApp() {
+  const rows = ['ubuntu-24.04.3-desktop-amd64.iso','Big Buck Bunny (2008) 1080p','linuxmint-22-cinnamon-64bit.iso','Debian 12 DVD set','Sintel (2010) 4K','Fedora-Workstation-Live-41.iso','Tears of Steel (2012)','archlinux-2026.10.01-x86_64.iso','Cosmos Laundromat (2015)','openSUSE-Tumbleweed-DVD.iso'];
+  const chosen = new Set(s.torrents.map(t => t.name));
+  document.getElementById('app').innerHTML = rows.map((n, i) => `<div class="row ${chosen.has(n) ? 'sel' : ''}"><span class="trim">${n}</span><span class="muted">${(i * 1.7 % 9 + 1).toFixed(1)} GiB</span><span class="muted">Seeding</span><span class="muted">${(i * 0.37 % 3).toFixed(2)}</span></div>`).join('');
+}
+function render() {
+  renderApp();
+  document.getElementById('dialog').innerHTML = VARIANTS[variant]();
+  document.getElementById('label').textContent = `${variant} (${NAMES[variant]})`;
+}
+function setVariant(v) { variant = v; params.set('variant', v); try { history.replaceState(null, '', '?' + params); } catch { } render(); }
+const step = d => setVariant(KEYS[(KEYS.indexOf(variant) + d + KEYS.length) % KEYS.length]);
+document.getElementById('prev').onclick = () => step(-1);
+document.getElementById('next').onclick = () => step(1);
+document.addEventListener('keydown', ev => { if (ev.target.closest('input,select,textarea')) return; if (ev.key === 'ArrowLeft') step(-1); if (ev.key === 'ArrowRight') step(1); });
+document.getElementById('scenario').value = 'three';
+document.getElementById('scenario').onchange = ev => { s = SCENARIOS[ev.target.value]; render(); };
+document.getElementById('theme').onclick = () => document.body.classList.toggle('dark');
+render();
+</script>
+</body>
+</html>

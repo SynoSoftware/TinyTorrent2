@@ -115,9 +115,9 @@ void Engine::State::Handle(lt::alert* alert)
             std::erase(relocation->waiting, paused->handle);
             ContinueMove();
         }
-        if (rename)
+        if (rename && rename->phase == RenamePhase::Waiting &&
+            std::erase(rename->waiting, paused->handle))
         {
-            std::erase(rename->waiting, paused->handle);
             ContinueRename();
         }
     }
@@ -180,9 +180,9 @@ void Engine::State::AwaitCompletion(Torrent& torrent)
 // so a person who opens a completed file never finds it incomplete.
 void Engine::State::On(lt::cache_flushed_alert const& alert)
 {
-    if (rename && (rename->phase == RenamePhase::Flushing || rename->phase == RenamePhase::Recovering))
+    if (rename && (rename->phase == RenamePhase::Flushing || rename->phase == RenamePhase::Recovering) &&
+        std::erase(rename->waiting, alert.handle))
     {
-        std::erase(rename->waiting, alert.handle);
         ContinueRename();
     }
     auto torrent = Find(alert.handle);
@@ -283,6 +283,10 @@ void Engine::State::On(lt::alerts_dropped_alert const&)
     }
     for (auto& [id, torrent] : torrents)
     {
+        if (torrent.restore)
+        {
+            continue;
+        }
         CompletePriorities(torrent);
         if (torrent.priorityReply)
         {

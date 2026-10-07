@@ -110,13 +110,6 @@ internal static class TableHarness
         ResolvedColumns(table).FirstOrDefault(c => (string?)Read(c, "Id") == id)
         ?? throw new AssertFailedException($"No resolved column '{id}'.");
 
-    /// <summary>The table-owned horizontal offset the header strip and every row panel subtract.</summary>
-    internal static void SetHorizontalOffset(Table table, double value)
-    {
-        object geometry = Geometry(table);
-        Property(geometry.GetType(), "HorizontalOffset").SetValue(geometry, value);
-    }
-
     /// <summary>The resize separator's own arithmetic, in header-strip coordinates.</summary>
     internal static int TrailingEdgeNear(Table table, double x, double tolerance)
     {

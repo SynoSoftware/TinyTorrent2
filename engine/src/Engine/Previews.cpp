@@ -27,7 +27,7 @@ std::vector<std::string> Engine::State::SharedFiles(std::shared_ptr<lt::torrent_
     auto wanted = FilePaths(*metadata, destination);
     for (auto const& [id, torrent] : torrents)
     {
-        auto other = torrent.handle.torrent_file();
+        auto other = torrent.restore ? torrent.restore->ti : torrent.handle.torrent_file();
         if (!other)
         {
             continue;
@@ -44,25 +44,8 @@ std::vector<std::string> Engine::State::SharedFiles(std::shared_ptr<lt::torrent_
             }
         }
     }
-    if (HoldsFiles(metadata, destination))
-    {
-        if (deletion)
-        {
-            names.push_back(deletion->names);
-        }
-        else if (relocation)
-        {
-            for (auto const& id : relocation->ids)
-            {
-                names.push_back(torrents.at(id).Name());
-            }
-        }
-        else if (rename)
-        {
-            for (auto const& owner : rename->owners)
-                names.push_back(torrents.at(owner.torrentId).Name());
-        }
-    }
+    auto holders = Holders(metadata, destination);
+    names.insert(names.end(), holders.begin(), holders.end());
     return names;
 }
 
@@ -132,6 +115,7 @@ bool Engine::State::CanMerge(Preview const& preview) const
 {
     auto duplicate = Duplicate(preview.InfoHashes());
     return !duplicate.empty() &&
+        !torrents.at(duplicate).restore &&
         !Missing(preview.params.trackers, Urls(torrents.at(duplicate).handle.trackers())).empty();
 }
 

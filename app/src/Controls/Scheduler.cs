@@ -3,45 +3,39 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
-using Windows.Foundation;
 using Windows.System;
-using Syno.TinyTorrent.Models;
 using Syno.TinyTorrent.Views;
 
 namespace Syno.TinyTorrent.Controls;
 
 public sealed partial class Scheduler : UserControl
 {
-    private PeriodDraft? _editor;
-    private bool _refreshing;
+    private readonly PeriodForm _editor;
     public Schedule Model { get; }
-    public event EventHandler? SpeedRequested;
+    public MainViewModel Main { get; }
 
-    public Scheduler(Schedule model)
+    public Scheduler(Schedule model, MainViewModel main)
     {
         Model = model;
+        Main = main;
         InitializeComponent();
-        Timeline.Content = new Week(model);
+        _editor = new PeriodForm(model);
+        _editor.Removing += (_, _) => FocusAdd();
+        Timeline.Content = new Week(model, main);
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
-        RefreshText();
     }
 
     private void OnLoaded(object sender, RoutedEventArgs args)
     {
         Model.PropertyChanged += OnModel;
-        Model.TextChanged += OnText;
-        Model.WeekChanged += OnWeek;
-        RefreshText();
         RefreshPeriods();
-        OnModel(this, new(string.Empty));
+        ShowPeriod();
     }
 
     private void OnUnloaded(object sender, RoutedEventArgs args)
     {
         Model.PropertyChanged -= OnModel;
-        Model.TextChanged -= OnText;
-        Model.WeekChanged -= OnWeek;
     }
 
     internal void FocusAdd()
@@ -50,110 +44,100 @@ public sealed partial class Scheduler : UserControl
         AddPeriod.Focus(FocusState.Programmatic);
     }
 
-    internal Control Editor(string? name) => (name is null ? null : FindName(name) as Control) ?? StartTime;
+    internal Control Editor(string? name) => _editor.Editor(name);
 
     private void OnModel(object? sender, PropertyChangedEventArgs args)
     {
-        Hint.Visibility = Model.IsEditing ? Visibility.Collapsed : Visibility.Visible;
-        if (string.IsNullOrEmpty(args.PropertyName) && Model.HasScheduleError)
-        {
-            var message = Model.ScheduleMessage;
-            DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
-            {
-                if (!IsLoaded || !Model.HasScheduleError || Model.ScheduleMessage != message) return;
-                UpdateLayout();
-                ScheduleError.StartBringIntoView(new BringIntoViewOptions { AnimationDesired = false });
-            });
-        }
-        if (_editor == Model.Draft) return;
-        _editor = Model.Draft;
+        RefreshPeriods();
+        // Expander raises Expanding before applying its visual state.
+        DispatcherQueue.TryEnqueue(ShowPeriod);
+    }
+
+    private async void OnAdd(object sender, RoutedEventArgs args)
+    {
+        await Model.Add();
         DispatcherQueue.TryEnqueue(() =>
         {
-            if (!IsLoaded) return;
-            if (Model.IsEditing)
-            {
-                PeriodEditor.StartBringIntoView(new BringIntoViewOptions { AnimationDesired = false });
-                StartTime.Focus(FocusState.Programmatic);
-            }
-            else if (Model.Selection is not null) ((Week)Timeline.Content).Focus(FocusState.Keyboard);
-            else FocusAdd();
+            if (!IsLoaded || !Model.IsOpen) return;
+            UpdateLayout();
+            var row = Periods.Children.Cast<Expander>().FirstOrDefault(row => row.Tag == Model.OpenPeriod);
+            if (row is not null && FocusManager.FindFirstFocusableElement(row) is Control header)
+                header.Focus(FocusState.Programmatic);
         });
     }
 
-    private void ArrangeTimes(object sender, SizeChangedEventArgs args)
+    private async void OnExpanding(Expander sender, ExpanderExpandingEventArgs args)
     {
-        var available = new Size(double.PositiveInfinity, double.PositiveInfinity);
-        StartTime.Measure(available);
-        EndTime.Measure(available);
-        var wide = Times.ActualWidth >= StartTime.DesiredSize.Width + EndTime.DesiredSize.Width + Times.ColumnSpacing;
-        Grid.SetColumnSpan(StartTime, wide ? 1 : 2);
-        Grid.SetColumnSpan(EndTime, wide ? 1 : 2);
-        Grid.SetColumn(EndTime, wide ? 1 : 0);
-        Grid.SetRow(EndTime, wide ? 0 : 1);
+        if (sender.Tag is SchedulePeriod period) await Model.Open(period);
     }
 
-    private void ArrangeSelection(object sender, SizeChangedEventArgs args)
+    private async void OnCollapsed(Expander sender, ExpanderCollapsedEventArgs args)
     {
-        SelectionActions.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-        var wide = SelectionLayout.ActualWidth >= SelectionActions.DesiredSize.Width + 280;
-        Grid.SetColumnSpan(SelectionText, wide ? 1 : 2);
-        Grid.SetColumn(SelectionActions, wide ? 1 : 0);
-        Grid.SetRow(SelectionActions, wide ? 0 : 1);
+        if (sender.Tag is SchedulePeriod period) await Model.Close(period);
     }
 
-    protected override void OnKeyDown(KeyRoutedEventArgs args)
+    private void OnEditorKey(object sender, KeyRoutedEventArgs args)
     {
-        base.OnKeyDown(args);
-        if (args.Handled || args.Key != VirtualKey.Escape || !Model.IsEditing || !Model.CancelPeriod.CanExecute(null)) return;
-        Model.CancelPeriod.Execute(null);
+        if (args.Handled || args.Key != VirtualKey.Escape || sender is not Expander { IsExpanded: true } row) return;
         args.Handled = true;
+        row.IsExpanded = false;
+        if (FocusManager.FindFirstFocusableElement(row) is Control header) header.Focus(FocusState.Programmatic);
     }
-
-    private void OnText(object? sender, EventArgs args) => RefreshText();
-    private void OnWeek(object? sender, EventArgs args) => RefreshPeriods();
 
     private void RefreshPeriods()
     {
-        var alternative = Model.Periods.Where(period => period.Mode == ScheduleMode.Alternative).ToArray();
-        var paused = Model.Periods.Where(period => period.Mode == ScheduleMode.Paused).ToArray();
-        if (AlternativePeriods.ItemsSource is not SchedulePeriod[] previous || !previous.SequenceEqual(alternative))
-            AlternativePeriods.ItemsSource = alternative;
-        if (PausedPeriods.ItemsSource is not SchedulePeriod[] earlier || !earlier.SequenceEqual(paused))
-            PausedPeriods.ItemsSource = paused;
+        if (!IsLoaded) return;
+        while (Periods.Children.Count > Model.Periods.Count)
+        {
+            ((Expander)Periods.Children[^1]).Content = null;
+            Periods.Children.RemoveAt(Periods.Children.Count - 1);
+        }
+        while (Periods.Children.Count < Model.Periods.Count)
+        {
+            var row = new Expander
+            {
+                Padding = new Thickness(16, 0, 16, 0),
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                HorizontalContentAlignment = HorizontalAlignment.Stretch
+            };
+            row.Expanding += OnExpanding;
+            row.Collapsed += OnCollapsed;
+            row.KeyDown += OnEditorKey;
+            Periods.Children.Add(row);
+        }
+        for (var index = 0; index < Model.Periods.Count; index++)
+        {
+            var row = (Expander)Periods.Children[index];
+            var period = Model.Periods[index];
+            row.Tag = period;
+            row.Header = period.Description;
+            AutomationProperties.SetName(row, period.Description);
+        }
     }
 
-    private void RefreshText()
+    private void ShowPeriod()
     {
-        _refreshing = true;
-        Label(AddPeriod, "add_period");
-        Label(SavePeriod, "save_period");
-        Label(SpeedLimits, "speed");
-        CancelPeriod.Content = Model.Text.Get("add", "cancel");
-        DaysTitle.Text = Model.Text.Get("preferences", "start_days");
-        StartTime.Header = Model.Text.Get("preferences", "start_time");
-        EndTime.Header = Model.Text.Get("preferences", "end_time");
-        AutomationProperties.SetName(StartTime, (string)StartTime.Header);
-        AutomationProperties.SetName(EndTime, (string)EndTime.Header);
-        PeriodMode.Header = Model.Text.Get("preferences", "period_mode");
-        AutomationProperties.SetName(PeriodMode, (string)PeriodMode.Header);
-        Label(AlternativeMode, "alternative");
-        Label(PausedMode, "paused");
-        NormalLegend.Text = Model.Text.Get("preferences", "normal");
-        AlternativeLegend.Text = Model.Text.Get("preferences", "alternative");
-        PausedLegend.Text = Model.Text.Get("preferences", "paused");
-        Hint.Text = Model.Text.Get("preferences", "timeline_hint");
-        PreviewHint.Text = Model.Text.Get("preferences", "preview_hint");
-        _refreshing = false;
-    }
-
-    private void Label(ContentControl control, string key) => control.Content = Model.Text.Get("preferences", key);
-    private async void OnToggle(object sender, RoutedEventArgs args) => await Model.Toggle(Enabled.IsOn);
-    private void OnSpeedLimits(object sender, RoutedEventArgs args) => SpeedRequested?.Invoke(this, EventArgs.Empty);
-    public static int ModeIndex(bool paused) => paused ? 1 : 0;
-    public static Visibility MessageVisibility(string value) => string.IsNullOrEmpty(value) ? Visibility.Collapsed : Visibility.Visible;
-
-    private void OnPeriodMode(object sender, SelectionChangedEventArgs args)
-    {
-        if (!_refreshing && Model.Draft is { } draft) draft.IsPaused = PeriodMode.SelectedIndex == 1;
+        if (!IsLoaded || Model.IsPending) return;
+        Expander? selected = null;
+        foreach (Expander row in Periods.Children)
+        {
+            if (row.Tag == Model.OpenPeriod)
+            {
+                selected = row;
+                continue;
+            }
+            row.Content = null;
+            row.IsExpanded = false;
+        }
+        // Detach the shared editor from its old row before attaching it here.
+        if (selected is not null)
+        {
+            selected.Content = _editor;
+            selected.IsExpanded = true;
+        }
+        if (!Model.HasScheduleError) return;
+        UpdateLayout();
+        FrameworkElement feedback = Model.IsOpen ? _editor.Feedback : PeriodsRow;
+        feedback.StartBringIntoView(new BringIntoViewOptions { AnimationDesired = false });
     }
 }

@@ -45,6 +45,7 @@
     "startup": "The window did not open. Downloads continue. Choose Show window in the tray to try again.",
     "save": "TinyTorrent could not save and remains running. Choose Exit in the tray to retry.",
     "pause": "The transfer pause setting could not be saved.",
+    "window_open": "The TinyTorrent window is still open. Close it, then retry.",
     "unresponsive": "The window did not respond to Exit. Nothing was discarded. Try Exit again when the window responds."
   }
 }

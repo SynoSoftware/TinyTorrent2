@@ -9,9 +9,13 @@ build entry points and permission to launch desktop applications.
 ## The everyday loop
 
 Start with source reasoning, compiler guarantees, and existing coverage. Run the
-smallest relevant existing check, using its native filter where available. Build
-only the affected target through the repository's supported workflow when a
-compile check is needed. Reuse valid build outputs; never test stale binaries.
+smallest relevant existing check, using its native filter where available. When
+a compile check is needed, build the project whose source changed and each
+project that uses an interface the change altered; any other build holds the
+owner's machine and proves nothing about the change. Run the installer
+(`Release.cmd`) only when the change touches `installer/` or the owner asks,
+because each run also consumes a build number in `Directory.Build.props`. Reuse
+valid build outputs; never test stale binaries.
 Documentation and screen-copy edits do not justify an application build or suite.
 
 Aim for seconds for routine checks. If the only available check takes five
@@ -240,10 +244,7 @@ Separate synthetic Pieces captures exercise the production model and renderer
 with mixed states, partial progress and 20,000 aggregated pieces. They replace
 only the diagnostic map temporarily; the live torrent header describes another
 fixture. These images establish rendering, not engine accuracy or live transfers.
-Native
-focus also reveals the last header in both flow directions without changing
-vertical scroll. This does not deliver physical arrow/End keys. No live traffic
-is implied by this paused fixture.
+No live traffic is implied by this paused fixture.
 Use `TINYTORRENT_CAPTURE_REVIEW=traffic` only with the disposable loopback
 launcher's `traffic-capture.json` manifest. It captures the active workspace,
 General, populated Peers, mixed Pieces and nonzero Speed history across the

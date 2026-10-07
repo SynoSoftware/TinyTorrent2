@@ -119,13 +119,21 @@ void Store::Write(std::filesystem::path path, std::function<std::string()> encod
         }
         DWORD error = success ? 0 : GetLastError();
         CloseHandle(file);
+        char const* operation = "WriteFile";
+        if (success)
+        {
+            operation = "MoveFileEx";
+            success = MoveFileExW(temporary.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH);
+            error = success ? 0 : GetLastError();
+        }
         if (!success)
         {
-            throw std::runtime_error("WriteFile: " + std::to_string(error));
-        }
-        if (!MoveFileExW(temporary.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
-        {
-            throw std::runtime_error("MoveFileEx: " + std::to_string(GetLastError()));
+            auto detail = std::string(operation) + ": " + std::to_string(error);
+            if (!DeleteFileW(temporary.c_str()))
+            {
+                detail += "; DeleteFile: " + std::to_string(GetLastError());
+            }
+            throw std::runtime_error(detail);
         }
     }, std::move(completion));
 }

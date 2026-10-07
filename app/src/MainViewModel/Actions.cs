@@ -10,14 +10,18 @@ public sealed partial class MainViewModel
 {
     private bool _receivingSources;
     private bool _sourcesPending;
+    private Task _arrivals = Task.CompletedTask;
     public bool AllPaused { get; private set; }
     public bool HasIncoming { get; private set; }
     public string MissingInterface { get; private set; } = string.Empty;
-    private bool _alternativeLimits;
-    public string Incoming => MissingInterface.Length > 0 ? Text.Format("preferences", "unavailable_interface", MissingInterface) :
-        Text.Get("window", HasIncoming ? "incoming" : "no_incoming");
+    public string Incoming => MissingInterface.Length > 0 ? Text.Format("window", "no_interface", MissingInterface) :
+        Preferences.Proxy.IsInUse ? Preferences.Proxy.Route : Text.Get("window", HasIncoming ? "incoming" : "no_incoming");
+    public string IncomingStatus => Text.Get("window", MissingInterface.Length > 0 ? "no_interface_status" :
+        Preferences.Proxy.IsInUse ? "proxy_status" : HasIncoming ? "incoming_status" : "no_incoming_status");
+    public string IncomingGlyph => MissingInterface.Length > 0 ? Syno.Lucide.Unplug : Preferences.Proxy.IsInUse ? Syno.Lucide.Route : Syno.Lucide.Network;
     public string SelectionText => Text.Format("window", "selected", _selected.Length);
-    public string ErrorCount => Text.Format("window", "errors", Torrents.Count(torrent => torrent.IsError));
+    public string TorrentCount => _selected.Length == 0 ? Text.FormatCount("window", "torrents", Torrents.Count) :
+        Text.Format("window", "torrents_selected", Text.FormatCount("window", "torrents", Torrents.Count), _selected.Length);
     public bool HasSelection => _selected.Length > 0;
     public bool CanReorder => CanEdit && VisibleTorrents.Count(torrent => torrent.Queue >= 0) > 1;
     private bool CanMove => CanEdit && _selected.Length > 0 && _selected.All(torrent => torrent.Queue >= 0);
@@ -29,11 +33,6 @@ public sealed partial class MainViewModel
     public ICommand EmptyAction => Torrents.Count > 0 ? ClearFilters : Add;
     public ICommand ClearFilters { get; }
     public bool ShowAdd => Preferences.ShowAdd.ConfirmedOn;
-    public bool AlternativeLimits
-    {
-        get => _alternativeLimits;
-        set { if (value != AlternativeLimits) _ = SaveAlternative(value); }
-    }
     public bool CanEditSelection => CanEdit && _selected.Length > 0;
     // Null when the selected torrents differ. Switching a mixed selection
     // turns the choice on for all of them.
@@ -41,6 +40,9 @@ public sealed partial class MainViewModel
     public bool? FirstLast => Shared(torrent => torrent.FirstLast);
     public ICommand SwitchSequential { get; }
     public ICommand SwitchFirstLast { get; }
+    public bool? Limited => Shared(torrent => torrent.IsLimited);
+    public ICommand LimitSpeed { get; }
+    public SpeedLimit SpeedLimit { get; }
     public Inspector Inspector { get; }
     public bool HasInspector => Inspector.IsOpen;
     public ICommand AddMagnet { get; }
@@ -66,26 +68,47 @@ public sealed partial class MainViewModel
     public event EventHandler<Torrent[]>? RemoveRequested;
     public event EventHandler? MergeRequested;
     public event EventHandler<Torrent[]>? MoveRequested;
+    public event EventHandler<Torrent[]>? SpeedLimitRequested;
     public event EventHandler<Torrent[]>? DeleteRequested;
     public event EventHandler<OpenRequestedEventArgs>? OpenRequested;
     public event EventHandler<string>? CopyRequested;
+
+    internal ICommand SpeedCommand(Func<Torrent[]> targets) => new Command(
+        () => { SpeedLimitRequested?.Invoke(this, targets().ToArray()); return Task.CompletedTask; },
+        () => CanEdit && targets() is { Length: > 0 } torrents && torrents.All(Contains));
+
+    internal ICommand MoveCommand(Func<Torrent[]> targets) => new Command(
+        () => { MoveRequested?.Invoke(this, targets().ToArray()); return Task.CompletedTask; },
+        () => CanEdit && targets() is { Length: > 0 } torrents && torrents.All(torrent => Contains(torrent) && !torrent.IsMoving));
 
     internal Torrent? Find(IEnumerable<string> hashes) => Torrents.FirstOrDefault(torrent =>
         torrent.Hashes.Intersect(hashes, StringComparer.OrdinalIgnoreCase).Any());
 
     // Dropped or pasted sources.
-    public Task AddSources(IEnumerable<string> sources)
-    {
-        Draft.Own(sources);
-        return AddArrived();
-    }
+    public Task AddSources(IEnumerable<string> sources) => AddSources(sources.ToArray(), false);
 
     // Picked sources: choosing Add torrent file asks for the form, however
     // many files the person picks.
-    public Task AddPicked(IEnumerable<string> sources)
+    public Task AddPicked(IEnumerable<string> sources) => AddSources(sources.ToArray(), true);
+
+    // Later arrivals stay outside the draft until the preceding batch has
+    // finished its cleanup; closing waits for the last accepted arrival.
+    private async Task AddSources(string[] sources, bool picked)
     {
-        Draft.Own(sources);
-        return AddOwnedSources();
+        if (sources.All(string.IsNullOrWhiteSpace)) return;
+        var previous = _arrivals;
+        var completed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _arrivals = completed.Task;
+        RefreshWindow();
+        try
+        {
+            await previous;
+            Draft.Own(sources);
+            if (picked) await AddOwnedSources();
+            else await AddArrived();
+        }
+        catch (Exception error) { Report(error); }
+        finally { completed.SetResult(); RefreshWindow(); }
     }
 
     private Task AddArrived() => !IsAddOpen && Draft.Sources.Count > 1 ? AddTogether() : AddOwnedSources();
@@ -98,9 +121,10 @@ public sealed partial class MainViewModel
     private async Task AddTogether()
     {
         await Draft.PrepareAll();
+        if (!Draft.CanEdit || IsAddOpen) return;
         if (await Draft.Submit() || Draft.Failure is not { } failure) return;
         Report(failure);
-        await Draft.Cancel();
+        await Draft.Cancel(Draft.Sources.Where(source => source.Failure is not null && !source.Uncertain).ToArray());
     }
 
     private async Task AddOwnedSources()
@@ -112,6 +136,7 @@ public sealed partial class MainViewModel
             return;
         }
         await Draft.PrepareAll();
+        if (IsAddOpen) return;
         // A torrent already in the list needs no form: Submit shows it where
         // it is, and only trackers it lacks are worth a question.
         if (Draft.Sources.All(source => source.Duplicate.Length > 0))
@@ -149,21 +174,15 @@ public sealed partial class MainViewModel
                 }
                 var activations = pending.GetProperty("activations").EnumerateArray().ToArray();
                 if (activations.Length == 0) continue;
-                foreach (var activation in activations)
-                    Draft.Own(activation.GetProperty("sources").EnumerateArray().Select(source => source.GetString()!));
+                var sources = activations.SelectMany(activation =>
+                    activation.GetProperty("sources").EnumerateArray().Select(source => source.GetString()!)).ToArray();
+                var arrival = AddSources(sources);
                 await _client.Send("sources_received", new { activation_ids = activations.Select(activation => activation.GetProperty("activation_id").GetString()).ToArray() });
-                await AddArrived();
+                await arrival;
             }
         }
         catch (Exception error) { Report(error); }
         finally { _receivingSources = false; Refresh(); }
-    }
-
-    private async Task SaveAlternative(bool enabled)
-    {
-        if (!CanEdit) return;
-        try { await Preferences.SetAlternative(enabled); Accepted("window", "alternative"); ClearError(); }
-        catch (Exception error) { Report(error); }
     }
 
     private Task Queue(string direction) => Queue(new { torrent_ids = _selected.Select(torrent => torrent.TorrentId).ToArray(), direction });
@@ -236,7 +255,7 @@ public sealed partial class MainViewModel
 
     private Task OpenTorrent(bool folder) => _selected.Length == 1 ? OpenTorrent(_selected[0], folder) : Task.CompletedTask;
 
-    private async Task OpenTorrent(Torrent torrent, bool folder)
+    internal async Task OpenTorrent(Torrent torrent, bool folder)
     {
         try
         {
@@ -263,18 +282,23 @@ public sealed partial class MainViewModel
         try
         {
             var detail = await Detail(_selected[0]);
-            CopyRequested?.Invoke(this, hashes ? string.Join(Environment.NewLine,
+            await Copy(hashes ? string.Join(Environment.NewLine,
                 detail.GetProperty("hashes").EnumerateArray().Select(hash => hash.GetString())) : detail.GetProperty("magnet").GetString()!);
         }
         catch (Exception error) { Report(error); }
     }
 
-    private Task Inspect(InspectorSection section)
+    internal Task Copy(string text)
     {
-        if (_selected.Length != 1) return Task.CompletedTask;
-        if (Inspector.Open(_selected[0])) Inspector.Select(section);
-        Refresh();
+        CopyRequested?.Invoke(this, text);
         return Task.CompletedTask;
+    }
+
+    private async Task Inspect(InspectorSection section)
+    {
+        if (_selected.Length != 1) return;
+        if (Inspector.Open(_selected[0])) await Inspector.Navigate(section);
+        Refresh();
     }
 
     public bool CloseInspector()

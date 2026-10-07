@@ -1127,15 +1127,16 @@ samples in buckets aligned to clock time and draws monotone cubic native paths
 with separate figures across unknown time gaps. Its marker exposes the marked
 point as a read-only UI Automation value. PiecesMap uses one BGRA
 bitmap, 16-pixel squares, 4-pixel gaps and 6-pixel gutters after each group of
-eight, matching the previous native map. Squares are anti-aliased tiles with the
+eight, matching the previous native map; a full row widens the gutters by the
+width left over, so the map ends at the right edge. Squares are anti-aliased tiles with the
 theme's control corner radius; their colours, hatch and cross come from the
 legend swatches, so the legend and the map share one palette, and the swatch
 outline appears only in High Contrast. When pieces outnumber the squares that
 fit, every fitting square is used and each covers a near-equal range. Geometry
 and theme changes invalidate the raster; equal data does not. Grouped squares
 use the documented state tie order, received fill, a mixed-state dot and an
-unavailable dot. One fixed, trimmed line under the legend describes the
-hovered square, otherwise the selected one; hover outlines a square without
+unavailable dot. The status and legend share the first line; one fixed,
+trimmed line under them describes the hovered square, otherwise the selected one; hover outlines a square without
 moving the selected square, which a click and Arrow/Home/End move. A read-only
 UI Automation value and Ctrl+C expose the selected square's detail line.
 These surfaces are not yet connected to the product or runtime-reviewed.
@@ -1254,9 +1255,9 @@ records the ruling and the arrangement that replaced vcpkg.
 
 ## Wire representation
 
-Protocol version 3 uses a four-byte little-endian UTF-8 JSON frame length,
+Protocol version 7 uses a four-byte little-endian UTF-8 JSON frame length,
 bounded to 16 MiB. The endpoint is `TinyTorrent.<logon SID>`; each connecting
-client first receives `{type:"hello",version:3,session_id:"...",data_directory:"..."}`. The absolute data directory
+client first receives `{type:"hello",version:7,session_id:"...",data_directory:"..."}`. The absolute data directory
 keeps the same store for explicit Restart, which starts the engine beside the
 window rather than a path a pipe peer reports. Requests are
 `{request_id:integer,command:string,...}`. Replies repeat `request_id` and have
@@ -1281,19 +1282,32 @@ torrent_id), `torrent` (torrent_id), `pause`, `resume`, `force`, `verify`, and
 or before_torrent_id: string/null for a row drop; null means end),
 `piece_order` (torrent_ids with sequential, first_last or both as booleans; an
 absent one keeps each torrent's choice),
-`session_pause` (paused), `settings` (changes), `open`, `ready`,
+`session_pause` (paused), `settings` (changes), `check_proxy` (proxy), `open`, `ready`,
 `ui_closed`, `activate_reply` (available boolean), `close_reply` (state:
 waiting/closing/cancelled), and `exit`. Activation acknowledgement lets Open wait through an
 old window's close path without losing the request. Current settings changes accept language (`en`, `es`)
 and theme (`system`, `light`, `dark`); unknown fields or values are refused. A
 settings acknowledgement confirms the same durable replacement as membership.
 Settings also accept `default_destination` (absolute path), `show_add` and
-`alternative_limits` (booleans), and `download_limit`, `upload_limit`,
+`limit_mode` (`none`, `speed` or `alternative` for a manual choice, default
+`none`, or null to clear its temporary override while scheduling is enabled), and `download_limit`, `upload_limit`,
 `alternative_download_limit`, `alternative_upload_limit` (bytes per second,
 integer 0 through INT_MAX; 0 means unlimited). Alternative limits initially use
 10 KiB/s in each direction. Settings also accept `notify_problems` (default true),
 `notifications_enabled` (finished downloads, default false), `notify_added`
 (default false), `prevent_sleep` and `prevent_sleep_seeding` (booleans).
+Settings also accept `encryption` (`preferred`, the default, `required`,
+`allowed` or `disabled`) and the proxy: `proxy_type` (`none`, the default,
+`socks5`, `socks4` or `http`), `proxy_host`, `proxy_port` (0 through 65,535),
+`proxy_username` and `proxy_password` (at most 255 bytes each). A proxy type
+other than `none` without a host and a port is refused. settings.json holds
+`proxy_password` encrypted with DPAPI for the current Windows user, as base64;
+the settings reply and the snapshot carry it as plain text.
+`check_proxy` takes `proxy`, an object with the settings command's proxy
+fields, and starts a check that connects to that proxy and signs in within 10
+seconds without changing the session. It replies at once with `check_id`,
+because the check can take longer than a client waits for a reply; the
+snapshot reports the result.
 Existing saved notification choices keep their value.
 Session pause is persisted as `all_paused` through
 its command and preserves individual torrent intent. The desktop host records
@@ -1320,13 +1334,24 @@ metadata without creating a payload handle; destination is applied at Add.
 Another instance of the storage worker reads and parses preview sources, so a
 slow share cannot hold up metadata commits; destruction cancels its blocked read.
 Snapshot contains session_id, torrents, settings, language_saved, download_rate,
-upload_rate, all_paused, has_incoming, stopping, loading, storage_failed, and startup_error.
+upload_rate, all_paused, limits, has_incoming, proxy, proxy_check, stopping, loading, storage_failed, and startup_error.
+Protocol version 7 adds `proxy` and `proxy_check`. A proxy check's outcome is
+`connected`, `sign_in_failed`, `unreachable`, `not_found`, `wrong_type` or
+`timed_out`. `proxy` is the outcome of the engine's check of the proxy in use,
+or null while no proxy is in use and until the check ends. `proxy_check` is the
+check that `check_proxy` started last: `check_id`, and `outcome` and
+`milliseconds`, which are null while it runs. It is null before the first
+check and when that check could not run.
 Torrent rows contain torrent_id, name,
-size (bytes), progress (0..1), status (stable code), paused, download_rate and
+size (wanted bytes), completed (wanted bytes present), progress (0..1 for the
+current task, including verification), status (stable code), paused, download_rate and
 upload_rate (bytes/second), save_path, error (stable code), diagnostic detail,
-added (Unix seconds), seeds, peers, downloaded/uploaded (bytes), queue
+added (Unix seconds), seeds and peers (connected; peers includes seeds),
+swarm_seeds and swarm_peers (tracker scrape totals, else known peers),
+downloaded/uploaded (bytes), queue
 (libtorrent position), complete, incoming, forced, sequential, first_last, and
-hashes. `torrent` returns
+hashes. Protocol version 6 adds `completed`, so content totals and remaining time
+do not mistake verification progress for downloaded bytes. `torrent` returns
 the torrent's facts, name, metadata_ready, files, hashes, current content folder,
 and magnet link.
 All identities are strings. Settings are intended changes rather than replacement
@@ -1524,10 +1549,17 @@ Settings now persist the UI's queue, connection, seeding, network, update-check
 and weekly-period choices through the existing document queue. Periods carry
 Monday-zero days, start/end minutes and paused/alternative mode, with at most
 128 definitions. Zero queue/connection limits mean unlimited. The summary's
-top-level all_paused and alternative_limits describe effective policy; the
-settings object retains manual choices. missing_interface identifies an absent
-selected adapter. The existing UI status and rate-pair toggle use these effective
-facts; tray status stays at two rows and three commands, with the adapter reason
+top-level all_paused describes effective pause policy. Its `limits` object carries
+`source` (manual/override/schedule), `alternative` (the effective pair), `download`
+and `upload` (caps in bytes per second, zero unlimited), and `pause` (empty,
+manual/schedule/interface). The settings object retains manual choices.
+missing_interface identifies an absent selected adapter. The status bar reads
+these facts through its view model without an interactive limits control.
+Settings > Transfers owns the native pair selector, serializes choices and
+keeps errors beside the picker. Same-mode schedule edits preserve an override;
+Follow schedule clears it through the existing settings command. This change
+has source review only; it has not been compiled or exercised in the product.
+Tray status stays at two rows and three commands, with the adapter reason
 in its tooltip. Selection of an unavailable adapter is retained and blocks the
 session rather than falling back. Availability is reconciled once a second;
 changed binding pauses old connections before the new settings apply.
@@ -1575,7 +1607,9 @@ The older request without `view` retains its General/Files shape, including URL
 strings in its saved `trackers` field, for existing action and check consumers.
 
 General supplies `folder`, `magnet`, `hashes`, metadata `comment`, `creator`,
-`created` (Unix seconds), `piece_size` (bytes), and `private` (null until metadata).
+`created` (Unix seconds), `piece_size` (bytes), `piece_count`, and `private` (null until metadata).
+The count comes from torrent metadata, because selected-file size does not describe
+all pieces. Protocol version 5 adds this field.
 Files supplies `metadata_ready` and indexed `files`, with logical relative `path`,
 actual `disk_path`, byte `size`, `padding`, effective `priority`, and actual byte
 `downloaded` values. Resolve `disk_path` against `save_path` for file operations;

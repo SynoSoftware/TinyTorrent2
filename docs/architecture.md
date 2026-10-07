@@ -53,8 +53,9 @@ VPN, notifications, preventing idle sleep while downloading on mains power, and
 an update check. Port mapping, notifications about problems, idle-sleep
 prevention while downloading, and the update check start enabled and can be
 turned off; notifications about finished and added downloads start disabled.
-Encryption follows libtorrent's defaults without a separate setting. Proxy
-configuration is outside the initial scope.
+A connection encryption setting, Preferred by default, shows that TinyTorrent
+encrypts, and an optional SOCKS5, SOCKS4 or HTTP proxy carries peer and tracker
+connections.
 
 A setting exists only where people need different behavior. When one answer
 is right for nearly everyone, it is fixed behavior; when no one has shown a

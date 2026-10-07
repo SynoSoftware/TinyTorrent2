@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pieces header prototype</title>
+<!-- PROTOTYPE, throw away. Six Pieces map headers on one mocked inspector, switchable via ?variant=A|B|C|D|E|F
+     (arrow keys or the bottom bar). Open this file directly; everything is sample data in memory.
+     The map follows PiecesMap's layout rules: 16 px squares, 4 px gaps, 6 px gutters every 8, near-equal ranges. -->
+<style>
+* { box-sizing: border-box; }
+:root { color-scheme:light; --base:#f3f3f3; --card:#fbfbfb; --line:#e5e5e5; --text:#1a1a1a; --muted:#5f5f5f; --accent:#005fb8;
+  --verified:#0f7b0f; --common:rgb(0 62 146 / .28); --missing:rgb(0 0 0 / .18); --received:#005fb8;
+  --rare:rgb(157 93 0 / .25); --hatch:#9d5d00; --unavail:rgb(196 43 28 / .25); --cross:#c42b1c;
+  --success:#0f7b0f; --caution:#9d5d00; --critical:#c42b1c; --subtle:rgb(0 0 0 / .04); --strong:#8a8a8a;
+  --bar-info:#f6f6f6; --bar-warning:#fff4ce; --bar-error:#fde7e9; }
+body.dark { color-scheme:dark; --base:#202020; --card:#2b2b2b; --line:#3a3a3a; --text:#ffffff; --muted:#c8c8c8; --accent:#60cdff;
+  --verified:#6ccb5f; --common:rgb(153 235 255 / .30); --missing:rgb(255 255 255 / .25); --received:#60cdff;
+  --rare:rgb(252 225 0 / .30); --hatch:#fce100; --unavail:rgb(255 153 164 / .30); --cross:#ff99a4;
+  --success:#6ccb5f; --caution:#fce100; --critical:#ff99a4; --subtle:rgb(255 255 255 / .05); --strong:#9a9a9a;
+  --bar-info:#323232; --bar-warning:#433519; --bar-error:#442726; }
+body { margin:0; background:var(--base); color:var(--text); font:14px/20px 'Segoe UI Variable Text','Segoe UI',sans-serif; }
+.window { margin:16px auto 96px; border:1px solid var(--line); border-radius:8px; background:var(--card); overflow:hidden; display:flex; flex-direction:column; }
+.tabs { display:flex; align-items:center; gap:24px; padding:10px 16px; border-bottom:1px solid var(--line); }
+.tabs .name { font-weight:600; } .tabs .size { color:var(--muted); margin-right:auto; }
+.tabs .tab { color:var(--text); } .tabs .tab.on { position:relative; } .tabs .tab.on::after { content:''; position:absolute; left:calc(50% - 8px); bottom:-10px; width:16px; height:3px; border-radius:2px; background:var(--accent); }
+.body { flex:1; min-height:0; display:flex; flex-direction:column; padding:12px 16px 16px; }
+.strong { font-weight:600; } .muted { color:var(--muted); } .num { font-variant-numeric:tabular-nums; }
+svg.sign { width:16px; height:16px; flex:none; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+.sw { width:16px; height:16px; border-radius:4px; flex:none; display:inline-block; vertical-align:-3px; position:relative; overflow:hidden; }
+.sw.v { background:var(--verified); } .sw.c { background:var(--common); } .sw.m { background:var(--missing); }
+.sw.d { background:linear-gradient(to right,var(--received) 56%,var(--missing) 56%); }
+.sw.r { background:repeating-linear-gradient(-45deg,var(--hatch) 0 1.5px,var(--rare) 1.5px 5px); }
+.sw.u { background:var(--unavail); } .sw.u::before,.sw.u::after { content:''; position:absolute; left:3px; top:7.25px; width:10px; height:1.5px; background:var(--cross); transform:rotate(45deg); } .sw.u::after { transform:rotate(-45deg); }
+.status { display:flex; align-items:flex-start; gap:8px; } .status svg { margin-top:2px; }
+.legend { display:flex; flex-wrap:wrap; gap:4px 24px; } .legend span { display:inline-flex; align-items:center; gap:8px; white-space:nowrap; }
+.detail { display:flex; gap:12px; min-width:0; white-space:nowrap; } .detail .facts { overflow:hidden; text-overflow:ellipsis; color:var(--muted); }
+.map { flex:1; min-height:0; position:relative; margin-top:8px; }
+.map canvas { position:absolute; left:0; top:0; }
+.ring { position:absolute; pointer-events:none; display:none; border-radius:5px; }
+.ring.hover { border:1px solid var(--strong); } .ring.sel { border:2px solid var(--accent); border-radius:6px; }
+/* A: current */
+.A .status .scale { margin-left:auto; color:var(--muted); white-space:nowrap; padding-left:16px; }
+.A .legend { margin-top:8px; } .A .legend span { min-width:150px; } .A .detail { margin-top:16px; }
+/* B: chart header */
+.B .row { display:flex; flex-wrap:wrap; align-items:center; gap:4px 32px; }
+.B .row .status { flex:1 1 320px; } .B .row + .row { margin-top:8px; }
+.B .row .detail { flex:1 1 320px; } .B .row .scale { color:var(--muted); white-space:nowrap; margin-left:auto; }
+/* C: stat strip */
+.C .strip { display:flex; flex-wrap:wrap; gap:8px 28px; margin-top:12px; align-items:stretch; }
+.C .stat { display:flex; flex-direction:column; gap:2px; } .C .stat .label { font-size:12px; line-height:16px; color:var(--muted); display:flex; gap:6px; align-items:center; }
+.C .stat .label .sw { width:12px; height:12px; border-radius:3px; } .C .stat .value { font-size:16px; line-height:22px; font-weight:600; }
+.C .divider { width:1px; background:var(--line); margin:2px 4px; } .C .detail { margin-top:14px; }
+/* D: readout bar */
+.D .legend { margin-top:8px; } .D .legend span { min-width:150px; }
+.D .bar { margin-top:14px; display:flex; gap:16px; align-items:center; background:var(--subtle); border-radius:4px; padding:6px 10px; }
+.D .bar .detail { flex:1; } .D .bar .scale { color:var(--muted); white-space:nowrap; }
+.D .map { margin-top:6px; }
+/* E: attention only */
+.E .attention { display:flex; align-items:flex-start; gap:12px; margin-bottom:12px; padding:12px 16px; border-radius:4px; border:1px solid var(--line); }
+.E .attention.info { background:var(--bar-info); } .E .attention.warning { background:var(--bar-warning); } .E .attention.error { background:var(--bar-error); }
+/* F: centred status */
+.F .attention { display:flex; justify-content:center; align-items:center; gap:10px; margin-bottom:12px; font-size:16px; line-height:24px; }
+.F .attention svg.sign { width:24px; height:24px; }
+.F .keyrow { display:flex; flex-wrap:wrap; align-items:center; gap:4px 24px; }
+.F .keyrow .legend { display:contents; } .F .keyrow .sep { width:1px; height:16px; background:var(--line); }
+.F .keyrow .scale { color:var(--muted); white-space:nowrap; } .F .detail { margin-top:16px; }
+.E .keyrow { display:flex; flex-wrap:wrap; align-items:center; gap:4px 24px; }
+.E .keyrow .legend { display:contents; } .E .keyrow .sep { width:1px; height:16px; background:var(--line); }
+.E .keyrow .scale { color:var(--muted); white-space:nowrap; } .E .detail { margin-top:16px; }
+.tabs .sign-slot { display:inline-flex; margin-left:-16px; }
+/* prototype controls, not part of the design */
+.proto { position:fixed; left:50%; bottom:16px; transform:translateX(-50%); display:flex; gap:10px; align-items:center; padding:8px 12px; border-radius:999px;
+  background:#111; color:#fff; font:12px/16px 'Segoe UI',sans-serif; box-shadow:0 8px 24px rgb(0 0 0 / .4); white-space:nowrap; }
+.proto button,.proto select { background:#2a2a2a; color:#fff; border:1px solid #444; border-radius:999px; padding:4px 10px; font:inherit; }
+.proto strong { min-width:150px; text-align:center; } .proto input { width:90px; vertical-align:middle; }
+</style>
+</head>
+<body class="dark">
+<div class="window" id="window">
+  <div class="tabs"><span>⭳</span><span class="name">ubuntu-24.04.3-desktop-amd64.iso</span><span class="sign-slot" id="titleSign"></span><span class="size">5.9 GiB</span>
+    <span class="tab">General</span><span class="tab">Files</span><span class="tab">Peers</span><span class="tab">Trackers</span><span class="tab">Speed</span><span class="tab on">Pieces</span><span style="margin-left:auto">✕</span></div>
+  <div class="body" id="body"></div>
+</div>
+<div class="proto">
+  <button id="prev">←</button><strong id="label"></strong><button id="next">→</button>
+  <select id="scenario"><option value="finish">Can finish</option><option value="blocked">Can't finish yet</option><option value="nopeers">No peers</option><option value="complete">Complete</option><option value="metadata">Metadata</option></select>
+  <label>W <input id="width" type="range" min="720" max="2000" value="1600"></label>
+  <label>H <input id="height" type="range" min="260" max="640" value="420"></label>
+  <button id="theme">Theme</button>
+</div>
+<script>
+const NAMES = { A:'Current', B:'Chart header', C:'Stat strip', D:'Readout bar', E:'Attention bar', F:'Centred status' };
+const KEYS = Object.keys(NAMES);
+const KINDS = ['Unavailable','Rare','Common','Missing','Downloading','Verified'];
+const SW = ['u','r','c','m','d','v'];
+const ICON = {
+  success:'<svg class="sign" viewBox="0 0 24 24" style="color:var(--success)"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>',
+  warning:'<svg class="sign" viewBox="0 0 24 24" style="color:var(--caution)"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>',
+  error:'<svg class="sign" viewBox="0 0 24 24" style="color:var(--critical)"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>',
+  info:'<svg class="sign" viewBox="0 0 24 24" style="color:var(--muted)"><path d="M5 22h14"/><path d="M5 2h14"/><path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"/><path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/></svg>'
+};
+const N0 = n => n.toLocaleString('en-US');
+const params = new URLSearchParams(location.search);
+let variant = KEYS.includes(params.get('variant')) ? params.get('variant') : 'A';
+let data, layout = null, pointed = -1, selected = -1;
+
+function makeData(kind) {
+  const n = kind === 'metadata' ? 0 : 24208;
+  const multi = kind === 'blocked';
+  const files = multi
+    ? ['Season 1/Episode 01 - Pilot.mkv','Season 1/Episode 02 - The Long Road Home.mkv','Season 1/Episode 03 - Harbour Lights.mkv','Season 1/Episode 04.mkv','Season 1/Subtitles.srt']
+        .map((path, i, all) => ({ path, first: Math.floor(i * n / all.length), end: Math.floor((i + 1) * n / all.length) }))
+    : [{ path:'ubuntu-24.04.3-desktop-amd64.iso', first:0, end:n }];
+  const state = new Uint8Array(n), avail = new Uint16Array(n), progress = new Float32Array(n);
+  let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  for (let i = 0; i < n; i++) {
+    avail[i] = 40 + Math.floor(rnd() * 30);
+    state[i] = kind === 'complete' || i < n * 0.18 ? 5 : kind === 'nopeers' ? 3 : 2;
+    if (state[i] === 2 && rnd() < 0.01) { state[i] = 1; avail[i] = 1 + Math.floor(rnd() * 5); }
+    if (multi && state[i] !== 5 && i > n * 0.42 && i < n * 0.47 && rnd() < 0.4) { state[i] = 0; avail[i] = 0; }
+  }
+  if (kind !== 'complete') for (let k = 0; k < 17; k++) { const i = Math.floor(n * 0.18) + Math.floor(rnd() * n * 0.8); state[i] = 4; progress[i] = rnd(); }
+  const prefix = KINDS.map(() => new Int32Array(n + 1));
+  for (let i = 0; i < n; i++) for (let k = 0; k < 6; k++) prefix[k][i + 1] = prefix[k][i] + (state[i] === k ? 1 : 0);
+  return { kind, n, files, state, avail, progress, prefix, peers: kind === 'nopeers' ? 0 : 69 };
+}
+const counts = (f, e) => KINDS.map((_, k) => data.prefix[k][e] - data.prefix[k][f]);
+
+function status() {
+  const c = counts(0, data.n);
+  switch (data.kind) {
+    case 'metadata': return ['info', 'Waiting for metadata'];
+    case 'complete': return ['success', 'Complete: every piece is verified'];
+    case 'nopeers': return ['warning', "Can't tell yet: no peers connected"];
+    case 'blocked': {
+      const hit = data.files.filter(f => counts(f.first, f.end)[0] > 0).map(f => f.path);
+      const names = hit.length > 3 ? [...hit.slice(0, 3), `and ${hit.length - 3} more`] : hit;
+      return ['error', `Can't finish yet: no connected peer has ${N0(c[0])} pieces of ${names.join(', ')}`];
+    }
+    default: return ['success', 'Can finish: connected peers have every remaining piece'];
+  }
+}
+function scale() {
+  if (!data.n) return '';
+  const size = `${N0(data.n)} pieces · 256.0 KiB each`;
+  if (!layout || layout.blocks.length === data.n) return size;
+  const lo = Math.floor(data.n / layout.blocks.length), hi = Math.ceil(data.n / layout.blocks.length);
+  return `${size} · ${lo === hi ? lo : lo + '–' + hi} per square`;
+}
+function describe(b) {
+  const c = counts(b.first, b.end), copies = [];
+  for (let i = b.first; i < b.end; i++) if (data.state[i] < 4) copies.push(data.avail[i]);
+  const range = b.end === b.first + 1 ? `Piece ${N0(b.end)}` : `Pieces ${N0(b.first + 1)}–${N0(b.end)}`;
+  const parts = [];
+  if (copies.length) {
+    const lo = Math.min(...copies), hi = Math.max(...copies);
+    parts.push(data.peers === 0 ? 'Peer availability unknown' : lo === hi ? `Connected peers per piece: ${lo}` : `Connected peers per piece: ${lo}–${hi}`);
+  }
+  parts.push(KINDS.map((k, i) => [k, c[i]]).reverse().filter(x => x[1]).map(x => `${x[0]} ${N0(x[1])}`).join(', '));
+  parts.push(data.files.filter(f => f.first < b.end && f.end > b.first).map(f => f.path).join(', '));
+  return [range, parts.filter(Boolean).join(' · ')];
+}
+function detailHtml() {
+  const b = layout && (layout.blocks[pointed] ?? layout.blocks[selected]);
+  if (!b) return `<div class="detail"><span class="muted">${layout ? 'Point to or select a square to see its pieces' : ''}&nbsp;</span></div>`;
+  const [range, facts] = describe(b);
+  return `<div class="detail"><span class="strong num">${range}</span><span class="facts num">${facts}</span></div>`;
+}
+const legend = () => { const c = data.n ? counts(0, data.n) : [0,0,0,0,0,0];
+  return `<div class="legend num">${[5,4,3,2,1,0].map(k => `<span><i class="sw ${SW[k]}"></i>${KINDS[k]} <b>${N0(c[k])}</b></span>`).join('')}</div>`; };
+
+function header() {
+  const [sev, text] = status();
+  const st = `<div class="status">${ICON[sev]}<span class="strong">${text}</span></div>`;
+  switch (variant) {
+    case 'A': return `<div class="status">${ICON[sev]}<span class="strong">${text}</span><span class="scale num" data-scale>${scale()}</span></div>${legend()}<div data-detail>${detailHtml()}</div>`;
+    case 'B': return `<div class="row">${st}${legend()}</div><div class="row"><div data-detail style="flex:1 1 320px;min-width:0">${detailHtml()}</div><span class="scale num" data-scale>${scale()}</span></div>`;
+    case 'C': { const c = data.n ? counts(0, data.n) : [0,0,0,0,0,0];
+      const per = layout && data.n && layout.blocks.length < data.n ? (() => { const lo = Math.floor(data.n / layout.blocks.length), hi = Math.ceil(data.n / layout.blocks.length); return lo === hi ? lo : lo + '–' + hi; })() : '1';
+      return `${st}<div class="strip num">${[5,4,3,2,1,0].map(k => `<div class="stat"><span class="label"><i class="sw ${SW[k]}"></i>${KINDS[k]}</span><span class="value">${N0(c[k])}</span></div>`).join('')}
+        <div class="divider"></div><div class="stat"><span class="label">Pieces</span><span class="value">${N0(data.n)}</span></div>
+        <div class="stat"><span class="label">Piece size</span><span class="value">256.0 KiB</span></div><div class="stat"><span class="label">Per square</span><span class="value" data-per>${per}</span></div></div><div data-detail>${detailHtml()}</div>`; }
+    case 'E': { const quiet = sev === 'success';
+      return `${quiet ? '' : `<div class="attention ${sev}">${ICON[sev]}<span class="strong">${text}</span></div>`}<div class="keyrow num">${legend()}<span class="sep"></span><span class="scale" data-scale>${scale()}</span></div><div data-detail>${detailHtml()}</div>`; }
+    case 'F': { const quiet = sev === 'success';
+      return `${quiet ? '' : `<div class="attention">${ICON[sev]}<span class="strong">${text}</span></div>`}<div class="keyrow num">${legend()}<span class="sep"></span><span class="scale" data-scale>${scale()}</span></div><div data-detail>${detailHtml()}</div>`; }
+    case 'D': return `${st}${legend()}<div class="bar"><div data-detail style="flex:1;min-width:0">${detailHtml()}</div><span class="scale num" data-scale>${scale()}</span></div>`;
+  }
+}
+
+const Q = 16, GAP = 4, BAND = 8, GUT = 6;
+const start = p => p * (Q + GAP) + Math.floor(p / BAND) * GUT;
+const extent = c => c === 0 ? 0 : start(c - 1) + Q;
+function render() {
+  const body = document.getElementById('body');
+  body.className = 'body ' + variant;
+  const [sev, text] = status(), sign = document.getElementById('titleSign');
+  const titled = (variant === 'E' || variant === 'F') && sev !== 'success';
+  sign.innerHTML = titled ? ICON[sev] : '';
+  sign.title = titled ? text : '';
+  body.innerHTML = header() + '<div class="map" id="map"><canvas id="cv"></canvas><div class="ring hover" id="hover"></div><div class="ring sel" id="sel"></div></div>';
+  drawMap();
+  body.querySelectorAll('[data-scale]').forEach(e => e.textContent = scale());
+  if (variant === 'C') body.querySelector('[data-per]').textContent = layout && layout.blocks.length < data.n ? scale().split(' · ').pop().replace(' per square', '') : '1';
+}
+function css(name) { return getComputedStyle(document.body).getPropertyValue(name).trim(); }
+function drawMap() {
+  const map = document.getElementById('map'), cv = document.getElementById('cv');
+  const W = map.clientWidth, H = map.clientHeight;
+  layout = null;
+  if (!data.n || W < Q || H < Q) { cv.width = cv.height = 0; return; }
+  let mc = 1; while (extent(mc + 1) <= W) mc++;
+  let mr = 1; while (extent(mr + 1) <= H) mr++;
+  const count = Math.min(data.n, mc * mr);
+  let cols = Math.min(mc, count); if (cols >= BAND) cols = Math.min(mc, Math.ceil(cols / BAND) * BAND);
+  const rows = Math.ceil(count / cols), dpr = devicePixelRatio || 1;
+  cv.width = extent(cols) * dpr; cv.height = extent(rows) * dpr; cv.style.width = extent(cols) + 'px'; cv.style.height = extent(rows) + 'px';
+  const g = cv.getContext('2d'); g.scale(dpr, dpr);
+  const fill = KINDS.map((_, k) => css(['--unavail','--rare','--common','--missing','--missing','--verified'][k]));
+  const hatch = css('--hatch'), cross = css('--cross'), received = css('--received'), ink = css('--text');
+  const blocks = [];
+  for (let i = 0; i < count; i++) {
+    const first = Math.floor(i * data.n / count), end = Math.floor((i + 1) * data.n / count), c = counts(first, end);
+    let dom = 0; for (let k = 1; k < 6; k++) if (c[k] > c[dom]) dom = k;
+    const x = start(i % cols), y = start(Math.floor(i / cols));
+    blocks.push({ first, end, x, y });
+    g.save(); g.beginPath(); g.roundRect(x, y, Q, Q, 4); g.clip();
+    g.fillStyle = fill[dom]; g.fillRect(x, y, Q, Q);
+    if (dom === 4) { let r = 0; for (let p = first; p < end; p++) r += data.state[p] === 5 ? 1 : data.progress[p]; g.fillStyle = received; g.fillRect(x, y, Q * r / (end - first), Q); }
+    if (dom === 1) { g.strokeStyle = hatch; g.lineWidth = 1.5; g.beginPath(); for (let d = -Q; d < Q * 2; d += 5) { g.moveTo(x + d, y + Q); g.lineTo(x + d + Q, y); } g.stroke(); }
+    if (dom === 0) { g.strokeStyle = cross; g.lineWidth = 1.5; g.beginPath(); g.moveTo(x + 4, y + 4); g.lineTo(x + 12, y + 12); g.moveTo(x + 12, y + 4); g.lineTo(x + 4, y + 12); g.stroke(); }
+    g.restore();
+    if (c.filter(v => v).length > 1) { g.fillStyle = ink; g.beginPath(); g.arc(x + Q - 4, y + 4, 2, 0, 7); g.fill(); }
+    if (c[0] && dom !== 0) { g.fillStyle = cross; g.beginPath(); g.arc(x + 4, y + Q - 4, 2, 0, 7); g.fill(); }
+  }
+  layout = { blocks, cols };
+  if (selected >= blocks.length) selected = blocks.length - 1;
+  rings();
+}
+function rings() {
+  for (const [id, i, pad] of [['hover', pointed, 1], ['sel', selected, 2]]) {
+    const el = document.getElementById(id), b = layout && layout.blocks[i];
+    el.style.display = b ? 'block' : 'none';
+    if (b) Object.assign(el.style, { left: b.x - pad + 'px', top: b.y - pad + 'px', width: Q + 2 * pad + 'px', height: Q + 2 * pad + 'px' });
+  }
+  document.querySelectorAll('[data-detail]').forEach(e => e.innerHTML = detailHtml());
+}
+function hit(ev) {
+  const r = document.getElementById('cv').getBoundingClientRect(), x = ev.clientX - r.left, y = ev.clientY - r.top;
+  return layout ? layout.blocks.findIndex(b => x >= b.x && x < b.x + Q && y >= b.y && y < b.y + Q) : -1;
+}
+document.addEventListener('mousemove', ev => { if (!ev.target.closest('#map')) { if (pointed !== -1) { pointed = -1; rings(); } return; }
+  const i = hit(ev); if (i >= 0 && i !== pointed) { pointed = i; rings(); } });
+document.addEventListener('click', ev => { if (!ev.target.closest('#map')) return; const i = hit(ev); if (i >= 0) { selected = i; rings(); } });
+
+function setVariant(v) { variant = v; params.set('variant', v); try { history.replaceState(null, '', '?' + params); } catch { } document.getElementById('label').textContent = `${v} (${NAMES[v]})`; render(); }
+const step = d => setVariant(KEYS[(KEYS.indexOf(variant) + d + KEYS.length) % KEYS.length]);
+document.getElementById('prev').onclick = () => step(-1);
+document.getElementById('next').onclick = () => step(1);
+document.addEventListener('keydown', ev => { if (ev.target.closest('input,select,textarea')) return; if (ev.key === 'ArrowLeft') step(-1); if (ev.key === 'ArrowRight') step(1); });
+document.getElementById('scenario').onchange = ev => { data = makeData(ev.target.value); selected = pointed = -1; render(); };
+document.getElementById('theme').onclick = () => { document.body.classList.toggle('dark'); render(); };
+const size = () => { const w = document.getElementById('window'); w.style.width = document.getElementById('width').value + 'px'; w.style.height = document.getElementById('height').value + 'px'; render(); };
+document.getElementById('width').oninput = size; document.getElementById('height').oninput = size;
+document.getElementById('width').value = Math.max(720, Math.min(2000, innerWidth - 32));
+data = makeData('finish');
+document.getElementById('label').textContent = `${variant} (${NAMES[variant]})`;
+size();
+</script>
+</body>
+</html>

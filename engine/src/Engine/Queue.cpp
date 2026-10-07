@@ -15,8 +15,12 @@ std::vector<std::string> Engine::State::CurrentQueue() const
     std::vector<std::pair<int, std::string>> positions;
     for (auto const& [id, torrent] : torrents)
     {
+        if (torrent.restore)
+        {
+            continue;
+        }
         auto position = torrent.handle.queue_position();
-        if (IsQueued(position))
+        if (!torrent.deleted && IsQueued(position))
         {
             positions.emplace_back(static_cast<int>(position), id);
         }
@@ -32,7 +36,7 @@ std::vector<std::string> Engine::State::CurrentQueue() const
 
 void Engine::State::ApplyQueue()
 {
-    std::erase_if(queueOrder, [this](auto const& id) { return !torrents.contains(id); });
+    std::erase_if(queueOrder, [this](auto const& id) { return !torrents.contains(id) || torrents.at(id).deleted; });
     for (auto const& id : CurrentQueue())
     {
         if (!Contains(queueOrder, id))
@@ -43,7 +47,7 @@ void Engine::State::ApplyQueue()
     int position = 0;
     for (auto const& id : queueOrder)
     {
-        if (IsQueued(torrents.at(id).handle.queue_position()))
+        if (!torrents.at(id).restore && IsQueued(torrents.at(id).handle.queue_position()))
         {
             torrents.at(id).handle.queue_position_set(lt::queue_position_t(position++));
         }
@@ -55,13 +59,13 @@ void Engine::State::Queue(std::vector<std::string> const& ids, QueueMove move, s
 {
     for (auto const& id : ids)
     {
-        if (!IsQueued(torrents.at(id).handle.queue_position()))
+        if (torrents.at(id).restore || !IsQueued(torrents.at(id).handle.queue_position()))
         {
             reply(Failure(ErrorCode::InvalidTargets));
             return;
         }
     }
-    bool unknownTarget = !before.empty() && !torrents.contains(before);
+    bool unknownTarget = !before.empty() && (!torrents.contains(before) || torrents.at(before).deleted);
     if (move == QueueMove::Before && (unknownTarget || Contains(ids, before)))
     {
         reply(Failure(ErrorCode::InvalidTargets));

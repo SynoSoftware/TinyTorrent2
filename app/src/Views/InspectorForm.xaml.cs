@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Windows.Input;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
@@ -36,6 +37,12 @@ public sealed partial class InspectorForm : UserControl
         var sections = new[] { GeneralSection, FilesSection, PeersSection, TrackersSection, SpeedSection, PiecesSection };
         for (var index = 0; index < sections.Length; index++) sections[index].Tag = (InspectorSection)index;
         Sections.SelectedItem = sections[(int)model.Section];
+        // The values are selectable text, so a double-click can arrive already handled.
+        foreach (var (element, command) in new (UIElement, ICommand)[] { (DownloadRate, model.LimitSpeed),
+            (UploadRate, model.LimitSpeed), (Limit, model.LimitSpeed), (Ratio, model.ShowRatioLimit),
+            (SeedCount, model.ShowConnectionLimit), (PeerCount, model.ShowConnectionLimit),
+            (FolderPath, model.MoveFiles) })
+            element.AddHandler(DoubleTappedEvent, new Microsoft.UI.Xaml.Input.DoubleTappedEventHandler((_, _) => command.Execute(null)), true);
         Peers.Schema<Peer>().Key(peer => peer.Endpoint).SortKey(EndpointColumn, peer => peer.Endpoint)
             .SortKey(ClientColumn, peer => peer.Client).SortKey(ConnectionColumn, peer => peer.ConnectionText)
             .SortKey(PeerProgressColumn, peer => peer.Progress).SortKey(PeerDownColumn, peer => peer.DownloadRate)
@@ -46,13 +53,14 @@ public sealed partial class InspectorForm : UserControl
             .SortKey(SeedsColumn, tracker => tracker.Seeds).SortKey(LeechersColumn, tracker => tracker.Leechers)
             .SortKey(CompletedColumn, tracker => tracker.Downloaded).SortKey(NextColumn, tracker => tracker.NextAnnounce)
             .SortKey(MessageColumn, tracker => tracker.Message);
-        Loaded += (_, _) => { Model.TextChanged += OnText; Model.PropertyChanged += OnModel; Model.RowsUpdated += OnRows; RefreshText(); Refresh(); };
-        Unloaded += (_, _) => { Model.TextChanged -= OnText; Model.PropertyChanged -= OnModel; Model.RowsUpdated -= OnRows; Map.Show(null, Model.Text); };
+        Loaded += (_, _) => { Model.TextChanged += OnText; Model.PropertyChanged += OnModel; Model.RowsUpdated += OnRows; Model.RecoveryRequested += OnRecovery; RefreshText(); Refresh(); };
+        Unloaded += (_, _) => { Model.TextChanged -= OnText; Model.PropertyChanged -= OnModel; Model.RowsUpdated -= OnRows; Model.RecoveryRequested -= OnRecovery; Map.Show(null, Model.Text); };
         RefreshText();
         Refresh();
     }
 
     private void OnText(object? sender, EventArgs args) => RefreshText();
+    private void OnRecovery(object? sender, EventArgs args) => Recover().Focus(FocusState.Programmatic);
 
     internal Control Recover()
     {
@@ -61,15 +69,21 @@ public sealed partial class InspectorForm : UserControl
     }
     public static bool Not(bool value) => !value;
     public static Visibility Hidden(bool value) => value ? Visibility.Collapsed : Visibility.Visible;
+    public static Visibility Shown(string text) => text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+
+    private void OnGeneralSize(object sender, SizeChangedEventArgs args) =>
+        VisualStateManager.GoToState(this, args.NewSize.Width >= 760 ? "Wide" : "Narrow", false);
     private void OnRows(object? sender, InspectorSection section)
     {
         if (section == InspectorSection.Peers) Peers.RefreshView();
         else if (section == InspectorSection.Trackers) TrackerTable.RefreshView();
     }
     private void OnModel(object? sender, PropertyChangedEventArgs args) => Refresh();
-    private void OnSection(SelectorBar sender, SelectorBarSelectionChangedEventArgs args)
+    private async void OnSection(SelectorBar sender, SelectorBarSelectionChangedEventArgs args)
     {
-        if (!_refreshing && sender.SelectedItem is { Tag: InspectorSection section }) Model.Select(section);
+        if (_refreshing || sender.SelectedItem is not { Tag: InspectorSection section }) return;
+        Refresh();
+        await Model.Navigate(section);
     }
 
     private void Refresh()
@@ -78,9 +92,17 @@ public sealed partial class InspectorForm : UserControl
         for (var index = 0; index < views.Length; index++)
             views[index].Visibility = index == (int)Model.Section ? Visibility.Visible : Visibility.Collapsed;
         _refreshing = true;
+        Sections.IsEnabled = !Model.IsPending;
         Sections.SelectedItem = Sections.Items.First(item => Equals(item.Tag, Model.Section));
         _refreshing = false;
+        var loading = Model.IsAvailable && Model.IsLoading;
+        Peers.Placeholder = Model.Peers is null && loading ? Syno.TableView.Placeholder.Loading : Syno.TableView.Placeholder.Empty;
+        TrackerTable.Placeholder = Model.Trackers is null && loading ? Syno.TableView.Placeholder.Loading : Syno.TableView.Placeholder.Empty;
+        NoPeers.Visibility = Model.Peers is null ? Visibility.Collapsed : Visibility.Visible;
+        NoTrackers.Visibility = Model.Trackers is null ? Visibility.Collapsed : Visibility.Visible;
         Map.Show(Model.Pieces, Model.Text);
+        VisualStateManager.GoToState(this, Model.Target is { IsError: true } ? "Error" :
+            Model.Target is { IsPaused: true } ? "Paused" : "Transferring", false);
         if (_editing != Model.IsEditingTrackers)
         {
             _editing = Model.IsEditingTrackers;
@@ -105,10 +127,6 @@ public sealed partial class InspectorForm : UserControl
         AutomationProperties.SetName(Sections, text.Get("inspector", "sections"));
         AutomationProperties.SetName(Close, text.Get("inspector", "close"));
         ToolTipService.SetToolTip(Close, text.Get("inspector", "close"));
-        Hashes.Header = text.Get("inspector", "hashes");
-        Magnet.Header = text.Get("add", "magnet");
-        AutomationProperties.SetName(Hashes, (string)Hashes.Header);
-        AutomationProperties.SetName(Magnet, (string)Magnet.Header);
         AutomationProperties.SetName(TrackerInput, text.Get("inspector", "trackers"));
         Peers.Strings = TrackerTable.Strings = text.Table;
         EndpointColumn.DisplayName = text.Get("peers", "endpoint");

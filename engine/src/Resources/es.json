@@ -45,6 +45,7 @@
     "startup": "La ventana no se abrió. Las descargas continúan. Selecciona Mostrar ventana en la bandeja para reintentar.",
     "save": "TinyTorrent no pudo guardar y sigue abierto. Selecciona Salir en la bandeja para reintentar.",
     "pause": "No se pudo guardar el ajuste de pausa de las transferencias.",
+    "window_open": "La ventana de TinyTorrent sigue abierta. Ciérrala y vuelve a intentarlo.",
     "unresponsive": "La ventana no respondió a Salir. No se descartó nada. Inténtalo de nuevo cuando responda."
   }
 }

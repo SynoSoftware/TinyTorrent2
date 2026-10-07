@@ -114,6 +114,7 @@ internal static class Downloads
     internal static async Task<Table> LoadAsync()
     {
         Table table = Build();
+        table.Layout = TestData.DeclaredWidths(table);
         table.ItemsSource = Rows();
 
         await TableHarness.LoadAsync(table);

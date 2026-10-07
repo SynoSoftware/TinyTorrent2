@@ -99,9 +99,10 @@ the icon does not open an application command menu.
 There is no application navigation pane, identity text, command overflow,
 language switch or permanent Exit button. Language and theme
 are chosen in Settings; the title-bar light/dark shortcut uses the same theme
-owner. Torrents is the normal workspace; Settings and About
-have a contextual Back button and Alt+Left route to it, with the existing draft
-guards. Keep continuous acrylic.
+owner. Torrents is the normal workspace; on Settings and About, a Back arrow at
+the left of the title bar, before the app icon, and Alt+Left route to it, with
+the existing draft guards. The arrow sits in the title bar, as in Windows
+Settings, so the page keeps its full height. Keep continuous acrylic.
 
 A second UI launch forwards Open to the existing application. Check its outcome
 before exiting. If forwarding fails before a WinUI window exists, a native
@@ -243,10 +244,10 @@ confirmation draws no panel around its text, because the dialog's frame,
 spacing and buttons already separate its parts. A confirmation with no fact
 beyond its title and buttons has no body.
 
-A button runs a command or opens a surface. A control that shows a setting, such
-as the alternative speed limits or the Errors shortcut, is a toggle or a selection
-control: it shows which state is current, and a button looks the same in every
-state. Label wording and icon use follow
+A button runs a command or opens a surface. A control that directly changes a
+setting, such as View > Toolbar, is a toggle or a selection control: it
+shows which state is current, and a button looks the same in every state.
+Label wording and icon use follow
 [Text, icons, and typography](#text-icons-and-typography).
 
 - **One act, one name.** The same act has the same label, the same accelerator,
@@ -383,19 +384,30 @@ discard that input without a prompt. Neither operation waits for reconnection,
 because ordinary Settings must not trap the person in an unavailable application.
 A picker or an operation already in progress finishes before close continues.
 
-**Owner ruling: leaving an explicit editor with unfinished input asks Save,
-Discard or Cancel.** This is the familiar Windows choice for unsaved work, and it
-keeps the input without making the person return to the editor first. Save runs
-the editor's own action, such as Save, Add, Move or Delete; if it fails, the
-editor stays open with its error. Discard drops the draft and continues. Cancel
-keeps the editor and focus. Deleting files still shows its own confirmation of
-what will be deleted.
+**Owner ruling: leaving an editor applies its input, and only Add and Move
+ask.** Fluent 2 applies a change without a confirmation step, so leaving a
+schedule period or a tracker list applies it, as leaving a setting does, and
+failed file choices are sent again. Nothing changes under the person's hands:
+an edit that cannot be applied, because it is incomplete, invalid or refused,
+keeps the person at the editor with its error, so they never leave believing
+it applied. A duplicate schedule period is dropped, because the schedule
+already holds it. A row that leaves the table's view, such as a torrent that
+finishes under the Downloading filter, leaves the selection but not the
+inspector: the inspector stays on that torrent, with any unfinished edit. When
+the engine or the torrent is unavailable, file choices are dropped on leaving,
+because Retry is unavailable and they have no Cancel, and closing the window
+drops any edit that cannot be saved.
+
+Add and Move still ask, because applying them would start a download or a file
+move that the person has not confirmed. Save runs the editor's own action, Add
+or Move; if it fails, the editor stays open with its error. Discard drops the
+draft and continues. Keep editing keeps the editor and focus. Deleting files
+still shows its own confirmation of what will be deleted.
 
 On window close, ask only for work the person has actually entered: a torrent
-source, changed trackers or file choices, a changed schedule period, or a move
-destination. Opening an untouched editor or changing Add or Move options without
-a source or destination does not justify a question. The question names the
-unfinished work and its primary action: Add, Move, Save period or Save changes.
+source or a move destination. Opening an untouched editor or changing Add or
+Move options without a source or destination does not justify a question. The
+question names the unfinished work and its primary action: Add or Move.
 Its text explains what Discard drops and that Keep editing cancels closing the
 window. Keep editing is the default button, so Enter cannot unexpectedly add a
 torrent, move files or discard input while the person is trying to close.
@@ -415,7 +427,7 @@ Language selection retains its immediate, in-place behavior.
 
 The download window extends acrylic content into its custom title bar.
 The File menu contains Add torrent file, Add magnet link, Settings, Exit and
-Exit and stop transfers. **Owner ruling:** Exit closes the window, as Ctrl+W
+Exit and stop transfers. **Owner ruling:** Exit closes the window, as Alt+F4
 does, and transfers continue in the tray; Exit and stop transfers is the
 tray's Exit, which stops the engine. Exit is the everyday way to leave the
 window, and stopping every download is the separate, named decision.
@@ -449,8 +461,7 @@ keeps the chosen filter, identified in View > Filters and a status label.
 Escape closes the drawer when focus is inside it. Clear filters lives inside
 the drawer and calls the existing filter owner. Downloading includes metadata
 acquisition, Seeding includes completed torrents and Paused includes session
-pause. The Errors shortcut in the status bar selects the same Errors filter;
-there is one filter owner. The drawer starts closed so the table keeps its full
+pause. The drawer starts closed so the table keeps its full
 width until the person asks to filter. Status and progress remain visible and
 sortable in the table. Tracker information
 belongs in the selected torrent's inspector. TableView owns generic interaction.
@@ -471,12 +482,21 @@ outside dismisses it; Escape dismisses it and returns focus to its invoker. Use
 native MenuFlyout behavior, because command menus should respond as Windows users
 expect.
 
-Settings and About retain the same title-bar layout. Back returns to the table,
+Settings and About retain the same title-bar layout, with the Back arrow added
+before the app icon. Back returns to the table,
 preserving selection and the inspector. Torrent and View menus are disabled while
 a secondary page is visible so commands cannot act on a hidden selection.
 
-The table starts with Name, Size, Progress, Status, Down speed, Up speed, ETA,
-Ratio, Seeds/Peers, and Added; the person can hide, show, and reorder them.
+The table starts with Name, Size, Progress, Status, Down speed, Up speed, Time
+left, Ratio, Seeds, Peers, and Added; the person can hide, show, and reorder them.
+Time left reads in its two largest units, such as 3 d 4 h or 45 min, and 100
+days or more reads as ∞, as in qBittorrent, because a raw count of minutes cannot
+be read at a glance. Seeds and Peers each show the connected count with the
+swarm total in parentheses, as qBittorrent does: the tracker's count when it
+reports one, otherwise the peers this session has heard of. Peers excludes
+seeds. Added reads as elapsed time, such as 3 hours ago, because how long ago a
+torrent arrived is what the person compares; the exact date and time is its
+tooltip.
 
 Queue ascending and natural order put downloads in libtorrent queue order,
 followed by completed seeds, whose Queue cell is empty. Seeds remain selectable
@@ -504,6 +524,28 @@ are in the window and the tray, and keep each torrent's own
 [paused or running state](engine.md#state-and-work). Exit and stop transfers is
 in the window as well as the tray, where it is named Exit.
 
+Limit torrent speed… sits beside the piece-order choices in Torrent, the row
+context menu and command search. Its name says torrent because Speed limits…
+already opens the global limits. It opens a dialog that names the torrent, or
+the count for several, with a download limit and an upload limit in the rate
+units Preferences uses; an empty field or 0 means no limit. When the selected
+torrents differ, a field starts empty and reads Mixed, and leaving it so keeps
+each torrent's own limit. Save applies both fields; a refusal keeps the dialog
+open with its error. Each limit is one fixed cap. The lower of the torrent's
+limit and the current global limit applies, so the schedule, alternative limits
+and Pause all keep working through the global limits, and no torrent needs its
+own alternative limits or schedule. A limit above the global limit is accepted,
+and the dialog shows the current global limit so the person sees which one
+applies. The menu item is checked when every selected torrent has a limit and
+mixed when only some do, as the piece-order choices are. The inspector's General
+view states the torrent's limits, because a person who wonders why one torrent
+is slow opens its properties. An optional Speed limit column, hidden by default
+because most torrents never have a limit, lets the person find every limited
+torrent: it shows ↓ 500 KB/s, ↑ 1 MB/s or both, and stays empty without a limit.
+Its accessible text names download and upload instead of the arrows. It sorts
+by download limit and then upload limit, with no limit as the highest value, so
+an ascending sort lists the limited torrents first.
+
 The toolbar, a row above the table that View shows or hides, holds Resume,
 Pause, Open folder, Properties, Verify, Remove and Delete files, as subtle
 icon buttons in groups split by dividers. It shows only the commands whose icon
@@ -511,7 +553,9 @@ a person recognizes without its tooltip, because Fluent asks a toolbar for
 familiar icons; the menus keep every command. Copy magnet link stays off it
 because its link icon is Add magnet link's in the title bar above. Its buttons
 act on the selection and are disabled without one, as their menu items are; Add
-stays in the title bar so it is visible while the toolbar is hidden. The
+stays in the title bar so it is visible while the toolbar is hidden. Settings
+ends the toolbar after its own divider, because it acts on the application
+rather than the selection, so it stays enabled without one. The
 toolbar is one Tab stop, and the arrow keys move inside it. It starts visible,
 and the window layout remembers it.
 
@@ -519,9 +563,58 @@ Dropping torrent files or magnet text on the window, or pasting them with Ctrl+V
 while the table has focus, follows the same Show the Add form preference. Sources
 join an already-open Add task; otherwise that preference decides whether the
 form opens or addition proceeds directly. An empty list says how
-to add a torrent. A status bar shows total download and upload speed, the
-alternative speed toggle, whether incoming connections arrive or the selected
-network interface is absent, and Update available when a newer release exists.
+to add a torrent.
+
+The status bar shows status only, on one line, and holds no buttons, because
+a control there is easy to miss and mixes acting with reading. Each label is
+short and starts with a Lucide icon so the person finds it at a glance; its
+tooltip and accessible name give the full sentence. The left group describes
+transfers: total download and upload speed, each followed by its cap while one
+applies, such as "1.2 MB/s of 5 MB/s", so a download that a limit holds back
+explains itself; Alternative limits, only while the alternative pair applies,
+with the caps and what turned them on in its tooltip; and All paused while the
+session is paused. A rate's tooltip names its limit and the pair it comes from,
+or says that no limit applies. The right group describes the list and the
+connection: the number of torrents and, while some are selected, how many, as
+File Explorer counts items; the active filter and its count while one is
+chosen; whether incoming connections arrive, a proxy is in use, or the
+selected network interface is absent; and Update available when a newer release exists. A rate keeps room
+for its longest text, so live rates never move the labels after it. When the
+line is too narrow, labels shorten to their icons, least important first.
+Help > Update and command search open the download page. Double-clicking an
+item opens the place that changes it, as Windows status bars do: a rate or
+Alternative limits opens the limits choice in Settings > Speed limits; the filter
+opens the filter pane; the connection item opens the port in Settings >
+Network, the proxy server while one is in use, or the network interface while
+it is absent; and Update available
+opens the download page. The torrent count has nothing to change, and All
+paused ends with Resume all, a command that a double-click must not run because
+the status bar only reads. Choosing limits
+belongs in Settings, because an automatic schedule makes an on/off shortcut
+ambiguous.
+
+Settings > Speed limits has two sections. Limits holds the standard and
+alternative pairs of caps for all torrents together and marks the pair in use.
+When limits apply holds, in order, the current state, such as "Now: alternative
+limits · until 5:00 PM", the Limits to use choice, and the week. The choice is
+No limits, Standard limits, Alternative limits or Weekly schedule, in one native
+ComboBox, so no separate schedule switch can disagree with it. No limits is a
+choice of its own because people read "Normal limits" as no limits, and a capped
+normal pair then looked like a stalled download; No limits also keeps the typed
+caps for later. A fixed choice applies all week until Weekly schedule is chosen
+again: it turns the schedule off rather than overriding it until the next
+scheduled change, because a choice that expires by itself surprises the person.
+The periods stay saved. A pair's caps are editable only while that pair applies,
+or will apply under the weekly schedule: standard limits whenever the schedule
+is followed, alternative limits when it has an alternative period. Editing caps
+that cannot apply looks like it changes the speed and does not. Caps, source and
+pause reason come together from the engine snapshot. The picker shows a pending choice at once,
+keeps that choice focusable and temporarily disables the other choices. The
+rest of the page shows the engine's confirmed choice, so it changes once, when
+the choice applies.
+Failure restores the confirmed selection and appears beside it; recovery clears
+an obsolete connection error. Native keyboard and accessibility behavior is
+retained. Colour is not the indication of applied limits.
 
 Shortcuts follow Windows conventions, so people keep the habits they use in
 other Windows applications. TinyTorrent has no Print, Save, or Refresh command,
@@ -548,10 +641,14 @@ editor keeps its own keys.
 | Delete | Remove |
 | Shift+Delete | Delete files |
 | Ctrl+, | Settings |
-| Ctrl+W | Exit (close the window) |
+| Alt+F4 | Exit (close the window) |
+| Ctrl+Q | Exit and stop transfers |
 
-Alt+F4 closes the window, as Ctrl+W does. Exit and stop transfers has no
-shortcut, because it stops every download; Alt+F, T reaches it.
+**Owner ruling:** Alt+F4 closes the window and Ctrl+Q closes the window and the
+engine; the File menu shows both keys. Alt+F4 is how Windows closes a window and
+Ctrl+Q is how desktop applications quit, so the menu names keys people already
+use. Ctrl+W does nothing, because in Windows it closes a document or a tab, not
+the application.
 
 Remove keeps data; delete-data is an explicit, distinct decision. Each confirms
 once with the affected torrent names or count, a specific action such as Remove
@@ -735,6 +832,16 @@ daemon's fields or fixed categories. Background choices have one engine owner;
 UI-only preferences have one WinUI owner. There are no remote profiles or
 connected-server scopes in this local product.
 
+**Owner ruling: the Settings page background is the window's acrylic with two
+translucent gear marks.** The page sets no background of its own, so the
+window's acrylic shows between and around the cards. Two large Lucide Cog glyphs
+in the accent colour overhang the top-left and bottom-right corners behind the
+content, at 4% opacity in the light theme and 3% in the dark theme, and hidden
+in High Contrast. They take no input and screen readers skip them. This is the
+owner's chosen look for the page, and nothing in the layout depends on it, so a
+redesign that does not know about it deletes it. A change to the page keeps
+both; only the owner removes them.
+
 Use the [commit rules](#committing-edits): ordinary settings apply individually,
 with no page-wide Save step or confirmation on close. Reveal dependent fields
 when relevant; keep an explicit editor's actions reachable. Native navigation
@@ -745,7 +852,10 @@ Preferences keeps this LabForms layout independently of the torrent inspector.
 Each category holds LabForms sections: a borderless card headed by an icon, a
 title and a description. Each setting in a section is one row: its name and a
 short description on the left, its control on the right, and its error in the
-same row, so feedback never moves the rest of the page.
+same row, so feedback never moves the rest of the page. Rows have no separator
+lines; rows that belong together, such as a pair of limits, sit on a borderless
+inner card, because spacing and grouping separate them without the visual noise
+of a rule under every row.
 Put Browse beside the default download path,
 and beside Add's destination, using the native Windows folder picker. Cancelling
 the picker preserves the current path and other unfinished input.
@@ -754,9 +864,9 @@ caching remains [automatic engine policy](engine.md#disk-write-caching), not a
 Preferences choice.
 
 Include, grouped by task: the default download folder and Show the Add form;
-global and alternative speed limits; queue limits for active downloads and
+standard and alternative speed limits and when they apply; queue limits for active downloads and
 seeds; seeding ratio and time limits; connection limits; the network interface,
-port mapping, and listen port; the
+port mapping, listen port, connection encryption and proxy server; the
 [notification switches](engine.md#notifications-and-sleep); preventing idle sleep
 while downloading on mains power, and also while seeding; Check for updates,
 following the [update model](architecture.md#installation-and-updates); and
@@ -764,7 +874,20 @@ language. Each uses the existing settings path. Reaching a seeding limit pauses
 the torrent; nothing is removed without a request. Resuming that torrent by
 hand lifts the limit for it, so it seeds on as asked instead of pausing again.
 The sleep switch names its mains-power condition, so a laptop that sleeps on
-battery does not surprise its owner.
+battery does not surprise its owner. The seeding switch only extends it, so it stays
+visible and is disabled while the sleep switch is off; hiding it would move the
+page and hide the choice.
+
+Settings > Network has a Proxy server section with one row: an icon for the
+engine's check of the proxy in use, once it has ended, the proxy's type and
+address or Off, and Edit. Edit opens the Edit proxy server dialog, because the
+proxy's five values save together and a half-made proxy would stop every
+connection. The dialog's Check connects with the typed values without saving
+them, and its one-line result sits in the Footer at the left; Save does not
+require a check. Choosing None or SOCKS4 disables the fields that it does not
+use instead of hiding them, so the dialog keeps its size. While a proxy is in
+use, the port and port-mapping rows are disabled, because peers cannot connect
+in through a proxy.
 
 General has a Notifications section with three switches in order of
 importance: Notify about problems, Notify when a download finishes, and Notify
@@ -774,55 +897,71 @@ notice that TinyTorrent keeps running in the notification area. Problems are
 one switch, because no one needs to silence one kind of problem and keep
 another.
 
-Scheduler presents one weekly overview with normal limits, alternative limits,
+Scheduler presents one weekly overview with standard limits, alternative limits,
 and paused periods, because separate schedules obscure their combined effect.
 Time runs left to right beneath a 00–24 hour ruler; each day has one row, and
-segments occupy widths proportional to their duration. The week stays visible
-when empty or switched off, so the person can discover and prepare a schedule.
-Its state, switch and Add period sit above the timeline. Normal time is quiet
-background; selecting a period reveals its exact times, duration, Edit and Remove.
-One collapsed Saved periods expander groups compact day/time entries by mode;
-each opens the exact editor, so covered periods remain accessible without nested
-disclosure or a separate selection step. Empty groups stay hidden.
+segments occupy widths proportional to their duration. The week always shows
+what will run, and a line marks the current day and time. Under a fixed choice
+every day is one neutral bar named for that choice, such as Standard limits and
+All day, with no periods and no gestures, because the periods do not run. Colour
+appears only under the weekly schedule: periods are coloured, and the time
+between them is named Standard limits where the gap is wide enough to read.
+The rest of the scheduler shows only under the weekly schedule: a legend names
+the three fills, and a Periods row with Add lists a fixed All other times row
+with Standard limits, then every period as an expander. One period is open
+at a time: opening a period closes the one open before, as one expander at a
+time stays open, so the page never holds two unfinished periods. Each period's
+header describes its days, times and mode. The native expander owns its arrow
+and content visibility; opening a period does not replace the control. Its
+content holds the mode ComboBox, days, start and end times, duration and Remove,
+so editing controls do not compete with the header's expand gesture.
+Every change applies at once, like every other setting, so the
+editor has no Save or Cancel. Input the schedule cannot take, such as a period
+with no day or a duplicate of another period, stays on screen beside its error.
+Closing the period drops that input. Leaving Settings with it is refused, so the
+person never leaves believing it runs. Leaving, closing or switching periods,
+Add and Remove wait for a save and apply valid input made during it before
+replacing the editor, so save timing cannot discard a change. Period changes
+run in the order they are asked for, so a click made during one is never lost.
+Add saves Monday to Friday, 09:00 to 17:00, with alternative limits, and opens
+it; when the schedule already holds that period, Add opens it instead.
 The scheduler is one control embedded in Preferences, sharing its period and
-save owner with the exact editor rather than implementing scheduling rules twice.
+save owner with the period editor rather than implementing scheduling rules twice.
 
-Dragging empty time opens Add with that day and range selected; an ordinary click
-only focuses the week. Dragging a period horizontally preserves its duration;
-selected start/end edges resize it. Thin inset grips appear on the hovered or
-dragged occurrence, while every occurrence keeps its selection outline, so
-recurring periods do not fill the week with handles. Gestures snap to 15 minutes and show a
-live time/duration preview. Release saves a move or resize of a saved period.
-While the exact editor is open, the draft remains draggable by its body or either
-edge and updates the time fields live; Save commits it. Escape or lost pointer
-capture restores the times before the gesture without discarding the draft.
-The native time fields retain exact minute precision.
-Blocks show their effective time ranges as well as their modes; hover and selection
-expose the complete source period, so an overlap does not obscure its saved times.
-The ruler reduces its tick count at narrow widths, and calendar geometry follows
-Windows text size so labels do not collide. Exact time fields and selection actions
-sit side by side when they fit, and stack when space is limited.
-Keyboard arrows navigate days and times, Space selects, and Enter adds or edits,
-so dragging is never required. Add period and the details list remain native
-keyboard and accessibility routes to every operation.
-Keyboard navigation displays the current day and exact time. Drafts identify their
-unsaved preview and next-day endpoints; Save and Cancel return focus to the week or
-Add period. Escape cancels the exact editor as well as an active drag.
+Dragging empty time saves a period for that day and range and opens it. A click
+on a period opens it; a click on empty time closes the open period. Dragging a
+period horizontally preserves its duration; the open period's start/end edges
+resize it. Thin inset grips appear on the hovered or dragged occurrence, while
+every occurrence keeps its outline, so recurring periods do not fill the week
+with handles. Gestures snap to 15 minutes and show a live time/duration preview.
+Release saves the move or resize. Escape or lost pointer capture restores the
+times before the gesture. The native time fields retain exact minute precision.
+Blocks show their effective time ranges as well as their modes; hover and the
+open period expose the complete source period, so an overlap does not obscure
+its saved times. The ruler reduces its tick count at narrow widths, and calendar
+geometry follows Windows text size so labels do not collide.
+Keyboard arrows navigate days and times, Space or Enter opens the period under
+the cursor, Enter on empty time adds a one-hour period, and Escape closes the
+open period, so dragging is never required. Add and the period list remain
+native keyboard and accessibility routes to every operation.
+Keyboard navigation displays the current day and exact time. Escape in the
+period editor closes it and returns focus to the period's header.
 
-Selecting a repeating period outlines every occurrence, including portions
+Opening a repeating period outlines every occurrence, including portions
 covered by Pause, so moving one occurrence cannot silently change other days.
 An overnight period shows its following-day portion and handles at its actual
 endpoints. The fill still shows the effective mode, with Pause taking precedence.
 Reject exact duplicate submissions; preserve distinct overlapping rules so a
-later Edit or Remove retains its meaning. Switching off stops application of
-the periods while leaving the editor usable. Save failures preserve the attempted
-times in the exact editor beside an error, so the person can retry or cancel.
+later Edit or Remove retains its meaning. A fixed choice stops application of
+the periods and keeps them for the next time Weekly schedule is chosen. A refused save keeps the attempted
+values in the open period beside the error, so the person can correct them or
+close the period.
 Full-day descriptions say All day rather than midnight to midnight.
-Each period has start days, start/end times, and a choice of alternative limits
-or pause, edited with native checkboxes, TimePicker controls, and radio buttons.
-Normal limits apply outside periods; pause takes precedence on overlap. Overnight
-periods end on the following day. The schedule is disabled by default and repeats
-in local time. Its engine owner preserves individually paused torrents and manual
+Each period has days, start/end times, and a choice of alternative limits
+or pause, edited with native checkboxes, TimePicker controls, and a ComboBox.
+Standard limits apply outside periods; pause takes precedence on overlap. Overnight
+periods end on the following day. Weekly schedule is not chosen by default; the
+schedule repeats in local time. Its engine owner preserves individually paused torrents and manual
 Pause all, so a scheduled boundary cannot undo the person's explicit pause.
 
 Appearance offers the application language and Follow Windows, Light, and Dark
@@ -877,6 +1016,32 @@ could not get used to a left navigation pane, and one row keeps the sections
 visible while the working view gets the full inspector width. The person
 adjusts the inspector's height with the split.
 
+General follows `app/general-prototype.html`, variant H, in two titled groups.
+Transfer holds the status and percentage, a native progress bar coloured as the
+same torrent's bar in the table, so completion adds no colour of its own, then
+completed content and time left beside the two live rates. Errors replace the
+progress summary; unknown metadata has indeterminate progress without an
+invented percentage. Below them, downloaded and uploaded bytes, ratio,
+seeds, peers and speed limits form a statistics strip. Each statistic is as wide
+as its content and the free width falls between them, so the strip spans its
+group instead of leaving one wide empty column at its end. The strip takes one
+row when its values fit, else two rows of three, else one column, so a long
+value never runs past the group's edge. Properties holds
+folder, individual info hashes, magnet link and comment beside added time,
+piece count and size, privacy, creation time and creator. Folder and copy
+buttons follow their values and act on the inspected torrent. Each group opens
+with its group icon and title, as Settings and Add groups do. Both groups sit on
+the inspector's own surface, which is already a card, and a divider separates
+them, so the groups add no surface of their own. A Lucide icon in the secondary text colour leads
+each label; privacy shows a lock or a globe, so its icon also states the value.
+Double-clicking a value opens the place that changes it, as on the status bar:
+a rate or the speed limit opens the torrent's Speed limit dialog, which also
+shows the global limit; the folder opens Move files; ratio opens the seeding
+ratio in Settings > Transfers; and seeds or peers open the connection limit in
+Settings > Network. The other values are facts of the torrent or its history,
+so they open nothing. Below 760 effective pixels of content width, Properties
+becomes one column, so values retain readable space.
+
 The inspector is a layer above the workspace, because it shows one torrent's
 properties rather than more of the table. It is a raised surface:
 `CardBackgroundFillColorDefaultBrush` fill, `SurfaceStrokeColorDefaultBrush`
@@ -908,9 +1073,13 @@ torrents use the files, name them and offer to move them together.
 
 Move files and Delete files are available from selection actions, the row context
 menu and command search. Shift+Delete opens Delete files; Delete still opens
-Remove, which keeps downloaded files. Delete files names the torrents and their
-source folders, warns that deletion is permanent, and lists outside torrents
-whose shared files will be kept. Cancel remains its default button.
+Remove, which keeps downloaded files. Delete files groups the torrents by
+folder with each torrent's size, shows the torrent count and total size beside
+its buttons, warns that deletion is permanent, and lists outside torrents whose
+shared files will be kept. It opens at once with nothing to wait for, and
+Delete is always available, following
+[the deletion ruling](engine.md#removal-and-relocation). Cancel remains its
+default button.
 
 Move files shows the current source folders, the chosen destination parent and
 the resulting content folders. Include shared torrents is an explicit choice;
@@ -972,47 +1141,55 @@ outlines, as that map's were; change them only when the
   different in a large swarm and a small one. Otherwise it is *common*. While no
   peer is connected, availability is unknown, so missing pieces are *missing*,
   never unavailable.
-- **Status.** Above the map, one sentence gives the conclusion, led by an icon
-  in its InfoBar severity colour so it reads at a glance: Complete, Waiting for
-  metadata, No peers connected, All missing pieces are available, or the number
-  of unavailable pieces and the files they belong to. Naming the files lets the
-  user skip them and let the rest finish. A list of files, here and in the
-  detail line, names the first three and counts the rest, so a long list cannot
-  push the map out of view or fill the screen; Files lists every file. The piece
-  count, the piece size, and how many pieces each square holds sit at the right
-  end of the status line in secondary text, as the Speed header places its range
-  choice; a long sentence trims beside them, with its full text available through
-  selection, automation and a tooltip, instead of pushing them out of view.
-  Keeping them on the status line saves a row of squares in the short inspector,
-  and the per-square number tells the user how much a merged square covers.
-- **Legend.** Under the status, one row shows each state with its swatch, its
-  name, and its count in semibold, as the Speed legend shows its values. The
-  counts are the legend, so the two cannot disagree. Entries share one width, so
-  they line up in columns when the row wraps in a narrow panel.
-- **Detail.** Under the legend, set closer to the map than to the legend so it
-  reads as part of the map, one line describes one square: its piece number or
-  range, how many connected peers have its missing pieces that are not
-  downloading, the count of each state it holds, and the files it belongs to.
-  The peer count is the count for one piece, and the lowest and highest for
-  several, because a merged square's colour cannot show that spread; while no
-  peer is connected, it is unknown. The line shows the square last pointed at
-  while the pointer is over the map, otherwise the selected square, otherwise,
-  while the map shows squares, a hint to point at or select one. A gap between
-  squares keeps the last square, so the text does not flicker while the pointer
-  crosses the map. The details sit in the page rather than in a tooltip, because
-  a tooltip covers the squares beside the pointer and users read square after
-  square. The range is in semibold and the rest in secondary text. The line
-  keeps its height and trims long text at its end, where the files are, so the
-  map never moves while the pointer crosses it.
+- **Status.** Above the map, at the reading start of the first line, a short
+  answer gives the conclusion, led by an icon in its InfoBar severity colour so
+  it reads at a glance: Waiting for metadata, Complete, Can finish, Can't tell
+  yet, or Can't finish yet. The reason is help, not the answer, so it is in the
+  answer's tooltip and automation help text: connected peers have every
+  remaining piece, no peers are connected, or no connected peer has a number of
+  pieces, with the files they belong to. The reason says remaining, never
+  missing, because the legend's Missing state means only pieces whose
+  availability is unknown. Naming the files lets the user skip them and let the
+  rest finish. A list of files, here and in the detail line, names the first
+  three and counts the rest, so a long list cannot push the map out of view or
+  fill the screen; Files lists every file.
+- **Legend.** On the same line as the status, at the opposite end, as a chart
+  places its key beside its title, each state shows its swatch, its name, and
+  its count in semibold, as the Speed legend shows its values. Sharing the line
+  saves a row of squares in the short inspector. The counts are the legend, so
+  the two cannot disagree. Entries keep their own width with even gaps between
+  them, because equal-width entries leave uneven gaps after the short ones; in a
+  narrow panel the legend wraps onto more lines.
+- **Detail.** The second line describes one square: its piece number or range,
+  how many connected peers have its missing pieces that are not downloading,
+  the count of each state it holds, each after a small copy of its legend
+  swatch so the eye matches it to the legend without reading, and the files it
+  belongs to. The peer count is the count for one piece, and the lowest and
+  highest for several, because a merged square's colour cannot show that
+  spread; while no peer is connected, it is unknown. The line shows the square
+  last pointed at while the pointer is over the map, otherwise the selected
+  square, otherwise, while the map shows squares, a hint to point at or select
+  one. A gap between squares keeps the last square, so the text does not
+  flicker while the pointer crosses the map. The details sit in the page rather
+  than in a tooltip, because a tooltip covers the squares beside the pointer and
+  users read square after square. The range is in semibold and the rest in
+  secondary text. How many pieces are verified out of the total, as in "2,300
+  of 24,208 pieces", the piece size, and how many pieces each square holds sit
+  at the end of the line in secondary text; the total alone does not say how
+  far the download has come, and the per-square number is next to the square
+  it explains. The line keeps its height and trims
+  the file list instead of wrapping, so the map never moves while the pointer
+  crosses it.
 - **Squares.** Squares keep one readable size and sit in groups of eight, so the
-  eye keeps its place; the last group across and down may be shorter, so the map
-  fills the width instead of leaving up to seven empty columns. They never
-  shrink: when the torrent has more pieces than fit, the squares fill the space
-  under the detail line completely, and each covers a contiguous range of pieces
-  that differs from the others by at most one piece. The map starts at the same
-  edge as the status and legend and is aligned to the top. In a right-to-left
-  language the first piece is at the top right, as a progress bar starts at the
-  right.
+  eye keeps its place; the last group across and down may be shorter. When a row
+  is full, the width left over by the last whole square widens the gutters
+  between groups, so the map ends at the same edge as the line above it instead
+  of leaving unexplained space. Squares
+  never shrink: when the torrent has more pieces than fit, the squares fill the
+  space under the detail line completely, and each covers a contiguous range of
+  pieces that differs from the others by at most one piece. The map is aligned
+  to the top. In a right-to-left language the first piece is at the top right,
+  as a progress bar starts at the right.
 - **Squares that cover several pieces** show the state most of their pieces
   have; on a tie the worse state wins, in the order unavailable, rare, common,
   missing, downloading, verified. A square that holds more than one state gets a
@@ -1022,10 +1199,15 @@ outlines, as that map's were; change them only when the
   colour, so a piece that can stop the download is never hidden by a healthier
   majority. Its corner carries the meaning without colour.
 - **Drawing.** Squares are tiles with the Fluent control corner radius, filled
-  with Fluent theme colours and drawn without outlines: verified is solid, a
-  downloading square fills as its data arrives, so progress moves while the user
-  watches, common is a light accent tint, missing is neutral, rare is hatched,
-  and unavailable is crossed. The solid fill, the partial fill, the hatching,
+  with Fluent theme colours and drawn without outlines: verified is solid
+  accent, as the torrent's progress bar in the table, a downloading square fills
+  with accent as its data arrives, so progress moves while the user watches,
+  common is a light accent tint, missing is neutral, rare is hatched in the
+  strong control stroke grey, and unavailable is crossed in the critical colour.
+  Rare and unavailable keep the neutral fill, so the map reads as one accent
+  progress picture and only the piece that can stop the download carries a
+  warning colour. The hatch and cross are drawn as smoothly as XAML shapes. The
+  solid fill, the partial fill, the hatching,
   and the cross keep the states apart without colour; missing needs no mark of
   its own, because it appears only while common, rare, and unavailable cannot.
   In High Contrast, system colours replace the fills, so every square also gets
@@ -1042,7 +1224,7 @@ outlines, as that map's were; change them only when the
   keyboard's place. A key press is the latest input, so it shows the selected
   square until the pointer moves again. The selected square's detail line is the
   map's UI Automation value, and Ctrl+C copies it; without a selection, the
-  value is the status sentence.
+  value is the status answer and its reason.
 - **Drawing cost.** Draw the squares into one bitmap and redraw only when the
   data changes, because one element per square is too slow at thousands of
   pieces.

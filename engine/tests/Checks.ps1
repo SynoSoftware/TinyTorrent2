@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory)]
-    [ValidateSet('Frames', 'FailedCommit', 'CheckpointRetry', 'Restart', 'DiskError', 'PreviewGuard', 'RemoveKeepFiles', 'QueueOrder', 'SelectedTransfer', 'MagnetDownload', 'SettingsPolicy', 'CommittedFiles', 'FilesSafety', 'FileNames', 'Pause')]
+    [ValidateSet('Frames', 'Targets', 'Facts', 'Restore', 'Exit', 'FailedCommit', 'CheckpointRetry', 'Restart', 'DiskError', 'PreviewGuard', 'RemoveKeepFiles', 'QueueOrder', 'SelectedTransfer', 'MagnetDownload', 'SettingsPolicy', 'CommittedFiles', 'FilesSafety', 'FileNames', 'Pause')]
     [string] $Check,
     [Parameter(Mandatory)]
     [string] $TorrentFile,
@@ -92,7 +92,7 @@ function Connect-Pipe {
         throw 'TinyTorrent is already running. The check refuses to command an engine it did not start.'
     }
     $hello = Read-Frame $stream
-    Assert ($hello.type -eq 'hello' -and $hello.version -eq 3) 'Invalid version handshake'
+    Assert ($hello.type -eq 'hello' -and $hello.version -eq 7) 'Invalid version handshake'
     return $stream
 }
 
@@ -175,6 +175,143 @@ function Assert-Paused([string] $torrentId) {
 try {
     $initial = Start-Engine
     switch ($Check) {
+        'Exit' {
+            function Exit-Code {
+                $exiting = Start-Process -FilePath $executable -ArgumentList '--headless', '--exit' -WindowStyle Hidden -PassThru
+                try {
+                    Assert ($exiting.WaitForExit(35000)) 'The shutdown gate did not finish'
+                    return $exiting.ExitCode
+                }
+                finally {
+                    if (-not $exiting.HasExited) { $exiting.Kill(); $exiting.WaitForExit() }
+                    $exiting.Dispose()
+                }
+            }
+            Stop-Engine
+            Assert ((Exit-Code) -eq 0) 'Shutdown refused an absent engine and window'
+            $window = [Threading.Mutex]::new($false, "Local\TinyTorrent.UI.$logon")
+            $owned = $false
+            try {
+                $owned = $window.WaitOne(0)
+                Assert $owned 'The window instance is already owned'
+                Assert ((Exit-Code) -eq 1) 'Shutdown reported success while a window survived the engine'
+                $null = Start-Engine
+                Assert ((Exit-Code) -eq 1) 'Forwarded shutdown ignored a surviving window'
+                Assert ($script:process.WaitForExit(15000)) 'Forwarded Exit did not stop the disposable engine'
+                $script:pipe.Dispose()
+                $script:pipe = $null
+                $script:process.Dispose()
+                $script:process = $null
+                $window.ReleaseMutex()
+                $owned = $false
+                Assert ((Exit-Code) -eq 0) 'Shutdown refused a released window instance'
+            }
+            finally {
+                if ($owned) { $window.ReleaseMutex() }
+                $window.Dispose()
+            }
+        }
+        'Restore' {
+            $reply = Send-Command @{ command = 'add'; preview_id = (Preview); destination = $payload; paused = $true }
+            Assert $reply.ok 'Fixture addition failed'
+            $torrentId = $reply.data.torrent_id
+            $files = (Send-Command @{ command = 'torrent'; torrent_id = $torrentId; view = 'files' }).data.files
+            Stop-Engine
+            $checkpoint = [IO.File]::ReadAllBytes((Join-Path $directory ($torrentId + '.resume')))
+            $file = Join-Path $directory 'settings.json'
+            $document = Get-Content -LiteralPath $file -Raw | ConvertFrom-Json
+            $document.settings.all_paused = $true
+            $document.settings.network_interface = '{00000000-0000-0000-0000-000000000000}'
+            $first = $document.torrents[0]
+            $first.hashes = @($first.hashes[0], ('1' * 64))
+            $second = $first | ConvertTo-Json -Depth 20 | ConvertFrom-Json
+            $second.torrent_id = 'zz-conflict'
+            $second.download_limit = 1024
+            $unrelated = $first | ConvertTo-Json -Depth 20 | ConvertFrom-Json
+            $unrelated.torrent_id = 'unrelated'
+            $unrelated.hashes = @(('2' * 40))
+            $document.torrents = @($first, $second, $unrelated)
+            foreach ($removed in 'zz-conflict', $torrentId) {
+                [IO.File]::WriteAllBytes($file, [Text.Encoding]::UTF8.GetBytes(($document | ConvertTo-Json -Depth 20)))
+                foreach ($id in $torrentId, 'zz-conflict') {
+                    [IO.File]::WriteAllBytes((Join-Path $directory ($id + '.resume')), [byte[]](0))
+                }
+                $snapshot = Start-Engine
+                Assert ($snapshot.torrents.Count -eq 3) 'Restore discarded accepted membership'
+                $conflicts = @($snapshot.torrents | Where-Object { $_.error -eq 'alias_conflict' })
+                Assert ($conflicts.Count -eq 2) 'Restore silently shared a live handle between identities'
+                $reply = Send-Command @{ command = 'speed_limit'; torrent_ids = @('zz-conflict'); download_limit = 2048 }
+                Assert $reply.ok 'The conflicting identity lost its own saved choices'
+                $rows = (Send-Command @{ command = 'snapshot' }).data.torrents
+                Assert (($rows | Where-Object torrent_id -eq $torrentId).download_limit -eq 0) 'An edit changed the other identity'
+                $reply = Send-Command @{ command = 'remove'; torrent_ids = @($removed) }
+                Assert $reply.ok 'A conflicting identity could not be removed'
+                $survivor = if ($removed -eq $torrentId) { 'zz-conflict' } else { $torrentId }
+                $reply = Send-Command @{ command = 'resume'; torrent_ids = @($survivor) }
+                Assert $reply.ok 'The chosen survivor did not obtain its own live handle'
+                Stop-Engine
+                $snapshot = Start-Engine
+                Assert ($snapshot.torrents.Count -eq 2 -and $removed -notin $snapshot.torrents.torrent_id -and
+                    $survivor -in $snapshot.torrents.torrent_id) 'Restart lost the chosen survivor or restored removed membership'
+                Stop-Engine
+            }
+            [IO.File]::WriteAllBytes($file, [Text.Encoding]::UTF8.GetBytes(($document | ConvertTo-Json -Depth 20)))
+            foreach ($id in $torrentId, 'zz-conflict') {
+                [IO.File]::WriteAllBytes((Join-Path $directory ($id + '.resume')), $checkpoint)
+            }
+            $shared = Join-Path $payload $files[0].disk_path
+            $null = New-Item -ItemType Directory -Path (Split-Path $shared) -Force
+            [IO.File]::WriteAllBytes($shared, [byte[]](11, 22, 33))
+            $originalHash = Payload-Hash $shared
+            $snapshot = Start-Engine
+            Assert (@($snapshot.torrents | Where-Object error -eq 'alias_conflict').Count -eq 2) 'Readable checkpoints lost the conflict'
+            $reply = Send-Command @{ command = 'file_scope'; torrent_ids = @('zz-conflict') }
+            Assert ($reply.ok -and $reply.data.kept_files -gt 0) 'The pending identity lost its shared file ownership'
+            $reply = Send-Command @{ command = 'delete_files'; torrent_ids = @('zz-conflict') }
+            Assert ($reply.ok -and $reply.data.kept_files -gt 0) 'Deleting the pending identity did not preserve shared files'
+            Stop-Engine
+            Assert ((Payload-Hash $shared) -eq $originalHash) 'Deleting the pending identity changed the survivor payload'
+            $snapshot = Start-Engine
+            Assert ($snapshot.torrents.Count -eq 2 -and 'zz-conflict' -notin $snapshot.torrents.torrent_id) 'Deleted conflicting membership returned after restart'
+        }
+        'Targets' {
+            $reply = Send-Command @{ command = 'add'; preview_id = (Preview); destination = $payload; paused = $true }
+            Assert $reply.ok 'Fixture addition failed'
+            $torrentId = $reply.data.torrent_id
+            foreach ($command in 'pause', 'remove', 'delete_files') {
+                $reply = Send-Command @{ command = $command; torrent_ids = @($torrentId, $torrentId) }
+                Assert (-not $reply.ok -and $reply.error.code -eq 'invalid_targets') 'Repeated targets were accepted'
+                $rows = (Send-Command @{ command = 'snapshot' }).data.torrents
+                Assert ($rows.Count -eq 1 -and $rows[0].torrent_id -eq $torrentId) 'Refused targets changed membership'
+            }
+            Stop-Engine
+            $snapshot = Start-Engine
+            Assert ($snapshot.torrents.Count -eq 1 -and $snapshot.torrents[0].torrent_id -eq $torrentId) 'Refused targets changed saved membership'
+        }
+        'Facts' {
+            $reply = Send-Command @{ command = 'add'; preview_id = (Preview); destination = $payload; paused = $true }
+            Assert $reply.ok 'Fixture addition failed'
+            $torrentId = $reply.data.torrent_id
+            $heldFile = [IO.File]::Open((Join-Path $directory 'settings.json'), [IO.FileMode]::Open,
+                [IO.FileAccess]::Read, [IO.FileShare]::Read)
+            foreach ($request in @(
+                @{ command = 'speed_limit'; torrent_ids = @($torrentId); download_limit = 0 },
+                @{ command = 'piece_order'; torrent_ids = @($torrentId); first_last = $false })) {
+                $reply = Send-Command $request
+                Assert $reply.ok 'An already-satisfied choice attempted a storage write'
+            }
+            $reply = Send-Command @{ command = 'speed_limit'; torrent_ids = @($torrentId); download_limit = 1024 }
+            Assert (-not $reply.ok -and $reply.error.code -eq 'storage_failed') 'A changed limit bypassed persistence'
+            $row = (Send-Command @{ command = 'snapshot' }).data.torrents[0]
+            Assert ($row.download_limit -eq 0) 'A refused limit changed live facts'
+            $heldFile.Dispose()
+            $heldFile = $null
+            $reply = Send-Command @{ command = 'speed_limit'; torrent_ids = @($torrentId); download_limit = 1024 }
+            Assert $reply.ok 'The limit did not save after storage recovered'
+            Stop-Engine
+            $snapshot = Start-Engine
+            Assert ($snapshot.torrents[0].download_limit -eq 1024) 'The committed limit did not survive restart'
+        }
         'Pause' {
             $reply = Send-Command @{ command = 'session_pause'; paused = $true }
             Assert $reply.ok 'Pause all was refused'
@@ -407,8 +544,6 @@ try {
             Assert (@($snapshot.torrents | Where-Object error -ne 'move_interrupted').Count -eq 0) 'An interrupted move resumed as ordinary transfer state'
             $reply = Send-Command @{ command = 'move'; torrent_ids = $identities; destination = $destination }
             Assert (-not $reply.ok -and $reply.error.code -eq 'move_interrupted') 'An ordinary retry erased the unresolved move destination'
-            $reply = Send-Command @{ command = 'delete_files'; torrent_ids = $identities }
-            Assert (-not $reply.ok -and $reply.error.code -eq 'move_interrupted') 'Delete treated an uncertain held destination as owned payload'
             $reply = Send-Command @{ command = 'move'; torrent_ids = $identities; destination = $destination; use_existing = $true }
             Assert $reply.ok 'Explicit recovery could not use the files at their known folder'
             $until = [DateTime]::UtcNow.AddSeconds(15)
@@ -417,11 +552,16 @@ try {
                 $rows = (Send-Command @{ command = 'snapshot' }).data.torrents
             } while (@($rows | Where-Object { $_.moving -or $_.move_destination }).Count -gt 0 -and [DateTime]::UtcNow -lt $until)
             Assert (@($rows | Where-Object { $_.moving -or $_.move_destination }).Count -eq 0) 'Explicit move recovery never completed'
+            Stop-Engine
+            $saved = [IO.File]::ReadAllText($settingsFile) | ConvertFrom-Json
+            foreach ($torrent in $saved.torrents) { $torrent.move_destination = $collision }
+            [IO.File]::WriteAllBytes($settingsFile, [Text.Encoding]::UTF8.GetBytes(($saved | ConvertTo-Json -Depth 30 -Compress)))
+            $null = Start-Engine
             $reply = Send-Command @{ command = 'delete_files'; torrent_ids = $identities }
-            Assert ($reply.ok -and $reply.data.kept_files -eq 0) 'The whole shared group could not delete its payload'
+            Assert ($reply.ok -and $reply.data.kept_files -eq 0) 'The interrupted shared group could not delete its payload'
             Stop-Engine
             $snapshot = Start-Engine
-            Assert ($snapshot.torrents.Count -eq 0 -and -not (Test-Path -LiteralPath $movedFile) -and (Payload-Hash $collisionFile) -eq $collisionHash -and (Test-Path -LiteralPath $unrelated)) 'Group deletion restored membership or damaged unrelated files'
+            Assert ($snapshot.torrents.Count -eq 0 -and -not (Test-Path -LiteralPath $movedFile) -and (Payload-Hash $collisionFile) -eq $collisionHash -and (Test-Path -LiteralPath $unrelated)) 'Group deletion reached the held destination, restored membership or damaged unrelated files'
         }
         'CommittedFiles' {
             $reply = Send-Command @{ command = 'session_pause'; paused = $true }
@@ -454,6 +594,7 @@ try {
         }
         'SettingsPolicy' {
             Assert ($initial.settings.notify_problems -eq $true -and $initial.settings.notifications_enabled -eq $false -and $initial.settings.notify_added -eq $false) 'Fresh notification preferences do not keep successes quiet and problems visible'
+            Assert ($initial.settings.encryption -eq 'preferred' -and $initial.settings.proxy_type -eq 'none') 'Fresh network preferences do not prefer encryption without a proxy'
             $previewId = Preview
             $reply = Send-Command @{ command = 'add'; preview_id = $previewId; destination = $payload; paused = $true }
             Assert $reply.ok 'Settings policy fixture addition failed'
@@ -472,17 +613,35 @@ try {
             $reply = Send-Command @{ command = 'settings'; changes = @{ schedule = @($period) } }
             Assert $reply.ok 'An alternative period could not replace the paused period'
             $snapshot = (Send-Command @{ command = 'snapshot' }).data
-            Assert $snapshot.alternative_limits 'An alternative period did not select its rate pair'
-            $reply = Send-Command @{ command = 'settings'; changes = @{ alternative_limits = $false } }
-            Assert $reply.ok 'An already-saved manual rate choice was refused'
+            Assert ($snapshot.limits.mode -eq 'alternative') 'An alternative period did not select its rate pair'
+            $reply = Send-Command @{ command = 'settings'; changes = @{ limit_mode = 'speed' } }
+            Assert $reply.ok 'A manual limit choice was refused while the schedule applied'
             $snapshot = (Send-Command @{ command = 'snapshot' }).data
-            Assert (-not $snapshot.alternative_limits) 'An explicit normal-rate choice did not override the scheduled pair'
+            Assert ($snapshot.limits.mode -eq 'speed') 'An explicit limit choice did not override the scheduled pair'
+            $reply = Send-Command @{ command = 'settings'; changes = @{ proxy_type = 'socks5' } }
+            Assert (-not $reply.ok) 'A proxy without its address was saved'
+            $secret = 'proxy-' + [guid]::NewGuid()
+            $reply = Send-Command @{ command = 'settings'; changes = @{ proxy_type = 'socks5'; proxy_host = '127.0.0.1'; proxy_port = 1; proxy_username = 'checks'; proxy_password = $secret } }
+            Assert $reply.ok 'A complete proxy could not be saved'
+            $reply = Send-Command @{ command = 'check_proxy'; proxy = @{ proxy_type = 'socks5'; proxy_host = '127.0.0.1'; proxy_port = 1 } }
+            Assert ($reply.ok -and $reply.data.check_id) 'A proxy check did not start'
+            $checkId = $reply.data.check_id
+            # The engine's own check of the saved proxy can run first; each
+            # check ends within 10 seconds.
+            $until = [DateTime]::UtcNow.AddSeconds(25)
+            do {
+                Start-Sleep -Milliseconds 100
+                $check = (Send-Command @{ command = 'snapshot' }).data.proxy_check
+            } while ($check.check_id -eq $checkId -and -not $check.outcome -and [DateTime]::UtcNow -lt $until)
+            Assert ($check.check_id -eq $checkId -and $check.outcome -eq 'unreachable') 'Checking a proxy where nothing listens did not report it unreachable'
             Stop-Engine
             $snapshot = Start-Engine
             Assert ($snapshot.settings.schedule.Count -eq 1 -and $snapshot.settings.schedule[0].mode -eq 'alternative') 'A committed weekly period was lost at restart'
             Assert ($snapshot.settings.active_downloads -eq 1 -and -not $snapshot.settings.check_for_updates -and -not $snapshot.settings.port_mapping) 'Committed preferences were lost at restart'
             Assert ($snapshot.settings.notify_problems -eq $false -and $snapshot.settings.notifications_enabled -eq $true -and $snapshot.settings.notify_added -eq $true) 'Notification choices were lost at restart'
-            Assert ($snapshot.alternative_limits -and $snapshot.torrents[0].paused) 'Restart replayed a temporary override or lost individual pause intent'
+            Assert ($snapshot.settings.proxy_type -eq 'socks5' -and $snapshot.settings.proxy_password -eq $secret) 'The proxy and its password were lost at restart'
+            Assert (-not [IO.File]::ReadAllText((Join-Path $directory 'settings.json')).Contains($secret)) 'settings.json holds the proxy password as plain text'
+            Assert ($snapshot.limits.mode -eq 'alternative' -and $snapshot.torrents[0].paused) 'Restart replayed a temporary override or lost individual pause intent'
             $missing = '{00000000-0000-0000-0000-000000000000}'
             $reply = Send-Command @{ command = 'settings'; changes = @{ network_interface = $missing } }
             Assert $reply.ok 'An unavailable saved adapter choice was refused'
@@ -495,7 +654,7 @@ try {
             $reply = Send-Command @{ command = 'settings'; changes = @{ network_interface = ''; schedule_enabled = $false } }
             Assert $reply.ok 'The saved adapter block could not be cleared'
             $snapshot = (Send-Command @{ command = 'snapshot' }).data
-            Assert (-not $snapshot.all_paused -and -not $snapshot.alternative_limits) 'Disabling the schedule lost the saved normal-rate choice'
+            Assert (-not $snapshot.all_paused -and $snapshot.limits.mode -eq 'speed') 'Disabling the schedule lost the saved limit choice'
             Assert $snapshot.torrents[0].paused 'Returning to ordinary policy resumed an individually paused torrent'
         }
         'CheckpointRetry' {
@@ -602,7 +761,7 @@ try {
             } while ([DateTime]::UtcNow -lt $until)
             Assert ((Get-Content -LiteralPath (Join-Path $directory 'peer.log') -Raw) -match 'ready') 'Multifile seed did not become ready'
             $TorrentFile = Join-Path $peerDirectory 'transfer.torrent'
-            $reply = Send-Command @{ command = 'settings'; changes = @{ download_limit = 131072; alternative_download_limit = 524288 } }
+            $reply = Send-Command @{ command = 'settings'; changes = @{ limit_mode = 'speed'; download_limit = 131072; alternative_download_limit = 524288 } }
             Assert $reply.ok 'Global limits were refused'
             $reply = Send-Command @{ command = 'preview'; source = $TorrentFile; destination = $payload }
             Assert ($reply.ok -and $reply.data.files.Count -eq 2) 'Aligned multifile fixture did not preview'
@@ -619,8 +778,8 @@ try {
             } while ([DateTime]::UtcNow -lt $until)
             Assert ($snapshot.data.torrents[0].downloaded -gt 262144) 'Local transfer did not start'
             $normalRate = Measure-Download
-            Assert ($normalRate -gt 65536 -and $normalRate -lt 170394) 'Normal global limit did not constrain real local payload'
-            $reply = Send-Command @{ command = 'settings'; changes = @{ alternative_limits = $true } }
+            Assert ($normalRate -gt 65536 -and $normalRate -lt 170394) 'Speed limits did not constrain real local payload'
+            $reply = Send-Command @{ command = 'settings'; changes = @{ limit_mode = 'alternative' } }
             Assert $reply.ok 'Alternative limits could not activate'
             $until = [DateTime]::UtcNow.AddSeconds(15)
             do {
@@ -632,8 +791,8 @@ try {
             Assert ($alternativeRate -gt 262144 -and $alternativeRate -lt 681575 -and $alternativeRate -gt 2 * $normalRate) 'Alternative global limit did not replace the normal limit on real local payload'
             [pscustomobject]@{ NormalLimit = 131072; NormalRate = $normalRate; AlternativeLimit = 524288; AlternativeRate = $alternativeRate } |
                 ConvertTo-Json | Tee-Object -FilePath (Join-Path $directory 'rates.json')
-            $reply = Send-Command @{ command = 'settings'; changes = @{ alternative_limits = $false; download_limit = 0 } }
-            Assert $reply.ok 'Normal unlimited transfer could not resume'
+            $reply = Send-Command @{ command = 'settings'; changes = @{ limit_mode = 'none' } }
+            Assert $reply.ok 'Unlimited transfer could not resume'
             $until = [DateTime]::UtcNow.AddSeconds(60)
             do {
                 $snapshot = Send-Command @{ command = 'snapshot' }
@@ -725,6 +884,8 @@ try {
             $torrentId = $reply.data.torrent_id
             $reply = Send-Command @{ command = 'piece_order'; torrent_ids = @($torrentId); first_last = $true }
             Assert $reply.ok 'First and last pieces choice was not saved'
+            $reply = Send-Command @{ command = 'speed_limit'; torrent_ids = @($torrentId); download_limit = 51200 }
+            Assert $reply.ok 'Torrent speed limit was not saved'
             $reply = Send-Command @{ command = 'pause'; torrent_ids = @($torrentId) }
             Assert $reply.ok 'Pause intent was not saved'
             $reply = Send-Command @{ command = 'session_pause'; paused = $true }
@@ -737,6 +898,8 @@ try {
             Assert ($snapshot.torrents[0].torrent_id -eq $torrentId) 'Durable identity changed after restart'
             Assert $snapshot.torrents[0].paused 'Saved pause intent was lost after restart'
             Assert ($snapshot.torrents[0].sequential -and $snapshot.torrents[0].first_last) 'Saved download order was lost after restart'
+            Assert ($snapshot.torrents[0].download_limit -eq 51200 -and $snapshot.torrents[0].upload_limit -eq 0) `
+                'Saved torrent speed limit was lost after restart'
             Assert $snapshot.all_paused 'Saved session pause was lost after restart'
             Assert ($snapshot.settings.language -eq 'es' -and $snapshot.settings.theme -eq 'dark') 'Saved appearance preferences were lost after restart'
             $reply = Send-Command @{ command = 'session_pause'; paused = $false }

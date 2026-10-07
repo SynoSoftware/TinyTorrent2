@@ -17,7 +17,7 @@ namespace Syno.TinyTorrent.Controls;
 public sealed partial class SpeedGraph : UserControl
 {
     public static readonly DependencyProperty SamplesProperty = DependencyProperty.Register(nameof(Samples),
-        typeof(IReadOnlyList<SpeedSample>), typeof(SpeedGraph), new PropertyMetadata(Array.Empty<SpeedSample>(), (graph, _) => ((SpeedGraph)graph).OnSamples()));
+        typeof(IReadOnlyList<SpeedSample>), typeof(SpeedGraph), new PropertyMetadata(null, (graph, _) => ((SpeedGraph)graph).OnSamples()));
 
     // Zoom levels, in seconds. Each view averages its samples in 60 buckets.
     private static readonly long[] Lengths = [300, 900, 1800, 3600, 21600, 86400];
@@ -54,9 +54,11 @@ public sealed partial class SpeedGraph : UserControl
         Day.Tag = 86400L;
     }
 
-    public IReadOnlyList<SpeedSample> Samples { get => (IReadOnlyList<SpeedSample>)GetValue(SamplesProperty); set => SetValue(SamplesProperty, value); }
+    // Null until the history is read, so the plot stays blank instead of
+    // reporting no history.
+    public IReadOnlyList<SpeedSample>? Samples { get => (IReadOnlyList<SpeedSample>?)GetValue(SamplesProperty); set => SetValue(SamplesProperty, value); }
 
-    private long Newest => Samples.Count == 0 ? DateTimeOffset.Now.ToUnixTimeSeconds() : Samples[^1].Time;
+    private long Newest => Samples is null || Samples.Count == 0 ? DateTimeOffset.Now.ToUnixTimeSeconds() : Samples[^1].Time;
     private long End => _end ?? Newest;
     private long Start => End - _length;
 
@@ -87,7 +89,7 @@ public sealed partial class SpeedGraph : UserControl
     private void SetView(long length, double end)
     {
         var newest = Newest;
-        var oldest = Samples.Count == 0 ? newest : Samples[0].Time;
+        var oldest = Samples is null || Samples.Count == 0 ? newest : Samples[0].Time;
         var clamped = (long)Math.Max(end, oldest + length);
         long? past = length >= PastMinimum && clamped < newest - length / 60 ? clamped : null;
         if (length == _length && past == _end)
@@ -155,7 +157,7 @@ public sealed partial class SpeedGraph : UserControl
         ToolTipService.SetToolTip(DownloadLegend, $"{DownloadLabel.Text} {DownloadValue.Text} · {DownloadDetail.Text}");
         ToolTipService.SetToolTip(UploadLegend, $"{UploadLabel.Text} {UploadValue.Text} · {UploadDetail.Text}");
         Maximum.Text = averages.Length == 0 ? string.Empty : Rate(text, top);
-        NoHistory.Visibility = averages.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
+        NoHistory.Visibility = Samples is not null && averages.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
         _value = marked is null ? string.Empty : text.Format("speed", "point", Time(marked.Time, format),
             Rate(text, marked.Download), Rate(text, marked.Upload));
         var extent = new Extent(Plot.ActualWidth, Plot.ActualHeight, Start, _length, top);
@@ -176,7 +178,7 @@ public sealed partial class SpeedGraph : UserControl
     private static Average? Nearest(Average[] averages, double? time) =>
         time is { } target && averages.Length > 0 ? averages.MinBy(average => Math.Abs(average.Time - target)) : null;
 
-    private List<List<Average>> Runs() => Bucket(Samples, Start, End, _length / 60);
+    private List<List<Average>> Runs() => Bucket(Samples ?? [], Start, End, _length / 60);
 
     private Average[] Averages() => Runs().SelectMany(run => run).ToArray();
 

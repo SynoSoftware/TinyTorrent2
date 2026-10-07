@@ -66,6 +66,12 @@ public sealed partial class Row : ContentControl
 
     private void OnUnloaded(object sender, RoutedEventArgs e)
     {
+        // A late Unloaded for a row still in the tree; see Table's OnUnloaded.
+        if (IsLoaded)
+        {
+            return;
+        }
+
         if (_owner is null)
         {
             return;

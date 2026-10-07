@@ -7,22 +7,24 @@
     <Grid RowSpacing="8">
         <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
         <Grid ColumnSpacing="12">
-            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" MaxWidth="220" /></Grid.ColumnDefinitions>
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" MaxWidth="220" /></Grid.ColumnDefinitions>
             <TextBlock Text="{x:Bind Model.Summary, Mode=OneWay}" Style="{StaticResource BodyTextStyle}" VerticalAlignment="Center" />
-            <Button x:Name="Priority" Grid.Column="1" Content="{x:Bind Model.Text.Get('files', 'priority'), Mode=OneWay}" Click="OnPriority" IsEnabled="False" />
-            <Button Style="{StaticResource SubtleButtonStyle}" Grid.Column="2" Click="OnExpand" Visibility="{x:Bind Model.HasFolders, Mode=OneWay}"
-                ToolTipService.ToolTip="{x:Bind Model.Text.Get('files', 'expand_all'), Mode=OneWay}" AutomationProperties.Name="{x:Bind Model.Text.Get('files', 'expand_all'), Mode=OneWay}">
-                <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.ChevronsUpDown}" FontSize="16" />
-            </Button>
-            <Button Style="{StaticResource SubtleButtonStyle}" Grid.Column="3" Click="OnCollapse" Visibility="{x:Bind Model.HasFolders, Mode=OneWay}"
-                ToolTipService.ToolTip="{x:Bind Model.Text.Get('files', 'collapse_all'), Mode=OneWay}" AutomationProperties.Name="{x:Bind Model.Text.Get('files', 'collapse_all'), Mode=OneWay}">
-                <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.ChevronsDownUp}" FontSize="16" />
-            </Button>
-            <AutoSuggestBox PlaceholderText="{x:Bind Model.Text.Get('files', 'search'), Mode=OneWay}" Grid.Column="4" VerticalAlignment="Center" QueryIcon="Find" Text="{x:Bind Model.Search, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12">
+                <Button x:Name="Priority" Content="{x:Bind Model.Text.Get('files', 'priority'), Mode=OneWay}" Click="OnPriority" IsEnabled="False" />
+                <Button Style="{StaticResource SubtleButtonStyle}" Click="OnExpand" Visibility="{x:Bind Model.HasFolders, Mode=OneWay}"
+                    ToolTipService.ToolTip="{x:Bind Model.Text.Get('files', 'expand_all'), Mode=OneWay}" AutomationProperties.Name="{x:Bind Model.Text.Get('files', 'expand_all'), Mode=OneWay}">
+                    <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.ChevronsUpDown}" FontSize="16" />
+                </Button>
+                <Button Style="{StaticResource SubtleButtonStyle}" Click="OnCollapse" Visibility="{x:Bind Model.HasFolders, Mode=OneWay}"
+                    ToolTipService.ToolTip="{x:Bind Model.Text.Get('files', 'collapse_all'), Mode=OneWay}" AutomationProperties.Name="{x:Bind Model.Text.Get('files', 'collapse_all'), Mode=OneWay}">
+                    <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.ChevronsDownUp}" FontSize="16" />
+                </Button>
+            </StackPanel>
+            <AutoSuggestBox PlaceholderText="{x:Bind Model.Text.Get('files', 'search'), Mode=OneWay}" Grid.Column="2" VerticalAlignment="Center" QueryIcon="Find" Text="{x:Bind Model.Search, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
         </Grid>
         <table:Table x:Name="Files" Grid.Row="1" ItemsSource="{x:Bind Model.Roots, Mode=OneWay}" PreviewKeyDown="OnFilesKey">
             <table:Table.Columns>
-                <table:Column x:Name="NameColumn" Id="name" Width="360" MinWidth="180" CellAlignment="Stretch">
+                <table:Column x:Name="NameColumn" Id="name" Width="360" CellAlignment="Stretch">
                     <table:Column.Header>
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <CheckBox x:Name="All" MinWidth="0" IsChecked="{x:Bind Model.AllMatching, Mode=OneWay}" IsEnabled="{x:Bind Model.IsEnabled, Mode=OneWay}" Click="OnAll" />

@@ -25,7 +25,9 @@ enum class Command
     Move,
     DeleteFiles,
     Queue,
-    PieceOrder
+    PieceOrder,
+    SpeedLimit,
+    CheckProxy
 };
 
 enum class TorrentView
@@ -69,6 +71,7 @@ enum class RelocationPhase
 {
     Preparing,
     Waiting,
+    Checking,
     Moving,
     Saving,
     Unknown
@@ -83,11 +86,28 @@ enum class RenamePhase
     Recovering
 };
 
+enum class NamePhase
+{
+    Pending,
+    Preparing,
+    Ready
+};
+
+// A deletion saves the list without its torrents, waits for libtorrent to
+// release their files, and then deletes them.
 enum class DeletionPhase
 {
+    Saving,
     Waiting,
     Deleting,
     Unknown
+};
+
+// Whether a command accepts torrents whose own files are busy.
+enum class BusyFiles
+{
+    Refused,
+    Accepted
 };
 
 enum class AdditionKind
@@ -151,6 +171,41 @@ enum class ScheduleMode
     Normal,
     Alternative,
     Paused
+};
+
+enum class LimitMode
+{
+    None,
+    Speed,
+    Alternative
+};
+
+enum class Encryption
+{
+    Preferred,
+    Required,
+    Allowed,
+    Disabled
+};
+
+enum class ProxyType
+{
+    None,
+    Socks5,
+    Socks4,
+    Http
+};
+
+// What the engine learned about a proxy, from a check or from the
+// connections that go through it.
+enum class ProxyOutcome
+{
+    Connected,
+    SignInFailed,
+    Unreachable,
+    NotFound,
+    WrongType,
+    TimedOut
 };
 
 enum class ProblemKind

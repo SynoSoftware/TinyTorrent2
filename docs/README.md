@@ -43,7 +43,8 @@ than keeping copies in both locations.
 The native engine and first WinUI download path exist alongside TableView,
 Lucide, the sample and control tests; see [current build integration](architecture-current.md#build-integration)
 and [implementation evidence](implementation.md). Later milestones and the
-installer remain targets; a contract alone is not implementation evidence.
+installer's installed journeys remain targets; the [release command](../installer/README.md)
+generates candidates, and a contract alone is not implementation evidence.
 The control's implementation document identifies known gaps against its contract.
 
 Each rule has one home. Link to it from another subject instead of copying it.

@@ -62,6 +62,7 @@ int WINAPI wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ PWSTR, _In_ int)
         int count = 0;
         auto arguments = CommandLineToArgvW(GetCommandLineW(), &count);
         bool background = false;
+        bool exiting = false;
         bool literal = false;
         std::string registration;
         std::vector<std::string> sources;
@@ -80,6 +81,10 @@ int WINAPI wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ PWSTR, _In_ int)
             else if (!literal && argument == tt::option::background)
             {
                 background = true;
+            }
+            else if (!literal && argument == tt::option::exit)
+            {
+                exiting = true;
             }
             else if (!literal && argument == tt::option::registration)
             {
@@ -116,6 +121,10 @@ int WINAPI wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ PWSTR, _In_ int)
         if (!registration.empty() && !sources.empty())
         {
             throw std::runtime_error("Registration operations cannot include torrent sources.");
+        }
+        if (exiting && (!registration.empty() || !sources.empty() || background || !directory.empty()))
+        {
+            throw std::runtime_error("The --exit option cannot include other operations or torrent sources.");
         }
         if (!sources.empty() && !tt::desktop::Application::ValidSources(sources))
         {
@@ -154,7 +163,11 @@ int WINAPI wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ PWSTR, _In_ int)
         if (acquired == WAIT_TIMEOUT)
         {
             auto forwarding = tt::Forwarding::Accepted;
-            if (!registration.empty())
+            if (exiting)
+            {
+                forwarding = tt::Pipe::Forward(sid, {{"command", "exit"}});
+            }
+            else if (!registration.empty())
             {
                 forwarding =
                     tt::Pipe::Forward(sid, {{"command", "registration"}, {"operation", registration}});
@@ -167,20 +180,52 @@ int WINAPI wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ PWSTR, _In_ int)
             {
                 forwarding = tt::Pipe::Forward(sid);
             }
-            mutex.reset();
             if (forwarding == tt::Forwarding::OtherVersion)
             {
                 throw std::runtime_error(tt::Utf8(tt::Strings().Text("error", "version")));
             }
-            if (forwarding == tt::Forwarding::Refused)
+            if (exiting)
             {
-                throw std::runtime_error("The running engine could not accept the activation request.");
+                acquired = WaitForSingleObject(mutex.get(), 30'000);
+                if (acquired != WAIT_OBJECT_0 && acquired != WAIT_ABANDONED)
+                {
+                    throw std::runtime_error("TinyTorrent is still running. Finish any open prompt or operation, then retry.");
+                }
             }
-            return 0;
+            else
+            {
+                mutex.reset();
+                if (forwarding == tt::Forwarding::Refused)
+                {
+                    throw std::runtime_error("The running engine could not accept the activation request.");
+                }
+                return 0;
+            }
         }
         if (acquired != WAIT_OBJECT_0 && acquired != WAIT_ABANDONED)
         {
             throw std::runtime_error("Cannot acquire engine instance ownership.");
+        }
+        if (exiting)
+        {
+            // The window can survive an engine crash and still hold application files.
+            tt::OwnedHandle window(OpenMutexW(SYNCHRONIZE | MUTEX_MODIFY_STATE, FALSE,
+                (L"Local\\TinyTorrent.UI." + sid).c_str()));
+            if (!window && GetLastError() != ERROR_FILE_NOT_FOUND)
+            {
+                throw std::runtime_error("Cannot check window instance ownership.");
+            }
+            if (window)
+            {
+                auto closed = WaitForSingleObject(window.get(), 0);
+                if (closed != WAIT_OBJECT_0 && closed != WAIT_ABANDONED)
+                {
+                    throw std::runtime_error(tt::Utf8(tt::Strings().Text("error", "window_open")));
+                }
+                ReleaseMutex(window.get());
+            }
+            ReleaseMutex(mutex.get());
+            return 0;
         }
         int result;
         if (!registration.empty())

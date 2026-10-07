@@ -14,7 +14,7 @@ for this documentation review.
 | Source subscription and coherent source capture | [Body.Source](../src/Body/Source.cs). |
 | Optional child membership, subscriptions and sibling projection | [Hierarchy](../src/Hierarchy.cs), configured by `Schema<TRow>.Hierarchy`. |
 | Displayed sequence and collection reconciliation | [Body.View](../src/Body/View.cs). |
-| Effective column geometry and horizontal offset | [ResolvedLayout](../src/ResolvedLayout.cs). |
+| Effective column geometry | [ResolvedLayout](../src/ResolvedLayout.cs). |
 | Shared header and row arrangement | [CellsPanel](../src/CellsPanel.cs). |
 | Hierarchy cell indentation and disclosure | [Body.Branch](../src/Body/Branch.cs), created only for the hierarchy column. |
 | Selection, current item, anchor, and logical focus | [SelectionState](../src/SelectionState.cs). |
@@ -39,8 +39,8 @@ large collapsed branch.
 ## Rendering and interaction
 
 The body uses a virtualized `ListView`; the header is a sibling. Header and rows
-use the same panel and resolved geometry. The control owns the horizontal offset;
-the body's native scroller owns the vertical axis. Wrapping that list in another
+use the same panel and resolved geometry. The body's native scroller owns the
+vertical axis, and nothing scrolls sideways. Wrapping that list in another
 vertical scroller or calculating column positions in a second place breaks those
 responsibilities.
 

@@ -2,7 +2,6 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Globalization;
 using System.Text.Json;
-using System.Windows.Input;
 using Syno.TinyTorrent.Models;
 using Syno.TinyTorrent.Services;
 
@@ -11,213 +10,270 @@ namespace Syno.TinyTorrent.Views;
 public sealed class Schedule : INotifyPropertyChanged
 {
     private readonly Preferences _owner;
-    private Exception? _scheduleError;
-    private bool _savingSchedule;
-    private int? _editingIndex;
-    private SchedulePeriod[]? _submittedSchedule;
-    private PeriodDraft? _draft;
-    private bool _invalidPeriod;
-    private bool _duplicatePeriod;
-    public SchedulePeriod? Selection { get; private set; }
+    private Task? _saving;
+    private Task? _changing;
+    private (int Index, PeriodDraft Draft)? _open;
+    private Refusal? _refusal;
 
-    public ObservableCollection<SchedulePeriod> Periods { get; } = [];
-    public PeriodDraft? Draft => _draft;
-    public bool HasDraft => _draft?.HasChanges == true;
-    public bool IsPending => _savingSchedule;
+    public ReadOnlyCollection<SchedulePeriod> Periods { get; private set; } = new([]);
+    public PeriodDraft? Draft => _open?.Draft;
+    public SchedulePeriod? OpenPeriod => _open is { } open && open.Index < Periods.Count ? Periods[open.Index] : null;
+    // The open period holds input the schedule does not hold yet: a change
+    // being saved, or one that failed.
+    public bool HasDraft => Draft is { } draft && OpenPeriod is { } open && draft.Period?.Matches(open) != true;
+    public bool IsPending => _saving is not null || _changing is not null;
     public bool CanEdit => _owner.CanEdit;
-    public bool CanSchedule => CanEdit && !_savingSchedule;
-    public bool IsEditing => _draft is not null;
-    public bool HasPeriods => Periods.Count > 0;
+    public bool CanSchedule => CanEdit && !IsPending;
+    public bool IsOpen => _open is not null;
     public bool HasAlternative => Periods.Any(period => period.Mode == ScheduleMode.Alternative);
-    public bool HasPaused => Periods.Any(period => period.Mode == ScheduleMode.Paused);
-    public string PeriodSummary => Text.Format("preferences", "period_count", Periods.Count);
-    public string EditorTitle => Text.Get("preferences", _editingIndex is null ? "new_period" : "edit_title");
-    public string WeekStatus => Text.Get("preferences", Enabled.IsOn ? "schedule_active" : "schedule_inactive");
-    public string AlternativeSummary => Text.Format("preferences", "period_group", FormatMode(ScheduleMode.Alternative), Periods.Count(period => period.Mode == ScheduleMode.Alternative));
-    public string PausedSummary => Text.Format("preferences", "period_group", FormatMode(ScheduleMode.Paused), Periods.Count(period => period.Mode == ScheduleMode.Paused));
-    public bool ShowsSelection => Selection is not null && !IsEditing;
-    internal SchedulePeriod? Preview => _draft is { Start: not null, End: not null } draft && draft.Days.Any(day => day.IsChecked)
-        ? new SchedulePeriod(this, draft) : null;
-    public bool HasScheduleError => _scheduleError is not null || _invalidPeriod || _duplicatePeriod;
-    public string ScheduleMessage => _duplicatePeriod ? Text.Get("preferences", "duplicate_period") :
-        _invalidPeriod ? Text.Get("preferences", "invalid_period") :
-        _scheduleError is null ? string.Empty : Text.Error(_scheduleError);
+    public bool HasScheduleError => _refusal is not null;
+    public string DaysMessage => _refusal?.Reason == RefusalReason.InvalidPeriod ? Text.Get("preferences", "invalid_period") : string.Empty;
+    public string ScheduleMessage => _refusal switch
+    {
+        { Reason: RefusalReason.DuplicatePeriod } => Text.Get("preferences", "duplicate_period"),
+        { Failure: { } failure } => Text.Error(failure),
+        _ => string.Empty
+    };
+    public string PeriodMessage => IsOpen ? ScheduleMessage : string.Empty;
+    public string PeriodsMessage => IsOpen ? string.Empty : ScheduleMessage;
     public Strings Text => _owner.Text;
-    public Preference Enabled { get; }
-    public string OnText => _owner.OnText;
-    public string OffText => _owner.OffText;
-    public ICommand AddPeriod { get; }
-    public ICommand SavePeriod { get; }
-    public ICommand CancelPeriod { get; }
     public event PropertyChangedEventHandler? PropertyChanged;
     public event EventHandler? TextChanged;
-    public event EventHandler? WeekChanged;
 
-    internal Schedule(Preferences owner)
-    {
-        _owner = owner;
-        Enabled = new(owner, "schedule_enabled", PreferenceKind.Boolean, PreferenceSection.Schedule);
-        AddPeriod = new Command(() => { Edit(null); return Task.CompletedTask; }, () => CanSchedule && !IsEditing);
-        SavePeriod = new Command(CommitPeriod, () => CanSchedule && IsEditing);
-        CancelPeriod = new Command(() => { CancelDraft(); return Task.CompletedTask; }, () => IsEditing && !_savingSchedule);
-    }
+    private sealed record Refusal(RefusalReason Reason, Exception? Failure = null);
 
-    public Task Toggle(bool value) => _owner.Toggle(Enabled, value);
+    internal Schedule(Preferences owner) => _owner = owner;
 
     internal void Apply(JsonElement schedule)
     {
         var values = schedule.EnumerateArray().Select(value => new SchedulePeriod(this, value)).ToArray();
-        if (!_savingSchedule && _submittedSchedule is { } submitted && values.Length == submitted.Length &&
-            values.Where((period, index) => !period.Matches(submitted[index])).Any() == false)
+        if (Periods.Count == values.Length && Periods.Zip(values).All(pair => pair.First.Matches(pair.Second))) return;
+        // Adding or removing a period invalidates the open period's position.
+        if (Periods.Count != values.Length)
         {
-            if (_draft is { } draft)
-            {
-                _editingIndex ??= submitted.Length - 1;
-                if (draft.Start is not null && draft.End is not null && new SchedulePeriod(this, draft).Matches(submitted[_editingIndex.Value]))
-                    CancelDraft();
-            }
-            _submittedSchedule = null;
+            _open = null;
+            _refusal = null;
         }
-        if (Periods.Count == values.Length && !Periods.Where((period, index) => !period.Matches(values[index])).Any()) return;
-        Selection = values.FirstOrDefault(period => Selection is { } selected && period.Matches(selected));
-        Periods.Clear();
-        foreach (var period in values) Periods.Add(period);
+        Periods = Array.AsReadOnly(values);
         Refresh();
     }
 
-    internal void Edit(SchedulePeriod? period)
+    internal Task Open(SchedulePeriod period)
     {
-        if (!CanSchedule || IsEditing) return;
-        if (period is not null && !Periods.Contains(period)) return;
-        BeginEdit(period);
-        _scheduleError = null;
-        _invalidPeriod = false;
-        _duplicatePeriod = false;
+        var index = Periods.IndexOf(period);
+        if (index < 0 || (period == OpenPeriod && !IsPending)) return Task.CompletedTask;
+        var count = Periods.Count;
+        return ChangePeriod(() =>
+        {
+            if (count == Periods.Count && _open?.Index != index) Edit(index);
+            return Task.CompletedTask;
+        });
+    }
+
+    private void Edit(int index)
+    {
+        _open = (index, new PeriodDraft(this, Periods[index]));
+        _refusal = null;
         Refresh();
     }
 
-    private void BeginEdit(SchedulePeriod? period)
+    public Task Close() => ChangePeriod(() =>
     {
-        _editingIndex = period is null ? null : Periods.IndexOf(period);
-        _draft = new PeriodDraft(this, period);
-        Selection = period;
+        ClearDraft();
+        return Task.CompletedTask;
+    });
+
+    internal Task Close(SchedulePeriod period)
+    {
+        if (!IsPending && period != OpenPeriod) return Task.CompletedTask;
+        var index = Periods.IndexOf(period);
+        if (index < 0) return Task.CompletedTask;
+        var count = Periods.Count;
+        return ChangePeriod(() =>
+        {
+            if (count == Periods.Count && _open?.Index == index) ClearDraft();
+            return Task.CompletedTask;
+        });
     }
 
-    internal void Select(SchedulePeriod? period)
+    private void ClearDraft()
     {
-        if (IsEditing || (period is not null && !Periods.Contains(period))) return;
-        Selection = period;
+        if (_open is null) return;
+        _open = null;
+        _refusal = null;
         Refresh();
     }
 
-    internal void CreatePeriod(int day, PeriodSpan span)
+    internal SchedulePeriod NewPeriod(IReadOnlyList<int> days, PeriodSpan span) => new(this, days, span, ScheduleMode.Alternative);
+
+    internal Task Add() => Create(NewPeriod([0, 1, 2, 3, 4], new PeriodSpan(9 * 60, 8 * 60)));
+
+    internal Task CreatePeriod(int day, PeriodSpan span) => Create(NewPeriod([day], span));
+
+    // A new period saves at once and opens. When the schedule already holds
+    // the same period, that one opens instead.
+    private Task Create(SchedulePeriod period)
     {
-        if (!CanSchedule || IsEditing) return;
-        Edit(null);
-        if (_draft is not { } draft) return;
-        foreach (var choice in draft.Days) choice.IsChecked = choice.Index == day;
-        draft.SetSpan(span);
+        if (!CanEdit) return Task.CompletedTask;
+        return ChangePeriod(async () =>
+        {
+            if (!_owner.CanSave) return;
+            ClearDraft();
+            var created = Periods.FirstOrDefault(value => value.Matches(period));
+            if (created is null)
+            {
+                if (!await SubmitPeriod(period, null)) return;
+                created = Periods[^1];
+            }
+            Edit(Periods.IndexOf(created));
+        });
     }
 
     internal async Task Reschedule(SchedulePeriod period, PeriodSpan span)
     {
-        if (!CanSchedule || IsEditing || !Periods.Contains(period) || period.Span == span) return;
-        var changed = period.WithSpan(span);
-        if (await SubmitPeriod(changed, Periods.IndexOf(period))) return;
-        var current = Periods.FirstOrDefault(candidate => candidate.Matches(period) || candidate.Matches(changed));
-        if (current is null) return;
-        BeginEdit(current);
-        _draft?.SetSpan(span);
-        Refresh();
+        if (!CanSchedule) return;
+        await Open(period);
+        if (OpenPeriod == period) Draft?.SetSpan(span);
     }
 
-    public async Task<bool> CommitPeriod()
+    // Each change to the open period applies at once. A change made during a
+    // save applies when that save ends.
+    internal async Task ApplyDraft()
     {
-        if (_draft is not { } draft) return true;
-        if (!_owner.CanSave || _savingSchedule) return false;
-        if (!draft.Days.Any(day => day.IsChecked) || draft.Start is null || draft.End is null)
+        while (_saving is null && Draft is { } draft && OpenPeriod is { } open)
         {
-            _invalidPeriod = true;
-            Refresh();
-            return false;
+            _refusal = null;
+            if (draft.Period is not { } period)
+            {
+                _refusal = new(RefusalReason.InvalidPeriod);
+                Refresh();
+                return;
+            }
+            if (period.Matches(open))
+            {
+                Refresh();
+                return;
+            }
+            if (!await SubmitPeriod(period, Periods.IndexOf(open))) return;
         }
-        var period = new SchedulePeriod(this, draft);
-        if (!await SubmitPeriod(period, _editingIndex)) return false;
-        CancelDraft();
-        return true;
+    }
+
+    // Leaving Settings keeps a period the schedule did not take on screen
+    // with its error, so the person never leaves believing it runs; a
+    // duplicate closes because the schedule already holds it. A departure
+    // waits for the save in progress and applies a change made during it, so
+    // a refusal never lands on a hidden page.
+    internal async Task<bool> Depart()
+    {
+        await Settle();
+        if (!HasDraft || !_owner.CanSave) return true;
+        if (_refusal?.Reason == RefusalReason.DuplicatePeriod)
+        {
+            ClearDraft();
+            return true;
+        }
+        return _refusal?.Reason != RefusalReason.InvalidPeriod && _refusal?.Failure is not CommandFailure;
+    }
+
+    private async Task Settle()
+    {
+        // Closing or switching periods must drain valid input typed during a
+        // save before the editor that holds it is replaced.
+        while (true)
+        {
+            if (_saving is { } saving) await saving;
+            else if (HasDraft && _refusal is null && _owner.CanSave) await ApplyDraft();
+            else return;
+        }
+    }
+
+    // Changes run one at a time in the order asked for, so a click made
+    // during another change still acts. Period positions survive an edit, but
+    // not another Add or Remove.
+    private async Task ChangePeriod(Func<Task> change)
+    {
+        while (_changing is { } running) await running;
+        var changed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _changing = changed.Task;
+        Refresh();
+        try
+        {
+            await Settle();
+            await change();
+        }
+        finally
+        {
+            _changing = null;
+            changed.SetResult();
+            Refresh();
+        }
     }
 
     private async Task<bool> SubmitPeriod(SchedulePeriod period, int? index)
     {
-        _duplicatePeriod = Periods.Where((_, candidate) => candidate != index).Any(value => value.Matches(period));
-        if (_duplicatePeriod) { Refresh(); return false; }
+        if (Periods.Where((_, candidate) => candidate != index).Any(value => value.Matches(period)))
+        {
+            _refusal = new(RefusalReason.DuplicatePeriod);
+            Refresh();
+            return false;
+        }
         var periods = Periods.ToList();
         if (index is { } position) periods[position] = period;
         else periods.Add(period);
-        if (!await SubmitSchedule(periods)) return false;
-        Selection = Periods[index ?? (Periods.Count - 1)];
-        Refresh();
-        return true;
+        return await SubmitSchedule(periods);
     }
 
-    internal async Task Remove(SchedulePeriod period)
+    // A save in progress replaces every period, so the period to remove is
+    // found again by its position.
+    internal Task Remove(SchedulePeriod period)
     {
-        if (!CanSchedule || IsEditing) return;
-        await SubmitSchedule(Periods.Where(value => value != period).ToArray());
+        if (!CanEdit) return Task.CompletedTask;
+        var index = Periods.IndexOf(period);
+        if (index < 0) return Task.CompletedTask;
+        var count = Periods.Count;
+        return ChangePeriod(async () =>
+        {
+            if (!_owner.CanSave || count != Periods.Count) return;
+            ClearDraft();
+            await SubmitSchedule(Periods.Where((_, position) => position != index).ToArray());
+        });
     }
 
     private async Task<bool> SubmitSchedule(IEnumerable<SchedulePeriod> periods)
     {
-        _savingSchedule = true;
-        _scheduleError = null;
-        _invalidPeriod = false;
-        _duplicatePeriod = false;
+        var saved = new TaskCompletionSource();
+        _saving = saved.Task;
+        _refusal = null;
         Refresh();
         try
         {
-            _submittedSchedule = periods.ToArray();
-            var schedule = _submittedSchedule.Select(period => new { days = period.Days, start = period.Start, end = period.End,
+            var schedule = periods.Select(period => new { days = period.Days, start = period.Start, end = period.End,
                 mode = period.Mode.ToString().ToLowerInvariant() }).ToArray();
             await _owner.Save(new { schedule });
             Apply(JsonSerializer.SerializeToElement(schedule));
-            _submittedSchedule = null;
             return true;
         }
-        catch (Exception error) { _scheduleError = error; return false; }
-        finally { _savingSchedule = false; Refresh(); }
-    }
-
-    public void CancelDraft()
-    {
-        _draft = null;
-        _editingIndex = null;
-        _submittedSchedule = null;
-        _scheduleError = null;
-        _invalidPeriod = false;
-        _duplicatePeriod = false;
-        Refresh();
+        catch (Exception error)
+        {
+            _refusal = new(RefusalReason.SaveFailed, error);
+            return false;
+        }
+        finally
+        {
+            _saving = null;
+            saved.SetResult();
+            Refresh();
+        }
     }
 
     internal void RefreshText()
     {
         Refresh();
-        _draft?.Refresh();
+        Draft?.Refresh();
         TextChanged?.Invoke(this, EventArgs.Empty);
     }
 
-    internal void Refresh()
-    {
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
-        foreach (var period in Periods) period.Refresh();
-        foreach (Command command in new[] { AddPeriod, SavePeriod, CancelPeriod }) command.Refresh();
-        WeekChanged?.Invoke(this, EventArgs.Empty);
-    }
-
-    internal void RefreshDraft()
-    {
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasDraft)));
-        WeekChanged?.Invoke(this, EventArgs.Empty);
-    }
+    internal void Refresh() => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
 
     internal IEnumerable<ScheduleRange> Ranges(int day, SchedulePeriod? original = null, SchedulePeriod? preview = null)
     {
@@ -245,9 +301,33 @@ public sealed class Schedule : INotifyPropertyChanged
         if (previous is not null) yield return previous;
     }
 
+    // When the scheduled mode next changes after the given local time: the
+    // time alone when that is today, or null when the mode never changes.
+    internal string? NextChange(DateTime now)
+    {
+        var today = Weekday(now);
+        var minute = now.Hour * 60 + now.Minute;
+        ScheduleMode? mode = null;
+        for (var offset = 0; offset <= 7; offset++)
+        {
+            var day = (today + offset) % 7;
+            foreach (var range in Ranges(day))
+            {
+                if (offset == 0 && range.End <= minute) continue;
+                if (mode is null) { mode = range.Mode; continue; }
+                if (offset == 7 && range.Start > minute) return null;
+                if (range.Mode == mode) continue;
+                return offset == 0 ? Time(range.Start) : Text.Format("transfer_limits", "day_time", ShortDay(day), Time(range.Start));
+            }
+        }
+        return null;
+    }
+
     internal string Day(int index) => Text.Get("preferences", new[] { "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday" }[index]);
     internal string ShortDay(int index) => Text.Get("preferences", new[] { "monday_short", "tuesday_short", "wednesday_short", "thursday_short", "friday_short", "saturday_short", "sunday_short" }[index]);
-    internal string FormatMode(ScheduleMode mode) => Text.Get("preferences", mode.ToString().ToLowerInvariant());
+    // Time outside the periods has the standard limits.
+    internal string FormatMode(ScheduleMode mode) =>
+        Text.Get("preferences", mode == ScheduleMode.Normal ? "speed" : mode.ToString().ToLowerInvariant());
     internal string DescribeDays(IReadOnlyList<int> days)
     {
         if (days.Count == 7) return Text.Get("preferences", "every_day");
@@ -260,10 +340,12 @@ public sealed class Schedule : INotifyPropertyChanged
         }
         return string.Join(", ", groups);
     }
+    // The schedule numbers days from Monday, as the engine does.
+    internal static int Weekday(DateTime time) => ((int)time.DayOfWeek + 6) % 7;
     internal static string Time(int minutes) => DateTime.Today.AddMinutes(minutes).ToString("t", CultureInfo.CurrentCulture);
 }
 
-public sealed class SchedulePeriod : INotifyPropertyChanged
+public sealed class SchedulePeriod
 {
     private readonly Schedule _owner;
     public IReadOnlyList<int> Days { get; } = [];
@@ -271,33 +353,20 @@ public sealed class SchedulePeriod : INotifyPropertyChanged
     public int End { get; }
     public ScheduleMode Mode { get; }
     internal PeriodSpan Span => new(Start, End > Start ? End - Start : 1440 - Start + End);
-    public string Summary => _owner.Text.Format("preferences", "period_summary", _owner.DescribeDays(Days), TimeLabel);
     public string TimeRange => Start == 0 && End == 0 ? _owner.Text.Get("preferences", "time_all_day") :
         _owner.Text.Format("preferences", End <= Start ? "time_overnight" : "time_range",
             Schedule.Time(Start), Schedule.Time(End));
-    public string TimeLabel => _owner.Text.Format("preferences", "time_summary", TimeRange,
-        Span.Duration < 60 ? _owner.Text.Format("preferences", "duration_minutes", Span.Duration) :
+    public string Length => Span.Duration < 60 ? _owner.Text.Format("preferences", "duration_minutes", Span.Duration) :
         Span.Duration % 60 == 0 ? _owner.Text.Format("preferences", "duration_hours", Span.Duration / 60) :
-        _owner.Text.Format("preferences", "duration_both", Span.Duration / 60, Span.Duration % 60));
-    public string ModeLabel => _owner.FormatMode(Mode);
+        _owner.Text.Format("preferences", "duration_both", Span.Duration / 60, Span.Duration % 60);
+    public string TimeLabel => _owner.Text.Format("preferences", "time_summary", TimeRange, Length);
     public string Description => Start == 0 && End == 0
         ? _owner.Text.Format("preferences", "period_all_day", _owner.DescribeDays(Days), _owner.FormatMode(Mode))
         : _owner.Text.Format("preferences", End <= Start ? "period_overnight" : "period", _owner.DescribeDays(Days),
             Schedule.Time(Start), Schedule.Time(End), _owner.FormatMode(Mode));
-    public string EditText => _owner.Text.Get("preferences", "edit");
-    public string RemoveText => _owner.Text.Get("preferences", "remove");
-    public string EditName => _owner.Text.Format("preferences", "edit_period", Description);
     public string RemoveName => _owner.Text.Format("preferences", "remove_period", Description);
-    public ICommand Edit { get; }
-    public ICommand Remove { get; }
-    public event PropertyChangedEventHandler? PropertyChanged;
 
-    private SchedulePeriod(Schedule owner)
-    {
-        _owner = owner;
-        Edit = new Command(() => { owner.Edit(this); return Task.CompletedTask; }, () => owner.CanSchedule && !owner.IsEditing);
-        Remove = new Command(() => owner.Remove(this), () => owner.CanSchedule && !owner.IsEditing);
-    }
+    private SchedulePeriod(Schedule owner) => _owner = owner;
     internal SchedulePeriod(Schedule owner, JsonElement value) : this(owner)
     {
         Days = value.GetProperty("days").EnumerateArray().Select(day => day.GetInt32()).Order().ToArray();
@@ -315,7 +384,7 @@ public sealed class SchedulePeriod : INotifyPropertyChanged
         Days = draft.Days.Where(day => day.IsChecked).Select(day => day.Index).ToArray();
         Start = (int)draft.Start.GetValueOrDefault().TotalMinutes;
         End = (int)draft.End.GetValueOrDefault().TotalMinutes;
-        Mode = draft.IsPaused ? ScheduleMode.Paused : ScheduleMode.Alternative;
+        Mode = draft.Mode;
     }
     internal SchedulePeriod(Schedule owner, IReadOnlyList<int> days, PeriodSpan span, ScheduleMode mode) : this(owner)
     {
@@ -331,22 +400,15 @@ public sealed class SchedulePeriod : INotifyPropertyChanged
         if (Start + Span.Duration > 1440 && Days.Contains((day + 6) % 7))
             yield return new(Start - 1440, Start + Span.Duration - 1440, Mode, this);
     }
-    internal void Refresh()
-    {
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
-        ((Command)Edit).Refresh();
-        ((Command)Remove).Refresh();
-    }
     internal bool Matches(SchedulePeriod period) => Days.SequenceEqual(period.Days) && Start == period.Start && End == period.End && Mode == period.Mode;
 }
 
 public sealed class PeriodDraft : INotifyPropertyChanged
 {
     private readonly Schedule _owner;
-    private readonly SchedulePeriod _original;
     private TimeSpan? _start;
     private TimeSpan? _end;
-    private bool _paused;
+    private ScheduleMode _mode;
     public DayChoice[] Days { get; }
     public TimeSpan? Start
     {
@@ -358,14 +420,31 @@ public sealed class PeriodDraft : INotifyPropertyChanged
         get => _end;
         set { if (_end == value) return; _end = value; Changed(); }
     }
-    public bool IsPaused
+    internal ScheduleMode Mode
     {
-        get => _paused;
-        set { if (_paused == value) return; _paused = value; Changed(); }
+        get => _mode;
+        set { if (_mode == value) return; _mode = value; Changed(); }
     }
-    public bool HasChanges => Start?.TotalMinutes != _original.Start || End?.TotalMinutes != _original.End ||
-        IsPaused != (_original.Mode == ScheduleMode.Paused) || !Days.Where(day => day.IsChecked).Select(day => day.Index).SequenceEqual(_original.Days);
+    public int ModeIndex
+    {
+        get => Mode == ScheduleMode.Paused ? 1 : 0;
+        set { if (value >= 0) Mode = value == 1 ? ScheduleMode.Paused : ScheduleMode.Alternative; }
+    }
+    // The period these values describe, or null while a day or a time is missing.
+    internal SchedulePeriod? Period => Start is not null && End is not null && Days.Any(day => day.IsChecked) ? new SchedulePeriod(_owner, this) : null;
+    public string Duration => Start is not null && End is not null
+        ? _owner.Text.Format("preferences", "duration", new SchedulePeriod(_owner, this).Length) : string.Empty;
     public event PropertyChangedEventHandler? PropertyChanged;
+
+    internal PeriodDraft(Schedule owner, SchedulePeriod period)
+    {
+        _owner = owner;
+        Days = Enumerable.Range(0, 7).Select(index => new DayChoice(this, index, period.Days.Contains(index))).ToArray();
+        _start = TimeSpan.FromMinutes(period.Start);
+        _end = TimeSpan.FromMinutes(period.End);
+        _mode = period.Mode;
+    }
+
     internal void SetSpan(PeriodSpan span)
     {
         var start = TimeSpan.FromMinutes(span.Start);
@@ -379,22 +458,11 @@ public sealed class PeriodDraft : INotifyPropertyChanged
     internal void Changed()
     {
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
-        _owner.RefreshDraft();
+        _ = _owner.ApplyDraft();
     }
 
-    public string TimeLabel => Start is not null && End is not null ? new SchedulePeriod(_owner, this).TimeLabel : string.Empty;
-
-    internal PeriodDraft(Schedule owner, SchedulePeriod? period)
-    {
-        _owner = owner;
-        _original = period ?? new SchedulePeriod(owner, [0, 1, 2, 3, 4, 5, 6], new PeriodSpan(9 * 60, 8 * 60), ScheduleMode.Alternative);
-        Days = Enumerable.Range(0, 7).Select(index => new DayChoice(this, index,
-            _original.Days.Contains(index))).ToArray();
-        _start = TimeSpan.FromMinutes(_original.Start);
-        _end = TimeSpan.FromMinutes(_original.End);
-        _paused = _original.Mode == ScheduleMode.Paused;
-    }
     internal string Day(int index) => _owner.Day(index);
+    internal string ShortDay(int index) => _owner.ShortDay(index);
     internal void Refresh()
     {
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
@@ -407,6 +475,7 @@ public sealed class DayChoice(PeriodDraft owner, int index, bool isChecked) : IN
     private bool _checked = isChecked;
     public int Index { get; } = index;
     public string Label => owner.Day(Index);
+    public string Abbreviation => owner.ShortDay(Index);
     public string AutomationId => "PeriodDay" + Index;
     public bool IsChecked
     {

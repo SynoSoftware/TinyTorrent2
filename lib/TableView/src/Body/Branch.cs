@@ -41,8 +41,21 @@ internal sealed partial class Branch : Grid
         Children.Add(_expander);
         SetColumn(content, 1);
         Children.Add(content);
-        Loaded += (_, _) => { _table.RowVisualsChanged += OnRowsChanged; Refresh(); };
-        Unloaded += (_, _) => _table.RowVisualsChanged -= OnRowsChanged;
+        // Unloaded is ignored while the branch is still in the tree, so Loaded
+        // can repeat; see Table's OnUnloaded.
+        Loaded += (_, _) =>
+        {
+            _table.RowVisualsChanged -= OnRowsChanged;
+            _table.RowVisualsChanged += OnRowsChanged;
+            Refresh();
+        };
+        Unloaded += (_, _) =>
+        {
+            if (!IsLoaded)
+            {
+                _table.RowVisualsChanged -= OnRowsChanged;
+            }
+        };
         RegisterPropertyChangedCallback(FlowDirectionProperty, (_, _) => Refresh());
         Refresh();
     }

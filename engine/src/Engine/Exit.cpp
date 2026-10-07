@@ -1,4 +1,5 @@
 #include "Engine/State.h"
+#include <algorithm>
 
 namespace tt
 {
@@ -74,7 +75,8 @@ void Engine::State::Stop()
             }
         }
         bool unknown = (relocation && relocation->phase == RelocationPhase::Unknown) ||
-            (deletion && deletion->phase == DeletionPhase::Unknown);
+            std::any_of(deletions.begin(), deletions.end(),
+                [](auto const& deletion) { return deletion.phase == DeletionPhase::Unknown; });
         if (!unknown)
         {
             return;
@@ -116,7 +118,7 @@ void Engine::State::Stop()
         {
             for (auto const& [id, torrent] : torrents)
             {
-                if (!bool(torrent.handle.flags() & lt::torrent_flags::paused))
+                if (!torrent.restore && !bool(torrent.handle.flags() & lt::torrent_flags::paused))
                 {
                     pausing.push_back(torrent.handle);
                 }

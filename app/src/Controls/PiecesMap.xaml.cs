@@ -24,6 +24,8 @@ public sealed partial class PiecesMap : UserControl
     private const int Gap = 4;
     private const int Band = 8;
     private const int Gutter = 6;
+    // The hatch and cross line width, matching the legend's StrokeThickness.
+    private const double Stroke = 1.5;
     private Pieces? _data;
     private Raster? _layout;
     private Strings? _text;
@@ -53,6 +55,8 @@ public sealed partial class PiecesMap : UserControl
     private Run[] Labels() => [UnavailableLabel, RareLabel, CommonLabel, MissingLabel, DownloadingLabel, VerifiedLabel];
     private Run[] Totals() => [UnavailableCount, RareCount, CommonCount, MissingCount, DownloadingCount, VerifiedCount];
     private FontIcon[] Signs() => [InformationalSign, SuccessSign, WarningSign, ErrorSign];
+    private StackPanel[] DetailEntries() => [DetailUnavailable, DetailRare, DetailCommon, DetailMissing, DetailDownloading, DetailVerified];
+    private TextBlock[] DetailLabels() => [DetailUnavailableLabel, DetailRareLabel, DetailCommonLabel, DetailMissingLabel, DetailDownloadingLabel, DetailVerifiedLabel];
 
     internal void Show(Pieces? data, Strings text)
     {
@@ -69,12 +73,13 @@ public sealed partial class PiecesMap : UserControl
         _language = text.Language;
         if (changed || languageChanged)
         {
-            var (summary, severity) = data?.Summary(text) ?? (text.Get("pieces", "metadata"), InfoBarSeverity.Informational);
-            Summary.Text = summary;
-            ToolTipService.SetToolTip(Summary, summary);
+            var conclusion = Conclude(text);
+            Answer.Text = conclusion.Answer;
+            ToolTipService.SetToolTip(Status, conclusion.Reason);
+            AutomationProperties.SetHelpText(Answer, conclusion.Reason);
             var signs = Signs();
             for (var index = 0; index < signs.Length; index++)
-                signs[index].Visibility = index == (int)severity ? Visibility.Visible : Visibility.Collapsed;
+                signs[index].Visibility = index == (int)conclusion.Severity ? Visibility.Visible : Visibility.Collapsed;
             var counts = data?.Counts(0, data.Count);
             var labels = Labels();
             var totals = Totals();
@@ -83,7 +88,6 @@ public sealed partial class PiecesMap : UserControl
                 labels[(int)kind].Text = Pieces.Name(text, kind);
                 totals[(int)kind].Text = (counts?[(int)kind] ?? 0).ToString("N0", CultureInfo.CurrentCulture);
             }
-            MeasureLegend();
             AutomationProperties.SetName(this, text.Get("inspector", "pieces"));
             Refresh();
         }
@@ -92,7 +96,6 @@ public sealed partial class PiecesMap : UserControl
 
     private void OnLoaded(object sender, RoutedEventArgs args)
     {
-        MeasureLegend();
         _root = XamlRoot;
         _root.Changed += OnRoot;
         QueueDraw();
@@ -106,21 +109,6 @@ public sealed partial class PiecesMap : UserControl
     }
     private void OnRoot(XamlRoot sender, XamlRootChangedEventArgs args) => QueueDraw();
     private void OnSize(object sender, SizeChangedEventArgs args) => QueueDraw();
-
-    private void MeasureLegend()
-    {
-        if (Legend.ItemsPanelRoot is not WrapGrid panel) return;
-        var width = 0.0;
-        var height = 0.0;
-        foreach (FrameworkElement item in Legend.Items)
-        {
-            item.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-            width = Math.Max(width, item.DesiredSize.Width);
-            height = Math.Max(height, item.DesiredSize.Height);
-        }
-        panel.ItemWidth = Math.Ceiling(width);
-        panel.ItemHeight = Math.Ceiling(height);
-    }
 
     private void QueueDraw()
     {
@@ -188,7 +176,12 @@ public sealed partial class PiecesMap : UserControl
         var columns = Math.Min(maxColumns, count);
         if (columns >= Band) columns = Math.Min(maxColumns, (columns + Band - 1) / Band * Band);
         var rows = (count + columns - 1) / columns;
-        var mapWidth = Extent(columns);
+        // A full row widens the gutters between groups by the width left over
+        // after the last whole square, so the map ends at the right edge.
+        var gutters = (columns - 1) / Band;
+        var spare = count >= maxColumns && gutters > 0 ? (int)space.Size.Width - Extent(columns) : 0;
+        int Left(int column) => Start(column) + (spare == 0 ? 0 : spare * (column / Band) / gutters);
+        var mapWidth = Left(columns - 1) + Square;
         var mapHeight = Extent(rows);
         var pixelWidth = (int)Math.Ceiling(mapWidth * scale);
         var pixelHeight = (int)Math.Ceiling(mapHeight * scale);
@@ -208,7 +201,7 @@ public sealed partial class PiecesMap : UserControl
                 if (counts[kind] > counts[dominant]) dominant = kind;
             var mixed = counts.Count(value => value > 0) > 1;
             var hidesUnavailable = counts[(int)PieceKind.Unavailable] > 0 && dominant != (int)PieceKind.Unavailable;
-            var x = Start(index % columns);
+            var x = Left(index % columns);
             // Mirror positions so a shorter last group stays at the reading end.
             if (rtl) x = mapWidth - x - Square;
             var y = Start(index / columns);
@@ -227,9 +220,8 @@ public sealed partial class PiecesMap : UserControl
                     var color = (PieceKind)dominant switch
                     {
                         PieceKind.Downloading when (rtl ? dx >= Square * (1 - share) : dx < Square * share) => palette.Received,
-                        PieceKind.Rare when Math.Abs((dx + dy) % 5 - 1) < 0.75 => palette.Hatch,
-                        PieceKind.Unavailable when Math.Min(dx, dy) > 4 && Math.Max(dx, dy) < Square - 4
-                            && (Math.Abs(dx - dy) < 0.75 || Math.Abs(dx + dy - Square) < 0.75) => palette.Cross,
+                        PieceKind.Rare => Mix(palette.Fills[dominant], palette.Hatch, Cover(HatchDistance(dx, dy), Stroke / 2, scale)),
+                        PieceKind.Unavailable => Mix(palette.Fills[dominant], palette.Cross, Cover(CrossDistance(dx, dy), Stroke / 2, scale)),
                         _ => palette.Fills[dominant]
                     };
                     if (edge < 1 && palette.Outline.A > 0) color = palette.Outline;
@@ -256,7 +248,29 @@ public sealed partial class PiecesMap : UserControl
     }
 
     // Coverage of a 2-DIP-radius corner mark whose centre is the given offset away.
-    private static double Dot(double x, double y, double scale) => Math.Clamp((2 - Math.Sqrt(x * x + y * y)) * scale + 0.5, 0, 1);
+    private static double Dot(double x, double y, double scale) => Cover(Math.Sqrt(x * x + y * y), 2, scale);
+
+    // Coverage of a pixel the given distance in DIPs from a mark's centre line or point, blending one
+    // pixel across the mark's edge so marks are drawn as smooth as XAML shapes.
+    private static double Cover(double distance, double radius, double scale) => Math.Clamp((radius - distance) * scale + 0.5, 0, 1);
+
+    // Distance in DIPs to the nearest hatch line, the legend's lines x + y = 1 (mod 5).
+    private static double HatchDistance(double x, double y)
+    {
+        var offset = ((x + y - 1) % 5 + 5) % 5;
+        return Math.Min(offset, 5 - offset) / Math.Sqrt(2);
+    }
+
+    // Distance in DIPs to the legend's cross: both diagonals from 4 to Square - 4, with round ends.
+    private static double CrossDistance(double x, double y)
+    {
+        // Signed distances from the two full diagonals; each is also the position along the other.
+        var falling = (x - y) / Math.Sqrt(2);
+        var rising = (x + y - Square) / Math.Sqrt(2);
+        var half = (Square / 2 - 4) * Math.Sqrt(2);
+        double Segment(double offset, double position) => Math.Sqrt(offset * offset + Math.Pow(Math.Max(0, Math.Abs(position) - half), 2));
+        return Math.Min(Segment(falling, rising), Segment(rising, falling));
+    }
 
     private static Color Mix(Color under, Color over, double amount) => amount <= 0 ? under : Color.FromArgb(
         (byte)(under.A + (over.A - under.A) * amount), (byte)(under.R + (over.R - under.R) * amount),
@@ -345,7 +359,7 @@ public sealed partial class PiecesMap : UserControl
             PieceCount.Text = string.Empty;
             return;
         }
-        var size = text.FormatCount("pieces", "size", data.Count, text.Bytes(data.PieceSize));
+        var size = text.FormatCount("pieces", "size", data.Count, text.Bytes(data.PieceSize), data.Counts(0, data.Count)[(int)PieceKind.Verified]);
         if (_layout is not { } layout || layout.Blocks.Length == data.Count)
         {
             PieceCount.Text = size;
@@ -362,14 +376,10 @@ public sealed partial class PiecesMap : UserControl
 
     private int Selected() => _selectedPiece < 0 || _layout is not { } layout ? -1 : Array.FindIndex(layout.Blocks, block => block.End > _selectedPiece);
 
-    // Clear drops the layout whenever Show drops the data, and the text arrives with the first data.
-    private (string Range, string Facts) Describe(Block block) => _data!.Describe(_text!, block.First, block.End);
+    private Conclusion Conclude(Strings text) => _data?.Conclude(text) ?? Pieces.Waiting(text);
 
-    private string Detail(Block block)
-    {
-        var (range, facts) = Describe(block);
-        return _text!.Format("pieces", "detail", range, facts);
-    }
+    // Clear drops the layout whenever Show drops the data.
+    private PieceDetail Describe(Block block, Strings text) => _data!.Describe(text, block.First, block.End);
 
     private void PointAt(int index)
     {
@@ -392,7 +402,9 @@ public sealed partial class PiecesMap : UserControl
         Selection.Visibility = block is null ? Visibility.Collapsed : Visibility.Visible;
         if (block is not null) Selection.Margin = new Thickness(block.X - 2, block.Y - 2, 0, 0);
         ShowDetail();
-        var value = block is null ? Summary.Text : Detail(block);
+        var value = _text is not { } text ? string.Empty
+            : block is null ? Conclude(text).Line(text)
+            : Describe(block, text).Line(text);
         if (_value == value) return;
         var previous = _value;
         _value = value;
@@ -404,7 +416,19 @@ public sealed partial class PiecesMap : UserControl
         if (_text is not { } text) return;
         var block = At(_pointed) ?? At(Selected());
         Hint.Text = block is null && _layout is not null ? text.Get("pieces", "hint") : string.Empty;
-        (DetailRange.Text, DetailFacts.Text) = block is null ? (string.Empty, string.Empty) : Describe(block);
+        var detail = block is null ? null : Describe(block, text);
+        DetailRange.Text = detail?.Range ?? string.Empty;
+        DetailPeers.Text = detail?.Peers ?? string.Empty;
+        DetailPeers.Visibility = detail?.Peers is null ? Visibility.Collapsed : Visibility.Visible;
+        var entries = DetailEntries();
+        var labels = DetailLabels();
+        foreach (var kind in Enum.GetValues<PieceKind>())
+        {
+            var count = detail?.Counts[(int)kind] ?? 0;
+            entries[(int)kind].Visibility = count > 0 ? Visibility.Visible : Visibility.Collapsed;
+            labels[(int)kind].Text = count > 0 ? Pieces.Label(text, kind, count) : string.Empty;
+        }
+        DetailFiles.Text = detail?.Files ?? string.Empty;
     }
 
     protected override AutomationPeer OnCreateAutomationPeer() => new MapPeer(this);

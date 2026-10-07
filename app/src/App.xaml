@@ -16,6 +16,8 @@
                     <StaticResource x:Key="TinyTorrentCaptionPressedBrush" ResourceKey="SubtleFillColorSecondaryBrush" />
                     <StaticResource x:Key="TinyTorrentCaptionDisabledForegroundBrush" ResourceKey="TextFillColorSecondaryBrush" />
                     <x:Double x:Key="TinyTorrentCaptionDisabledOpacity">0.4</x:Double>
+                    <SolidColorBrush x:Key="TinyTorrentInnerCardBrush" Color="#09000000" />
+                    <SolidColorBrush x:Key="TinyTorrentAlternativeBrush" Color="{ThemeResource SystemAccentColorDark1}" Opacity="0.16" />
                 </ResourceDictionary>
                 <ResourceDictionary x:Key="Dark">
                     <SolidColorBrush x:Key="TinyTorrentChromeBrush" Color="#66213844" />
@@ -24,6 +26,8 @@
                     <StaticResource x:Key="TinyTorrentCaptionPressedBrush" ResourceKey="SubtleFillColorSecondaryBrush" />
                     <StaticResource x:Key="TinyTorrentCaptionDisabledForegroundBrush" ResourceKey="TextFillColorSecondaryBrush" />
                     <x:Double x:Key="TinyTorrentCaptionDisabledOpacity">0.4</x:Double>
+                    <SolidColorBrush x:Key="TinyTorrentInnerCardBrush" Color="#0BFFFFFF" />
+                    <SolidColorBrush x:Key="TinyTorrentAlternativeBrush" Color="{ThemeResource SystemAccentColorLight2}" Opacity="0.2" />
                 </ResourceDictionary>
                 <ResourceDictionary x:Key="HighContrast">
                     <SolidColorBrush x:Key="TinyTorrentChromeBrush" Color="{ThemeResource SystemColorWindowColor}" />
@@ -32,6 +36,8 @@
                     <StaticResource x:Key="TinyTorrentCaptionPressedBrush" ResourceKey="SystemColorHighlightColorBrush" />
                     <StaticResource x:Key="TinyTorrentCaptionDisabledForegroundBrush" ResourceKey="SystemColorGrayTextColorBrush" />
                     <x:Double x:Key="TinyTorrentCaptionDisabledOpacity">1</x:Double>
+                    <SolidColorBrush x:Key="TinyTorrentInnerCardBrush" Color="{ThemeResource SystemColorWindowColor}" />
+                    <SolidColorBrush x:Key="TinyTorrentAlternativeBrush" Color="{ThemeResource SystemColorWindowColor}" />
                 </ResourceDictionary>
             </ResourceDictionary.ThemeDictionaries>
             <x:Double x:Key="TinyTorrentCaptionHeight">48</x:Double>
@@ -351,6 +357,10 @@
                 <Setter Property="TextLineBounds" Value="Tight" />
                 <Setter Property="VerticalAlignment" Value="Center" />
             </Style>
+            <Style x:Key="TinyTorrentStatusIconStyle" TargetType="FontIcon">
+                <Setter Property="FontSize" Value="16" />
+                <Setter Property="VerticalAlignment" Value="Center" />
+            </Style>
             <Style x:Key="TitleDetailTextStyle" TargetType="TextBlock" BasedOn="{StaticResource BodyTextBlockStyle}">
                 <Setter Property="TextLineBounds" Value="Tight" />
                 <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
@@ -372,10 +382,22 @@
                 <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorSecondaryBrush}" />
                 <Setter Property="CornerRadius" Value="{ThemeResource OverlayCornerRadius}" />
             </Style>
+            <!-- A sub-group inside a settings card: a tint without a border. -->
+            <Style x:Key="InnerCardStyle" TargetType="Border">
+                <Setter Property="Padding" Value="16,0" />
+                <Setter Property="Background" Value="{ThemeResource TinyTorrentInnerCardBrush}" />
+                <Setter Property="CornerRadius" Value="{ThemeResource ControlCornerRadius}" />
+            </Style>
             <!-- WinUI's 5-pixel top padding puts a check box label's letters one
                  pixel above the middle of the box; 6 pixels centres them. -->
             <Style TargetType="CheckBox" BasedOn="{StaticResource DefaultCheckBoxStyle}">
                 <Setter Property="Padding" Value="8,6,0,0" />
+            </Style>
+            <Style TargetType="ToggleSwitch" BasedOn="{StaticResource DefaultToggleSwitchStyle}">
+                <Setter Property="HorizontalAlignment" Value="Right" />
+                <Setter Property="MinWidth" Value="0" />
+                <Setter Property="OnContent" Value="" />
+                <Setter Property="OffContent" Value="" />
             </Style>
             <!-- WinUI's even 4-pixel MenuBarItem margins put a heading's letters one
                  pixel below the middle of the menu bar; 3 above and 5 below centre them. -->

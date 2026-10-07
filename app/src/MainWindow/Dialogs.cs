@@ -41,6 +41,18 @@ public sealed partial class MainWindow
             _ = ShowAdd();
     }
 
+    private static async Task Submit(DialogInteraction interaction, ContentDialogButtonClickEventArgs args, Func<Task<bool>> submit)
+    {
+        args.Cancel = true;
+        var deferral = args.GetDeferral();
+        try
+        {
+            args.Cancel = !await submit();
+            if (!args.Cancel) interaction.IsResolved = true;
+        }
+        finally { deferral.Complete(); }
+    }
+
     private async Task<ContentDialogResult> ShowDialog(DialogInteraction interaction, ContentDialog dialog, Action refreshText)
     {
         interaction.Dialog = dialog;

@@ -31,8 +31,21 @@ public sealed partial class FileBrowser : UserControl
         Files.SelectionChanged += (_, _) => RefreshActions();
         Files.ItemContextRequested += (_, args) =>
             ShowPriority(args.Target, args.SelectedItems.OfType<FileNode>().ToArray(), args.Position);
-        Loaded += (_, _) => { Model.Changed += OnChanged; RefreshActions(); };
-        Unloaded += (_, _) => Model.Changed -= OnChanged;
+        // WinUI can deliver Unloaded while this control is still in the tree, as
+        // ContentDialog does, so a late Unloaded is ignored and Loaded can repeat.
+        Loaded += (_, _) =>
+        {
+            Model.Changed -= OnChanged;
+            Model.Changed += OnChanged;
+            RefreshActions();
+        };
+        Unloaded += (_, _) =>
+        {
+            if (!IsLoaded)
+            {
+                Model.Changed -= OnChanged;
+            }
+        };
         RefreshText();
     }
 

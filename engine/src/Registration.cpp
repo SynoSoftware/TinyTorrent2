@@ -167,8 +167,15 @@ bool IsThis(std::wstring const& command)
     {
         return false;
     }
+    // Only the owner thread enters here; a timed-out lookup must finish
+    // before another starts, without making shutdown wait for blocked I/O.
+    static std::future<bool> pending;
+    if (pending.valid() && pending.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready)
+    {
+        return false;
+    }
     auto same = std::make_shared<std::promise<bool>>();
-    auto answer = same->get_future();
+    pending = same->get_future();
     try
     {
         std::thread([same, target, executable]
@@ -181,7 +188,7 @@ bool IsThis(std::wstring const& command)
     {
         return false;
     }
-    return answer.wait_for(identityWait) == std::future_status::ready && answer.get();
+    return pending.wait_for(identityWait) == std::future_status::ready && pending.get();
 }
 
 // A TinyTorrent handler's open command, preferring one that starts another

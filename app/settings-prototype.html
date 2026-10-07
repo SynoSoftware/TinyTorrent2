@@ -1,0 +1,579 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Settings layout prototype</title>
+<!-- PROTOTYPE, throw away. Settings layout B2 (section cards, one row per setting, no separator lines; sub-groups
+     sit on borderless inner cards) with status bar S2 (the items of MainWindow.xaml, caps beside the rates, one line, hover tooltips).
+     Open this file directly; all values are sample data in memory. Edits apply as they happen, with no Save.
+     Network tab: encryption sits in the Connections card; the Proxy server card has three editing variants (?variant=1..3,
+     arrows in the bottom bar or the ←/→ keys). Variant B saves the proxy from a dialog, as Windows Settings does for its own proxy.
+     Transfers and Schedule are left out: their current design is speed-prototype.html. -->
+<style>
+* { box-sizing: border-box; }
+:root { color-scheme:light; --page:#f3f3f3; --card:#fbfbfb; --ctl:#fdfdfd; --ctl2:#f5f5f5; --ctlBorder:#e5e5e5; --ctlLine:#868686;
+  --text:#1a1a1a; --muted:#5f5f5f; --accent:#005fb8; --accentText:#003e92; --onAccent:#fff; --hover:rgb(0 0 0 / .03);
+  --caution:#9d5d00; --cautionBg:rgb(157 93 0 / .16); --critical:#c42b1c; --success:#0f7b0f; --grid:#ececec; --gridLine:#dcdcdc; --inner:rgb(0 0 0 / .035);
+  --tint:rgb(0 95 184 / .16); --tip:#f9f9f9; --tipBorder:rgb(0 0 0 / .06); }
+body.dark { color-scheme:dark; --page:#273036; --card:#2f3538; --ctl:#3c4144; --ctl2:#454a4d; --ctlBorder:rgb(255 255 255 / .07); --ctlLine:#a1a3a5;
+  --text:#ffffff; --muted:#c5c5c5; --accent:#4cc2ff; --accentText:#99ebff; --onAccent:#000; --hover:rgb(255 255 255 / .04);
+  --caution:#fce100; --cautionBg:rgb(252 225 0 / .16); --critical:#ff99a4; --success:#6ccb5f; --grid:#404548; --gridLine:#4d5255; --inner:rgb(255 255 255 / .045);
+  --tint:rgb(76 194 255 / .2); --tip:#2c2c2c; --tipBorder:rgb(0 0 0 / .2); }
+body { margin:0; background:#111; font:14px/20px 'Segoe UI Variable Text','Segoe UI',sans-serif; color:var(--text); }
+.window { margin:12px auto 0; background:var(--page); border:1px solid #444; border-radius:8px; overflow:hidden; display:flex; flex-direction:column; }
+svg.i { width:16px; height:16px; flex:none; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+.chrome { height:48px; display:flex; align-items:center; gap:28px; padding:0 18px; flex:none; }
+.chrome .menu { color:var(--muted); } .chrome .menu b { color:var(--text); font-weight:400; }
+.chrome .search { margin:0 auto; width:320px; height:32px; border-radius:4px; background:var(--ctl); border-bottom:1px solid var(--ctlLine); padding:6px 10px; color:var(--muted); }
+.backrow { height:48px; padding:8px 16px; flex:none; }
+.btn { display:inline-flex; align-items:center; gap:8px; height:32px; padding:0 11px; border-radius:4px; background:var(--ctl); border:1px solid var(--ctlBorder); color:var(--text); font:inherit; white-space:nowrap; cursor:default; }
+.scroll { flex:1; min-height:0; overflow-y:auto; }
+.column { max-width:832px; margin:0 auto; padding:0 16px 32px; }
+h1 { font:600 28px/36px 'Segoe UI Variable Display','Segoe UI',sans-serif; margin:20px 0 24px; }
+.selector { display:flex; margin:0 0 8px; } .selector .item { position:relative; display:flex; align-items:center; gap:8px; padding:8px 12px 12px; cursor:default; }
+.selector .item.on::after { content:''; position:absolute; left:calc(50% - 8px); bottom:2px; width:16px; height:3px; border-radius:2px; background:var(--accent); }
+.selector .item:not(.on) { color:var(--muted); }
+.lbl { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.err { color:var(--critical); } .sub { color:var(--muted); }
+.link { color:var(--accentText); cursor:default; }
+/* controls */
+.tg { display:inline-flex; align-items:center; gap:12px; height:32px; cursor:default; user-select:none; }
+.track { width:40px; height:20px; border-radius:10px; border:1px solid var(--muted); position:relative; flex:none; }
+.track::after { content:''; position:absolute; top:3px; left:4px; width:12px; height:12px; border-radius:6px; background:var(--muted); transition:left .1s; }
+.tg.on .track { background:var(--accent); border-color:var(--accent); } .tg.on .track::after { left:22px; background:var(--onAccent); }
+input.num, input.text, input.path, select.combo, .picker select { height:32px; border-radius:4px; background:var(--ctl); border:1px solid var(--ctlBorder); border-bottom-color:var(--ctlLine); color:var(--text); font:inherit; padding:0 10px; }
+input.num { width:160px; } input.path { width:100%; } input::placeholder { color:var(--muted); }
+input.bad { border-bottom:2px solid var(--critical); }
+select.combo { width:240px; appearance:none; padding-right:30px; background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%);
+  background-position:calc(100% - 17px) 14px,calc(100% - 12px) 14px; background-size:5px 5px; background-repeat:no-repeat; }
+.pathline { display:grid; grid-template-columns:1fr auto; gap:12px; }
+.cb { display:inline-flex; gap:8px; align-items:center; cursor:default; user-select:none; }
+.cb .box { width:20px; height:20px; border-radius:4px; border:1px solid var(--muted); display:grid; place-items:center; flex:none; }
+.cb.on .box { background:var(--accent); border-color:var(--accent); color:var(--onAccent); } .cb:not(.on) .box svg { visibility:hidden; }
+.cb .box svg { width:14px; height:14px; stroke-width:3; }
+.radio { display:inline-flex; gap:8px; align-items:center; cursor:default; user-select:none; } .radio .dot { width:20px; height:20px; border-radius:10px; border:1px solid var(--muted); flex:none; }
+.radio.on .dot { border:6px solid var(--accent); background:var(--onAccent); }
+.group { display:flex; gap:20px; align-items:center; }
+.picker { display:inline-grid; grid-template-columns:repeat(3,1fr); width:242px; }
+.picker select { appearance:none; border-radius:0; text-align:center; text-align-last:center; padding:0; background:var(--ctl2); }
+.picker select:first-child { border-radius:4px 0 0 4px; } .picker select:last-child { border-radius:0 4px 4px 0; }
+.picker select + select { border-left:1px solid var(--page); }
+/* section cards: one row per setting, label left, control flush right */
+.card { background:var(--card); border-radius:4px; padding:16px 24px 8px; margin-bottom:16px; }
+.head { display:flex; align-items:center; gap:16px; font-weight:600; height:40px; }
+.head svg { width:20px; height:20px; color:var(--accentText); }
+.row { display:grid; grid-template-columns:minmax(0,1fr) auto; column-gap:16px; align-items:center; min-height:56px; padding:8px 0; }
+.row.child { margin-left:36px; }
+.row > .ctl { justify-self:end; display:flex; gap:12px; align-items:center; }
+.row .detail { grid-column:1 / -1; margin-top:8px; }
+.two-line { display:flex; flex-direction:column; min-width:0; }
+.inner { background:var(--inner); border-radius:4px; padding:0 16px; }
+.inner + .inner { margin-top:4px; }
+.row.press { cursor:default; } .row.press:hover { background:var(--hover); margin:0 -16px; padding:8px 16px; border-radius:4px; }
+.chev { transition:transform .15s; } .open > .ctl .chev { transform:rotate(180deg); }
+.nested { margin-left:24px; }
+/* limits table (B2) */
+.limits { display:grid; grid-template-columns:minmax(0,1fr) 160px 160px; column-gap:16px; align-items:center; }
+.limits > * { min-height:56px; display:flex; align-items:center; }
+.limits > .colhead { min-height:40px; }
+.inuse { color:var(--accentText); }
+/* schedule */
+.week { position:relative; padding-top:8px; }
+.ruler { position:relative; height:24px; margin-left:56px; }
+.ruler span { position:absolute; top:0; transform:translateX(-50%); } .ruler span:first-child { transform:none; } .ruler span:last-child { transform:translateX(-100%); }
+.day { display:flex; align-items:center; height:40px; } .day + .day { margin-top:6px; } .day .name { width:56px; flex:none; }
+.lane { flex:1; height:40px; position:relative; background:var(--grid); border-radius:2px; overflow:hidden; }
+.lane i { position:absolute; top:0; bottom:0; width:1px; background:var(--gridLine); }
+.block { position:absolute; top:0; bottom:0; display:flex; flex-direction:column; justify-content:center; padding:0 6px; line-height:16px; font-size:12px; overflow:hidden; white-space:nowrap; border-radius:2px; cursor:default; }
+.block.alt { background:var(--tint); border:1px solid var(--accent); }
+.block.pause { background:var(--cautionBg); border:1px solid var(--caution); }
+.block.sel { outline:2px solid var(--text); outline-offset:-2px; }
+.legend { display:flex; gap:24px; align-items:center; min-height:56px; }
+.legend .btn { margin-left:auto; }
+.swatch { display:inline-block; width:16px; height:16px; border-radius:3px; vertical-align:-3px; margin-right:8px; }
+/* status bar (S2): transfer state left, view and environment right, one line; labels shorten to icons by priority */
+.sb { flex:none; display:flex; align-items:center; min-height:32px; padding:8px 16px 12px; white-space:nowrap; overflow:hidden; }
+.sb .grp { display:flex; align-items:center; min-width:0; }
+.sb .grp + .grp { margin-left:auto; padding-left:24px; }
+.si { display:inline-flex; align-items:center; gap:6px; flex:none; cursor:default; }
+.si + .si { margin-left:20px; }
+.si.icon .t { display:none; }
+/* Fixed width holds the longest text a rate can show, so live rates and cap changes never move the items after it. */
+.si.rate { width:148px; font-variant-numeric:tabular-nums; }
+/* tooltip, after WinUI ToolTip */
+.tip { position:fixed; z-index:20; max-width:320px; padding:6px 8px 8px; border-radius:4px; background:var(--tip); border:1px solid var(--tipBorder);
+  box-shadow:0 4px 8px rgb(0 0 0 / .26); font-size:12px; line-height:16px; color:var(--text); pointer-events:none; white-space:normal; }
+/* prototype controls, not part of the design */
+.proto { position:fixed; left:50%; bottom:12px; transform:translateX(-50%); display:flex; gap:10px; align-items:center; padding:8px 12px; border-radius:999px; z-index:10;
+  background:#111; color:#fff; font:12px/16px 'Segoe UI',sans-serif; box-shadow:0 8px 24px rgb(0 0 0 / .5); white-space:nowrap; border:1px solid #444; }
+.proto button, .proto select { background:#2a2a2a; color:#fff; border:1px solid #444; border-radius:999px; padding:4px 10px; font:inherit; }
+.proto input[type=range] { width:100px; vertical-align:middle; }
+.proto .sep { width:1px; height:20px; background:#444; }
+/* network tab: encryption and proxy variants */
+input.text { width:240px; }
+.row.off > .lbl, .row.off > .ctl { opacity:.45; }
+.btn.accent { background:var(--accent); border-color:var(--accent); color:var(--onAccent); }
+.btn.off { opacity:.45; }
+.summary { color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.scrim { position:fixed; inset:0; background:rgb(0 0 0 / .45); display:grid; place-items:center; z-index:15; }
+.dlg { width:560px; max-width:calc(100vw - 32px); background:var(--card); border:1px solid var(--ctlBorder); border-radius:8px; box-shadow:0 16px 48px rgb(0 0 0 / .4); overflow:hidden; }
+.dlg { width:548px; }
+.dlg .body { padding:24px; display:flex; flex-direction:column; gap:12px; }
+.dlg h2 { display:flex; align-items:center; gap:12px; font:600 20px/28px 'Segoe UI Variable Display','Segoe UI',sans-serif; margin:0 0 4px; }
+.dlg h2 svg { width:20px; height:20px; color:var(--accentText); }
+.dlg .fld { display:flex; flex-direction:column; gap:8px; min-width:0; } .dlg .fld.off { opacity:.45; }
+.dlg .fld input, .dlg .fld select { width:100%; }
+.dlg .foot { display:flex; align-items:center; gap:8px; padding:24px; background:var(--page); }
+.dlg .foot .status { flex:1; margin-right:24px; }
+.dlg .foot .btn { min-width:120px; justify-content:center; }
+/* proxy check: WinUI InfoBar and ProgressRing */
+.status { display:inline-flex; align-items:center; gap:8px; min-width:0; white-space:nowrap; }
+.status .badge { width:16px; height:16px; border-radius:8px; display:grid; place-items:center; flex:none; color:var(--card); }
+.status.ok .badge { background:var(--success); } .status.bad .badge { background:var(--critical); }
+.status .badge svg { width:10px; height:10px; stroke-width:3.5; }
+.ring { width:16px; height:16px; border-radius:50%; border:2px solid var(--ctlBorder); border-top-color:var(--accent); animation:spin .8s linear infinite; flex:none; }
+@keyframes spin { to { transform:rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .ring { animation-duration:2.4s; } }
+.actions { display:flex; gap:8px; justify-content:flex-end; padding:8px 0 16px; }
+</style>
+</head>
+<body class="dark">
+<div class="window" id="window"></div>
+<div class="tip" id="tip" hidden></div>
+<div class="proto">
+  <button id="prev">←</button><span id="variant"></span><button id="next">→</button>
+  <button id="sampleProxy">Sample proxy</button>
+  <span class="sep"></span>
+  <select id="checkResult"></select>
+  <select id="state"></select>
+  <span class="sep"></span>
+  <label><input type="checkbox" id="errors"> Errors</label>
+  <label>Width <input id="width" type="range" min="560" max="1600"></label>
+  <button id="theme">Theme</button>
+</div>
+<script>
+const STATES = {
+  'State: normal':{}, 'State: alternative limits':{ alt:1 }, 'State: filter chosen':{ filter:1 }, 'State: all paused':{ paused:1 },
+  'State: 1 selected':{ selected:1 }, 'State: no incoming':{ net:'none' },
+  'State: proxy working':{ proxy:'ok' }, 'State: proxy failing':{ proxy:'bad' },
+  'State: everything at once':{ alt:1, paused:1, filter:1, update:1, net:'iface', selected:3 }
+};
+const P = {
+  sliders:'<line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/>',
+  arrows:'<path d="m3 16 4 4 4-4"/><path d="M7 20V4"/><path d="m21 8-4-4-4 4"/><path d="M17 4v16"/>',
+  globe:'<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>',
+  calendar:'<rect width="18" height="18" x="3" y="4" rx="2"/><path d="M8 2v4"/><path d="M16 2v4"/><path d="M3 10h18"/>',
+  palette:'<circle cx="13.5" cy="6.5" r=".5"/><circle cx="17.5" cy="10.5" r=".5"/><circle cx="8.5" cy="7.5" r=".5"/><circle cx="6.5" cy="12.5" r=".5"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/>',
+  folderDown:'<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.930 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/><path d="M12 10v6"/><path d="m15 13-3 3-3-3"/>',
+  bell:'<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
+  rocket:'<path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.910a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/>',
+  battery:'<path d="M15 7h1a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-2"/><path d="M6 7H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h1"/><path d="m11 7-3 5h4l-3 5"/><line x1="22" x2="22" y1="11" y2="13"/>',
+  refresh:'<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>',
+  gauge:'<path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/>',
+  turtle:'<path d="m12 10 2 4v3a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1v-2a8 8 0 0 0-8-8 8 8 0 0 0-8 8v2a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1v-3l2-4h4Z"/><path d="M4.82 7.9 8 10"/><path d="M15.18 7.9 12 10"/><path d="M16.930 10H20a2 2 0 0 1 0 4H2"/>',
+  list:'<path d="M10 12h11"/><path d="M10 18h11"/><path d="M10 6h11"/><path d="M4 10h2"/><path d="M4 6h1v4"/><path d="M6 18H4c0-1 2-2 2-3s-1-1.5-2-1"/>',
+  sprout:'<path d="M7 20h10"/><path d="M10 20c5.5-2.5.8-6.4 3-10"/><path d="M9.5 9.4c1.1.8 1.8 2.2 2.3 3.7-2 .4-3.5.4-4.8-.3-1.2-.6-2.3-1.9-3-4.2 2.8-.5 4.4 0 5.5.8z"/><path d="M14.1 6a7 7 0 0 0-1.1 4c1.9-.1 3.3-.6 4.3-1.4 1-1 1.6-2.3 1.7-4.6-2.7.1-4 1-4.9 2z"/>',
+  network:'<rect x="16" y="16" width="6" height="6" rx="1"/><rect x="2" y="16" width="6" height="6" rx="1"/><rect x="9" y="2" width="6" height="6" rx="1"/><path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3"/><path d="M12 12V8"/>',
+  unplug:'<path d="m19 5 3-3"/><path d="m2 22 3-3"/><path d="M6.3 20.3a2.4 2.4 0 0 0 3.4 0L12 18l-6-6-2.3 2.3a2.4 2.4 0 0 0 0 3.4Z"/><path d="M7.5 13.5 10 11"/><path d="M10.5 16.5 13 14"/><path d="m12 6 6 6 2.3-2.3a2.4 2.4 0 0 0 0-3.4l-2.6-2.6a2.4 2.4 0 0 0-3.4 0Z"/>',
+  files:'<path d="M20 7h-3a2 2 0 0 1-2-2V2"/><path d="M9 18a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h7l4 4v10a2 2 0 0 1-2 2Z"/><path d="M3 7.6v12.8A1.6 1.6 0 0 0 4.6 22h9.8"/>',
+  pause:'<rect x="14" y="4" width="4" height="16" rx="1"/><rect x="6" y="4" width="4" height="16" rx="1"/>',
+  funnel:'<path d="M10 20a1 1 0 0 0 .553.895l2 1A1 1 0 0 0 14 21v-7a2 2 0 0 1 .517-1.341L21.74 4.67A1 1 0 0 0 21 3H3a1 1 0 0 0-.742 1.67l7.225 7.989A2 2 0 0 1 10 14z"/>',
+  update:'<path d="M12 2a10 10 0 0 1 7.38 16.75"/><path d="m16 12-4-4-4 4"/><path d="M12 16V8"/><path d="M2.5 8.875a10 10 0 0 0-.5 3"/><path d="M2.83 16a10 10 0 0 0 2.43 3.4"/><path d="M4.636 5.235a10 10 0 0 1 .891-.857"/><path d="M8.644 21.42a10 10 0 0 0 7.631-.38"/>',
+  down:'<path d="M12 5v14"/><path d="m19 12-7 7-7-7"/>',
+  up:'<path d="m5 12 7-7 7 7"/><path d="M12 19V5"/>',
+  calClock:'<path d="M21 7.5V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h3.5"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h5"/><path d="M17.5 17.5 16 16.3V14"/><circle cx="16" cy="16" r="6"/>',
+  folderSearch:'<path d="M10.7 20H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H20a2 2 0 0 1 2 2v4.1"/><path d="m21 21-1.9-1.9"/><circle cx="17" cy="17" r="3"/>',
+  plus:'<path d="M5 12h14"/><path d="M12 5v14"/>',
+  listX:'<path d="M11 12H3"/><path d="M16 6H3"/><path d="M16 18H3"/><path d="m19 10-4 4"/><path d="m15 10 4 4"/>',
+  check:'<path d="M20 6 9 17l-5-5"/>',
+  x:'<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  info:'<path d="M12 16v-5"/><path d="M12 8h.01"/>',
+  shield:'<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>',
+  pencil:'<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/>',
+  plugZap:'<path d="M6.3 20.3a2.4 2.4 0 0 0 3.4 0L12 18l-6-6-2.3 2.3a2.4 2.4 0 0 0 0 3.4Z"/><path d="m2 22 3-3"/><path d="M7.5 13.5 10 11"/><path d="M10.5 16.5 13 14"/><path d="m18 3-4 4h6l-4 4"/>',
+  route:'<circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/>',
+  chevron:'<path d="m6 9 6 6 6-6"/>',
+  back:'<path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>'
+};
+const ic = n => `<svg class="i${n === 'chevron' ? ' chev' : ''}" viewBox="0 0 24 24">${P[n]}</svg>`;
+const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+
+const TABS = [['General','sliders'],['Network','globe'],['Appearance','palette']];
+const DEF = {
+  folder:{ t:'path', l:'Default download folder' },
+  showAdd:{ t:'tg', l:'Show dialog when adding torrents' },
+  handlers:{ t:'tg', l:'Open torrents with TinyTorrent', link:'Default apps' },
+  notifyProblems:{ t:'tg', l:'Notify about problems' },
+  notifyFinished:{ t:'tg', l:'Notify when a download finishes' },
+  notifyAdded:{ t:'tg', l:'Notify when a torrent is added' },
+  signin:{ t:'tg', l:'Start when I sign in', link:'Windows Startup settings' },
+  tray:{ t:'tg', l:'Start in the notification area' },
+  splash:{ t:'tg', l:'Show the splash screen while opening' },
+  sleep:{ t:'tg', l:'Prevent sleep while downloading on mains power' },
+  sleepSeed:{ t:'tg', l:'Also while seeding', parent:'sleep' },
+  updates:{ t:'tg', l:'Check for updates' },
+  use:{ t:'combo', l:'Use', opts:['Normal limits','Alternative limits','Follow schedule'] },
+  dl:{ t:'num', l:'Download (KiB/s)', unl:1 }, ul:{ t:'num', l:'Upload (KiB/s)', unl:1 },
+  adl:{ t:'num', l:'Download (KiB/s)', unl:1 }, aul:{ t:'num', l:'Upload (KiB/s)', unl:1 },
+  downloads:{ t:'num', l:'Maximum active downloads', err:['2.5', 'Enter a whole number, 0 or more'] },
+  seeds:{ t:'num', l:'Maximum active seeds' },
+  ratio:{ t:'num', l:'Seed until share ratio', unl:1, err:['-1', 'Enter a number, 0 or more'] },
+  minutes:{ t:'num', l:'Seed for (minutes)', unl:1 },
+  port:{ t:'num', l:'Port for incoming connections', err:['70000', 'Enter a whole number from 1 to 65,535'], proxyOff:1 },
+  mapping:{ t:'tg', l:'Forward the port on my router (UPnP / NAT-PMP)', proxyOff:1 },
+  iface:{ t:'combo', l:'Network interface', opts:['Any interface','Ethernet','Wi-Fi','NordLynx'] },
+  conns:{ t:'num', l:'Maximum connections' },
+  enc:{ t:'combo', l:'Encryption', opts:['Preferred','Required','Allowed','Disabled'],
+    tip:'Preferred: encrypt the data with every peer that supports it. Required: connect only to peers that encrypt. Allowed: encrypt the data when the peer asks for it. Disabled: plain connections only. Encryption makes torrent traffic harder for network providers to detect. It does not hide your IP address.' },
+  proxyType:{ t:'combo', l:'Proxy type', opts:['None','SOCKS5','SOCKS4','HTTP'],
+    tip:'SOCKS5 works with every torrent feature. HTTP and SOCKS4 cannot carry DHT, uTP, or UDP trackers, so those stop while the proxy is in use.' },
+  proxyHost:{ t:'text', l:'Address' }, proxyPort:{ t:'num', l:'Port' },
+  proxyUser:{ t:'text', l:'User name' }, proxyPass:{ t:'pass', l:'Password' },
+  schedOn:{ t:'tg', l:'Enable schedule' },
+  lang:{ t:'combo', l:'Application language', opts:['English','Español'] },
+  theme:{ t:'combo', l:'Theme', opts:['Use Windows setting','Light','Dark'] }
+};
+const S = { folder:'C:\\Users\\user\\Downloads', showAdd:true, handlers:false, notifyProblems:true, notifyFinished:true, notifyAdded:false,
+  signin:false, tray:false, splash:true, sleep:true, sleepSeed:true, updates:true, use:'Follow schedule', dl:'2', ul:'2', adl:'10', aul:'0',
+  downloads:'3', seeds:'5', ratio:'1', minutes:'0', port:'6881', mapping:true, iface:'Any interface', conns:'200', lang:'English', theme:'Dark',
+  schedOn:true, errors:false, enc:'Preferred',
+  proxyType:'None', proxyHost:'', proxyPort:'', proxyUser:'', proxyPass:'' };
+const PROXY = ['proxyType','proxyHost','proxyPort','proxyUser','proxyPass'];
+const VARIANTS = ['A · Rows in the card, apply as typed', 'B · Summary row, dialog with Save', 'C · Expander row, apply as typed'];
+let variant = 0, draft = null, proxyOpen = false;
+/* Simulated results of Check proxy: a short answer, and the reason for its tooltip. */
+const CHECKS = {
+  'Check: works':[1, 'Connected', d => `The proxy answered in 84 ms${d.proxyUser ? ' and accepted the user name and password' : ''}.`],
+  'Check: wrong password':[0, 'Sign-in failed', () => 'The proxy did not accept the user name or password.'],
+  'Check: nothing answers':[0, 'Unreachable', d => `Nothing answered at ${d.proxyHost}:${d.proxyPort}. Check the address and port.`],
+  'Check: address not found':[0, 'Not found', d => `Cannot find ${d.proxyHost}. Check the address.`],
+  'Check: wrong type':[0, 'Wrong type', d => `The server at ${d.proxyHost}:${d.proxyPort} is not a ${d.proxyType} proxy.`],
+  'Check: no response':[0, 'Timed out', () => 'The proxy did not answer within 10 seconds.']
+};
+let check = null, checkTimer;
+const touched = new Set();
+const DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+let nextId = 3;
+let periods = [
+  { id:1, days:[1,1,1,1,1,1,1], from:540, to:1020, paused:false },
+  { id:2, days:[0,0,0,0,0,1,1], from:60, to:360, paused:true }
+];
+let open = 1;
+
+const SPEC = {
+  General:[['folderDown','Downloads',['folder','showAdd','handlers']],['bell','Notifications',['notifyProblems','notifyFinished','notifyAdded']],
+    ['rocket','Startup',['signin','tray','splash']],['battery','Power',['sleep','sleepSeed']],['refresh','Updates',['updates']]],
+  Network:[['network','Connections',['port','mapping','iface','conns','enc']],['route','Proxy server','proxy']],
+  Appearance:[['palette','Appearance',['lang','theme']]]
+};
+
+const params = new URLSearchParams(location.search);
+let state = Object.keys(STATES)[0];
+let tab = TABS.some(t => t[0] === params.get('tab')) ? params.get('tab') : 'Network';
+
+function error(k) { const e = DEF[k].err; return S.errors && e ? e[1] : ''; }
+function labelHtml(text, err, link) {
+  const main = `<span class="lbl" title="${esc(text + (err ? ' · ' + err : ''))}">${esc(text)}${err ? `<span class="err"> · ${esc(err)}</span>` : ''}</span>`;
+  return link ? `<span class="two-line">${main}<span class="link lbl">${link}</span></span>` : main;
+}
+function toggle(k) { const on = S[k]; return `<span class="tg${on ? ' on' : ''}" data-k="${k}"><span>${on ? 'On' : 'Off'}</span><span class="track"></span></span>`; }
+function control(k) {
+  const d = DEF[k];
+  if (d.t === 'tg') return toggle(k);
+  if (d.t === 'num') {
+    const bad = error(k), unl = d.unl && !bad && (S[k] === '0' || S[k] === '');
+    return `<input class="num${bad ? ' bad' : ''}" data-k="${k}" value="${bad ? esc(d.err[0]) : unl ? '' : esc(S[k])}" placeholder="${unl ? 'Unlimited' : ''}">`;
+  }
+  if (d.t === 'combo') return `<select class="combo" data-k="${k}">${d.opts.map(o => `<option${o === S[k] ? ' selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
+  return '';
+}
+function row(k) {
+  const d = DEF[k];
+  if (d.parent && !S[d.parent]) return '';
+  if (d.t === 'path') return `<div class="row">${labelHtml(d.l)}<span></span><div class="detail"><div class="pathline"><input class="path" data-k="folder" value="${esc(S.folder)}"><span class="btn">${ic('folderSearch')}Browse…</span></div></div></div>`;
+  if (d.proxyOff && proxyInUse()) return `<div class="row off" data-tip="${esc(tipHtml(['Peers cannot connect to you through a proxy, so this setting is off while the proxy is in use.']))}">${labelHtml(d.l)}<span class="ctl">${control(k).replace('<input', '<input disabled')}</span></div>`;
+  return `<div class="row${d.parent ? ' child' : ''}"${d.tip ? ` data-tip="${esc(tipHtml([d.tip]))}"` : ''}>${labelHtml(d.l, error(k), d.link)}<span class="ctl">${control(k)}</span></div>`;
+}
+/* Proxy fields. `v` is the saved settings or the dialog's draft; `attr` says which one an edit writes to. */
+function proxyErrors(v) {
+  if (v.proxyType === 'None') return {};
+  const host = v.proxyHost.trim(), name = /^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)*$/, ip6 = /^\[?[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*\]?$/;
+  return { proxyHost: name.test(host) || ip6.test(host) ? '' : 'Enter a host name or IP address',
+    proxyPort: /^\d+$/.test(v.proxyPort) && +v.proxyPort >= 1 && +v.proxyPort <= 65535 ? '' : 'Enter a whole number from 1 to 65,535' };
+}
+const complete = v => v.proxyType !== 'None' && !Object.values(proxyErrors(v)).some(Boolean);
+const proxyInUse = () => complete(S);
+const summary = v => v.proxyType === 'None' ? 'Off' : `${v.proxyType} · ${complete(v) ? `${v.proxyHost}:${v.proxyPort}` : 'Not in use'}`;
+function proxyRows(v, attr, child) {
+  const errs = proxyErrors(v), cls = child ? ' child' : '';
+  const field = k => {
+    const d = DEF[k], err = touched.has(k) ? errs[k] || '' : '';
+    const none = v.proxyType === 'None', noAuth = none || v.proxyType === 'SOCKS4' && (k === 'proxyUser' || k === 'proxyPass');
+    const input = `<input class="${d.t === 'num' ? 'num' : 'text'}${err ? ' bad' : ''}" ${attr}="${k}" value="${esc(v[k])}"${d.t === 'pass' ? ' type="password"' : ''}${noAuth ? ' disabled' : ''}>`;
+    const tip = noAuth && !none ? ` data-tip="${esc(tipHtml(['SOCKS4 does not use a user name or password.']))}"` : '';
+    return `<div class="row${cls}${noAuth ? ' off' : ''}"${tip}>${labelHtml(d.l, err)}<span class="ctl">${input}</span></div>`;
+  };
+  const pending = attr === 'data-k' && v.proxyType !== 'None' && !complete(v) ? '<span class="sub">Not in use</span>' : '';
+  const type = `<div class="row" data-tip="${esc(tipHtml([DEF.proxyType.tip]))}">${labelHtml(DEF.proxyType.l)}<span class="ctl">${pending}
+    <select class="combo" ${attr}="proxyType">${DEF.proxyType.opts.map(o => `<option${o === v.proxyType ? ' selected' : ''}>${o}</option>`).join('')}</select></span></div>`;
+  return type + ['proxyHost','proxyPort','proxyUser','proxyPass'].map(field).join('');
+}
+function proxyCard() {
+  if (variant === 0) return proxyRows(S, 'data-k', true);
+  if (variant === 1) return `<div class="row">${labelHtml('Use a proxy server')}<span class="ctl">${proxyStatus()}<span class="sub">${esc(summary(S))}</span><span class="btn" data-edit data-tip="${esc(tipHtml(['Change the proxy server']))}">${ic('pencil')}Edit</span></span></div>`;
+  return `<div class="inner"><div class="row press${proxyOpen ? ' open' : ''}" data-proxy>${labelHtml('Use a proxy server')}
+    <span class="ctl"><span class="sub">${esc(summary(S))}</span>${ic('chevron')}</span></div>${proxyOpen ? `<div class="nested">${proxyRows(S, 'data-k', false)}</div>` : ''}</div>`;
+}
+/* What the engine last learned from connections through the proxy; no icon until it knows. */
+function proxyStatus() {
+  const known = proxyInUse() && st().proxy;
+  if (!known) return '';
+  const tip = known === 'ok' ? 'The proxy is working. Peer and tracker connections go through it.'
+    : 'The proxy did not accept the user name or password. Peer and tracker connections are failing.';
+  return `<span class="status ${known}" role="img" aria-label="${esc(tip)}" data-tip="${esc(tipHtml([tip]))}"><span class="badge">${ic(known === 'ok' ? 'check' : 'x')}</span></span>`;
+}
+/* The shared Dialog: Lucide icon before the title, headers above the fields, one word, one icon and a
+   tooltip per button. Check's result is the Footer, so it holds the left of the button row; Check, Save and
+   Cancel sit at the right. */
+function dialog() {
+  if (!draft) return '';
+  const d = draft, errs = proxyErrors(d), none = d.proxyType === 'None', busy = check === 'busy', result = CHECKS[check];
+  const header = (k, text) => { const err = touched.has(k) ? errs[k] || '' : ''; return labelHtml(text, err); };
+  const field = k => {
+    const def = DEF[k], off = none || d.proxyType === 'SOCKS4' && (k === 'proxyUser' || k === 'proxyPass');
+    const tip = off && !none ? ` data-tip="${esc(tipHtml(['SOCKS4 does not use a user name or password.']))}"` : '';
+    const bad = touched.has(k) && errs[k];
+    return `<div class="fld${off ? ' off' : ''}"${tip}>${header(k, def.l)}<input class="text${bad ? ' bad' : ''}" data-d="${k}" value="${esc(d[k])}"${def.t === 'pass' ? ' type="password"' : ''}${off ? ' disabled' : ''}></div>`;
+  };
+  const type = `<div class="fld" data-tip="${esc(tipHtml([DEF.proxyType.tip]))}">${labelHtml(DEF.proxyType.l)}
+    <select class="combo" data-d="proxyType">${DEF.proxyType.opts.map(o => `<option${o === d.proxyType ? ' selected' : ''}>${o}</option>`).join('')}</select></div>`;
+  const status = busy ? '<span class="status"><span class="ring"></span><span class="sub">Checking…</span></span>'
+    : result ? `<span class="status ${result[0] ? 'ok' : 'bad'}" role="status" data-tip="${esc(tipHtml([result[2](d)]))}"><span class="badge">${ic(result[0] ? 'check' : 'x')}</span><span class="lbl">${result[1]}</span></span>`
+    : '<span class="status"></span>';
+  const checkBtn = `<span class="btn${busy || none ? ' off' : ''}" data-check data-tip="${esc(tipHtml(['Connect to the proxy with these values, without saving them']))}">${ic('plugZap')}Check</span>`;
+  return `<div class="scrim"><div class="dlg" role="dialog"><div class="body"><h2>${ic('route')}Edit proxy server</h2>
+    ${type}${['proxyHost','proxyPort','proxyUser','proxyPass'].map(field).join('')}</div>
+    <div class="foot">${status}${checkBtn}<span class="btn accent" data-save data-tip="${esc(tipHtml(['Use these proxy settings for peer and tracker connections']))}">${ic('check')}Save</span>
+    <span class="btn" data-cancel data-tip="${esc(tipHtml(['Close without saving']))}">${ic('x')}Cancel</span></div></div></div>`;
+}
+const card = (icon, title, body) => `<div class="card"><div class="head">${ic(icon)}${title}</div>${body}</div>`;
+const unl = v => +v > 0 ? `${v} KiB/s` : 'Unlimited';
+/* Normal and alternative limits side by side, grouped on an inner card below the choice */
+function limitsTable() {
+  const inUse = alternativeApplies() ? 'adl' : 'dl';
+  const head = (text, key) => `<span class="colhead${key === inUse ? ' inuse' : ''}">${text}${key === inUse ? ' · In use' : ''}</span>`;
+  return row('use') + `<div class="inner"><div class="limits"><span class="colhead"></span>${head('Normal', 'dl')}${head('Alternative', 'adl')}
+    <span>${labelHtml('Download (KiB/s)')}</span><span>${control('dl')}</span><span>${control('adl')}</span>
+    <span>${labelHtml('Upload (KiB/s)')}</span><span>${control('ul')}</span><span>${control('aul')}</span></div></div>`;
+}
+/* schedule */
+const pad = n => String(n).padStart(2, '0');
+function time(m) { const h = Math.floor(m / 60) % 24; return `${h % 12 || 12}:${pad(m % 60)} ${h < 12 ? 'AM' : 'PM'}`; }
+function daysText(d) {
+  const s = d.join('');
+  if (s === '1111111') return 'Every day'; if (s === '1111100') return 'Weekdays'; if (s === '0000011') return 'Weekends';
+  if (s === '0000000') return 'No days';
+  return DAYS.filter((_, i) => d[i]).join(', ');
+}
+const overnight = p => p.to <= p.from;
+function length(p) { const m = (p.to - p.from + 1440) % 1440 || 1440; return (m % 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m / 60} h`) + (overnight(p) ? ' · next day' : ''); }
+const range = p => p.from === p.to ? 'All day' : `${time(p.from)}–${time(p.to)}`;
+const mode = p => p.paused ? 'Paused' : 'Alternative limits';
+const valid = p => p.days.some(Boolean);
+function picker(p, field) {
+  const m = p[field], h = Math.floor(m / 60), sel = (v, cur) => v === cur ? ' selected' : '';
+  return `<span class="picker" data-p="${p.id}" data-f="${field}">
+    <select>${[...Array(12)].map((_, i) => `<option value="${i + 1}"${sel(i + 1, h % 12 || 12)}>${i + 1}</option>`).join('')}</select>
+    <select>${[0, 15, 30, 45].map(v => `<option value="${v}"${sel(v, m % 60)}>${pad(v)}</option>`).join('')}</select>
+    <select><option${sel(true, h < 12)}>AM</option><option${sel(true, h >= 12)}>PM</option></select></span>`;
+}
+/* The period's fields are ordinary rows, so their labels and controls share the page's two edges. */
+function periodRows(p) {
+  const days = DAYS.map((d, i) => `<span class="cb${p.days[i] ? ' on' : ''}" data-day="${i}" data-p="${p.id}"><span class="box">${ic('check')}</span>${d}</span>`).join('');
+  const modes = [false, true].map(v => `<span class="radio${p.paused === v ? ' on' : ''}" data-mode="${v}" data-p="${p.id}"><span class="dot"></span>${v ? 'Paused' : 'Alternative limits'}</span>`).join('');
+  return `<div class="row">${labelHtml('Days', valid(p) ? '' : 'Choose at least one day')}<span class="ctl group">${days}</span></div>
+    <div class="row">${labelHtml('From')}<span class="ctl">${picker(p, 'from')}</span></div>
+    <div class="row">${labelHtml('Until')}<span class="ctl"><span class="sub">${length(p)}</span>${picker(p, 'to')}</span></div>
+    <div class="row">${labelHtml('During this period')}<span class="ctl group">${modes}</span></div>`;
+}
+function week() {
+  const ticks = [0, 3, 6, 9, 12, 15, 18, 21, 24], segs = DAYS.map(() => []);
+  for (const p of periods) {
+    if (!valid(p)) continue;
+    p.days.forEach((on, i) => {
+      if (!on) return;
+      if (!overnight(p)) segs[i].push([p, p.from, p.to]);
+      else { segs[i].push([p, p.from, 1440]); if (p.to > 0) segs[(i + 1) % 7].push([p, 0, p.to]); }
+    });
+  }
+  const block = ([p, a, b]) => `<div class="block ${p.paused ? 'pause' : 'alt'}${p.id === open ? ' sel' : ''}" data-open="${p.id}" title="${esc(daysText(p.days) + ' · ' + range(p) + ' · ' + mode(p))}"
+    style="left:${a / 14.4}%;width:${(b - a) / 14.4}%;z-index:${p.paused ? 2 : 1}"><span>${mode(p)}</span><span>${range(p)}</span></div>`;
+  const lanes = DAYS.map((d, i) => `<div class="day"><span class="name">${d}</span><div class="lane">${ticks.slice(1, -1).map(t => `<i style="left:${t / .24}%"></i>`).join('')}
+    ${segs[i].sort((x, y) => x[0].paused - y[0].paused).map(block).join('')}</div></div>`).join('');
+  return `<div class="week"><div class="ruler">${ticks.map(t => `<span style="left:${t / .24}%">${pad(t)}</span>`).join('')}</div>${lanes}</div>`;
+}
+function legend() {
+  return `<div class="legend"><span><span class="swatch" style="background:var(--grid);border:1px solid var(--gridLine)"></span>Normal limits</span>
+    <span><span class="swatch" style="background:var(--tint);border:1px solid var(--accent)"></span>Alternative limits</span>
+    <span><span class="swatch" style="background:var(--cautionBg);border:1px solid var(--caution)"></span>Paused</span>
+    <span class="btn" data-goto="Transfers">${ic('gauge')}Limits</span></div>`;
+}
+const add = `<span class="btn" data-add>${ic('plus')}Add</span>`;
+const remove = p => `<span class="btn" data-remove="${p.id}">${ic('listX')}Remove</span>`;
+/* Each period is an inner card that expands like a Windows Settings expander. */
+function schedule() {
+  const list = periods.map(p => {
+    const isOpen = p.id === open;
+    return `<div class="inner"><div class="row press${isOpen ? ' open' : ''}" data-open="${p.id}">${labelHtml(daysText(p.days) + ' · ' + range(p))}
+      <span class="ctl">${isOpen ? remove(p) : ''}<span class="sub">${mode(p)}</span>${ic('chevron')}</span></div>${isOpen ? `<div class="nested">${periodRows(p)}</div>` : ''}</div>`;
+  }).join('');
+  return row('schedOn') + week() + legend() + `<div class="row">${labelHtml('Periods')}<span class="ctl"><span class="sub">Local time</span>${add}</span></div>` + list;
+}
+
+const selector = () => `<div class="selector">${TABS.map(([n, i]) => `<span class="item${n === tab ? ' on' : ''}" data-tab="${n}">${ic(i)}${n}</span>`).join('')}</div>`;
+function page() {
+  const body = keys => keys === 'schedule' ? schedule() : keys === 'limits' ? limitsTable() : keys === 'proxy' ? proxyCard() : keys.map(row).join('');
+  return '<h1>Settings</h1>' + selector() + SPEC[tab].map(([icon, title, keys]) => card(icon, title, body(keys))).join('');
+}
+
+/* status bar (S2): MainWindow.xaml's items and tooltip text, with caps beside the rates, on one line */
+const st = () => ({ net:'ok', ...STATES[state] });
+const alternativeApplies = () => S.use === 'Alternative limits' || S.use === 'Follow schedule' && !!st().alt;
+function rateText(kib) { return kib === 0 ? '0 B/s' : `${kib.toFixed(1)} KiB/s`; }
+const tipHtml = lines => lines.filter(Boolean).map(l => `<div>${esc(l)}</div>`).join('');
+function item(icon, text, tip, cls = '', pri = 0) { return `<span class="si ${cls}" data-pri="${pri}" data-tip="${esc(tipHtml(tip))}">${ic(icon)}<span class="t">${esc(text)}</span></span>`; }
+function statusbar() {
+  const s = st(), alt = alternativeApplies(), caps = (alt ? [S.adl, S.aul] : [S.dl, S.ul]).map(Number);
+  const rates = s.paused ? [0, 0] : alt ? [9.6, 41.3] : [1.9, 1.2];
+  const pair = alt ? 'alternative limits' : 'normal limits';
+  const rate = (i, icon, name) => {
+    const cap = caps[i], r = rates[i];
+    const text = cap > 0 ? `${r ? r.toFixed(1) : 0} of ${cap} KiB/s` : rateText(r);
+    return item(icon, text, [`${name}: ${rateText(r)}`, cap > 0 ? `Limit: ${cap} KiB/s, from the ${pair}` : `No limit in the ${pair}`], 'rate', 9);
+  };
+  const source = S.use === 'Follow schedule' ? 'Turned on by the schedule.' : 'Turned on in Settings.';
+  const altItem = alt ? item('turtle', 'Alternative limits', [`Alternative speed limits apply: download ${unl(S.adl)}, upload ${unl(S.aul)}. ${source}`], 'alt', 4) : '';
+  const paused = s.paused ? item('pause', 'All paused', ['All transfers are paused. Choose Resume all to start them again.'], '', 5) : '';
+  const count = item('files', s.selected ? `12 torrents · ${s.selected} selected` : '12 torrents', [s.selected ? `12 torrents, ${s.selected} selected` : '12 torrents'], '', 6);
+  const filter = s.filter ? item('funnel', 'Downloading · 3', ['Filter: Downloading'], '', 2) : '';
+  const update = s.update ? item('update', 'Update available', ['A newer version is available. Choose Help > Update to open its download page.'], '', 1) : '';
+  const net = s.net === 'iface' ? ['unplug', 'Adapter missing', 'The selected network adapter NordLynx is not available, so transfers are blocked.']
+    : s.net === 'none' ? ['network', 'Port not confirmed', 'No peer has connected to TinyTorrent yet, so its listening port is not confirmed open. Downloads still work.']
+    : proxyInUse() ? ['route', 'Proxy in use', `Connections to peers and trackers go through the ${S.proxyType} proxy at ${S.proxyHost}:${S.proxyPort}. Peers cannot connect to you.`]
+    : ['network', 'Port open', 'Peers can connect to TinyTorrent through its listening port.'];
+  const incoming = item(net[0], net[1], [net[2]], '', 3);
+  return `<div class="sb"><span class="grp">${rate(0, 'down', 'Download')}${rate(1, 'up', 'Upload')}${altItem}${paused}</span>
+    <span class="grp">${count}${filter}${incoming}${update}</span></div>`;
+}
+/* Keeps one line: shortens the least important labels to their icons until the bar fits. The tooltip still names each item. */
+function fitStatus() {
+  const sb = document.querySelector('.sb');
+  const items = [...sb.querySelectorAll('.si:not(.icon)')].filter(e => +e.dataset.pri < 9).sort((a, b) => a.dataset.pri - b.dataset.pri);
+  while (sb.scrollWidth > sb.clientWidth && items.length) items.shift().classList.add('icon');
+}
+
+const tipEl = document.getElementById('tip');
+let tipFor = null, tipTimer;
+function hideTip() { clearTimeout(tipTimer); tipEl.hidden = true; tipFor = null; }
+document.addEventListener('mouseover', ev => {
+  const t = ev.target.closest('[data-tip]');
+  if (t === tipFor) return;
+  hideTip();
+  if (!t) return;
+  tipFor = t;
+  tipTimer = setTimeout(() => {
+    tipEl.innerHTML = t.dataset.tip; tipEl.hidden = false;
+    const r = t.getBoundingClientRect();
+    tipEl.style.left = Math.max(8, Math.min(r.left, innerWidth - tipEl.offsetWidth - 8)) + 'px';
+    tipEl.style.top = (r.top - tipEl.offsetHeight - 8) + 'px';
+  }, 400);
+});
+
+function render() {
+  hideTip();
+  if (!draft) { clearTimeout(checkTimer); check = null; }
+  const w = document.getElementById('window'), keep = w.querySelector('.scroll')?.scrollTop ?? 0;
+  const width = Math.min(+document.getElementById('width').value, innerWidth - 24);
+  w.style.width = width + 'px';
+  w.style.height = (innerHeight - 76) + 'px';
+  w.innerHTML = `<div class="chrome"><b style="color:var(--accent)">◆</b><span class="menu"><b>File</b>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Torrent&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;View&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>Help</b></span>
+      <span class="search">Search TinyTorrent</span><span style="width:120px"></span></div>
+    <div class="backrow"><span class="btn">${ic('back')}Back</span></div>
+    <div class="scroll"><div class="column">${page()}</div></div>${statusbar()}${dialog()}`;
+  document.getElementById('variant').textContent = `${variant + 1}/${VARIANTS.length} ${VARIANTS[variant]}`;
+  fitStatus();
+  w.querySelector('.scroll').scrollTop = keep;
+}
+
+const period = id => periods.find(p => p.id === +id);
+document.addEventListener('click', ev => {
+  if (ev.target.closest('.proto')) return;
+  const hit = sel => ev.target.closest(sel);
+  let e;
+  if ((e = hit('[data-remove]'))) { periods = periods.filter(p => p.id !== +e.dataset.remove); open = null; }
+  else if (hit('[data-add]')) { const p = { id:nextId++, days:[1,1,1,1,1,0,0], from:540, to:1020, paused:false }; periods.push(p); open = p.id; }
+  else if (hit('select') || hit('input') || hit('.row.off')) return;
+  else if (hit('[data-check]')) {
+    if (check === 'busy' || draft.proxyType === 'None') return;
+    if (!complete(draft)) PROXY.forEach(k => touched.add(k));
+    else { check = 'busy'; checkTimer = setTimeout(() => { check = document.getElementById('checkResult').value; render(); }, 1200); }
+  }
+  else if (hit('[data-edit]')) { draft = Object.fromEntries(PROXY.map(k => [k, S[k]])); touched.clear(); }
+  else if (hit('[data-cancel]')) draft = null;
+  else if (hit('[data-save]')) { if (draft.proxyType !== 'None' && !complete(draft)) PROXY.forEach(k => touched.add(k)); else { Object.assign(S, draft); draft = null; } }
+  else if (hit('.scrim')) return;
+  else if (hit('[data-proxy]')) proxyOpen = !proxyOpen;
+  else if ((e = hit('.tg[data-k]'))) S[e.dataset.k] = !S[e.dataset.k];
+  else if ((e = hit('[data-day]'))) { const p = period(e.dataset.p); p.days[e.dataset.day] ^= 1; }
+  else if ((e = hit('[data-mode]'))) period(e.dataset.p).paused = e.dataset.mode === 'true';
+  else if ((e = hit('[data-open]'))) open = open === +e.dataset.open ? null : +e.dataset.open;
+  else if ((e = hit('[data-tab],[data-goto]'))) { tab = e.dataset.tab || e.dataset.goto; remember('tab', tab); }
+  else return;
+  render();
+});
+document.addEventListener('change', ev => {
+  if (ev.target.closest('.proto')) return;
+  const pk = ev.target.closest('.picker');
+  if (pk) {
+    const [h, m, a] = [...pk.querySelectorAll('select')].map(s => s.value);
+    period(pk.dataset.p)[pk.dataset.f] = ((+h % 12) + (a === 'PM' ? 12 : 0)) * 60 + +m;
+  } else if (ev.target.dataset?.d) {
+    draft[ev.target.dataset.d] = ev.target.value; touched.add(ev.target.dataset.d);
+    clearTimeout(checkTimer); check = null;
+  } else {
+    const k = ev.target.dataset?.k; if (!k || DEF[k]?.err) return;
+    S[k] = ev.target.value; touched.add(k);
+  }
+  render();
+});
+function remember(key, value) { params.set(key, value); try { history.replaceState(null, '', '?' + params); } catch { } }
+const statePick = document.getElementById('state');
+statePick.innerHTML = Object.keys(STATES).map(n => `<option>${n}</option>`).join('');
+statePick.onchange = () => { state = statePick.value; render(); };
+function setVariant(i) { variant = (i + VARIANTS.length) % VARIANTS.length; draft = null; remember('variant', variant + 1); render(); }
+document.getElementById('prev').onclick = () => setVariant(variant - 1);
+document.getElementById('next').onclick = () => setVariant(variant + 1);
+document.getElementById('sampleProxy').onclick = () => {
+  Object.assign(S, S.proxyType === 'None' ? { proxyType:'SOCKS5', proxyHost:'proxy.example.net', proxyPort:'1080', proxyUser:'marta', proxyPass:'secret' }
+    : { proxyType:'None', proxyHost:'', proxyPort:'', proxyUser:'', proxyPass:'' });
+  touched.clear(); draft = null; render();
+};
+document.addEventListener('keydown', ev => {
+  if (draft && ev.key === 'Escape') { draft = null; render(); return; }
+  if (ev.target.closest('input, select, textarea')) return;
+  if (ev.key === 'ArrowLeft') setVariant(variant - 1);
+  if (ev.key === 'ArrowRight') setVariant(variant + 1);
+});
+variant = Math.max(0, Math.min(VARIANTS.length - 1, (+params.get('variant') || 2) - 1));
+const checkPick = document.getElementById('checkResult');
+checkPick.innerHTML = Object.keys(CHECKS).map(n => `<option>${n}</option>`).join('');
+document.getElementById('errors').onchange = ev => { S.errors = ev.target.checked; render(); };
+document.getElementById('theme').onclick = () => { document.body.classList.toggle('dark'); render(); };
+document.getElementById('width').value = Math.max(560, Math.min(1303, innerWidth - 24));
+document.getElementById('width').oninput = render;
+addEventListener('resize', render);
+render();
+</script>
+</body>
+</html>

@@ -30,6 +30,7 @@ namespace option
 constexpr wchar_t literal[] = L"--";
 constexpr wchar_t headless[] = L"--headless";
 constexpr wchar_t background[] = L"--background";
+constexpr wchar_t exit[] = L"--exit";
 constexpr wchar_t registration[] = L"--registration";
 constexpr wchar_t data[] = L"--data";
 }
@@ -159,8 +160,23 @@ std::optional<Value> Parse(std::pair<std::string_view, Value> const (&names)[Siz
     return std::nullopt;
 }
 
+// The protocol word for a value, from the same table that Parse reads.
+template <typename Value, std::size_t Size>
+std::string_view Word(std::pair<std::string_view, Value> const (&names)[Size], Value value)
+{
+    for (auto const& [name, named] : names)
+    {
+        if (named == value)
+        {
+            return name;
+        }
+    }
+    return {};
+}
+
 std::string Utf8(std::wstring const& value);
 std::wstring Wide(std::string const& value);
+std::string Base64(std::string_view bytes);
 std::wstring Executable();
 char const* ToString(NoticeKind kind);
 Json Success(Json data = Json::object());

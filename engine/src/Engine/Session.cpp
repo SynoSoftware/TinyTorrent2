@@ -36,7 +36,7 @@ lt::info_hash_t SavedHashes(std::vector<std::string> const& hashes)
 }
 
 Engine::State::State(std::filesystem::path path, std::function<void()> notification) :
-    directory(std::move(path)), store(notification), payload(notification), sources(notification), wake(std::move(notification)),
+    directory(std::move(path)), store(notification), payload(notification), sources(notification), checks(notification), wake(std::move(notification)),
     language(settings.language)
 {
     // Without a saved document the engine starts from the default settings.
@@ -123,7 +123,7 @@ void Engine::State::Start(Document const& saved, Resumes& resumes)
     pack.set_bool(lt::settings_pack::enable_natpmp, false);
     pack.set_str(lt::settings_pack::user_agent, "TinyTorrent/" TT_VERSION);
     pack.set_str(lt::settings_pack::peer_fingerprint,
-        lt::generate_fingerprint("TY", TT_VERSION_MAJOR, TT_VERSION_MINOR, TT_VERSION_BUILD, TT_VERSION_REVISION));
+        lt::generate_fingerprint("TY", TT_VERSION_MAJOR, TT_VERSION_MINOR, TT_VERSION_BUILD));
     pack.set_str(lt::settings_pack::dht_bootstrap_nodes,
         "dht.libtorrent.org:25401,dht.transmissionbt.com:6881,router.bittorrent.com:6881");
     pack.set_int(lt::settings_pack::alert_mask,
@@ -179,17 +179,11 @@ void Engine::State::Start(Document const& saved, Resumes& resumes)
         params.piece_priorities.clear();
         params.flags &= ~lt::torrent_flags::auto_managed;
         params.flags |= lt::torrent_flags::paused;
+        params.flags |= lt::torrent_flags::duplicate_is_error;
         params.flags |= lt::torrent_flags::default_dont_download;
         if (!params.ti)
             std::fill(params.file_priorities.begin(), params.file_priorities.end(), lt::dont_download);
-        auto handle = session->add_torrent(params);
-        auto& torrent = Install(id, handle, facts, params);
-        torrent.namesReady = false;
-        PrepareFiles(torrent);
-        if (facts.trackers)
-        {
-            handle.replace_trackers(*facts.trackers);
-        }
+        Restore(id, facts, std::move(params));
     }
     queueOrder = saved.queueOrder;
     ApplyQueue();
@@ -199,6 +193,59 @@ void Engine::State::Start(Document const& saved, Resumes& resumes)
     }
     startup = Startup::Ready;
     diagnostics.Write("startup", "", "ready");
+}
+
+void Engine::State::Restore(std::string const& id, Facts facts, lt::add_torrent_params params)
+{
+    lt::error_code error;
+    auto handle = session->add_torrent(params, error);
+    if (error == lt::errors::duplicate_torrent)
+    {
+        auto hashes = params.ti ? params.ti->info_hashes() : params.info_hashes;
+        auto& torrent = torrents.insert_or_assign(id, Torrent{id, {}, std::move(facts)}).first->second;
+        torrent.restore = std::move(params);
+        torrent.status.info_hashes = hashes;
+        torrent.unsaved = false;
+        for (auto& [otherId, other] : torrents)
+        {
+            if (Overlaps(torrent.Hashes(), other.Hashes()))
+            {
+                other.conflict = error.message();
+                other.ApplyIntent();
+            }
+        }
+        diagnostics.Write("startup", id, "alias_conflict");
+        return;
+    }
+    if (error)
+    {
+        throw lt::system_error(error);
+    }
+    auto& torrent = Install(id, handle, std::move(facts), params);
+    torrent.namePhase = NamePhase::Pending;
+    PrepareFiles(torrent);
+    if (torrent.facts.trackers)
+    {
+        handle.replace_trackers(*torrent.facts.trackers);
+    }
+}
+
+void Engine::State::RestorePending()
+{
+    if (FilesBusy() || !additions.empty())
+    {
+        return;
+    }
+    for (auto& [id, torrent] : torrents)
+    {
+        if (!torrent.restore || torrent.deleted || !Duplicate(torrent.status.info_hashes, id).empty())
+        {
+            continue;
+        }
+        Restore(id, torrent.facts, std::move(*torrent.restore));
+        torrent.ApplyIntent();
+        ApplyQueue();
+    }
 }
 
 std::filesystem::path Engine::State::ResumeFile(std::string const& id) const
@@ -215,7 +262,7 @@ Json Engine::State::Document::ToJson() const
         entry["torrent_id"] = id;
         list.push_back(std::move(entry));
     }
-    return {{"format", format}, {"settings", settings.ToJson()}, {"torrents", std::move(list)},
+    return {{"format", format}, {"settings", settings.ToFile()}, {"torrents", std::move(list)},
         {"queue_order", queueOrder}};
 }
 
@@ -241,9 +288,15 @@ Engine::State::Document Engine::State::Saved() const
     document.settings = settings;
     for (auto const& [id, torrent] : torrents)
     {
-        document.torrents.emplace(id, torrent.facts);
+        // A deleted torrent is out of the saved list; it stays in torrents
+        // only until it is removed.
+        if (!torrent.deleted)
+        {
+            document.torrents.emplace(id, torrent.facts);
+        }
     }
     document.queueOrder = queueOrder;
+    std::erase_if(document.queueOrder, [&document](auto const& id) { return !document.torrents.contains(id); });
     return document;
 }
 
@@ -271,6 +324,11 @@ tt::Activity Engine::State::Activity() const
     tt::Activity activity;
     for (auto const& [id, torrent] : torrents)
     {
+        if (torrent.deleted)
+        {
+            continue;
+        }
+        ++activity.torrentCount;
         activity.downloadRate += torrent.status.download_payload_rate;
         activity.uploadRate += torrent.status.upload_payload_rate;
         activity.hasIncoming |= torrent.status.has_incoming;
@@ -304,7 +362,6 @@ tt::Activity Engine::State::Activity() const
     }
     activity.downloading = activity.downloading && !stopping;
     activity.seeding = activity.seeding && !stopping;
-    activity.torrentCount = torrents.size();
     activity.allPaused = IsPaused();
     activity.missingInterface = interfaceMissing ? settings.networkInterface : std::string();
     activity.notificationsEnabled = settings.notificationsEnabled;
@@ -322,18 +379,30 @@ Json Engine::State::Snapshot() const
     Json rows = Json::array();
     for (auto const& [id, torrent] : torrents)
     {
-        rows.push_back(torrent.Row(IsPaused()));
+        if (!torrent.deleted)
+        {
+            rows.push_back(torrent.Row(IsPaused()));
+        }
     }
     auto current = settings.ToJson();
     current["language"] = language;
     auto activity = Activity();
+    auto mode = CurrentLimits();
+    auto caps = settings.Caps(mode);
+    auto source = !settings.scheduleEnabled ? "manual" : limitOverride ? "override" : "schedule";
+    auto pause = !IsPaused() ? "" : interfaceMissing ? "interface" : settings.allPaused ? "manual" : "schedule";
     return {{"session_id", sessionId}, {"torrents", std::move(rows)}, {"settings", std::move(current)},
         {"language_saved", language == settings.language},
         {"download_rate", activity.downloadRate}, {"upload_rate", activity.uploadRate},
         {"all_paused", IsPaused()},
-        {"alternative_limits", UsesAlternative()},
+        {"limits", {{"source", source}, {"mode", Settings::Name(mode)},
+            {"download", caps.download}, {"upload", caps.upload}, {"pause", pause}}},
         {"missing_interface", activity.missingInterface},
         {"has_incoming", activity.hasIncoming},
+        {"proxy", proxyOutcome ? Json(std::string(Name(*proxyOutcome))) : Json()},
+        {"proxy_check", !requestedCheck ? Json() : Json{{"check_id", requestedCheck->id},
+            {"outcome", requestedCheck->result ? Json(std::string(Name(requestedCheck->result->outcome))) : Json()},
+            {"milliseconds", requestedCheck->result ? Json(requestedCheck->result->elapsed.count()) : Json()}}},
         {"stopping", stopping}, {"loading", startup != Startup::Ready}, {"storage_failed", !startupError.empty()},
         {"startup_error", startupError}};
 }
@@ -347,12 +416,12 @@ Torrent* Engine::State::Find(lt::torrent_handle const& handle)
 Torrent& Engine::State::Install(std::string const& id, lt::torrent_handle handle, Facts facts,
     lt::add_torrent_params const& params)
 {
-    auto& torrent = torrents.emplace(id, Torrent{id, handle, std::move(facts)}).first->second;
+    auto& torrent = torrents.insert_or_assign(id, Torrent{id, handle, std::move(facts)}).first->second;
     torrent.comment = params.comment;
     torrent.creator = params.created_by;
     torrent.created = params.creation_date;
     torrent.status = handle.status(lt::torrent_handle::query_name);
-    torrent.namesReady = params.ti != nullptr;
+    torrent.namePhase = params.ti ? NamePhase::Ready : NamePhase::Pending;
     CompleteFiles(torrent);
     torrent.savedUploaded = torrent.status.all_time_upload;
     handles.emplace(handle, &torrent);
@@ -361,6 +430,10 @@ Torrent& Engine::State::Install(std::string const& id, lt::torrent_handle handle
 
 void Engine::State::Notify(NoticeKind kind, Torrent const& torrent, std::string detail)
 {
+    if (torrent.deleted && kind != NoticeKind::Error)
+    {
+        return;
+    }
     Notify(kind, torrent.Name(), std::move(detail), torrent.identity);
 }
 
@@ -394,7 +467,7 @@ void Engine::State::RecordHashes(Torrent& torrent)
     }
     if (!changes.Queue([this, id, hashes = std::move(hashes)]
     {
-        if (!torrents.contains(id))
+        if (!torrents.contains(id) || torrents.at(id).deleted)
         {
             return;
         }
@@ -430,6 +503,8 @@ void Engine::State::RecordHashes(Torrent& torrent)
 Engine::State::~State()
 {
     sources.Abandon();
+    checkStop.request_stop();
+    checks.Abandon();
 }
 
 void Engine::State::Tick()
@@ -437,6 +512,7 @@ void Engine::State::Tick()
     store.Drain();
     payload.Drain();
     sources.Drain();
+    checks.Drain();
     if (session)
     {
         std::vector<lt::alert*> alerts;
@@ -446,6 +522,7 @@ void Engine::State::Tick()
             Handle(alert);
         }
         ContinueRename();
+        RemoveDeferred();
         if (!stopping)
         {
             Maintain();
@@ -464,6 +541,7 @@ void Engine::State::Maintain()
     if (now - statusAt >= statusInterval)
     {
         statusAt = now;
+        RestorePending();
         RefreshPolicy();
         LimitSeeds();
         auto time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());

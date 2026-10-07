@@ -10,6 +10,13 @@ internal static class TestData
     internal static Column Column(string id, double defaultWidth) =>
         new() { Id = id, DisplayName = id.ToUpperInvariant(), Width = defaultWidth };
 
+    /// <summary>
+    /// A saved layout holding every column's declared width, so the table keeps those widths
+    /// instead of fitting its first rows.
+    /// </summary>
+    internal static ColumnLayout DeclaredWidths(Table table) =>
+        Layout(widths: table.Columns.ToDictionary(column => column.Id!, column => column.Width));
+
     /// <summary>A table with the given columns declared, not yet loaded.</summary>
     internal static Table Table(params Column[] columns)
     {

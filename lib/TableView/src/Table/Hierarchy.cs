@@ -138,7 +138,7 @@ public sealed partial class Table
         for (var node = focused; node is not null; node = VisualTreeHelper.GetParent(node))
         {
             if (ReferenceEquals(node, this)) break;
-            if (node is ListViewItem row && _itemsView?.ItemFromContainer(row) is { } item)
+            if (node is ListViewItem row && IsInsideRows(row) && _itemsView?.ItemFromContainer(row) is { } item)
                 return CollapsedAncestor(item) is { } ancestor ? (ancestor, state) : default;
         }
         return default;

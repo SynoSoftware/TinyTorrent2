@@ -57,7 +57,7 @@ public sealed partial class MainViewModel
         try
         {
             using var http = new HttpClient();
-            http.DefaultRequestHeaders.UserAgent.ParseAdd("TinyTorrent/" + RunningVersion.ToString(3));
+            http.DefaultRequestHeaders.UserAgent.ParseAdd("TinyTorrent/" + RunningVersion);
             http.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
             http.DefaultRequestHeaders.Add("X-GitHub-Api-Version", "2026-03-10");
             using var stream = await http.GetStreamAsync("https://api.github.com/repos/SynoSoftware/TinyTorrent2/releases/latest", cancellation.Token);

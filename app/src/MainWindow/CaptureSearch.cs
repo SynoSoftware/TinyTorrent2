@@ -120,15 +120,15 @@ public sealed partial class MainWindow
         await ShowTorrents();
         var rate = Model.Preferences.Fields.Single(field => field.Name == "download_limit");
         var rateInput = rate.Input;
-        (bool Transfers, bool Focused) LimitsState()
+        (bool Shown, bool Focused) LimitsState()
         {
             if (_preferencesForm is not { } form) return (false, false);
-            var transfers = Model.Page == WindowPage.Preferences && CaptureElements(form).OfType<SelectorBar>()
-                .Single(control => control.Name == "Categories").SelectedItem?.Tag?.ToString() == "Transfers";
-            var editor = CaptureElements(form).OfType<NumberBox>().SingleOrDefault(control => ReferenceEquals(control.Tag, rate));
+            var shown = Model.Page == WindowPage.Preferences && CaptureElements(form).OfType<SelectorBar>()
+                .Single(control => control.Name == "Categories").SelectedItem?.Tag?.ToString() == "Limits";
+            var editor = CaptureElements(form).OfType<ComboBox>().SingleOrDefault(control => control.Name == "LimitsChoice");
             var focus = FocusManager.GetFocusedElement(Root.XamlRoot) as DependencyObject;
             while (focus is not null && !ReferenceEquals(focus, editor)) focus = VisualTreeHelper.GetParent(focus);
-            return (transfers, editor is not null && focus is not null);
+            return (shown, editor is not null && focus is not null);
         }
         var limits = Model.Text.Get("commands", "limits");
         list = await Open(limits, "search-limits-before");
@@ -137,10 +137,10 @@ public sealed partial class MainWindow
         await CaptureUi("search-limits-after");
         var limitsState = LimitsState();
         var limitsRetained = rate.Input == rateInput && !rate.HasDraft && !rate.IsPending;
-        outcomes.Add(new { journey = "speed limits result", choice.Submitted, limitsState.Transfers, limitsState.Focused,
+        outcomes.Add(new { journey = "speed limits result", choice.Submitted, limitsState.Shown, limitsState.Focused,
             retained = limitsRetained, page = Model.Page.ToString(), field = rate.Name });
-        if (!choice.Submitted || !limitsState.Transfers || !limitsState.Focused || !limitsRetained)
-            failures.Add("Speed limits search does not focus the existing Transfers setting without changing it.");
+        if (!choice.Submitted || !limitsState.Shown || !limitsState.Focused || !limitsRetained)
+            failures.Add("Speed limits search does not focus the existing Speed limits setting without changing it.");
         Search.IsSuggestionListOpen = false;
         completed.Add("search-limits");
 

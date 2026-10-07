@@ -2,26 +2,27 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:icons="using:Syno"
+    xmlns:local="using:Syno.TinyTorrent.Controls"
     IsTabStop="True" UseSystemFocusVisuals="True" KeyDown="OnKey">
     <UserControl.Resources>
         <ResourceDictionary>
             <ResourceDictionary.ThemeDictionaries>
                 <ResourceDictionary x:Key="Light">
                     <!-- These strengths keep verified squares at 3:1 against common and missing ones,
-                         and the hatch and cross at 3:1 against their tints; the Fluent disabled fill
-                         gives only 2.2:1 for missing. -->
+                         and the hatch and cross at 3:1 against the missing fill; the Fluent disabled
+                         fill gives only 2.2:1 for missing. -->
                     <SolidColorBrush x:Key="PiecesMapCommonBrush" Color="{ThemeResource SystemAccentColorDark1}" Opacity="0.28" />
                     <SolidColorBrush x:Key="PiecesMapMissingBrush" Color="#2E000000" />
-                    <SolidColorBrush x:Key="PiecesMapRareBrush" Color="{ThemeResource SystemFillColorCaution}" Opacity="0.25" />
-                    <SolidColorBrush x:Key="PiecesMapUnavailableBrush" Color="{ThemeResource SystemFillColorCritical}" Opacity="0.25" />
+                    <SolidColorBrush x:Key="PiecesMapRareBrush" Color="#2E000000" />
+                    <SolidColorBrush x:Key="PiecesMapUnavailableBrush" Color="#2E000000" />
                     <StaticResource x:Key="PiecesMapReceivedBrush" ResourceKey="AccentFillColorDefaultBrush" />
                     <Thickness x:Key="PiecesMapOutlineThickness">0</Thickness>
                 </ResourceDictionary>
                 <ResourceDictionary x:Key="Dark">
                     <SolidColorBrush x:Key="PiecesMapCommonBrush" Color="{ThemeResource SystemAccentColorLight2}" Opacity="0.3" />
                     <StaticResource x:Key="PiecesMapMissingBrush" ResourceKey="ControlStrongFillColorDisabledBrush" />
-                    <SolidColorBrush x:Key="PiecesMapRareBrush" Color="{ThemeResource SystemFillColorCaution}" Opacity="0.3" />
-                    <SolidColorBrush x:Key="PiecesMapUnavailableBrush" Color="{ThemeResource SystemFillColorCritical}" Opacity="0.3" />
+                    <StaticResource x:Key="PiecesMapRareBrush" ResourceKey="ControlStrongFillColorDisabledBrush" />
+                    <StaticResource x:Key="PiecesMapUnavailableBrush" ResourceKey="ControlStrongFillColorDisabledBrush" />
                     <StaticResource x:Key="PiecesMapReceivedBrush" ResourceKey="AccentFillColorDefaultBrush" />
                     <Thickness x:Key="PiecesMapOutlineThickness">0</Thickness>
                 </ResourceDictionary>
@@ -50,66 +51,120 @@
             <Style x:Key="PiecesMapEntryStyle" TargetType="StackPanel">
                 <Setter Property="Orientation" Value="Horizontal" />
                 <Setter Property="Spacing" Value="8" />
-                <Setter Property="Margin" Value="0,0,24,4" />
+            </Style>
+            <Style x:Key="PiecesMapChipStyle" TargetType="Viewbox">
+                <Setter Property="Width" Value="12" />
+                <Setter Property="Height" Value="12" />
+                <Setter Property="VerticalAlignment" Value="Center" />
+            </Style>
+            <Style x:Key="PiecesMapDetailEntryStyle" TargetType="StackPanel">
+                <Setter Property="Orientation" Value="Horizontal" />
+                <Setter Property="Spacing" Value="6" />
             </Style>
         </ResourceDictionary>
     </UserControl.Resources>
     <Grid RowSpacing="8">
-        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
-        <Grid ColumnSpacing="8">
-            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-            <!-- One sign per InfoBarSeverity, in its order, so the conclusion reads at a glance. -->
-            <FontIcon x:Name="InformationalSign" Style="{StaticResource PiecesMapSignStyle}" FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Hourglass}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-            <FontIcon x:Name="SuccessSign" Style="{StaticResource PiecesMapSignStyle}" FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.CircleCheck}" Foreground="{ThemeResource SystemFillColorSuccessBrush}" />
-            <FontIcon x:Name="WarningSign" Style="{StaticResource PiecesMapSignStyle}" FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.TriangleAlert}" Foreground="{ThemeResource SystemFillColorCautionBrush}" />
-            <FontIcon x:Name="ErrorSign" Style="{StaticResource PiecesMapSignStyle}" FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.CircleAlert}" Foreground="{ThemeResource SystemFillColorCriticalBrush}" />
-            <TextBlock x:Name="Summary" Grid.Column="1" Style="{StaticResource BodyStrongTextBlockStyle}" TextTrimming="CharacterEllipsis" IsTextSelectionEnabled="True" />
-            <TextBlock x:Name="PieceCount" Grid.Column="2" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-        </Grid>
-        <ItemsControl x:Name="Legend" Grid.Row="1" IsTabStop="False">
-            <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapGrid Orientation="Horizontal" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
-            <StackPanel Style="{StaticResource PiecesMapEntryStyle}">
-                <Border x:Name="VerifiedSwatch" Style="{StaticResource PiecesMapSwatchStyle}" Background="{ThemeResource SystemFillColorSuccessBrush}" />
-                <TextBlock><Run x:Name="VerifiedLabel" /><Run Text=" " /><Run x:Name="VerifiedCount" FontWeight="SemiBold" /></TextBlock>
-            </StackPanel>
-            <StackPanel Style="{StaticResource PiecesMapEntryStyle}">
-                <Border x:Name="DownloadingSwatch" Style="{StaticResource PiecesMapSwatchStyle}" Background="{ThemeResource PiecesMapMissingBrush}">
-                    <Border x:Name="Received" Width="9" HorizontalAlignment="Left" CornerRadius="4,0,0,4" Background="{ThemeResource PiecesMapReceivedBrush}" />
-                </Border>
-                <TextBlock><Run x:Name="DownloadingLabel" /><Run Text=" " /><Run x:Name="DownloadingCount" FontWeight="SemiBold" /></TextBlock>
-            </StackPanel>
-            <StackPanel Style="{StaticResource PiecesMapEntryStyle}">
-                <Border x:Name="MissingSwatch" Style="{StaticResource PiecesMapSwatchStyle}" Background="{ThemeResource PiecesMapMissingBrush}" />
-                <TextBlock><Run x:Name="MissingLabel" /><Run Text=" " /><Run x:Name="MissingCount" FontWeight="SemiBold" /></TextBlock>
-            </StackPanel>
-            <StackPanel Style="{StaticResource PiecesMapEntryStyle}">
-                <Border x:Name="CommonSwatch" Style="{StaticResource PiecesMapSwatchStyle}" Background="{ThemeResource PiecesMapCommonBrush}" />
-                <TextBlock><Run x:Name="CommonLabel" /><Run Text=" " /><Run x:Name="CommonCount" FontWeight="SemiBold" /></TextBlock>
-            </StackPanel>
-            <StackPanel Style="{StaticResource PiecesMapEntryStyle}">
-                <Grid VerticalAlignment="Center">
-                    <Border x:Name="RareSwatch" Style="{StaticResource PiecesMapSwatchStyle}" Background="{ThemeResource PiecesMapRareBrush}" />
-                    <Path x:Name="Hatch" Data="M0,6 L6,0 M0,11 L11,0 M1,15 L15,1 M5,16 L16,5 M10,16 L16,10" Stroke="{ThemeResource SystemFillColorCautionBrush}" StrokeThickness="1.5" />
-                </Grid>
-                <TextBlock><Run x:Name="RareLabel" /><Run Text=" " /><Run x:Name="RareCount" FontWeight="SemiBold" /></TextBlock>
-            </StackPanel>
-            <StackPanel Style="{StaticResource PiecesMapEntryStyle}">
-                <Grid VerticalAlignment="Center">
-                    <Border x:Name="UnavailableSwatch" Style="{StaticResource PiecesMapSwatchStyle}" Background="{ThemeResource PiecesMapUnavailableBrush}" />
-                    <Path x:Name="Cross" Data="M4,4 L12,12 M12,4 L4,12" Stroke="{ThemeResource SystemFillColorCriticalBrush}" StrokeThickness="1.5" />
-                </Grid>
-                <TextBlock><Run x:Name="UnavailableLabel" /><Run Text=" " /><Run x:Name="UnavailableCount" FontWeight="SemiBold" /></TextBlock>
-            </StackPanel>
-        </ItemsControl>
-        <!-- The extra top margin groups the detail with the map rather than the legend; its lines keep their height
-             while empty and trim instead of wrapping, so the map never moves. -->
-        <Grid Grid.Row="2" Margin="0,8,0,0" ColumnSpacing="12">
+        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+        <Grid ColumnSpacing="32">
             <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-            <TextBlock x:Name="Hint" Grid.ColumnSpan="2" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextTrimming="CharacterEllipsis" />
-            <TextBlock x:Name="DetailRange" Style="{StaticResource BodyStrongTextBlockStyle}" />
-            <TextBlock x:Name="DetailFacts" Grid.Column="1" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextTrimming="CharacterEllipsis" />
+            <StackPanel x:Name="Status" Orientation="Horizontal" Spacing="8" VerticalAlignment="Top">
+                <!-- One sign per InfoBarSeverity, in its order, so the conclusion reads at a glance. -->
+                <FontIcon x:Name="InformationalSign" Style="{StaticResource PiecesMapSignStyle}" FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Hourglass}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                <FontIcon x:Name="SuccessSign" Style="{StaticResource PiecesMapSignStyle}" FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.CircleCheck}" Foreground="{ThemeResource SystemFillColorSuccessBrush}" />
+                <FontIcon x:Name="WarningSign" Style="{StaticResource PiecesMapSignStyle}" FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.TriangleAlert}" Foreground="{ThemeResource SystemFillColorCautionBrush}" />
+                <FontIcon x:Name="ErrorSign" Style="{StaticResource PiecesMapSignStyle}" FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.CircleAlert}" Foreground="{ThemeResource SystemFillColorCriticalBrush}" />
+                <TextBlock x:Name="Answer" Style="{StaticResource BodyStrongTextBlockStyle}" IsTextSelectionEnabled="True" />
+            </StackPanel>
+            <local:WrapPanel Grid.Column="1" HorizontalAlignment="Right" ColumnSpacing="24" RowSpacing="4">
+                <StackPanel Style="{StaticResource PiecesMapEntryStyle}">
+                    <Border x:Name="VerifiedSwatch" Style="{StaticResource PiecesMapSwatchStyle}" Background="{ThemeResource AccentFillColorDefaultBrush}" />
+                    <TextBlock><Run x:Name="VerifiedLabel" /><Run Text=" " /><Run x:Name="VerifiedCount" FontWeight="SemiBold" /></TextBlock>
+                </StackPanel>
+                <StackPanel Style="{StaticResource PiecesMapEntryStyle}">
+                    <Border x:Name="DownloadingSwatch" Style="{StaticResource PiecesMapSwatchStyle}" Background="{ThemeResource PiecesMapMissingBrush}">
+                        <Border x:Name="Received" Width="9" HorizontalAlignment="Left" CornerRadius="4,0,0,4" Background="{ThemeResource PiecesMapReceivedBrush}" />
+                    </Border>
+                    <TextBlock><Run x:Name="DownloadingLabel" /><Run Text=" " /><Run x:Name="DownloadingCount" FontWeight="SemiBold" /></TextBlock>
+                </StackPanel>
+                <StackPanel Style="{StaticResource PiecesMapEntryStyle}">
+                    <Border x:Name="MissingSwatch" Style="{StaticResource PiecesMapSwatchStyle}" Background="{ThemeResource PiecesMapMissingBrush}" />
+                    <TextBlock><Run x:Name="MissingLabel" /><Run Text=" " /><Run x:Name="MissingCount" FontWeight="SemiBold" /></TextBlock>
+                </StackPanel>
+                <StackPanel Style="{StaticResource PiecesMapEntryStyle}">
+                    <Border x:Name="CommonSwatch" Style="{StaticResource PiecesMapSwatchStyle}" Background="{ThemeResource PiecesMapCommonBrush}" />
+                    <TextBlock><Run x:Name="CommonLabel" /><Run Text=" " /><Run x:Name="CommonCount" FontWeight="SemiBold" /></TextBlock>
+                </StackPanel>
+                <StackPanel Style="{StaticResource PiecesMapEntryStyle}">
+                    <Grid VerticalAlignment="Center">
+                        <Border x:Name="RareSwatch" Style="{StaticResource PiecesMapSwatchStyle}" Background="{ThemeResource PiecesMapRareBrush}" />
+                        <Path x:Name="Hatch" Data="M0,6 L6,0 M0,11 L11,0 M1,15 L15,1 M5,16 L16,5 M10,16 L16,10" Stroke="{ThemeResource ControlStrongStrokeColorDefaultBrush}" StrokeThickness="1.5" />
+                    </Grid>
+                    <TextBlock><Run x:Name="RareLabel" /><Run Text=" " /><Run x:Name="RareCount" FontWeight="SemiBold" /></TextBlock>
+                </StackPanel>
+                <StackPanel Style="{StaticResource PiecesMapEntryStyle}">
+                    <Grid VerticalAlignment="Center">
+                        <Border x:Name="UnavailableSwatch" Style="{StaticResource PiecesMapSwatchStyle}" Background="{ThemeResource PiecesMapUnavailableBrush}" />
+                        <Path x:Name="Cross" Data="M4,4 L12,12 M12,4 L4,12" Stroke="{ThemeResource SystemFillColorCriticalBrush}" StrokeThickness="1.5" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                    </Grid>
+                    <TextBlock><Run x:Name="UnavailableLabel" /><Run Text=" " /><Run x:Name="UnavailableCount" FontWeight="SemiBold" /></TextBlock>
+                </StackPanel>
+            </local:WrapPanel>
         </Grid>
-        <Grid x:Name="Viewport" Grid.Row="3" SizeChanged="OnSize">
+        <!-- The detail keeps its height while empty and trims instead of wrapping, so the map never moves.
+             Each chip repeats its legend swatch at a smaller size. -->
+        <Grid Grid.Row="1" ColumnSpacing="16">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+            <TextBlock x:Name="Hint" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextTrimming="CharacterEllipsis" />
+            <!-- Facts wider than the line are clipped by this column, so the scale keeps its place. -->
+            <Grid ColumnSpacing="16">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                <StackPanel Orientation="Horizontal" Spacing="16">
+                    <TextBlock x:Name="DetailRange" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                    <TextBlock x:Name="DetailPeers" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    <StackPanel x:Name="DetailVerified" Style="{StaticResource PiecesMapDetailEntryStyle}">
+                        <Viewbox Style="{StaticResource PiecesMapChipStyle}"><Border Style="{StaticResource PiecesMapSwatchStyle}" Background="{ThemeResource AccentFillColorDefaultBrush}" /></Viewbox>
+                        <TextBlock x:Name="DetailVerifiedLabel" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    </StackPanel>
+                    <StackPanel x:Name="DetailDownloading" Style="{StaticResource PiecesMapDetailEntryStyle}">
+                        <Viewbox Style="{StaticResource PiecesMapChipStyle}">
+                            <Border Style="{StaticResource PiecesMapSwatchStyle}" Background="{ThemeResource PiecesMapMissingBrush}">
+                                <Border Width="9" HorizontalAlignment="Left" CornerRadius="4,0,0,4" Background="{ThemeResource PiecesMapReceivedBrush}" />
+                            </Border>
+                        </Viewbox>
+                        <TextBlock x:Name="DetailDownloadingLabel" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    </StackPanel>
+                    <StackPanel x:Name="DetailMissing" Style="{StaticResource PiecesMapDetailEntryStyle}">
+                        <Viewbox Style="{StaticResource PiecesMapChipStyle}"><Border Style="{StaticResource PiecesMapSwatchStyle}" Background="{ThemeResource PiecesMapMissingBrush}" /></Viewbox>
+                        <TextBlock x:Name="DetailMissingLabel" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    </StackPanel>
+                    <StackPanel x:Name="DetailCommon" Style="{StaticResource PiecesMapDetailEntryStyle}">
+                        <Viewbox Style="{StaticResource PiecesMapChipStyle}"><Border Style="{StaticResource PiecesMapSwatchStyle}" Background="{ThemeResource PiecesMapCommonBrush}" /></Viewbox>
+                        <TextBlock x:Name="DetailCommonLabel" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    </StackPanel>
+                    <StackPanel x:Name="DetailRare" Style="{StaticResource PiecesMapDetailEntryStyle}">
+                        <Viewbox Style="{StaticResource PiecesMapChipStyle}">
+                            <Grid>
+                                <Border Style="{StaticResource PiecesMapSwatchStyle}" Background="{ThemeResource PiecesMapRareBrush}" />
+                                <Path Data="M0,6 L6,0 M0,11 L11,0 M1,15 L15,1 M5,16 L16,5 M10,16 L16,10" Stroke="{ThemeResource ControlStrongStrokeColorDefaultBrush}" StrokeThickness="1.5" />
+                            </Grid>
+                        </Viewbox>
+                        <TextBlock x:Name="DetailRareLabel" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    </StackPanel>
+                    <StackPanel x:Name="DetailUnavailable" Style="{StaticResource PiecesMapDetailEntryStyle}">
+                        <Viewbox Style="{StaticResource PiecesMapChipStyle}">
+                            <Grid>
+                                <Border Style="{StaticResource PiecesMapSwatchStyle}" Background="{ThemeResource PiecesMapUnavailableBrush}" />
+                                <Path Data="M4,4 L12,12 M12,4 L4,12" Stroke="{ThemeResource SystemFillColorCriticalBrush}" StrokeThickness="1.5" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                            </Grid>
+                        </Viewbox>
+                        <TextBlock x:Name="DetailUnavailableLabel" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    </StackPanel>
+                </StackPanel>
+                <TextBlock x:Name="DetailFiles" Grid.Column="1" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextTrimming="CharacterEllipsis" />
+            </Grid>
+            <TextBlock x:Name="PieceCount" Grid.Column="1" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+        </Grid>
+        <Grid x:Name="Viewport" Grid.Row="2" SizeChanged="OnSize">
             <Grid x:Name="Drawing" HorizontalAlignment="Left" VerticalAlignment="Top" PointerMoved="OnPointer" PointerPressed="OnPressed" PointerExited="OnPointerExit" FlowDirection="LeftToRight">
                 <Image x:Name="Bitmap" Stretch="Fill" AutomationProperties.AccessibilityView="Raw" />
                 <Border x:Name="Hover" Width="18" Height="18" BorderThickness="1" BorderBrush="{ThemeResource ControlStrongStrokeColorDefaultBrush}" HorizontalAlignment="Left" VerticalAlignment="Top" IsHitTestVisible="False" Visibility="Collapsed" />

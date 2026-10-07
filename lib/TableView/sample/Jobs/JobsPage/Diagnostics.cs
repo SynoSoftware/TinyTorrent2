@@ -1,14 +1,10 @@
 using System.Collections.Specialized;
 using System.Diagnostics;
 using System.Globalization;
-using System.Reflection;
 using System.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
-using Microsoft.UI.Xaml.Automation.Peers;
-using Microsoft.UI.Xaml.Automation.Provider;
 using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
 using Syno.TableView;
@@ -83,12 +79,6 @@ public sealed partial class JobsPage
         {
             Section("A. Did anything render at all?");
             await ReportRenderAsync();
-        }
-
-        if (!Skip("D"))
-        {
-            Section("D. Move the table-owned horizontal offset");
-            await ProbeOffsetAsync();
         }
 
         if (!Skip("F"))
@@ -212,83 +202,9 @@ public sealed partial class JobsPage
         ReportRowOrigin(containers);
         ReportRowPitch(list, containers);
 
-        Section("C. Header cell boundaries vs row cell boundaries at offset 0");
-        await SavePngAsync(System.IO.Path.Combine(AppContext.BaseDirectory, "sample-offset0.png"));
-        ReportBoundaries("offset 0", header, containers);
-    }
-
-    private async Task ProbeOffsetAsync()
-    {
-        ListView? list = FindDescendant<ListView>(Table);
-        Strip? strip = FindDescendant<Strip>(Table);
-        List<Cell> header = new();
-        if (strip is not null)
-        {
-            FindAll(strip, header);
-        }
-
-        double[] headerX = header.Select(c => XOf(c)).ToArray();
-
-        ScrollBar? bar = FindByName<ScrollBar>(Table, "PART_HorizontalScrollBar");
-        W($"PART_HorizontalScrollBar found = {bar is not null}");
-        if (bar is not null)
-        {
-            W($"  Minimum={bar.Minimum:0.##} Maximum={bar.Maximum:0.##} " +
-              $"ViewportSize={bar.ViewportSize:0.##} Value={bar.Value:0.##} Visibility={bar.Visibility}");
-        }
-
-        // The list keeps realizing containers for several frames after load. Wait until the panel
-        // measure counter stops moving, so the offset measurement is not polluted by realization.
-        W("waiting for layout to go quiet: " + await WaitForQuietAsync());
-
-        List<ListViewItem> containers = new();
-        if (list is not null)
-        {
-            FindAll(list, containers);
-        }
-
-        W($"realized ListViewItem containers once quiet = {containers.Count} of {RowCount} rows");
-
-        // Idle baseline first: an untouched table must not be re-measuring on its own.
-        int idleStartM = ReadPanelCounter("MeasurePasses");
-        int idleStartA = ReadPanelCounter("ArrangePasses");
-        await Settle(400);
-        int idleEndM = ReadPanelCounter("MeasurePasses");
-        int idleEndA = ReadPanelCounter("ArrangePasses");
-        W($"idle 400 ms with no input: measure +{idleEndM - idleStartM} arrange +{idleEndA - idleStartA} " +
-          $"(counters {Show(idleStartM)} -> {Show(idleEndM)})");
-
-        bool setValueAccepted = false;
-        if (bar is not null)
-        {
-            setValueAccepted = TryMoveOffsetByAutomation(bar, 300);
-            await Settle(400);
-            W($"automation SetValue(300) accepted={setValueAccepted}; ScrollBar.Value={bar.Value:0.##}");
-        }
-
-        int afterM = ReadPanelCounter("MeasurePasses");
-        int afterA = ReadPanelCounter("ArrangePasses");
-
-        bool moved = false;
-        if (header.Count > 0)
-        {
-            double[] headerAfter = header.Select(c => XOf(c)).ToArray();
-            moved = headerX.Length == headerAfter.Length
-                && headerX.Zip(headerAfter).Any(p => Math.Abs(p.First - p.Second) > 0.5);
-        }
-
-        W($"header cells moved after the offset change = {moved}");
-        W($"MeasureOverride calls caused by the offset change = {afterM - idleEndM}");
-        W($"ArrangeOverride calls caused by the offset change = {afterA - idleEndA}");
-
-        Section("E. Header cell boundaries vs row cell boundaries at the new offset");
-        ReportBoundaries("offset moved", header, containers);
-
-        if (bar is not null)
-        {
-            TryMoveOffsetByAutomation(bar, 0);
-            await Settle(300);
-        }
+        Section("C. Header cell boundaries vs row cell boundaries");
+        await SavePngAsync(System.IO.Path.Combine(AppContext.BaseDirectory, "sample-boundaries.png"));
+        ReportBoundaries("loaded", header, containers);
     }
 
     // ------------------------------------------------------ sections H–K
@@ -937,22 +853,6 @@ public sealed partial class JobsPage
         return 40;
     }
 
-    private async Task<string> WaitForQuietAsync()
-    {
-        for (int round = 1; round <= 20; round++)
-        {
-            int before = ReadPanelCounter("MeasurePasses");
-            await Settle(300);
-            int after = ReadPanelCounter("MeasurePasses");
-            if (after == before)
-            {
-                return $"quiet after {round} round(s), measure counter {Show(after)}";
-            }
-        }
-
-        return $"still moving after 20 rounds, measure counter {Show(ReadPanelCounter("MeasurePasses"))}";
-    }
-
     private void SizeWindow()
     {
         try
@@ -1300,34 +1200,6 @@ public sealed partial class JobsPage
 
     // ------------------------------------------------------------- utilities
 
-    private static bool TryMoveOffsetByAutomation(ScrollBar bar, double value)
-    {
-        try
-        {
-            AutomationPeer? peer = FrameworkElementAutomationPeer.CreatePeerForElement(bar);
-            if (peer?.GetPattern(PatternInterface.RangeValue) is IRangeValueProvider provider)
-            {
-                provider.SetValue(value);
-                return true;
-            }
-        }
-        catch
-        {
-            // reported by the caller through the observed ScrollBar value
-        }
-
-        return false;
-    }
-
-    private static int ReadPanelCounter(string fieldName)
-    {
-        FieldInfo? field = typeof(CellsPanel).GetField(
-            fieldName, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
-        return field?.GetValue(null) is int n ? n : -1;
-    }
-
-    private static string Show(int counter) => counter < 0 ? "(not instrumented)" : counter.ToString();
-
     private double XOf(FrameworkElement element) => XOf(element, Table);
 
     private static double XOf(FrameworkElement element, UIElement relativeTo) =>
@@ -1367,13 +1239,6 @@ public sealed partial class JobsPage
         }
 
         return null;
-    }
-
-    private static T? FindByName<T>(DependencyObject root, string name) where T : FrameworkElement
-    {
-        List<T> all = new();
-        FindAll(root, all);
-        return all.FirstOrDefault(e => e.Name == name);
     }
 
     private static void FindAll<T>(DependencyObject root, List<T> into) where T : DependencyObject

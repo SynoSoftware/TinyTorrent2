@@ -570,7 +570,7 @@ void Application::Receive(Pipe::Client const& client, Json const& request, Reply
 // The window has drawn its first state and waits to appear.
 void Application::OnReady(Pipe::Client const& client, Reply const& reply)
 {
-    if (ui_ && ui_ != client)
+    if (ui_)
     {
         reply(Failure(ErrorCode::UiConnected));
         return;
@@ -823,8 +823,8 @@ void Application::Exit()
     {
         return;
     }
-    exiting_ = true;
     splash_.Close();
+    exiting_ = true;
     Refresh();
     if (ui_)
     {

@@ -12,9 +12,11 @@
 #include <chrono>
 #include <filesystem>
 #include <functional>
+#include <list>
 #include <map>
 #include <memory>
 #include <optional>
+#include <stop_token>
 #include <string>
 #include <vector>
 
@@ -86,6 +88,17 @@ public:
             static std::optional<Period> Read(Json const& value);
         };
 
+        struct Proxy
+        {
+            ProxyType type = ProxyType::None;
+            std::string host;
+            int port = 0;
+            std::string username;
+            std::string password;
+
+            bool operator==(Proxy const&) const = default;
+        };
+
         std::string destination;
         std::string language;
         // Only the window and the splash act on the theme.
@@ -96,6 +109,8 @@ public:
         int activeDownloads = 3;
         int activeSeeds = 5;
         int connections = 200;
+        Encryption encryption = Encryption::Preferred;
+        Proxy proxy;
         double ratio = 0;
         int seedingMinutes = 0;
         bool checksUpdates = true;
@@ -107,7 +122,8 @@ public:
         bool allPaused = false;
         Limits limits;
         Limits alternative{10 * 1024, 10 * 1024};
-        bool usesAlternative = false;
+        // The choice while no schedule applies.
+        LimitMode limitMode = LimitMode::None;
         bool notificationsEnabled = false;
         bool notifyProblems = true;
         bool notifyAdded = false;
@@ -115,11 +131,20 @@ public:
         bool preventSleepSeeding = false;
         bool backgroundNoticeShown = false;
 
+        // The settings for the settings reply and the snapshot.
         Json ToJson() const;
+        // The settings for settings.json, which holds the proxy password
+        // encrypted; Read decrypts it.
+        Json ToFile() const;
         void Read(Json const& saved);
         // A copy with a settings command's changes applied, or nothing when a
-        // change names an unknown setting or holds an invalid value.
+        // change names an unknown setting, holds an invalid value or leaves
+        // the proxy without its address.
         std::optional<Settings> With(Json const& changes) const;
+        Limits Caps(LimitMode mode) const;
+        // The mode's name in settings.json, the settings command and the snapshot.
+        static char const* Name(LimitMode mode);
+        static std::optional<LimitMode> Named(Json const& value);
     };
 
     // The saved document. A change edits a copy of the saved one and commits
@@ -136,6 +161,19 @@ public:
         void Read(Json const& saved);
     };
 
+    struct ProxyCheck
+    {
+        ProxyOutcome outcome = ProxyOutcome::TimedOut;
+        std::chrono::milliseconds elapsed{};
+    };
+
+    // A check that check_proxy started; its result is nothing while it runs.
+    struct RequestedCheck
+    {
+        std::string id;
+        std::optional<ProxyCheck> result;
+    };
+
     // A command's work on a list of torrents that all exist.
     using Action = std::function<void(std::vector<std::string> const& ids, Reply reply)>;
 
@@ -149,6 +187,10 @@ public:
     Store payload;
     // Reads preview sources, which can block on a slow share.
     Store sources;
+    // Checks proxies, which can wait for one that does not answer.
+    Store checks;
+    // Ends a running proxy check when the engine closes.
+    std::stop_source checkStop;
     Log diagnostics{store, directory};
     Changes changes{store, directory / L"settings.json", diagnostics};
     std::function<void()> wake;
@@ -180,11 +222,18 @@ public:
     std::chrono::steady_clock::time_point statusAt{};
     std::optional<ScheduleMode> scheduledMode;
     bool bypassesScheduledPause = false;
-    std::optional<bool> alternativeOverride;
+    std::optional<LimitMode> limitOverride;
     bool interfaceMissing = false;
     std::string appliedListen;
+    std::optional<Settings::Proxy> appliedProxy;
+    std::optional<Encryption> appliedEncryption;
+    // The check of the proxy in use; nothing until it ends.
+    std::optional<ProxyOutcome> proxyOutcome;
+    // The check that check_proxy started last. The snapshot reports it,
+    // because a check can take longer than the client waits for a reply.
+    std::optional<RequestedCheck> requestedCheck;
     std::optional<bool> appliedPause;
-    std::optional<bool> appliedAlternative;
+    std::optional<LimitMode> appliedLimits;
     std::vector<std::string> limitingSeeds;
 
     // What a file operation on the selected torrents reaches. Both path lists
@@ -217,10 +266,10 @@ public:
         std::vector<std::filesystem::path> files;
         std::vector<std::filesystem::path> roots;
         std::string names;
-        DeletionPhase phase = DeletionPhase::Waiting;
+        DeletionPhase phase = DeletionPhase::Saving;
     };
     std::optional<Relocation> relocation;
-    std::optional<Deletion> deletion;
+    std::list<Deletion> deletions;
     struct Rename
     {
         struct Owner
@@ -244,6 +293,8 @@ public:
     ~State();
     static bool Contains(std::vector<std::string> const& values, std::string const& value);
     void Start(Document const& saved, Resumes& resumes);
+    void Restore(std::string const& id, Facts facts, lt::add_torrent_params params);
+    void RestorePending();
     std::filesystem::path ResumeFile(std::string const& id) const;
     Document Saved() const;
     void Tick();
@@ -263,10 +314,15 @@ public:
     void RefreshPolicy(bool configure = false);
     ScheduleMode ScheduledMode() const;
     bool IsPaused() const;
-    bool UsesAlternative() const;
+    LimitMode CurrentLimits() const;
     void LimitSeeds();
     bool ReachedSeedLimit(Torrent const& torrent) const;
     void Configure(Json const& choices, Reply reply);
+    // Connects to the proxy and signs in, without changing the session. `done`
+    // receives nothing when the check cannot run.
+    void CheckProxy(Settings::Proxy proxy, std::function<void(std::optional<ProxyCheck>)> done);
+    // The outcome's name in the snapshot.
+    static std::string_view Name(ProxyOutcome outcome);
     static bool IsAbsolute(std::string const& path);
     void PauseSession(bool paused, std::function<void(Outcome)> done);
     void RecordBackgroundNotice(std::function<void(Outcome)> done);
@@ -292,7 +348,6 @@ public:
         std::vector<lt::download_priority_t> chosen, std::shared_ptr<lt::torrent_info const> const& metadata);
     static bool IsChoice(lt::download_priority_t priority);
     void SaveAddition(std::string id, lt::torrent_handle handle);
-    static void PrepareNames(lt::add_torrent_params& params);
     void PrepareAddition(std::string const& id, lt::torrent_handle handle);
     void CommitAddition(std::string const& id);
     void Abandon(std::string id, Outcome outcome, Added added = {});
@@ -305,9 +360,13 @@ public:
     std::optional<ErrorCode> Refusal() const;
     void Execute(Json const& request, std::string const& connection, Reply reply);
     void MergeTrackers(Preview& preview, std::string const& id, Reply reply);
-    void Act(std::vector<std::string> ids, Reply reply, Action action);
+    void Act(std::vector<std::string> ids, Reply reply, Action action, BusyFiles busy = BusyFiles::Refused);
     void Verify(std::vector<std::string> const& ids, Reply reply);
     void Remove(std::vector<std::string> const& ids, Reply reply, bool deleteData = false);
+    std::list<Deletion>::iterator PrepareDeletion(std::vector<std::string> const& ids);
+    void RemoveHandles(std::vector<std::string> const& ids, std::list<Deletion>::iterator deletion);
+    bool CanRemove(Torrent const& torrent) const;
+    void RemoveDeferred();
     static std::filesystem::path FullPath(std::filesystem::path const& path);
     static bool PathBefore(std::filesystem::path const& left, std::filesystem::path const& right);
     static bool SamePath(std::filesystem::path const& left, std::filesystem::path const& right);
@@ -325,10 +384,15 @@ public:
     void ContinueMove();
     void FinishMove(lt::torrent_handle const& handle, std::optional<Problem> problem);
     void ContinueDeletion();
+    void Delete(std::list<Deletion>::iterator deletion);
     void On(lt::torrent_deleted_alert const& alert);
     void On(lt::torrent_delete_failed_alert const& alert);
     void RecoverFiles();
     void PrepareFiles(Torrent& torrent);
+    static void PrepareNames(lt::add_torrent_params& params);
+    // Returns whether any rename was requested.
+    static bool ApplyNames(lt::torrent_handle const& handle, lt::add_torrent_params const& prepared,
+        std::set<lt::file_index_t>& pending);
     void ContinueNames();
     void FinishNames(Torrent& torrent);
     void CompleteFiles(Torrent& torrent);
@@ -338,12 +402,12 @@ public:
     void On(lt::file_completed_alert const& alert);
     void On(lt::file_renamed_alert const& alert);
     void On(lt::file_rename_failed_alert const& alert);
-    bool HoldsFiles(std::shared_ptr<lt::torrent_info const> const& metadata,
+    std::vector<std::string> Holders(std::shared_ptr<lt::torrent_info const> const& metadata,
         std::string const& destination) const;
     void SetIntent(std::vector<std::string> const& ids, Intent intent, Reply reply);
-    // A missing choice keeps each torrent's current one.
-    void SetPieceOrder(std::vector<std::string> const& ids, std::optional<bool> sequential,
-        std::optional<bool> firstLast, Reply reply);
+    // Saves `change` to each listed torrent's facts, then applies them.
+    void ChangeFacts(std::vector<std::string> const& ids, std::function<void(Facts&)> const& change,
+        Reply reply);
     void Edit(std::string const& id, Json const& choices, Reply reply);
     void CompletePriorities(Torrent& torrent);
     Json History(bool day) const;

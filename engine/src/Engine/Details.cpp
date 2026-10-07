@@ -89,6 +89,11 @@ void Engine::State::CommitEdit(std::string const& id,
     std::optional<std::vector<lt::announce_entry>> const& trackers, Reply reply)
 {
     auto& torrent = torrents.at(id);
+    if (torrent.restore)
+    {
+        reply(Failure(ProblemKind::AliasConflict, torrent.conflict));
+        return;
+    }
     if (!priorities.empty() && torrent.priorityReply)
     {
         reply(Failure(ErrorCode::Overloaded));

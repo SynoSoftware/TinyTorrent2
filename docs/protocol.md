@@ -132,8 +132,10 @@ Measure a real payload problem before replacing this design.
 
 `file_scope` reads `torrent_ids` and returns `torrents`, the transitive outside
 `shared` group, and `kept_files`. Each entry carries its durable `torrent_id`,
-`name`, `save_path`, and actual content `folder`. This is a review aid; Move and
-Delete recheck their scope when they execute.
+`name`, `save_path`, and actual content `folder`. It answers from engine state
+without reading the disk and accepts torrents whose files are busy, so the
+Delete files dialog opens at once. This is a review aid; Move and Delete
+recheck their scope when they execute.
 
 `move` reads `torrent_ids`, the destination parent folder, and the optional
 explicit `use_existing` choice. It replies after the recovery marker commits,
@@ -141,8 +143,7 @@ without occupying the pipe while files move. Rows carry `moving` and
 `move_destination`; completion clears the group markers and failures remain
 visible on the torrents. Source sharing and destination use by an outside
 torrent have distinct refusals, so each offers an action that can resolve it.
-An interrupted saved move refuses an ordinary move or deletion with
-`move_interrupted`. An active move whose disk outcome cannot be established
+An interrupted saved move refuses an ordinary move with `move_interrupted`. An active move whose disk outcome cannot be established
 shows `move_uncertain`; its path holds remain, so recovery first requires a
 normal Exit or explicit Exit anyway and reopening. `recovery_required` remains
 the general unconfirmed-operation code for other commands, so file-specific
@@ -150,8 +151,10 @@ instructions cannot misdirect an Add or priority edit.
 
 `delete_files` reads `torrent_ids`, commits removal, and replies with
 `kept_files`. Payload deletion then continues without the removed rows; failures
-are notified and logged. An unresolved move refuses deletion until explicit
-recovery establishes the real folder. Cancellation or disconnect cannot undo
+are notified and logged. It never refuses because files are busy, following
+[the deletion ruling](engine.md#removal-and-relocation): a torrent whose own
+files are moving or being renamed, or that is deleted while an addition runs,
+leaves the snapshot at once and is removed when that work ends. Cancellation or disconnect cannot undo
 accepted file work, and reconnect never repeats an uncertain destructive command.
 
 ## Isolation

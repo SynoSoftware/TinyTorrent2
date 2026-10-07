@@ -53,6 +53,7 @@ public sealed partial class MainWindow : Window
         SetTitleBar(Caption);
         AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "TinyTorrent.ico"));
         Caption.SizeChanged += (_, _) => UpdateChrome();
+        CaptionStart.SizeChanged += (_, _) => UpdateChrome();
         Menus.SizeChanged += (_, _) => UpdateChrome();
         AddButtons.SizeChanged += (_, _) => UpdateChrome();
         ThemeButton.Loaded += (_, _) => UpdateChrome();
@@ -90,6 +91,7 @@ public sealed partial class MainWindow : Window
         Model.MergeRequested += async (_, _) => await ConfirmMerge();
         Model.MoveRequested += async (_, torrents) => await ShowFiles(torrents, FileAction.Move);
         Model.DeleteRequested += async (_, torrents) => await ShowFiles(torrents, FileAction.Delete);
+        Model.SpeedLimitRequested += async (_, torrents) => await ShowSpeedLimit(torrents);
         Model.OpenRequested += (_, args) => Open(args);
         Model.CopyRequested += (_, text) =>
         {
@@ -111,14 +113,18 @@ public sealed partial class MainWindow : Window
         };
         Model.ShowRequested += async (_, _) => await ShowWhenReady();
         Model.CloseRequested += async (_, engineExit) => await CloseWindow(engineExit);
+        // No limit sorts as the highest, so ascending lists limited torrents first.
+        static long Rank(int limit) => limit > 0 ? limit : long.MaxValue;
         Torrents.Schema<Torrent>().Key(row => row.TorrentId).CanReorder(row => row.Queue >= 0)
             .SortKey(NameColumn, row => row.Name, StringComparer.CurrentCultureIgnoreCase)
             .SortKey(SizeColumn, row => row.Size).SortKey(ProgressColumn, row => row.Progress)
             .SortKey(StatusColumn, row => row.Status).SortKey(DownColumn, row => row.DownloadRate)
             .SortKey(UpColumn, row => row.UploadRate).SortKey(QueueColumn, row => row.QueueOrder)
-            .SortKey(EtaColumn, row => row.DownloadRate <= 0 ? double.PositiveInfinity : row.Remaining / row.DownloadRate)
+            .SortKey(LimitColumn, row => (Rank(row.DownloadLimit), Rank(row.UploadLimit)))
+            .SortKey(EtaColumn, row => row.Eta ?? double.PositiveInfinity)
             .SortKey(RatioColumn, row => row.Ratio)
-            .SortKey(PeersColumn, row => row.Seeds).SortKey(AddedColumn, row => row.Added);
+            .SortKey(SeedsColumn, row => row.Seeds).SortKey(PeersColumn, row => row.Leechers)
+            .SortKey(AddedColumn, row => row.Added);
         Torrents.Sort = new Syno.TableView.Sort(QueueColumn);
         Torrents.Placeholder = Syno.TableView.Placeholder.Loading;
         Torrents.SelectionChanged += async (_, _) => await SelectTorrent();
@@ -133,7 +139,10 @@ public sealed partial class MainWindow : Window
         AppWindow.Closing += OnClosing;
         Closed += (_, _) => { _uiSettings.TextScaleFactorChanged -= OnTextScaling; Model.Dispose(); };
         AddShortcut(new() { Key = VirtualKey.O, Modifiers = VirtualKeyModifiers.Control }, Model.Add);
-        AddShortcut(new() { Key = VirtualKey.W, Modifiers = VirtualKeyModifiers.Control }, Model.CloseWindow);
+        // Windows closes the window on Alt+F4 through OnClosing; this entry only
+        // shows the key beside Exit.
+        _shortcuts.Add(Model.CloseWindow, new() { Key = VirtualKey.F4, Modifiers = VirtualKeyModifiers.Menu });
+        AddShortcut(new() { Key = VirtualKey.Q, Modifiers = VirtualKeyModifiers.Control }, Model.Exit);
         AddShortcut(new() { Key = VirtualKey.P, Modifiers = VirtualKeyModifiers.Control, ScopeOwner = Torrents }, Model.Pause);
         AddShortcut(new() { Key = VirtualKey.S, Modifiers = VirtualKeyModifiers.Control, ScopeOwner = Torrents }, Model.Resume);
         AddShortcut(new() { Key = VirtualKey.M, Modifiers = VirtualKeyModifiers.Control, ScopeOwner = Torrents }, Model.Force);
@@ -209,9 +218,8 @@ public sealed partial class MainWindow : Window
         if (selection) accelerator.ScopeOwner = Root;
         accelerator.Invoked += (_, args) =>
         {
-            if (HasDialog && accelerator.Key != VirtualKey.W) return;
-            if (selection && (Model.Page != WindowPage.Torrents || HasEditorFocus())) return;
-            if (Root.XamlRoot?.Content is null) return;
+            if (HasDialog) return;
+            if (selection && (Model.Page != WindowPage.Torrents || HasEditorFocus())) return;            if (Root.XamlRoot?.Content is null) return;
             action();
             args.Handled = true;
         };
@@ -255,7 +263,11 @@ public sealed partial class MainWindow : Window
             Bind(dialog, ContentDialog.IsPrimaryButtonEnabledProperty, nameof(AddDraft.CanSubmit));
             Bind(dialog, ContentDialog.PrimaryButtonTextProperty, nameof(AddDraft.SubmitText));
             Bind(dialog, Dialog.PrimaryToolTipProperty, nameof(AddDraft.SubmitToolTip));
-            dialog.PrimaryButtonClick += OnSubmit;
+            dialog.PrimaryButtonClick += async (_, args) =>
+            {
+                await Submit(interaction, args, Model.Draft.Submit);
+                if (args.Cancel) _form?.FocusError();
+            };
             dialog.Opened += (_, _) => _form?.FocusError();
             dialog.Closing += (_, args) => { if ((Model.Draft.IsSubmitting || Model.IsPicking) && !Model.IsClosing) args.Cancel = true; };
             var completed = false;
@@ -327,22 +339,6 @@ public sealed partial class MainWindow : Window
         return null;
     }
 
-    private async void OnSubmit(ContentDialog sender, ContentDialogButtonClickEventArgs args)
-    {
-        args.Cancel = true;
-        var deferral = args.GetDeferral();
-        try
-        {
-            args.Cancel = !await Model.Draft.Submit();
-            if (!args.Cancel && _interaction is { } interaction) interaction.IsResolved = true;
-            if (args.Cancel) _form?.FocusError();
-        }
-        finally
-        {
-            deferral.Complete();
-        }
-    }
-
     private async void OnClosing(AppWindow sender, AppWindowClosingEventArgs args)
     {
         if (_allowClose) return;
@@ -365,7 +361,9 @@ public sealed partial class MainWindow : Window
         DialogInteraction? suspended = null;
         try
         {
-            if (!HasDialog && !Model.HasDraft && !Model.IsPicking) AppWindow.Hide();
+            // An open schedule period may keep the window open with its error,
+            // so the window stays visible instead of vanishing and returning.
+            if (!HasDialog && !Model.HasDraft && !Model.Preferences.Schedule.HasDraft && !Model.IsPicking) AppWindow.Hide();
             if (_engineExit) await Model.DeferClose();
             if (_interaction is { IsDraftDecision: true } decision && !await decision.Completion.Task) return;
             if (!Model.CanClose)
@@ -423,14 +421,16 @@ public sealed partial class MainWindow : Window
                     await Model.Activated(true);
                 }
                 ShowDeferredAdd();
+                // A page the person is already on stays as they left it, and
+                // Recover moves only to the error.
                 if (!HasDialog && Model.Preferences.HasError)
                 {
-                    await ShowPreferences(new(PreferenceSection.General));
+                    if (Model.Page != WindowPage.Preferences) await ShowPreferences(new(PreferenceSection.General));
                     focused = _preferencesForm?.Recover(focusName);
                 }
                 else if (!HasDialog && Model.Inspector.HasDraft && Model.Inspector.HasError)
                 {
-                    await ShowTorrents();
+                    if (Model.Page != WindowPage.Torrents) await ShowTorrents();
                     focused = (InspectorContent.Content as InspectorForm)?.Recover();
                 }
                 if (focused is { IsLoaded: true })
@@ -449,10 +449,11 @@ public sealed partial class MainWindow : Window
     {
         if (Model.Draft.HasChanges) return ResolveDraft("add", Model.Draft.Submit, Model.Draft.Cancel);
         if (Model.Files.HasDraft) return ResolveDraft("move", Model.Files.Submit, () => { Model.Files.Cancel(); return Task.CompletedTask; });
-        if (Model.Preferences.HasDraft) return ResolveDraft("schedule", Model.Preferences.SaveDraft, () =>
-            { Model.Preferences.CancelDraft(); return Task.CompletedTask; });
-        if (Model.Inspector.HasDraft) return ResolveDraft("torrent", Model.Inspector.SaveDraft, () =>
-            { Model.Inspector.CancelDraft(); return Task.CompletedTask; });
+        if (!Model.Inspector.HasDraft) return Task.FromResult(true);
+        // As with Settings, an edit that cannot be saved, because the engine or
+        // the torrent is gone, closes without it instead of trapping the person.
+        if (Model.CanSave && Model.Inspector.IsAvailable) return Model.Inspector.Depart();
+        Model.Inspector.CancelDraft();
         return Task.FromResult(true);
     }
 

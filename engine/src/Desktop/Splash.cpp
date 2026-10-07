@@ -94,6 +94,8 @@ Splash::Splash(Strings const& strings) : strings_(strings)
 
 Splash::~Splash()
 {
+    // The application and its pipe have already released the reply's owners.
+    show_ = nullptr;
     Close();
 }
 
@@ -192,7 +194,10 @@ void Splash::Close()
         buffered_ = false;
     }
     shownAt_ = 0;
-    show_ = nullptr;
+    if (auto show = std::exchange(show_, nullptr))
+    {
+        show();
+    }
 }
 
 void Splash::Translate()

@@ -102,6 +102,31 @@ public sealed class Strings
         return Format("units", units[unit], value);
     }
 
+    /// <summary>Formats a remaining time in its two largest units; 100 days or more reads as never, as in qBittorrent.</summary>
+    public string Duration(double seconds)
+    {
+        var minutes = (long)Math.Ceiling(seconds / 60);
+        if (minutes >= 100 * 24 * 60) return "∞";
+        if (minutes < 60) return Format("units", "minutes", minutes);
+        if (minutes < 24 * 60)
+            return minutes % 60 == 0 ? Format("units", "hours", minutes / 60) : Format("units", "hours_minutes", minutes / 60, minutes % 60);
+        var hours = minutes % (24 * 60) / 60;
+        return hours == 0 ? Format("units", "days", minutes / (24 * 60)) : Format("units", "days_hours", minutes / (24 * 60), hours);
+    }
+
+    public string Ago(DateTimeOffset moment)
+    {
+        var elapsed = DateTimeOffset.Now - moment;
+        if (elapsed.TotalMinutes < 1) return Get("units", "now");
+        if (elapsed.TotalHours < 1) return FormatCount("units", "minutes_ago", (int)elapsed.TotalMinutes);
+        if (elapsed.TotalDays < 1) return FormatCount("units", "hours_ago", (int)elapsed.TotalHours);
+        if (elapsed.TotalDays < 30) return FormatCount("units", "days_ago", (int)elapsed.TotalDays);
+        if (elapsed.TotalDays < 365) return FormatCount("units", "months_ago", (int)(elapsed.TotalDays / 30));
+        return FormatCount("units", "years_ago", (int)(elapsed.TotalDays / 365));
+    }
+
+    public string Time(DateTimeOffset moment) => moment.LocalDateTime.ToString("g", CultureInfo.CurrentCulture);
+
     internal sealed record Catalogue(string Language, Dictionary<string, Dictionary<string, string>> Text,
         Syno.TableView.Strings Table, bool IsRightToLeft);
 }

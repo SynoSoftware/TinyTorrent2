@@ -7,15 +7,8 @@ namespace Syno.TableView;
 
 /// <summary>
 /// The one panel type used by both the header strip and the row template. It reads the resolved
-/// layout, realizes one child per visible column, and arranges each child at its cumulative x
-/// minus the table-owned horizontal offset.
+/// layout, realizes one child per visible column, and arranges each child at its cumulative x.
 /// </summary>
-/// <remarks>
-/// A pure horizontal-offset change arrives as <see cref="LayoutInvalidationReason.Offset"/> and
-/// calls <see cref="UIElement.InvalidateArrange"/> only, so no measure pass runs.
-/// <see cref="LayoutInvalidationReason.Widths"/> adds the measure, and only
-/// <see cref="LayoutInvalidationReason.Columns"/> reconciles the cells.
-/// </remarks>
 public sealed partial class CellsPanel : Panel
 {
     /// <summary>The column a row cell shows. A header cell names its own.</summary>
@@ -87,6 +80,12 @@ public sealed partial class CellsPanel : Panel
 
     private void OnUnloaded(object sender, RoutedEventArgs e)
     {
+        // A late Unloaded for a panel still in the tree; see Table's OnUnloaded.
+        if (IsLoaded)
+        {
+            return;
+        }
+
         if (_layout is null)
         {
             return;
@@ -114,12 +113,6 @@ public sealed partial class CellsPanel : Panel
 
     private void OnLayoutInvalidated(object? sender, LayoutInvalidationReason reason)
     {
-        if (reason == LayoutInvalidationReason.Offset)
-        {
-            InvalidateArrange();
-            return;
-        }
-
         // New widths across the same columns leave every cell where it belongs, so a resize takes
         // the measure without the reconcile.
         if (reason == LayoutInvalidationReason.Columns)
@@ -356,12 +349,11 @@ public sealed partial class CellsPanel : Panel
 
         IReadOnlyList<VisibleColumn> visible = _layout.VisibleColumns;
         RequireOneCellPerColumn(visible.Count);
-        double offset = _layout.HorizontalOffset;
 
         for (int i = 0; i < visible.Count; i++)
         {
             Children[i].Arrange(new Rect(
-                visible[i].Offset - offset,
+                visible[i].Offset,
                 0,
                 visible[i].Width,
                 finalSize.Height));

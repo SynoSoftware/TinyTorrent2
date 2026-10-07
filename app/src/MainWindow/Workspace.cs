@@ -36,6 +36,7 @@ public sealed partial class MainWindow
     private async Task<bool> Navigate(WindowPage page)
     {
         if (HasDialog || Model.IsClosing || _allowClose) return false;
+        if (Model.Page == WindowPage.Torrents && page != WindowPage.Torrents && !await LeaveInspector()) return false;
         if (Model.Page == WindowPage.Preferences && page != WindowPage.Preferences)
         {
             if (!await Model.Preferences.PrepareLeave())
@@ -45,10 +46,8 @@ public sealed partial class MainWindow
                 field?.Focus(FocusState.Programmatic);
                 return false;
             }
-            if (Model.Preferences.HasDraft && !await ResolveDraft("schedule", Model.Preferences.SaveDraft, () =>
-                { Model.Preferences.CancelDraft(); return Task.CompletedTask; })) return false;
         }
-        if (Model.IsClosing) return false;
+        if (HasDialog || Model.IsClosing || _allowClose) return false;
         Model.Page = page;
         return true;
     }
@@ -63,8 +62,9 @@ public sealed partial class MainWindow
         if (!await Navigate(WindowPage.Preferences)) return;
         if (_preferencesForm is null)
         {
-            _preferencesForm = new PreferencesForm(Model.Preferences);
+            _preferencesForm = new PreferencesForm(Model);
             _preferencesForm.DestinationRequested += async (_, _) => await PickPreferenceFolder();
+            _preferencesForm.ProxyRequested += async (_, _) => await ShowProxy();
             PreferencesContent.Content = _preferencesForm;
         }
         _preferencesForm.Navigate(target);
@@ -87,8 +87,7 @@ public sealed partial class MainWindow
         var desired = selection ?? Torrents.Selection;
         try
         {
-            var accepted = await Model.Select(desired.Items.Cast<Torrent>(), desired.Current as Torrent, () =>
-                ResolveDraft("torrent", Model.Inspector.SaveDraft, () => { Model.Inspector.CancelDraft(); return Task.CompletedTask; }));
+            var accepted = await Model.Select(desired.Items.Cast<Torrent>(), desired.Current as Torrent, LeaveInspector);
             var retained = Model.Selected.Where(Model.VisibleTorrents.Contains).ToArray();
             Torrents.Selection = new Syno.TableView.Selection(retained, Model.Current is { } current && Model.VisibleTorrents.Contains(current) ? current : null);
             return accepted;
@@ -96,6 +95,15 @@ public sealed partial class MainWindow
         finally { _selecting = false; }
     }
 
+    private async Task<bool> LeaveInspector()
+    {
+        if (await Model.Inspector.Depart()) return true;
+        (InspectorContent.Content as InspectorForm)?.Recover().Focus(FocusState.Programmatic);
+        return false;
+    }
+
+    // Only Add and Move still ask, because applying them on close would start
+    // a download or a file move that the person has not confirmed.
     private async Task<bool> ResolveDraft(string editor, Func<Task<bool>> save, Func<Task> discard)
     {
         var focused = FocusManager.GetFocusedElement(Root.XamlRoot) as Control;
@@ -104,31 +112,14 @@ public sealed partial class MainWindow
             var prompt = new Dialog { XamlRoot = Root.XamlRoot, DefaultButton = ContentDialogButton.Close, SecondaryGlyph = Syno.Lucide.Undo2, CloseGlyph = Syno.Lucide.Pencil };
             var choice = await ShowDialog(interaction, prompt, () =>
             {
-                var subject = editor == "torrent" ? (Model.Inspector.HasTrackerDraft, Model.Inspector.HasFileDraft) switch
-                {
-                    (true, true) => "torrent",
-                    (true, false) => "trackers",
-                    _ => "files"
-                } : editor;
-                prompt.Title = Model.Text.Get("changes", subject + "_title");
-                prompt.Content = editor switch
-                {
-                    "add" => Lines([Model.Draft.Heading]),
-                    "move" => Lines([Model.Files.Destination]),
-                    "schedule" => null,
-                    _ => Lines([Model.Inspector.Name])
-                };
-                (prompt.PrimaryButtonText, prompt.Glyph) = subject switch
-                {
-                    "add" => (Model.Draft.SubmitText, Syno.Lucide.CirclePlus),
-                    "move" => (Model.Files.SubmitText, Syno.Lucide.FolderInput),
-                    "files" => (Model.Text.Get("inspector", "retry_files"), Syno.Lucide.RotateCw),
-                    _ => (Model.Text.Get("changes", "save"), Syno.Lucide.Save)
-                };
+                prompt.Title = Model.Text.Get("changes", editor + "_title");
+                (prompt.Content, prompt.PrimaryButtonText, prompt.Glyph) = editor == "add"
+                    ? (Lines([Model.Draft.Heading]), Model.Draft.SubmitText, Syno.Lucide.CirclePlus)
+                    : (Lines([Model.Files.Destination]), Model.Files.SubmitText, Syno.Lucide.FolderInput);
                 prompt.PrimaryGlyph = prompt.Glyph;
-                prompt.PrimaryToolTip = Model.Text.Get("changes", subject + "_save_tip");
+                prompt.PrimaryToolTip = Model.Text.Get("changes", editor + "_save_tip");
                 prompt.SecondaryButtonText = Model.Text.Get("changes", "discard");
-                prompt.SecondaryToolTip = Model.Text.Get("changes", subject + "_discard_tip");
+                prompt.SecondaryToolTip = Model.Text.Get("changes", editor + "_discard_tip");
                 // Two words, because Cancel would not say whether it cancels the
                 // edit or the act that is leaving it.
                 prompt.CloseButtonText = Model.Text.Get("changes", "keep_editing");
