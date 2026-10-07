@@ -23,6 +23,21 @@ reviewer leaves no counted disclosure defect after its second scoped re-review.
 See [morning-report.md](morning-report.md#latest-diff-review-and-add-disclosure--2026-10-07)
 for the focused evidence and remaining gaps. The broader release goal is active.
 
+The follow-up review through `065243b` finds no additional source defect and
+removes the temporary Settings/About audit after preserving its evidence.
+The broader visual review's Add search clipping is corrected: transient Unloaded
+events no longer end subscriptions before the dialog closes. AddForm owns layout
+subscriptions until MainWindow disposes it; the accepted layout is unchanged.
+Twelve correction variants retain the prepared draft, and the fresh reviewer
+closes the finding with no new counted defect after correction re-review #1.
+Some larger popup bitmaps and literal 720-pixel width remain unverified. These
+checks do not reopen accepted designs or require repeated engine checks.
+Overlapping Settings captures also close the General, Transfers and schedule
+middle-viewport gaps across all twelve variants, with unchanged fields and
+saved periods. The fresh reviewer finds no counted defect in those 194 images.
+Temporary probes are removed, and the ordinary Debug/x64 app builds cleanly.
+This Add lifetime milestone does not close #140 or the Windows integration gaps.
+
 ## Chart and menu review checkpoint — 2026-10-07
 
 The Speed/Pieces and window/engine Exit changes in `d77471d` retain their existing

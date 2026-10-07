@@ -43,6 +43,54 @@ PiecesMap own their rendering and input, Inspector owns detail collection, and
 File/search/Ctrl+W use the same window-close operation. No additional owner,
 type, state or abstraction is justified by this review.
 
+The follow-up review through `065243b` finds no new ownership, naming or comment
+defect. The temporary Settings/About audit and its mode are removed after
+72 visits and 112 PNGs in
+`artifacts/evidence/UiSelfCapture-bf9b602c-317b-424b-b9a4-1c5ec26b6f96/captures`.
+Its report has no failure and all 25 preference fields match before and after.
+No product code changes, rebuild or repeated test is justified by this cleanup.
+The process audit and documented Everything query return no results.
+
+The broader fresh capture review finds one Add defect outside the scoped
+disclosure acceptance below: narrowing an open form leaves its content too wide,
+clipping file search. The current reproduction is
+`artifacts/evidence/UiSelfCapture-6bbd830d-ba23-40fc-8537-8f6abdeadf38/captures`.
+The short trace in `UiSelfCapture-4c07f91f-c30c-432d-a851-1baf8068ea21/captures`
+records transient Unloaded events detaching the form's subscriptions while its
+dialog stays open. AddForm now owns those subscriptions for its dialog lifetime;
+MainWindow supplies the host XamlRoot and disposes the form before detaching it.
+The existing layout, sizing formulas and draft authority remain unchanged.
+
+The correction in
+`artifacts/evidence/UiSelfCapture-eaeaa341-ffd7-4743-b97b-0d245dc161ed/captures`
+completes all twelve variants in 77.65 seconds with no reported failure.
+Host changes now resize the same prepared form, retaining destination, sources,
+files, choices and paused intent. The fresh reviewer compares narrow baselines
+and all 24 correction popup paths: the clipped search is resolved, with no new
+counted defect after correction re-review #1. Some larger popup bitmaps are blank;
+those remain pixel gaps. Root's serial user, keyboard, accessibility, Fluent and
+UX review agrees with the correction, without claiming physical input or OS
+accessibility evidence. The accepted minimum still clamps narrow clients to
+837 pixels in English and 863 in Spanish; literal 720-pixel width is unverified.
+
+The overlapping Settings capture in
+`artifacts/evidence/UiSelfCapture-f1883f87-1562-4547-9f87-12d832a4ce8a/captures`
+completes 194 images in 313.58 seconds, using the existing diagnostic binary.
+All preference fields and saved periods match before and after, with no draft
+left open. The fresh reviewer inspects all images across the twelve variants
+and finds no counted defect: Notifications/Startup, alternative limits,
+intermediate weekdays and schedule day/From/Until now have complete pixel
+coverage. No accepted Settings, title-bar or schedule layout changes are needed.
+
+The final source review preserves one layout owner, one draft authority and
+the existing naming and comments. Temporary resize, audit and coverage probes
+are removed. Ordinary Debug/x64 compilation passes in 39.48 seconds with no
+warnings or errors; only the app compiles, and both libraries reuse their outputs.
+Owned processes close normally and the documented Everything query returns no
+results. Engine code is unchanged, so its safety evidence remains valid; no
+engine build, repeated engine check or full suite is warranted. Physical input,
+Windows integration, #140 and the other release gaps remain open.
+
 The focused Add baseline is
 `artifacts/evidence/UiSelfCapture-8ec88d1a-f77f-4f92-8b2e-b612d662e3c7/captures`.
 Twelve native file-choice journeys refused an empty selection and recovered

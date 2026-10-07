@@ -9,9 +9,10 @@ using Syno.TinyTorrent.Controls;
 
 namespace Syno.TinyTorrent.Views;
 
-public sealed partial class AddForm : UserControl
+public sealed partial class AddForm : UserControl, IDisposable
 {
     public MainViewModel Model { get; }
+    private readonly XamlRoot _root;
     private readonly FileBrowser _browser;
     private bool _maximized;
     // Null until the person chooses; until then the room decides.
@@ -20,9 +21,10 @@ public sealed partial class AddForm : UserControl
     public event EventHandler? DestinationRequested;
     public event EventHandler? CloseRequested;
 
-    public AddForm(MainViewModel model)
+    public AddForm(MainViewModel model, XamlRoot root)
     {
         Model = model;
+        _root = root;
         _hasFiles = model.Draft.HasFiles;
         InitializeComponent();
         // Resetting recent folders during localisation clears the editable
@@ -37,18 +39,17 @@ public sealed partial class AddForm : UserControl
             OptionsColumn.Width = new GridLength(1 - share, GridUnitType.Star);
             FilesColumn.Width = new GridLength(share, GridUnitType.Star);
         };
-        Loaded += (_, _) =>
-        {
-            XamlRoot.Changed += OnRootChanged;
-            Model.Draft.PropertyChanged += OnDraftChanged;
-            Fit();
-        };
-        Unloaded += (_, _) =>
-        {
-            if (XamlRoot is { } root) root.Changed -= OnRootChanged;
-            Model.Draft.PropertyChanged -= OnDraftChanged;
-        };
+        // ContentDialog may unload its content while the dialog is still open.
+        _root.Changed += OnRootChanged;
+        Model.Draft.PropertyChanged += OnDraftChanged;
+        Fit();
         RefreshText();
+    }
+
+    public void Dispose()
+    {
+        _root.Changed -= OnRootChanged;
+        Model.Draft.PropertyChanged -= OnDraftChanged;
     }
 
     // Uses the splitter's set width, not its actual width, so the result stays
@@ -70,7 +71,7 @@ public sealed partial class AddForm : UserControl
     // from the window: a comfortable default, or nearly the whole window.
     private void Fit()
     {
-        var window = XamlRoot.Size;
+        var window = _root.Size;
         var room = window.Width - 96;
         var width = _maximized ? room : Math.Min(960, room);
         var height = _maximized ? window.Height - 176 : Math.Clamp(window.Height - 220, 320, 580);

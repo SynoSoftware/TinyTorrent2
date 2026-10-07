@@ -231,7 +231,7 @@ public sealed partial class MainWindow : Window
                 if (!Model.Draft.HasChanges) return true;
                 return interaction.IsResolved = await ResolveDraft("add", Model.Draft.Submit, Model.Draft.Cancel);
             };
-            _form = new AddForm(Model);
+            _form = new AddForm(Model, Root.XamlRoot);
             _form.DestinationRequested += async (_, _) => await PickDestination();
             _form.AllowDrop = true;
             _form.DragOver += OnDragOver;
@@ -273,6 +273,7 @@ public sealed partial class MainWindow : Window
             }
             finally
             {
+                _form?.Dispose();
                 dialog.Content = null;
                 Model.IsAddOpen = false;
                 if (!Model.IsClosing && completed)
