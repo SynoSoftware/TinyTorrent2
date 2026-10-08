@@ -16,6 +16,8 @@ public sealed class AddDraft : INotifyPropertyChanged
     private readonly Strings _strings;
     private string _destination;
     private string _defaultDestination;
+    private bool _defaultPaused;
+    private bool _defaultQueueTop;
     private bool _paused;
     private bool _queueTop;
     private bool _sequential;
@@ -145,11 +147,11 @@ public sealed class AddDraft : INotifyPropertyChanged
     // Magnet text not yet accepted becomes one more source when Add runs.
     private int SubmitCount => Sources.Count + (Magnet.Trim().Length > 0 ? 1 : 0);
     public string Space =>
-        FreeSpace() is not { } free ? string.Empty
+        DiskSpace.Read(_destination) is not { } free ? string.Empty
         : Needed > free
             ? _strings.Format("add", "short", _strings.Bytes(Needed), _strings.Bytes(free))
         : _strings.Format("add", "free", _strings.Bytes(free));
-    public bool LacksSpace => FreeSpace() is { } free && Needed > free;
+    public bool LacksSpace => DiskSpace.Read(_destination) is { } free && Needed > free;
     private long Needed =>
         Sources
             .Where(source => source.MetadataReady && !source.IsDuplicate)
@@ -588,11 +590,24 @@ public sealed class AddDraft : INotifyPropertyChanged
         await _client.Send("cancel_preview", new { preview_id = previewId });
     }
 
-    internal void UseDefault(string destination)
+    internal void ApplyDefaults(string destination, bool startsDownload, bool queueTop)
     {
-        if (Sources.Count > 0 || _destination != _defaultDestination || _destination == destination)
+        if (_defaultDestination == destination && _defaultPaused == !startsDownload && _defaultQueueTop == queueTop)
             return;
-        _defaultDestination = _destination = destination;
+        var usesDestination = _destination == _defaultDestination;
+        var usesPaused = _paused == _defaultPaused;
+        var usesQueue = _queueTop == _defaultQueueTop;
+        _defaultDestination = destination;
+        _defaultPaused = !startsDownload;
+        _defaultQueueTop = queueTop;
+        if (HasChanges)
+            return;
+        if (usesDestination)
+            _destination = _defaultDestination;
+        if (usesPaused)
+            _paused = _defaultPaused;
+        if (usesQueue)
+            _queueTop = _defaultQueueTop;
         Refresh();
     }
 
@@ -609,9 +624,11 @@ public sealed class AddDraft : INotifyPropertyChanged
         Files.Clear();
         Magnet = string.Empty;
         EditingMagnet = false;
-        _paused = _queueTop = _sequential = _firstLast = _neverShow = false;
+        _paused = _defaultPaused;
+        _queueTop = _defaultQueueTop;
+        _sequential = _firstLast = _neverShow = false;
         _failure = null;
-        _defaultDestination = _destination;
+        _destination = _defaultDestination;
         Refresh();
     }
 
@@ -620,25 +637,6 @@ public sealed class AddDraft : INotifyPropertyChanged
         foreach (var source in Sources)
             source.Refresh();
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
-    }
-
-    private long? FreeSpace()
-    {
-        try
-        {
-            if (!Path.IsPathFullyQualified(_destination))
-                return null;
-            var drive = new DriveInfo(_destination);
-            // A disconnected network drive can block the UI thread for seconds.
-            if (drive.DriveType == DriveType.Network || !drive.IsReady)
-                return null;
-            return drive.AvailableFreeSpace;
-        }
-        catch (Exception error)
-            when (error is ArgumentException or IOException or UnauthorizedAccessException)
-        {
-            return null;
-        }
     }
 }
 

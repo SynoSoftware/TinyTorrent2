@@ -62,11 +62,12 @@ public sealed partial class MainWindow
                 ?? throw new InvalidOperationException(
                     "The edit review settings page did not open."
                 );
-            var number = CaptureElements(page)
-                .OfType<NumberBox>()
+            var control = CaptureElements(page)
+                .OfType<Control>()
+                .Where(control => control is TextBox or NumberBox)
                 .Single(control => ReferenceEquals(control.Tag, setting));
             var editor =
-                TextEditor.Find(number)
+                TextEditor.Find(control)
                 ?? throw new InvalidOperationException("The native numeric editor did not load.");
             editor.Focus(FocusState.Programmatic);
             editor.Text = input;
@@ -94,13 +95,12 @@ public sealed partial class MainWindow
 
         async Task<SchedulePeriod> AddPeriod()
         {
-            // Periods show and change only under the weekly schedule.
             await Model.ChooseLimits(LimitMode.Schedule);
             if (!Model.FollowsSchedule)
                 throw new InvalidOperationException(
                     "The edit review could not choose the weekly schedule."
                 );
-            await ShowSettings(new(SettingsCategory.Limits));
+            await ShowSettings(new(SettingsCategory.Schedule));
             await CaptureLayout();
             var page =
                 _settingsPage
@@ -505,7 +505,7 @@ public sealed partial class MainWindow
                 }
             );
             completed.Add("edits-period-save-departure");
-            await ShowSettings(new(SettingsCategory.Limits));
+            await ShowSettings(new(SettingsCategory.Schedule));
             await settings.Schedule.Open(
                 settings.Schedule.Periods.Single(period => period.Matches(added))
             );

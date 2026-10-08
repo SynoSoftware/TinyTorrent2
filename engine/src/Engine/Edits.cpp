@@ -110,7 +110,7 @@ void Engine::State::CommitEdit(std::string const& id,
         }
         if (facts.priorities.empty())
         {
-            facts.priorities = DefaultPriorities(metadata->layout());
+            facts.priorities = DefaultPriorities(metadata->layout(), facts.skipPatterns);
         }
         for (auto const& [index, priority] : priorities)
         {

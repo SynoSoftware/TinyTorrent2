@@ -87,6 +87,15 @@ torrent's own intent.
 **Download queue**: the order in which unfinished torrents are considered for
 downloading. It is distinct from the table's displayed order.
 
+**Queue limits**: the maximum numbers of automatically managed downloading,
+seeding, and overall active torrents. They limit activity, not transfer speed.
+
+**Bandwidth limits**: caps on download and upload rates, separate from how many
+torrents or peers may be active.
+
+**Transfer preset**: a named combination of bandwidth and queue limits. Custom
+means the current choices do not match a predefined combination, not a saved profile.
+
 ### Files and folders
 
 **Save path**: the base folder against which a torrent's relative file paths are
@@ -112,6 +121,25 @@ used by torrents outside the operation. Removal and deletion have separate outco
 **Move**: changing a torrent's save path by moving its files, or by using and
 verifying files already at the destination.
 _Avoid_: relocation.
+
+### Library
+
+**Library**: the searchable collection of files reported by its current data
+sources, together with associated video information.
+
+**Library data source**: an origin of Library file entries and their current
+membership, such as managed torrents.
+_Avoid_: source alone, which means a torrent file or magnet supplied for addition.
+
+**Library entry**: a known file location represented by one or more current
+data-source contributions.
+
+**Video information**: descriptive facts about a movie, series or episode,
+independent of whether a corresponding file belongs to Library.
+_Avoid_: metadata, which describes torrent content.
+
+**Identification**: the association of a Library file with the movie or TV
+content it represents.
 
 ### Engine work and presentation
 
@@ -144,6 +172,12 @@ _Avoid_: result, when naming an operation's outcome.
 **Snapshot**: a coherent, completed copy of engine state for presentation.
 _Avoid_: observation, when it means the same copy.
 
+**Refresh interval**: how often the product window requests current engine data.
+It does not determine how often the engine records speed history.
+
+**History interval**: the period represented by an average speed sample in a
+history range, independent of whether the product window is open.
+
 **Tray**: the application's Windows notification-area icon and menu.
 
 **Splash window**: the temporary window shown while the product interface opens.
@@ -155,7 +189,8 @@ _Avoid_: preferences.
 to.
 _Avoid_: interface.
 
-**Page**: a whole view of the product window: Torrents, Settings, or About.
+**Page**: a whole view of the product window, such as Torrents, Library, Settings,
+or About.
 _Avoid_: form.
 
 **Dialog**: a surface over the product window for one task, such as Add or Proxy.

@@ -85,9 +85,13 @@ that result. The torrent stays checkpointing until these writes have settled.
 
 The engine records the session's total download and upload rate once a second,
 also while WinUI is closed, so the Speed view shows what happened while the
-window was closed. Keep the last five minutes at one sample a second for a live
-chart, and the last 24 hours at one averaged sample a minute to cover a day away
-from the window. The history is session-wide: a history per torrent would cost
+window was closed. Keep the last five minutes at a selected 1, 5, or 10 second
+average and the last 24 hours at a selected 10, 30, 60, or 300 second average.
+Defaults remain one second and one minute. Retain at most 300 recent and 8640
+day samples, including the partial bucket, so changing granularity cannot grow
+history without bound. Interval changes keep completed samples and finish the
+old partial bucket at its last observed timestamp; gaps never gain invented
+samples. The history is session-wide: a history per torrent would cost
 memory for every torrent while the window is closed, the state this product
 measures first. History is not saved: the time while the engine was stopped is
 unknown in any case, so after a restart the chart starts empty.
@@ -700,8 +704,10 @@ continue.
 Exit is in the tray menu and in the window's File menu; the window's Close
 only closes the window. The optional active-transfer
 confirmation is on by default and belongs to the desktop host, so tray Exit and
-window Exit use one check even when WinUI is closed. Windows shutdown and
-headless operation bypass it. After confirmation, engine Exit closes
+window Exit use one check even when WinUI is closed. While the window is open,
+the host asks it to show the prompt in the app's dialog style; the host shows a
+native prompt when the window is closed or cannot show a dialog at that moment.
+Windows shutdown and headless operation bypass it. After confirmation, engine Exit closes
 the window by the same rules as Close: a prompt appears only for actual unfinished
 input, and Cancel in that prompt cancels Exit. If a move or file deletion is running, Exit
 waits for it to finish without a second prompt, because stopping it midway leaves
@@ -840,6 +846,30 @@ limits start disabled; reaching either pauses through the saved intent owner.
 The ratio denominator is the greater of downloaded and verified bytes; seeding
 time excludes paused time. Explicit Resume or Force of completed content saves a
 per-torrent exemption, so it does not pause again immediately or after restart.
+
+## Connection measurement
+
+The engine owns a temporary connection test independently of the window's
+refresh interval. It suspends the session through the existing pause policy;
+it never rewrites individual torrent intent or the saved Pause all choice.
+Before measuring, session statistics must report no connected or half-open
+peers and unchanged payload counters for one second. Stopping is bounded to
+ten seconds so a session that cannot become quiet is restored instead of
+measured under load.
+
+Measurement runs off the engine thread using the native integration described
+in [the provider decision](architecture/connection-test-provider.md). Download
+and upload share a 45-second deadline. A successful test retains suspension for
+three minutes; a successful retest starts that hold again without releasing
+the existing suspension. Draft edits do not extend it. Navigation, Apply, page
+cancellation, test cancellation, failure, expiry, disconnect and shutdown release
+only this operation's restriction. The current pause policy decides whether
+transfers can resume, preserving independent manual, schedule and adapter pauses.
+
+Restoration checks the session's pause state before reporting completion. A
+failure remains visible; it must not claim that transfers resumed. Results are
+transient measured capacities, never automatically applied settings. The
+connection owns the operation, so another caller cannot release or replace it.
 
 ## libtorrent settings
 

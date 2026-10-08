@@ -87,11 +87,13 @@ public sealed class Strings
             .Select(match => match.Groups[1].Value)
             .ToHashSet();
 
-    public string Get(string group, string key) =>
+    public string? Find(string group, string key) =>
         _current.Text.TryGetValue(group, out var messages)
         && messages.TryGetValue(key, out var text)
             ? text
-            : group + "." + key;
+            : null;
+
+    public string Get(string group, string key) => Find(group, key) ?? group + "." + key;
 
     public string Format(string group, string key, params object[] values) =>
         string.Format(CultureInfo.CurrentCulture, Get(group, key), values);

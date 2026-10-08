@@ -27,7 +27,21 @@ enum class Command
     Queue,
     PieceOrder,
     SpeedLimit,
-    CheckProxy
+    CheckProxy,
+    ConnectionTest
+};
+
+enum class ConnectionPhase
+{
+    Idle,
+    Stopping,
+    Downloading,
+    Uploading,
+    Holding,
+    Restoring,
+    Completed,
+    Cancelled,
+    Failed
 };
 
 enum class TorrentView
@@ -108,7 +122,9 @@ enum class CompletionPhase
 {
     Idle,
     Flushing,
-    Settling
+    Settling,
+    Checking,
+    Checked
 };
 
 // A deletion saves the list without its torrents, waits for libtorrent to
@@ -211,6 +227,45 @@ enum class ProxyType
     Socks5,
     Socks4,
     Http
+};
+
+enum class Transport
+{
+    Both,
+    Tcp,
+    Utp
+};
+
+enum class IpFamily
+{
+    Both,
+    Ipv4,
+    Ipv6
+};
+
+enum class Layout
+{
+    Keep,
+    Create,
+    Strip
+};
+
+enum class DuplicatePolicy
+{
+    Keep,
+    Merge
+};
+
+enum class DeletionMode
+{
+    Recycle,
+    Permanent
+};
+
+enum class SeedRule
+{
+    Any,
+    All
 };
 
 // What the engine learned about a proxy, from a check or from the
@@ -333,12 +388,23 @@ enum class CloseState
     Closing
 };
 
-// How far the desktop host is through Exit: the person confirming it, the
-// window closing and the final save, or Windows ending the session.
+// The window's answer when the desktop host asks it to confirm Exit.
+enum class ExitAnswer
+{
+    Confirmed,
+    Cancelled,
+    // The window could not show the prompt, so the host asks natively.
+    Unavailable
+};
+
+// How far the desktop host is through Exit: the person confirming it in the
+// host's prompt or in the window, the window closing and the final save, or
+// Windows ending the session.
 enum class ExitPhase
 {
     Idle,
     Confirming,
+    WindowConfirming,
     Exiting,
     SessionEnding
 };
@@ -352,6 +418,7 @@ enum class Command
     WindowClosed,
     ActivateReply,
     CloseReply,
+    ExitReply,
     ActivateSources,
     PendingActivations,
     ActivationsReceived,

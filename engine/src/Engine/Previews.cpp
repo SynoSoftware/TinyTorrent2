@@ -24,7 +24,7 @@ std::vector<std::string> Engine::State::SharedFiles(std::shared_ptr<lt::torrent_
     {
         return names;
     }
-    auto wanted = FilePaths(*metadata, destination);
+    auto wanted = FilePaths(*metadata, destination, settings.layout);
     for (auto const& [id, torrent] : torrents)
     {
         auto other = torrent.restore ? torrent.restore->ti : torrent.handle.torrent_file();
@@ -124,9 +124,20 @@ Json Engine::State::Describe(Preview const& preview, std::string const& destinat
     auto const& params = preview.params;
     auto hashes = preview.InfoHashes();
     auto duplicate = FindDuplicate(hashes);
+    auto files = Files(params.ti);
+    if (params.ti)
+    {
+        auto priorities = DefaultPriorities(params.ti->layout(), settings.excludes ? settings.patterns : std::string());
+        for (auto& file : files)
+        {
+            auto index = lt::file_index_t(file.at("index").get<int>());
+            file["path"] = ContentPath(params.ti->layout(), index, settings.layout);
+            file["priority"] = static_cast<std::uint8_t>(priorities[static_cast<int>(index)]);
+        }
+    }
     return {{"preview_id", preview.previewId},
         {"name", tt::Name(params.ti ? params.ti->name() : params.name, Hashes(hashes))},
-        {"size", params.ti ? params.ti->total_size() : 0}, {"files", Files(params.ti)},
+        {"size", params.ti ? params.ti->total_size() : 0}, {"files", std::move(files)},
         {"torrent_id", duplicate}, {"hashes", Hashes(hashes)}, {"trackers", params.trackers},
         {"merge_available", CanMerge(preview)}, {"metadata_ready", bool(params.ti)},
         {"error", preview.error}, {"shared_with", SharedFiles(params.ti, settings.SavePath(destination))}};
@@ -179,6 +190,7 @@ void Engine::State::Inspect(std::string source, std::string connectionId,
             return;
         }
         preview->params.info_hashes = preview->InfoHashes();
+        preview->params.storage_mode = settings.preallocates ? lt::storage_mode_allocate : lt::storage_mode_sparse;
         auto hashes = Hashes(preview->params.info_hashes);
         for (auto& [id, existing] : previews)
         {
@@ -201,6 +213,7 @@ void Engine::State::Inspect(std::string source, std::string connectionId,
                 completion({ErrorCode::PreviewFailed, error.message()}, nullptr);
                 return;
             }
+            ApplyPolicy(preview->handle);
         }
         completion({}, &previews.emplace(preview->previewId, *preview).first->second);
     });
@@ -237,6 +250,7 @@ void Engine::State::Discard(std::function<bool(Preview const&)> const& matches)
 
 void Engine::State::Disconnect(std::string const& connectionId)
 {
+    ReleaseConnectionTest(connectionId, true);
     for (auto const& preview : parsing)
     {
         if (preview->connectionId == connectionId)

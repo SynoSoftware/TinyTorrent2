@@ -625,10 +625,10 @@ the status bar only reads. Choosing limits
 belongs in Settings, because an automatic schedule makes an on/off shortcut
 ambiguous.
 
-Settings > Speed limits has two sections. Limits holds the standard and
-alternative pairs of caps for all torrents together and marks the pair in use.
-When limits apply holds, in order, the current state, such as "Now: alternative
-limits · until 5:00 PM", the Limits to use choice, and the week. The choice is
+Settings > Speed limits groups the current mode, standard and alternative caps,
+queue activity, peer connections, and bandwidth accounting. The weekly editor
+lives in Settings > Schedule, with both pairs of caps summarized above it so
+periods have a visible meaning. The mode choice is
 No limits, Standard limits, Alternative limits or Weekly schedule, in one native
 ComboBox, so no separate schedule switch can disagree with it. No limits is a
 choice of its own because people read "Normal limits" as no limits, and a capped
@@ -748,7 +748,8 @@ so making every message float would hide useful context rather than improve it.
 ### Add
 
 The task answers: what is being added, which files are wanted, and where they go.
-Add to top of queue is an always-visible option, initially unchecked. For a batch,
+Add to top of queue is an always-visible option, initialized from Settings (off
+by default). For a batch,
 it places the new torrents first in their displayed source order, so choosing
 the option does not reverse the list the person reviewed.
 Use native source/destination pickers and an editable magnet input with an
@@ -812,7 +813,8 @@ F2 opens the native priority choice for the focused file row; ordinary tree,
 checkbox and ComboBox keyboard behavior remains native.
 Keep file identity and selected bytes clear; when a known list
 has no wanted files, explain why Add is unavailable. The destination starts from
-the default download folder, initially Windows' Downloads known folder, and remains changeable through a native picker. A failed
+the configured default or last-used download folder, initially Windows' Downloads
+known folder, and remains changeable through a native picker. A failed
 free-space check must not be presented as proof of an invalid folder.
 The destination also offers recent folders: the default folder and the folders of
 the newest torrents, six at most. They are derived from the default folder and
@@ -863,7 +865,8 @@ has no automatic Replace action.
 
 Group settings by user task and the actual libtorrent product, not the old
 daemon's fields or fixed categories. Background choices have one engine owner;
-Window-only settings have one WinUI owner. There are no remote profiles or
+Window-only settings have one WinUI operational owner; the existing settings
+store persists their choices alongside theme. There are no remote profiles or
 connected-server scopes in this local product.
 
 **Owner ruling: the Settings page background is the window's acrylic with two
@@ -877,19 +880,28 @@ redesign that does not know about it deletes it. A change to the page keeps
 both; only the owner removes them.
 
 Use the [commit rules](#committing-edits): ordinary settings apply individually,
-with no page-wide Save step or confirmation on close. Reveal dependent fields
-when relevant; keep an explicit editor's actions reachable. Native navigation
+with no page-wide Save step or confirmation on close. Keep dependent fields
+visible and disable them while inapplicable, so changing a switch does not move
+later rows. One Show advanced settings switch reveals advanced rows and cards
+across categories. Search includes those settings and reveals the chosen row.
+The category index provides the overview, and title-bar Back returns from a
+category to that index without an extra navigation row. Keep an explicit
+editor's actions reachable. Native navigation
 and scrolling handle smaller windows. Settings uses a full page with horizontal
 category selection and grouped sections, so settings have room without obscuring
 the task. Returning to torrents preserves selection and the inspector view.
 Settings keeps this LabForms layout independently of the torrent inspector.
 Each category holds LabForms sections: a borderless card headed by an icon, a
-title and a description. Each setting in a section is one row: its name and a
-short description on the left, its control on the right, and its error in the
+title and native tooltip help. Each setting in a section is one compact row: its
+name on the left, its control on the right, and its error in the
 same row, so feedback never moves the rest of the page. Rows have no separator
 lines; rows that belong together, such as a pair of limits, sit on a borderless
 inner card, because spacing and grouping separate them without the visual noise
-of a rule under every row.
+of a rule under every row. Labels, values, and state text stay single-line with
+native trimming and full accessible text. If any visible row in a category has
+a unit, every numeric field and switch track in that category shares the value
+edge; units and On/Off occupy the trailing column. Categories without visible
+units reserve no column. Advanced disclosure recomputes this once for the category.
 Put Browse beside the default and incomplete download paths,
 and beside Add's destination, using the native Windows folder picker. Cancelling
 the picker preserves the current path and other unfinished input.
@@ -901,15 +913,33 @@ help. Buffer targets do not claim to cap total memory. The category strip
 scrolls horizontally when its labels do not fit, so Advanced stays reachable
 at smaller widths and larger text sizes.
 
-Transfers groups Adding torrents, Files, Queue, and Seeding limits.
+Transfers groups Adding torrents, Files, and Seeding limits. Speed limits groups
+standard and alternative caps, queue activity, peer connections, and bandwidth
+accounting. Schedule has its own category, with actual standard and alternative
+caps above the existing weekly editor.
+Connection setup is a child Settings page because its capacity inputs and
+multi-field proposal form one explicit operation. Inputs and proposed changes
+sit side by side when they fit and stack otherwise; Apply and Cancel stay in
+the footer. Title-bar Back returns to the initiating setting. Ordinary settings
+keep their individual commit behavior. The proposal shows current and proposed
+values, emphasizes changes, and enables Apply only for a valid change. Preset
+identity comes from confirmed settings, not a separate profile. Test measures
+real download and upload capacity through the engine's
+[temporary suspension](engine.md#connection-measurement). Test and Cancel use
+the same action slot, with inline phase feedback and a resumption countdown.
+Announce phase changes through the window's existing accessibility path, not
+each countdown tick. Measurements populate the proposal; only Apply changes
+settings. The provider and traffic cost are visible before testing; native
+tooltips supply route and privacy details without moving other controls.
 Files holds the default folder, the incomplete-filename suffix, and an optional
 separate incomplete folder. Folder and suffix defaults apply to new torrents;
 the help makes that scope explicit. Turning off Show dialog when adding torrents
 lets torrent files and magnet links add in the background, respecting pause and
 queue choices. General holds Default app, Closing, Notifications, Startup, Power,
 and Updates. Closing offers confirmation before Exit stops active transfers;
-the engine's desktop host owns that native Windows prompt so it also works
-without WinUI. Closing only the window does not ask to stop transfers.
+the engine's desktop host owns that decision so it also works without WinUI.
+The open window shows the prompt as its own dialog; the host shows a native
+prompt only when no window can. Closing only the window does not ask to stop transfers.
 
 Include, grouped by task: the default download folder and Show dialog when adding torrents;
 standard and alternative speed limits and when they apply; queue limits for active downloads and
@@ -948,13 +978,12 @@ another.
 Scheduler presents one weekly overview with standard limits, alternative limits,
 and paused periods, because separate schedules obscure their combined effect.
 Time runs left to right beneath a 00–24 hour ruler; each day has one row, and
-segments occupy widths proportional to their duration. The week always shows
-what will run, and a line marks the current day and time. Under a fixed choice
-every day is one neutral bar named for that choice, such as Standard limits and
-All day, with no periods and no gestures, because the periods do not run. Colour
-appears only under the weekly schedule: periods are coloured, and the time
-between them is named Standard limits where the gap is wide enough to read.
-The rest of the scheduler shows only under the weekly schedule: a legend names
+segments occupy widths proportional to their duration. The week shows saved
+periods, and a line marks the current day and time. Saved periods remain editable
+while a fixed limit mode is active; a stable status line explains when the
+schedule is inactive. Editing does not activate it. Periods are coloured, and
+the time between them is named Standard limits where the gap is wide enough to
+read. A legend names
 the three fills, and a Periods row with Add lists a fixed All other times row
 with Standard limits, then every period as an expander. One period is open
 at a time: opening a period closes the one open before, as one expander at a
@@ -1189,8 +1218,8 @@ detail work.
 
 The Pieces map answers two questions: how far the download has come, and whether
 it can finish. It states the answer in words, because a grid of colours alone
-leaves the user to work out the conclusion. Square size and the rare limit
-follow the previous TinyTorrent map, and the squares are filled tiles without
+leaves the user to work out the conclusion. The smallest square size and the
+rare limit follow the previous TinyTorrent map, and the squares are filled tiles without
 outlines, as that map's were; change them only when the
 [implementation review](#implementation-review) shows a better choice in use.
 
@@ -1227,7 +1256,9 @@ outlines, as that map's were; change them only when the
   swatch so the eye matches it to the legend without reading, and the files it
   belongs to. The peer count is the count for one piece, and the lowest and
   highest for several, because a merged square's colour cannot show that
-  spread; while no peer is connected, it is unknown. The line shows the square
+  spread; while no peer is connected, it is unknown. The count reads only as
+  peers, such as "87 peers", so the line keeps room for the rest; its tooltip
+  says they are the connected peers that have the missing pieces. The line shows the square
   last pointed at while the pointer is over the map, otherwise the selected
   square, otherwise, while the map shows squares, a hint to point at or select
   one. A gap between squares keeps the last square, so the text does not
@@ -1241,15 +1272,18 @@ outlines, as that map's were; change them only when the
   it explains. The line keeps its height and trims
   the file list instead of wrapping, so the map never moves while the pointer
   crosses it.
-- **Squares.** Squares keep one readable size and sit in groups of eight, so the
-  eye keeps its place; the last group across and down may be shorter. When a row
-  is full, the width left over by the last whole square widens the gutters
-  between groups, so the map ends at the same edge as the line above it instead
-  of leaving unexplained space. Squares
-  never shrink: when the torrent has more pieces than fit, the squares fill the
-  space under the detail line completely, and each covers a contiguous range of
-  pieces that differs from the others by at most one piece. The map is aligned
-  to the top. In a right-to-left language the first piece is at the top right,
+- **Squares.** Squares are all the same size and sit in groups of eight, so the
+  eye keeps its place; the last group across and down may be shorter. The map
+  fills the space under the detail line, because empty space under a short map
+  looks unfinished. When the torrent has fewer pieces than fit, the squares grow
+  to the largest size at which every piece still has its own square. Squares
+  never shrink below the readable size: when the torrent has more pieces than
+  fit, each square covers a contiguous range of pieces that differs from the
+  others by at most one piece. When a row is full, the width left over by the
+  last whole square widens the gutters between groups, so the map ends at the
+  same edge as the line above it instead of leaving unexplained space; when the
+  rows fill the height, the height left over widens the gutters between row
+  groups in the same way. The map is aligned to the top. In a right-to-left language the first piece is at the top right,
   as a progress bar starts at the right.
 - **Squares that cover several pieces** show the state most of their pieces
   have; on a tie the worse state wins, in the order unavailable, rare, common,

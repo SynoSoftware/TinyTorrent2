@@ -151,8 +151,8 @@ public sealed class Pieces
         var peers =
             copies.Length == 0 ? null
             : PeerCount == 0 ? text.Get("pieces", "unknown")
-            : end == first + 1 ? text.Format("pieces", "copies", copies[0])
-            : copies.Min() == copies.Max() ? text.Format("pieces", "copies_each", copies[0])
+            : end == first + 1 ? text.FormatCount("pieces", "copies", copies[0])
+            : copies.Min() == copies.Max() ? text.FormatCount("pieces", "copies_each", copies[0])
             : text.Format("pieces", "copies_range", copies.Min(), copies.Max());
         var files = string.Join(
             ", ",

@@ -13,7 +13,11 @@ std::string Code(lt::error_code const& error)
 
 void Engine::State::Handle(lt::alert* alert)
 {
-    if (auto external = lt::alert_cast<lt::external_ip_alert>(alert))
+    if (auto statistics = lt::alert_cast<lt::session_stats_alert>(alert))
+    {
+        ObserveConnectionTest(*statistics);
+    }
+    else if (auto external = lt::alert_cast<lt::external_ip_alert>(alert))
     {
         auto& address = external->external_address.is_v4() ? externalIpv4 : externalIpv6;
         address = external->external_address.to_string();
@@ -106,6 +110,11 @@ void Engine::State::Handle(lt::alert* alert)
     {
         if (auto torrent = Find(checked->handle))
         {
+            if (torrent->completionPhase == CompletionPhase::Checking)
+            {
+                torrent->Update(torrent->handle.status(lt::torrent_handle::query_name));
+                torrent->completionPhase = torrent->status.is_finished ? CompletionPhase::Checked : CompletionPhase::Idle;
+            }
             CompleteFiles(*torrent);
             FinishFiles(*torrent);
             if (torrent->facts.firstLast)
@@ -302,6 +311,13 @@ void Engine::State::On(lt::alerts_dropped_alert const&)
             torrent.checkpointPhase = CheckpointPhase::Idle;
         }
         torrent.unsaved = true;
+        if (torrent.completionPhase == CompletionPhase::Checking)
+        {
+            torrent.Update(torrent.handle.status(lt::torrent_handle::query_name));
+            if (torrent.status.state != lt::torrent_status::checking_files &&
+                torrent.status.state != lt::torrent_status::checking_resume_data)
+                torrent.completionPhase = torrent.status.is_finished ? CompletionPhase::Checked : CompletionPhase::Idle;
+        }
         AwaitCompletion(torrent);
         // flush_cache posts a new cache_flushed_alert in place of a lost one.
         if (torrent.completionPhase == CompletionPhase::Flushing)

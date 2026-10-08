@@ -22,6 +22,14 @@ the authority for product behavior.
 The architecture owns the [live decision list](architecture.md#decisions-still-open).
 Update it as choices are made; historical reviews do not supply active requirements.
 
+For automatic subtitle downloading or its Settings prototype, read the
+[subtitle design](subtitles.md). It records the agreed invisible workflow,
+configuration, and required file-operation changes before implementation.
+
+For Library work, read the [Library master plan](library.md). It owns the
+agreed data-source membership, cached video information, search and interaction
+design before implementation.
+
 For TableView work, continue with the [table glossary](../lib/TableView/CONTEXT.md),
 [TableView contract](../lib/TableView/docs/tableview-contract.md), and
 [TableView implementation](../lib/TableView/docs/tableview-implementation.md).

@@ -4,49 +4,83 @@ namespace tt
 {
 namespace
 {
-constexpr std::int64_t minuteLength = 60;
-constexpr std::int64_t fiveMinutes = 5 * minuteLength;
-constexpr std::int64_t oneDay = 24 * 60 * minuteLength;
-// The seconds view keeps one sample per second. The minutes view keeps one
-// average per finished minute; the minute in progress completes the day.
-constexpr std::size_t secondSamples = fiveMinutes;
-constexpr std::size_t minuteSamples = oneDay / minuteLength - 1;
-// Samples come once a second, so a longer silence ends the minute in progress.
+// Engine ticks are one second apart; a longer silence must not join buckets.
 constexpr std::int64_t sampleGap = 2;
+}
+
+void SpeedHistory::Configure(int recentInterval, int dayInterval)
+{
+    recent.Configure(recentInterval);
+    day.Configure(dayInterval);
+}
+
+void SpeedHistory::Range::Configure(int value)
+{
+    if (interval == value)
+    {
+        return;
+    }
+    Finish();
+    interval = value;
+}
+
+void SpeedHistory::Range::Sample(Point sample)
+{
+    if (count || !points.empty())
+    {
+        auto previous = count ? bucket.time : points.back().time;
+        if (sample.time <= previous)
+        {
+            points.clear();
+            bucket = {};
+            count = 0;
+        }
+        else if (sample.time - previous > sampleGap)
+        {
+            Finish();
+        }
+    }
+    if (count && sample.time / interval != bucket.time / interval)
+    {
+        Finish();
+    }
+    bucket.time = sample.time;
+    bucket.download += sample.download;
+    bucket.upload += sample.upload;
+    ++count;
+    Prune(sample.time);
+}
+
+void SpeedHistory::Range::Finish()
+{
+    if (!count)
+    {
+        return;
+    }
+    points.push_back(Average());
+    bucket = {};
+    count = 0;
+}
+
+SpeedHistory::Point SpeedHistory::Range::Average() const
+{
+    return {bucket.time, bucket.download / count, bucket.upload / count};
+}
+
+void SpeedHistory::Range::Prune(std::int64_t time)
+{
+    while (!points.empty() && (points.size() + (count ? 1 : 0) > capacity ||
+        points.front().time <= time - duration))
+    {
+        points.pop_front();
+    }
 }
 
 void SpeedHistory::Sample(std::int64_t time, double download, double upload)
 {
     Point sample{time, download, upload};
-    if (!seconds.empty() && time <= seconds.back().time)
-    {
-        seconds.clear();
-        minutes.clear();
-    }
-    if (minuteCount && (time <= minute.time || time - minute.time > sampleGap))
-    {
-        minute = {};
-        minuteCount = 0;
-    }
-    if (minuteCount && time / minuteLength != minute.time / minuteLength)
-    {
-        minutes.push_back({minute.time, minute.download / minuteCount, minute.upload / minuteCount});
-        minute = {};
-        minuteCount = 0;
-    }
-    minute.time = time;
-    minute.download += sample.download;
-    minute.upload += sample.upload;
-    ++minuteCount;
-    seconds.push_back(sample);
-    while (!seconds.empty() && (seconds.size() > secondSamples || seconds.front().time <= time - fiveMinutes))
-    {
-        seconds.pop_front();
-    }
-    while (!minutes.empty() && (minutes.size() > minuteSamples || minutes.front().time <= time - oneDay))
-    {
-        minutes.pop_front();
-    }
+    recent.Sample(sample);
+    day.Sample(sample);
 }
 
 Json SpeedHistory::Read(bool day) const
@@ -57,13 +91,14 @@ Json SpeedHistory::Read(bool day) const
         samples.push_back({{"time", sample.time}, {"download_rate", sample.download},
             {"upload_rate", sample.upload}});
     };
-    for (auto const& sample : day ? minutes : seconds)
+    auto const& range = day ? this->day : recent;
+    for (auto const& sample : range.points)
     {
         append(sample);
     }
-    if (day && minuteCount)
+    if (range.count)
     {
-        append({minute.time, minute.download / minuteCount, minute.upload / minuteCount});
+        append(range.Average());
     }
     return samples;
 }

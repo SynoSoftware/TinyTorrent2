@@ -23,6 +23,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     private Exception? _error;
     private double _downloadRate;
     private double _uploadRate;
+    private long? _freeSpace;
+    private Task? _spaceRead;
+    private string? _spacePath;
+    private long _spaceChecked;
     private bool _loading = true;
     private bool _storageFailed;
     private bool _languageSaved = true;
@@ -51,6 +55,18 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     public Settings Settings { get; }
     public string Theme =>
         Settings.Theme.ConfirmedText.Length > 0 ? Settings.Theme.ConfirmedText : "system";
+    public bool ShowsTitleSpeeds => Settings.ShowTitleSpeeds.ConfirmedOn;
+    public bool ShowsFreeSpace =>
+        _connected
+        && !_loading
+        && !_storageFailed
+        && Settings.ShowFreeSpace.ConfirmedOn
+        && _spacePath == Settings.Destination.ConfirmedText
+        && _freeSpace is not null;
+    public string FreeSpaceStatus =>
+        _freeSpace is { } space ? Text.Format("window", "free_space", Text.Bytes(space)) : string.Empty;
+    public string DownloadSpeed => Rate(_downloadRate);
+    public string UploadSpeed => Rate(_uploadRate);
     public bool IsConnected => _connected;
     internal double DownloadRate => _downloadRate;
     internal double UploadRate => _uploadRate;
@@ -179,6 +195,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     public event EventHandler? ActivateRequested;
     public event EventHandler? ShowRequested;
     public event EventHandler<bool>? CloseRequested;
+    public event EventHandler? ConfirmExitRequested;
     public event EventHandler<string>? AnnouncementRequested;
     public ICommand Restart { get; }
     public bool CanRestart => !_connected && _connectionReason is not null;
@@ -349,7 +366,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         );
         ClearFilters = new RelayCommand(ClearFinding, () => Filter != TorrentFilter.All);
         ShowSettings = new RelayCommand(
-            () => RequestSettings(new(SettingsCategory.General)),
+            () => RequestSettings(new()),
             () => true
         );
         ShowTorrents = new RelayCommand(
@@ -411,6 +428,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
                     _ = ReceiveActivations();
                 else if (control == "settings")
                     RequestSettings(new(SettingsCategory.General));
+                else if (control == "confirm_exit")
+                    ConfirmExitRequested?.Invoke(this, EventArgs.Empty);
                 else
                     CloseRequested?.Invoke(this, true);
             });
@@ -469,6 +488,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             snapshot.GetProperty("proxy"),
             snapshot.GetProperty("proxy_check")
         );
+        _client.SetRefreshInterval(settings.GetProperty("refresh_interval").GetInt32());
         IsPaused = snapshot.GetProperty("session_paused").GetBoolean();
         HasIncoming = snapshot.GetProperty("has_incoming").GetBoolean();
         _externalIpv4 = snapshot.GetProperty("external_ipv4").GetString() ?? string.Empty;
@@ -477,6 +497,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             ? missing.GetString() ?? string.Empty
             : string.Empty;
         ApplyLimits(snapshot.GetProperty("limits"));
+        Settings.Connection.Observe(snapshot.GetProperty("connection_test"));
         // A failed language save keeps the person's choice and its error until they change or cancel it.
         if (
             !_changingLanguage
@@ -515,9 +536,14 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             Inspector.Show(null);
         var languageSaved = snapshot.GetProperty("language_saved").GetBoolean();
         _languageSaved = languageSaved;
-        AddDraft.UseDefault(Settings.Destination.ConfirmedText);
+        AddDraft.ApplyDefaults(
+            settings.GetProperty("addition_destination").GetString() ?? string.Empty,
+            settings.GetProperty("starts_download").GetBoolean(),
+            settings.GetProperty("queue_top").GetBoolean()
+        );
         _downloadRate = snapshot.GetProperty("download_rate").GetDouble();
         _uploadRate = snapshot.GetProperty("upload_rate").GetDouble();
+        ObserveSpace();
         var published = Project();
         if (accessChanged)
             Refresh();
@@ -742,6 +768,29 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         }
     }
 
+    internal async Task ReplyExit(ExitAnswer answer)
+    {
+        try
+        {
+            await _client.Send(
+                "exit_reply",
+                new
+                {
+                    answer = answer switch
+                    {
+                        ExitAnswer.Confirmed => "confirmed",
+                        ExitAnswer.Cancelled => "cancelled",
+                        _ => "unavailable",
+                    },
+                }
+            );
+        }
+        catch (Exception error)
+        {
+            Report(error);
+        }
+    }
+
     internal async Task ReplyActivation(bool available)
     {
         try
@@ -811,6 +860,32 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
 
     // Shows a command's effect without waiting for the next periodic refresh.
     internal void RequestSnapshot() => _ = _client.RefreshSnapshot();
+
+    private void ObserveSpace()
+    {
+        var path = Settings.Destination.ConfirmedText;
+        if (_spacePath != path)
+            _freeSpace = null;
+        if (
+            !Settings.ShowFreeSpace.ConfirmedOn
+            || _spaceRead is { IsCompleted: false }
+            || _spacePath == path && Environment.TickCount64 - _spaceChecked < 10000
+        )
+            return;
+        _spacePath = path;
+        _spaceChecked = Environment.TickCount64;
+        _spaceRead = ReadSpace(path);
+    }
+
+    private async Task ReadSpace(string path)
+    {
+        var space = await Task.Run(() => DiskSpace.Read(path));
+        if (_closed || path != Settings.Destination.ConfirmedText)
+            return;
+        _freeSpace = space;
+        Changed(nameof(FreeSpaceStatus));
+        Changed(nameof(ShowsFreeSpace));
+    }
 
     internal void ClearError()
     {
@@ -887,6 +962,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         {
             Changed(nameof(Theme));
             Changed(nameof(ShowsExternalIp));
+            Changed(nameof(ShowsTitleSpeeds));
+            Changed(nameof(ShowsFreeSpace));
         }
         Changed(nameof(CanClose));
         Changed(nameof(CanExit));

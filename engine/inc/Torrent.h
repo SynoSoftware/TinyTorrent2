@@ -34,6 +34,8 @@ struct Facts
     std::string savePath;
     std::string finalFolder;
     bool appendsSuffix = true;
+    Layout layout = Layout::Keep;
+    std::string skipPatterns;
     std::string moveDestination;
     bool verifyFiles = false;
     Intent intent = Intent::Resumed;
@@ -98,6 +100,7 @@ struct Torrent
     // The person deleted the torrent before the engine could remove it. It is
     // out of the list, stays paused, and refuses commands until it is removed.
     bool deleted = false;
+    DeletionMode deletionMode = DeletionMode::Permanent;
 
     std::string Name() const;
     // Every hash the torrent is known by: its own and those the document saved.
@@ -127,7 +130,8 @@ struct Torrent
 std::vector<std::string> Hashes(lt::info_hash_t const& hashes);
 std::string Name(std::string name, std::vector<std::string> const& hashes);
 lt::download_priority_t DefaultPriority(lt::file_storage const& files, lt::file_index_t index);
-std::vector<lt::download_priority_t> DefaultPriorities(lt::file_storage const& files);
+std::vector<lt::download_priority_t> DefaultPriorities(lt::file_storage const& files, std::string const& patterns = {});
+std::string ContentPath(lt::file_storage const& files, lt::file_index_t index, Layout layout);
 Json Files(std::shared_ptr<lt::torrent_info const> const& metadata);
 std::vector<std::filesystem::path> Paths(lt::torrent_info const& metadata);
 std::vector<std::string> Urls(std::vector<lt::announce_entry> const& trackers);

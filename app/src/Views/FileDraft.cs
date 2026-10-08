@@ -21,6 +21,7 @@ public sealed class FileDraft : INotifyPropertyChanged
     private string _originalDestination = string.Empty;
     private bool _includeShared;
     private bool _useExisting;
+    private DeletionMode _deletion;
     public FileAction Action { get; private set; }
     public bool IsPending => _submitting || IsMove && _reading;
     public bool HasChanges =>
@@ -49,11 +50,16 @@ public sealed class FileDraft : INotifyPropertyChanged
             ? _owner.Text.Get("commands", "move")
             : _owner.Text.Get("file_action", "delete_title");
     public bool IsDelete => !IsMove;
-    public string SubmitText => _owner.Text.Get("file_action", IsMove ? "move" : "delete");
+    public string SubmitText =>
+        _owner.Text.Get("file_action",
+            IsMove ? "move" : _deletion == DeletionMode.Recycle ? "recycle" : "delete");
     public string SubmitGlyph => IsMove ? Lucide.FolderInput : Lucide.Trash2;
     public string SubmitToolTip =>
-        _owner.Text.Get("file_action", IsMove ? "move_tip" : "delete_tip");
-    public string Warning => _owner.Text.Get("file_action", "delete_warning");
+        _owner.Text.Get("file_action",
+            IsMove ? "move_tip" : _deletion == DeletionMode.Recycle ? "recycle_tip" : "delete_tip");
+    public string Warning =>
+        _owner.Text.Get("file_action",
+            _deletion == DeletionMode.Recycle ? "recycle_warning" : "delete_warning");
     public string Locations =>
         string.Join(
             Environment.NewLine,
@@ -148,6 +154,8 @@ public sealed class FileDraft : INotifyPropertyChanged
     internal void Begin(Torrent[] torrents, FileAction action)
     {
         Action = action;
+        _deletion = _owner.Settings.Deletion.ConfirmedText == "permanent"
+            ? DeletionMode.Permanent : DeletionMode.Recycle;
         _torrentIds = torrents.Select(torrent => torrent.TorrentId).ToArray();
         _selection = torrents.ToDictionary(torrent => torrent.TorrentId);
         _torrents = torrents
@@ -233,7 +241,11 @@ public sealed class FileDraft : INotifyPropertyChanged
                         use_existing = UseExisting,
                     }
                 )
-                : await _client.Send("delete_files", new { torrent_ids = torrentIds });
+                : await _client.Send("delete_files", new
+                {
+                    torrent_ids = torrentIds,
+                    deletion = _deletion == DeletionMode.Recycle ? "recycle" : "permanent",
+                });
             _owner.AnnounceAccepted("commands", IsMove ? "move" : "delete_files");
             if (!IsMove)
             {

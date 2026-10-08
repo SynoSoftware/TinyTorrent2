@@ -1,6 +1,8 @@
 #include "Engine/State.h"
 #include <winsock2.h>
+#include <ws2tcpip.h>
 #include <iphlpapi.h>
+#include <libtorrent/ip_filter.hpp>
 #include <libtorrent/settings_pack.hpp>
 #include <algorithm>
 #include <cctype>
@@ -17,11 +19,19 @@ constexpr ULONG adapterLimit = 1024 * 1024;
 // A schedule period starts and ends at a minute of the day.
 constexpr int dayMinutes = 24 * 60;
 
-bool IsAdapterAvailable(std::string const& name)
+std::vector<std::string> Interfaces(std::string const& name, IpFamily family)
 {
     if (name.empty())
     {
-        return true;
+        if (family == IpFamily::Ipv4)
+        {
+            return {"0.0.0.0"};
+        }
+        if (family == IpFamily::Ipv6)
+        {
+            return {"::"};
+        }
+        return {"0.0.0.0", "::"};
     }
     ULONG size = adapterBuffer;
     std::vector<char> buffer(size);
@@ -39,17 +49,53 @@ bool IsAdapterAvailable(std::string const& name)
     }
     if (outcome != NO_ERROR)
     {
-        return false;
+        return {};
     }
     for (auto adapter = reinterpret_cast<IP_ADAPTER_ADDRESSES*>(buffer.data());
         adapter; adapter = adapter->Next)
     {
         if (_stricmp(adapter->AdapterName, name.c_str()) == 0)
         {
-            return adapter->OperStatus == IfOperStatusUp && adapter->FirstUnicastAddress;
+            if (adapter->OperStatus != IfOperStatusUp || !adapter->FirstUnicastAddress)
+            {
+                return {};
+            }
+            if (family == IpFamily::Both)
+            {
+                return {name};
+            }
+            std::vector<std::string> addresses;
+            for (auto address = adapter->FirstUnicastAddress; address; address = address->Next)
+            {
+                auto socket = address->Address.lpSockaddr;
+                if (!socket || (family == IpFamily::Ipv4 ? socket->sa_family != AF_INET :
+                    socket->sa_family != AF_INET6))
+                {
+                    continue;
+                }
+                char text[INET6_ADDRSTRLEN];
+                auto bytes = socket->sa_family == AF_INET ?
+                    static_cast<void*>(&reinterpret_cast<sockaddr_in*>(socket)->sin_addr) :
+                    static_cast<void*>(&reinterpret_cast<sockaddr_in6*>(socket)->sin6_addr);
+                if (!InetNtopA(socket->sa_family, bytes, text, sizeof(text)))
+                {
+                    continue;
+                }
+                std::string value(text);
+                if (socket->sa_family == AF_INET6)
+                {
+                    auto scope = reinterpret_cast<sockaddr_in6*>(socket)->sin6_scope_id;
+                    if (scope)
+                    {
+                        value += "%" + std::to_string(scope);
+                    }
+                }
+                addresses.push_back(std::move(value));
+            }
+            return addresses;
         }
     }
-    return false;
+    return {};
 }
 
 // Windows names an adapter by its GUID in upper case, and libtorrent matches
@@ -143,12 +189,12 @@ ScheduleMode Engine::State::ScheduledMode() const
 
 bool Engine::State::IsPaused() const
 {
-    return IsPausedByChoice() || adapterMissing;
+    return IsPausedByChoice() || adapterMissing || SuspendsForConnectionTest();
 }
 
 bool Engine::State::IsPausedByChoice() const
 {
-    return settings.allPaused || (scheduledMode == ScheduleMode::Paused && !bypassesScheduledPause);
+    return settings.allPaused || launchPaused || (scheduledMode == ScheduleMode::Paused && !bypassesScheduledPause);
 }
 
 LimitMode Engine::State::CurrentLimits() const
@@ -173,20 +219,38 @@ void Engine::State::RefreshPolicy(bool configure)
         bypassesScheduledPause = false;
         limitOverride.reset();
     }
-    adapterMissing = !IsAdapterAvailable(settings.networkAdapter);
     auto adapter = AdapterName(settings.networkAdapter);
+    auto family = settings.proxy.type == ProxyType::None ? settings.ipFamily : IpFamily::Both;
+    auto interfaces = Interfaces(adapter, family);
+    adapterMissing = interfaces.empty();
     auto port = std::to_string(settings.listenPort);
-    auto listen = adapter.empty() ? "0.0.0.0:" + port + ",[::]:" + port : adapter + ":" + port;
+    std::string listen;
+    std::string outgoing;
+    for (auto const& address : interfaces)
+    {
+        if (!listen.empty())
+        {
+            listen += ",";
+            outgoing += ",";
+        }
+        listen += (address.find(':') == std::string::npos ? address : "[" + address + "]") + ":" + port;
+        outgoing += address;
+    }
+    if (adapter.empty())
+    {
+        outgoing.clear();
+    }
     if (adapterMissing)
     {
-        listen.clear();
+        outgoing = adapter;
     }
     auto paused = IsPaused();
     auto limits = CurrentLimits();
     bool proxyChanged = appliedProxy != settings.proxy;
-    // libtorrent applies encryption and the proxy only to new connections, so
-    // a change of either reconnects every peer, as a change of interface does.
-    bool networkChanged = appliedListen != listen || proxyChanged || appliedEncryption != settings.encryption;
+    // Connection policy and peer classes apply to new peers, so changing them
+    // reconnects existing peers too.
+    bool networkChanged = appliedListen != listen || proxyChanged || appliedEncryption != settings.encryption ||
+        appliedTransport != settings.transport || appliedFamily != family || appliedLan != settings.limitsLan;
     if (!configure && !networkChanged && appliedPause == paused && appliedLimits == limits)
     {
         return;
@@ -214,7 +278,43 @@ void Engine::State::RefreshPolicy(bool configure)
         pack.set_bool(lt::settings_pack::enable_upnp, maps);
         pack.set_bool(lt::settings_pack::enable_natpmp, maps);
         pack.set_str(lt::settings_pack::listen_interfaces, listen);
-        pack.set_str(lt::settings_pack::outgoing_interfaces, adapter);
+        pack.set_str(lt::settings_pack::outgoing_interfaces, outgoing);
+        pack.set_bool(lt::settings_pack::enable_incoming_tcp, settings.transport != Transport::Utp);
+        pack.set_bool(lt::settings_pack::enable_outgoing_tcp, settings.transport != Transport::Utp);
+        pack.set_bool(lt::settings_pack::enable_incoming_utp, settings.transport != Transport::Tcp);
+        pack.set_bool(lt::settings_pack::enable_outgoing_utp, settings.transport != Transport::Tcp);
+        if (appliedFamily != family)
+        {
+            lt::ip_filter filter;
+            if (family == IpFamily::Ipv4)
+            {
+                filter.add_rule(lt::address_v6(), lt::make_address_v6("ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff"),
+                    lt::ip_filter::blocked);
+            }
+            else if (family == IpFamily::Ipv6)
+            {
+                filter.add_rule(lt::address_v4(), lt::address_v4(0xffffffff), lt::ip_filter::blocked);
+            }
+            session->set_ip_filter(filter);
+        }
+        pack.set_bool(lt::settings_pack::apply_ip_filter_to_trackers, true);
+        if (appliedLan != settings.limitsLan)
+        {
+            auto classes = session->get_peer_class_type_filter();
+            for (int type = 0; type < lt::peer_class_type_filter::num_socket_types; ++type)
+            {
+                auto socket = static_cast<lt::peer_class_type_filter::socket_type_t>(type);
+                if (settings.limitsLan)
+                {
+                    classes.add(socket, lt::session::global_peer_class_id);
+                }
+                else
+                {
+                    classes.remove(socket, lt::session::global_peer_class_id);
+                }
+            }
+            session->set_peer_class_type_filter(classes);
+        }
         auto encryption = settings.encryption;
         auto policy = encryption == Encryption::Required ? lt::settings_pack::pe_forced :
             encryption == Encryption::Disabled ? lt::settings_pack::pe_disabled : lt::settings_pack::pe_enabled;
@@ -246,11 +346,36 @@ void Engine::State::RefreshPolicy(bool configure)
         pack.set_int(lt::settings_pack::hashing_threads, settings.hashingThreads);
         pack.set_int(lt::settings_pack::file_pool_size, settings.fileLimit);
         pack.set_int(lt::settings_pack::active_seeds, settings.activeSeeds ? settings.activeSeeds : -1);
-        pack.set_int(lt::settings_pack::active_limit, -1);
+        pack.set_int(lt::settings_pack::active_limit, settings.activeTotal ? settings.activeTotal : -1);
+        pack.set_bool(lt::settings_pack::dont_count_slow_torrents, settings.ignoresSlow);
+        pack.set_int(lt::settings_pack::inactive_down_rate, settings.slowDownload);
+        pack.set_int(lt::settings_pack::inactive_up_rate, settings.slowUpload);
+        pack.set_int(lt::settings_pack::auto_manage_startup, settings.slowWait);
+        pack.set_int(lt::settings_pack::active_checking, settings.activeChecking);
+        pack.set_int(lt::settings_pack::connection_speed, settings.outgoingRate);
+        pack.set_bool(lt::settings_pack::enable_dht, settings.dht);
+        pack.set_bool(lt::settings_pack::enable_lsd, settings.lsd);
+        pack.set_bool(lt::settings_pack::rate_limit_ip_overhead, settings.includesOverhead);
         pack.set_int(lt::settings_pack::active_dht_limit, -1);
         pack.set_int(lt::settings_pack::active_lsd_limit, -1);
         pack.set_int(lt::settings_pack::active_tracker_limit, -1);
         pack.set_int(lt::settings_pack::connections_limit, settings.connections ? settings.connections : INT_MAX);
+        history.Configure(settings.recentInterval, settings.historyInterval);
+        for (auto const& [id, torrent] : torrents)
+        {
+            if (!torrent.deleted)
+            {
+                ApplyPolicy(torrent.handle);
+            }
+        }
+        for (auto const& [id, preview] : previews)
+        {
+            ApplyPolicy(preview.handle);
+        }
+        for (auto const& [id, addition] : additions)
+        {
+            ApplyPolicy(addition.handle);
+        }
     }
     auto caps = settings.Caps(limits);
     pack.set_int(lt::settings_pack::download_rate_limit, caps.download);
@@ -267,6 +392,9 @@ void Engine::State::RefreshPolicy(bool configure)
     appliedListen = std::move(listen);
     appliedProxy = settings.proxy;
     appliedEncryption = settings.encryption;
+    appliedTransport = settings.transport;
+    appliedFamily = family;
+    appliedLan = settings.limitsLan;
     appliedPause = paused;
     appliedLimits = limits;
     // libtorrent cannot tell a proxy that fails from peers that are offline,
@@ -283,11 +411,44 @@ void Engine::State::RefreshPolicy(bool configure)
     }
 }
 
-void Engine::State::LimitSeeds()
+void Engine::State::ApplyPolicy(lt::torrent_handle const& handle)
 {
-    if (settings.ratio == 0 && settings.seedingMinutes == 0)
+    if (!handle.is_valid())
     {
         return;
+    }
+    handle.set_max_connections(settings.torrentConnections ? settings.torrentConnections : -1);
+    if (settings.pex)
+    {
+        handle.unset_flags(lt::torrent_flags::disable_pex);
+    }
+    else
+    {
+        handle.set_flags(lt::torrent_flags::disable_pex);
+    }
+}
+
+void Engine::State::LimitSeeds()
+{
+    if (settings.ratio == 0 && settings.seedingMinutes == 0 && settings.inactiveMinutes == 0)
+    {
+        return;
+    }
+    if (settings.seedingMinutes > 0 || settings.inactiveMinutes > 0)
+    {
+        // Idle torrents do not emit state updates as their elapsed durations increase.
+        std::vector<lt::torrent_status> seeds;
+        for (auto const& [id, torrent] : torrents)
+            if (!torrent.deleted && !torrent.restore && torrent.status.is_finished &&
+                torrent.facts.intent != Intent::Paused && !torrent.facts.ignoresSeedLimits)
+                seeds.push_back(torrent.status);
+        if (!seeds.empty())
+        {
+            session->refresh_torrent_status(&seeds, lt::torrent_handle::query_name);
+            for (auto& status : seeds)
+                if (auto torrent = Find(status.handle))
+                    torrent->Update(std::move(status));
+        }
     }
     std::vector<std::string> ids;
     for (auto const& [id, torrent] : torrents)
@@ -335,7 +496,9 @@ void Engine::State::LimitSeeds()
 
 bool Engine::State::ReachedSeedLimit(Torrent const& torrent) const
 {
-    if (!torrent.status.is_finished || torrent.facts.intent == Intent::Paused ||
+    if ((settings.ratio == 0 && settings.seedingMinutes == 0 && settings.inactiveMinutes == 0) ||
+        !torrent.status.is_finished || torrent.completionPhase == CompletionPhase::Checking ||
+        torrent.facts.intent == Intent::Paused ||
         torrent.facts.ignoresSeedLimits)
     {
         return false;
@@ -345,6 +508,13 @@ bool Engine::State::ReachedSeedLimit(Torrent const& torrent) const
         static_cast<double>(torrent.status.all_time_upload) / downloaded >= settings.ratio;
     bool timeReached = settings.seedingMinutes > 0 &&
         torrent.status.finished_duration.count() >= static_cast<std::int64_t>(settings.seedingMinutes) * 60;
-    return ratioReached || timeReached;
+    auto inactiveFor = std::chrono::minutes(settings.inactiveMinutes);
+    bool inactivityReached = settings.inactiveMinutes > 0 && torrent.status.finished_duration >= inactiveFor &&
+        (torrent.status.last_upload == lt::time_point{} || lt::clock_type::now() - torrent.status.last_upload >= inactiveFor);
+    if (settings.seedRule == SeedRule::All)
+        return (settings.ratio == 0 || ratioReached) &&
+            (settings.seedingMinutes == 0 || timeReached) &&
+            (settings.inactiveMinutes == 0 || inactivityReached);
+    return ratioReached || timeReached || inactivityReached;
 }
 }

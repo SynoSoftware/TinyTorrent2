@@ -212,13 +212,12 @@ public sealed partial class MainWindow
         // page hides the table.
         Torrents.ScrollTo(placement.VerticalOffset);
         if (placement.Page == WindowPage.Settings)
-            await ShowSettings(
-                new(
-                    Enum.IsDefined(placement.Category)
-                        ? placement.Category
-                        : SettingsCategory.General
-                )
-            );
+        {
+            var category = placement.Category;
+            if (category.HasValue && !Enum.IsDefined(category.Value))
+                category = SettingsCategory.General;
+            await ShowSettings(new(category));
+        }
         else if (placement.Page == WindowPage.About)
             await ShowAbout();
     }
@@ -246,7 +245,7 @@ public sealed partial class MainWindow
                 ? pane.Layout
                 : _placement?.Inspector,
             Page = Model.Page,
-            Category = _settingsPage?.Category ?? SettingsCategory.General,
+            Category = _settingsPage?.Category,
             Filter = Model.Filter,
             FiltersOpen = Model.IsFilterOpen,
             ToolbarOpen = Model.IsToolbarOpen,
@@ -281,7 +280,7 @@ public sealed partial class MainWindow
         public Syno.TableView.ColumnLayout? Torrents { get; init; }
         public InspectorLayout? Inspector { get; init; }
         public WindowPage Page { get; init; }
-        public SettingsCategory Category { get; init; }
+        public SettingsCategory? Category { get; init; } = SettingsCategory.General;
         public TorrentFilter Filter { get; init; }
         public bool FiltersOpen { get; init; }
         public bool ToolbarOpen { get; init; } = true;

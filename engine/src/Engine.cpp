@@ -235,6 +235,7 @@ bool Engine::HasStorageFailure() const { return !state_->startupError.empty(); }
 std::string Engine::StartupError() const { return state_->startupError; }
 std::string Engine::SessionId() const { return state_->sessionId; }
 bool Engine::ShowsAdd() const { return state_->settings.showsAdd; }
+bool Engine::RaisesAdd() const { return state_->settings.raisesAdd; }
 
 bool Engine::HasSettings() const { return state_->startup != Startup::Settings; }
 bool Engine::ShowsSplash() const { return state_->settings.showsSplash; }

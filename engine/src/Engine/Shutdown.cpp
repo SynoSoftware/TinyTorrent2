@@ -30,6 +30,8 @@ void Engine::State::Shutdown(std::function<void(std::optional<std::string> failu
             RecordHashes(torrent);
         }
     }
+    if (connectionTest)
+        ReleaseConnectionTest(connectionTest->connectionId, true);
     shuttingDown = true;
     phaseStarted.reset();
     Discard([](Preview const&) { return true; });

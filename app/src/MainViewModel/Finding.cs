@@ -161,15 +161,13 @@ public sealed partial class MainViewModel
                 )
                 .ToArray();
 
-        bool MatchesQuery(string text) =>
-            words.All(word => text.Contains(word, StringComparison.CurrentCultureIgnoreCase));
         var actions = commands
             .Concat(SettingSuggestions())
-            .Where(suggestion => MatchesQuery(suggestion.Label + " " + suggestion.Detail))
+            .Where(suggestion => MatchesQuery(suggestion, words))
             .Take(30)
             .ToArray();
         var torrents = Torrents
-            .Where(torrent => MatchesQuery(torrent.Name + " " + torrent.Status))
+            .Where(torrent => MatchesQuery(torrent.Name + " " + torrent.Status, words))
             .Take(30 - actions.Length)
             .Select(torrent => new Suggestion(
                 torrent.Name,
@@ -322,6 +320,20 @@ public sealed partial class MainViewModel
             );
     }
 
+    internal IReadOnlyList<Suggestion> FindSettings(string query)
+    {
+        var words = query.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+        return SettingSuggestions()
+            .Where(suggestion => MatchesQuery(suggestion, words))
+            .ToArray();
+    }
+
+    private static bool MatchesQuery(string text, string[] words) =>
+        words.All(word => text.Contains(word, StringComparison.CurrentCultureIgnoreCase));
+
+    private static bool MatchesQuery(Suggestion suggestion, string[] words) =>
+        MatchesQuery(suggestion.Label + " " + suggestion.Detail + " " + suggestion.SearchTerms, words);
+
     private IEnumerable<Suggestion> SettingSuggestions()
     {
         foreach (var category in Enum.GetValues<SettingsCategory>())
@@ -331,15 +343,21 @@ public sealed partial class MainViewModel
             );
         foreach (var setting in Settings.All)
         {
+            if (setting == Settings.CapacityDownload || setting == Settings.CapacityUpload)
+                continue;
             yield return SettingSuggestion(new(setting.Category, setting.Name), setting.Label);
         }
+        yield return SettingSuggestion(
+            new(SettingsCategory.Limits, "connection_setup"),
+            Text.Get("settings", "connection_setup")
+        );
         foreach (var key in new[] { "start_signin", "startup_settings", "open_defaults" })
             yield return SettingSuggestion(
                 new(SettingsCategory.General, key),
                 Text.Get("settings", key)
             );
         yield return SettingSuggestion(
-            new(SettingsCategory.Limits, "add_period"),
+            new(SettingsCategory.Schedule, "add_period"),
             Text.Get("settings", "add_period")
         );
         yield return SettingSuggestion(
@@ -351,15 +369,16 @@ public sealed partial class MainViewModel
     private Suggestion SettingSuggestion(SettingTarget target, string label) =>
         new(
             label,
-            target.Name is null
+            target.Name is null || target.Category is not { } category
                 ? Text.Get("finding", "settings")
                 : Text.Format(
                     "finding",
                     "setting_detail",
-                    Text.Get("settings", target.Category.ToString().ToLowerInvariant())
+                    Text.Get("settings", category.ToString().ToLowerInvariant())
                 ),
             SuggestionScope.Settings,
-            new RelayCommand(() => RequestSettings(target), () => true)
+            new RelayCommand(() => RequestSettings(target), () => true),
+            target.Name is { } name ? Text.Find("search_terms", name) ?? string.Empty : string.Empty
         );
 }
 
@@ -381,7 +400,8 @@ public sealed record Suggestion(
     string Label,
     string Detail,
     SuggestionScope Scope,
-    ICommand Command
+    ICommand Command,
+    string SearchTerms = ""
 )
 {
     public bool IsEnabled => Command.CanExecute(null);
@@ -390,4 +410,4 @@ public sealed record Suggestion(
     public override string ToString() => Label;
 }
 
-public sealed record SettingTarget(SettingsCategory Category, string? Name = null);
+public sealed record SettingTarget(SettingsCategory? Category = null, string? Name = null);

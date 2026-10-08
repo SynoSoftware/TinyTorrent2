@@ -30,6 +30,9 @@ internal sealed class PipeClient : IDisposable
     // At most one unsent read per consumer, oldest first, so consumers take turns.
     private readonly List<Command> _reads = [];
     private readonly SemaphoreSlim _queued = new(0);
+    private readonly PeriodicTimer _refreshTimer = new(TimeSpan.FromMilliseconds(1000));
+    private int _refreshInterval = 1000;
+    private bool _connectionTestActive;
     private Task? _pump;
     private TaskCompletionSource<JsonElement>? _reply;
     private long _requestId;
@@ -185,8 +188,7 @@ internal sealed class PipeClient : IDisposable
         Exception? launchFailure = null;
         string? lastFailure = null;
         var token = _lifetime.Token;
-        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
-        var refresh = Refresh(timer, token);
+        var refresh = Refresh(token);
         try
         {
             while (!token.IsCancellationRequested)
@@ -322,14 +324,39 @@ internal sealed class PipeClient : IDisposable
 
     // Each refresh waits for the previous one, so a slow engine is not asked
     // again until it has answered.
-    private async Task Refresh(PeriodicTimer timer, CancellationToken token)
+    private async Task Refresh(CancellationToken token)
     {
         try
         {
-            while (await timer.WaitForNextTickAsync(token))
+            while (await _refreshTimer.WaitForNextTickAsync(token))
                 await RefreshSnapshot();
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+    }
+
+    internal void SetRefreshInterval(int milliseconds)
+    {
+        lock (_gate)
+        {
+            _refreshInterval = milliseconds;
+            UpdateRefreshInterval();
+        }
+    }
+
+    internal void SetConnectionTestActive(bool active)
+    {
+        lock (_gate)
+        {
+            _connectionTestActive = active;
+            UpdateRefreshInterval();
+        }
+    }
+
+    private void UpdateRefreshInterval()
+    {
+        var period = TimeSpan.FromMilliseconds(_connectionTestActive ? 1000 : _refreshInterval);
+        if (!_disposed && _refreshTimer.Period != period)
+            _refreshTimer.Period = period;
     }
 
     internal async Task RefreshSnapshot()
@@ -402,7 +429,12 @@ internal sealed class PipeClient : IDisposable
                 var message = await Read(pipe, token);
                 if (message.TryGetProperty("type", out var type))
                 {
-                    if (type.GetString() is "activate" or "close" or "activations" or "settings")
+                    if (type.GetString()
+                        is "activate"
+                            or "close"
+                            or "confirm_exit"
+                            or "activations"
+                            or "settings")
                         Control?.Invoke(type.GetString()!);
                     else if (type.GetString() == "notice")
                         Notice?.Invoke(message);
@@ -465,7 +497,7 @@ internal sealed class PipeClient : IDisposable
             var hello = await Read(pipe, deadline.Token);
             if (
                 hello.GetProperty("type").GetString() != "hello"
-                || hello.GetProperty("version").GetInt32() != 8
+                || hello.GetProperty("version").GetInt32() != 10
             )
                 throw new InvalidDataException(strings.Get("connection", "version"));
             return hello;
@@ -600,6 +632,7 @@ internal sealed class PipeClient : IDisposable
         }
         finally
         {
+            _refreshTimer.Dispose();
             _lifetime.Dispose();
         }
     }

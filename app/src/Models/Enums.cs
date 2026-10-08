@@ -7,6 +7,14 @@ public enum WindowPage
     About,
 }
 
+public enum TransferPreset
+{
+    Reduced,
+    Balanced,
+    FullSpeed,
+    Custom,
+}
+
 public enum Consumer
 {
     Summary,
@@ -24,6 +32,12 @@ public enum FileAction
 {
     Move,
     Delete,
+}
+
+public enum DeletionMode
+{
+    Recycle,
+    Permanent,
 }
 
 public enum TorrentFilter
@@ -54,6 +68,7 @@ public enum SettingsCategory
     Limits,
     Appearance,
     Advanced,
+    Schedule,
 }
 
 public enum InspectorSection
@@ -108,12 +123,22 @@ internal enum LimitOrigin
     Override,
 }
 
+// The window's answer when the engine asks it to confirm Exit.
+internal enum ExitAnswer
+{
+    Confirmed,
+    Cancelled,
+    // The window cannot show the prompt now, so the engine asks natively.
+    Unavailable,
+}
+
 internal enum PauseReason
 {
     None,
     Adapter,
     Manual,
     Schedule,
+    ConnectionTest,
 }
 
 internal enum RefusalReason
@@ -159,6 +184,19 @@ public enum SettingKind
     Integer,
 }
 
+internal enum ConnectionPhase
+{
+    Idle,
+    Stopping,
+    Downloading,
+    Uploading,
+    Holding,
+    Restoring,
+    Completed,
+    Cancelled,
+    Failed,
+}
+
 #if CAPTURE
 internal enum CaptureMode
 {
@@ -178,6 +216,7 @@ internal enum CaptureMode
     Edits,
     AddLayout,
     SettingsLayout,
+    SettingsPrototype,
     Footer,
 }
 #endif

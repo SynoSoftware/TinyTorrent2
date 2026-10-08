@@ -20,6 +20,7 @@ namespace Syno.TinyTorrent.Controls;
 
 public sealed partial class PiecesMap : UserControl
 {
+    // The smallest square; squares grow only while every piece still fits.
     private const int Square = 16;
     private const int Gap = 4;
     private const int Band = 8;
@@ -113,6 +114,7 @@ public sealed partial class PiecesMap : UserControl
             var conclusion = Conclude(text);
             Answer.Text = conclusion.Answer;
             ToolTipService.SetToolTip(Status, conclusion.Reason);
+            ToolTipService.SetToolTip(DetailPeers, text.Get("pieces", "peers_tip"));
             AutomationProperties.SetHelpText(Answer, conclusion.Reason);
             var signs = Signs();
             for (var index = 0; index < signs.Length; index++)
@@ -215,6 +217,8 @@ public sealed partial class PiecesMap : UserControl
                 stream.Write(layout.Pixels);
             bitmap.Invalidate();
             _layout = layout with { Pixels = [] };
+            Hover.Width = Hover.Height = layout.Side + 2;
+            Selection.Width = Selection.Height = layout.Side + 4;
             Drawing.Width = Bitmap.Width = layout.Width;
             Drawing.Height = Bitmap.Height = layout.Height;
             Bitmap.Source = bitmap;
@@ -228,34 +232,53 @@ public sealed partial class PiecesMap : UserControl
         }
     }
 
-    private static int Start(int position) => position * (Square + Gap) + position / Band * Gutter;
+    private static int Start(int position, int side) =>
+        position * (side + Gap) + position / Band * Gutter;
 
-    private static int Extent(int count) => count == 0 ? 0 : Start(count - 1) + Square;
+    private static int Extent(int count, int side) =>
+        count == 0 ? 0 : Start(count - 1, side) + side;
+
+    // How many squares of the given side fit in the length, never fewer than one.
+    private static int Fit(double length, int side)
+    {
+        var count = 1;
+        while (Extent(count + 1, side) <= length)
+            count++;
+        return count;
+    }
 
     private static Raster Render(Pieces data, Space space, Palette palette)
     {
         var scale = space.Scale;
         var rtl = space.IsRightToLeft;
-        var maxColumns = 1;
-        while (Extent(maxColumns + 1) <= space.Size.Width)
-            maxColumns++;
-        var maxRows = 1;
-        while (Extent(maxRows + 1) <= space.Size.Height)
-            maxRows++;
+        var width = space.Size.Width;
+        var height = space.Size.Height;
+        var side = Square;
+        while (
+            side + 1 <= Math.Min(width, height)
+            && Fit(width, side + 1) * Fit(height, side + 1) >= data.Count
+        )
+            side++;
+        var maxColumns = Fit(width, side);
+        var maxRows = Fit(height, side);
         var count = Math.Min(data.Count, maxColumns * maxRows);
         var columns = Math.Min(maxColumns, count);
         if (columns >= Band)
             columns = Math.Min(maxColumns, (columns + Band - 1) / Band * Band);
         var rows = (count + columns - 1) / columns;
-        // A full row widens the gutters between groups by the width left over
-        // after the last whole square, so the map ends at the right edge.
-        var gutters = (columns - 1) / Band;
-        var spare =
-            count >= maxColumns && gutters > 0 ? (int)space.Size.Width - Extent(columns) : 0;
-        int Left(int column) =>
-            Start(column) + (spare == 0 ? 0 : spare * (column / Band) / gutters);
-        var mapWidth = Left(columns - 1) + Square;
-        var mapHeight = Extent(rows);
+        // A full row widens the gutters between groups by the length left over
+        // after the last whole square, so the map ends at the right edge; a full
+        // column does the same downwards, so the map ends at the bottom edge.
+        var columnGutters = (columns - 1) / Band;
+        var spareWidth =
+            count >= maxColumns && columnGutters > 0 ? (int)width - Extent(columns, side) : 0;
+        var rowGutters = (rows - 1) / Band;
+        var spareHeight =
+            rows == maxRows && rowGutters > 0 ? (int)height - Extent(rows, side) : 0;
+        int Spread(int position, int spare, int gutters) =>
+            Start(position, side) + (spare == 0 ? 0 : spare * (position / Band) / gutters);
+        var mapWidth = Spread(columns - 1, spareWidth, columnGutters) + side;
+        var mapHeight = Spread(rows - 1, spareHeight, rowGutters) + side;
         var pixelWidth = (int)Math.Ceiling(mapWidth * scale);
         var pixelHeight = (int)Math.Ceiling(mapHeight * scale);
         var pixels = new byte[pixelWidth * pixelHeight * 4];
@@ -279,28 +302,28 @@ public sealed partial class PiecesMap : UserControl
             var mixed = counts.Count(value => value > 0) > 1;
             var hidesUnavailable =
                 counts[(int)PieceKind.Unavailable] > 0 && dominant != (int)PieceKind.Unavailable;
-            var x = Left(index % columns);
+            var x = Spread(index % columns, spareWidth, columnGutters);
             // Mirror positions so a shorter last group stays at the reading end.
             if (rtl)
-                x = mapWidth - x - Square;
-            var y = Start(index / columns);
+                x = mapWidth - x - side;
+            var y = Spread(index / columns, spareHeight, rowGutters);
             blocks[index] = new Block(first, end, x, y);
             var left = (int)Math.Round(x * scale);
             var top = (int)Math.Round(y * scale);
-            var side = Math.Max(1, (int)Math.Round(Square * scale));
-            for (var py = 0; py < side && top + py < pixelHeight; py++)
-            for (var px = 0; px < side && left + px < pixelWidth; px++)
+            var pixelSide = Math.Max(1, (int)Math.Round(side * scale));
+            for (var py = 0; py < pixelSide && top + py < pixelHeight; py++)
+            for (var px = 0; px < pixelSide && left + px < pixelWidth; px++)
             {
                 var dx = (px + 0.5) / scale;
                 var dy = (py + 0.5) / scale;
-                var edge = Edge(dx, dy, space.Radius);
+                var edge = Edge(dx, dy, side, space.Radius);
                 var coverage = Math.Clamp(edge * scale + 0.5, 0, 1);
                 if (coverage <= 0)
                     continue;
                 var color = (PieceKind)dominant switch
                 {
                     PieceKind.Downloading
-                        when (rtl ? dx >= Square * (1 - share) : dx < Square * share) =>
+                        when (rtl ? dx >= side * (1 - share) : dx < side * share) =>
                         palette.Received,
                     PieceKind.Rare => Mix(
                         palette.Fills[dominant],
@@ -310,16 +333,16 @@ public sealed partial class PiecesMap : UserControl
                     PieceKind.Unavailable => Mix(
                         palette.Fills[dominant],
                         palette.Cross,
-                        Cover(CrossDistance(dx, dy), Stroke / 2, scale)
+                        Cover(CrossDistance(dx, dy, side), Stroke / 2, scale)
                     ),
                     _ => palette.Fills[dominant],
                 };
                 if (edge < 1 && palette.Outline.A > 0)
                     color = palette.Outline;
                 if (mixed)
-                    color = Mix(color, palette.Ink, Dot(dx - (Square - 4), dy - 4, scale));
+                    color = Mix(color, palette.Ink, Dot(dx - (side - 4), dy - 4, scale));
                 if (hidesUnavailable)
-                    color = Mix(color, palette.Cross, Dot(dx - 4, dy - (Square - 4), scale));
+                    color = Mix(color, palette.Cross, Dot(dx - 4, dy - (side - 4), scale));
                 var alpha = color.A * coverage;
                 var offset = ((top + py) * pixelWidth + left + px) * 4;
                 pixels[offset] = (byte)(color.B * alpha / 255);
@@ -333,6 +356,7 @@ public sealed partial class PiecesMap : UserControl
             {
                 Size = new Size(mapWidth, mapHeight),
             },
+            side,
             columns,
             pixels,
             blocks
@@ -340,13 +364,13 @@ public sealed partial class PiecesMap : UserControl
     }
 
     // Distance in DIPs from a point inside the square to its rounded edge; negative outside.
-    private static double Edge(double x, double y, double radius)
+    private static double Edge(double x, double y, int side, double radius)
     {
-        var cornerX = Math.Max(radius - x, x - (Square - radius));
-        var cornerY = Math.Max(radius - y, y - (Square - radius));
+        var cornerX = Math.Max(radius - x, x - (side - radius));
+        var cornerY = Math.Max(radius - y, y - (side - radius));
         if (cornerX > 0 && cornerY > 0)
             return radius - Math.Sqrt(cornerX * cornerX + cornerY * cornerY);
-        return Math.Min(Math.Min(x, Square - x), Math.Min(y, Square - y));
+        return Math.Min(Math.Min(x, side - x), Math.Min(y, side - y));
     }
 
     // Coverage of a 2-DIP-radius corner mark whose centre is the given offset away.
@@ -365,13 +389,14 @@ public sealed partial class PiecesMap : UserControl
         return Math.Min(offset, 5 - offset) / Math.Sqrt(2);
     }
 
-    // Distance in DIPs to the legend's cross: both diagonals from 4 to Square - 4, with round ends.
-    private static double CrossDistance(double x, double y)
+    // Distance in DIPs to the legend's cross: both diagonals from 4 DIPs inside each corner, with
+    // round ends.
+    private static double CrossDistance(double x, double y, int side)
     {
         // Signed distances from the two full diagonals; each is also the position along the other.
         var falling = (x - y) / Math.Sqrt(2);
-        var rising = (x + y - Square) / Math.Sqrt(2);
-        var half = (Square / 2 - 4) * Math.Sqrt(2);
+        var rising = (x + y - side) / Math.Sqrt(2);
+        var half = (side / 2.0 - 4) * Math.Sqrt(2);
         double Segment(double offset, double position) =>
             Math.Sqrt(offset * offset + Math.Pow(Math.Max(0, Math.Abs(position) - half), 2));
         return Math.Min(Segment(falling, rising), Segment(rising, falling));
@@ -404,9 +429,9 @@ public sealed partial class PiecesMap : UserControl
             layout.Blocks,
             block =>
                 position.X >= block.X
-                && position.X < block.X + Square
+                && position.X < block.X + layout.Side
                 && position.Y >= block.Y
-                && position.Y < block.Y + Square
+                && position.Y < block.Y + layout.Side
         );
     }
 
@@ -631,7 +656,7 @@ public sealed partial class PiecesMap : UserControl
         public required Color Outline { get; init; }
     }
 
-    private sealed record Raster(Space Space, int Columns, byte[] Pixels, Block[] Blocks)
+    private sealed record Raster(Space Space, int Side, int Columns, byte[] Pixels, Block[] Blocks)
     {
         public double Width => Space.Size.Width;
         public double Height => Space.Size.Height;

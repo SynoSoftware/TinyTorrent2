@@ -31,6 +31,9 @@ public sealed partial class MainViewModel
     internal LimitMode? FixedLimits =>
         HasLimits && CurrentLimits != LimitMode.Schedule ? CurrentLimits : null;
     public bool FollowsSchedule => FixedLimits is null;
+    public string ScheduleStatus =>
+        !HasLimits ? Text.Get("status", "unknown")
+        : Text.Get("settings", FollowsSchedule ? "schedule_on" : "schedule_off");
     public bool CanUseNone => CanChoose(LimitMode.None);
     public bool CanUseSpeed => CanChoose(LimitMode.Speed);
     public bool CanUseAlternative => CanChoose(LimitMode.Alternative);
@@ -52,7 +55,7 @@ public sealed partial class MainViewModel
     internal PauseReason PausedBy => _pause;
 
     // Resume all lifts the person's and the schedule's pause, not a missing adapter's.
-    internal bool IsPausedByChoice => IsPaused && _pause != PauseReason.Adapter;
+    internal bool IsPausedByChoice => IsPaused && _pause is not (PauseReason.Adapter or PauseReason.ConnectionTest);
 
     // What holds transfers back, which the status bar shows as one item: a
     // pause, or else the alternative limits, which change nothing while paused.
@@ -94,6 +97,7 @@ public sealed partial class MainViewModel
                 : Text.Get("status", "scheduled"),
             PauseReason.Adapter => Text.Format("window", "no_adapter", MissingAdapter),
             PauseReason.Manual => Text.Get("status", "all_paused"),
+            PauseReason.ConnectionTest => Text.Get("connection_setup", "paused"),
             _ => string.Empty,
         };
     public string LimitsNow
@@ -106,7 +110,7 @@ public sealed partial class MainViewModel
                 return Text.Format(
                     "transfer_limits",
                     "now_fixed",
-                    Text.Get("transfer_limits", "state_" + EngineName(mode))
+                    LimitLabel(mode)
                 );
             var state = Text.Get(
                 "transfer_limits",
@@ -143,6 +147,11 @@ public sealed partial class MainViewModel
                     : Text.Format("window", "no_rate_limit", pair)
             );
     }
+
+    internal string LimitLabel(LimitMode mode) =>
+        mode == LimitMode.Schedule
+            ? Text.Get("settings", "schedule")
+            : Text.Get("transfer_limits", "state_" + EngineName(mode));
 
     // The engine's name for a mode; following the schedule is the absence of one.
     private static string? EngineName(LimitMode mode) =>
@@ -190,16 +199,13 @@ public sealed partial class MainViewModel
             "adapter" => PauseReason.Adapter,
             "manual" => PauseReason.Manual,
             "schedule" => PauseReason.Schedule,
+            "connection_test" => PauseReason.ConnectionTest,
             _ => throw new InvalidDataException("Unknown pause reason."),
         };
         // The notice after Resume all explains only a missing adapter's pause.
         if (_pause == PauseReason.None || _waiting is [] && MissingAdapter.Length == 0)
             _waiting = null;
         AnnounceRestriction();
-        // The periods hide under a fixed choice, so none stays open out of
-        // sight, where its input could be neither seen nor corrected.
-        if (FixedLimits is not null && Settings.Schedule.IsOpen)
-            _ = Settings.Schedule.Close();
     }
 
     // Compares the kind of restriction, not its text, because the time in the

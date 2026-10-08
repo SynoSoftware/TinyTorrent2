@@ -65,7 +65,7 @@ function Connect-Pipe {
         throw 'TinyTorrent is already running. The check refuses to command an engine it did not start.'
     }
     $hello = Read-Frame $stream
-    Assert ($hello.type -eq 'hello' -and $hello.version -eq 8) 'Invalid version handshake'
+    Assert ($hello.type -eq 'hello' -and $hello.version -eq 10) 'Invalid version handshake'
     return $stream
 }
 

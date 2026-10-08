@@ -19,7 +19,7 @@ short-lived pipe instances at the same endpoint and contract, so an attached win
 cannot prevent another launch from forwarding its request.
 
 The engine also sends bounded control notifications for activation, close
-requests, desktop notices, and opening Settings after the person selects a
+requests, Exit confirmation, desktop notices, and opening Settings after the person selects a
 notification about a broken torrent handler. One receive dispatcher separates them from replies;
 one writer per connection serializes whole frames so notifications and replies
 cannot interleave. A close request for Exit runs asynchronously, outside the
@@ -102,8 +102,9 @@ copy another thread is still filling. Membership and application state form one
 consistent copy; transfer telemetry is sampled, not a promise to freeze every
 swarm at one instant.
 
-While WinUI is connected, refresh the summary once a second, as other clients do,
-and after each command. Allow at most one refresh in flight. Commands go before
+While WinUI is connected, refresh the summary at the configured window interval
+(1000–10000 milliseconds, default 1000) and after each command. The setting changes
+window demand, not engine ticks or history sampling. Allow at most one refresh in flight. Commands go before
 refresh and detail reads, and each view keeps at most one unsent read: a newer
 read replaces it, and a closed or changed view withdraws it. Use stable torrent
 identity to preserve the window's selection, focus, and drafts across refresh/reconnect.
@@ -128,6 +129,21 @@ accumulate behind a disconnected client. Speed history is engine state with its
 own [bound](engine.md#state-and-work), not data kept for a client, so it continues. Do not add field-level
 patches, replay logs, or another cache authority to avoid modest summary copies.
 Measure a real payload problem before replacing this design.
+
+## Connection measurement
+
+`connection_test` accepts `start`, `cancel`, or `release` and returns the current
+operation state without holding the request slot during measurement. The same
+state appears in summary snapshots. The window temporarily requests snapshots
+once per second while the operation is active so phase feedback and the hold
+countdown remain usable even with a slower configured refresh interval.
+
+State includes the operation identity, phase, measured download/upload capacity
+in Mbps, remaining hold seconds and a stable failure code. The engine owns the
+[lifecycle and restoration](engine.md#connection-measurement); losing the
+connection releases its temporary restriction. A start whose reply was lost is
+not automatically replayed: observe the next snapshot before offering another
+test, because testing consumes network traffic. Results do not commit settings.
 
 ## File-operation callers
 

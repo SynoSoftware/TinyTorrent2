@@ -25,6 +25,7 @@ constexpr std::pair<std::string_view, Command> commands[] = {
     {"window_closed", Command::WindowClosed},
     {"activate_reply", Command::ActivateReply},
     {"close_reply", Command::CloseReply},
+    {"exit_reply", Command::ExitReply},
     {"activate_sources", Command::ActivateSources},
     {"pending_activations", Command::PendingActivations},
     {"activations_received", Command::ActivationsReceived},
@@ -35,6 +36,11 @@ constexpr std::pair<std::string_view, CloseState> closeStates[] = {
     {"waiting", CloseState::Waiting},
     {"cancelled", CloseState::Cancelled},
     {"closing", CloseState::Closing}};
+
+constexpr std::pair<std::string_view, ExitAnswer> exitAnswers[] = {
+    {"confirmed", ExitAnswer::Confirmed},
+    {"cancelled", ExitAnswer::Cancelled},
+    {"unavailable", ExitAnswer::Unavailable}};
 
 // Durations in milliseconds, as GetTickCount64 counts.
 constexpr UINT tickInterval = 1000;
@@ -552,6 +558,17 @@ void Application::Receive(std::shared_ptr<Pipe::Connection> const& client, Json 
             OnCloseReply(client, *state, reply);
             break;
         }
+        case Command::ExitReply:
+        {
+            auto answer = Parse(exitAnswers, request.at("answer").get<std::string>());
+            if (!answer)
+            {
+                reply(Failure(ErrorCode::InvalidRequest));
+                break;
+            }
+            OnExitReply(client, *answer, reply);
+            break;
+        }
         case Command::ActivateSources:
             reply(Activate(request.at("sources").get<std::vector<std::string>>()));
             break;
@@ -688,6 +705,25 @@ void Application::OnCloseReply(std::shared_ptr<Pipe::Connection> const& client, 
     CancelExit();
 }
 
+void Application::OnExitReply(std::shared_ptr<Pipe::Connection> const& client, ExitAnswer answer, Reply const& reply)
+{
+    if (windowClient_ != client || exit_ != ExitPhase::WindowConfirming)
+    {
+        reply(Failure(ErrorCode::InvalidRequest));
+        return;
+    }
+    reply(Success());
+    exit_ = ExitPhase::Idle;
+    if (engine_->IsShuttingDown())
+    {
+        return;
+    }
+    if (answer == ExitAnswer::Confirmed || (answer == ExitAnswer::Unavailable && ConfirmExit()))
+    {
+        BeginExit();
+    }
+}
+
 void Application::OnPendingActivations(std::shared_ptr<Pipe::Connection> const& client, Reply const& reply)
 {
     if (windowClient_ != client)
@@ -737,6 +773,10 @@ void Application::Disconnect(std::shared_ptr<Pipe::Connection> const& client)
 void Application::ForgetWindow()
 {
     windowClient_.reset();
+    if (exit_ == ExitPhase::WindowConfirming)
+    {
+        exit_ = ExitPhase::Idle;
+    }
     waitingSince_ = 0;
     splash_.Close();
     if (IsExiting())
@@ -841,32 +881,58 @@ void Application::Exit()
         return;
     }
     auto activity = engine_->Activity();
-    if (!headless_ && activity.confirmsExit && activity.activeCount > 0)
+    if (headless_ || !activity.confirmsExit || activity.activeCount == 0)
     {
-        auto title = strings_.Text("exit", "title");
-        auto detail = strings_.Text("exit", "active");
-        auto label = strings_.Text("tray", "exit");
-        TASKDIALOG_BUTTON button{IDOK, label.c_str()};
-        TASKDIALOGCONFIG dialog{sizeof(dialog)};
-        auto window = windowClient_ ? FindWinUiWindow(windowClient_->processId) : nullptr;
-        dialog.hwndParent = window && IsWindowVisible(window) && !IsIconic(window) ? window : nullptr;
-        dialog.dwCommonButtons = TDCBF_CANCEL_BUTTON;
-        dialog.pszWindowTitle = productName;
-        dialog.pszMainInstruction = title.c_str();
-        dialog.pszContent = detail.c_str();
-        dialog.cButtons = 1;
-        dialog.pButtons = &button;
-        dialog.nDefaultButton = IDCANCEL;
-        int chosen = IDCANCEL;
-        exit_ = ExitPhase::Confirming;
-        auto outcome = TaskDialogIndirect(&dialog, &chosen, nullptr, nullptr);
-        // Windows can end the session while the dialog is open.
-        if (exit_ != ExitPhase::Confirming)
-            return;
-        exit_ = ExitPhase::Idle;
-        if (FAILED(outcome) || chosen != IDOK || engine_->IsShuttingDown())
-            return;
+        BeginExit();
+        return;
     }
+    // The open window asks in its own style; the host asks only without one.
+    if (windowClient_)
+    {
+        if (windowClient_->processId)
+        {
+            AllowSetForegroundWindow(windowClient_->processId);
+        }
+        exit_ = ExitPhase::WindowConfirming;
+        windowClient_->Send(Json{{"type", "confirm_exit"}});
+        return;
+    }
+    if (ConfirmExit())
+    {
+        BeginExit();
+    }
+}
+
+bool Application::ConfirmExit()
+{
+    auto title = strings_.Text("exit", "title");
+    auto detail = strings_.Text("exit", "active");
+    auto label = strings_.Text("tray", "exit");
+    TASKDIALOG_BUTTON button{IDOK, label.c_str()};
+    TASKDIALOGCONFIG dialog{sizeof(dialog)};
+    auto window = windowClient_ ? FindWinUiWindow(windowClient_->processId) : nullptr;
+    dialog.hwndParent = window && IsWindowVisible(window) && !IsIconic(window) ? window : nullptr;
+    dialog.dwCommonButtons = TDCBF_CANCEL_BUTTON;
+    dialog.pszWindowTitle = productName;
+    dialog.pszMainInstruction = title.c_str();
+    dialog.pszContent = detail.c_str();
+    dialog.cButtons = 1;
+    dialog.pButtons = &button;
+    dialog.nDefaultButton = IDCANCEL;
+    int chosen = IDCANCEL;
+    exit_ = ExitPhase::Confirming;
+    auto outcome = TaskDialogIndirect(&dialog, &chosen, nullptr, nullptr);
+    // Windows can end the session while the dialog is open.
+    if (exit_ != ExitPhase::Confirming)
+    {
+        return false;
+    }
+    exit_ = ExitPhase::Idle;
+    return SUCCEEDED(outcome) && chosen == IDOK && !engine_->IsShuttingDown();
+}
+
+void Application::BeginExit()
+{
     splash_.Close();
     exit_ = ExitPhase::Exiting;
     Refresh();
@@ -1116,7 +1182,8 @@ void Application::AddSources()
         {
             windowClient_->Send(Json{{"type", "activations"}});
         }
-        Open();
+        if (!windowClient_ || engine_->RaisesAdd())
+            Open();
         return;
     }
     adding_ = true;

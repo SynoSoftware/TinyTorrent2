@@ -30,7 +30,8 @@ constexpr std::pair<std::string_view, Command> commands[] = {
     {"queue", Command::Queue},
     {"piece_order", Command::PieceOrder},
     {"speed_limit", Command::SpeedLimit},
-    {"check_proxy", Command::CheckProxy}};
+    {"check_proxy", Command::CheckProxy},
+    {"connection_test", Command::ConnectionTest}};
 
 constexpr std::pair<std::string_view, QueueMove> moves[] = {
     {"up", QueueMove::Up},
@@ -99,6 +100,27 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
     case Command::Settings:
         Configure(request.at("changes"), reply);
         break;
+    case Command::ConnectionTest:
+    {
+        auto action = request.at("action").get<std::string>();
+        if (action == "start")
+        {
+            if (!StartConnectionTest(connectionId))
+            {
+                reply(Failure(ErrorCode::InvalidRequest));
+                break;
+            }
+        }
+        else if (action == "cancel" || action == "release")
+            ReleaseConnectionTest(connectionId, action == "cancel");
+        else
+        {
+            reply(Failure(ErrorCode::InvalidRequest));
+            break;
+        }
+        reply(Success(ConnectionTestSnapshot()));
+        break;
+    }
     case Command::CheckProxy:
     {
         // The proxy is read as the settings command reads it, so a proxy the
@@ -176,11 +198,11 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
         }
         Addition::Choices choices;
         choices.destination = request.at("destination").get<std::string>();
-        choices.intent = request.value("paused", false) ? Intent::Paused : Intent::Resumed;
+        choices.intent = request.value("paused", !settings.startsDownload) ? Intent::Paused : Intent::Resumed;
         choices.priorities = ReadPriorities(request.value("priorities", Json::array()));
         choices.sequential = request.value("sequential", false);
         choices.firstLast = request.value("first_last", false);
-        choices.queueTop = request.value("queue_top", false);
+        choices.queueTop = request.value("queue_top", settings.queueTop);
         Add(*preview, std::move(choices), [reply](Outcome outcome, Added added)
         {
             reply(outcome.error ? Failure(*outcome.error, outcome.detail) :
@@ -301,11 +323,19 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
         });
         break;
     case Command::DeleteFiles:
-        Act(TorrentIds(request), reply, [this](auto const& ids, Reply reply)
+    {
+        auto mode = request.value("deletion", settings.deletion == DeletionMode::Recycle ? "recycle" : "permanent");
+        if (mode != "recycle" && mode != "permanent")
         {
-            Remove(ids, reply, true);
+            reply(Failure(ErrorCode::InvalidRequest));
+            return;
+        }
+        Act(TorrentIds(request), reply, [this, mode](auto const& ids, Reply reply)
+        {
+            Remove(ids, reply, true, mode == "recycle" ? DeletionMode::Recycle : DeletionMode::Permanent);
         }, BusyFiles::Accepted);
         break;
+    }
     case Command::Queue:
     {
         // A queue command names either a direction or the torrent to move
@@ -470,7 +500,7 @@ void Engine::State::Verify(std::vector<std::string> const& ids, Reply reply)
 // Removes the torrents from the list. With deleteData it also deletes their
 // files; a torrent that CanRemove refuses leaves the list at once and is
 // removed when CanRemove allows it.
-void Engine::State::Remove(std::vector<std::string> const& ids, Reply reply, bool deleteData)
+void Engine::State::Remove(std::vector<std::string> const& ids, Reply reply, bool deleteData, DeletionMode mode)
 {
     std::vector<std::string> ready;
     std::vector<std::string> later;
@@ -479,7 +509,7 @@ void Engine::State::Remove(std::vector<std::string> const& ids, Reply reply, boo
         (!deleteData || CanRemove(torrents.at(id)) ? ready : later).push_back(id);
     }
     std::size_t kept = 0;
-    auto deletion = deleteData ? PrepareDeletion(ready) : deletions.end();
+    auto deletion = deleteData ? PrepareDeletion(ready, mode) : deletions.end();
     if (deleteData)
     {
         kept = FileScope(ids).kept.size();
@@ -489,7 +519,7 @@ void Engine::State::Remove(std::vector<std::string> const& ids, Reply reply, boo
     std::erase_if(document.torrents, [&removed](auto const& entry) { return removed(entry.first); });
     std::erase_if(document.queueOrder, removed);
     changes.Commit(document.ToJson(),
-        [this, ready, later, order = document.queueOrder, deletion, kept, reply](StorageOutcome outcome)
+        [this, ready, later, order = document.queueOrder, deletion, kept, reply, mode](StorageOutcome outcome)
     {
         if (!outcome.succeeded)
         {
@@ -507,6 +537,7 @@ void Engine::State::Remove(std::vector<std::string> const& ids, Reply reply, boo
         {
             auto& torrent = torrents.at(id);
             torrent.deleted = true;
+            torrent.deletionMode = mode;
             torrent.ApplyIntent();
         }
         // A move takes its torrents one at a time, so a deleted one still
@@ -535,7 +566,8 @@ void Engine::State::Remove(std::vector<std::string> const& ids, Reply reply, boo
     });
 }
 
-std::list<Engine::State::Deletion>::iterator Engine::State::PrepareDeletion(std::vector<std::string> const& ids)
+std::list<Engine::State::Deletion>::iterator Engine::State::PrepareDeletion(std::vector<std::string> const& ids,
+    DeletionMode mode)
 {
     if (ids.empty())
     {
@@ -543,6 +575,7 @@ std::list<Engine::State::Deletion>::iterator Engine::State::PrepareDeletion(std:
     }
     auto scope = FileScope(ids);
     Deletion deleting;
+    deleting.mode = mode;
     deleting.holds = std::move(scope.holds);
     for (auto const& file : scope.files)
     {
@@ -630,15 +663,14 @@ void Engine::State::RemoveDeferred()
     {
         return;
     }
-    std::vector<std::string> ready;
-    for (auto const& [id, torrent] : torrents)
+    for (auto mode : {DeletionMode::Recycle, DeletionMode::Permanent})
     {
-        if (torrent.deleted && CanRemove(torrent))
-        {
-            ready.push_back(id);
-        }
+        std::vector<std::string> ready;
+        for (auto const& [id, torrent] : torrents)
+            if (torrent.deleted && torrent.deletionMode == mode && CanRemove(torrent))
+                ready.push_back(id);
+        RemoveHandles(ready, PrepareDeletion(ready, mode));
     }
-    RemoveHandles(ready, PrepareDeletion(ready));
 }
 
 void Engine::State::SetIntent(std::vector<std::string> const& ids, Intent intent, Reply reply)

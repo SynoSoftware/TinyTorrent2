@@ -149,6 +149,7 @@ public:
     std::string StartupError() const;
     std::string SessionId() const;
     bool ShowsAdd() const;
+    bool RaisesAdd() const;
     bool HasSettings() const;
     bool ShowsSplash() const;
     bool StartsInTray() const;

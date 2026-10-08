@@ -1,5 +1,7 @@
 #include "Engine/State.h"
 #include <Windows.h>
+#include <Shellapi.h>
+#include <ShlObj.h>
 #include <libtorrent/torrent_info.hpp>
 #include <algorithm>
 #include <set>
@@ -54,7 +56,8 @@ void Engine::State::PrepareFiles(Torrent& torrent)
     prepared->ti = metadata;
     prepared->save_path = torrent.facts.savePath;
     prepared->renamed_files = torrent.handle.get_renamed_files().export_filenames(metadata->layout());
-    payload.Run([prepared, appendsSuffix = torrent.facts.appendsSuffix] { PrepareNames(*prepared, appendsSuffix); },
+    payload.Run([prepared, appendsSuffix = torrent.facts.appendsSuffix, layout = torrent.facts.layout]
+        { PrepareNames(*prepared, appendsSuffix, layout); },
         [this, id = torrent.torrentId, prepared](StorageOutcome outcome)
     {
         auto found = torrents.find(id);
@@ -75,7 +78,7 @@ void Engine::State::PrepareFiles(Torrent& torrent)
     });
 }
 
-void Engine::State::PrepareNames(lt::add_torrent_params& params, bool appendsSuffix)
+void Engine::State::PrepareNames(lt::add_torrent_params& params, bool appendsSuffix, Layout layout)
 {
     if (!params.ti)
         return;
@@ -85,7 +88,7 @@ void Engine::State::PrepareNames(lt::add_torrent_params& params, bool appendsSuf
     {
         if (files.pad_file_at(index))
             continue;
-        auto name = files.file_path(index);
+        auto name = ContentPath(files, index, layout);
         auto path = root / Wide(name);
         if (auto renamed = params.renamed_files.find(index); renamed != params.renamed_files.end())
         {
@@ -94,7 +97,10 @@ void Engine::State::PrepareNames(lt::add_torrent_params& params, bool appendsSuf
                     std::filesystem::file_type::not_found &&
                 std::filesystem::symlink_status(path).type() != std::filesystem::file_type::not_found)
             {
-                params.renamed_files.erase(renamed);
+                if (name == files.file_path(index))
+                    params.renamed_files.erase(renamed);
+                else
+                    renamed->second = name;
             }
             continue;
         }
@@ -102,6 +108,8 @@ void Engine::State::PrepareNames(lt::add_torrent_params& params, bool appendsSuf
         {
             params.renamed_files[index] = name + ".!tt";
         }
+        else if (name != files.file_path(index))
+            params.renamed_files[index] = name;
     }
 }
 
@@ -155,7 +163,7 @@ void Engine::State::CompleteFiles(Torrent& torrent)
     auto const& files = metadata->layout();
     for (auto index : files.file_range())
     {
-        if (mappings.file_path(files, index) == files.file_path(index) + ".!tt" &&
+        if (mappings.file_path(files, index) == ContentPath(files, index, torrent.facts.layout) + ".!tt" &&
             progress[static_cast<int>(index)] >= files.file_size(index))
             torrent.completedFiles.insert(index);
     }
@@ -176,7 +184,7 @@ void Engine::State::FinishFiles(Torrent& torrent)
             continue;
         if (progress[static_cast<int>(index)] < files.file_size(index))
             continue;
-        auto name = files.file_path(index);
+        auto name = ContentPath(files, index, torrent.facts.layout);
         auto actual = renames.file_path(files, index);
         if (actual != name + ".!tt")
             continue;
@@ -243,6 +251,7 @@ void Engine::State::FinishDownload(Torrent& torrent)
     if (waits && !torrent.status.is_finished)
         torrent.moveError.reset();
     if (shuttingDown || torrent.deleted || torrent.restore || torrent.completionPhase == CompletionPhase::Flushing ||
+        torrent.completionPhase == CompletionPhase::Checking ||
         !torrent.status.is_finished || torrent.namePhase != NamePhase::Ready || torrent.FilesBusy() ||
         !torrent.completedFiles.empty() || !torrent.facts.moveDestination.empty())
         return;
@@ -274,7 +283,20 @@ void Engine::State::FinishDownload(Torrent& torrent)
         });
         return;
     }
-    if (torrent.completionPhase == CompletionPhase::Settling)
+    if (torrent.completionPhase == CompletionPhase::Settling && settings.rechecksFinished)
+    {
+        torrent.completionPhase = CompletionPhase::Checking;
+        Verify({torrent.torrentId}, [this, id = torrent.torrentId](Json result)
+        {
+            if (!result.at("ok").get<bool>())
+            {
+                torrents.at(id).completionPhase = CompletionPhase::Settling;
+                log.Write("verify", id, "completion_failed");
+            }
+        });
+        return;
+    }
+    if (torrent.completionPhase == CompletionPhase::Settling || torrent.completionPhase == CompletionPhase::Checked)
     {
         torrent.completionPhase = CompletionPhase::Idle;
         Notify(NoticeKind::Completed, torrent);
@@ -472,13 +494,14 @@ void Engine::State::On(lt::file_rename_failed_alert const& alert)
 
 // The full paths of the content's files at the folder, sorted by PathBefore.
 std::vector<std::filesystem::path> Engine::State::FilePaths(lt::torrent_info const& metadata,
-    std::string const& folder)
+    std::string const& folder, Layout layout)
 {
     std::filesystem::path root = Wide(folder);
     std::vector<std::filesystem::path> files;
-    for (auto const& path : Paths(metadata))
+    for (auto index : metadata.layout().file_range())
     {
-        files.push_back(FullPath(root / path));
+        if (!metadata.layout().pad_file_at(index))
+            files.push_back(FullPath(root / Wide(ContentPath(metadata.layout(), index, layout))));
     }
     std::sort(files.begin(), files.end(), PathBefore);
     files.erase(std::unique(files.begin(), files.end(), SamePath), files.end());
@@ -657,7 +680,7 @@ std::vector<std::string> Engine::State::Holders(std::shared_ptr<lt::torrent_info
     {
         return names;
     }
-    auto files = FilePaths(*metadata, destination);
+    auto files = FilePaths(*metadata, destination, settings.layout);
     auto holds = [&files](std::vector<std::filesystem::path> const& held)
     {
         return std::any_of(files.begin(), files.end(), [&held](auto const& file)
@@ -1029,13 +1052,55 @@ void Engine::State::Delete(std::list<Deletion>::iterator deletion)
     payload.Run([deleting]
     {
         std::string failure;
-        for (auto const& file : deleting.files)
+        if (deleting.mode == DeletionMode::Recycle)
         {
-            std::error_code error;
-            std::filesystem::remove(file, error);
-            if (error && failure.empty())
+            auto initialized = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+            IFileOperation* operation = nullptr;
+            auto result = FAILED(initialized) ? initialized : CoCreateInstance(CLSID_FileOperation, nullptr,
+                CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&operation));
+            if (SUCCEEDED(result))
+                result = operation->SetOperationFlags(FOFX_RECYCLEONDELETE | FOFX_EARLYFAILURE |
+                    FOF_NOERRORUI | FOF_SILENT | FOF_NOCONFIRMATION | FOF_NO_CONNECTED_ELEMENTS);
+            for (auto const& file : deleting.files)
             {
-                failure = Utf8(file.wstring()) + ": " + error.message();
+                if (FAILED(result))
+                    break;
+                std::error_code error;
+                auto type = std::filesystem::symlink_status(file, error).type();
+                if (type == std::filesystem::file_type::not_found)
+                    continue;
+                if (error || type == std::filesystem::file_type::directory)
+                {
+                    result = E_FAIL;
+                    break;
+                }
+                IShellItem* item = nullptr;
+                result = SHCreateItemFromParsingName(file.c_str(), nullptr, IID_PPV_ARGS(&item));
+                if (SUCCEEDED(result))
+                    result = operation->DeleteItem(item, nullptr);
+                if (item)
+                    item->Release();
+            }
+            if (SUCCEEDED(result))
+                result = operation->PerformOperations();
+            BOOL aborted = FALSE;
+            if (SUCCEEDED(result))
+                result = operation->GetAnyOperationsAborted(&aborted);
+            if (operation)
+                operation->Release();
+            if (SUCCEEDED(initialized))
+                CoUninitialize();
+            if (FAILED(result) || aborted)
+                throw std::runtime_error("recycle_failed");
+        }
+        else
+        {
+            for (auto const& file : deleting.files)
+            {
+                std::error_code error;
+                std::filesystem::remove(file, error);
+                if (error && failure.empty())
+                    failure = Utf8(file.wstring()) + ": " + error.message();
             }
         }
         for (auto const& file : deleting.files)

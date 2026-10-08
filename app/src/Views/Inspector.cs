@@ -456,8 +456,8 @@ public sealed class Inspector : INotifyPropertyChanged
         }
     }
 
-    // The engine keeps the day at one sample a minute and the last five minutes
-    // at one a second; the chart uses the finer samples where both exist.
+    // Recent samples replace overlapping day samples; their intervals can differ
+    // after an aggregation setting changes, so merge by timestamp.
     private async Task<SpeedSample[]> ReadHistory()
     {
         var day = Samples(await _client.Read(Consumer.Inspector, "history", new { range = "day" }));

@@ -47,6 +47,7 @@ An attractive placeholder is not evidence that its backend feature exists.
 - Search covers all settings, including hidden advanced settings and familiar
   synonyms. Selecting a hidden result reveals it and goes to its real owner;
   search is not a second editable copy of Settings.
+  Use its placeholder and accessible name without an extra "Find a setting" label.
 - Ordinary settings use the existing individual commit and error behavior.
   There is no page-wide Save. Use the
   [committing-edits contract](../docs/interface.md#committing-edits) for pending,
@@ -137,6 +138,7 @@ copy of every label and range here.
 | --- | --- |
 | General | Default-app integration; sign-in/background startup, splash and start-paused choices; exit confirmation; notifications; sleep prevention on mains power; updates. Closing a window and exiting the engine remain distinct operations. |
 | Transfers | Background versus dialog-based addition, start/queue placement, folder layout and duplicates, skipped files, download/incomplete folders, suffix and allocation, seeding stop rules, watched folders. Defaults for new torrents must not relocate existing data or rewrite existing torrent choices. |
+| Subtitles | Automatic downloading, supplier access, and wanted languages. Follow the [subtitle design](../docs/subtitles.md) for early lookup, quiet recovery, and file ownership. |
 | Network | Adapter, incoming port/mapping, encryption, transport and address family, connection attempts, proxy and peer discovery. Reuse the existing network and proxy owners, including private-torrent restrictions. |
 | Speed limits | Connection setup, active speed-limit mode, standard caps, queue limits, peer limits, alternative caps, bandwidth accounting. Queue activity and transfer speed are separate concepts even though they share this category. |
 | Schedule | Weekly schedule and its existing editing capabilities, plus a compact summary of the actual standard and alternative speeds. |
@@ -149,6 +151,107 @@ duplicate policies. An optional added notification provides feedback from the
 tray; it is not a reason to open the main window. File associations, startup,
 notifications, update checks, and sleep prevention use the existing desktop
 integration. The prototype's sample dialogs and messages do not implement them.
+
+## Subtitles
+
+Subtitles has its own tab and category card in C's search and index layout.
+Search includes provider/account terms, captions, SRT, and language names; each
+result opens the existing setting rather than a second editor. The shared field
+inventory also makes these controls available in the comparison layouts.
+
+The default is TinyTorrent's provisioned, account-free OpenSubtitles package.
+Settings shows Subtitle supplier on the left and the clickable saved supplier
+with Edit on the right, all in one row. The value and action align with the
+language input and Add. Edit opens the supplier/account
+dialog; user name and password there are optional for OpenSubtitles. Blank uses
+TinyTorrent's access; a complete pair uses the person's account. No personal API
+key or subscription is required. Check examines the draft, Save commits it as one
+configuration, and Cancel/Escape discard it. Nothing applies merely on typing,
+focus departure, or Check. Automatic downloading and language edits remain
+immediate on the Settings page.
+
+Automatic subtitles starts Off, ready to enable using the interface language.
+An unset language choice follows the current interface language; choosing
+languages makes that selection independent, and Reset restores the default.
+Its tooltip says "Use the interface language for subtitles"; it keeps its Lucide
+icon and remains visible, disabled, when the default is already active.
+Edit, Check, Add, and Reset share one action size on the Subtitles page and
+align to the right edge. Reset stays below the language list, right-aligned.
+The HTML uses 96 by 32 pixels; native implementation sizes the shared action
+column for the widest localized label at the current text scale, so equal sizes
+never clip labels. The shared supplier/proxy dialog row uses the same equal action
+size for Check, Save, and Cancel; this is the owner's exception to natural widths.
+A searchable language input replaces the fixed checkbox list.
+Add or Enter adds a matching language once; selections remain visible with Remove
+actions. Removing the last explicit choice restores the interface-language default.
+All configuration stays editable while Off. Supplier status belongs in the Supplier
+card's footer beside Check, which checks the saved configuration directly. Edit
+opens the compound editor; its Check tests the draft through the same operation.
+There is no unrelated Status row under Automatic subtitles. Reserve footer space
+so an access, allowance, or file problem does not move other controls.
+The saved supplier name opens an anchored information flyout containing its
+disclosure and policy links. The editor's information icon beside the supplier
+label opens the same surface for the draft supplier. The supplier selector, user
+name, and password fields share both horizontal edges; the information icon never
+reduces an input's width. No disclaimer paragraph
+or policy links occupy either work surface. Use a native WinUI Flyout in production;
+Edit continues to use the existing shared Dialog base class. The flyout supports
+keyboard opening, Escape and light dismissal. Its readable text may wrap because
+this is a dedicated information surface, without adding rows to Settings.
+The policy link remains explicitly a draft until release facts are established.
+Secondary facts use Body text and the secondary color, not smaller type. Account
+instructions are field tooltips and accessible descriptions. Keep visible error
+feedback in its existing reserved space. No additional consent step is added.
+
+C opens on its Settings index. A full-width horizontal Automatic subtitles help
+card precedes the category grid, with its brief benefit and a right-aligned
+Set up subtitles cue. The whole main surface opens Subtitles, matching the
+category cards. A sibling dismiss button removes the help without navigating
+and returns focus to the ordinary Subtitles category card. Leaving the
+index also dismisses the help for the session; production persists that decision
+so ignoring help never causes a reminder after restart. Search remains available.
+The owner's requested discovery copy is the dedicated help exception; its
+benefit stays on one line with the full text available on the card's keyboard
+focus. The requested Set up subtitles cue is part of the help card's navigation
+surface rather than a nested button. All category
+summaries share the same trimming rule. Icon-only actions have hover and focus
+tooltips; provider changes also reset the password reveal tooltip.
+
+Proxy and supplier now use one dialog implementation for account entry, password
+reveal, reserved Check feedback, and Save/Cancel. The proxy purpose adds type,
+host, and port; the supplier purpose adds supplier selection. Each purpose
+validates and saves its own configuration. Proxy values and credentials never
+become subtitle values. The common editor preserves None and SOCKS4's disabled
+fields. Its address row and account fields share the existing Fluent spacing;
+footer buttons share an equal width beside reserved feedback.
+
+The supplier selector includes OpenSubtitles and a clearly marked sample supplier
+requiring an account. Selecting another supplier clears only draft credentials;
+Cancel preserves the saved configuration. The prototype toolbar supplies
+not-checked, successful-check, unconfigured, access-error, quota, and save-error
+outcomes. Status starts Not checked, and successful-check feedback is marked as a
+sample. Check simulates the selected outcome; Not checked becomes a sample success
+only when Check is invoked. Saved supplier/account changes invalidate the previous
+result unless the unchanged draft has just been checked. Editing that draft clears
+its result, and Cancel never changes the saved status. Blank
+credentials or a complete form never imply successful access. Production Check and
+saved-access validation call the same supplier operation. Setup remains editable
+while Off; enabling requires readiness, and a later failure preserves On for quiet
+recovery. Saving a changed supplier resets Off. These simulations do not establish
+provider authorization or real account validation. No supplier requests or file
+downloads occur. Use sample credentials;
+all edits last until reload, and the sample data view masks the subtitle password.
+Production reads confirmed access and retry state from the engine under the
+subtitle design, including actual quota reset times.
+
+Production uses WinUI AutoSuggestBox with the supplier's full language catalog,
+matching localized names, native names, and stable codes. Control choice follows
+the WinUI Gallery `gallery-autosuggestbox-1` sample and Microsoft's
+[AutoSuggestBox guidance](https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/auto-suggest-box).
+The HTML stand-in uses a native datalist and Add/Enter, with 188 ISO language and
+regional samples, including Hebrew, Japanese, and Brazilian Portuguese. That sample
+catalog is not a claim that a supplier supports every entry. Saved sample choices
+use language codes. No additional language-selection library is required.
 
 ## Connection setup
 

@@ -12,16 +12,14 @@ public sealed partial class Scheduler : UserControl
 {
     private readonly PeriodEditor _editor;
     public Schedule Model { get; }
-    public MainViewModel Main { get; }
 
-    public Scheduler(Schedule model, MainViewModel main)
+    public Scheduler(Schedule model)
     {
         Model = model;
-        Main = main;
         InitializeComponent();
         _editor = new PeriodEditor(model);
         _editor.Removing += (_, _) => FocusAdd();
-        Timeline.Content = new Week(model, main);
+        Timeline.Content = new Week(model);
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
     }

@@ -45,6 +45,7 @@ public sealed partial class MainWindow
         "edits" => CaptureMode.Edits,
         "add-layout" => CaptureMode.AddLayout,
         "settings-layout" => CaptureMode.SettingsLayout,
+        "settings-prototype" => CaptureMode.SettingsPrototype,
         "footer" => CaptureMode.Footer,
         _ => CaptureMode.None,
     };
@@ -204,6 +205,8 @@ public sealed partial class MainWindow
                         page = Model.Page.ToString(),
                         language = Model.Text.Language,
                         theme = Root.ActualTheme.ToString(),
+                        highContrast = new Windows.UI.ViewManagement.AccessibilitySettings().HighContrast,
+                        textScale = new Windows.UI.ViewManagement.UISettings().TextScaleFactor,
                         scale,
                         milliseconds = clock.ElapsedMilliseconds,
                         frames,
@@ -728,13 +731,12 @@ public sealed partial class MainWindow
         var limits = Model.LimitsIndex;
         try
         {
-            // Periods show and change only under the weekly schedule.
             await Model.ChooseLimits(LimitMode.Schedule);
             if (!Model.FollowsSchedule)
                 throw new InvalidOperationException(
                     "The review could not choose the weekly schedule."
                 );
-            await ShowSettings(new(SettingsCategory.Limits));
+            await ShowSettings(new(SettingsCategory.Schedule));
             await CaptureLayout();
             var page =
                 _settingsPage
@@ -1828,6 +1830,11 @@ public sealed partial class MainWindow
                 throw new InvalidOperationException(
                     "The connected engine does not own the capture store."
                 );
+            if (ReviewMode == CaptureMode.SettingsPrototype)
+            {
+                await CaptureSettings(outcomes, completed);
+                return;
+            }
             if (ReviewMode == CaptureMode.SettingsLayout)
             {
                 foreach (var language in new[] { "en", "es" })
@@ -2585,8 +2592,7 @@ public sealed partial class MainWindow
                         await CapturePage(prefix + "settings-" + category, _settingsPage);
                         if (
                             !filesOnly
-                            && category == SettingsCategory.Limits
-                            && Model.FollowsSchedule
+                            && category == SettingsCategory.Schedule
                             && Model.Settings.Schedule.Periods.FirstOrDefault() is { } period
                         )
                         {
@@ -2746,6 +2752,9 @@ public sealed partial class MainWindow
                     )
                 );
             }
+            if (ReviewMode == CaptureMode.SettingsPrototype)
+                foreach (var setting in Model.Settings.All)
+                    setting.Cancel();
             await Model.CancelDraft();
             await CloseWindow(exiting: false);
         }

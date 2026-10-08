@@ -24,10 +24,194 @@ mechanism mandatory.
 - Keep proof proportional to the change. Verify the consequence that could go
   wrong, rather than creating a framework or test suite to satisfy a heading.
 
-Prepared 2026-10-08 against the current working tree. This is a plan, not an
-implementation or verification claim. No builds, applications, or tests were run.
+Prepared 2026-10-08 against the current working tree. Implementation status below
+separates source changes from verification. The owner has authorized Debug x64
+builds and the app's off-screen capture review against a disposable store.
+
+## Implementation status — 2026-10-08
+
+The integrated native settings build in Debug x64. The settings capture now passes
+English/Dark and Spanish/Light journeys, including atomic preset submission,
+navigation and shutdown. File-policy verification passes admission, restart,
+recycle recovery, watcher deduplication and seed limits. Actual connection
+measurement now passes with successful hold/release, cancellation and preservation
+of independent pause intent. Requests use the provider's tested 10 MB sample tier.
+The evidence and its scope are listed below. The prototype remains the design
+reference; no browser UI is shipped.
+
+| Stage | Current source status |
+| --- | --- |
+| 1: Baseline | Existing keys and effective defaults traced before adding settings. Missing keys preserve existing transfer behavior; prototype sample values do not replace production defaults. |
+| 2–3: Native presentation | Index/search, compact cards, one advanced switch, category-wide unit/switch alignment, native tooltips, and existing settings are integrated. Queue and peer controls are in Speed limits. Schedule has its own category, cap summary, and visible inactive state; existing period editing is retained. Duration fields have minutes/hours selectors. Fractional inputs use native TextBox controls so display rounding cannot create drafts or alter saved precision. |
+| 4: Additional controls | Network/discovery, overall queue and peer limits, slow-torrent handling, bandwidth accounting, checking concurrency, UI refresh interval, title speeds, and free-space visibility are connected to their existing owners. |
+| 5: History | Engine aggregation supports both interval settings, retains completed timestamped samples, and bounds partial/completed history by time and count. A headless runtime check demonstrates five- and ten-second aggregation, preservation across a change, and saved intervals after restart. The window refresh interval does not change engine sampling. |
+| 6: Manual Connection setup | Native responsive child page, editable connection capacity, proposed/current values, derived preset identity, and atomic intended-change submission are integrated. No simulated test is exposed. |
+| 7: Addition/file policies | Admission defaults, launch pause, layout, duplicate handling, exclusions, recycle/permanent deletion, inactivity/combined seed rules, watched folders, and completion verification are connected to engine owners. The focused file-policy check passes restart/intent, payload preservation, recycle recovery, watcher deduplication and Any/All inactivity limits. |
+| 8: Connection testing | Native WinHTTP measurement, temporary session suspension, three-minute hold, retest, cancellation and restoration are implemented. Actual measurement, explicit release, cancellation, preservation of an existing pause, restoration after failure, successful retest without releasing suspension, real three-minute expiry, and client-disconnect restoration pass. |
+| 9: Integration evidence | Debug builds pass without warnings. Settings captures pass both language/theme cases, atomic preset submission, no reading-created drafts, navigation and shutdown. A separate Windows High Contrast capture at 200% text passes both languages; inspected pictures confirm native cards, category-wide unit alignment, readable duration selectors, Connection setup stacking and stable actions. Detail reads remain a separate workstream. |
+
+Stage 7's fields have native controls, persistence and engine behavior, with
+the focused file-integrity and restart evidence listed here. This does not
+claim every settings combination was exercised.
+
+### Decisions applied in this slice
+
+Current evidence under `artifacts/evidence/`:
+
+- `Capture-settings-prototype-d3722cbe-791a-4a8a-bd5f-5f55450b32de`:
+  passing native journeys and inspected wide/dark, narrow/light captures.
+- `SettingsFiles-c3161ae2-78b8-457f-9910-ebaef494af82`:
+  passing focused admission, persistence, recycle, watcher and seeding checks.
+- `ConnectionTest-3316bfc2-cace-4856-8eda-4c16a6f56342`:
+  cancellation and failure restoration pass; engine log identifies HTTP 403.
+- `ConnectionTest-e5234852-7882-4676-a46b-0f4f54e92dcb`:
+  corrected real measurement succeeds (approximately 392.5/191.7 Mbps), enters
+  Holding with 179 seconds remaining, and releases successfully. Cancellation
+  and preservation of an existing session pause also pass.
+- `ConnectionTest-3edecbf3-99fa-4fee-80e9-fc8c08c46e92`:
+  successful retest retains suspension and resets the hold; the actual
+  three-minute expiry and client disconnect both restore engine activity.
+- `SettingsHistory-158a1d79-1494-4929-91d6-715ee9b12200`:
+  headless aggregation changes from five to ten seconds without erasing
+  completed samples; both history intervals and the UI interval survive restart.
+  Exact timestamp spacing is not a standing assertion: samples record actual
+  engine observations, including partial buckets at configuration boundaries.
+- `Capture-settings-prototype-3b2d45fc-a3a8-4525-8d12-a7456cd3eb8b`:
+  Windows High Contrast and 200% text, confirmed in capture metadata. Both
+  language journeys pass. The review corrected short value columns, preset
+  wrapping and narrow duration-unit selectors. Original Windows preferences
+  were restored and the disposable processes closed.
+
+Connection-test phase changes use the window's existing accessibility
+announcement path, without announcing every countdown tick. A new engine's
+idle snapshot clears the preceding session's test failure. The prototype's
+redundant "Find a setting" label is removed; native search already uses its
+placeholder and accessible name.
+
+### Acceptance scope
+
+The field inventory below is implemented through the named native controls
+and engine owners. Existing registration, startup, notification, sleep, update,
+proxy and scheduler operations remain with their established implementations.
+New admission and file policies share those operations rather than adding a
+second foreground/background path. Source tracing covers validation, defaults,
+commit ordering, refusal and disconnect paths; the runtime evidence above
+covers the new data-integrity and lifecycle risks.
+
+This record distinguishes those source guarantees from measured results. It
+does not claim every combination of settings or an optimal bandwidth policy
+for every connection. No total-memory or performance improvement is claimed.
+Subtitles and the independent detail-read redesign remain outside this delivery.
+
+Request-level WinHTTP probes isolated the failure to a 16 MiB download request;
+both directions accept the documented 10 MB sample. The engine now uses that
+per-request ceiling, with the existing 128 MiB total ceiling per direction.
+The normal Debug app and engine build without warnings, including typed deletion
+mode and the small dialog declaration grouped with its SpeedLimit owner.
+
+- Window refresh is 1,000–10,000 ms through the existing PipeClient timer.
+  Operational window preferences use the existing settings store; they do not
+  create a second configuration file or add fields to window placement.
+- Presets own the two standard bandwidth caps and three queue limits. Reduced
+  uses 50% and 2/2/3; Balanced uses 85% and 3/5/8; Full speed removes bandwidth
+  caps and uses 3/5/8. Returning from Reduced therefore restores useful queue
+  activity. These are explicit policies, not measured performance recommendations.
+  Peer limits, alternative caps, saved periods, and individual pause intent stay
+  unchanged. A saved weekly schedule stays selected; other modes switch to
+  standard limits when applying the proposal.
+- Preset identity is derived from confirmed controlled values and stored
+  connection capacity. It becomes Custom when those values no longer match.
+  There is no saved preset profile. Capacity facts and all proposed changes use
+  the existing atomic settings submission, with no Apply for an empty proposal.
+- Production defaults retain unlimited overall activity and unlimited
+  per-torrent connections. A finite per-torrent connection limit starts at two,
+  matching the pinned libtorrent contract. Slow thresholds remain 2 KiB/s and
+  protocol overhead remains included. These differ deliberately from HTML
+  examples because an upgrade must preserve existing behavior.
+- Last destination changes only after a successful admission. Preallocation is
+  chosen when preparing a new source; an already prepared addition keeps its
+  storage mode. Neither choice moves existing files.
+- Wire settings additions and connection testing use protocol version 10. The parallel detail-read
+  document and implementation remain with their owner. Review peer-detail
+  invalidation at network changes when that implementation becomes available;
+  this slice does not introduce a competing cache or query path.
+
+Source checks cover JSON parsing, duplicate resource keys, matching English and
+Spanish placeholders, XAML structure and literal resource references, and diff
+whitespace. Source review also corrected outgoing interface filtering, explicit
+Torrents versus Back navigation, and policies on pending additions. These checks
+do not establish native binding compilation, rendered layout, or runtime safety.
+
+### Earlier source trace — superseded by integration evidence above
+
+Traced the changed UI input, search, navigation, settings submission, engine
+validation/persistence, policy application, addition, polling, history, and
+window-lifetime paths, including refusal and disconnect handling. Fixed:
+
+- Inactive schedule editing was closed by every engine snapshot; the obsolete
+  fixed-mode close path is removed. Unavailable engine state now reports unknown
+  schedule status instead of implying the weekly schedule is active.
+- Slow-torrent inputs displayed KiB/s but used byte/s maxima. The input maximum
+  now derives its units at the Setting owner.
+- Three empty numeric XAML resources could fail page loading; their intended
+  theme opacity values are restored.
+- Ordinary Settings entry skipped the index, and saved index state restored
+  General. An absent category now denotes the index in navigation and placement;
+  existing saved category numbers retain their meaning.
+- Index navigation lacked keyboard focus transfer, and existing search results
+  retained the previous language. Both follow their current page/text state.
+- Connection setup could finish navigation after the person left Settings;
+  the continuation checks the active page.
+- A completed Connection setup Apply could return to Settings during window
+  closure. The return now respects closure and dialog state; queued focus also
+  checks that Settings is still the active content.
+- A destination acknowledgement could briefly show free space from the old
+  volume. Visibility now requires the sample path to match the confirmed folder.
+- Optional title speeds could use an over-wide child layout as their fit test;
+  the calculation now uses available caption width.
+- The existing engine check's handshake expectation now matches protocol 10.
+
+The engine trace found no additional source-level faults in queued-save ordering,
+failed admission, restored/pending handles, policy propagation, or history bounds.
+Queue/checking help now states that forced transfers can bypass these limits.
+Structural checks and diff checks passed before native verification. The
+integration evidence above records subsequent builds, captures and runtime checks.
+
+### Ownership and naming review — 2026-10-08
+
+- SettingsPage has one traversal for field discovery, disclosure, and visible
+  row alignment. Its category panels come from XAML; only the persisted enum
+  mapping remains explicit because stored ordinals differ from visual tab order.
+- MainViewModel's limit owner supplies schedule status and mode labels. Setting
+  owns confirmed numeric access; Connection setup does not interpret raw JSON.
+- TransferPreset names the transfer policy rather than its current editor.
+  Capacity validation and queue calculations have one implementation. The private
+  Limits record keeps the five values of one proposal: two bandwidth caps and
+  three queue limits. Splitting its constructor into arbitrary wrappers would
+  obscure that cohesive result.
+- DiskSpace owns local-volume queries and unavailable/network-drive handling for
+  the two actual callers. Neither caller delegates filesystem policy to another
+  view model. There is no interface, cache, or forwarding wrapper around it.
+- PipeClient owns and disposes its refresh timer with its other lifetime
+  resources. SetRefreshInterval retains three words to distinguish configuring
+  the cadence from requesting an immediate snapshot. Existing Show-prefixed
+  settings retain the established preference vocabulary.
+- ApplyPolicy takes a torrent handle; its name does not repeat that argument's
+  scope. The history Range stays private and owns aggregation for the two actual
+  ranges, rather than adding separate recent/day implementations.
+
+The review removes redundant notifications and capability forwarding while
+preserving settings keys, saved choices, navigation behavior, and transfer policy.
+Connection setup uses explicit validation and status branches, named proposal
+arguments, and one change-set calculation per Apply. Category lookup, advanced
+disclosure, and saved-page restoration use straightforward control flow.
+Subsequent verification uses the owner's authorization for Debug builds and
+off-screen capture; see the integration evidence above.
 
 ## Outcome and scope
+
+**Owner ruling:** The Subtitles tab is excluded from this goal. Its separate
+implementation is not a prerequisite or part of Settings acceptance here.
 
 Implement the selected Settings experience from
 [the prototype](../app/settings-options-prototype.html) and its
@@ -453,9 +637,10 @@ verification. Stage 1 confirms the exact mapping before edits.
 
 ## Verification and execution constraints
 
-The current instruction is **no running and no compiling**. This plan does not
-revoke it. Source review, field tracing, diff review, and documentation checks
-are available now; build/runtime evidence remains pending until authorized.
+The owner authorized Debug x64 builds and the app's hidden capture review against
+a disposable store. Finish related edits before building; reuse passing evidence
+and rerun only checks whose behavior changed. `detail-reads.md` remains a separate
+workstream and does not block settings delivery.
 
 When execution is authorized, follow [testing.md](testing.md) and root build
 rules: finish a coherent slice before building, use affected Debug x64 targets,

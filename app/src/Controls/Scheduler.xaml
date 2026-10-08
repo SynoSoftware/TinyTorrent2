@@ -69,9 +69,7 @@
       HorizontalContentAlignment="Stretch"
       IsTabStop="False"
     />
-    <!-- The periods run only while the weekly schedule is chosen, so
-             they show only then. -->
-    <StackPanel Visibility="{x:Bind Main.FollowsSchedule, Mode=OneWay}">
+    <StackPanel>
       <StackPanel MinHeight="56" Orientation="Horizontal" Spacing="24">
         <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
           <Border

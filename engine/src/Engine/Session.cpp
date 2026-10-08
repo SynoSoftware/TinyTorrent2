@@ -117,6 +117,8 @@ bool Engine::State::Contains(std::vector<std::string> const& values, std::string
 
 void Engine::State::Start(Document const& saved, Resumes& resumes)
 {
+    launchPaused = settings.startsPaused;
+    watchedSources = saved.watchedSources;
     lt::settings_pack pack;
     pack.set_str(lt::settings_pack::listen_interfaces, "");
     pack.set_bool(lt::settings_pack::enable_upnp, false);
@@ -134,13 +136,6 @@ void Engine::State::Start(Document const& saved, Resumes& resumes)
     {
         session->set_alert_notify(wake);
     }
-    auto classes = session->get_peer_class_type_filter();
-    for (int type = 0; type < lt::peer_class_type_filter::num_socket_types; ++type)
-    {
-        classes.add(static_cast<lt::peer_class_type_filter::socket_type_t>(type),
-            lt::session::global_peer_class_id);
-    }
-    session->set_peer_class_type_filter(classes);
     RefreshPolicy(true);
     for (auto [id, facts] : saved.torrents)
     {
@@ -270,7 +265,7 @@ Json Engine::State::Document::ToJson() const
         list.push_back(std::move(entry));
     }
     return {{"format", format}, {"settings", settings.ToFile()}, {"torrents", std::move(list)},
-        {"queue_order", queueOrder}};
+        {"queue_order", queueOrder}, {"watched_sources", watchedSources}};
 }
 
 // Refuses a document of another format, which a save must not rewrite, or
@@ -290,6 +285,10 @@ void Engine::State::Document::Read(Json const& saved)
     {
         settings.Read(*found);
     }
+    if (auto found = saved.find("watched_sources"); found != saved.end() && found->is_object())
+        for (auto const& [source, stamp] : found->items())
+            if (watchedSources.size() < torrentLimit && IsAbsolute(source) && stamp.is_string())
+                watchedSources.emplace(source, stamp.get<std::string>());
     for (auto const& entry : saved.at("torrents"))
     {
         // Without its identity a record cannot find its resume file, so it
@@ -315,6 +314,7 @@ Engine::State::Document Engine::State::Saved() const
 {
     Document document;
     document.settings = settings;
+    document.watchedSources = watchedSources;
     for (auto const& [id, torrent] : torrents)
     {
         // A deleted torrent is out of the saved list; it stays in torrents
@@ -425,11 +425,13 @@ Json Engine::State::Snapshot() const
     auto origin = !settings.scheduleEnabled ? "manual" : limitOverride ? "override" : "schedule";
     // A pause that Resume all lifts comes first, so "adapter" means that only the
     // missing adapter pauses transfers and the window offers Settings instead.
-    auto pause = !IsPaused() ? "" : settings.allPaused ? "manual" : IsPausedByChoice() ? "schedule" : "adapter";
+    auto pause = !IsPaused() ? "" : settings.allPaused || launchPaused ? "manual" : IsPausedByChoice() ? "schedule" :
+        adapterMissing ? "adapter" : "connection_test";
     return {{"session_id", sessionId}, {"torrents", std::move(rows)}, {"settings", std::move(current)},
         {"language_saved", language == settings.language},
         {"download_rate", activity.downloadRate}, {"upload_rate", activity.uploadRate},
         {"session_paused", IsPaused()},
+        {"connection_test", ConnectionTestSnapshot()},
         {"limits", {{"origin", origin}, {"mode", Settings::Name(mode)},
             {"download", caps.download}, {"upload", caps.upload}, {"pause", pause}}},
         {"missing_adapter", activity.missingAdapter},
@@ -458,6 +460,7 @@ Torrent* Engine::State::Find(lt::torrent_handle const& handle)
 Torrent& Engine::State::Install(std::string const& id, lt::torrent_handle handle, Facts facts,
     lt::add_torrent_params const& params)
 {
+    ApplyPolicy(handle);
     auto& torrent = torrents.insert_or_assign(id, Torrent{id, handle, std::move(facts)}).first->second;
     torrent.comment = params.comment;
     torrent.creator = params.created_by;
@@ -548,6 +551,8 @@ Engine::State::~State()
 {
     sources.Abandon();
     checkStop.request_stop();
+    if (connectionTest)
+        connectionTest->stop.request_stop();
     checks.Abandon();
 }
 
@@ -585,7 +590,9 @@ void Engine::State::Maintain()
     if (now - statusAt >= statusInterval)
     {
         statusAt = now;
+        MaintainConnectionTest();
         RestorePending();
+        WatchFolder();
         RefreshPolicy();
         LimitSeeds();
         auto time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());

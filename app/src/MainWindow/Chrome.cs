@@ -17,7 +17,11 @@ public sealed partial class MainWindow
     private readonly UISettings _uiSettings = new();
 
     private void OnTextScaling(UISettings sender, object args) =>
-        DispatcherQueue.TryEnqueue(UpdateStatus);
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            UpdateStatus();
+            UpdateChrome();
+        });
 
     private void OnStatusSize(object sender, SizeChangedEventArgs args) => UpdateStatus();
 
@@ -71,6 +75,7 @@ public sealed partial class MainWindow
         TextBlock[] labels =
         [
             UpdateLabel,
+            FreeSpaceLabel,
             FilterLabel,
             ExternalIpLabel,
             IncomingLabel,
@@ -146,6 +151,22 @@ public sealed partial class MainWindow
         LeftInset.Width = new GridLength(left);
         RightInset.Width = new GridLength(right);
         UpdateMinimum(scale);
+        TitleDownload.Width = TitleUpload.Width = 128 * _uiSettings.TextScaleFactor;
+        var speedWidth = TitleDownload.Width + TitleUpload.Width + TitleSpeeds.Spacing;
+        var available = Caption.ActualWidth
+            - left
+            - right
+            - CaptionStart.ActualWidth
+            - Menus.ActualWidth
+            - AddButtons.ActualWidth
+            - ThemeButton.ActualWidth
+            - SearchArea.Margin.Left
+            - SearchArea.Margin.Right;
+        TitleSpeeds.Visibility =
+            Model.ShowsTitleSpeeds
+            && available >= Search.MinWidth + speedWidth + TitleSpeeds.Margin.Left
+                ? Visibility.Visible
+                : Visibility.Collapsed;
         if (Caption.ActualHeight <= 0)
             return;
         var start = AppWindow.TitleBar.LeftInset;
@@ -270,7 +291,7 @@ public sealed partial class MainWindow
                 "shortcuts",
                 "tip",
                 Model.Text.Get("menus", "back"),
-                ShortcutText(Model.ShowTorrents)
+                ShortcutText(Back)
             )
         );
         RefreshMenus();

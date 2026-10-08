@@ -18,13 +18,13 @@ button,input,select,textarea{font:inherit;color:inherit}button{cursor:pointer}bu
 button{border:1px solid var(--line);border-radius:4px;background:var(--control);min-height:32px;padding:4px 12px}button:hover:not(:disabled){background:var(--hover)}input,select,textarea{border:1px solid var(--line);border-bottom-color:var(--muted);border-radius:4px;background:var(--control);padding:6px 10px;min-height:32px;max-width:100%}input:focus,textarea:focus{border-bottom:2px solid var(--accent)}select option{background:var(--page)}input[type=number]{width:110px}input[type=time]{width:130px}input[type=text],input[type=password]{width:240px}textarea{width:100%;resize:vertical}.lucide{width:20px;height:20px;display:inline-grid;place-items:center;flex:none;font-family:Lucide;font-size:20px;font-style:normal;font-weight:normal;line-height:1;user-select:none}.icon-button{width:36px;padding:5px;display:inline-grid;place-items:center;background:transparent;border-color:transparent}
 .window{height:calc(100dvh - 70px);min-height:400px;display:flex;flex-direction:column;overflow:hidden;position:relative;background:var(--page)}.chrome{height:48px;display:flex;align-items:center;gap:22px;padding:0 18px;flex:none;z-index:2}.menus{display:flex;gap:22px}.caption{margin-left:auto;display:flex;gap:20px;color:var(--muted);user-select:none}.stage{position:relative;flex:1;min-height:0;isolation:isolate;display:flex;flex-direction:column}.gear{position:absolute;width:440px;height:440px;font-size:440px;z-index:-1;color:var(--accent);opacity:.04;pointer-events:none}.gear.first{top:-145px;left:calc(50% - 610px)}.gear.last{bottom:-215px;right:calc(50% - 610px);width:560px;height:560px;font-size:560px}body.dark .gear{opacity:.03}
 .mast{width:100%;max-width:848px;margin:auto;padding:24px 24px 0;flex:none}.heading{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:22px}h1{font-size:28px;line-height:36px;font-weight:600;margin:0}h2{font-size:16px;line-height:24px;font-weight:600;margin:0}h3{font-size:14px;line-height:20px;margin:0;font-weight:600}.searchline{display:flex;gap:12px;align-items:center;margin-bottom:14px}.searchbox{position:relative;flex:1}.searchbox .lucide{position:absolute;left:12px;top:10px;width:16px;height:16px;color:var(--muted);font-size:16px}.searchbox input{width:100%;height:38px;padding-left:38px;padding-right:34px}.searchbox .clear{position:absolute;right:3px;top:3px;min-height:30px;height:30px;width:30px;padding:0;border:0;background:transparent}.hint{font-size:12px;color:var(--muted)}.tabs{display:flex;overflow:auto;gap:4px;padding:4px 4px 8px;scrollbar-width:thin}.tab{flex-shrink:0;border:0;background:transparent;white-space:nowrap;position:relative;padding:8px 11px 12px;color:var(--muted)}.tab[aria-selected=true]{color:var(--text);font-weight:600}.tab[aria-selected=true]:after{content:'';position:absolute;bottom:3px;left:calc(50% - 8px);width:16px;height:3px;border-radius:2px;background:var(--accent)}
-.scroll{flex:1;min-height:0;overflow:auto;scroll-behavior:smooth}.content{max-width:848px;margin:0 auto;padding:8px 24px 40px}.section{background:var(--card);border-radius:6px;margin:0 0 16px;padding:18px 24px 12px;scroll-margin-top:12px}.section-head{display:flex;align-items:flex-start;gap:14px;padding-bottom:10px}.section-head .lucide{color:var(--accent);margin-top:2px}.section-head p{margin:3px 0 0;color:var(--muted);font-size:12px}.row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:16px;align-items:center;min-height:64px;padding:10px 0}.row-title{font-size:14px;font-weight:400}.description{display:block;color:var(--muted);font-size:12px;line-height:17px;margin-top:3px;max-width:410px}.control{display:flex;align-items:center;justify-content:flex-end;gap:10px}.control select{width:214px}.unit{min-width:48px;color:var(--muted);font-size:12px}.path-row{grid-template-columns:1fr}.path-row .control{justify-content:stretch}.path-row input{flex:1;width:0;min-width:0}.row.inactive .row-copy{color:var(--muted)}.toggle{display:inline-flex;align-items:center;gap:10px;border:0;background:transparent;padding:5px 0;white-space:nowrap}.toggle:hover:not(:disabled){background:transparent}.toggle .state{color:var(--muted);min-width:22px;font-size:12px}.track{display:inline-block;position:relative;width:40px;height:20px;border:1px solid var(--muted);border-radius:12px;flex:none}.track:after{content:'';position:absolute;width:12px;height:12px;border-radius:50%;left:3px;top:3px;background:var(--muted)}.toggle[aria-checked=true] .track{background:var(--accent);border-color:var(--accent)}.toggle[aria-checked=true] .track:after{left:23px;background:var(--on-accent)}.global-toggle{gap:12px}.global-toggle .label{font-size:14px}.global-toggle .state{display:inline-block}.category-title{font-size:23px;font-weight:600;margin:28px 0 16px;scroll-margin-top:10px}.category-title:first-child{margin-top:4px}.note{display:flex;gap:10px;color:var(--muted);font-size:12px;align-items:flex-start;margin:0 0 16px;padding:10px 0}.note .lucide{width:16px;height:16px;font-size:16px}.result{display:flex;align-items:center;justify-content:space-between;text-align:left;width:100%;padding:14px 18px;margin-bottom:6px;background:var(--card);border:0}.result small{display:block;margin-top:4px;color:var(--muted)}.result .lucide{color:var(--muted);width:16px;font-size:16px;height:16px}.index{display:grid;grid-template-columns:1fr 1fr;gap:14px}.index-card{padding:22px;text-align:left;background:var(--card);border:0;min-height:130px}.index-card .lucide{color:var(--accent);margin-bottom:12px}.index-card strong{display:block;font-size:16px;font-weight:600}.index-card small{color:var(--muted);display:block;margin-top:5px}.index-intro{margin:10px 0 22px;color:var(--muted)}.empty{padding:35px 0;color:var(--muted)}.spotlight{outline:2px solid var(--accent);outline-offset:5px;border-radius:3px}.status{display:flex;gap:24px;align-items:center;min-height:32px;padding:4px 18px;border-top:1px solid var(--line);font-size:12px;color:var(--muted);flex:none}.status .right{margin-left:auto}.status .rate{color:var(--text)}
-.prototype{position:fixed;bottom:12px;left:50%;transform:translateX(-50%);display:flex;gap:8px;align-items:center;padding:7px 10px;background:#161c24;color:#f5f6f8;border:1px solid #46515f;border-radius:9px;box-shadow:0 4px 16px #0003;white-space:nowrap;font-size:12px;z-index:8}.prototype button{background:#ffffff09;border-color:#ffffff20;color:inherit;min-height:28px}.prototype small{color:#aebdce}.prototype .divider{height:20px;border-left:1px solid #ffffff25;margin:0 4px}.toast{position:fixed;right:20px;bottom:80px;max-width:360px;padding:12px 16px;background:var(--page);border:1px solid var(--line);border-radius:6px;box-shadow:0 5px 22px var(--shadow);z-index:12;font-size:13px}.toast:empty{display:none}dialog{width:540px;max-width:calc(100vw - 32px);max-height:80dvh;padding:24px;border:1px solid var(--line);border-radius:8px;background:var(--page);color:var(--text);box-shadow:0 16px 48px #0005}dialog::backdrop{background:#0006}dialog h2{font-size:20px;margin-bottom:12px}dialog label{display:block;margin:14px 0 6px}dialog input,dialog select{width:100%!important}dialog .actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;margin-top:24px}dialog pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px}#proxy-result{min-height:20px}
+.scroll{flex:1;min-height:0;overflow:auto;scroll-behavior:smooth}.content{max-width:848px;margin:0 auto;padding:8px 24px 40px}.section{background:var(--card);border-radius:6px;margin:0 0 16px;padding:18px 24px 12px;scroll-margin-top:12px}.section-head{display:flex;align-items:flex-start;gap:14px;padding-bottom:10px}.section-head .lucide{color:var(--accent);margin-top:2px}.section-head p{margin:3px 0 0;color:var(--muted);font-size:12px}.row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:16px;align-items:center;min-height:64px;padding:10px 0}.row-title{font-size:14px;font-weight:400}.description{display:block;color:var(--muted);font-size:12px;line-height:17px;margin-top:3px;max-width:410px}.control{display:flex;align-items:center;justify-content:flex-end;gap:10px}.control select{width:214px}.unit{min-width:48px;color:var(--muted);font-size:12px}.path-row{grid-template-columns:1fr}.path-row .control{justify-content:stretch}.path-row input{flex:1;width:0;min-width:0}.row.inactive .row-copy{color:var(--muted)}.toggle{display:inline-flex;align-items:center;gap:10px;border:0;background:transparent;padding:5px 0;white-space:nowrap}.toggle:hover:not(:disabled){background:transparent}.toggle .state{color:var(--muted);min-width:22px;font-size:12px}.track{display:inline-block;position:relative;width:40px;height:20px;border:1px solid var(--muted);border-radius:12px;flex:none}.track:after{content:'';position:absolute;width:12px;height:12px;border-radius:50%;left:3px;top:3px;background:var(--muted)}.toggle[aria-checked=true] .track{background:var(--accent);border-color:var(--accent)}.toggle[aria-checked=true] .track:after{left:23px;background:var(--on-accent)}.global-toggle{gap:12px}.global-toggle .label{font-size:14px}.global-toggle .state{display:inline-block}.category-title{font-size:23px;font-weight:600;margin:28px 0 16px;scroll-margin-top:10px}.category-title:first-child{margin-top:4px}.note{display:flex;gap:10px;color:var(--muted);font-size:12px;align-items:flex-start;margin:0 0 16px;padding:10px 0}.note .lucide{width:16px;height:16px;font-size:16px}.result{display:flex;align-items:center;justify-content:space-between;text-align:left;width:100%;padding:14px 18px;margin-bottom:6px;background:var(--card);border:0}.result small{display:block;margin-top:4px;color:var(--muted)}.result .lucide{color:var(--muted);width:16px;font-size:16px;height:16px}.index{display:grid;grid-template-columns:1fr 1fr;gap:14px}.index-card{padding:22px;text-align:left;background:var(--card);border:0;min-height:130px}.index-card .lucide{color:var(--accent);margin-bottom:12px}.index-card strong{display:block;font-size:16px;font-weight:600}.index-card small{color:var(--muted);display:block;margin-top:5px}.empty{padding:35px 0;color:var(--muted)}.spotlight{outline:2px solid var(--accent);outline-offset:5px;border-radius:3px}.status{display:flex;gap:24px;align-items:center;min-height:32px;padding:4px 18px;border-top:1px solid var(--line);font-size:12px;color:var(--muted);flex:none}.status .right{margin-left:auto}.status .rate{color:var(--text)}
+.prototype{position:fixed;bottom:12px;left:50%;transform:translateX(-50%);display:flex;gap:8px;align-items:center;padding:7px 10px;background:#161c24;color:#f5f6f8;border:1px solid #46515f;border-radius:9px;box-shadow:0 4px 16px #0003;white-space:nowrap;font-size:12px;z-index:8}.prototype button{background:#ffffff09;border-color:#ffffff20;color:inherit;min-height:28px}.prototype small{color:#aebdce}.prototype .divider{height:20px;border-left:1px solid #ffffff25;margin:0 4px}.toast{position:fixed;right:20px;bottom:80px;max-width:360px;padding:12px 16px;background:var(--page);border:1px solid var(--line);border-radius:6px;box-shadow:0 5px 22px var(--shadow);z-index:12;font-size:13px}.toast:empty{display:none}dialog{width:540px;max-width:calc(100vw - 32px);max-height:80dvh;padding:24px;border:1px solid var(--line);border-radius:8px;background:var(--page);color:var(--text);box-shadow:0 16px 48px #0005}dialog::backdrop{background:#0006}dialog h2{font-size:20px;margin-bottom:12px}dialog label{display:block;margin:14px 0 6px}dialog input,dialog select{width:100%!important}dialog .actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;margin-top:24px}dialog pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px}#connection-result{min-height:20px}
 @media(max-width:740px){.menus{display:none}.mast{padding:18px 18px 0}.content{padding:8px 18px 30px}.section{padding:16px}.heading{flex-wrap:wrap;gap:8px}.row{gap:12px}.description{max-width:280px}.control select{width:175px}.prototype small,.prototype .divider,.status .right{display:none}.prototype{gap:5px;max-width:calc(100vw - 12px)}.index{grid-template-columns:1fr}}
 @media(max-width:480px){.row{grid-template-columns:1fr}.control{justify-content:flex-start}.row:not(.path-row) .control{padding-top:2px}.control select{width:100%}.status{gap:12px}}
 @media(prefers-reduced-motion:reduce){.scroll{scroll-behavior:auto}}
 @media(forced-colors:active){.gear{display:none}.section,.index-card{border:1px solid CanvasText}.track{border-color:ButtonText}.track:after{background:ButtonText}.toggle[aria-checked=true] .track{background:Highlight}.toggle[aria-checked=true] .track:after{background:HighlightText}.tab[aria-selected=true]:after{background:Highlight}}
-.search-label{display:block;font-size:12px;color:var(--muted);margin-bottom:6px}.searchbox .lucide{top:33px}.searchbox .clear{top:26px}input[type=search]::-webkit-search-cancel-button{display:none}
+input[type=search]::-webkit-search-cancel-button{display:none}
 .global-toggle .label{white-space:normal;text-align:left}.global-toggle{flex-shrink:0}
 .row-title{cursor:default}.row-copy{min-width:0}.control{min-width:0}.row-error{font-size:12px;line-height:17px;color:var(--critical,#c42b1c);margin-top:4px}.row-error:empty{display:none}body.dark{--critical:#ff99a4}input[aria-invalid=true]{border-bottom:2px solid var(--critical,#c42b1c)}.result:focus-visible,.index-card:focus-visible{outline-offset:-3px}
 .status{overflow-x:auto;white-space:nowrap;scrollbar-width:thin}.status>span{flex-shrink:0}.prototype{max-width:calc(100vw - 16px);overflow-x:auto;scrollbar-width:thin}.prototype>*{flex-shrink:0}.prototype small,.prototype .divider,.prototype .state-button{display:initial}.prototype .divider{display:block}.prototype select{background:#242d39;color:#f5f6f8;border-color:#ffffff25;min-height:30px;max-width:210px;font-size:12px}.prototype select option{background:#242d39}.row:focus{outline:2px solid var(--accent);outline-offset:4px;border-radius:3px}.row-error[role=alert]{max-width:100%}
@@ -40,10 +40,10 @@ body.compact .section{padding:14px 20px 8px;margin-bottom:12px}body.compact .sec
 </style>
 <style>
 .action{display:inline-flex;align-items:center;justify-content:center;gap:8px;line-height:20px;white-space:nowrap}.action .lucide{width:20px;height:20px;font-size:20px}
-dialog .actions{justify-content:center;gap:8px}button.action[data-primary]{background:var(--accent);color:var(--on-accent);border-color:transparent}dialog .actions.has-status{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:12px}dialog .action-buttons{display:flex;align-items:center;justify-content:flex-end;gap:8px}#proxy-result{min-height:0;margin:0}
+dialog .actions{justify-content:center;gap:8px}button.action[data-primary]{background:var(--accent);color:var(--on-accent);border-color:transparent}dialog .actions.has-status{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:12px}dialog .action-buttons{display:flex;align-items:center;justify-content:flex-end;gap:8px}#connection-result{min-height:0;margin:0}
 .schedule-limits table{width:100%;min-width:0;table-layout:fixed;border-collapse:collapse;font-size:14px;line-height:20px}.schedule-limits th,.schedule-limits td{text-align:left;padding:4px 12px 4px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.schedule-limits th{font-weight:600}.schedule-limits thead{color:var(--muted)}.schedule-limits th:first-child{width:38%}.schedule-limits td{font-variant-numeric:tabular-nums}.schedule-limits td,.schedule-limits thead th:not(:first-child){text-align:right}
 #tooltip{position:fixed;inset:auto;margin:0;max-width:min(420px,calc(100vw - 24px));padding:8px 12px;border:1px solid var(--line);border-radius:4px;background:var(--page);color:var(--text);box-shadow:0 4px 16px var(--shadow);font:14px/20px 'Segoe UI',sans-serif;white-space:normal;overflow-wrap:anywhere}
-body.aligned{line-height:20px}body.aligned :is(.hint,.unit,.toggle .state,.status,.row-error,.week-ruler,.week-day>span,.week-legend,.period summary,.period summary small,.schedule-now,.search-label,.note){font-size:14px;line-height:20px}
+body.aligned{line-height:20px}body.aligned :is(.hint,.unit,.toggle .state,.status,.row-error,.week-ruler,.week-day>span,.week-legend,.period summary,.period summary small,.schedule-now,.note){font-size:14px;line-height:20px}
 :is(.section-head p,.description:not(.setting-value),dialog>p.hint){position:absolute;width:1px;height:1px;padding:0;margin:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 body.aligned .section{padding:16px 24px;margin-bottom:16px}body.aligned .section-head{align-items:center;gap:12px;padding-bottom:8px}body.aligned .section-head .lucide{margin:0}body.aligned .section-head>div{min-width:0}body.aligned h2{font-size:14px;line-height:20px;font-weight:600}body.aligned dialog h2{font-size:20px;line-height:28px}
 body.aligned .row,body.aligned .fixed-setting{display:grid;grid-template-columns:minmax(0,1fr) 248px;min-height:48px;gap:16px}body.aligned .row{padding:8px 0}body.aligned .control{justify-content:flex-start;gap:8px}body.aligned .control select{width:100%;height:32px}body.aligned .control select[data-duration-unit]{width:116px;flex:none}body.aligned .control input[type=number]{width:120px}body.aligned .control input:not([type=checkbox]),body.aligned .control button{min-height:32px}body.aligned input:not([type=checkbox]),body.aligned select{line-height:20px;padding-block:5px}body.aligned input:focus{padding-bottom:4px}
@@ -53,8 +53,8 @@ body.aligned .week-lane,body.aligned .week-block{height:48px}body.aligned .week-
 body.aligned .note{align-items:center}body.aligned .note .lucide{width:20px;height:20px;font-size:20px}body.aligned .schedule-limits{gap:16px}body.aligned .schedule-limits table{flex:1}body.aligned .schedule-limits th:first-child{width:40%}body.aligned .schedule-limits :is(th,td):last-child{padding-right:0}
 body.aligned .result{gap:16px}body.aligned .result>span{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}body.aligned .result small{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .period-actions{display:grid;grid-template-columns:minmax(0,1fr) auto}.period-actions>div{margin-left:auto}.period-actions>span{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}body .period-actions>.row-error{margin:0}
-.scroll{scrollbar-gutter:stable both-edges}.row{position:relative}.row-title,.setting-value,.row-error,.note>span,.schedule-now,.period summary,.section-head h2{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.row-title{display:block}.section-head>div,.note>span{min-width:0}.setting-value{max-width:100%}
-body .row.has-validation{padding-bottom:28px}.row .row-error{position:absolute;bottom:4px;left:0;right:0;margin:0;line-height:20px}.period-actions{min-height:32px}#proxy-result{min-width:0;min-height:20px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.scroll{scrollbar-gutter:stable both-edges}.row{position:relative}.row-title,.setting-value,.row-error,.note>span,.schedule-now,.period summary,.section-head h2{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.row-title{display:block}.section-head>div,.note>span{min-width:0}.setting-value{max-width:100%;font-size:14px;line-height:20px}.toggle .state,.row-error{font-size:14px;line-height:20px}
+body .row.has-validation{padding-bottom:28px}.row .row-error{position:absolute;bottom:4px;left:0;right:0;margin:0;line-height:20px}.period-actions{min-height:32px}#connection-result{min-width:0;min-height:20px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 @media(max-width:620px){.period-actions{grid-template-columns:minmax(0,1fr);gap:8px}}
 .control:has(>input[type=number],>.limit-input){width:max-content;justify-self:end}.control>input[type=number]{width:120px}
 .settings-category{display:contents}.settings-category:has(.control>.unit){--unit-width:64px}.settings-category:has(.control>select[data-duration-unit]){--unit-width:116px}
@@ -63,10 +63,15 @@ body .row.has-validation{padding-bottom:28px}.row .row-error{position:absolute;b
 .settings-category:has(.control>.unit,.control>select[data-duration-unit]) .toggle>.track{justify-self:end}
 .settings-category:has(.control>.unit,.control>select[data-duration-unit]) .toggle>.state{justify-self:start}
 .limit-input{position:relative;width:120px;flex:none}.limit-input input{display:block;padding-right:32px}body .limit-input .clear-limit{position:absolute;right:2px;top:50%;transform:translateY(-50%);width:28px;height:28px;min-height:28px;padding:0;visibility:hidden}.limit-input:focus-within .clear-limit{visibility:visible}.limit-input input:placeholder-shown+.clear-limit,.limit-input input:disabled+.clear-limit{visibility:hidden}input[data-unlimited]::placeholder{color:var(--text);opacity:1}
+.connection-address{display:grid;grid-template-columns:minmax(0,1fr) 100px;gap:16px}.connection-password{position:relative}.connection-password input{padding-right:40px}.connection-password .icon-button{position:absolute;right:2px;top:2px;width:30px;height:30px;min-height:30px;padding:0}.connection-form label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#connection-result{font-size:14px;line-height:20px}.language-picker{width:320px;max-width:100%;min-width:0}.language-entry{display:flex;gap:8px}.language-entry input{flex:1;min-width:0}.selected-languages{list-style:none;padding:0;margin:8px 0}.selected-languages li{display:flex;align-items:center;gap:8px;min-height:36px}.selected-languages li>span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.selected-languages small{color:var(--muted);font-size:inherit}.selected-languages .icon-button{flex:none}.subtitle-status{width:240px;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--muted)}.subtitle-status[data-error=true]{color:var(--critical,#c42b1c)}
+.index-card{min-width:0}.index-card :is(strong,small){white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.index-card small{font-size:14px;line-height:20px}.index-entry{position:relative;min-width:0;margin-bottom:20px}.index-entry .index-card{display:grid;grid-template-columns:20px minmax(0,1fr);gap:6px 14px;width:100%;min-height:130px;padding:20px 48px 20px 22px;border:1px solid var(--line)}.index-entry .index-card>.lucide{margin:0}.index-entry .index-card small{grid-column:2;margin:0}.index-entry .index-card .index-action{grid-column:2;justify-self:end;margin-top:8px}.index-entry>.icon-button{position:absolute;top:8px;right:8px}.index-card .index-action{display:flex;align-items:center;gap:8px;margin-top:12px;color:var(--accent);font-size:14px;line-height:20px;white-space:nowrap}.index-action .lucide{margin:0;width:20px;height:20px;font-size:20px}#supplier-info{position:fixed;inset:auto;margin:0;width:min(440px,calc(100vw - 24px));max-height:calc(100dvh - 24px);overflow:auto;padding:16px;border:1px solid var(--line);border-radius:8px;background:var(--page);color:var(--text);box-shadow:0 8px 24px var(--shadow);font-size:14px;line-height:20px}#supplier-info h2{font-size:16px;line-height:24px;margin:0}#supplier-info p{margin:8px 0 12px}.supplier-link,#supplier-info a{color:var(--accent)}.supplier-link{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.subtitle-links{display:flex;gap:8px 16px;flex-wrap:wrap}.subtitle-links a{white-space:nowrap}.connection-heading{display:flex;align-items:center;gap:8px;margin:14px 0 6px}.connection-heading label{margin:0}.connection-heading .icon-button{width:24px;height:24px;min-height:24px;padding:2px;flex:none}.supplier-link:focus-visible,#supplier-info a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.supplier-feedback{display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:48px;padding-top:8px;margin-top:4px}.supplier-feedback .subtitle-status{width:auto;flex:1;min-width:0}.supplier-feedback button{flex:none}
+.settings-category:has(#subtitles) .action,dialog .action-buttons .action{width:96px;height:32px;flex:none}.language-picker>[data-language-reset]{display:flex;margin-left:auto}.language-entry{align-items:center}
+.control:has(>.supplier-link){width:320px;max-width:100%;gap:8px;justify-self:end}.control>.supplier-link{flex:1;min-width:0}
 .schedule-feedback{display:flex;align-items:center;gap:8px;min-width:0;min-height:32px}.schedule-feedback .schedule-now{flex:1}.schedule-feedback button{flex:none}.schedule-feedback .icon-button{width:32px;height:32px}
 .global-toggle .label{white-space:nowrap;max-width:none}.period summary small{display:inline;margin-left:12px}.toast,dialog>p:not(.hint){white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .search-entry{position:relative}.search-entry .lucide{top:50%;transform:translateY(-50%)}.search-entry .clear{top:50%;transform:translateY(-50%);place-items:center}.search-entry .clear:not([hidden]){display:grid}.search-entry .clear .lucide{position:static;transform:none;width:20px;height:20px;font-size:20px}
-body.aligned :is(.toast,#proxy-result,dialog>p:not(.hint)){white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:14px;line-height:20px}body.aligned .toast{max-width:calc(100vw - 40px)}[data-tip]:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
+body.aligned :is(.toast,#connection-result,dialog>p:not(.hint)){white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:14px;line-height:20px}body.aligned .toast{max-width:calc(100vw - 40px)}[data-tip]:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
 @media(max-width:620px){body.aligned .row{grid-template-columns:1fr;gap:8px}body.aligned .heading{align-items:flex-start}body.aligned .control{padding-top:0}body.aligned .control select{width:min(100%,280px)}body.aligned .section{padding:16px}body.aligned .schedule-limits table{flex-basis:100%}dialog .actions.has-status{grid-template-columns:1fr}dialog .action-buttons{justify-content:center}}
 @media(forced-colors:active){#tooltip{background:Canvas;color:CanvasText;border-color:CanvasText;box-shadow:none}button.action[data-primary]{background:Highlight;color:HighlightText}}
 [hidden]{display:none!important}
@@ -131,7 +136,7 @@ body.aligned :is(.toast,#proxy-result,dialog>p:not(.hint)){white-space:nowrap;ov
 <body>
 <div class="window">
   <header class="chrome"><button class="icon-button" id="back" aria-label="Back to torrents">←</button><img class="app-icon" src="../resources/tinyTorrent.svg" alt="TinyTorrent"><nav class="menus" aria-label="Application menu"><button data-menu="file" aria-haspopup="menu">File</button><button data-menu="torrent" aria-haspopup="menu">Torrent</button><button data-menu="view" aria-haspopup="menu">View</button><button data-menu="help" aria-haspopup="menu">Help</button></nav><div class="caption-search"><input id="torrent-search" type="search" aria-label="Search torrents" placeholder="Search torrents"></div><div id="title-speeds" class="title-speeds" hidden></div><div class="caption-actions"><button class="icon-button" data-existing="Add torrent file" aria-label="Add torrent file" data-tip="Add torrent file" data-icon="plus"></button><button class="icon-button" data-existing="Add magnet link" aria-label="Add magnet link" data-tip="Add magnet link" data-icon="link"></button><span class="caption-separator"></span><button class="icon-button" id="caption-theme" aria-label="Switch theme" data-tip="Switch theme" data-icon="sun-moon"></button></div><span class="caption" aria-hidden="true">— &nbsp; □ &nbsp; ×</span></header>
-  <main class="stage"><div id="gears" aria-hidden="true"></div><div class="mast"><div class="heading"><h1>Settings</h1><button id="advanced" class="toggle global-toggle" role="switch" aria-label="Show advanced options" aria-checked="false"><span class="label">Show advanced options</span><span class="track" aria-hidden="true"></span><span id="advanced-state" class="state" aria-hidden="true">Off</span></button></div><div class="searchline"><div class="searchbox"><label for="search" class="search-label">Find a setting</label><div class="search-entry"><span id="search-icon" aria-hidden="true"></span><input id="search" type="search" placeholder="Search all settings, including advanced" autocomplete="off" aria-controls="content"><button id="clear" class="clear" aria-label="Clear search" hidden>×</button></div></div></div><nav id="tabs" class="tabs" aria-label="Settings categories"></nav></div><div id="scroll" class="scroll"><div id="content" class="content" tabindex="-1"></div></div></main>
+  <main class="stage"><div id="gears" aria-hidden="true"></div><div class="mast"><div class="heading"><h1>Settings</h1><button id="advanced" class="toggle global-toggle" role="switch" aria-label="Show advanced options" aria-checked="false"><span class="label">Show advanced options</span><span class="track" aria-hidden="true"></span><span id="advanced-state" class="state" aria-hidden="true">Off</span></button></div><div class="searchline"><div class="searchbox"><div class="search-entry"><span id="search-icon" aria-hidden="true"></span><input id="search" type="search" placeholder="Search all settings, including advanced" aria-label="Search all settings, including advanced" autocomplete="off" aria-controls="content"><button id="clear" class="clear" aria-label="Clear search" hidden>×</button></div></div></div><nav id="tabs" class="tabs" aria-label="Settings categories"></nav></div><div id="scroll" class="scroll"><div id="content" class="content" tabindex="-1"></div></div></main>
   <main id="setup-surface" class="setup-surface" hidden></main>
   <main id="torrents-surface" class="torrents-surface" hidden></main>
   <main id="tray-surface" class="tray-surface" hidden><span class="desktop-label">Notification area preview</span><div class="taskbar"><span>TinyTorrent · Running in the background</span><button id="tray-icon" class="icon-button" data-menu="tray" aria-label="TinyTorrent notification area menu" aria-haspopup="menu"><img src="../resources/tinyTorrent.svg" alt=""></button></div></main>
@@ -139,11 +144,16 @@ body.aligned :is(.toast,#proxy-result,dialog>p:not(.hint)){white-space:nowrap;ov
 </div>
 <aside class="prototype" aria-label="Prototype controls"><small>Prototype</small><select id="surface-picker" aria-label="Preview surface"><option value="settings">Settings</option><option value="torrents">Torrents</option><option value="tray">Notification area</option></select><button id="previous" aria-label="Previous layout">←</button><select id="variant-picker" aria-label="Prototype layout"></select><button id="next" aria-label="Next layout">→</button><span class="divider"></span><button id="preview-theme">Use dark theme</button><button id="state" class="state-button">View sample data</button><button id="reset">Reset sample</button><select id="test-outcome" aria-label="Simulated test outcome" data-tip="No network test or torrent suspension occurs. Speeds and preset policies are illustrative."><option value="complete">Simulated test: success</option><option value="failed">Simulated test: failure</option><option value="timeout">Simulated test: timeout</option></select></aside>
 <div id="toast" class="toast" role="status" aria-live="polite" tabindex="0"></div>
+<select id="subtitle-outcome" aria-label="Simulated subtitle outcome" hidden><option value="unchecked">Subtitles: not checked</option><option value="ready">Subtitles: check succeeded</option><option value="unconfigured">Subtitles: not configured</option><option value="account">Subtitles: access error</option><option value="quota">Subtitles: download limit</option><option value="disk">Subtitles: save error</option></select>
 <dialog id="dialog" aria-labelledby="dialog-title"></dialog>
 <div id="tooltip" role="tooltip" popover="manual"></div>
+<div id="supplier-info" popover="auto" role="dialog" aria-labelledby="supplier-info-title"></div>
 <div id="menu" class="menu" role="menu" popover="auto"></div>
 <script>
 const icons={
+  'captions':'\uE3A8',
+  'languages':'\uE104',
+  'eye':'\uE0BE',
   'copy':'\uE0A2',
   'link':'\uE108',
   'more':'\uE0BA',
@@ -198,6 +208,7 @@ const icons={
 const icon=name=>`<i class="lucide" aria-hidden="true">${icons[name]||icons.settings}</i>`;
 const escape=value=>String(value).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;');
 const field=(id,label,help,type,value,advanced=false,extra={})=>({id,label,help,type,value,advanced,...extra});
+const subtitleLanguages='aa ab ae af ak am an ar as av ay az ba be bg bh bi bm bn bo br bs ca ce ch co cr cs cu cv cy da de dv dz ee el en eo es et eu fa ff fi fj fo fr fy ga gd gl gn gu gv ha he hi ho hr ht hu hy hz ia id ie ig ii ik io is it iu ja jv ka kg ki kj kk kl km kn ko kr ks ku kv kw ky la lb lg li ln lo lt lu lv mg mh mi mk ml mn mr ms mt my na nb nd ne ng nl nn no nr nv ny oc oj om or os pa pi pl ps pt qu rm rn ro ru rw sa sc sd se sg si sk sl sm sn so sq sr ss st su sv sw ta te tg th ti tk tl tn to tr ts tt tw ty ug uk ur uz ve vi vo wa wo xh yi yo za zh zu pt-BR es-419 zh-Hans zh-Hant'.split(' ').map(id=>({id,name:new Intl.DisplayNames(['en'],{type:'language'}).of(id),native:new Intl.DisplayNames([id],{type:'language'}).of(id)})).sort((a,b)=>a.name.localeCompare(b.name));
 function action(label,glyph,description,attributes=''){return `<button class="action" aria-label="${escape(description)}" data-tip="${escape(description)}" ${attributes}>${icon(glyph)}<span>${escape(label)}</span></button>`}
 const sections=[
   {category:'General',title:'Default app',description:'Open torrent files and magnet links with TinyTorrent.',icon:'app-window',rows:[
@@ -256,6 +267,16 @@ const sections=[
     field('watch_path','Folder to watch','','path','C:\\Users\\user\\Downloads\\Torrents',true,{depends:'watch'}),
     field('watch_recursive','Include subfolders','','toggle',false,true,{depends:'watch'}),
     field('watch_destination','Download folder','New torrents use your start and queue settings.','path','D:\\Downloads',true,{depends:'watch'})
+  ]},
+  {category:'Subtitles',title:'Automatic subtitles',description:'Subtitles appear beside your movies, preferably while they are still downloading.',icon:'captions',rows:[
+    field('subtitles','Automatic subtitles','Find subtitles for new and unfinished movie downloads. Configure the supplier before turning on. Existing subtitle files are kept.','toggle',false)
+  ]},
+  {category:'Subtitles',title:'Supplier',description:'Edit the supplier and account together. Leave the optional account blank to use TinyTorrent access.',icon:'network',rows:[
+    field('subtitle_supplier','Subtitle supplier','Choose a supplier, edit account details, and check access before saving.','action','Edit'),
+    field('subtitle_status','Supplier status','Optionally check saved supplier access. Checking does not enable downloads. Persistent problems appear here.','check','')
+  ]},
+  {category:'Subtitles',title:'Languages',description:'Download subtitles in each selected language.',icon:'languages',rows:[
+    field('subtitle_languages','Subtitle languages','Search by language name, native name, or code. Add each language you want. Uses the interface language until you choose your own.','languages',null,false,{options:subtitleLanguages.flatMap(language=>[language.name,language.native,language.id])})
   ]},
   {category:'Network',title:'Connections',description:'Choose where torrent traffic goes and how peers connect.',icon:'network',rows:[
     field('adapter','Network adapter','Transfers pause if the selected adapter is unavailable.','select','Any adapter',false,{options:['Any adapter','Ethernet','Wi-Fi','WireGuard VPN']}),
@@ -335,13 +356,15 @@ const sections=[
 ];
 const fields=sections.flatMap(section=>section.rows);
 const aliases={refresh_interval:'polling engine refresh update interval milliseconds',default_app:'file association magnet default program',startup:'windows startup login',tray:'startup background tray',show_add:'magnet torrent dialog background',destination:'save location save path download folder',disk_buffer:'cache ram memory limit',download_limit:'bandwidth speed',upload_limit:'bandwidth speed',alt_download:'bandwidth speed alternative',alt_upload:'bandwidth speed alternative',prevent_sleep:'sleep power awake',title_speeds:'titlebar bandwidth speed',recent_interval:'sampling granularity resolution frequency',history_interval:'sampling granularity resolution frequency'};
-const categoryIcons={'General':'settings','Transfers':'arrow-down-up','Network':'network','Speed limits':'gauge','Schedule':'calendar-clock','Appearance':'palette','Advanced':'wrench'};
+Object.assign(aliases,{subtitles:'captions movie film srt automatic download',subtitle_supplier:'opensubtitles provider supplier account user name username password credentials login sign in check',subtitle_languages:'captions language english spanish french german portuguese italian',subtitle_status:'subtitles account error quota allowance limit retry save folder'});
+const categoryIcons={'General':'settings','Transfers':'arrow-down-up','Subtitles':'captions','Network':'network','Speed limits':'gauge','Schedule':'calendar-clock','Appearance':'palette','Advanced':'wrench'};
 const categories=Object.keys(categoryIcons);
 const variants={A:'Category tabs',B:'All settings',C:'Search and index',D:'Compact rows',E:'Aligned rows'};
 const defaults=Object.fromEntries(fields.map(field=>[field.id,field.value]));
 const initialVariant=new URLSearchParams(location.search).get('variant');
-const state={variant:variants[initialVariant]?initialVariant:'C',surface:'settings',inspector:'General',category:'Speed limits',advanced:false,query:'',index:false,units:{seed_time:'minutes',inactive_time:'minutes'},values:{...defaults},bandwidth:{download:'',upload:''},proxy:{type:'None',host:'',port:1080,username:'',password:''}};
+const state={variant:variants[initialVariant]?initialVariant:'C',surface:'settings',inspector:'General',category:'Speed limits',advanced:false,query:'',index:false,units:{seed_time:'minutes',inactive_time:'minutes'},values:{...defaults},bandwidth:{download:'',upload:''},supplier:{name:'OpenSubtitles.com',username:'',password:''},proxy:{type:'None',host:'',port:1080,username:'',password:''}};
 const sample={name:'Ubuntu 24.04.1 desktop',path:'C:\\Downloads\\ubuntu-24.04.1-desktop-amd64.iso',hash:'0123456789abcdef0123456789abcdef01234567',tracker:'https://tracker.example.org/announce',peer:'203.0.113.18:51413',download:'12.4 MB/s',upload:'820 KB/s',lastFolder:'D:\\Downloads',defaultApps:{torrent:'TinyTorrent',magnet:'Another app'},canRecycle:true};
+state.subtitleHelp='new';
 const days=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 const samplePeriods=[{id:1,days:[0,1,2,3,4],from:540,until:1020,mode:'Alternative limits'},{id:2,days:[0,1,2,3,4,5,6],from:1380,until:420,mode:'Paused'}];
 const schedule={periods:structuredClone(samplePeriods),open:null,draft:null,nextId:3,removed:null};
@@ -369,7 +392,7 @@ function requestRender(){
 document.addEventListener('pointerdown',()=>{pointerHeld=true;keyboardInput=false;hideTooltip()},true);
 for(const event of ['pointerup','pointercancel'])document.addEventListener(event,()=>{pointerHeld=false;if(renderPending)requestRender()},true);
 window.addEventListener('blur',()=>{pointerHeld=false;keyboardInput=false;hideTooltip();if(renderPending)requestRender()});
-function hideTooltip(){clearTimeout(tooltipTimer);if(tooltip.matches(':popover-open'))tooltip.hidePopover();tooltipTarget=null}
+function hideTooltip(){clearTimeout(tooltipTimer);if(tooltip.matches(':popover-open'))tooltip.hidePopover();if(tooltip.parentElement!==document.body)document.body.append(tooltip);tooltipTarget=null}
 function showTooltip(target){
   if(!target.isConnected)return;
   if(target.classList.contains('result')&&[...target.querySelectorAll('span,small')].every(text=>text.scrollWidth<=text.clientWidth))return hideTooltip();
@@ -384,18 +407,53 @@ function showTooltip(target){
   tooltip.style.left=`${Math.max(12,Math.min(bounds.left,innerWidth-size.width-12))}px`;
   tooltip.style.top=`${Math.max(12,bounds.bottom+size.height+18<innerHeight?bounds.bottom+6:bounds.top-size.height-6)}px`;
 }
-document.addEventListener('pointerover',event=>{const target=event.target.closest('[data-tip],.row-error,#proxy-result');if(target&&!pointerHeld&&!target.contains(event.relatedTarget)){clearTimeout(tooltipTimer);tooltipTimer=setTimeout(()=>{if(!pointerHeld&&target.matches(':hover'))showTooltip(target)},600)}});
-document.addEventListener('pointerout',event=>{const target=event.target.closest('[data-tip],.row-error,#proxy-result');if(target&&!target.contains(event.relatedTarget)&&!(keyboardInput&&target.contains(document.activeElement))){clearTimeout(tooltipTimer);tooltipTimer=setTimeout(hideTooltip,150)}});
+document.addEventListener('pointerover',event=>{const target=event.target.closest('[data-tip],.row-error,#connection-result');if(target&&!pointerHeld&&!target.contains(event.relatedTarget)){clearTimeout(tooltipTimer);tooltipTimer=setTimeout(()=>{if(!pointerHeld&&target.matches(':hover'))showTooltip(target)},600)}});
+document.addEventListener('pointerout',event=>{const target=event.target.closest('[data-tip],.row-error,#connection-result');if(target&&!target.contains(event.relatedTarget)&&!(keyboardInput&&target.contains(document.activeElement))){clearTimeout(tooltipTimer);tooltipTimer=setTimeout(hideTooltip,150)}});
 tooltip.addEventListener('pointerenter',()=>clearTimeout(tooltipTimer));
 tooltip.addEventListener('pointerleave',()=>{if(!(keyboardInput&&tooltipTarget?.contains(document.activeElement)))hideTooltip()});
-document.addEventListener('focusin',event=>{hideTooltip();const target=event.target.closest('[data-tip],.row-error,#proxy-result');if(keyboardInput&&target)tooltipTimer=setTimeout(()=>{if(keyboardInput&&target.contains(document.activeElement))showTooltip(target)},600)});
+document.addEventListener('focusin',event=>{hideTooltip();const target=event.target.closest('[data-tip],.row-error,#connection-result');if(keyboardInput&&target)tooltipTimer=setTimeout(()=>{if(keyboardInput&&target.contains(document.activeElement))showTooltip(target)},600)});
 document.addEventListener('focusout',event=>{if(tooltipTarget?.contains(event.target)&&!tooltipTarget.contains(event.relatedTarget))hideTooltip()});
 document.addEventListener('keydown',event=>{keyboardInput=!event.altKey&&!event.ctrlKey&&!event.metaKey&&['Tab','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(event.key);hideTooltip()},true);
 document.addEventListener('scroll',hideTooltip,true);
 window.addEventListener('resize',hideTooltip);
 function notify(message){document.querySelector('#toast').textContent=message;document.querySelector('#toast').dataset.tip=message;clearTimeout(toastTimer);toastTimer=setTimeout(()=>document.querySelector('#toast').textContent='',5000)}
 function available(){return categories.filter(category=>category!=='Advanced'||state.advanced)}
-function enabled(field){return (field.id!=='seed_rule'||['ratio','seed_time','inactive_time'].filter(id=>state.values[id]>0).length>1)&&(field.id!=='destination'||!state.values.last_folder)&&(!field.depends||state.values[field.depends])&&(!field.proxyDisabled||state.proxy.type==='None')}
+function subtitleAccount(name=state.supplier.name){return name==='Account supplier (sample)'}
+function subtitleSelection(){return state.values.subtitle_languages??[state.values.language==='Español'?'es':'en']}
+function addLanguage(){
+  const input=document.getElementById('subtitle_query'),query=input.value.trim().toLocaleLowerCase();
+  const language=subtitleLanguages.find(language=>[language.id,language.name,language.native].some(name=>name.toLocaleLowerCase()===query));
+  if(!language){const error='Choose a language from the suggestions.';drafts.subtitle_query={value:input.value,error};input.setAttribute('aria-invalid','true');document.getElementById('error-subtitle_languages').textContent=error;input.focus();return}
+  state.values.subtitle_languages=[...new Set([...subtitleSelection(),language.id])];
+  delete drafts.subtitle_query;render();document.getElementById('subtitle_query').focus({preventScroll:true});
+}
+function subtitleReady(){return ((!subtitleAccount()&&!state.supplier.username&&!state.supplier.password)||!!(state.supplier.username.trim()&&state.supplier.password))&&!['unconfigured','account'].includes(document.querySelector('#subtitle-outcome').value)}
+function supplierDisclosure(name){
+  const disclosure=`Subtitle matching sends movie names, languages, file fingerprints, and your IP address to ${name}.`;
+  return `<p>${escape(disclosure)}</p><div class="subtitle-links"><a href="../docs/subtitle-privacy.md" target="_blank" rel="noopener noreferrer" data-tip="TinyTorrent privacy policy draft">Privacy policy draft</a>${subtitleAccount(name)?'':`<a href="https://opensubtitles.tawk.help/article/privacy-policy" target="_blank" rel="noopener noreferrer" data-tip="OpenSubtitles privacy policy">Supplier privacy</a><a href="https://opensubtitles.tawk.help/article/terms-of-service" target="_blank" rel="noopener noreferrer" data-tip="OpenSubtitles terms of service">Supplier terms</a>`}</div>`;
+}
+function showSupplierInfo(button){
+  hideTooltip();
+  const flyout=document.getElementById('supplier-info'),name=button.dataset.supplierInfo;
+  if(flyout.matches(':popover-open')){flyout.hidePopover();return}
+  (dialog.open?dialog:document.body).append(flyout);
+  flyout.innerHTML=`<h2 id="supplier-info-title" tabindex="-1">${escape(name)}</h2>${supplierDisclosure(name)}`;
+  flyout.showPopover();
+  const bounds=button.getBoundingClientRect(),size=flyout.getBoundingClientRect();
+  flyout.style.left=`${Math.max(12,Math.min(bounds.left,innerWidth-size.width-12))}px`;
+  flyout.style.top=`${Math.max(12,bounds.bottom+size.height+18<innerHeight?bounds.bottom+6:bounds.top-size.height-6)}px`;
+  flyout.querySelector('h2').focus({preventScroll:true});
+  flyout.ontoggle=()=>{if(!flyout.matches(':popover-open')){if(button.isConnected)button.focus({preventScroll:true});document.body.append(flyout)}};
+}
+function subtitleStatus(outcome=document.querySelector('#subtitle-outcome').value,supplier=state.supplier){
+  return {unchecked:'Not checked',ready:'Check succeeded (sample)',unconfigured:'Supplier not configured.',account:subtitleAccount(supplier.name)||supplier.username||supplier.password?'Sign-in failed. Check your account.':'Supplier access unavailable. Retrying later.',quota:'Download limit reached. Retrying tomorrow.',disk:'Could not save Movie.en.srt. Check folder access.'}[outcome];
+}
+function checkSupplier(supplier){
+  if((subtitleAccount(supplier.name)||supplier.username||supplier.password)&&(!supplier.username.trim()||!supplier.password))return 'account';
+  const outcome=document.querySelector('#subtitle-outcome').value;
+  return outcome==='unchecked'?'ready':outcome;
+}
+function enabled(field){return (field.id!=='subtitles'||state.values.subtitles||subtitleReady())&&(field.id!=='seed_rule'||['ratio','seed_time','inactive_time'].filter(id=>state.values[id]>0).length>1)&&(field.id!=='destination'||!state.values.last_folder)&&(!field.depends||state.values[field.depends])&&(!field.proxyDisabled||state.proxy.type==='None')}
 function visible(field){
   return !field.advanced||state.advanced;
 }
@@ -442,6 +500,7 @@ function renderSpeeds(){
   return `<span class="speed-pair">${[['down','Download',sample.download],['up','Upload',sample.upload]].map(([glyph,label,value])=>`<span class="speed-value" role="img" aria-label="${label}: ${paused?'0 B/s':value}">${icon(glyph)}<span>${paused?'0 B/s':value}</span></span>`).join('')}</span>`;
 }
 function setSurface(surface){
+  if(state.subtitleHelp==='visible'&&surface!=='settings')state.subtitleHelp='seen';
   if(testActive()&&surface!=='setup'){stopTest(surface);return}
   if(surface!=='setup')setup=null;
   closeMenu();state.surface=surface;render();
@@ -544,9 +603,10 @@ function control(field){
   const value=drafts[field.id]?.value??state.values[field.id],disabled=enabled(field)?'':'disabled';
   const attrs=`id="${field.id}" data-field="${field.id}" aria-labelledby="label-${field.id}" aria-describedby="help-${field.id} error-${field.id}${field.unit?` unit-${field.id}`:''}" aria-invalid="${!!drafts[field.id]?.error}" ${disabled}`;
   if(field.type==='toggle')return toggle(field.id,value,field.label,!!disabled);
+  if(field.type==='languages')return `<div id="${field.id}" class="language-picker" role="group" aria-labelledby="label-${field.id}"><form class="language-entry" data-language-form><input id="subtitle_query" type="text" list="subtitle-suggestions" aria-label="Add subtitle language" aria-describedby="help-${field.id} error-${field.id}" placeholder="Find a language" autocomplete="off" aria-invalid="${!!drafts.subtitle_query?.error}" value="${escape(drafts.subtitle_query?.value||'')}">${action('Add','plus','Add subtitle language','type="submit"')}</form><datalist id="subtitle-suggestions">${subtitleLanguages.map(language=>`<option value="${escape(language.name)}">${escape(language.native)} · ${language.id}</option>`).join('')}</datalist><ul class="selected-languages" aria-label="Selected subtitle languages">${subtitleSelection().map(id=>{const language=subtitleLanguages.find(language=>language.id===id);return `<li><span tabindex="0" data-tip="${escape(language.name+' · '+language.native+' · '+id)}">${escape(language.name)}${value===null?' <small>· interface language</small>':''}</span>${value===null?'':`<button class="icon-button" data-language-remove="${id}" aria-label="Remove ${escape(language.name)}" data-tip="Remove ${escape(language.name)}">${icon('close')}</button>`}</li>`}).join('')}</ul>${action('Reset','reset','Use the interface language for subtitles',`data-language-reset ${value===null?'disabled':''}`)}</div>`;
   if(field.type==='choice')return `<select ${attrs}>${field.options.map((option,index)=>`<option value="${index}" ${Boolean(index)===value?'selected':''}>${escape(option)}</option>`).join('')}</select>`;
   if(field.type==='select')return `<select ${attrs}>${field.options.map(option=>`<option ${option===value?'selected':''}>${escape(option)}</option>`).join('')}</select>`;
-  if(field.type==='action')return action(field.id==='proxy'?'Edit':'Open',field.id==='proxy'?'edit':'settings',value+' · '+field.label,`id="${field.id}" data-action="${field.id}" aria-describedby="help-${field.id}"`);
+  if(field.type==='action')return (field.id==='subtitle_supplier'?`<a class="supplier-link" href="#supplier-info" data-action="supplier_info" data-supplier-info="${escape(state.supplier.name)}" aria-haspopup="dialog" data-tip="About ${escape(state.supplier.name)}">${escape(state.supplier.name)}</a>`:'')+action(['proxy','subtitle_supplier'].includes(field.id)?'Edit':'Open',['proxy','subtitle_supplier'].includes(field.id)?'edit':'settings',value+' · '+field.label,`id="${field.id}" data-action="${field.id}" aria-describedby="help-${field.id}"`);
   if(field.type==='textarea')return `<textarea ${attrs} rows="3">${escape(value)}</textarea>`;
   if(field.type==='path')return `<input type="text" ${attrs} required value="${escape(value)}">${action('Browse','folder','Browse for '+field.label.toLowerCase(),`id="browse-${field.id}" data-browse="${field.id}" ${disabled}`)}`;
   if(field.unlimited){
@@ -560,9 +620,12 @@ function control(field){
 function renderSection(section){
   const rows=section.schedule?[fields.find(field=>field.id==='limit_mode')]:section.rows.filter(visible);if(!rows.length)return '';
   const fixed=section.title==='Closing'?'<div class="fixed-setting"><span>When the window closes</span><span>Keep transfers running</span></div>':'';
-  return `<section class="section" aria-label="${escape(section.title)}"><header class="section-head" tabindex="0" data-tip="${escape(section.title+'. '+section.description)}">${icon(section.icon)}<div><h2>${escape(section.title)}</h2><p>${escape(section.description)}</p></div></header>${fixed}${rows.map(field=>{
+  const description=section.description;
+  return `<section class="section" aria-label="${escape(section.title)}"><header class="section-head" tabindex="0" data-tip="${escape(section.title+'. '+description)}">${icon(section.icon)}<div><h2>${escape(section.title)}</h2><p>${escape(description)}</p></div></header>${fixed}${rows.map(field=>{
     if(field.id==='preset')return `<div id="row-preset"><a href="#connection-setup" class="settings-link" id="preset" data-action="preset" data-tip="${escape(field.help)}" aria-label="Connection setup. Current preset: ${presetName()}"><span class="row-title">Connection setup</span><span class="preset-name">${presetName()}</span>${icon('arrow')}</a></div>`;
+    if(field.id==='subtitle_status')return `<div class="supplier-feedback" id="row-${field.id}"><span id="${field.id}" class="subtitle-status" role="status" aria-live="polite" tabindex="0" aria-label="Supplier status: ${escape(subtitleStatus())}" data-tip="${escape(subtitleStatus())}" data-error="${!['unchecked','ready'].includes(document.querySelector('#subtitle-outcome').value)}">${escape(subtitleStatus())}</span>${action('Check','circle-check','Check saved supplier access (optional)','id="subtitle-check" data-action="check_subtitles"')}</div>`;
     let help=field.help;
+    const label=field.label;
     if(field.id==='limit_mode')help+=' Edit saved periods on Schedule, even while the schedule is off.';
     if(field.unlimited)help+=(help?' ':'')+'Enter a limit or Unlimited. Clearing the value removes the limit.';
     if(field.id==='encryption')help=({'Prefer encryption':'Accept encrypted and unencrypted connections; prefer encryption.','Require encryption':'Connect only to peers that support encryption.','Allow encryption':'Accept encrypted and unencrypted connections; do not prefer encryption.','Disable encryption':'Use only unencrypted peer connections.'})[state.values.encryption]+' Encryption does not hide your IP address.';
@@ -570,13 +633,15 @@ function renderSection(section){
     if(field.id==='seed_rule'&&!enabled(field))help='Set at least two seeding limits to choose how they work together.';
     if(section.category==='Advanced'&&field.type==='number')help=`Range: ${field.min.toLocaleString()}–${field.max.toLocaleString()}${field.unit?' '+field.unit:''}. ${help}`;
     if(field.id==='proxy')help=state.proxy.type==='None'?'Off':`${state.proxy.type} · ${state.proxy.host}:${state.proxy.port}`;
+    if(field.id==='subtitle_supplier')help=state.supplier.name;
     if(field.proxyDisabled&&state.proxy.type!=='None')help='Unavailable when you use a proxy.';
     if(field.depends&&!state.values[field.depends])help=field.depends==='show_add'?'Choose Show the torrent dialog to change this.':`Turn on “${fields.find(parent=>parent.id===field.depends).label}” to change this.`;
     const status=field.id==='default_app'?`Torrent files: ${sample.defaultApps.torrent} · Magnet links: ${sample.defaultApps.magnet}`:field.id==='last_folder'?(state.values.last_folder?sample.lastFolder:state.values.destination):field.id==='title_speeds'?(state.values.title_speeds?(innerWidth<1200?'Hidden at this window size':'Shown in the title bar'):'Not shown'):'';
-    return `<div class="row ${['path','textarea'].includes(field.type)?'path-row':''} ${enabled(field)?'':'inactive'} ${['number','path'].includes(field.type)?'has-validation':''}" id="row-${field.id}" data-tip="${escape(help||field.label)}" ${enabled(field)?'':'tabindex="0"'}><div class="row-copy"><label class="row-title" id="label-${field.id}" for="${field.id}">${escape(field.label)}</label><span class="description ${field.id==='proxy'?'setting-value':''}" id="help-${field.id}">${escape(help)}</span>${status?`<span class="setting-status" id="status-${field.id}" tabindex="0" data-tip="${escape(status)}">${escape(status)}</span>`:''}<div class="row-error" id="error-${field.id}" role="alert" tabindex="0">${escape(drafts[field.id]?.error||'')}</div></div><div class="control">${control(field)}</div></div>`;
+    return `<div class="row ${['path','textarea'].includes(field.type)?'path-row':''} ${enabled(field)?'':'inactive'} ${['number','path','languages'].includes(field.type)?'has-validation':''}" id="row-${field.id}" data-tip="${escape(help||label)}" ${enabled(field)?'':'tabindex="0"'}><div class="row-copy"><label class="row-title" id="label-${field.id}" for="${field.id}">${escape(label)}</label><span class="description ${field.id==='proxy'?'setting-value':''}" id="help-${field.id}">${escape(help)}</span>${status?`<span class="setting-status" id="status-${field.id}" tabindex="0" data-tip="${escape(status)}">${escape(status)}</span>`:''}<div class="row-error" id="error-${field.id}" role="alert" tabindex="0">${escape((field.type==='languages'?drafts.subtitle_query:drafts[field.id])?.error||'')}</div></div><div class="control">${control(field)}</div></div>`;
   }).join('')}${section.schedule?renderSchedule():''}</section>`;
 }
 function render(){
+  const flyout=document.getElementById('supplier-info');if(flyout.matches(':popover-open'))flyout.hidePopover();
   clearTimeout(renderTimer);renderPending=false;
   const focused=document.activeElement.id;
   hideTooltip();
@@ -591,6 +656,7 @@ function render(){
   const backLabel={limits:'Back to speed limits',settings:'Back to settings',index:'Back to all settings',torrents:'Back to torrents'}[backDestination()];
   back.setAttribute('aria-label',backLabel);back.dataset.tip=`${backLabel} (Alt+Left)`;
   document.querySelector('#surface-picker').value=state.surface==='setup'?'settings':state.surface;
+  document.querySelector('#subtitle-outcome').hidden=state.surface!=='settings'||!!state.query||(state.variant==='B'?state.category==='Schedule':state.category!=='Subtitles'||state.variant==='C'&&state.index);
   document.querySelector('#title-speeds').hidden=!state.values.title_speeds;
   document.querySelector('#title-speeds').innerHTML=renderSpeeds();
   document.querySelector('#status-speeds').innerHTML=renderSpeeds();
@@ -626,9 +692,12 @@ function renderContent(){
     return;
   }
   if(state.variant==='C'&&state.index){
-    content.innerHTML=`<p class="index-intro">Search for a setting or choose a category.</p><div class="index">${available().map(category=>{
+    const help=['new','visible'].includes(state.subtitleHelp)&&!state.values.subtitles;
+    if(help)state.subtitleHelp='visible';
+    content.innerHTML=(help?`<div class="index-entry"><button class="index-card" data-category="Subtitles" data-tip="Automatic subtitles. Find subtitles automatically, even before downloads finish. Set up subtitles.">${icon('captions')}<strong>Automatic subtitles</strong><small>Find subtitles automatically, even before downloads finish.</small><span class="index-action">${icon('arrow')}Set up subtitles</span></button><button class="icon-button" data-dismiss-subtitles aria-label="Dismiss subtitle help" data-tip="Dismiss subtitle help">${icon('close')}</button></div>`:'')+`<div class="index">${available().map(category=>{
       const groups=sections.filter(section=>section.category===category&&(!section.advanced||state.advanced));
-      return `<button class="index-card" data-category="${category}">${icon(categoryIcons[category])}<strong>${category}</strong><small>${groups.map(group=>group.title).slice(0,4).join(' · ')}</small></button>`;
+      const summary=groups.map(group=>group.title).slice(0,4).join(' · ');
+      return `<button class="index-card" id="index-${category.replaceAll(' ','-')}" data-category="${category}" data-tip="${escape(category+'. '+summary)}">${icon(categoryIcons[category])}<strong>${category}</strong><small>${escape(summary)}</small></button>`;
     }).join('')}</div>`;
     return;
   }
@@ -660,6 +729,7 @@ function goBack(){
   setSurface('torrents');
 }
 function setCategory(category){
+  if(state.subtitleHelp==='visible')state.subtitleHelp='seen';
   if(testActive()){stopTest('settings');return}
   setup=null;
   closeMenu();state.surface='settings';
@@ -669,13 +739,14 @@ function setCategory(category){
   tab.focus({preventScroll:true});tab.scrollIntoView({block:'nearest',inline:'nearest'});
 }
 function setVariant(key){
+  if(state.subtitleHelp==='visible')state.subtitleHelp='seen';
   state.variant=key;state.index=true;state.query='';document.querySelector('#search').value='';
   const url=new URL(location.href);url.searchParams.set('variant',key);history.replaceState(null,'',url);render();scroll.scrollTop=0;
 }
 function cycle(delta){const keys=Object.keys(variants);setVariant(keys[(keys.indexOf(state.variant)+delta+keys.length)%keys.length])}
 function applyTheme(value){document.body.classList.toggle('dark',value==='Dark'||value==='Use system setting'&&systemTheme.matches);document.querySelector('#preview-theme').textContent=document.body.classList.contains('dark')?'Use light theme':'Use dark theme'}
 function openDialog(){hideTooltip();dialogReturn=document.activeElement.id;const hint=dialog.querySelector(':scope>p.hint'),heading=dialog.querySelector('h2');if(hint){heading.dataset.tip=hint.textContent;heading.tabIndex=0}dialog.showModal();const input=dialog.querySelector('input:not(:disabled):not([type=password]),select:not(:disabled),textarea:not(:disabled)');if(input)input.focus();else dialog.querySelector('[autofocus],.actions button')?.focus()}
-dialog.addEventListener('close',()=>{hideTooltip();document.getElementById(dialogReturn)?.focus({preventScroll:true})});
+dialog.addEventListener('close',()=>{hideTooltip();const flyout=document.getElementById('supplier-info');if(flyout.matches(':popover-open'))flyout.hidePopover();document.body.append(flyout);document.getElementById(dialogReturn)?.focus({preventScroll:true})});
 systemTheme.addEventListener('change',()=>{if(state.values.theme==='Use system setting')applyTheme(state.values.theme)});
 const presets={
   Reduced:{percent:50,activity:{downloads:2,seeds:2,active_total:3}},
@@ -824,22 +895,71 @@ function updateSetup(){
   form.querySelector('[type=submit]').disabled=busy||!valid||changes===0;
   return !busy&&valid&&changes>0;
 }
-function showProxy(){
-  dialog.innerHTML=`<h2 id="dialog-title">Proxy server</h2><p class="hint">Use a proxy for torrent connections. This prototype does not make network requests.</p><form id="proxy-form"><label for="proxy-type">Type</label><select id="proxy-type" name="type">${['None','SOCKS5','SOCKS4','HTTP'].map(type=>`<option ${state.proxy.type===type?'selected':''}>${type}</option>`).join('')}</select><label for="proxy-host">Host name or IP address</label><input id="proxy-host" name="host" value="${escape(state.proxy.host)}"><label for="proxy-port">Port</label><input id="proxy-port" name="port" type="number" min="1" max="65535" value="${state.proxy.port}"><label for="proxy-user">User name (optional)</label><input id="proxy-user" name="username" value="${escape(state.proxy.username)}" autocomplete="off"><label for="proxy-password">Password (optional)</label><input id="proxy-password" name="password" type="password" value="${escape(state.proxy.password)}" autocomplete="off"><div class="actions has-status"><p id="proxy-result" class="hint" role="status" tabindex="0"></p><div class="action-buttons">${action('Check','circle-check','Check the proxy settings without saving','type="button" id="proxy-check"')}${action('Save','save','Save proxy settings','type="submit" data-primary')}${action('Cancel','close','Cancel proxy changes','type="button" data-close')}</div></div></form>`;
-  const form=dialog.querySelector('form');
-  const update=()=>{const off=form.elements.type.value==='None';for(const name of ['host','port','username','password'])form.elements[name].disabled=off||(name==='password'&&form.elements.type.value==='SOCKS4');form.elements.host.required=form.elements.port.required=!off;document.querySelector('#proxy-check').disabled=off;document.querySelector('#proxy-result').textContent=''};
-  const valid=()=>{form.elements.host.setCustomValidity(form.elements.type.value!=='None'&&!form.elements.host.value.trim()?'Enter a proxy host name or IP address.':'');return form.reportValidity()};
-  form.elements.type.addEventListener('change',update);update();
-  form.addEventListener('input',()=>{form.elements.host.setCustomValidity('');document.querySelector('#proxy-result').textContent=''});
-  document.querySelector('#proxy-check').onclick=()=>{if(valid())document.querySelector('#proxy-result').textContent='The required settings are filled in. This prototype does not test the connection.'};
-  form.onsubmit=event=>{event.preventDefault();if(!valid())return;state.proxy={type:form.elements.type.value,host:form.elements.host.value.trim(),port:Number(form.elements.port.value),username:form.elements.username.value,password:form.elements.password.value};dialog.close();render()};
-  openDialog();
+function showConnection(kind){
+  const supplier=kind==='supplier',saved=supplier?state.supplier:state.proxy;
+  const title=supplier?'Subtitle supplier':'Proxy server';
+  const choices=supplier?['OpenSubtitles.com','Account supplier (sample)']:['None','SOCKS5','SOCKS4','HTTP'];
+  dialog.innerHTML=`<h2 id="dialog-title">${title}</h2><form id="connection-form" class="connection-form" novalidate><div class="connection-heading"><label for="connection-kind">${supplier?'Supplier':'Type'}</label>${supplier?`<button type="button" class="icon-button" id="connection-info" data-supplier-info="${escape(saved.name)}" aria-haspopup="dialog" aria-label="About ${escape(saved.name)}" data-tip="About ${escape(saved.name)}">${icon('info')}</button>`:''}</div><select id="connection-kind" name="kind">${choices.map(value=>`<option ${value===(supplier?saved.name:saved.type)?'selected':''}>${value}</option>`).join('')}</select>${supplier?'':`<div class="connection-address"><div><label for="connection-host">Host name or IP address</label><input id="connection-host" name="host" value="${escape(saved.host)}"></div><div><label for="connection-port">Port</label><input id="connection-port" name="port" type="number" min="1" max="65535" value="${saved.port}"></div></div>`}<p id="connection-help" class="sr-only"></p><label for="connection-user" id="connection-user-label">User name (optional)</label><input id="connection-user" name="username" value="${escape(saved.username)}" autocomplete="off" aria-describedby="connection-help"><label for="connection-password" id="connection-password-label">Password (optional)</label><div class="connection-password"><input id="connection-password" name="password" type="password" value="${escape(saved.password)}" autocomplete="off" aria-describedby="connection-help"><button type="button" class="icon-button" data-reveal="connection-password" aria-label="Show password" data-tip="Show password" aria-pressed="false">${icon('eye')}</button></div><div class="actions has-status"><p id="connection-result" class="hint" role="status" tabindex="0"></p><div class="action-buttons">${action('Check','circle-check','Check the typed settings without saving','type="button" id="connection-check"')}${action('Save','save','Save '+title.toLowerCase(),'type="submit" data-primary')}${action('Cancel','close','Discard changes','type="button" data-close')}</div></div></form>`;
+  const form=dialog.querySelector('form'),result=form.querySelector('#connection-result');
+  let checked;
+  const feedback=text=>{result.textContent=text;result.dataset.tip=text};
+  const read=()=>{const username=form.elements.username.value,password=form.elements.password.value;return supplier?{name:form.elements.kind.value,username,password}:{type:form.elements.kind.value,host:form.elements.host.value.trim(),port:Number(form.elements.port.value),username,password}};
+  const update=()=>{
+    checked=undefined;
+    const value=form.elements.kind.value,off=!supplier&&value==='None',required=supplier&&subtitleAccount(value);
+    if(!supplier){form.elements.host.disabled=form.elements.port.disabled=off}
+    form.elements.username.disabled=off;form.elements.password.disabled=off||!supplier&&value==='SOCKS4';
+    form.querySelector('[data-reveal]').disabled=form.elements.password.disabled;
+    form.querySelector('#connection-user-label').textContent='User name'+(required?'':' (optional)');
+    form.querySelector('#connection-password-label').textContent='Password'+(required?'':' (optional)');
+    const help=supplier?(required?'This sample supplier requires an account.':'Leave both account fields blank to use access provided by TinyTorrent.'):'Use a proxy for torrent connections.';
+    form.querySelector('#connection-help').textContent=help;
+    form.elements.username.dataset.tip=help;
+    form.elements.password.dataset.tip=help;
+    if(supplier){const info=form.querySelector('#connection-info');info.dataset.supplierInfo=value;info.dataset.tip='About '+value;info.setAttribute('aria-label','About '+value)}
+    form.querySelector('#connection-check').disabled=off;
+    for(const input of form.querySelectorAll('input'))input.setAttribute('aria-invalid','false');
+    feedback('');
+  };
+  const valid=()=>{
+    const value=read();
+    let input,message;
+    if(supplier){
+      const account=subtitleAccount(value.name)||value.username||value.password;
+      if(account&&!value.username.trim()){input=form.elements.username;message='Enter a user name.'}
+      else if(account&&!value.password){input=form.elements.password;message='Enter a password.'}
+    }else if(value.type!=='None'){
+      if(!value.host){input=form.elements.host;message='Enter a host name or IP address.'}
+      else if(!Number.isInteger(value.port)||value.port<1||value.port>65535){input=form.elements.port;message='Enter a port from 1 to 65535.'}
+    }
+    if(!input)return true;
+    input.setAttribute('aria-invalid','true');feedback(message);input.focus();return false;
+  };
+  form.elements.kind.onchange=()=>{if(supplier){form.elements.username.value='';form.elements.password.value='';form.elements.password.type='password';const reveal=form.querySelector('[data-reveal]');reveal.setAttribute('aria-pressed','false');reveal.setAttribute('aria-label','Show password');reveal.dataset.tip='Show password'}update()};
+  form.addEventListener('input',update);
+  form.querySelector('#connection-check').onclick=()=>{
+    if(!valid())return;
+    if(supplier){checked=checkSupplier(read());feedback(subtitleStatus(checked,read()))}
+    else feedback('Required settings are filled in. This prototype does not test the connection.');
+  };
+  form.onsubmit=event=>{
+    event.preventDefault();if(!valid())return;
+    const value=read();
+    if(supplier){if(value.name!==state.supplier.name)state.values.subtitles=false;if(checked!==undefined||['name','username','password'].some(key=>value[key]!==state.supplier[key]))document.querySelector('#subtitle-outcome').value=checked??'unchecked';state.supplier=value}
+    else state.proxy=value;
+    dialog.close();render();
+  };
+  update();openDialog();
 }
 document.addEventListener('click',event=>{
   const button=event.target.closest('button,a[data-action]');if(!button||button.disabled)return;
+  if(button.dataset.languageRemove||button.hasAttribute('data-language-reset')){const selected=button.dataset.languageRemove?subtitleSelection().filter(id=>id!==button.dataset.languageRemove):[];state.values.subtitle_languages=selected.length?selected:null;render();document.getElementById('subtitle_query').focus({preventScroll:true});return}
+  if(button.hasAttribute('data-dismiss-subtitles')){state.subtitleHelp='seen';render();document.getElementById('index-Subtitles').focus({preventScroll:true});return}
   if(button.matches('a[data-action]'))event.preventDefault();
+  if(button.dataset.supplierInfo)return showSupplierInfo(button);
   if(testActive()&&button.dataset.result){stopTest('settings');return}
   if(button.dataset.clearLimit){const input=document.getElementById(button.dataset.clearLimit);input.value='';input.dispatchEvent(new Event('change',{bubbles:true}));input.focus();return}
+  if(button.dataset.reveal){const input=document.getElementById(button.dataset.reveal),reveal=input.type==='password';input.type=reveal?'text':'password';button.setAttribute('aria-pressed',reveal);button.setAttribute('aria-label',reveal?'Hide password':'Show password');button.dataset.tip=reveal?'Hide password':'Show password';return}
   if(button.dataset.menu)return showMenu(button.dataset.menu,button);
   if(button.hasAttribute('data-submenu'))return openSubmenu(button);
   if(menu.contains(button)){closeMenu();menuAnchor?.focus({preventScroll:true})}
@@ -870,7 +990,9 @@ document.addEventListener('click',event=>{
   if(button.hasAttribute('data-close'))return dialog.close();
   if(button.hasAttribute('data-setup-cancel'))return goBack();
   if(button.dataset.action==='preset')return showPreset();
-  if(button.dataset.action==='proxy')return showProxy();
+  if(button.dataset.action==='proxy')return showConnection('proxy');
+  if(button.dataset.action==='subtitle_supplier')return showConnection('supplier');
+  if(button.dataset.action==='check_subtitles'){document.querySelector('#subtitle-outcome').value=checkSupplier(state.supplier);render();return}
   if(button.dataset.action==='default_app'){
     dialog.innerHTML=`<h2 id="dialog-title">Default apps · Sample</h2><form id="defaults-form">${[['torrent','Torrent files'],['magnet','Magnet links']].map(([key,label])=>`<label for="default-${key}">${label}</label><select id="default-${key}" name="${key}">${['TinyTorrent','Another app'].map(app=>`<option ${sample.defaultApps[key]===app?'selected':''}>${app}</option>`).join('')}</select>`).join('')}<div class="actions">${action('Save','save','Save sample associations. Windows settings are unchanged.','type="submit" data-primary')}${action('Cancel','close','Keep the sample associations','type="button" data-close')}</div></form>`;
     dialog.querySelector('form').onsubmit=event=>{event.preventDefault();sample.defaultApps={torrent:event.target.elements.torrent.value,magnet:event.target.elements.magnet.value};dialog.close();render()};openDialog();return;
@@ -913,7 +1035,11 @@ function validateInput(input){
   return !error;
 }
 content.addEventListener('focusin',event=>{if(event.target.matches('input[data-unlimited]')&&event.target.value==='Unlimited')event.target.select()});
-content.addEventListener('input',event=>{if(event.target.dataset.field)validateInput(event.target)});
+content.addEventListener('input',event=>{
+  if(event.target.id==='subtitle_query'){drafts.subtitle_query={value:event.target.value};event.target.setAttribute('aria-invalid','false');document.getElementById('error-subtitle_languages').textContent='';return}
+  if(event.target.dataset.field)validateInput(event.target);
+});
+content.addEventListener('submit',event=>{if(event.target.hasAttribute('data-language-form')){event.preventDefault();addLanguage()}});
 content.addEventListener('change',event=>{
   if(event.target.dataset.durationUnit){const id=event.target.dataset.durationUnit;if(drafts[id]?.error){event.target.value=state.units[id];document.getElementById(id).focus();return}state.units[id]=event.target.value;requestRender();return}
   const id=event.target.dataset.field;if(!id)return;
@@ -923,19 +1049,21 @@ content.addEventListener('change',event=>{
   state.values[id]=field.duration?Math.round(value):value;
   delete drafts[id];
   if(id==='theme')applyTheme(state.values.theme);
-  if(id==='language')notify('This prototype displays text in English. Your sample language choice is saved until you reload the page.');
+  if(id==='language'){notify('This prototype displays text in English. Your sample language choice is saved until you reload the page.');requestRender()}
   if(id==='limit_mode')setLimitMode(state.values[id]);
   else if(field.unlimited||field.type==='choice'||field.type==='path'||id==='encryption')requestRender();
 });
 document.querySelector('#advanced').onclick=()=>{state.advanced=!state.advanced;render()};
-document.querySelector('#search').oninput=event=>{state.query=event.target.value.trim();render();scroll.scrollTop=0};
+document.querySelector('#search').oninput=event=>{if(state.subtitleHelp==='visible')state.subtitleHelp='seen';state.query=event.target.value.trim();render();scroll.scrollTop=0};
 document.querySelector('#clear').onclick=()=>{state.query='';document.querySelector('#search').value='';render();document.querySelector('#search').focus()};
 document.querySelector('#previous').onclick=()=>cycle(-1);
 document.querySelector('#next').onclick=()=>cycle(1);
 document.querySelector('#variant-picker').onchange=event=>setVariant(event.target.value);
 document.querySelector('#preview-theme').onclick=()=>{state.values.theme=document.body.classList.contains('dark')?'Light':'Dark';applyTheme(state.values.theme);render()};
-document.querySelector('#reset').onclick=()=>{dialog.innerHTML=`<h2 id="dialog-title">Reset sample settings?</h2><p>Your prototype edits will be lost.</p><div class="actions">${action('Reset','reset','Reset the sample settings. Actual TinyTorrent settings are unchanged.','id="confirm-reset"')}${action('Cancel','close','Cancel reset and keep your prototype edits','data-close data-primary autofocus')}</div>`;document.querySelector('#confirm-reset').onclick=()=>{clearTimeout(testTimer);setup=null;document.getElementById('test-outcome').disabled=false;document.getElementById('test-outcome').value='complete';state.values={...defaults};state.bandwidth={download:'',upload:''};for(const id of Object.keys(drafts))delete drafts[id];Object.assign(schedule,{periods:structuredClone(samplePeriods),open:null,draft:null,nextId:3,removed:null});state.units={seed_time:'minutes',inactive_time:'minutes'};sample.defaultApps={torrent:'TinyTorrent',magnet:'Another app'};state.advanced=false;state.surface='settings';state.inspector='General';state.category='Speed limits';state.query='';state.index=false;state.proxy={type:'None',host:'',port:1080,username:'',password:''};document.querySelector('#search').value='';document.querySelector('#torrent-search').value='';clearTimeout(toastTimer);document.querySelector('#toast').textContent='';dialog.close();applyTheme(state.values.theme);render();scroll.scrollTop=0};openDialog()};
-document.querySelector('#state').onclick=()=>{dialog.innerHTML=`<h2 id="dialog-title">Sample data</h2><p class="hint">Your sample settings last until you reload the page. Your TinyTorrent settings are unchanged. Use the period controls to edit the schedule. Dragging to create, move, or resize periods is available in the app and is not simulated here.</p><pre>${escape(JSON.stringify({...state,setup,sample,drafts,schedule,proxy:{...state.proxy,password:state.proxy.password?'(set)':''}},null,2))}</pre><div class="actions">${action('Close','close','Close sample data','data-close')}</div>`;openDialog()};
+document.querySelector('#reset').onclick=()=>{dialog.innerHTML=`<h2 id="dialog-title">Reset sample settings?</h2><p>Your prototype edits will be lost.</p><div class="actions">${action('Reset','reset','Reset the sample settings. Actual TinyTorrent settings are unchanged.','id="confirm-reset"')}${action('Cancel','close','Cancel reset and keep your prototype edits','data-close data-primary autofocus')}</div>`;document.querySelector('#confirm-reset').onclick=()=>{clearTimeout(testTimer);setup=null;document.getElementById('test-outcome').disabled=false;document.getElementById('test-outcome').value='complete';document.querySelector('#subtitle-outcome').value='unchecked';state.subtitleHelp='new';state.values={...defaults};state.bandwidth={download:'',upload:''};for(const id of Object.keys(drafts))delete drafts[id];Object.assign(schedule,{periods:structuredClone(samplePeriods),open:null,draft:null,nextId:3,removed:null});state.units={seed_time:'minutes',inactive_time:'minutes'};sample.defaultApps={torrent:'TinyTorrent',magnet:'Another app'};state.advanced=false;state.surface='settings';state.inspector='General';state.category='Speed limits';state.query='';state.index=state.variant==='C';state.supplier={name:'OpenSubtitles.com',username:'',password:''};state.proxy={type:'None',host:'',port:1080,username:'',password:''};document.querySelector('#search').value='';document.querySelector('#torrent-search').value='';clearTimeout(toastTimer);document.querySelector('#toast').textContent='';dialog.close();applyTheme(state.values.theme);render();scroll.scrollTop=0};openDialog()};
+document.querySelector('#state').onclick=()=>{dialog.innerHTML=`<h2 id="dialog-title">Sample data</h2><p class="hint">Your sample settings last until you reload the page. Your TinyTorrent settings are unchanged. Use the period controls to edit the schedule. Dragging to create, move, or resize periods is available in the app and is not simulated here.</p><pre>${escape(JSON.stringify({...state,supplier:{...state.supplier,password:state.supplier.password?'(set)':''},setup,sample,drafts,schedule,proxy:{...state.proxy,password:state.proxy.password?'(set)':''}},null,2))}</pre><div class="actions">${action('Close','close','Close sample data','data-close')}</div>`;openDialog()};
+document.querySelector('.prototype').append(document.querySelector('#subtitle-outcome'));
+document.querySelector('#subtitle-outcome').onchange=()=>render();
 document.querySelector('#back').onclick=goBack;
 document.querySelector('#surface-picker').onchange=event=>setSurface(event.target.value);
 document.querySelector('#caption-theme').onclick=()=>document.querySelector('#preview-theme').click();
@@ -972,6 +1100,7 @@ document.querySelector('#back').innerHTML=icon('back');
 document.querySelector('#clear').innerHTML=icon('close');document.querySelector('#clear').dataset.tip='Clear search';
 document.querySelector('#search-icon').innerHTML=icon('search');
 document.querySelector('#gears').innerHTML=icon('settings').replace('class="lucide"','class="lucide gear first"')+icon('settings').replace('class="lucide"','class="lucide gear last"');
+if(state.variant==='C')state.index=true;
 applyTheme(state.values.theme);render();
 </script>
 </body>

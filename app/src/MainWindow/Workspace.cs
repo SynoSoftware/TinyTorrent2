@@ -12,6 +12,7 @@ namespace Syno.TinyTorrent;
 public sealed partial class MainWindow
 {
     private SettingsPage? _settingsPage;
+    private ConnectionPage? _connectionPage;
     private bool _refreshingFilters;
     private bool _selecting;
     private double _splitHeight = 360;
@@ -44,9 +45,66 @@ public sealed partial class MainWindow
         return true;
     }
 
+    private async Task GoBack()
+    {
+        if (HasDialog || Model.IsClosing || _allowClose)
+            return;
+        if (Model.Page == WindowPage.Settings && SettingsContent.Content is ConnectionPage)
+        {
+            await ReturnToSettings();
+            return;
+        }
+        if (Model.Page == WindowPage.Settings && _settingsPage?.BackToIndex() == true)
+            return;
+        await ShowTorrents();
+    }
+
+    private async Task ReturnToSettings()
+    {
+        if (HasDialog || Model.IsClosing || _allowClose || !Model.Settings.Connection.CanLeave)
+            return;
+        if (!await Model.Settings.Connection.Depart())
+            return;
+        if (HasDialog || Model.IsClosing || _allowClose || Model.Page != WindowPage.Settings
+            || SettingsContent.Content is not ConnectionPage)
+            return;
+        SettingsContent.Content = _settingsPage;
+        DispatcherQueue.TryEnqueue(
+            Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,
+            () =>
+            {
+                if (Model.Page == WindowPage.Settings && ReferenceEquals(SettingsContent.Content, _settingsPage))
+                    _settingsPage?.FocusConnection();
+            }
+        );
+    }
+
+    private async Task ShowConnection()
+    {
+        if (
+            !await Model.Settings.PrepareLeave()
+            || Model.Page != WindowPage.Settings
+            || HasDialog
+            || Model.IsClosing
+            || _allowClose
+        )
+            return;
+        Model.Settings.Connection.Open();
+        if (_connectionPage is null)
+        {
+            _connectionPage = new ConnectionPage(Model.Settings.Connection);
+            _connectionPage.ReturnRequested += async (_, _) => await ReturnToSettings();
+        }
+        SettingsContent.Content = _connectionPage;
+    }
+
     private async Task<bool> Navigate(WindowPage page)
     {
         if (HasDialog || Model.IsClosing || _allowClose)
+            return false;
+        if (SettingsContent.Content is ConnectionPage && !Model.Settings.Connection.CanLeave)
+            return false;
+        if (SettingsContent.Content is ConnectionPage && !await Model.Settings.Connection.Depart())
             return false;
         if (
             Model.Page == WindowPage.Torrents
@@ -86,8 +144,9 @@ public sealed partial class MainWindow
             _settingsPage.FolderRequested += async (_, setting) =>
                 await PickSettingsFolder(setting);
             _settingsPage.ProxyRequested += async (_, _) => await ShowProxy();
-            SettingsContent.Content = _settingsPage;
+            _settingsPage.ConnectionRequested += async (_, _) => await ShowConnection();
         }
+        SettingsContent.Content = _settingsPage;
         _settingsPage.Navigate(target);
     }
 

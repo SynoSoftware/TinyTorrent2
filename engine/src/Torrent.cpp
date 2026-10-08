@@ -1,10 +1,12 @@
 #include "Torrent.h"
+#include <Windows.h>
 #include <libtorrent/hex.hpp>
 #include <libtorrent/magnet_uri.hpp>
 #include <libtorrent/peer_info.hpp>
 #include <libtorrent/torrent_info.hpp>
 #include <algorithm>
 #include <stdexcept>
+#include <sstream>
 
 namespace tt
 {
@@ -93,12 +95,61 @@ lt::download_priority_t DefaultPriority(lt::file_storage const& files, lt::file_
     return files.pad_file_at(index) ? lt::dont_download : lt::default_priority;
 }
 
-std::vector<lt::download_priority_t> DefaultPriorities(lt::file_storage const& files)
+std::string ContentPath(lt::file_storage const& files, lt::file_index_t index, Layout layout)
 {
+    auto path = std::filesystem::path(Wide(files.file_path(index)));
+    bool hasFolder = path.has_parent_path() && *path.begin() == std::filesystem::path(Wide(files.name()));
+    if (layout == Layout::Strip && hasFolder)
+        path = path.lexically_relative(*path.begin());
+    else if (layout == Layout::Create && !hasFolder)
+        path = std::filesystem::path(Wide(files.name())) / path;
+    return Utf8(path.generic_wstring());
+}
+
+std::vector<lt::download_priority_t> DefaultPriorities(lt::file_storage const& files, std::string const& patterns)
+{
+    std::vector<std::wstring> masks;
+    std::wistringstream lines{Wide(patterns)};
+    for (std::wstring line; std::getline(lines, line);)
+    {
+        auto first = line.find_first_not_of(L" \t\r");
+        if (first != std::wstring::npos)
+            masks.push_back(line.substr(first, line.find_last_not_of(L" \t\r") - first + 1));
+    }
+    auto matches = [](std::wstring const& name, std::wstring const& mask)
+    {
+        std::size_t file = 0, pattern = 0, star = std::wstring::npos, retry = 0;
+        while (file < name.size())
+        {
+            if (pattern < mask.size() && (mask[pattern] == L'?' ||
+                CompareStringOrdinal(&name[file], 1, &mask[pattern], 1, TRUE) == CSTR_EQUAL))
+            {
+                ++file;
+                ++pattern;
+            }
+            else if (pattern < mask.size() && mask[pattern] == L'*')
+            {
+                star = pattern++;
+                retry = file;
+            }
+            else if (star != std::wstring::npos)
+            {
+                pattern = star + 1;
+                file = ++retry;
+            }
+            else
+                return false;
+        }
+        while (pattern < mask.size() && mask[pattern] == L'*')
+            ++pattern;
+        return pattern == mask.size();
+    };
     std::vector<lt::download_priority_t> priorities;
     for (auto index : files.file_range())
     {
-        priorities.push_back(DefaultPriority(files, index));
+        auto name = std::filesystem::path(Wide(files.file_path(index))).filename().wstring();
+        bool skipped = std::any_of(masks.begin(), masks.end(), [&](auto const& mask) { return matches(name, mask); });
+        priorities.push_back(skipped ? lt::dont_download : DefaultPriority(files, index));
     }
     return priorities;
 }
@@ -143,7 +194,11 @@ std::vector<std::filesystem::path> Torrent::Paths(bool logical) const
     }
     if (logical)
     {
-        return tt::Paths(*metadata);
+        std::vector<std::filesystem::path> paths;
+        for (auto index : metadata->layout().file_range())
+            if (!metadata->layout().pad_file_at(index))
+                paths.push_back(Wide(ContentPath(metadata->layout(), index, facts.layout)));
+        return paths;
     }
     lt::renamed_files renames;
     if (restore)
@@ -183,6 +238,8 @@ Json Facts::ToJson() const
         {"save_path", savePath},
         {"final_folder", finalFolder},
         {"append_suffix", appendsSuffix},
+        {"layout", static_cast<int>(layout)},
+        {"skip_patterns", skipPatterns},
         {"move_destination", moveDestination},
         {"verify_files", verifyFiles},
         {"paused", intent == Intent::Paused},
@@ -214,6 +271,11 @@ Facts Facts::Read(Json const& saved)
     facts.savePath = ReadSaved(saved, "save_path", std::string());
     facts.finalFolder = ReadSaved(saved, "final_folder", std::string());
     facts.appendsSuffix = ReadSaved(saved, "append_suffix", true);
+    auto layout = ReadSaved(saved, "layout", 0);
+    if (layout >= 0 && layout <= static_cast<int>(Layout::Strip))
+        facts.layout = static_cast<Layout>(layout);
+    if (auto patterns = ReadSaved(saved, "skip_patterns", std::string()); patterns.size() <= 4096)
+        facts.skipPatterns = std::move(patterns);
     facts.moveDestination = ReadSaved(saved, "move_destination", std::string());
     facts.verifyFiles = ReadSaved(saved, "verify_files", false);
     if (ReadSaved(saved, "paused", false))
@@ -403,7 +465,7 @@ Status Torrent::Classify(bool sessionPaused) const
     {
         return Status::Queued;
     }
-    if (completionPhase == CompletionPhase::Flushing)
+    if (completionPhase == CompletionPhase::Flushing || completionPhase == CompletionPhase::Checking)
     {
         return Status::Downloading;
     }
@@ -716,7 +778,8 @@ Json Torrent::Row(bool sessionPaused) const
         {"swarm_leecher_count", status.num_incomplete >= 0 ? status.num_incomplete : status.list_peers - status.list_seeds},
         {"downloaded", status.all_time_download}, {"uploaded", status.all_time_upload},
         {"queue", static_cast<int>(status.queue_position)},
-        {"complete", status.has_metadata && status.is_finished && completionPhase != CompletionPhase::Flushing},
+        {"complete", status.has_metadata && status.is_finished && completionPhase != CompletionPhase::Flushing &&
+            completionPhase != CompletionPhase::Checking},
         {"incoming", status.has_incoming}, {"hashes", Hashes()}};
 }
 
@@ -744,10 +807,11 @@ void Torrent::ApplyIntent()
         std::fill(priorities.begin(), priorities.end(), lt::dont_download);
     if (priorities.empty() && metadata)
     {
-        priorities = DefaultPriorities(metadata->layout());
+        priorities = DefaultPriorities(metadata->layout(), facts.skipPatterns);
     }
     handle.prioritize_files(priorities);
-    if (facts.intent == Intent::Paused)
+    if (facts.intent == Intent::Paused || (metadata && std::none_of(priorities.begin(), priorities.end(),
+        [](auto priority) { return priority != lt::dont_download; })))
     {
         handle.unset_flags(lt::torrent_flags::auto_managed);
         handle.pause();

@@ -114,11 +114,13 @@
     <ClCompile Include="Engine\Settings.cpp" />
     <ClCompile Include="Engine\Policy.cpp" />
     <ClCompile Include="Engine\Proxy.cpp" />
+    <ClCompile Include="Engine\ConnectionTest.cpp" />
     <ClCompile Include="Engine\Edits.cpp" />
     <ClCompile Include="SpeedHistory.cpp" />
     <ClCompile Include="Engine\Files.cpp" />
     <ClCompile Include="Engine\Previews.cpp" />
     <ClCompile Include="Engine\Additions.cpp" />
+    <ClCompile Include="Engine\Watching.cpp" />
     <ClCompile Include="Engine\Commands.cpp" />
     <ClCompile Include="Engine\Queue.cpp" />
     <ClCompile Include="Engine\Checkpoints.cpp" />

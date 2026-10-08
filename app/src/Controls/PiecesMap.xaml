@@ -398,8 +398,6 @@
         <Image x:Name="Bitmap" Stretch="Fill" AutomationProperties.AccessibilityView="Raw" />
         <Border
           x:Name="Hover"
-          Width="18"
-          Height="18"
           BorderThickness="1"
           BorderBrush="{ThemeResource ControlStrongStrokeColorDefaultBrush}"
           HorizontalAlignment="Left"
@@ -409,8 +407,6 @@
         />
         <Border
           x:Name="Selection"
-          Width="20"
-          Height="20"
           BorderThickness="2"
           BorderBrush="{ThemeResource AccentFillColorDefaultBrush}"
           HorizontalAlignment="Left"

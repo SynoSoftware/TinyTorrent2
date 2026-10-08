@@ -30,9 +30,7 @@ public sealed partial class Week : UserControl
     private double Ruler => 24 * _settings.TextScaleFactor;
     private double RowHeight => 16 + 32 * _settings.TextScaleFactor;
     private readonly Schedule _model;
-    private readonly MainViewModel _main;
     private readonly DispatcherTimer _clock = new() { Interval = TimeSpan.FromSeconds(30) };
-    private LimitMode? _fixed;
     private bool _invalid;
     private Drag? _drag;
     private int _day;
@@ -40,13 +38,9 @@ public sealed partial class Week : UserControl
     private int? _hoverDay;
     private double TrackWidth => Math.Max(1, ActualWidth - Gutter);
 
-    // Periods change only while they run, under the weekly schedule.
-    private bool CanSchedule => _model.CanSchedule && _main.FollowsSchedule;
-
-    internal Week(Schedule model, MainViewModel main)
+    internal Week(Schedule model)
     {
         _model = model;
-        _main = main;
         InitializeComponent();
         Height = Ruler + 7 * RowHeight;
         IsTabStop = true;
@@ -58,7 +52,6 @@ public sealed partial class Week : UserControl
         {
             _model.PropertyChanged += OnWeek;
             _model.TextChanged += OnText;
-            _main.PropertyChanged += OnMain;
             _settings.TextScaleFactorChanged += OnScaling;
             _clock.Start();
             DrawGrid();
@@ -69,7 +62,6 @@ public sealed partial class Week : UserControl
             CancelDrag();
             _model.PropertyChanged -= OnWeek;
             _model.TextChanged -= OnText;
-            _main.PropertyChanged -= OnMain;
             _settings.TextScaleFactorChanged -= OnScaling;
             _clock.Stop();
             CompositionTarget.Rendering -= OnRendering;
@@ -107,7 +99,7 @@ public sealed partial class Week : UserControl
         if (
             _drag is { } drag
             && (
-                !CanSchedule
+                !_model.CanSchedule
                 || drag.Action != PeriodAction.Create && !_model.Periods.Contains(drag.Period)
             )
         )
@@ -119,14 +111,6 @@ public sealed partial class Week : UserControl
     private void OnText(object? sender, EventArgs args)
     {
         DrawGrid();
-        Invalidate();
-    }
-
-    private void OnMain(object? sender, PropertyChangedEventArgs args)
-    {
-        if (_main.FixedLimits == _fixed)
-            return;
-        CancelDrag();
         Invalidate();
     }
 
@@ -268,8 +252,6 @@ public sealed partial class Week : UserControl
     {
         Tip.Visibility = Visibility.Collapsed;
         PlaceNow();
-        // A fixed choice applies all week, so each day shows only that choice.
-        _fixed = _main.FixedLimits;
         if (ActualWidth <= Gutter + 24)
         {
             Trim(Blocks, 0);
@@ -278,32 +260,20 @@ public sealed partial class Week : UserControl
         }
         var preview = _drag is { HasMoved: true } drag ? drag.Period.WithSpan(drag.Span) : null;
         var original = _drag is { Action: not PeriodAction.Create } moving ? moving.Period : null;
-        var selected = _fixed is null ? preview ?? _model.OpenPeriod : null;
+        var selected = preview ?? _model.OpenPeriod;
         var blocks = 0;
         var outlines = 0;
         for (var day = 0; day < 7; day++)
         {
-            if (_fixed is { } limits)
+            foreach (var range in _model.Ranges(day, original, preview))
             {
-                Block(
-                    blocks++,
-                    day,
-                    new ScheduleRange(0, 1440, ScheduleMode.Normal, null),
-                    FixedName(limits)
-                );
-            }
-            else
-            {
-                foreach (var range in _model.Ranges(day, original, preview))
-                {
-                    // Short standard time stays unlabelled, so the periods
-                    // around it keep their room.
-                    var label =
-                        range.Mode != ScheduleMode.Normal || range.End - range.Start >= 240
-                            ? _model.FormatMode(range.Mode)
-                            : null;
-                    Block(blocks++, day, range, label);
-                }
+                // Short standard time stays unlabelled, so the periods
+                // around it keep their room.
+                var label =
+                    range.Mode != ScheduleMode.Normal || range.End - range.Start >= 240
+                        ? _model.FormatMode(range.Mode)
+                        : null;
+                Block(blocks++, day, range, label);
             }
             if (selected is null)
                 continue;
@@ -325,7 +295,7 @@ public sealed partial class Week : UserControl
                     Handle(outlines++, Math.Max(left, right - 7), day);
             }
         }
-        if (FocusState == FocusState.Keyboard && _drag is null && _fixed is null)
+        if (FocusState == FocusState.Keyboard && _drag is null)
         {
             var cursor = GetBorder(Outlines, outlines++, "WeekOutlineStyle");
             cursor.Width = 2;
@@ -343,40 +313,20 @@ public sealed partial class Week : UserControl
                 X(_minute)
             );
         }
-        // Nothing on the week changes under a fixed choice, so it takes no
-        // focus and names only that choice.
-        IsTabStop = _fixed is null;
-        if (_fixed is { } chosen)
-        {
-            AutomationProperties.SetName(
-                this,
-                _model.Text.Format(
-                    "settings",
-                    "time_summary",
-                    FixedName(chosen),
-                    _model.Text.Get("settings", "time_all_day")
-                )
+        var description =
+            selected?.Description
+            ?? _model.Text.Format(
+                "settings",
+                "day_schedule",
+                _model.Day(_day),
+                Schedule.Time(_minute)
             );
-            AutomationProperties.SetHelpText(this, string.Empty);
-            UpdateTip(null);
-        }
-        else
-        {
-            var description =
-                selected?.Description
-                ?? _model.Text.Format(
-                    "settings",
-                    "day_schedule",
-                    _model.Day(_day),
-                    Schedule.Time(_minute)
-                );
-            AutomationProperties.SetName(
-                this,
-                _model.Text.Format("settings", "timeline_name", description)
-            );
-            AutomationProperties.SetHelpText(this, Hint);
-            UpdateTip(description);
-        }
+        AutomationProperties.SetName(
+            this,
+            _model.Text.Format("settings", "timeline_name", description)
+        );
+        AutomationProperties.SetHelpText(this, Hint);
+        UpdateTip(description);
         if (_drag is { HasMoved: true } active && preview is not null)
         {
             ShowTip(preview.TimeLabel, active.Current.X);
@@ -429,14 +379,6 @@ public sealed partial class Week : UserControl
         block.BorderThickness = new(1);
         Position(block, X(range.Start), Y(day) + 4);
     }
-
-    private string FixedName(LimitMode limits) =>
-        limits switch
-        {
-            LimitMode.None => _model.Text.Get("transfer_limits", "none"),
-            LimitMode.Alternative => _model.Text.Get("settings", "alternative"),
-            _ => _model.Text.Get("settings", "speed"),
-        };
 
     private void ShowTip(string text, double x)
     {
@@ -495,7 +437,7 @@ public sealed partial class Week : UserControl
     protected override async void OnPointerPressed(PointerRoutedEventArgs args)
     {
         base.OnPointerPressed(args);
-        if (!CanSchedule || _drag is not null)
+        if (!_model.CanSchedule || _drag is not null)
             return;
         var pointer = args.GetCurrentPoint(this);
         var point = pointer.Position;
@@ -549,14 +491,14 @@ public sealed partial class Week : UserControl
         }
         var action = _drag?.Action;
         SchedulePeriod? hovered = null;
-        if (action is null && day is { } current && _fixed is null)
+        if (action is null && day is { } current)
         {
             var hit = Hit(point, current);
             action = hit.Action;
             hovered = hit.Period;
         }
         UpdateTip(hovered?.Description);
-        ProtectedCursor = !CanSchedule
+        ProtectedCursor = !_model.CanSchedule
             ? null
             : action switch
             {
@@ -572,7 +514,7 @@ public sealed partial class Week : UserControl
     private void UpdateTip(string? description)
     {
         var tooltip =
-            _drag is null && _fixed is null
+            _drag is null
                 ? string.Join(
                     " ",
                     new[] { description, Hint }.Where(text => !string.IsNullOrEmpty(text))
@@ -682,7 +624,7 @@ public sealed partial class Week : UserControl
                 await _model.Close();
             return;
         }
-        if (_drag is not null || !CanSchedule)
+        if (_drag is not null || !_model.CanSchedule)
             return;
         var period = _model
             .Ranges(_day)

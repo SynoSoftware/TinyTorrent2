@@ -39,7 +39,7 @@
           x:Name="BackButton"
           Style="{StaticResource TinyTorrentCaptionButtonStyle}"
           Visibility="Collapsed"
-          Command="{x:Bind Model.ShowTorrents}"
+          Command="{x:Bind Back}"
         >
           <FontIcon
             FontFamily="{x:Bind icons:Lucide.Font}"
@@ -69,6 +69,10 @@
         <MenuBarItem x:Name="HelpMenu" IsAccessKeyScope="True" />
       </MenuBar>
       <Grid x:Name="SearchArea" Grid.Column="3" Margin="24,0" VerticalAlignment="Center">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
         <AutoSuggestBox
           x:Name="Search"
           MaxWidth="320"
@@ -96,6 +100,50 @@
             </DataTemplate>
           </AutoSuggestBox.ItemTemplate>
         </AutoSuggestBox>
+        <StackPanel
+          x:Name="TitleSpeeds"
+          Grid.Column="1"
+          Margin="24,0,0,0"
+          Orientation="Horizontal"
+          Spacing="16"
+          VerticalAlignment="Center"
+          Visibility="Collapsed"
+        >
+          <StackPanel
+            x:Name="TitleDownload"
+            Orientation="Horizontal"
+            Spacing="6"
+            ToolTipService.ToolTip="{x:Bind Model.DownloadTip, Mode=OneWay}"
+          >
+            <FontIcon
+              FontFamily="{x:Bind icons:Lucide.Font}"
+              Glyph="{x:Bind icons:Lucide.ArrowDown}"
+              Style="{StaticResource TinyTorrentStatusIconStyle}"
+            />
+            <TextBlock
+              Text="{x:Bind Model.DownloadSpeed, Mode=OneWay}"
+              AutomationProperties.Name="{x:Bind Model.DownloadTip, Mode=OneWay}"
+              Style="{StaticResource TinyTorrentStatusTextStyle}"
+            />
+          </StackPanel>
+          <StackPanel
+            x:Name="TitleUpload"
+            Orientation="Horizontal"
+            Spacing="6"
+            ToolTipService.ToolTip="{x:Bind Model.UploadTip, Mode=OneWay}"
+          >
+            <FontIcon
+              FontFamily="{x:Bind icons:Lucide.Font}"
+              Glyph="{x:Bind icons:Lucide.ArrowUp}"
+              Style="{StaticResource TinyTorrentStatusIconStyle}"
+            />
+            <TextBlock
+              Text="{x:Bind Model.UploadSpeed, Mode=OneWay}"
+              AutomationProperties.Name="{x:Bind Model.UploadTip, Mode=OneWay}"
+              Style="{StaticResource TinyTorrentStatusTextStyle}"
+            />
+          </StackPanel>
+        </StackPanel>
       </Grid>
       <StackPanel x:Name="AddButtons" Grid.Column="4" Orientation="Horizontal">
         <Button
@@ -818,6 +866,23 @@
           <TextBlock
             x:Name="UpdateLabel"
             Text="{x:Bind Model.Text.Get('about', 'available'), Mode=OneWay}"
+            Style="{StaticResource TinyTorrentStatusTextStyle}"
+          />
+        </StackPanel>
+        <StackPanel
+          Orientation="Horizontal"
+          Spacing="6"
+          Visibility="{x:Bind Model.ShowsFreeSpace, Mode=OneWay}"
+          ToolTipService.ToolTip="{x:Bind Model.FreeSpaceStatus, Mode=OneWay}"
+        >
+          <FontIcon
+            Style="{StaticResource TinyTorrentStatusIconStyle}"
+            FontFamily="{x:Bind icons:Lucide.Font}"
+            Glyph="{x:Bind icons:Lucide.HardDrive}"
+          />
+          <TextBlock
+            x:Name="FreeSpaceLabel"
+            Text="{x:Bind Model.FreeSpaceStatus, Mode=OneWay}"
             Style="{StaticResource TinyTorrentStatusTextStyle}"
           />
         </StackPanel>

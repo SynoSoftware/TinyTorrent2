@@ -79,6 +79,9 @@ void Engine::State::Add(Preview& preview, Addition::Choices choices, std::functi
         completion({ErrorCode::InvalidDestination}, {});
         return;
     }
+    auto patterns = settings.excludes ? settings.patterns : std::string();
+    if (choices.priorities.empty() && preview.params.ti)
+        choices.priorities = DefaultPriorities(preview.params.ti->layout(), patterns);
     auto chosen = Priorities(std::move(choices.priorities), preview.params.ti);
     if (!chosen || (preview.params.ti && std::none_of(chosen->begin(), chosen->end(),
         [](auto priority) { return priority != lt::dont_download; })))
@@ -90,6 +93,8 @@ void Engine::State::Add(Preview& preview, Addition::Choices choices, std::functi
     addition.torrentId = NewId();
     addition.params = preview.params;
     addition.facts.appendsSuffix = settings.appendsSuffix;
+    addition.facts.layout = settings.layout;
+    addition.facts.skipPatterns = std::move(patterns);
     addition.facts.savePath = settings.SavePath(choices.destination);
     if (addition.facts.savePath != choices.destination)
     {
@@ -105,6 +110,8 @@ void Engine::State::Add(Preview& preview, Addition::Choices choices, std::functi
     addition.facts.priorities = std::move(*chosen);
     addition.facts.hashes = Hashes(preview.InfoHashes());
     addition.queueTop = choices.queueTop;
+    addition.watchSource = std::move(choices.watchSource);
+    addition.watchStamp = std::move(choices.watchStamp);
     addition.completion = std::move(completion);
     auto& pending = additions.emplace(addition.torrentId, std::move(addition)).first->second;
     if (preview.handle.is_valid())
@@ -117,7 +124,8 @@ void Engine::State::Add(Preview& preview, Addition::Choices choices, std::functi
     else
     {
         auto prepared = std::make_shared<lt::add_torrent_params>(pending.params);
-        payload.Run([prepared, appendsSuffix = pending.facts.appendsSuffix] { PrepareNames(*prepared, appendsSuffix); },
+        payload.Run([prepared, appendsSuffix = pending.facts.appendsSuffix, layout = pending.facts.layout]
+            { PrepareNames(*prepared, appendsSuffix, layout); },
             [this, id = pending.torrentId, prepared](StorageOutcome outcome)
         {
             auto found = additions.find(id);
@@ -141,6 +149,7 @@ void Engine::State::PrepareAddition(std::string const& id, lt::torrent_handle ha
 {
     auto& addition = additions.at(id);
     addition.handle = handle;
+    ApplyPolicy(handle);
     addition.phase = AdditionPhase::Naming;
     auto prepared = std::make_shared<lt::add_torrent_params>(addition.params);
     if (!prepared->ti)
@@ -151,7 +160,8 @@ void Engine::State::PrepareAddition(std::string const& id, lt::torrent_handle ha
         return;
     }
     prepared->renamed_files = handle.get_renamed_files().export_filenames(prepared->ti->layout());
-    payload.Run([prepared, appendsSuffix = addition.facts.appendsSuffix] { PrepareNames(*prepared, appendsSuffix); }, [this, id, prepared](StorageOutcome outcome)
+    payload.Run([prepared, appendsSuffix = addition.facts.appendsSuffix, layout = addition.facts.layout]
+        { PrepareNames(*prepared, appendsSuffix, layout); }, [this, id, prepared](StorageOutcome outcome)
     {
         auto found = additions.find(id);
         if (found == additions.end() || found->second.phase != AdditionPhase::Naming)
@@ -173,7 +183,8 @@ void Engine::State::PrepareAddition(std::string const& id, lt::torrent_handle ha
 // Previews and adds a source as the window does when the person accepts the
 // defaults. The source has its own connection, so its preview merges with no
 // other and ends with the addition.
-void Engine::State::AddSource(std::string source, std::function<void(Outcome, Added)> completion)
+void Engine::State::AddSource(std::string source, std::function<void(Outcome, Added)> completion,
+    std::string destination, std::string watchStamp)
 {
     auto connectionId = NewId();
     auto finish = [this, connectionId, completion](Outcome outcome, Added added)
@@ -181,15 +192,32 @@ void Engine::State::AddSource(std::string source, std::function<void(Outcome, Ad
         Disconnect(connectionId);
         completion(std::move(outcome), std::move(added));
     };
-    Inspect(std::move(source), connectionId, [this, finish](Outcome outcome, Preview* preview)
+    auto watchSource = watchStamp.empty() ? std::string() : source;
+    Inspect(std::move(source), connectionId, [this, finish, destination, watchSource, watchStamp](Outcome outcome, Preview* preview)
     {
         if (outcome.error)
         {
             finish(std::move(outcome), {});
             return;
         }
+        auto duplicate = FindDuplicate(preview->InfoHashes());
+        if (!duplicate.empty() && settings.duplicates == DuplicatePolicy::Merge && CanMerge(*preview))
+        {
+            MergeTrackers(*preview, duplicate, [finish, duplicate](Json reply)
+            {
+                if (!reply.at("ok").get<bool>())
+                    finish({ErrorCode::StorageFailed}, {});
+                else
+                    finish({}, {AdditionKind::Duplicate, duplicate});
+            });
+            return;
+        }
         Addition::Choices choices;
-        choices.destination = settings.destination;
+        choices.destination = destination.empty() ? settings.AdditionFolder() : destination;
+        choices.intent = settings.startsDownload ? Intent::Resumed : Intent::Paused;
+        choices.queueTop = settings.queueTop;
+        choices.watchSource = watchSource;
+        choices.watchStamp = watchStamp;
         Add(*preview, std::move(choices), finish);
     });
 }
@@ -223,6 +251,10 @@ void Engine::State::CommitAddition(std::string const& id)
     auto const& addition = additions.at(id);
     auto document = Saved();
     document.torrents.emplace(id, addition.facts);
+    if (!addition.watchSource.empty())
+        document.watchedSources[addition.watchSource] = addition.watchStamp;
+    document.settings.lastFolder = addition.facts.finalFolder.empty() ?
+        addition.facts.savePath : addition.facts.finalFolder;
     if (addition.queueTop)
     {
         document.queueOrder.insert(document.queueOrder.begin(), id);
@@ -231,7 +263,8 @@ void Engine::State::CommitAddition(std::string const& id)
     {
         document.queueOrder.push_back(id);
     }
-    changes.Commit(document.ToJson(), [this, id, order = document.queueOrder](StorageOutcome outcome)
+    changes.Commit(document.ToJson(), [this, id, order = document.queueOrder,
+        folder = document.settings.lastFolder, watched = document.watchedSources](StorageOutcome outcome)
     {
         if (!outcome.succeeded)
         {
@@ -241,6 +274,8 @@ void Engine::State::CommitAddition(std::string const& id)
         auto found = additions.find(id);
         auto& torrent = Install(id, found->second.handle, found->second.facts, found->second.params);
         queueOrder = order;
+        settings.lastFolder = folder;
+        watchedSources = watched;
         ApplyQueue();
         torrent.ApplyIntent();
         log.Write("add", id, "saved");

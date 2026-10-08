@@ -11,28 +11,26 @@
       IsTextSelectionEnabled="True"
       ToolTipService.ToolTip="{x:Bind Model.SpeedLimit.Subject, Mode=OneWay}"
     />
-    <NumberBox
+    <TextBox
       x:Name="Download"
       Header="{x:Bind Model.Text.Get('limits', 'download_limit'), Mode=OneWay}"
-      Text="{x:Bind Model.SpeedLimit.Download, Mode=OneWay}"
+      Text="{x:Bind Model.SpeedLimit.Download, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
       PlaceholderText="{x:Bind Model.SpeedLimit.DownloadHint, Mode=OneWay}"
-      ValidationMode="Disabled"
+      InputScope="Number"
       IsEnabled="{x:Bind Model.SpeedLimit.CanSubmit, Mode=OneWay}"
       ToolTipService.ToolTip="{x:Bind Model.SpeedLimit.Global, Mode=OneWay}"
       AutomationProperties.HelpText="{x:Bind Model.SpeedLimit.Global, Mode=OneWay}"
-      Loaded="OnNumberLoaded"
       AutomationProperties.AutomationId="TorrentDownloadLimit"
     />
-    <NumberBox
+    <TextBox
       x:Name="Upload"
       Header="{x:Bind Model.Text.Get('limits', 'upload_limit'), Mode=OneWay}"
-      Text="{x:Bind Model.SpeedLimit.Upload, Mode=OneWay}"
+      Text="{x:Bind Model.SpeedLimit.Upload, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
       PlaceholderText="{x:Bind Model.SpeedLimit.UploadHint, Mode=OneWay}"
-      ValidationMode="Disabled"
+      InputScope="Number"
       IsEnabled="{x:Bind Model.SpeedLimit.CanSubmit, Mode=OneWay}"
       ToolTipService.ToolTip="{x:Bind Model.SpeedLimit.Global, Mode=OneWay}"
       AutomationProperties.HelpText="{x:Bind Model.SpeedLimit.Global, Mode=OneWay}"
-      Loaded="OnNumberLoaded"
       AutomationProperties.AutomationId="TorrentUploadLimit"
     />
     <InfoBar

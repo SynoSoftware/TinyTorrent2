@@ -1126,9 +1126,11 @@ its view, a zoom length and either the present or a past end time; it averages
 samples in buckets aligned to clock time and draws monotone cubic native paths
 with separate figures across unknown time gaps. Its marker exposes the marked
 point as a read-only UI Automation value. PiecesMap uses one BGRA
-bitmap, 16-pixel squares, 4-pixel gaps and 6-pixel gutters after each group of
-eight, matching the previous native map; a full row widens the gutters by the
-width left over, so the map ends at the right edge. Squares are anti-aliased tiles with the
+bitmap, squares of at least 16 pixels, 4-pixel gaps and 6-pixel gutters after
+each group of eight, matching the previous native map. Squares grow while every
+piece still fits; a full row widens the gutters by the width left over and full
+columns by the height left over, so the map ends at the right and bottom edges.
+Squares are anti-aliased tiles with the
 theme's control corner radius; their colours, hatch and cross come from the
 legend swatches, so the legend and the map share one palette, and the swatch
 outline appears only in High Contrast. When pieces outnumber the squares that
@@ -1257,12 +1259,12 @@ records the ruling and the arrangement that replaced vcpkg.
 
 Protocol version 8 uses a four-byte little-endian UTF-8 JSON frame length,
 bounded to 16 MiB. The endpoint is `TinyTorrent.<logon SID>`; each connecting
-client first receives `{type:"hello",version:8,session_id:"...",data_directory:"..."}`. The absolute data directory
+client first receives `{type:"hello",version:10,session_id:"...",data_directory:"..."}`. The absolute data directory
 keeps the same store for explicit Restart, which starts the engine beside the
 window rather than a path a pipe peer reports. Requests are
 `{request_id:integer,command:string,...}`. Replies repeat `request_id` and have
 `ok:boolean`, either `data` or `error:{code:string,detail:string}`. Native control
-notifications are `{type:"activate"}`, `{type:"close"}`, and `{type:"sources"}`. The pipe
+notifications are `{type:"activate"}`, `{type:"close"}`, `{type:"confirm_exit"}`, and `{type:"sources"}`. The pipe
 passes the engine each request's connection beside the request, so no request field
 can claim another connection's previews.
 
@@ -1284,7 +1286,8 @@ or before_torrent_id: string/null for a row drop; null means end),
 absent one keeps each torrent's choice),
 `session_pause` (paused), `settings` (changes), `check_proxy` (proxy), `open`, `ready`,
 `window_closed`, `activate_reply` (available boolean), `close_reply` (state:
-waiting/closing/cancelled), and `exit`. Activation acknowledgement lets Open wait through an
+waiting/closing/cancelled), `exit_reply` (answer: confirmed/cancelled/unavailable),
+and `exit`. Activation acknowledgement lets Open wait through an
 old window's close path without losing the request. Current settings changes accept language (`en`, `es`)
 and theme (`system`, `light`, `dark`); unknown fields or values are refused. A
 settings acknowledgement confirms the same durable replacement as membership.
@@ -1356,6 +1359,18 @@ Protocol version 8 adds `external_ipv4` and `external_ipv6` to snapshots. Each
 is an address string or empty when unavailable. Torrent rows add `final_folder`,
 empty unless they will move on completion, so recent download folders do not
 mistake the incomplete folder for the chosen final destination.
+Protocol version 9 extends settings with queue, network, checking, history,
+window-refresh and addition defaults. `refresh_interval` is milliseconds;
+`recent_interval`, `history_interval`, and `slow_wait` are seconds;
+`slow_download` and `slow_upload` are bytes per second. Capacity facts are Mbps.
+`addition_destination` is the derived destination for new additions and is not
+stored in settings.json. Existing keys and defaults keep their prior meanings.
+Protocol version 10 adds the remaining addition/file policies and `connection_test`.
+Its snapshot reports `phase`, with the active test's `id`, measured `download` and
+`upload` in Mbps, `remaining` hold seconds, and a stable `failure` code. The command
+accepts `action` as `start`, `cancel`, or `release`; it does not apply transfer
+limits. `delete_files` accepts an explicit `deletion` choice (`recycle` or
+`permanent`) so the confirmed dialog and the asynchronous file operation agree.
 Torrent rows contain torrent_id, name,
 size (wanted bytes), completed (wanted bytes present), progress (0..1 for the
 current task, including verification), status (stable code), paused, download_rate and

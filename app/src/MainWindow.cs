@@ -24,6 +24,7 @@ namespace Syno.TinyTorrent;
 public sealed partial class MainWindow : Window
 {
     public MainViewModel Model { get; }
+    public ICommand Back { get; }
     internal static bool IsCaptureReview { get; }
 
     partial void ConfigureCapture();
@@ -40,6 +41,7 @@ public sealed partial class MainWindow : Window
     public MainWindow(Strings strings)
     {
         Model = new MainViewModel(strings, DispatcherQueue);
+        Back = new RelayCommand(GoBack, () => true);
         InitializeComponent();
         ConfigureCapture();
         ConfigureNotifications();
@@ -163,21 +165,14 @@ public sealed partial class MainWindow : Window
                 await Model.ReplyActivation(false);
                 return;
             }
-            if (
-                AppWindow.Presenter is OverlappedPresenter
-                {
-                    State: OverlappedPresenterState.Minimized
-                } presenter
-            )
-                presenter.Restore();
-            Activate();
-            SetForegroundWindow(WinRT.Interop.WindowNative.GetWindowHandle(this));
+            BringToFront();
             await Model.ReplyActivation(true);
             if (Model.Page == WindowPage.Settings)
                 await Model.Settings.ObserveRegistration();
         };
         Model.ShowRequested += async (_, _) => await ShowWhenReady();
         Model.CloseRequested += async (_, exiting) => await CloseWindow(exiting);
+        Model.ConfirmExitRequested += async (_, _) => await ConfirmExit();
         // No limit sorts as the highest, so ascending lists limited torrents first.
         static long Rank(int limit) => limit > 0 ? limit : long.MaxValue;
         Torrents
@@ -293,7 +288,7 @@ public sealed partial class MainWindow : Window
         );
         AddShortcut(
             new() { Key = VirtualKey.Left, Modifiers = VirtualKeyModifiers.Menu },
-            Model.ShowTorrents
+            Back
         );
         AddShortcut(
             new()
@@ -394,6 +389,11 @@ public sealed partial class MainWindow : Window
 
     private void OnModelChanged(object? sender, PropertyChangedEventArgs args)
     {
+        if (
+            string.IsNullOrEmpty(args.PropertyName)
+            || args.PropertyName == nameof(MainViewModel.ShowsTitleSpeeds)
+        )
+            UpdateChrome();
         if (args.PropertyName == nameof(MainViewModel.Page))
             UpdatePage();
         if (Model.CanRestart)
@@ -645,6 +645,58 @@ public sealed partial class MainWindow : Window
     }
 
     private void OnDismissError(InfoBar sender, object args) => Model.ClearError();
+
+    private void BringToFront()
+    {
+        if (
+            AppWindow.Presenter is OverlappedPresenter
+            {
+                State: OverlappedPresenterState.Minimized
+            } presenter
+        )
+            presenter.Restore();
+        Activate();
+        SetForegroundWindow(WinRT.Interop.WindowNative.GetWindowHandle(this));
+    }
+
+    // The engine decides whether Exit needs confirmation and asks here while
+    // the window is open. A window that cannot show the prompt now lets the
+    // engine ask natively instead.
+    private async Task ConfirmExit()
+    {
+        if (_cloaked || IsCaptureReview || HasDialog || Model.IsPicking || Model.IsClosing)
+        {
+            await Model.ReplyExit(ExitAnswer.Unavailable);
+            return;
+        }
+        BringToFront();
+        var answer = ExitAnswer.Cancelled;
+        await Interact(async interaction =>
+        {
+            var dialog = new Dialog
+            {
+                XamlRoot = Root.XamlRoot,
+                DefaultButton = ContentDialogButton.Close,
+                Glyph = Syno.Lucide.Power,
+                PrimaryGlyph = Syno.Lucide.Power,
+            };
+            var choice = await ShowDialog(
+                interaction,
+                dialog,
+                () =>
+                {
+                    dialog.Title = Model.Text.Get("exit", "title");
+                    dialog.Content = Model.Text.Get("exit", "active");
+                    dialog.PrimaryButtonText = Model.Text.Get("commands", "exit");
+                    dialog.CloseButtonText = Model.Text.Get("add", "cancel");
+                }
+            );
+            if (choice == ContentDialogResult.Primary)
+                answer = ExitAnswer.Confirmed;
+            return true;
+        });
+        await Model.ReplyExit(answer);
+    }
 
     private async Task CloseWindow(bool exiting)
     {

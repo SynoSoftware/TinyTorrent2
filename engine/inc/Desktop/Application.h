@@ -34,6 +34,7 @@ private:
     void OnClosed(Reply const& reply);
     void OnActivateReply(std::shared_ptr<Pipe::Connection> const& client, bool available, Reply const& reply);
     void OnCloseReply(std::shared_ptr<Pipe::Connection> const& client, CloseState state, Reply const& reply);
+    void OnExitReply(std::shared_ptr<Pipe::Connection> const& client, ExitAnswer answer, Reply const& reply);
     void OnPendingActivations(std::shared_ptr<Pipe::Connection> const& client, Reply const& reply);
     void OnActivationsReceived(std::shared_ptr<Pipe::Connection> const& client, std::vector<std::string> const& ids,
         Reply const& reply);
@@ -43,6 +44,8 @@ private:
     bool Open();
     bool IsWindowRunning() const;
     void Exit();
+    bool ConfirmExit();
+    void BeginExit();
     void Shutdown();
     bool IsExiting() const;
     void CancelExit();
