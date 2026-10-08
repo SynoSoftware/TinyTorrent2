@@ -8,9 +8,13 @@
     "pause": "Pausar transferencias",
     "resume": "Reanudar transferencias",
     "open": "Mostrar ventana",
-    "missing_interface": "Interfaz de red no disponible: {0}",
+    "missing_adapter": "Adaptador de red no disponible: {0}",
     "exit": "Salir",
     "background": "Las transferencias continúan en el área de notificación. Selecciona Salir en el menú de TinyTorrent para detenerlas."
+  },
+  "exit": {
+    "title": "¿Salir de TinyTorrent?",
+    "active": "Hay transferencias activas. Se detendrán al salir."
   },
   "startup": {
     "opening": "Abriendo TinyTorrent…",
@@ -31,7 +35,9 @@
     "aggregate": "{0} actualizaciones de transferencias.",
     "add_failed": "No se pudo añadir {0}.",
     "delete_failed": "No se pudieron eliminar todos los archivos de {0}.",
-    "failures": "Errores de transferencias: {0}. {1}: {2}"
+    "failures": "Errores de transferencias: {0}. {1}: {2}",
+    "missing_program": "Los torrents están configurados para abrirse con un programa que ya no está: {0}. Selecciona este aviso para repararlo en Ajustes.",
+    "missing_programs": "Los torrents están configurados para abrirse con programas que ya no están: {0} y {1} más. Selecciona este aviso para repararlos en Ajustes."
   },
   "power": {
     "transfers": "TinyTorrent está transfiriendo archivos."

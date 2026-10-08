@@ -48,7 +48,7 @@ enum class QueueMove
     Before
 };
 
-enum class RegistrationOperation
+enum class RegistrationAction
 {
     Observe,
     RegisterHandlers,
@@ -59,6 +59,14 @@ enum class RegistrationOperation
     OpenStartup
 };
 
+// The executable a registration starts, compared with this copy.
+enum class Copy
+{
+    This,
+    Other,
+    Missing
+};
+
 enum class AdditionPhase
 {
     Adding,
@@ -67,7 +75,7 @@ enum class AdditionPhase
     Saving
 };
 
-enum class RelocationPhase
+enum class MovePhase
 {
     Preparing,
     Waiting,
@@ -93,6 +101,16 @@ enum class NamePhase
     Ready
 };
 
+// A finished download waits for libtorrent to write its data to disk, then
+// for its files to settle in their final names and folder, before the
+// Completed notice.
+enum class CompletionPhase
+{
+    Idle,
+    Flushing,
+    Settling
+};
+
 // A deletion saves the list without its torrents, waits for libtorrent to
 // release their files, and then deletes them.
 enum class DeletionPhase
@@ -113,10 +131,7 @@ enum class BusyFiles
 enum class AdditionKind
 {
     New,
-    Duplicate,
-    // The content is already in the list and the source has trackers that
-    // torrent lacks. Nothing changes, so the person chooses whether to merge.
-    Mergeable
+    Duplicate
 };
 
 // Where a torrent's checkpoint is: waiting for libtorrent's resume data, or
@@ -128,7 +143,7 @@ enum class CheckpointPhase
     Writing
 };
 
-enum class ExitStep
+enum class ShutdownPhase
 {
     Draining,
     Pausing,
@@ -158,6 +173,8 @@ enum class Status
     Moving,
     Error,
     Paused,
+    // The torrent would transfer, but a session pause holds every torrent.
+    AllPaused,
     Checking,
     Metadata,
     Queued,
@@ -232,11 +249,11 @@ enum class ErrorCode
     InvalidDestination,
     InvalidPriorities,
     InvalidTrackers,
-    InvalidTargets,
+    InvalidTorrents,
     ResponseTooLarge,
-    UiConnected,
+    WindowConnected,
     Starting,
-    Stopping,
+    ShuttingDown,
     Unavailable,
     Overloaded,
     StorageFailed,
@@ -245,6 +262,7 @@ enum class ErrorCode
     SharedFiles,
     DestinationConflict,
     DestinationInUse,
+    MoveInterrupted,
     MetadataUnavailable,
     PreviewExpired,
     PreviewFailed,
@@ -261,7 +279,12 @@ enum class NoticeKind
     Duplicate,
     AddFailed,
     DeleteFailed,
+    // The application could not do what the person asked, such as saving on
+    // Exit. Unlike torrent problems, it shows even when those are turned off.
+    Failure,
     Background,
+    // A torrent or magnet handler starts a program that is missing.
+    MissingProgram,
     // Several notices that arrived together, shown as one balloon.
     Aggregate
 };
@@ -310,18 +333,28 @@ enum class CloseState
     Closing
 };
 
+// How far the desktop host is through Exit: the person confirming it, the
+// window closing and the final save, or Windows ending the session.
+enum class ExitPhase
+{
+    Idle,
+    Confirming,
+    Exiting,
+    SessionEnding
+};
+
 // The commands the desktop host answers itself; it passes all others to the
 // engine.
 enum class Command
 {
     Registration,
     Ready,
-    UiClosed,
+    WindowClosed,
     ActivateReply,
     CloseReply,
     ActivateSources,
-    PendingSources,
-    SourcesReceived,
+    PendingActivations,
+    ActivationsReceived,
     Open,
     Exit
 };

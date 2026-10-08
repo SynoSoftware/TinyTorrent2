@@ -113,7 +113,7 @@ void Engine::State::Merge(Preview& existing, Preview const& source)
 // trackers that torrent lacks.
 bool Engine::State::CanMerge(Preview const& preview) const
 {
-    auto duplicate = Duplicate(preview.InfoHashes());
+    auto duplicate = FindDuplicate(preview.InfoHashes());
     return !duplicate.empty() &&
         !torrents.at(duplicate).restore &&
         !Missing(preview.params.trackers, Urls(torrents.at(duplicate).handle.trackers())).empty();
@@ -123,32 +123,32 @@ Json Engine::State::Describe(Preview const& preview, std::string const& destinat
 {
     auto const& params = preview.params;
     auto hashes = preview.InfoHashes();
-    auto duplicate = Duplicate(hashes);
-    return {{"preview_id", preview.identity},
+    auto duplicate = FindDuplicate(hashes);
+    return {{"preview_id", preview.previewId},
         {"name", tt::Name(params.ti ? params.ti->name() : params.name, Hashes(hashes))},
         {"size", params.ti ? params.ti->total_size() : 0}, {"files", Files(params.ti)},
-        {"duplicate", duplicate}, {"hashes", Hashes(hashes)}, {"trackers", params.trackers},
+        {"torrent_id", duplicate}, {"hashes", Hashes(hashes)}, {"trackers", params.trackers},
         {"merge_available", CanMerge(preview)}, {"metadata_ready", bool(params.ti)},
-        {"error", preview.error}, {"shared_with", SharedFiles(params.ti, destination)}};
+        {"error", preview.error}, {"shared_with", SharedFiles(params.ti, settings.SavePath(destination))}};
 }
 
-void Engine::State::Inspect(std::string source, std::string connection,
-    std::function<void(Outcome, Preview*)> done)
+void Engine::State::Inspect(std::string source, std::string connectionId,
+    std::function<void(Outcome, Preview*)> completion)
 {
     if (previews.size() + parsing.size() >= previewLimit)
     {
-        done({ErrorCode::Overloaded}, nullptr);
+        completion({ErrorCode::Overloaded}, nullptr);
         return;
     }
     if (!IsSource(source))
     {
-        done({ErrorCode::InvalidSource}, nullptr);
+        completion({ErrorCode::InvalidSource}, nullptr);
         return;
     }
     NormaliseMagnet(source);
     auto preview = std::make_shared<Preview>();
-    preview->identity = Identity();
-    preview->connection = std::move(connection);
+    preview->previewId = NewId();
+    preview->connectionId = std::move(connectionId);
     sources.Run([preview, source]
     {
         if (IsMagnet(source))
@@ -161,35 +161,35 @@ void Engine::State::Inspect(std::string source, std::string connection,
             preview->params = lt::load_torrent_buffer(
                 lt::span<char const>(bytes.data(), bytes.size()));
         }
-    }, [this, preview, done](StorageOutcome outcome)
+    }, [this, preview, completion](StorageOutcome outcome)
     {
         std::erase(parsing, preview);
         if (preview->cancelled)
         {
             return;
         }
-        if (stopping)
+        if (shuttingDown)
         {
-            done({ErrorCode::Stopping}, nullptr);
+            completion({ErrorCode::ShuttingDown}, nullptr);
             return;
         }
         if (!outcome.succeeded)
         {
-            done({ErrorCode::InvalidSource, outcome.detail}, nullptr);
+            completion({ErrorCode::InvalidSource, outcome.detail}, nullptr);
             return;
         }
         preview->params.info_hashes = preview->InfoHashes();
         auto hashes = Hashes(preview->params.info_hashes);
         for (auto& [id, existing] : previews)
         {
-            if (existing.connection == preview->connection && Overlaps(Hashes(existing.InfoHashes()), hashes))
+            if (existing.connectionId == preview->connectionId && Overlaps(Hashes(existing.InfoHashes()), hashes))
             {
                 Merge(existing, *preview);
-                done({}, &existing);
+                completion({}, &existing);
                 return;
             }
         }
-        if (!preview->params.ti && Duplicate(preview->params.info_hashes).empty())
+        if (!preview->params.ti && FindDuplicate(preview->params.info_hashes).empty())
         {
             Guard(preview->params);
             preview->params.flags &= ~lt::torrent_flags::paused;
@@ -198,20 +198,20 @@ void Engine::State::Inspect(std::string source, std::string connection,
             preview->handle = session->add_torrent(preview->params, error);
             if (error)
             {
-                done({ErrorCode::PreviewFailed, error.message()}, nullptr);
+                completion({ErrorCode::PreviewFailed, error.message()}, nullptr);
                 return;
             }
         }
-        done({}, &previews.emplace(preview->identity, *preview).first->second);
+        completion({}, &previews.emplace(preview->previewId, *preview).first->second);
     });
     parsing.push_back(preview);
 }
 
 // A preview belongs to the connection that opened it.
-Engine::State::Preview* Engine::State::FindPreview(std::string const& id, std::string const& connection)
+Engine::State::Preview* Engine::State::FindPreview(std::string const& previewId, std::string const& connectionId)
 {
-    auto found = previews.find(id);
-    if (found == previews.end() || found->second.connection != connection)
+    auto found = previews.find(previewId);
+    if (found == previews.end() || found->second.connectionId != connectionId)
     {
         return nullptr;
     }
@@ -235,16 +235,16 @@ void Engine::State::Discard(std::function<bool(Preview const&)> const& matches)
     });
 }
 
-void Engine::State::Disconnect(std::string const& connection)
+void Engine::State::Disconnect(std::string const& connectionId)
 {
     for (auto const& preview : parsing)
     {
-        if (preview->connection == connection)
+        if (preview->connectionId == connectionId)
         {
             preview->cancelled = true;
         }
     }
-    Discard([&connection](Preview const& preview) { return preview.connection == connection; });
+    Discard([&connectionId](Preview const& preview) { return preview.connectionId == connectionId; });
 }
 
 void Engine::State::On(lt::metadata_failed_alert const& alert)

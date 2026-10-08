@@ -10,7 +10,7 @@ public:
     explicit Strings(std::string language = DefaultLanguage());
     static std::string DefaultLanguage();
     // Whether `language` names a shipped catalogue exactly, as a saved
-    // language preference must.
+    // language setting must.
     static bool Supports(std::string_view language);
     std::string const& Language() const { return language_; }
     std::wstring Text(std::string const& group, std::string const& key) const;

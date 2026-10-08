@@ -31,7 +31,8 @@ public sealed class ItemContextRequestedEventArgs : EventArgs
         object item,
         IReadOnlyList<object> selectedItems,
         FrameworkElement target,
-        Point? position)
+        Point? position
+    )
     {
         Item = item;
         SelectedItems = selectedItems;

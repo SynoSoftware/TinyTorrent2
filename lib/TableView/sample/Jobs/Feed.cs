@@ -124,7 +124,10 @@ public sealed class Feed
         }
 
         double inRate = Math.Clamp(
-            row.InRate + ((_random.NextDouble() - 0.45) * 400_000), 40_000, 24_000_000);
+            row.InRate + ((_random.NextDouble() - 0.45) * 400_000),
+            40_000,
+            24_000_000
+        );
         row.InRate = inRate;
         row.OutRate = inRate * (0.4 + (_random.NextDouble() * 0.5));
 
@@ -165,9 +168,10 @@ public sealed class Feed
         int workers = Math.Clamp(row.WorkersBusy + _random.Next(-1, 2), 0, row.WorkersTotal);
         row.WorkersBusy = workers;
         row.InRate = 0;
-        row.OutRate = workers == 0
-            ? 0
-            : Math.Clamp(row.OutRate + ((_random.NextDouble() - 0.5) * 200_000), 0, 6_000_000);
+        row.OutRate =
+            workers == 0
+                ? 0
+                : Math.Clamp(row.OutRate + ((_random.NextDouble() - 0.5) * 200_000), 0, 6_000_000);
 
         if (row.Frames > 0)
         {
@@ -181,8 +185,22 @@ public sealed class Feed
     {
         string[] shots =
         {
-            "atrium", "canyon", "harbour", "lantern", "meadow", "obsidian", "prairie", "quartz",
-            "ridgeline", "solstice", "tundra", "vantage", "willow", "zephyr", "basalt", "cinder",
+            "atrium",
+            "canyon",
+            "harbour",
+            "lantern",
+            "meadow",
+            "obsidian",
+            "prairie",
+            "quartz",
+            "ridgeline",
+            "solstice",
+            "tundra",
+            "vantage",
+            "willow",
+            "zephyr",
+            "basalt",
+            "cinder",
         };
         string[] takes = { "layout", "lighting", "fx", "comp", "grade", "matte" };
         string[] passes = { "beauty", "depth", "normals", "motion", "shadow", "ao" };
@@ -223,61 +241,64 @@ public sealed class Feed
                 ? _random.Next(1, Math.Min(60, workersTotal))
                 : 0;
 
-            double inRate = state == JobState.Rendering
-                ? 60_000 + (_random.NextDouble() * 6_000_000)
-                : 0;
-            double outRate = state == JobState.Publishing
-                ? _random.NextDouble() * 2_000_000
-                : inRate * 0.5;
+            double inRate =
+                state == JobState.Rendering ? 60_000 + (_random.NextDouble() * 6_000_000) : 0;
+            double outRate =
+                state == JobState.Publishing ? _random.NextDouble() * 2_000_000 : inRate * 0.5;
 
             DateTimeOffset submitted = start.AddMinutes(_random.Next(1, 400_000));
             long done = (long)(frames * share);
 
-            rows.Add(new Job
-            {
-                Id = i.ToString("D7", CultureInfo.InvariantCulture),
-                Index = i,
-                Name = i % 97 == 3
-                    ? longShots[(i / 97) % longShots.Length]
-                    : $"{shots[i % shots.Length]}-{100 + (i % 900)}-" +
-                      $"{takes[i % takes.Length]}-{passes[i % passes.Length]}",
-                Frames = frames,
-                FramesText = frames.ToString("N0", CultureInfo.CurrentCulture) + " frames",
-                SubmittedText = submitted.ToString("yyyy-MM-dd HH:mm"),
-                Fault = i % 173 == 5 ? faults[(i / 173) % faults.Length] : string.Empty,
-                WorkersTotal = workersTotal,
-                State = state,
-                FramesDone = done,
-                WorkersBusy = workersBusy,
-                InRate = inRate,
-                OutRate = outRate,
-                Yield = state is JobState.Publishing or JobState.QueuedToPublish
-                    ? Math.Round(_random.NextDouble() * 6, 2)
-                    : Math.Round(_random.NextDouble() * 0.6, 2),
-                Remaining = state == JobState.Rendering && inRate > 1000
-                    ? TimeSpan.FromSeconds(_random.Next(20, 400_000))
-                    : null,
-                Finished = share >= 1
-                    ? submitted + TimeSpan.FromHours(_random.Next(1, 300))
-                    : null,
-            });
+            rows.Add(
+                new Job
+                {
+                    Id = i.ToString("D7", CultureInfo.InvariantCulture),
+                    Index = i,
+                    Name =
+                        i % 97 == 3
+                            ? longShots[(i / 97) % longShots.Length]
+                            : $"{shots[i % shots.Length]}-{100 + (i % 900)}-"
+                                + $"{takes[i % takes.Length]}-{passes[i % passes.Length]}",
+                    Frames = frames,
+                    FramesText = frames.ToString("N0", CultureInfo.CurrentCulture) + " frames",
+                    SubmittedText = submitted.ToString("yyyy-MM-dd HH:mm"),
+                    Fault = i % 173 == 5 ? faults[(i / 173) % faults.Length] : string.Empty,
+                    WorkersTotal = workersTotal,
+                    State = state,
+                    FramesDone = done,
+                    WorkersBusy = workersBusy,
+                    InRate = inRate,
+                    OutRate = outRate,
+                    Yield = state is JobState.Publishing or JobState.QueuedToPublish
+                        ? Math.Round(_random.NextDouble() * 6, 2)
+                        : Math.Round(_random.NextDouble() * 0.6, 2),
+                    Remaining =
+                        state == JobState.Rendering && inRate > 1000
+                            ? TimeSpan.FromSeconds(_random.Next(20, 400_000))
+                            : null,
+                    Finished =
+                        share >= 1 ? submitted + TimeSpan.FromHours(_random.Next(1, 300)) : null,
+                }
+            );
         }
 
         // Two jobs the farm has been asked to cancel and has not confirmed. They are display only.
         for (int pending = 0; pending < 2 && rows.Count > 0; pending++)
         {
-            rows.Add(new Job
-            {
-                Id = (count + pending).ToString("D7", CultureInfo.InvariantCulture),
-                Index = count + pending,
-                Name = pending == 0 ? "willow-471-comp-beauty" : "zephyr-118-grade-matte",
-                Frames = 0,
-                FramesText = "0 frames",
-                SubmittedText = DateTimeOffset.Now.ToString("yyyy-MM-dd HH:mm"),
-                Fault = string.Empty,
-                WorkersTotal = 0,
-                State = JobState.Cancelling,
-            });
+            rows.Add(
+                new Job
+                {
+                    Id = (count + pending).ToString("D7", CultureInfo.InvariantCulture),
+                    Index = count + pending,
+                    Name = pending == 0 ? "willow-471-comp-beauty" : "zephyr-118-grade-matte",
+                    Frames = 0,
+                    FramesText = "0 frames",
+                    SubmittedText = DateTimeOffset.Now.ToString("yyyy-MM-dd HH:mm"),
+                    Fault = string.Empty,
+                    WorkersTotal = 0,
+                    State = JobState.Cancelling,
+                }
+            );
         }
 
         return rows;
@@ -287,16 +308,17 @@ public sealed class Feed
     /// Which state a generated row starts in. Twenty is the cycle, so a screenful of about
     /// twenty-five rows shows every one of the eight running states without scrolling.
     /// </summary>
-    private static JobState StateOf(int index) => (index % 20) switch
-    {
-        < 7 => JobState.Rendering,
-        < 12 => JobState.Publishing,
-        < 14 => JobState.Paused,
-        14 => JobState.Stalled,
-        15 => JobState.QueuedToRender,
-        16 => JobState.QueuedToPublish,
-        17 => JobState.Verifying,
-        18 => JobState.QueuedToVerify,
-        _ => JobState.Rendering,
-    };
+    private static JobState StateOf(int index) =>
+        (index % 20) switch
+        {
+            < 7 => JobState.Rendering,
+            < 12 => JobState.Publishing,
+            < 14 => JobState.Paused,
+            14 => JobState.Stalled,
+            15 => JobState.QueuedToRender,
+            16 => JobState.QueuedToPublish,
+            17 => JobState.Verifying,
+            18 => JobState.QueuedToVerify,
+            _ => JobState.Rendering,
+        };
 }

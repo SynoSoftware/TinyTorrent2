@@ -6,18 +6,21 @@ using Windows.Foundation;
 namespace Syno.TableView;
 
 /// <summary>
-/// The one panel type used by both the header strip and the row template. It reads the resolved
+/// The one panel type used by both the header strip and the row template. It reads the effective
 /// layout, realizes one child per visible column, and arranges each child at its cumulative x.
 /// </summary>
 public sealed partial class CellsPanel : Panel
 {
     /// <summary>The column a row cell shows. A header cell names its own.</summary>
-    private static readonly DependencyProperty ColumnProperty =
-        DependencyProperty.RegisterAttached(
-            "Column", typeof(Column), typeof(CellsPanel), new PropertyMetadata(null));
+    private static readonly DependencyProperty ColumnProperty = DependencyProperty.RegisterAttached(
+        "Column",
+        typeof(Column),
+        typeof(CellsPanel),
+        new PropertyMetadata(null)
+    );
 
     private Table? _owner;
-    private ResolvedLayout? _layout;
+    private EffectiveLayout? _layout;
     private bool _isHeaderPanel;
 
     public CellsPanel()
@@ -57,7 +60,7 @@ public sealed partial class CellsPanel : Panel
             return false;
         }
 
-        _layout = owner.Geometry;
+        _layout = owner.EffectiveLayout;
         _layout.Invalidated += OnLayoutInvalidated;
         SyncChildren();
         return true;
@@ -136,7 +139,8 @@ public sealed partial class CellsPanel : Panel
             {
                 presenter.Content = args.NewValue;
             }
-            else if (child is Body.Branch branch) branch.Item = args.NewValue;
+            else if (child is Body.HierarchyCell hierarchyCell)
+                hierarchyCell.Item = args.NewValue;
         }
     }
 
@@ -222,9 +226,8 @@ public sealed partial class CellsPanel : Panel
         return -1;
     }
 
-    private static Column? ColumnOf(UIElement child) => child is Header.Cell cell
-        ? cell.Column
-        : child.GetValue(ColumnProperty) as Column;
+    private static Column? ColumnOf(UIElement child) =>
+        child is Header.Cell cell ? cell.Column : child.GetValue(ColumnProperty) as Column;
 
     /// <summary>
     /// The header cell and the row cell, built four lines apart and reading one inset, because a
@@ -251,8 +254,10 @@ public sealed partial class CellsPanel : Panel
             Padding = padding,
             Content = DataContext,
         };
-        UIElement child = _owner?.IsHierarchyColumn(column) == true
-            ? new Body.Branch(_owner, presenter) : presenter;
+        UIElement child =
+            _owner?.IsHierarchyColumn(column) == true
+                ? new Body.HierarchyCell(_owner, presenter)
+                : presenter;
         child.SetValue(ColumnProperty, column);
         return child;
     }
@@ -278,7 +283,8 @@ public sealed partial class CellsPanel : Panel
         {
             presenter.Content = DataContext;
         }
-        else if (child is Body.Branch branch) branch.Item = DataContext;
+        else if (child is Body.HierarchyCell hierarchyCell)
+            hierarchyCell.Item = DataContext;
     }
 
     /// <summary>
@@ -298,8 +304,9 @@ public sealed partial class CellsPanel : Panel
         if (Children.Count != visible)
         {
             throw new InvalidOperationException(
-                $"The panel holds {Children.Count} cells against {visible} visible columns. " +
-                "SyncChildren owns that reconcile, so every column change must reach it.");
+                $"The panel holds {Children.Count} cells against {visible} visible columns. "
+                    + "SyncChildren owns that reconcile, so every column change must reach it."
+            );
         }
     }
 
@@ -352,11 +359,7 @@ public sealed partial class CellsPanel : Panel
 
         for (int i = 0; i < visible.Count; i++)
         {
-            Children[i].Arrange(new Rect(
-                visible[i].Offset,
-                0,
-                visible[i].Width,
-                finalSize.Height));
+            Children[i].Arrange(new Rect(visible[i].Offset, 0, visible[i].Width, finalSize.Height));
         }
 
         return finalSize;

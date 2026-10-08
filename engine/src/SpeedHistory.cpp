@@ -1,5 +1,4 @@
-#include "Engine/State.h"
-#include "Engine/History.h"
+#include "SpeedHistory.h"
 
 namespace tt
 {
@@ -67,10 +66,5 @@ Json SpeedHistory::Read(bool day) const
         append({minute.time, minute.download / minuteCount, minute.upload / minuteCount});
     }
     return samples;
-}
-
-Json Engine::State::History(bool day) const
-{
-    return {{"session_id", sessionId}, {"samples", history.Read(day)}};
 }
 }

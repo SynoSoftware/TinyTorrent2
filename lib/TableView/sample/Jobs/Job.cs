@@ -87,43 +87,46 @@ public sealed class Job : INotifyPropertyChanged
         }
     }
 
-    public string StateText => _stateText ??= _state switch
-    {
-        JobState.Rendering => "Rendering",
-        JobState.Publishing => "Publishing",
-        JobState.Verifying => "Verifying",
-        JobState.Stalled => "Stalled",
-        JobState.QueuedToRender => "Queued to render",
-        JobState.QueuedToVerify => "Queued to verify",
-        JobState.QueuedToPublish => "Queued to publish",
-        JobState.Paused => "Paused",
-        _ => "Cancelling",
-    };
+    public string StateText =>
+        _stateText ??= _state switch
+        {
+            JobState.Rendering => "Rendering",
+            JobState.Publishing => "Publishing",
+            JobState.Verifying => "Verifying",
+            JobState.Stalled => "Stalled",
+            JobState.QueuedToRender => "Queued to render",
+            JobState.QueuedToVerify => "Queued to verify",
+            JobState.QueuedToPublish => "Queued to publish",
+            JobState.Paused => "Paused",
+            _ => "Cancelling",
+        };
 
     /// <summary>Segoe Fluent Icons, from the set the reference host already draws.</summary>
-    public string StateGlyph => _state switch
-    {
-        JobState.Rendering => "",
-        JobState.Publishing => "",
-        JobState.Verifying => "",
-        JobState.Stalled => "",
-        JobState.Paused => "",
-        JobState.Cancelling => "",
-        _ => "",
-    };
+    public string StateGlyph =>
+        _state switch
+        {
+            JobState.Rendering => "",
+            JobState.Publishing => "",
+            JobState.Verifying => "",
+            JobState.Stalled => "",
+            JobState.Paused => "",
+            JobState.Cancelling => "",
+            _ => "",
+        };
 
     /// <summary>
     /// A theme resource key, resolved by the cell template. The row never holds a brush: one
     /// resolved on first read is the wrong colour for the rest of the session as soon as the user
     /// switches theme.
     /// </summary>
-    public string StateAccentKey => _state switch
-    {
-        JobState.Rendering or JobState.Verifying => "AccentTextFillColorPrimaryBrush",
-        JobState.Publishing => "SystemFillColorSuccessBrush",
-        JobState.Stalled => "SystemFillColorCautionBrush",
-        _ => "TextFillColorSecondaryBrush",
-    };
+    public string StateAccentKey =>
+        _state switch
+        {
+            JobState.Rendering or JobState.Verifying => "AccentTextFillColorPrimaryBrush",
+            JobState.Publishing => "SystemFillColorSuccessBrush",
+            JobState.Stalled => "SystemFillColorCautionBrush",
+            _ => "TextFillColorSecondaryBrush",
+        };
 
     /// <summary>Frames written so far. The progress bar and its label both come from this.</summary>
     public long FramesDone
@@ -142,8 +145,8 @@ public sealed class Job : INotifyPropertyChanged
         }
     }
 
-    public string DoneText => _doneText ??=
-        $"{_framesDone.ToString("N0", CultureInfo.CurrentCulture)} of {FramesText}";
+    public string DoneText =>
+        _doneText ??= $"{_framesDone.ToString("N0", CultureInfo.CurrentCulture)} of {FramesText}";
 
     /// <summary>Completed percentage, 0 to 100, which is what the bar in the cell shows.</summary>
     public double Progress
@@ -159,8 +162,8 @@ public sealed class Job : INotifyPropertyChanged
         }
     }
 
-    public string ProgressText => _progressText ??=
-        _progress.ToString("0.0", CultureInfo.CurrentCulture) + "%";
+    public string ProgressText =>
+        _progressText ??= _progress.ToString("0.0", CultureInfo.CurrentCulture) + "%";
 
     /// <summary>Bytes a second pulled from the asset store. Every tick moves it on an active row.</summary>
     public double InRate
@@ -258,8 +261,10 @@ public sealed class Job : INotifyPropertyChanged
         }
     }
 
-    public string FinishedText => _finishedText ??=
-        _finished is DateTimeOffset when ? when.ToString("yyyy-MM-dd HH:mm") : "—";
+    public string FinishedText =>
+        _finishedText ??= _finished is DateTimeOffset when
+            ? when.ToString("yyyy-MM-dd HH:mm")
+            : "—";
 
     /// <summary>How the whole row sorts by completion: a job with no finish time sorts last.</summary>
     public DateTimeOffset FinishedOrder => _finished ?? DateTimeOffset.MaxValue;
@@ -271,21 +276,24 @@ public sealed class Job : INotifyPropertyChanged
     public void InvalidateStateAccent() => Raise(nameof(StateAccentKey));
 
     /// <summary>An em dash below a kilobyte, so a stopped row reads as stopped rather than as 0.</summary>
-    private static string Rate(double bytesPerSecond) => bytesPerSecond switch
-    {
-        < 1_000 => "—",
-        < 1_000_000 => (bytesPerSecond / 1_000).ToString("0", CultureInfo.CurrentCulture) + " KB/s",
-        _ => (bytesPerSecond / 1_000_000).ToString("0.0", CultureInfo.CurrentCulture) + " MB/s",
-    };
+    private static string Rate(double bytesPerSecond) =>
+        bytesPerSecond switch
+        {
+            < 1_000 => "—",
+            < 1_000_000 => (bytesPerSecond / 1_000).ToString("0", CultureInfo.CurrentCulture)
+                + " KB/s",
+            _ => (bytesPerSecond / 1_000_000).ToString("0.0", CultureInfo.CurrentCulture) + " MB/s",
+        };
 
-    private static string Duration(TimeSpan? span) => span switch
-    {
-        null => "—",
-        { TotalDays: >= 1 } d => $"{(int)d.TotalDays}d {d.Hours}h",
-        { TotalHours: >= 1 } h => $"{(int)h.TotalHours}h {h.Minutes}m",
-        { TotalMinutes: >= 1 } m => $"{(int)m.TotalMinutes}m {m.Seconds}s",
-        { } s => $"{(int)s.TotalSeconds}s",
-    };
+    private static string Duration(TimeSpan? span) =>
+        span switch
+        {
+            null => "—",
+            { TotalDays: >= 1 } d => $"{(int)d.TotalDays}d {d.Hours}h",
+            { TotalHours: >= 1 } h => $"{(int)h.TotalHours}h {h.Minutes}m",
+            { TotalMinutes: >= 1 } m => $"{(int)m.TotalMinutes}m {m.Seconds}s",
+            { } s => $"{(int)s.TotalSeconds}s",
+        };
 
     private bool Set<T>(ref T field, T value, [CallerMemberName] string? name = null)
     {

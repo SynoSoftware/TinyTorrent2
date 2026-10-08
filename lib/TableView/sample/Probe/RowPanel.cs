@@ -12,7 +12,7 @@ namespace Syno.TableViewSample.Probe;
 public sealed class RowPanel : Panel
 {
     public const double ColumnWidth = 200;
-    public const int ColumnCount = 10;          // 10 * 200 = 2000 DIP total
+    public const int ColumnCount = 10; // 10 * 200 = 2000 DIP total
     public const double TotalWidth = ColumnWidth * ColumnCount;
 
     /// <summary>Table-owned horizontal offset, shared by every realized row.</summary>
@@ -29,7 +29,11 @@ public sealed class RowPanel : Panel
 
     public RowPanel()
     {
-        Loaded += (_, _) => { if (!Live.Contains(this)) Live.Add(this); };
+        Loaded += (_, _) =>
+        {
+            if (!Live.Contains(this))
+                Live.Add(this);
+        };
         Unloaded += (_, _) => Live.Remove(this);
     }
 
@@ -52,7 +56,8 @@ public sealed class RowPanel : Panel
             child.Measure(new Size(ColumnWidth, double.PositiveInfinity));
             height = Math.Max(height, child.DesiredSize.Height);
         }
-        if (height <= 0) height = 28;
+        if (height <= 0)
+            height = 28;
         LastMeasureReturned = new Size(TotalWidth, height);
         return LastMeasureReturned;
     }
@@ -78,5 +83,6 @@ public sealed class Item
 {
     public int Index { get; init; }
     public string Name { get; init; } = "";
+
     public override string ToString() => Name;
 }

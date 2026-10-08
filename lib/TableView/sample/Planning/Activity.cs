@@ -8,5 +8,6 @@ public sealed class Activity(string name, double hours, params Activity[] childr
     public double Hours { get; } = hours;
     public ObservableCollection<Activity> Children { get; } = new(children);
     public bool IsExpanded { get; set; } = true;
+
     public override string ToString() => Name;
 }

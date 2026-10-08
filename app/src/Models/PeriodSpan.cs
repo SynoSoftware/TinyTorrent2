@@ -16,7 +16,8 @@ internal readonly record struct PeriodSpan
         Duration = duration;
     }
 
-    internal static int Snap(double minute) => (int)Math.Round(minute / 15.0, MidpointRounding.AwayFromZero) * 15;
+    internal static int Snap(double minute) =>
+        (int)Math.Round(minute / 15.0, MidpointRounding.AwayFromZero) * 15;
 
     internal PeriodSpan Adjust(PeriodAction action, int delta)
     {
@@ -30,10 +31,17 @@ internal readonly record struct PeriodSpan
             case PeriodAction.Move:
                 return new(Math.Clamp(Snap(Start + delta), 0, 1425), Duration);
             case PeriodAction.Start:
-                var start = Math.Clamp(Snap(Start + delta), Math.Max(0, end - 1440), Math.Min(1439, end - Math.Min(15, Duration)));
+                var start = Math.Clamp(
+                    Snap(Start + delta),
+                    Math.Max(0, end - 1440),
+                    Math.Min(1439, end - Math.Min(15, Duration))
+                );
                 return new(start, end - start);
             case PeriodAction.End:
-                return new(Start, Math.Clamp(Snap(end + delta) - Start, Math.Min(15, Duration), 1440));
+                return new(
+                    Start,
+                    Math.Clamp(Snap(end + delta) - Start, Math.Min(15, Duration), 1440)
+                );
             default:
                 throw new ArgumentOutOfRangeException(nameof(action));
         }

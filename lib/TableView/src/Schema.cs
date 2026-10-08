@@ -16,7 +16,8 @@ namespace Syno.TableView;
 /// silently stops matching.
 /// </para>
 /// </remarks>
-public sealed class Schema<TRow> where TRow : class
+public sealed class Schema<TRow>
+    where TRow : class
 {
     private readonly Table _table;
 
@@ -27,16 +28,26 @@ public sealed class Schema<TRow> where TRow : class
     /// the host. Children must be finite with globally unique row identities. After changing
     /// expansion in the host, call <see cref="Table.RefreshView"/> once for the batch.
     /// </summary>
-    public Schema<TRow> Hierarchy(Column column, Func<TRow, IEnumerable<TRow>> children,
-        Func<TRow, bool> isExpanded, Action<TRow, bool> setExpanded)
+    public Schema<TRow> Hierarchy(
+        Column column,
+        Func<TRow, IEnumerable<TRow>> children,
+        Func<TRow, bool> isExpanded,
+        Action<TRow, bool> setExpanded
+    )
     {
         ArgumentNullException.ThrowIfNull(column);
         ArgumentNullException.ThrowIfNull(children);
         ArgumentNullException.ThrowIfNull(isExpanded);
         ArgumentNullException.ThrowIfNull(setExpanded);
         _table.RequireSetup();
-        _table.SetHierarchy(new Hierarchy(column, item => children((TRow)item),
-            item => isExpanded((TRow)item), (item, value) => setExpanded((TRow)item, value)));
+        _table.SetHierarchy(
+            new Hierarchy(
+                column,
+                item => children((TRow)item),
+                item => isExpanded((TRow)item),
+                (item, value) => setExpanded((TRow)item, value)
+            )
+        );
         return this;
     }
 
@@ -44,7 +55,8 @@ public sealed class Schema<TRow> where TRow : class
     /// A stable, non-null, unique key per row, used to reconcile selection, current item, anchor
     /// and focus across a source change. Without one, identity is object reference.
     /// </summary>
-    public Schema<TRow> Key<TKey>(Func<TRow, TKey> key) where TKey : notnull
+    public Schema<TRow> Key<TKey>(Func<TRow, TKey> key)
+        where TKey : notnull
     {
         ArgumentNullException.ThrowIfNull(key);
         _table.RequireSetup();
@@ -82,8 +94,11 @@ public sealed class Schema<TRow> where TRow : class
     /// <summary>
     /// Make this column sortable, by the key this returns for a row.
     /// </summary>
-    public Schema<TRow> SortKey<TKey>(Column column, Func<TRow, TKey> key,
-        IComparer<TKey>? comparer = null)
+    public Schema<TRow> SortKey<TKey>(
+        Column column,
+        Func<TRow, TKey> key,
+        IComparer<TKey>? comparer = null
+    )
     {
         ArgumentNullException.ThrowIfNull(column);
         ArgumentNullException.ThrowIfNull(key);
@@ -108,11 +123,13 @@ public sealed class Schema<TRow> where TRow : class
             _comparer.Compare(_key((TRow)x!), _key((TRow)y!));
     }
 
-    private sealed class KeyEquality<TKey> : IEqualityComparer<object> where TKey : notnull
+    private sealed class KeyEquality<TKey> : IEqualityComparer<object>
+        where TKey : notnull
     {
         public new bool Equals(object? x, object? y) =>
             EqualityComparer<TKey>.Default.Equals((TKey)x!, (TKey)y!);
 
-        public int GetHashCode(object value) => EqualityComparer<TKey>.Default.GetHashCode((TKey)value);
+        public int GetHashCode(object value) =>
+            EqualityComparer<TKey>.Default.GetHashCode((TKey)value);
     }
 }

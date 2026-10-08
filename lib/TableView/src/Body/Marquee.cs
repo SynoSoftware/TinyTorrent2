@@ -66,7 +66,8 @@ internal sealed class Marquee
         ScrollViewer? scroller,
         FrameworkElement? overlay,
         Point origin,
-        Action coverageChanged)
+        Action coverageChanged
+    )
     {
         _rows = rows;
         _scroller = scroller;
@@ -86,7 +87,7 @@ internal sealed class Marquee
         Advance(alwaysReport: true);
     }
 
-    /// <param name="pointer">The pointer position, relative to the hosted list.</param>
+    /// <param name="pointer">The pointer position, relative to the row surface.</param>
     internal void Track(Point pointer)
     {
         if (!IsActive)
@@ -153,7 +154,8 @@ internal sealed class Marquee
             Math.Min(_originX, _pointer.X),
             Math.Min(originY, _pointer.Y),
             Math.Abs(_pointer.X - _originX),
-            Math.Abs(_pointer.Y - originY));
+            Math.Abs(_pointer.Y - originY)
+        );
     }
 
     /// <summary>

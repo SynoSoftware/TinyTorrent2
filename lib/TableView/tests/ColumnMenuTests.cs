@@ -27,50 +27,124 @@ public class ColumnMenuTests
 
     private static string FitThis(string name) => $"Fit column “{name}”";
 
-    private const string FitVisible = "Fit visible columns";
+    private const string FitVisible = "Fit columns";
+    private const string FillVisible = "Fill width";
     private const string MoveLeft = "Move left";
     private const string MoveRight = "Move right";
 
     // ------------------------------------------------------------------ what the menu contains
 
+    /// <summary>
+    /// Each command runs the operation its name promises. Fit columns and Fill width are told apart
+    /// by where the columns end: a fit leaves them at their content, a fill takes them to the edge of
+    /// the strip.
+    /// </summary>
     [TestMethod]
-    public Task TheMenuOverAHeaderCarriesEverySection12Command() => TestHost.RunAsync(async () =>
-    {
-        Table table = await LoadAsync("a", "b", "c");
+    public Task EachCommandInTheMenuOverAHeaderDoesItsOwnOperation() =>
+        TestHost.RunAsync(async () =>
+        {
+            Table table = await LoadAsync("a", "b", "c");
+            List<LayoutChange> reported = new();
+            table.LayoutChanged += (_, kind) => reported.Add(kind);
+            double edge = Strip(table).ActualWidth;
+            await OpenMenuAsync(table, visibleIndex: 1);
 
-        // The column list is in this menu, not behind a door into a second one: a submenu is a
-        // separate popup that closes on a toggle whatever the root menu does about its own close.
-        CollectionAssert.AreEqual(
-            new[] { Hide("B"), "-", FitThis("B"), FitVisible, "-", MoveLeft, MoveRight, "-", "A", "B", "C" },
-            Labels(Menu(table, "b")));
-    });
+            // The columns start at the declared 150 DIPs and the table has no rows, so a fit finds only
+            // the header label, which is narrower.
+            await InvokeAsync(table, FitThis("B"));
+
+            Assert.IsTrue(TableHarness.EffectiveWidth(table, "b") < 150, "b was fitted");
+            Assert.AreEqual(150d, TableHarness.EffectiveWidth(table, "a"), 0d, "and only b");
+            Assert.AreEqual(150d, TableHarness.EffectiveWidth(table, "c"), 0d);
+            AssertReported(reported, LayoutChange.Fit);
+
+            await InvokeAsync(table, FitVisible);
+
+            Assert.IsTrue(TableHarness.EffectiveWidth(table, "a") < 150, "a was fitted");
+            Assert.IsTrue(TableHarness.EffectiveWidth(table, "c") < 150, "and c");
+            Assert.IsTrue(TableHarness.TotalWidth(table) < edge - 1, "a fit leaves the edge empty");
+            AssertReported(reported, LayoutChange.Fit);
+
+            await InvokeAsync(table, FillVisible);
+
+            Assert.AreEqual(
+                edge,
+                TableHarness.TotalWidth(table),
+                0.5,
+                "a fill takes the columns to the edge"
+            );
+            AssertReported(reported, LayoutChange.Fit);
+
+            await InvokeAsync(table, MoveLeft);
+
+            CollectionAssert.AreEqual(new[] { "b", "a", "c" }, TableHarness.Order(table));
+            AssertReported(reported, LayoutChange.Move);
+
+            await InvokeAsync(table, MoveRight);
+
+            CollectionAssert.AreEqual(new[] { "a", "b", "c" }, TableHarness.Order(table));
+            AssertReported(reported, LayoutChange.Move);
+
+            await InvokeAsync(table, Hide("B"));
+
+            CollectionAssert.AreEqual(new[] { "a", "c" }, VisibleIds(table));
+            AssertReported(reported, LayoutChange.Visibility);
+        });
 
     [TestMethod]
-    public Task UnusedHeaderSpaceGetsTheColumnListItselfRatherThanADoorToIt() =>
+    public Task UnusedHeaderSpaceGetsTheColumnListWithoutPerColumnCommands() =>
         TestHost.RunAsync(async () =>
         {
             Table table = await LoadAsync("a", "b");
 
-            // No column to act on, so the whole menu is the column set: the one command that
-            // applies to all of them, then every column, with no submenu in between.
-            CollectionAssert.AreEqual(
-                new[] { FitVisible, "-", "A", "B" },
-                Labels(Menu(table, null)));
+            string[] labels = Labels(Menu(table, null));
+
+            foreach (
+                string perColumn in new[]
+                {
+                    Hide("A"),
+                    Hide("B"),
+                    FitThis("A"),
+                    FitThis("B"),
+                    MoveLeft,
+                    MoveRight,
+                }
+            )
+            {
+                CollectionAssert.DoesNotContain(labels, perColumn, "there is no column to act on");
+            }
+
+            List<LayoutChange> reported = new();
+            table.LayoutChanged += (_, kind) => reported.Add(kind);
+            await OpenMenuAsync(table, visibleIndex: null);
+
+            await InvokeAsync(table, "A");
+
+            Assert.IsFalse(TableHarness.IsVisible(table, "a"), "the entry for a toggled a");
+            Assert.IsTrue(TableHarness.IsVisible(table, "b"));
+            AssertReported(reported, LayoutChange.Visibility);
         });
 
     [TestMethod]
-    public Task TheColumnListNamesEveryColumnIncludingTheHiddenOnes() => TestHost.RunAsync(async () =>
-    {
-        Table table = await LoadAsync("a", "b", "c");
-        SetVisibility(table, "b", false);
+    public Task TheColumnListNamesEveryColumnIncludingTheHiddenOnes() =>
+        TestHost.RunAsync(async () =>
+        {
+            Table table = await LoadAsync("a", "b", "c");
+            SetVisibility(table, "b", false);
 
-        MenuFlyoutItem[] toggles = ColumnEntries(Menu(table, "a"));
+            MenuFlyoutItem[] toggles = ColumnEntries(Menu(table, "a"));
 
-        CollectionAssert.AreEqual(new[] { "A", "B", "C" }, toggles.Select(t => t.Text).ToArray(),
-            "the host's DisplayName names each column, in the effective order");
-        CollectionAssert.AreEqual(new[] { true, false, true },
-            toggles.Select(t => t.Icon is not null).ToArray(), "a shown column carries the check icon");
-    });
+            CollectionAssert.AreEqual(
+                new[] { "A", "B", "C" },
+                toggles.Select(t => t.Text).ToArray(),
+                "the host's DisplayName names each column, in the effective order"
+            );
+            CollectionAssert.AreEqual(
+                new[] { true, false, true },
+                toggles.Select(t => t.Icon is not null).ToArray(),
+                "a shown column carries the check icon"
+            );
+        });
 
     // ------------------------------------------------------------ enabled only when it can change
 
@@ -87,17 +161,18 @@ public class ColumnMenuTests
         });
 
     [TestMethod]
-    public Task AColumnTheHostFixedOffersNoSizingCommand() => TestHost.RunAsync(async () =>
-    {
-        Column fixedWidth = TestData.Column("a");
-        fixedWidth.CanResize = false;
+    public Task AColumnTheHostFixedOffersNoSizingCommand() =>
+        TestHost.RunAsync(async () =>
+        {
+            Column fixedWidth = TestData.Column("a");
+            fixedWidth.CanResize = false;
 
-        Table table = await LoadAsync(fixedWidth, TestData.Column("b"));
-        MenuFlyout menu = Menu(table, "a");
+            Table table = await LoadAsync(fixedWidth, TestData.Column("b"));
+            MenuFlyout menu = Menu(table, "a");
 
-        Assert.IsFalse(Item(menu, FitThis("A")).IsEnabled);
-        Assert.IsTrue(Item(menu, FitVisible).IsEnabled, "b can still be fitted");
-    });
+            Assert.IsFalse(Item(menu, FitThis("A")).IsEnabled);
+            Assert.IsTrue(Item(menu, FitVisible).IsEnabled, "b can still be fitted");
+        });
 
     [TestMethod]
     public Task FitVisibleColumnsIsDisabledWhenNoVisibleColumnCanBeResized() =>
@@ -114,61 +189,78 @@ public class ColumnMenuTests
         });
 
     [TestMethod]
-    public Task AColumnTheHostRequiresCannotBeHidden() => TestHost.RunAsync(async () =>
-    {
-        Column required = TestData.Column("a");
-        required.CanHide = false;
+    public Task AColumnTheHostRequiresCannotBeHidden() =>
+        TestHost.RunAsync(async () =>
+        {
+            Column required = TestData.Column("a");
+            required.CanHide = false;
 
-        Table table = await LoadAsync(required, TestData.Column("b"));
+            Table table = await LoadAsync(required, TestData.Column("b"));
 
-        Assert.IsFalse(Item(Menu(table, "a"), Hide("A")).IsEnabled);
-        Assert.IsFalse(Toggle(Menu(table, "a"), "A").IsEnabled);
-        Assert.IsTrue(Item(Menu(table, "b"), Hide("B")).IsEnabled);
-    });
+            Assert.IsFalse(Item(Menu(table, "a"), Hide("A")).IsEnabled);
+            Assert.IsFalse(Toggle(Menu(table, "a"), "A").IsEnabled);
+            Assert.IsTrue(Item(Menu(table, "b"), Hide("B")).IsEnabled);
+        });
 
     // ------------------------------------------------------------------ the zero-column invariant
 
     [TestMethod]
-    public Task TheLastVisibleColumnCannotBeHidden() => TestHost.RunAsync(async () =>
-    {
-        Table table = await LoadAsync("a", "b");
-        SetVisibility(table, "b", false);
+    public Task TheLastVisibleColumnCannotBeHidden() =>
+        TestHost.RunAsync(async () =>
+        {
+            Table table = await LoadAsync("a", "b");
+            SetVisibility(table, "b", false);
 
-        MenuFlyout menu = Menu(table, "a");
-        Assert.IsFalse(Item(menu, Hide("A")).IsEnabled, "hiding a would leave nothing visible");
-        Assert.IsFalse(Toggle(menu, "A").IsEnabled, "and its toggle cannot be unchecked either");
-        Assert.IsTrue(Toggle(menu, "B").IsEnabled, "the hidden column can still come back");
+            MenuFlyout menu = Menu(table, "a");
+            Assert.IsFalse(Item(menu, Hide("A")).IsEnabled, "hiding a would leave nothing visible");
+            Assert.IsFalse(
+                Toggle(menu, "A").IsEnabled,
+                "and its toggle cannot be unchecked either"
+            );
+            Assert.IsTrue(Toggle(menu, "B").IsEnabled, "the hidden column can still come back");
 
-        Func<int> events = LayoutChanges(table, LayoutChange.Visibility);
-        SetVisibility(table, "a", false);
+            Func<int> events = LayoutChanges(table, LayoutChange.Visibility);
+            SetVisibility(table, "a", false);
 
-        Assert.IsTrue(TableHarness.IsVisible(table, "a"), "the operation itself refuses it too");
-        Assert.AreEqual(0, events());
-    });
+            Assert.IsTrue(
+                TableHarness.IsVisible(table, "a"),
+                "the operation itself refuses it too"
+            );
+            Assert.AreEqual(0, events());
+        });
 
     // ------------------------------------------------------------------ what the commands do
 
     [TestMethod]
-    public Task ShowingAColumnAgainKeepsItsPlaceAndItsWidth() => TestHost.RunAsync(async () =>
-    {
-        Table table = await LoadAsync("a", "b", "c");
-        table.Layout = TestData.Layout(widths: new Dictionary<string, double> { ["b"] = 220 });
-        Func<int> events = LayoutChanges(table, LayoutChange.Visibility);
+    public Task ShowingAColumnAgainKeepsItsPlaceAndItsWidth() =>
+        TestHost.RunAsync(async () =>
+        {
+            Table table = await LoadAsync("a", "b", "c");
+            table.Layout = TestData.Layout(widths: new Dictionary<string, double> { ["b"] = 220 });
+            Func<int> events = LayoutChanges(table, LayoutChange.Visibility);
 
-        SetVisibility(table, "b", false);
+            SetVisibility(table, "b", false);
 
-        Assert.AreEqual(220, TableHarness.ResolvedWidth(table, "b"), "a hidden column keeps its width");
-        CollectionAssert.AreEqual(new[] { "a", "c" }, VisibleIds(table));
+            Assert.AreEqual(
+                220,
+                TableHarness.EffectiveWidth(table, "b"),
+                "a hidden column keeps its width"
+            );
+            CollectionAssert.AreEqual(new[] { "a", "c" }, VisibleIds(table));
 
-        SetVisibility(table, "b", true);
+            SetVisibility(table, "b", true);
 
-        CollectionAssert.AreEqual(new[] { "a", "b", "c" }, VisibleIds(table));
-        Assert.AreEqual(220, TableHarness.ResolvedWidth(table, "b"));
-        Assert.AreEqual(2, events(), "one notification for each completed change, and none for a no-op");
+            CollectionAssert.AreEqual(new[] { "a", "b", "c" }, VisibleIds(table));
+            Assert.AreEqual(220, TableHarness.EffectiveWidth(table, "b"));
+            Assert.AreEqual(
+                2,
+                events(),
+                "one notification for each completed change, and none for a no-op"
+            );
 
-        SetVisibility(table, "b", true);
-        Assert.AreEqual(2, events());
-    });
+            SetVisibility(table, "b", true);
+            Assert.AreEqual(2, events());
+        });
 
     /// <summary>
     /// The menu's move must be the drag's move, not a second implementation of it. The hidden
@@ -176,18 +268,22 @@ public class ColumnMenuTests
     /// full order.
     /// </summary>
     [TestMethod]
-    public Task MoveLeftFromTheMenuLandsWhereTheDragWouldLandIt() => TestHost.RunAsync(async () =>
-    {
-        Table table = await LoadAsync("a", "b", "hidden", "c");
-        SetVisibility(table, "hidden", false);
-        table.UpdateLayout();
+    public Task MoveLeftFromTheMenuLandsWhereTheDragWouldLandIt() =>
+        TestHost.RunAsync(async () =>
+        {
+            Table table = await LoadAsync("a", "b", "hidden", "c");
+            SetVisibility(table, "hidden", false);
+            table.UpdateLayout();
 
-        await OpenMenuAsync(table, visibleIndex: 2);
-        await InvokeAsync(table, MoveLeft);
+            await OpenMenuAsync(table, visibleIndex: 2);
+            await InvokeAsync(table, MoveLeft);
 
-        CollectionAssert.AreEqual(new[] { "a", "c", "b", "hidden" }, TableHarness.Order(table),
-            "the same order the equivalent drop produces");
-    });
+            CollectionAssert.AreEqual(
+                new[] { "a", "c", "b", "hidden" },
+                TableHarness.Order(table),
+                "the same order the equivalent drop produces"
+            );
+        });
 
     // ------------------------------------------------------------------ opening and closing
 
@@ -205,8 +301,11 @@ public class ColumnMenuTests
 
             await InvokeAsync(table, MoveLeft);
 
-            CollectionAssert.AreEqual(new[] { "b", "a" }, TableHarness.Order(table),
-                "the item ran the operation");
+            CollectionAssert.AreEqual(
+                new[] { "b", "a" },
+                TableHarness.Order(table),
+                "the item ran the operation"
+            );
 
             // Nothing in this menu closes it. Every item is repeated by nature — nudging a column
             // left until it sits where it should, showing one column and then another — or is
@@ -216,8 +315,10 @@ public class ColumnMenuTests
 
             // Which is why the item cannot be left saying what it said before it ran: "b" is now
             // first, so the command that moved it there has nowhere left to go.
-            Assert.IsFalse(OpenItem(table, MoveLeft).IsEnabled,
-                "and the item re-asked whether it is still legal");
+            Assert.IsFalse(
+                OpenItem(table, MoveLeft).IsEnabled,
+                "and the item re-asked whether it is still legal"
+            );
         });
 
     // ------------------------------------------------------------------ helpers
@@ -225,30 +326,36 @@ public class ColumnMenuTests
     private static Task<Table> LoadAsync(params string[] ids) =>
         LoadAsync(ids.Select(id => TestData.Column(id)).ToArray());
 
+    /// <summary>A table that keeps its declared widths instead of filling its width.</summary>
     private static async Task<Table> LoadAsync(params Column[] columns)
     {
         Table table = TestData.Table(columns);
         table.Width = 700;
         table.Height = 200;
+        table.Layout = TestData.DeclaredWidths(table);
 
         await TableHarness.LoadAsync(table);
         table.UpdateLayout();
         return table;
     }
 
-    private static string[] Labels(MenuFlyout menu) => menu.Items
-        .Select(item => item switch
-        {
-            MenuFlyoutItem command => command.Text,
-            MenuFlyoutSubItem submenu => submenu.Text,
-            _ => "-",
-        })
-        .ToArray();
+    private static string[] Labels(MenuFlyout menu) =>
+        menu
+            .Items.Select(item =>
+                item switch
+                {
+                    MenuFlyoutItem command => command.Text,
+                    MenuFlyoutSubItem submenu => submenu.Text,
+                    _ => "-",
+                }
+            )
+            .ToArray();
 
-    private static MenuFlyoutItem Item(MenuFlyout menu, string text) => menu.Items
-        .OfType<MenuFlyoutItem>()
-        .SingleOrDefault(item => item.Text == text)
-        ?? throw new AssertFailedException($"The menu has no '{text}' item: {string.Join(", ", Labels(menu))}");
+    private static MenuFlyoutItem Item(MenuFlyout menu, string text) =>
+        menu.Items.OfType<MenuFlyoutItem>().SingleOrDefault(item => item.Text == text)
+        ?? throw new AssertFailedException(
+            $"The menu has no '{text}' item: {string.Join(", ", Labels(menu))}"
+        );
 
     /// <summary>
     /// The column entries: plain items sitting after the last command, told apart from the
@@ -259,10 +366,7 @@ public class ColumnMenuTests
         // Everything after the last separator. They can no longer be told from the commands by
         // name, because three of the commands now carry a column's name themselves.
         int lastSeparator = menu.Items.ToList().FindLastIndex(item => item is MenuFlyoutSeparator);
-        return menu.Items
-            .Skip(lastSeparator + 1)
-            .OfType<MenuFlyoutItem>()
-            .ToArray();
+        return menu.Items.Skip(lastSeparator + 1).OfType<MenuFlyoutItem>().ToArray();
     }
 
     private static MenuFlyoutItem Toggle(MenuFlyout menu, string displayName) =>
@@ -331,34 +435,38 @@ public class ColumnMenuTests
         }
     }
 
-    // The menu, the resolved columns it acts on and the strip's show are all internal to TableView,
+    // The menu, the effective columns it acts on and the strip's show are all internal to TableView,
     // which grants no InternalsVisibleTo. Reflection is the only way to reach them without widening
     // the control's public surface for a test.
 
     private static MenuFlyout Menu(Table table, string? activeId)
     {
-        Type type = typeof(Table).Assembly.GetType("Syno.TableView.Header.Menu")
+        Type type =
+            typeof(Table).Assembly.GetType("Syno.TableView.Header.Menu")
             ?? throw new MissingMemberException("Syno.TableView.Header.Menu");
 
         object?[] arguments =
         {
-            table, activeId is null ? null : TableHarness.ResolvedColumn(table, activeId),
+            table,
+            activeId is null ? null : TableHarness.EffectiveColumn(table, activeId),
         };
-        return (MenuFlyout)type
-            .GetMethod("Create", BindingFlags.Static | BindingFlags.NonPublic)!
-            .Invoke(null, arguments)!;
+        return (MenuFlyout)
+            type.GetMethod("Create", BindingFlags.Static | BindingFlags.NonPublic)!
+                .Invoke(null, arguments)!;
     }
 
     /// <summary>
-    /// Open the menu the way the strip opens it, on the header cell at this visible index. Only the
-    /// platform's own <c>ContextRequested</c> is left out; it cannot be raised from a test.
+    /// Open the menu the way the strip opens it, on the header cell at this visible index, or on
+    /// unused header space when there is none. Only the platform's own <c>ContextRequested</c> is
+    /// left out; it cannot be raised from a test.
     /// </summary>
-    private static async Task<Control> OpenMenuAsync(Table table, int visibleIndex)
+    private static async Task<Control?> OpenMenuAsync(Table table, int? visibleIndex)
     {
         Header.Strip strip = Strip(table);
-        Control cell = HeaderCell(strip, visibleIndex);
+        Control? cell = visibleIndex is int index ? HeaderCell(strip, index) : null;
 
-        strip.GetType()
+        strip
+            .GetType()
             .GetMethod("ShowMenu", BindingFlags.Instance | BindingFlags.NonPublic)!
             .Invoke(strip, new object?[] { cell, null });
 
@@ -371,23 +479,35 @@ public class ColumnMenuTests
         MenuFlyoutItem item = OpenItem(table, text);
         Assert.IsTrue(item.IsEnabled, $"'{text}' is disabled.");
 
-        ((IInvokeProvider)FrameworkElementAutomationPeer
-            .CreatePeerForElement(item)
-            .GetPattern(PatternInterface.Invoke)).Invoke();
+        (
+            (IInvokeProvider)
+                FrameworkElementAutomationPeer
+                    .CreatePeerForElement(item)
+                    .GetPattern(PatternInterface.Invoke)
+        ).Invoke();
 
         await Task.Delay(250);
     }
 
+    /// <summary>Checks what one invocation reported, then forgets it.</summary>
+    private static void AssertReported(List<LayoutChange> reported, LayoutChange expected)
+    {
+        CollectionAssert.AreEqual(new[] { expected }, reported);
+        reported.Clear();
+    }
+
     private static void SetVisibility(Table table, string id, bool visible) =>
-        Invoke(table, "SetColumnVisibility", TableHarness.ResolvedColumn(table, id), visible);
+        Invoke(table, "SetColumnVisibility", TableHarness.EffectiveColumn(table, id), visible);
 
     private static object? Invoke(object target, string method, params object[] arguments) =>
-        target.GetType()
+        target
+            .GetType()
             .GetMethod(method, BindingFlags.Instance | BindingFlags.NonPublic)!
             .Invoke(target, arguments);
 
     private static object? Field(object target, string name) =>
-        target.GetType()
+        target
+            .GetType()
             .GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!
             .GetValue(target);
 }

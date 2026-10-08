@@ -17,7 +17,7 @@ internal static class Menu
     /// The menu for <paramref name="active"/>, or the one unused header space gets when there is no
     /// active column: the same menu without the actions that need one.
     /// </summary>
-    internal static MenuFlyout Create(Table owner, ResolvedColumn? active)
+    internal static MenuFlyout Create(Table owner, EffectiveColumn? active)
     {
         MenuFlyout menu = new();
 
@@ -44,7 +44,8 @@ internal static class Menu
             Func<IconElement?> icon,
             Func<bool> enabled,
             Action invoke,
-            Func<string>? status = null)
+            Func<string>? status = null
+        )
         {
             MenuFlyoutItem item = new();
 
@@ -81,29 +82,47 @@ internal static class Menu
             // so hiding it leaves the menu standing over a column that is gone; the item that hid
             // it is then the obvious place to get it back, and a second entry saying so would be a
             // second control for one state.
-            menu.Items.Add(Item(
-                () => active.IsVisible
-                    ? owner.Strings.HideColumn(active.Column.DisplayName)
-                    : owner.Strings.ShowColumn(active.Column.DisplayName),
-                () => active.IsVisible ? Icons.HideColumn() : Icons.ShowColumn(),
-                () => !active.IsVisible || owner.CanHideColumn(active),
-                () => owner.SetColumnVisibility(active, !active.IsVisible)));
+            menu.Items.Add(
+                Item(
+                    () =>
+                        active.IsVisible
+                            ? owner.Strings.HideColumn(active.Column.DisplayName)
+                            : owner.Strings.ShowColumn(active.Column.DisplayName),
+                    () => active.IsVisible ? Icons.HideColumn() : Icons.ShowColumn(),
+                    () => !active.IsVisible || owner.CanHideColumn(active),
+                    () => owner.SetColumnVisibility(active, !active.IsVisible)
+                )
+            );
 
             menu.Items.Add(new MenuFlyoutSeparator());
-            menu.Items.Add(Item(
-                () => owner.Strings.FitColumn(active.Column.DisplayName),
-                Icons.FitColumn,
-                () => owner.CanFitColumn(active),
-                () => owner.Fit(active)));
+            menu.Items.Add(
+                Item(
+                    () => owner.Strings.FitColumn(active.Column.DisplayName),
+                    Icons.FitColumn,
+                    () => owner.CanFitColumn(active),
+                    () => owner.Fit(active)
+                )
+            );
         }
 
         // A right-click on unused header space has no column to act on, so the whole menu is about
-        // the column set: this command and the list below it, with no door between them.
-        menu.Items.Add(Item(
-            () => owner.Strings.FitVisibleColumns,
-            Icons.FitVisibleColumns,
-            () => owner.CanFitColumns,
-            owner.FitColumns));
+        // the column set: these commands and the list below them, with no door between them.
+        menu.Items.Add(
+            Item(
+                () => owner.Strings.FitColumns,
+                Icons.FitColumns,
+                () => owner.CanFitColumns,
+                owner.FitColumns
+            )
+        );
+        menu.Items.Add(
+            Item(
+                () => owner.Strings.FillWidth,
+                Icons.FillWidth,
+                () => owner.CanFitColumns,
+                owner.FillWidth
+            )
+        );
 
         // No Narrow and no Widen. They stepped 8 DIPs, so widening the host's 150 DIP name column
         // to something readable was thirteen invocations. That count came from the original host's
@@ -118,16 +137,22 @@ internal static class Menu
         {
             int LeftStep() => owner.FlowDirection == FlowDirection.RightToLeft ? 1 : -1;
             menu.Items.Add(new MenuFlyoutSeparator());
-            menu.Items.Add(Item(
-                () => owner.Strings.MoveLeft,
-                Icons.MoveLeft,
-                () => owner.CanMoveColumnBy(active, LeftStep()),
-                () => owner.MoveColumnBy(active, LeftStep())));
-            menu.Items.Add(Item(
-                () => owner.Strings.MoveRight,
-                Icons.MoveRight,
-                () => owner.CanMoveColumnBy(active, -LeftStep()),
-                () => owner.MoveColumnBy(active, -LeftStep())));
+            menu.Items.Add(
+                Item(
+                    () => owner.Strings.MoveLeft,
+                    Icons.MoveLeft,
+                    () => owner.CanMoveColumnBy(active, LeftStep()),
+                    () => owner.MoveColumnBy(active, LeftStep())
+                )
+            );
+            menu.Items.Add(
+                Item(
+                    () => owner.Strings.MoveRight,
+                    Icons.MoveRight,
+                    () => owner.CanMoveColumnBy(active, -LeftStep()),
+                    () => owner.MoveColumnBy(active, -LeftStep())
+                )
+            );
         }
 
         // The column list, in this menu rather than in a submenu of it. A submenu is a second popup
@@ -138,19 +163,50 @@ internal static class Menu
         // same menu, not a nested one.
         menu.Items.Add(new MenuFlyoutSeparator());
 
-        foreach (ResolvedColumn column in owner.Geometry.Order)
+        foreach (EffectiveColumn column in owner.EffectiveLayout.Order)
         {
             // A plain item carrying its state as an icon, not a ToggleMenuFlyoutItem. A toggle keeps
             // its check in a column of its own that holds its width even while the check is
             // invisible, so one standing beside items that carry icons gives the menu two glyph
             // columns and pushes every label past both.
-            ResolvedColumn target = column;
-            menu.Items.Add(Item(
-                () => target.Column.DisplayName,
-                () => target.IsVisible ? Icons.Shown() : null,
-                () => !target.IsVisible || owner.CanHideColumn(target),
-                () => owner.SetColumnVisibility(target, !target.IsVisible),
-                () => target.IsVisible ? owner.Strings.ColumnShown : owner.Strings.ColumnHidden));
+            EffectiveColumn target = column;
+            menu.Items.Add(
+                Item(
+                    () => target.Column.DisplayName,
+                    () => target.IsVisible ? Icons.Shown() : null,
+                    () => !target.IsVisible || owner.CanHideColumn(target),
+                    () => owner.SetColumnVisibility(target, !target.IsVisible),
+                    () => target.IsVisible ? owner.Strings.ColumnShown : owner.Strings.ColumnHidden
+                )
+            );
+        }
+
+        // The header's own buttons, shown and hidden the way the columns above are, and set apart
+        // from them by a separator because they are not columns.
+        if (owner.ShowsHeaderButtons)
+        {
+            void AddButton(Func<string> text, Func<bool> hidden, Action<bool> hide) =>
+                menu.Items.Add(
+                    Item(
+                        text,
+                        () => hidden() ? null : Icons.Shown(),
+                        () => true,
+                        () => hide(!hidden()),
+                        () => hidden() ? owner.Strings.ButtonHidden : owner.Strings.ButtonShown
+                    )
+                );
+
+            menu.Items.Add(new MenuFlyoutSeparator());
+            AddButton(
+                () => owner.Strings.FitButton,
+                () => owner.FitButtonHidden,
+                hide => owner.FitButtonHidden = hide
+            );
+            AddButton(
+                () => owner.Strings.FillButton,
+                () => owner.FillButtonHidden,
+                hide => owner.FillButtonHidden = hide
+            );
         }
 
         void Refresh(object? sender, EventArgs args)
@@ -168,5 +224,4 @@ internal static class Menu
         menu.Closed += (_, _) => owner.TextChanged -= Refresh;
         return menu;
     }
-
 }

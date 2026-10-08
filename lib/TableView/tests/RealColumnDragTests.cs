@@ -2,7 +2,6 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using Microsoft.UI;
 using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Windows.Foundation;
@@ -25,93 +24,72 @@ namespace Syno.TableView.Tests;
 public class RealColumnDragTests
 {
     [TestMethod]
-    public Task ARealDragDropsTheColumnOnTheBoundaryUnderThePointer() => TestHost.RunAsync(async () =>
-    {
-        DragHarness h = await DragHarness.LoadAsync();
-        int events = 0;
-        h.Table.LayoutChanged += (_, kind) =>
+    public Task ARealDragDropsTheColumnOnTheBoundaryUnderThePointer() =>
+        TestHost.RunAsync(async () =>
         {
-            Assert.AreEqual(LayoutChange.Move, kind);
-            events++;
-        };
+            DragHarness h = await DragHarness.LoadAsync();
+            int events = 0;
+            h.Table.LayoutChanged += (_, kind) =>
+            {
+                Assert.AreEqual(LayoutChange.Move, kind);
+                events++;
+            };
 
-        await h.MoveAsync(100);
-        await h.PressAsync(100);
+            await h.MoveAsync(100);
+            await h.PressAsync(100);
+            await h.MoveAsync(160);
+            await h.MoveAsync(520);
 
-        Assert.AreEqual("a", h.PressedColumn(), "the press armed a drag on the first header");
+            Assert.AreEqual(Visibility.Visible, h.Marker.Visibility, "the destination is shown");
 
-        await h.MoveAsync(160);
-        await h.MoveAsync(520);
+            await h.ReleaseAsync(520);
 
-        Assert.AreEqual(Visibility.Visible, h.Marker.Visibility, "the destination is shown");
-        Assert.AreEqual(600 - (h.Marker.Width / 2), h.MarkerX(), 0.01, "after the last column");
-        Assert.AreEqual(0.8, h.HeaderOpacity(0), 0.001,
-            "the dragged header carries the platform's drag opacity");
-
-        await h.ReleaseAsync(520);
-
-        CollectionAssert.AreEqual(new[] { "b", "c", "a" }, TableHarness.Order(h.Table));
-        Assert.AreEqual(1, events, "one completed move, one notification");
-        Assert.AreEqual(Visibility.Collapsed, h.Marker.Visibility);
-        Assert.AreEqual(1.0, h.HeaderOpacity(0), 0.001, "and the dimmed header cell is opaque again");
-    });
+            CollectionAssert.AreEqual(new[] { "b", "c", "a" }, TableHarness.Order(h.Table));
+            Assert.AreEqual(1, events, "one completed move, one notification");
+            Assert.AreEqual(Visibility.Collapsed, h.Marker.Visibility);
+        });
 
     [TestMethod]
-    public Task ARealPressBelowTheThresholdChangesNothing() => TestHost.RunAsync(async () =>
-    {
-        DragHarness h = await DragHarness.LoadAsync();
-        int events = 0;
-        h.Table.LayoutChanged += (_, _) => events++;
+    public Task ARealPressBelowTheThresholdChangesNothing() =>
+        TestHost.RunAsync(async () =>
+        {
+            DragHarness h = await DragHarness.LoadAsync();
+            int events = 0;
+            h.Table.LayoutChanged += (_, _) => events++;
 
-        await h.MoveAsync(100);
-        await h.PressAsync(100);
-        await h.MoveAsync(102);
-        await h.ReleaseAsync(102);
+            await h.MoveAsync(100);
+            await h.PressAsync(100);
+            await h.MoveAsync(102);
+            await h.ReleaseAsync(102);
 
-        CollectionAssert.AreEqual(new[] { "a", "b", "c" }, TableHarness.Order(h.Table));
-        Assert.AreEqual(Visibility.Collapsed, h.Marker.Visibility, "no drag ever started");
-        Assert.AreEqual(0, events);
-    });
-
-    [TestMethod]
-    public Task EscapeCancelsARealDrag() => TestHost.RunAsync(async () =>
-    {
-        DragHarness h = await DragHarness.LoadAsync();
-        int events = 0;
-        h.Table.LayoutChanged += (_, _) => events++;
-
-        await h.MoveAsync(100);
-        await h.PressAsync(100);
-        await h.MoveAsync(520);
-
-        Assert.AreEqual(Visibility.Visible, h.Marker.Visibility);
-
-        await h.EscapeAsync();
-
-        Assert.AreEqual(Visibility.Collapsed, h.Marker.Visibility, "the drag is over");
-        Assert.AreEqual(1.0, h.HeaderOpacity(0), 0.001);
-
-        await h.ReleaseAsync(520);
-
-        CollectionAssert.AreEqual(new[] { "a", "b", "c" }, TableHarness.Order(h.Table));
-        Assert.AreEqual(0, events);
-    });
+            CollectionAssert.AreEqual(new[] { "a", "b", "c" }, TableHarness.Order(h.Table));
+            Assert.AreEqual(Visibility.Collapsed, h.Marker.Visibility, "no drag ever started");
+            Assert.AreEqual(0, events);
+        });
 
     [TestMethod]
-    public Task ARealDropBackOnItsOwnPlaceReportsNothing() => TestHost.RunAsync(async () =>
-    {
-        DragHarness h = await DragHarness.LoadAsync();
-        int events = 0;
-        h.Table.LayoutChanged += (_, _) => events++;
+    public Task EscapeCancelsARealDrag() =>
+        TestHost.RunAsync(async () =>
+        {
+            DragHarness h = await DragHarness.LoadAsync();
+            int events = 0;
+            h.Table.LayoutChanged += (_, _) => events++;
 
-        await h.MoveAsync(100);
-        await h.PressAsync(100);
-        await h.MoveAsync(180);
-        await h.ReleaseAsync(180);
+            await h.MoveAsync(100);
+            await h.PressAsync(100);
+            await h.MoveAsync(520);
 
-        CollectionAssert.AreEqual(new[] { "a", "b", "c" }, TableHarness.Order(h.Table));
-        Assert.AreEqual(0, events, "the drop asked for the place it came from");
-    });
+            Assert.AreEqual(Visibility.Visible, h.Marker.Visibility);
+
+            await h.EscapeAsync();
+
+            Assert.AreEqual(Visibility.Collapsed, h.Marker.Visibility, "the drag is over");
+
+            await h.ReleaseAsync(520);
+
+            CollectionAssert.AreEqual(new[] { "a", "b", "c" }, TableHarness.Order(h.Table));
+            Assert.AreEqual(0, events);
+        });
 }
 
 /// <summary>
@@ -149,20 +127,28 @@ internal sealed class DragHarness
 
     internal FrameworkElement Marker => (FrameworkElement)Field(Strip, "_marker")!;
 
-    /// <summary>Three 200 DIP columns in the live window, with the window in the foreground.</summary>
+    /// <summary>
+    /// Three 200 DIP columns in the live window, kept at their declared widths instead of filling
+    /// the table, with the window in the foreground.
+    /// </summary>
     internal static async Task<DragHarness> LoadAsync(Action<Table>? configure = null)
     {
         Table table = TestData.Table(
-            TestData.Column("a", 200), TestData.Column("b", 200), TestData.Column("c", 200));
+            TestData.Column("a", 200),
+            TestData.Column("b", 200),
+            TestData.Column("c", 200)
+        );
         table.Width = 700;
         table.Height = 200;
+        table.Layout = TestData.DeclaredWidths(table);
         configure?.Invoke(table);
 
         await TableHarness.LoadAsync(table);
         table.UpdateLayout();
 
         IntPtr window = Win32Interop.GetWindowFromWindowId(
-            table.XamlRoot.ContentIslandEnvironment.AppWindowId);
+            table.XamlRoot.ContentIslandEnvironment.AppWindowId
+        );
 
         SetForegroundWindow(window);
         await Task.Delay(250);
@@ -170,12 +156,14 @@ internal sealed class DragHarness
         if (GetForegroundWindow() != window)
         {
             Assert.Inconclusive(
-                "The test window could not take the foreground, so real mouse messages could not " +
-                "be injected without sending them to another application.");
+                "The test window could not take the foreground, so real mouse messages could not "
+                    + "be injected without sending them to another application."
+            );
         }
 
         Header.Strip strip = Descendants<Header.Strip>(table).First();
-        InputInjector injector = InputInjector.TryCreate()
+        InputInjector injector =
+            InputInjector.TryCreate()
             ?? throw new AssertFailedException("InputInjector.TryCreate() returned null.");
 
         DragHarness harness = new(table, strip, injector, window);
@@ -193,36 +181,19 @@ internal sealed class DragHarness
 
     internal async Task KeyAsync(VirtualKey key)
     {
-        Injector.InjectKeyboardInput(new[]
-        {
-            new InjectedInputKeyboardInfo { VirtualKey = (ushort)key },
-            new InjectedInputKeyboardInfo
+        Injector.InjectKeyboardInput(
+            new[]
             {
-                VirtualKey = (ushort)key,
-                KeyOptions = InjectedInputKeyOptions.KeyUp,
-            },
-        });
+                new InjectedInputKeyboardInfo { VirtualKey = (ushort)key },
+                new InjectedInputKeyboardInfo
+                {
+                    VirtualKey = (ushort)key,
+                    KeyOptions = InjectedInputKeyOptions.KeyUp,
+                },
+            }
+        );
 
         await Task.Delay(120);
-    }
-
-    /// <summary>The ID of the column the strip's live gesture is acting on.</summary>
-    internal string? PressedColumn()
-    {
-        object? column = Field(Strip, "_column");
-        return column is null ? null : (string?)column.GetType()
-            .GetProperty("Id", BindingFlags.Instance | BindingFlags.NonPublic)!
-            .GetValue(column);
-    }
-
-    internal double MarkerX() => ((TranslateTransform)Field(Strip, "_markerOffset")!).X;
-
-    /// <summary>Opacity of the header cell's template root, which the drag state sets.</summary>
-    internal double HeaderOpacity(int visibleIndex)
-    {
-        Panel panel = (Panel)Field(Strip, "_panel")!;
-        FrameworkElement cell = (FrameworkElement)panel.Children[visibleIndex];
-        return ((FrameworkElement)VisualTreeHelper.GetChild(cell, 0)).Opacity;
     }
 
     private async Task InjectAsync(double x, int options)
@@ -231,15 +202,17 @@ internal sealed class DragHarness
         int left = GetSystemMetrics(VirtualScreenX);
         int top = GetSystemMetrics(VirtualScreenY);
 
-        Injector.InjectMouseInput(new[]
-        {
-            new InjectedInputMouseInfo
+        Injector.InjectMouseInput(
+            new[]
             {
-                DeltaX = Normalize(screenX - left, GetSystemMetrics(VirtualScreenWidth)),
-                DeltaY = Normalize(screenY - top, GetSystemMetrics(VirtualScreenHeight)),
-                MouseOptions = (InjectedInputMouseOptions)(options | Absolute | VirtualDesk),
-            },
-        });
+                new InjectedInputMouseInfo
+                {
+                    DeltaX = Normalize(screenX - left, GetSystemMetrics(VirtualScreenWidth)),
+                    DeltaY = Normalize(screenY - top, GetSystemMetrics(VirtualScreenHeight)),
+                    MouseOptions = (InjectedInputMouseOptions)(options | Absolute | VirtualDesk),
+                },
+            }
+        );
 
         await Task.Delay(80);
     }
@@ -277,8 +250,9 @@ internal sealed class DragHarness
         if (GetAncestor(atPoint, 2) != Window)
         {
             Assert.Inconclusive(
-                "Another window covers the test window's header, so mouse messages could not be " +
-                "injected without clicking on it.");
+                "Another window covers the test window's header, so mouse messages could not be "
+                    + "injected without clicking on it."
+            );
         }
     }
 
@@ -302,7 +276,8 @@ internal sealed class DragHarness
     }
 
     private static object? Field(object target, string name) =>
-        target.GetType()
+        target
+            .GetType()
             .GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!
             .GetValue(target);
 

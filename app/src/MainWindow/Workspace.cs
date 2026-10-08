@@ -2,16 +2,16 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
-using Windows.System;
 using Syno.TinyTorrent.Controls;
 using Syno.TinyTorrent.Models;
 using Syno.TinyTorrent.Views;
+using Windows.System;
 
 namespace Syno.TinyTorrent;
 
 public sealed partial class MainWindow
 {
-    private PreferencesForm? _preferencesForm;
+    private SettingsPage? _settingsPage;
     private bool _refreshingFilters;
     private bool _selecting;
     private double _splitHeight = 360;
@@ -21,84 +21,123 @@ public sealed partial class MainWindow
         var element = FocusManager.GetFocusedElement(Root.XamlRoot) as DependencyObject;
         while (element is not null)
         {
-            if (element is TextBox or RichEditBox or PasswordBox or NumberBox or ComboBox or AutoSuggestBox) return true;
+            if (
+                element
+                is TextBox
+                    or RichEditBox
+                    or PasswordBox
+                    or NumberBox
+                    or ComboBox
+                    or AutoSuggestBox
+            )
+                return true;
             element = VisualTreeHelper.GetParent(element);
         }
         return false;
     }
+
     private async Task<bool> ShowTorrents()
     {
-        if (!await Navigate(WindowPage.Torrents)) return false;
+        if (!await Navigate(WindowPage.Torrents))
+            return false;
         Torrents.Focus(FocusState.Programmatic);
         return true;
     }
 
     private async Task<bool> Navigate(WindowPage page)
     {
-        if (HasDialog || Model.IsClosing || _allowClose) return false;
-        if (Model.Page == WindowPage.Torrents && page != WindowPage.Torrents && !await LeaveInspector()) return false;
-        if (Model.Page == WindowPage.Preferences && page != WindowPage.Preferences)
+        if (HasDialog || Model.IsClosing || _allowClose)
+            return false;
+        if (
+            Model.Page == WindowPage.Torrents
+            && page != WindowPage.Torrents
+            && !await LeaveInspector()
+        )
+            return false;
+        if (Model.Page == WindowPage.Settings && page != WindowPage.Settings)
         {
-            if (!await Model.Preferences.PrepareLeave())
+            if (!await Model.Settings.PrepareLeave())
             {
-                var field = _preferencesForm?.Recover(null);
+                var field = _settingsPage?.Recover(null);
                 field?.StartBringIntoView();
                 field?.Focus(FocusState.Programmatic);
                 return false;
             }
         }
-        if (HasDialog || Model.IsClosing || _allowClose) return false;
+        if (HasDialog || Model.IsClosing || _allowClose)
+            return false;
         Model.Page = page;
         return true;
     }
 
     private async Task ShowAbout()
     {
-        if (await Navigate(WindowPage.About)) BackButton.Focus(FocusState.Programmatic);
+        if (await Navigate(WindowPage.About))
+            BackButton.Focus(FocusState.Programmatic);
     }
 
-    private async Task ShowPreferences(PreferenceTarget target)
+    private async Task ShowSettings(SettingTarget target)
     {
-        if (!await Navigate(WindowPage.Preferences)) return;
-        if (_preferencesForm is null)
+        if (!await Navigate(WindowPage.Settings))
+            return;
+        if (_settingsPage is null)
         {
-            _preferencesForm = new PreferencesForm(Model);
-            _preferencesForm.DestinationRequested += async (_, _) => await PickPreferenceFolder();
-            _preferencesForm.ProxyRequested += async (_, _) => await ShowProxy();
-            PreferencesContent.Content = _preferencesForm;
+            _settingsPage = new SettingsPage(Model);
+            _settingsPage.FolderRequested += async (_, setting) =>
+                await PickSettingsFolder(setting);
+            _settingsPage.ProxyRequested += async (_, _) => await ShowProxy();
+            SettingsContent.Content = _settingsPage;
         }
-        _preferencesForm.Navigate(target);
+        _settingsPage.Navigate(target);
     }
 
     private void UpdatePage()
     {
-        Workspace.Visibility = Model.Page == WindowPage.Torrents ? Visibility.Visible : Visibility.Collapsed;
-        PreferencesContent.Visibility = Model.Page == WindowPage.Preferences ? Visibility.Visible : Visibility.Collapsed;
-        AboutContent.Visibility = Model.Page == WindowPage.About ? Visibility.Visible : Visibility.Collapsed;
-        BackButton.Visibility = Model.Page == WindowPage.Torrents ? Visibility.Collapsed : Visibility.Visible;
+        Workspace.Visibility =
+            Model.Page == WindowPage.Torrents ? Visibility.Visible : Visibility.Collapsed;
+        SettingsContent.Visibility =
+            Model.Page == WindowPage.Settings ? Visibility.Visible : Visibility.Collapsed;
+        AboutContent.Visibility =
+            Model.Page == WindowPage.About ? Visibility.Visible : Visibility.Collapsed;
+        BackButton.Visibility =
+            Model.Page == WindowPage.Torrents ? Visibility.Collapsed : Visibility.Visible;
         TorrentMenu.IsEnabled = Model.Page == WindowPage.Torrents;
         ViewMenu.IsEnabled = Model.Page == WindowPage.Torrents;
     }
 
     private async Task<bool> SelectTorrent(Syno.TableView.Selection? selection = null)
     {
-        if (_selecting || Model.IsClosing) return false;
+        if (_selecting || Model.IsClosing)
+            return false;
         _selecting = true;
         var desired = selection ?? Torrents.Selection;
         try
         {
-            var accepted = await Model.Select(desired.Items.Cast<Torrent>(), desired.Current as Torrent, LeaveInspector);
+            var accepted = await Model.Select(
+                desired.Items.Cast<Torrent>(),
+                desired.Current as Torrent,
+                LeaveInspector
+            );
             var retained = Model.Selected.Where(Model.VisibleTorrents.Contains).ToArray();
-            Torrents.Selection = new Syno.TableView.Selection(retained, Model.Current is { } current && Model.VisibleTorrents.Contains(current) ? current : null);
+            Torrents.Selection = new Syno.TableView.Selection(
+                retained,
+                Model.Current is { } current && Model.VisibleTorrents.Contains(current)
+                    ? current
+                    : null
+            );
             return accepted;
         }
-        finally { _selecting = false; }
+        finally
+        {
+            _selecting = false;
+        }
     }
 
     private async Task<bool> LeaveInspector()
     {
-        if (await Model.Inspector.Depart()) return true;
-        (InspectorContent.Content as InspectorForm)?.Recover().Focus(FocusState.Programmatic);
+        if (await Model.Inspector.Depart())
+            return true;
+        (InspectorContent.Content as InspectorPane)?.Recover().Focus(FocusState.Programmatic);
         return false;
     }
 
@@ -107,36 +146,68 @@ public sealed partial class MainWindow
     private async Task<bool> ResolveDraft(string editor, Func<Task<bool>> save, Func<Task> discard)
     {
         var focused = FocusManager.GetFocusedElement(Root.XamlRoot) as Control;
-        return await Interact(async interaction =>
-        {
-            var prompt = new Dialog { XamlRoot = Root.XamlRoot, DefaultButton = ContentDialogButton.Close, SecondaryGlyph = Syno.Lucide.Undo2, CloseGlyph = Syno.Lucide.Pencil };
-            var choice = await ShowDialog(interaction, prompt, () =>
+        return await Interact(
+            async interaction =>
             {
-                prompt.Title = Model.Text.Get("changes", editor + "_title");
-                (prompt.Content, prompt.PrimaryButtonText, prompt.Glyph) = editor == "add"
-                    ? (Lines([Model.Draft.Heading]), Model.Draft.SubmitText, Syno.Lucide.CirclePlus)
-                    : (Lines([Model.Files.Destination]), Model.Files.SubmitText, Syno.Lucide.FolderInput);
-                prompt.PrimaryGlyph = prompt.Glyph;
-                prompt.PrimaryToolTip = Model.Text.Get("changes", editor + "_save_tip");
-                prompt.SecondaryButtonText = Model.Text.Get("changes", "discard");
-                prompt.SecondaryToolTip = Model.Text.Get("changes", editor + "_discard_tip");
-                // Two words, because Cancel would not say whether it cancels the
-                // edit or the act that is leaving it.
-                prompt.CloseButtonText = Model.Text.Get("changes", "keep_editing");
-            });
-            var resolved = false;
-            if (choice == ContentDialogResult.Primary) resolved = await save();
-            else if (choice == ContentDialogResult.Secondary) { await discard(); resolved = true; }
-            if (!resolved && focused is { IsLoaded: true }) focused.Focus(FocusState.Programmatic);
-            return resolved;
-        }, isDraftDecision: true);
+                var prompt = new Dialog
+                {
+                    XamlRoot = Root.XamlRoot,
+                    DefaultButton = ContentDialogButton.Close,
+                    SecondaryGlyph = Syno.Lucide.Undo2,
+                    CloseGlyph = Syno.Lucide.Pencil,
+                };
+                var choice = await ShowDialog(
+                    interaction,
+                    prompt,
+                    () =>
+                    {
+                        prompt.Title = Model.Text.Get("changes", editor + "_title");
+                        (prompt.Content, prompt.PrimaryButtonText, prompt.Glyph) =
+                            editor == "add"
+                                ? (
+                                    Lines([Model.AddDraft.Heading]),
+                                    Model.AddDraft.SubmitText,
+                                    Syno.Lucide.CirclePlus
+                                )
+                                : (
+                                    Lines([Model.FileDraft.Destination]),
+                                    Model.FileDraft.SubmitText,
+                                    Syno.Lucide.FolderInput
+                                );
+                        prompt.PrimaryGlyph = prompt.Glyph;
+                        prompt.PrimaryToolTip = Model.Text.Get("changes", editor + "_save_tip");
+                        prompt.SecondaryButtonText = Model.Text.Get("changes", "discard");
+                        prompt.SecondaryToolTip = Model.Text.Get(
+                            "changes",
+                            editor + "_discard_tip"
+                        );
+                        // Two words, because Cancel would not say whether it cancels the
+                        // edit or the act that is leaving it.
+                        prompt.CloseButtonText = Model.Text.Get("changes", "keep_editing");
+                    }
+                );
+                var resolved = false;
+                if (choice == ContentDialogResult.Primary)
+                    resolved = await save();
+                else if (choice == ContentDialogResult.Secondary)
+                {
+                    await discard();
+                    resolved = true;
+                }
+                if (!resolved && focused is { IsLoaded: true })
+                    focused.Focus(FocusState.Programmatic);
+                return resolved;
+            },
+            isDraftDecision: true
+        );
     }
 
     private void OnFiltersClose(object sender, RoutedEventArgs args) => CloseFilters();
 
     private void OnFiltersKey(object sender, KeyRoutedEventArgs args)
     {
-        if (args.Key != VirtualKey.Escape) return;
+        if (args.Key != VirtualKey.Escape)
+            return;
         CloseFilters();
         args.Handled = true;
     }
@@ -149,7 +220,8 @@ public sealed partial class MainWindow
 
     private void OnFilterChanged(object sender, SelectionChangedEventArgs args)
     {
-        if (!_refreshingFilters && Filters.SelectedItem is FilterChoice choice) Model.Filter = choice.Filter;
+        if (!_refreshingFilters && Filters.SelectedItem is FilterChoice choice)
+            Model.Filter = choice.Filter;
     }
 
     private void FocusSearch()
@@ -168,17 +240,26 @@ public sealed partial class MainWindow
 
     private void OnSearchChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args)
     {
-        if (args.Reason != AutoSuggestionBoxTextChangeReason.UserInput) return;
+        if (args.Reason != AutoSuggestionBoxTextChangeReason.UserInput)
+            return;
         Model.Query = sender.Text;
         sender.ItemsSource = Model.FindSuggestions(sender.Text);
     }
 
-    private async void OnSearchSubmitted(AutoSuggestBox sender, AutoSuggestBoxQuerySubmittedEventArgs args)
+    private async void OnSearchSubmitted(
+        AutoSuggestBox sender,
+        AutoSuggestBoxQuerySubmittedEventArgs args
+    )
     {
-        if (HasDialog || Model.IsClosing) return;
-        var suggestion = args.ChosenSuggestion as Suggestion ?? Model.FindSuggestions(args.QueryText).FirstOrDefault(value => value.IsEnabled);
-        if (suggestion is null || !suggestion.IsEnabled) return;
-        if (suggestion.Scope == SuggestionScope.Navigation && !await ShowTorrents()) return;
+        if (HasDialog || Model.IsClosing)
+            return;
+        var suggestion =
+            args.ChosenSuggestion as Suggestion
+            ?? Model.FindSuggestions(args.QueryText).FirstOrDefault(value => value.IsEnabled);
+        if (suggestion is null || !suggestion.IsEnabled)
+            return;
+        if (suggestion.Scope == SuggestionScope.Navigation && !await ShowTorrents())
+            return;
         Model.Query = string.Empty;
         sender.IsSuggestionListOpen = false;
         Run(suggestion.Command);
@@ -186,31 +267,43 @@ public sealed partial class MainWindow
 
     private void UpdateInspectorSize()
     {
-        if (!Model.HasInspector) { InspectorRow.Height = new GridLength(0); return; }
+        if (!Model.HasInspector)
+        {
+            InspectorRow.Height = new GridLength(0);
+            return;
+        }
         if (InspectorContent.Content is null)
         {
-            var form = new InspectorForm(Model.Inspector);
-            form.Close.Click += OnInspectorClose;
-            if (_placement?.Inspector is { } layout) form.Layout = layout;
-            InspectorContent.Content = form;
+            var pane = new InspectorPane(Model.Inspector);
+            pane.Close.Click += OnInspectorClose;
+            if (_placement?.Inspector is { } layout)
+                pane.Layout = layout;
+            InspectorContent.Content = pane;
         }
-        var toolbar = Model.IsToolbarOpen ? Toolbar.ActualHeight + Toolbar.Margin.Top + Toolbar.Margin.Bottom : 0;
+        var toolbar = Model.IsToolbarOpen
+            ? Toolbar.ActualHeight + Toolbar.Margin.Top + Toolbar.Margin.Bottom
+            : 0;
         var maximum = Math.Max(0, Workspace.ActualHeight - toolbar - 126);
         var minimum = Math.Min(300, maximum);
         Split.SetBounds(minimum, maximum, _splitHeight);
         InspectorRow.Height = new GridLength(Math.Clamp(_splitHeight, minimum, maximum));
     }
 
-    private async Task PickPreferenceFolder()
+    private async Task PickSettingsFolder(Setting setting)
     {
-        if (!Model.Preferences.Destination.CanEdit || Model.IsPicking) return;
+        if (!setting.CanEdit || Model.IsPicking)
+            return;
         try
         {
             var folder = await PickFolder();
-            if (folder is null) return;
-            Model.Preferences.Destination.Input = folder;
-            await Model.Preferences.Commit(Model.Preferences.Destination);
+            if (folder is null)
+                return;
+            setting.Input = folder;
+            await Model.Settings.Commit(setting);
         }
-        catch (Exception error) { Model.Report(error); }
+        catch (Exception error)
+        {
+            Model.Report(error);
+        }
     }
 }

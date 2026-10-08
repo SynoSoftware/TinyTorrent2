@@ -37,7 +37,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     private string? _connectionReason;
     private bool _loaded;
     private bool _ready;
-    private bool _stopping;
+    private bool _shuttingDown;
     private bool _closed;
     private bool _closing;
     private bool _picking;
@@ -47,9 +47,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
 
     public Strings Text { get; }
     public IReadOnlyList<Torrent> Torrents => _torrents;
-    public AddDraft Draft { get; }
-    public Preferences Preferences { get; }
-    public string Theme => Preferences.Theme.ConfirmedText.Length > 0 ? Preferences.Theme.ConfirmedText : "system";
+    public AddDraft AddDraft { get; }
+    public Settings Settings { get; }
+    public string Theme =>
+        Settings.Theme.ConfirmedText.Length > 0 ? Settings.Theme.ConfirmedText : "system";
     public bool IsConnected => _connected;
     internal double DownloadRate => _downloadRate;
     internal double UploadRate => _uploadRate;
@@ -57,33 +58,59 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     public bool IsStorageFailed => _storageFailed;
     public bool IsEmptyVisible => !_storageFailed;
     public bool IsClosing => _closing;
-    public bool CanClose => !_changingLanguage && !_picking && !_receivingSources && _arrivals.IsCompleted && !Draft.IsPending &&
-        !Inspector.IsPending && !Preferences.IsPending && !Files.IsPending && !SpeedLimit.IsPending && _limitsChoice is null;
+    public bool CanClose =>
+        !_changingLanguage
+        && !_picking
+        && !_receivingActivations
+        && _arrivals.IsCompleted
+        && !AddDraft.IsPending
+        && !Inspector.IsPending
+        && !Settings.IsPending
+        && !FileDraft.IsPending
+        && !SpeedLimit.IsPending
+        && _limitsChoice is null;
     public bool CanExit => _connected && CanClose;
     public string? DataDirectory => _client.DataDirectory;
-    public bool HasDraft => Draft.HasChanges || Inspector.HasDraft || Files.HasDraft;
-    internal bool CanSave => _connected && !_loading && !_storageFailed && !_stopping && !_picking;
+    public bool HasDraft => AddDraft.HasChanges || Inspector.HasDraft || FileDraft.HasChanges;
+    internal bool CanSave =>
+        _connected && !_loading && !_storageFailed && !_shuttingDown && !_picking;
     public bool CanEdit => CanSave && !_closing;
     public bool IsPicking
     {
         get => _picking;
-        set { if (_picking == value) return; _picking = value; Refresh(); }
+        set
+        {
+            if (_picking == value)
+                return;
+            _picking = value;
+            Refresh();
+        }
     }
     public bool IsAddOpen
     {
         get => _addOpen;
         set
         {
-            if (_addOpen == value) return;
+            if (_addOpen == value)
+                return;
             _addOpen = value;
-            if (value) Draft.StartPolling(); else Draft.StopPolling();
+            if (value)
+                AddDraft.StartPolling();
+            else
+                AddDraft.StopPolling();
             Refresh();
         }
     }
     public bool IsDark
     {
         get => _dark;
-        set { if (_dark == value) return; _dark = value; Changed(nameof(IsDark)); }
+        set
+        {
+            if (_dark == value)
+                return;
+            _dark = value;
+            Changed(nameof(IsDark));
+        }
     }
     public ICommand Add { get; }
     public ICommand Pause { get; }
@@ -94,25 +121,45 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     public bool IsToolbarOpen
     {
         get => _toolbarOpen;
-        set { if (_toolbarOpen == value) return; _toolbarOpen = value; Changed(nameof(IsToolbarOpen)); }
+        set
+        {
+            if (_toolbarOpen == value)
+                return;
+            _toolbarOpen = value;
+            Changed(nameof(IsToolbarOpen));
+        }
     }
     public ICommand SwitchToolbar { get; }
-    public bool IsSessionPaused => _connected && AllPaused;
-    private string Rate(double rate) => _connected && !_loading && !_storageFailed ? Text.Format("units", "rate", Text.Bytes(rate)) : "—";
-    public string TorrentError => _current is null || !_current.IsError ? string.Empty :
-        Text.Format("errors", "torrent", _current.Name, _current.ErrorText);
+    public bool IsSessionPaused => _connected && IsPaused;
+
+    private string Rate(double rate) =>
+        _connected && !_loading && !_storageFailed
+            ? Text.Format("units", "rate", Text.Bytes(rate))
+            : "—";
+
+    public string TorrentError =>
+        _current is null || !_current.IsError
+            ? string.Empty
+            : Text.Format("errors", "torrent", _current.Name, _current.ErrorText);
     public string Message
     {
         get
         {
             if (!_connected)
             {
-                var message = Text.Get("window", _sessionId.Length == 0 ? "connecting" : "disconnected");
+                var message = Text.Get(
+                    "window",
+                    _sessionId.Length == 0 ? "connecting" : "disconnected"
+                );
                 var detail = _connectionReason;
-                return string.IsNullOrEmpty(detail) ? message : Text.Format("errors", "detail", message, detail);
+                return string.IsNullOrEmpty(detail)
+                    ? message
+                    : Text.Format("errors", "detail", message, detail);
             }
-            if (_storageFailed) return Text.Error("storage_failed", _startupError);
-            if (_loading) return Text.Get("window", "connecting");
+            if (_storageFailed)
+                return Text.Error("storage_failed", _startupError);
+            if (_loading)
+                return Text.Get("window", "connecting");
             return !_languageSaved ? Text.Get("errors", "language_unsaved") : string.Empty;
         }
     }
@@ -120,13 +167,14 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     public string CommandError => _error is null ? string.Empty : Text.Error(_error);
     public bool HasCommandError => _error is not null;
     public bool HasTorrentError => TorrentError.Length > 0;
-    public InfoBarSeverity Severity => _connected && _storageFailed ?
-        InfoBarSeverity.Error : InfoBarSeverity.Warning;
+    public InfoBarSeverity Severity =>
+        _connected && _storageFailed ? InfoBarSeverity.Error : InfoBarSeverity.Warning;
 
     public event PropertyChangedEventHandler? PropertyChanged;
     public event EventHandler? TextChanged;
     internal event EventHandler<SnapshotAppliedEventArgs>? SnapshotApplied;
     public event EventHandler<Torrent[]>? RevealRequested;
+    public event EventHandler<Torrent[]>? ReleaseRequested;
     public event EventHandler? AddRequested;
     public event EventHandler? ActivateRequested;
     public event EventHandler? ShowRequested;
@@ -141,105 +189,237 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         Text = strings;
         _dispatcher = dispatcher;
         _client = new PipeClient(strings);
-        OpenCompletion = new Command(OpenCompleted, () => CanOpenCompletion);
-        Draft = new AddDraft(this, _client, strings);
-        Files = new FileOperation(this, _client);
+        OpenCompletion = new RelayCommand(OpenCompleted, () => CanOpenCompletion);
+        AddDraft = new AddDraft(this, _client, strings);
+        FileDraft = new FileDraft(this, _client);
         SpeedLimit = new SpeedLimit(this, _client);
         Inspector = new Inspector(this, _client);
-        Preferences = new Preferences(this, _client);
-        Filters = Enum.GetValues<TorrentFilter>().Select(filter => new FilterChoice(this, filter)).ToArray();
-        Draft.PropertyChanged += OnTaskChanged;
+        Settings = new Settings(this, _client);
+        Filters = Enum.GetValues<TorrentFilter>()
+            .Select(filter => new FilterChoice(this, filter))
+            .ToArray();
+        AddDraft.PropertyChanged += OnTaskChanged;
         Inspector.PropertyChanged += OnTaskChanged;
-        Preferences.PropertyChanged += OnTaskChanged;
-        Files.PropertyChanged += OnTaskChanged;
+        Settings.PropertyChanged += OnTaskChanged;
+        FileDraft.PropertyChanged += OnTaskChanged;
         SpeedLimit.PropertyChanged += OnTaskChanged;
-        Restart = new Command(() =>
-        {
-            try { _client.LaunchEngine(); ClearError(); }
-            catch (Exception error) { Report(error); }
-            return Task.CompletedTask;
-        }, () => CanRestart);
-        Add = new Command(() => { FilesRequested?.Invoke(this, EventArgs.Empty); return Task.CompletedTask; },
-            () => CanEdit && !_addOpen);
-        Pause = new Command(() => ActOnSelection("pause"), () => CanEdit && _selected.Length > 0);
-        Resume = new Command(() => ActOnSelection("resume"), () => CanEdit && _selected.Length > 0);
-        Exit = new Command(ExitEngine, () => CanExit);
-        CloseWindow = new Command(() => { CloseRequested?.Invoke(this, false); return Task.CompletedTask; }, () => true);
-        SwitchTheme = new Command(async () =>
-        {
-            await Preferences.SelectTheme(_dark ? "light" : "dark");
-            if (Preferences.Theme.Failure is { } error) Report(error);
-            else ClearError();
-        }, () => CanEdit);
-        AddMagnet = new Command(() =>
-        {
-            Draft.EditingMagnet = true;
-            Draft.Refresh();
-            AddRequested?.Invoke(this, EventArgs.Empty);
-            return Task.CompletedTask;
-        }, () => CanEdit);
-        Force = new Command(() => ActOnSelection("force"), () => CanEdit && _selected.Length > 0);
-        SwitchSequential = new Command(() => SetPieceOrder(PieceOrder.Sequential, Sequential != true), () => CanEditSelection);
-        SwitchFirstLast = new Command(() => SetPieceOrder(PieceOrder.FirstLast, FirstLast != true), () => CanEditSelection);
+        Restart = new RelayCommand(
+            () =>
+            {
+                try
+                {
+                    _client.LaunchEngine();
+                    ClearError();
+                }
+                catch (Exception error)
+                {
+                    Report(error);
+                }
+                return Task.CompletedTask;
+            },
+            () => CanRestart
+        );
+        Add = new RelayCommand(
+            () =>
+            {
+                FilesRequested?.Invoke(this, EventArgs.Empty);
+                return Task.CompletedTask;
+            },
+            () => CanEdit && !_addOpen
+        );
+        Pause = new RelayCommand(
+            () => ActOnSelection("pause"),
+            () => CanEdit && _selected.Length > 0
+        );
+        Resume = new RelayCommand(
+            () => ActOnSelection("resume"),
+            () => CanEdit && _selected.Length > 0
+        );
+        Exit = new RelayCommand(RequestExit, () => CanExit);
+        CloseWindow = new RelayCommand(
+            () =>
+            {
+                CloseRequested?.Invoke(this, false);
+                return Task.CompletedTask;
+            },
+            () => true
+        );
+        SwitchTheme = new RelayCommand(
+            async () =>
+            {
+                await Settings.SelectTheme(_dark ? "light" : "dark");
+                if (Settings.Theme.Failure is { } error)
+                    Report(error);
+                else
+                    ClearError();
+            },
+            () => CanEdit
+        );
+        AddMagnet = new RelayCommand(
+            () =>
+            {
+                AddDraft.EditingMagnet = true;
+                AddDraft.Refresh();
+                AddRequested?.Invoke(this, EventArgs.Empty);
+                return Task.CompletedTask;
+            },
+            () => CanEdit
+        );
+        Force = new RelayCommand(
+            () => ActOnSelection("force"),
+            () => CanEdit && _selected.Length > 0
+        );
+        SwitchSequential = new RelayCommand(
+            () => SetPieceOrder(PieceOrder.Sequential, Sequential != true),
+            () => CanEditSelection
+        );
+        SwitchFirstLast = new RelayCommand(
+            () => SetPieceOrder(PieceOrder.FirstLast, FirstLast != true),
+            () => CanEditSelection
+        );
         LimitSpeed = SpeedCommand(() => _selected);
-        SwitchFilters = new Command(() => { IsFilterOpen = !IsFilterOpen; return Task.CompletedTask; }, () => true);
-        SwitchToolbar = new Command(() => { IsToolbarOpen = !IsToolbarOpen; return Task.CompletedTask; }, () => true);
-        Verify = new Command(() => ActOnSelection("verify"), () => CanEdit && _selected.Length > 0);
-        Remove = new Command(() => { RemoveRequested?.Invoke(this, _selected.ToArray()); return Task.CompletedTask; }, () => CanEdit && _selected.Length > 0);
+        SwitchFilters = new RelayCommand(
+            () =>
+            {
+                IsFilterOpen = !IsFilterOpen;
+                return Task.CompletedTask;
+            },
+            () => true
+        );
+        SwitchToolbar = new RelayCommand(
+            () =>
+            {
+                IsToolbarOpen = !IsToolbarOpen;
+                return Task.CompletedTask;
+            },
+            () => true
+        );
+        Verify = new RelayCommand(
+            () => ActOnSelection("verify"),
+            () => CanEdit && _selected.Length > 0
+        );
+        Remove = new RelayCommand(
+            () =>
+            {
+                RemoveRequested?.Invoke(this, _selected.ToArray());
+                return Task.CompletedTask;
+            },
+            () => CanEdit && _selected.Length > 0
+        );
         MoveFiles = MoveCommand(() => _selected);
-        DeleteFiles = new Command(() => { DeleteRequested?.Invoke(this, _selected.ToArray()); return Task.CompletedTask; },
-            () => CanEdit && _selected.Length > 0 && _selected.All(torrent => !torrent.IsMoving));
-        Up = new Command(() => Queue("up"), () => CanMove);
-        Down = new Command(() => Queue("down"), () => CanMove);
-        Top = new Command(() => Queue("top"), () => CanMove);
-        Bottom = new Command(() => Queue("bottom"), () => CanMove);
-        PauseAll = new Command(() => SessionPause(true), () => CanEdit);
-        ResumeAll = new Command(() => SessionPause(false), () => CanEdit);
-        ResolvePause = new Command(() => _pause == PauseReason.Interface
-            ? ShowSetting(Preferences.Interface) : SessionPause(false), () => CanEdit);
-        Limits = new Command(() => RequestPreferences(new(PreferenceSection.Limits, "limit_mode")), () => true);
-        Open = new Command(() => OpenTorrent(false), () => CanEdit && _selected.Length == 1);
-        OpenFolder = new Command(() => OpenTorrent(true), () => CanEdit && _selected.Length == 1);
-        CopyMagnet = new Command(() => CopyTorrent(false), () => CanEdit && _selected.Length == 1);
-        CopyHash = new Command(() => CopyTorrent(true), () => CanEdit && _selected.Length == 1);
-        Properties = new Command(() => Inspect(Inspector.Section), () => CanEdit && _selected.Length == 1);
-        ClearFilters = new Command(ClearFinding, () => Filter != TorrentFilter.All);
-        ShowPreferences = new Command(() => RequestPreferences(new(PreferenceSection.General)), () => true);
-        ShowTorrents = new Command(() => { TorrentsRequested?.Invoke(this, EventArgs.Empty); return Task.CompletedTask; }, () => true);
-        ShowAbout = new Command(() => { AboutRequested?.Invoke(this, EventArgs.Empty); return Task.CompletedTask; }, () => true);
-        OpenUpdate = new Command(() => { OpenRequested?.Invoke(this, new(ReleasePage)); return Task.CompletedTask; }, () => HasUpdate);
-        Preferences.Updates.PropertyChanged += (_, _) =>
+        DeleteFiles = new RelayCommand(
+            () =>
+            {
+                DeleteRequested?.Invoke(this, _selected.ToArray());
+                return Task.CompletedTask;
+            },
+            () => CanEdit && _selected.Length > 0 && _selected.All(torrent => !torrent.IsMoving)
+        );
+        Up = new RelayCommand(() => Queue("up"), () => CanMove);
+        Down = new RelayCommand(() => Queue("down"), () => CanMove);
+        Top = new RelayCommand(() => Queue("top"), () => CanMove);
+        Bottom = new RelayCommand(() => Queue("bottom"), () => CanMove);
+        PauseAll = new RelayCommand(() => SessionPause(true), () => CanEdit);
+        ResumeAll = new RelayCommand(() => SessionPause(false), () => CanEdit);
+        ResolvePause = new RelayCommand(
+            () =>
+                _pause == PauseReason.Adapter ? ShowSetting(Settings.Adapter) : SessionPause(false),
+            () => CanEdit
+        );
+        Limits = new RelayCommand(
+            () => RequestSettings(new(SettingsCategory.Limits, "limit_mode")),
+            () => true
+        );
+        Open = new RelayCommand(() => OpenTorrent(false), () => CanEdit && _selected.Length == 1);
+        OpenFolder = new RelayCommand(
+            () => OpenTorrent(true),
+            () => CanEdit && _selected.Length == 1
+        );
+        CopyMagnet = new RelayCommand(
+            () => CopyTorrent(false),
+            () => CanEdit && _selected.Length == 1
+        );
+        CopyHash = new RelayCommand(
+            () => CopyTorrent(true),
+            () => CanEdit && _selected.Length == 1
+        );
+        Properties = new RelayCommand(
+            () => Inspect(Inspector.Section),
+            () => CanEdit && _selected.Length == 1
+        );
+        ClearFilters = new RelayCommand(ClearFinding, () => Filter != TorrentFilter.All);
+        ShowSettings = new RelayCommand(
+            () => RequestSettings(new(SettingsCategory.General)),
+            () => true
+        );
+        ShowTorrents = new RelayCommand(
+            () =>
+            {
+                TorrentsRequested?.Invoke(this, EventArgs.Empty);
+                return Task.CompletedTask;
+            },
+            () => true
+        );
+        ShowAbout = new RelayCommand(
+            () =>
+            {
+                AboutRequested?.Invoke(this, EventArgs.Empty);
+                return Task.CompletedTask;
+            },
+            () => true
+        );
+        OpenUpdate = new RelayCommand(
+            () =>
+            {
+                OpenRequested?.Invoke(this, new(ReleasePage));
+                return Task.CompletedTask;
+            },
+            () => HasUpdate
+        );
+        Settings.Updates.PropertyChanged += (_, _) =>
         {
             ObserveUpdates();
             Changed(nameof(HasUpdate));
-            ((Command)OpenUpdate).Refresh();
+            ((RelayCommand)OpenUpdate).Refresh();
         };
         _client.Snapshot += QueueSnapshot;
         _client.Notice += notice => _dispatcher.TryEnqueue(() => ReceiveNotice(notice));
-        _client.Disconnected += reason => _dispatcher.TryEnqueue(() =>
-        {
-            if (_closed) return;
-            _connected = false;
-            _resumeNotice = false;
-            _connectionReason = reason;
-            _ready = false;
-            Draft.Invalidate();
-            Inspector.Disconnect();
-            foreach (var torrent in Torrents) torrent.Disconnect();
-            Refresh();
-        });
-        _client.Control += control => _dispatcher.TryEnqueue(() =>
-        {
-            if (_closed) return;
-            if (control == "activate") ActivateRequested?.Invoke(this, EventArgs.Empty);
-            else if (control == "sources") _ = ReceiveSources();
-            else CloseRequested?.Invoke(this, true);
-        });
+        _client.Disconnected += reason =>
+            _dispatcher.TryEnqueue(() =>
+            {
+                if (_closed)
+                    return;
+                _connected = false;
+                _waiting = null;
+                _restriction = null;
+                _connectionReason = reason;
+                _ready = false;
+                AddDraft.Invalidate();
+                Inspector.Disconnect();
+                foreach (var torrent in Torrents)
+                    torrent.Disconnect();
+                Refresh();
+            });
+        _client.Control += control =>
+            _dispatcher.TryEnqueue(() =>
+            {
+                if (_closed)
+                    return;
+                if (control == "activate")
+                    ActivateRequested?.Invoke(this, EventArgs.Empty);
+                else if (control == "activations")
+                    _ = ReceiveActivations();
+                else if (control == "settings")
+                    RequestSettings(new(SettingsCategory.General));
+                else
+                    CloseRequested?.Invoke(this, true);
+            });
     }
 
     public void Start()
     {
-        if (_loaded) return;
+        if (_loaded)
+            return;
         _loaded = true;
         Refresh();
         _client.Start();
@@ -250,37 +430,60 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
 
     private void Apply(JsonElement snapshot)
     {
-        var previousAccess = (_connected, _loading, _storageFailed, _stopping);
+        var previousAccess = (_connected, _loading, _storageFailed, _shuttingDown);
         var sessionId = snapshot.GetProperty("session_id").GetString()!;
         var reconnected = !_connected || _sessionId != sessionId;
-        if (reconnected && _limitsError is not CommandFailure) _limitsError = null;
-        if (_sessionId != sessionId) Draft.Invalidate();
+        if (reconnected && _limitsError is not CommandException)
+            _limitsError = null;
+        if (_sessionId != sessionId)
+            AddDraft.Invalidate();
         _sessionId = sessionId;
         _connected = true;
         _connectionReason = null;
         _loading = snapshot.TryGetProperty("loading", out var startup) && startup.GetBoolean();
-        _storageFailed = snapshot.TryGetProperty("storage_failed", out var storage) && storage.GetBoolean();
-        _startupError = snapshot.TryGetProperty("startup_error", out var detail) ? detail.GetString() : null;
-        _stopping = snapshot.GetProperty("stopping").GetBoolean();
-        var accessChanged = previousAccess != (_connected, _loading, _storageFailed, _stopping);
+        _storageFailed =
+            snapshot.TryGetProperty("storage_failed", out var storage) && storage.GetBoolean();
+        _startupError = snapshot.TryGetProperty("startup_error", out var detail)
+            ? detail.GetString()
+            : null;
+        _shuttingDown = snapshot.GetProperty("shutting_down").GetBoolean();
+        var accessChanged = previousAccess != (_connected, _loading, _storageFailed, _shuttingDown);
         // The first state the window can show: the saved settings, or the
         // storage failure that replaces them.
         var first = !_ready && !_loading;
         _ready |= first;
         if (_loading || _storageFailed)
         {
-            if (accessChanged) Refresh(); else RefreshWindow();
+            if (accessChanged)
+                Refresh();
+            else
+                RefreshWindow();
             ObserveUpdates();
-            if (first) ShowRequested?.Invoke(this, EventArgs.Empty);
+            if (first)
+                ShowRequested?.Invoke(this, EventArgs.Empty);
             return;
         }
         var settings = snapshot.GetProperty("settings");
-        Preferences.Apply(settings, snapshot.GetProperty("proxy"), snapshot.GetProperty("proxy_check"));
-        AllPaused = snapshot.GetProperty("all_paused").GetBoolean();
+        Settings.Apply(
+            settings,
+            snapshot.GetProperty("proxy"),
+            snapshot.GetProperty("proxy_check")
+        );
+        IsPaused = snapshot.GetProperty("session_paused").GetBoolean();
         HasIncoming = snapshot.GetProperty("has_incoming").GetBoolean();
-        MissingInterface = snapshot.TryGetProperty("missing_interface", out var missing) ? missing.GetString() ?? string.Empty : string.Empty;
+        _externalIpv4 = snapshot.GetProperty("external_ipv4").GetString() ?? string.Empty;
+        _externalIpv6 = snapshot.GetProperty("external_ipv6").GetString() ?? string.Empty;
+        MissingAdapter = snapshot.TryGetProperty("missing_adapter", out var missing)
+            ? missing.GetString() ?? string.Empty
+            : string.Empty;
         ApplyLimits(snapshot.GetProperty("limits"));
-        if (!_changingLanguage && Preferences.Language.ConfirmedText is { Length: > 0 } tag && tag != _requestedLanguage)
+        // A failed language save keeps the person's choice and its error until they change or cancel it.
+        if (
+            !_changingLanguage
+            && Settings.Language.Failure is null
+            && Settings.Language.ConfirmedText is { Length: > 0 } tag
+            && tag != _requestedLanguage
+        )
             _languageLoad = LoadLanguage(tag);
         var present = new HashSet<string>();
         var eligibilityChanged = false;
@@ -297,7 +500,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             }
             var couldReorder = torrent.Queue >= 0;
             torrent.Update(item);
-            eligibilityChanged |= existing && couldReorder != (torrent.Queue >= 0) && Matches(torrent, Filter);
+            eligibilityChanged |=
+                existing && couldReorder != (torrent.Queue >= 0) && Matches(torrent, Filter);
         }
         foreach (var torrent in Torrents.Where(row => !present.Contains(row.TorrentId)).ToArray())
         {
@@ -305,18 +509,26 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             _byId.Remove(torrent.TorrentId);
         }
         _selected = _selected.Where(row => present.Contains(row.TorrentId)).ToArray();
-        if (_current is not null && !present.Contains(_current.TorrentId)) _current = null;
-        if (Inspector.Target is { } target && !Contains(target)) CloseInspector();
+        if (_current is not null && !present.Contains(_current.TorrentId))
+            _current = null;
+        if (Inspector.Target is { } target && !Contains(target))
+            Inspector.Show(null);
         var languageSaved = snapshot.GetProperty("language_saved").GetBoolean();
         _languageSaved = languageSaved;
-        Draft.UseDefault(Preferences.Destination.ConfirmedText);
+        AddDraft.UseDefault(Settings.Destination.ConfirmedText);
         _downloadRate = snapshot.GetProperty("download_rate").GetDouble();
         _uploadRate = snapshot.GetProperty("upload_rate").GetDouble();
         var published = Project();
-        if (accessChanged) Refresh();
-        else { Files.Refresh(); RefreshWindow(); }
+        if (accessChanged)
+            Refresh();
+        else
+        {
+            FileDraft.Refresh();
+            RefreshWindow();
+        }
         ObserveUpdates();
-        if (first) ShowRequested?.Invoke(this, EventArgs.Empty);
+        if (first)
+            ShowRequested?.Invoke(this, EventArgs.Empty);
         Inspector.Observe(sessionId);
         SnapshotApplied?.Invoke(this, new SnapshotAppliedEventArgs(published, eligibilityChanged));
         // Torrents added together are shown together, once all of them are in the list.
@@ -334,10 +546,18 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     // Reports that the window has rendered its first complete frame. The engine
     // answers when the window may appear, after a splash on screen has stayed
     // for its minimum time.
-    internal async Task<bool> Ready()
+    internal async Task<bool> SendReady()
     {
-        try { await _client.Send("ready"); return true; }
-        catch (Exception error) { Report(error); return false; }
+        try
+        {
+            await _client.Send("ready");
+            return true;
+        }
+        catch (Exception error)
+        {
+            Report(error);
+            return false;
+        }
     }
 
     private void QueueSnapshot(JsonElement snapshot)
@@ -345,7 +565,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         lock (_snapshotGate)
         {
             _latest = snapshot;
-            if (_applyQueued) return;
+            if (_applyQueued)
+                return;
             _applyQueued = true;
         }
         _dispatcher.TryEnqueue(() =>
@@ -357,30 +578,46 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
                 _latest = null;
                 _applyQueued = false;
             }
-            if (!_closed && latest is not null) Apply(latest.Value);
+            if (!_closed && latest is not null)
+                Apply(latest.Value);
         });
     }
 
     private async Task ActOnSelection(string command)
     {
-        if (!CanEdit || _selected.Length == 0) return;
-        var identities = _selected.Select(row => row.TorrentId).ToArray();
+        if (!CanEdit || _selected.Length == 0)
+            return;
+        var torrents = _selected.ToArray();
+        var torrentIds = torrents.Select(row => row.TorrentId).ToArray();
         try
         {
-            await _client.Send(command, new { torrent_ids = identities });
-            Accepted("commands", command);
+            await _client.Send(command, new { torrent_ids = torrentIds });
             _error = null;
-            _resumeNotice = command is "resume" or "force";
+            _waiting = command is "resume" or "force" && IsSessionPaused ? torrents : null;
+            if (HasResumeNotice)
+                Announce(ResumeNotice);
+            else
+                AnnounceAccepted("commands", command);
             RequestSnapshot();
         }
-        catch (Exception error) { Report(error); }
+        catch (Exception error)
+        {
+            Report(error);
+        }
     }
 
-    private async Task ExitEngine()
+    private async Task RequestExit()
     {
-        if (!CanExit) return;
-        try { await _client.Send("exit"); }
-        catch (Exception error) { Report(error); }
+        if (!CanExit)
+            return;
+        try
+        {
+            await _client.Send("exit");
+        }
+        catch (Exception error)
+        {
+            Report(error);
+        }
     }
 
     private async Task LoadLanguage(string language)
@@ -390,14 +627,16 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         try
         {
             var catalogue = await Task.Run(() => Strings.Prepare(language));
-            if (revision != _languageRevision || _closed) return;
+            if (revision != _languageRevision || _closed)
+                return;
             Publish(catalogue);
-            if (Preferences.Language.Failure is { } error) Report(error);
-            Preferences.Language.Cancel();
+            if (Settings.Language.Failure is null)
+                Settings.Language.Cancel();
         }
         catch (Exception error)
         {
-            if (revision != _languageRevision || _closed) return;
+            if (revision != _languageRevision || _closed)
+                return;
             _requestedLanguage = Text.Language;
             Report(error);
         }
@@ -405,10 +644,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
 
     internal void SelectLanguage(string language)
     {
-        if (!CanEdit) return;
+        if (!CanEdit)
+            return;
         _requestedLanguage = language;
         ++_languageRevision;
-        if (_changingLanguage) return;
+        if (_changingLanguage)
+            return;
         _changingLanguage = true;
         Refresh();
         _ = ChangeLanguage();
@@ -426,18 +667,22 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
                 try
                 {
                     var catalogue = await Task.Run(() => Strings.Prepare(language));
-                    if (_closed) return;
-                    if (revision != _languageRevision) continue;
+                    if (_closed)
+                        return;
+                    if (revision != _languageRevision)
+                        continue;
                     Publish(catalogue);
                     published = true;
-                    await Preferences.SaveLanguage(language);
-                    if (revision != _languageRevision) continue;
+                    await Settings.SaveLanguage(language);
+                    if (revision != _languageRevision)
+                        continue;
                     _error = null;
                     break;
                 }
                 catch (Exception error)
                 {
-                    if (revision != _languageRevision) continue;
+                    if (revision != _languageRevision)
+                        continue;
                     if (!published)
                     {
                         _requestedLanguage = Text.Language;
@@ -447,77 +692,100 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
                 }
             }
         }
-        finally { _changingLanguage = false; Refresh(); }
+        finally
+        {
+            _changingLanguage = false;
+            Refresh();
+        }
     }
 
     private void Publish(Strings.Catalogue catalogue)
     {
         Text.Publish(catalogue);
-        foreach (var torrent in Torrents) torrent.RefreshText();
-        Draft.Refresh();
+        foreach (var torrent in Torrents)
+            torrent.RefreshText();
+        AddDraft.Refresh();
         Inspector.RefreshText();
-        Preferences.RefreshText();
-        Files.Refresh();
+        Settings.RefreshText();
+        FileDraft.Refresh();
         Refresh();
         TextChanged?.Invoke(this, EventArgs.Empty);
     }
 
     // Requests queued before this one reach the engine first, so a command that
     // sends one request needs no wait before the window closes.
-    public async Task Close(bool engineExit)
+    public async Task Close(bool exiting)
     {
         if (_connected)
-            await _client.Send(engineExit ? "close_reply" : "ui_closed", new { state = "closing" });
+            await _client.Send(
+                exiting ? "close_reply" : "window_closed",
+                new { state = "closing" }
+            );
     }
 
     public async Task CancelClose()
     {
-        if (_connected) await _client.Send("close_reply", new { state = "cancelled" });
+        if (_connected)
+            await _client.Send("close_reply", new { state = "cancelled" });
     }
 
     public async Task DeferClose()
     {
         try
         {
-            if (_connected) await _client.Send("close_reply", new { state = "waiting" });
+            if (_connected)
+                await _client.Send("close_reply", new { state = "waiting" });
         }
-        catch (Exception error) { Report(error); }
+        catch (Exception error)
+        {
+            Report(error);
+        }
     }
 
-    internal async Task Activated(bool available)
+    internal async Task ReplyActivation(bool available)
     {
-        try { await _client.Send("activate_reply", new { available }); }
-        catch (Exception error) { Report(error); }
+        try
+        {
+            await _client.Send("activate_reply", new { available });
+        }
+        catch (Exception error)
+        {
+            Report(error);
+        }
     }
 
     public async Task CancelDraft()
     {
-        await Draft.Cancel();
+        await AddDraft.Cancel();
         Inspector.CancelDraft();
-        await Preferences.CancelDraft();
-        Files.Cancel();
+        await Settings.CancelDraft();
+        FileDraft.Cancel();
     }
 
     public void Report(Exception error)
     {
-        if (_closed) return;
+        if (_closed)
+            return;
         _error = error;
         Refresh();
         Announce(Text.Error(error));
     }
 
-    internal void Accepted(string group, string key) => Announce(Text.Format("outcomes", "accepted", Text.Get(group, key)));
+    internal void AnnounceAccepted(string group, string key) =>
+        Announce(Text.Format("outcomes", "accepted", Text.Get(group, key)));
 
     internal void Announce(string message)
     {
-        if (!_closed) AnnouncementRequested?.Invoke(this, message);
+        if (!_closed)
+            AnnouncementRequested?.Invoke(this, message);
     }
 
     // Stops new operations while the window closes. Accepted work still
     // finishes, and CanClose reports when it has.
     internal bool BeginClose()
     {
-        if (_closing) return false;
+        if (_closing)
+            return false;
         _closing = true;
         Refresh();
         return true;
@@ -527,12 +795,14 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     {
         _closing = false;
         Refresh();
-        if (_sourcesPending) _ = ReceiveSources();
+        if (_activationsPending)
+            _ = ReceiveActivations();
     }
 
     internal void Reveal(string[] torrentIds)
     {
-        if (torrentIds.Length == 0) return;
+        if (torrentIds.Length == 0)
+            return;
         Filter = TorrentFilter.All;
         _revealIds = torrentIds;
         _error = null;
@@ -542,52 +812,100 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     // Shows a command's effect without waiting for the next periodic refresh.
     internal void RequestSnapshot() => _ = _client.RefreshSnapshot();
 
-    internal void ClearError() { _error = null; RefreshWindow(); }
+    internal void ClearError()
+    {
+        _error = null;
+        RefreshWindow();
+    }
 
     private void Refresh()
     {
-        if (_closed) return;
-        Draft.Refresh();
+        if (_closed)
+            return;
+        AddDraft.Refresh();
         Inspector.Refresh();
-        Preferences.Refresh();
-        Files.Refresh();
+        Settings.Refresh();
+        FileDraft.Refresh();
         SpeedLimit.Refresh();
         RefreshWindow();
     }
 
     private void RefreshWindow()
     {
-        if (_closed) return;
-        foreach (var choice in Filters) choice.Refresh();
+        if (_closed)
+            return;
+        foreach (var choice in Filters)
+            choice.Refresh();
         Changed(string.Empty);
-        foreach (Command command in new[] { Add, AddMagnet, Pause, Resume, Force, SwitchSequential, SwitchFirstLast, LimitSpeed, SwitchFilters, SwitchToolbar,
-            Verify, Remove, MoveFiles, DeleteFiles,
-            Up, Down, Top, Bottom, PauseAll, ResumeAll, ResolvePause, Open, OpenFolder, CopyMagnet, CopyHash,
-            Properties, Limits, ClearFilters, ShowPreferences, ShowTorrents, ShowAbout, OpenUpdate, Exit, SwitchTheme, Restart, OpenCompletion }) command.Refresh();
+        foreach (
+            RelayCommand command in new[]
+            {
+                Add,
+                AddMagnet,
+                Pause,
+                Resume,
+                Force,
+                SwitchSequential,
+                SwitchFirstLast,
+                LimitSpeed,
+                SwitchFilters,
+                SwitchToolbar,
+                Verify,
+                Remove,
+                MoveFiles,
+                DeleteFiles,
+                Up,
+                Down,
+                Top,
+                Bottom,
+                PauseAll,
+                ResumeAll,
+                ResolvePause,
+                Open,
+                OpenFolder,
+                CopyMagnet,
+                CopyHash,
+                Properties,
+                Limits,
+                ClearFilters,
+                ShowSettings,
+                ShowTorrents,
+                ShowAbout,
+                OpenUpdate,
+                Exit,
+                SwitchTheme,
+                Restart,
+                OpenCompletion,
+            }
+        )
+            command.Refresh();
     }
 
     private void OnTaskChanged(object? sender, PropertyChangedEventArgs args)
     {
-        if (ReferenceEquals(sender, Preferences))
+        if (ReferenceEquals(sender, Settings))
         {
             Changed(nameof(Theme));
+            Changed(nameof(ShowsExternalIp));
         }
         Changed(nameof(CanClose));
         Changed(nameof(CanExit));
         Changed(nameof(HasDraft));
         Changed(nameof(HasInspector));
-        ((Command)Exit).Refresh();
+        ((RelayCommand)Exit).Refresh();
     }
 
-    private void Changed(string property) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(property));
+    private void Changed(string property) =>
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(property));
 
     public void Dispose()
     {
         _closed = true;
         _updateRequest?.Cancel();
-        Draft.StopPolling();
+        AddDraft.StopPolling();
         _client.Dispose();
-        lock (_snapshotGate) _latest = null;
+        lock (_snapshotGate)
+            _latest = null;
     }
 }
 
@@ -597,13 +915,17 @@ internal sealed class SnapshotAppliedEventArgs(bool published, bool eligibilityC
     public bool EligibilityChanged { get; } = eligibilityChanged;
 }
 
-internal sealed class Command(Func<Task> execute, Func<bool> enabled) : ICommand
+internal sealed class RelayCommand(Func<Task> execute, Func<bool> enabled) : ICommand
 {
     public bool CanExecute(object? parameter) => enabled();
+
     public async void Execute(object? parameter)
     {
-        if (CanExecute(parameter)) await execute();
+        if (CanExecute(parameter))
+            await execute();
     }
+
     public event EventHandler? CanExecuteChanged;
+
     internal void Refresh() => CanExecuteChanged?.Invoke(this, EventArgs.Empty);
 }

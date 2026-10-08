@@ -5,10 +5,10 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
+using Syno.TinyTorrent.Models;
 using Windows.Foundation;
 using Windows.Graphics;
 using Windows.UI.ViewManagement;
-using Syno.TinyTorrent.Models;
 
 namespace Syno.TinyTorrent;
 
@@ -16,23 +16,46 @@ public sealed partial class MainWindow
 {
     private readonly UISettings _uiSettings = new();
 
-    private void OnTextScaling(UISettings sender, object args) => DispatcherQueue.TryEnqueue(UpdateStatus);
+    private void OnTextScaling(UISettings sender, object args) =>
+        DispatcherQueue.TryEnqueue(UpdateStatus);
+
     private void OnStatusSize(object sender, SizeChangedEventArgs args) => UpdateStatus();
-    private void OnLimitsStatus(object sender, DoubleTappedRoutedEventArgs args) => Run(Model.Limits);
-    private void OnUpdateAvailable(object sender, DoubleTappedRoutedEventArgs args) => Run(Model.OpenUpdate);
+
+    private void OnLimitsStatus(object sender, DoubleTappedRoutedEventArgs args) =>
+        Run(Model.Limits);
+
+    private void OnUpdateAvailable(object sender, DoubleTappedRoutedEventArgs args) =>
+        Run(Model.OpenUpdate);
+
+    // Resume all is a command, which a double-click on status must not run, so
+    // the person's own pause opens nothing.
+    private void OnRestriction(object sender, DoubleTappedRoutedEventArgs args)
+    {
+        if (Model.PausedBy == PauseReason.Adapter)
+            Model.ShowSetting(Model.Settings.Adapter);
+        else if (Model.PausedBy != PauseReason.Manual)
+            Run(Model.Limits);
+    }
 
     private void OnIncoming(object sender, DoubleTappedRoutedEventArgs args)
     {
-        if (Model.MissingInterface.Length > 0) Model.ShowSetting(Model.Preferences.Interface);
-        else if (Model.Preferences.Proxy.IsInUse) Model.ShowProxySetting();
-        else Model.ShowSetting(Model.Preferences.Port);
+        if (Model.MissingAdapter.Length > 0)
+            Model.ShowSetting(Model.Settings.Adapter);
+        else if (Model.Settings.Proxy.IsInUse)
+            Model.ShowProxySetting();
+        else
+            Model.ShowSetting(Model.Settings.Port);
     }
 
     private async void OnFilterStatus(object sender, DoubleTappedRoutedEventArgs args)
     {
-        if (!await ShowTorrents()) return;
+        if (!await ShowTorrents())
+            return;
         Model.IsFilterOpen = true;
-        DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () => Filters.Focus(FocusState.Programmatic));
+        DispatcherQueue.TryEnqueue(
+            Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,
+            () => Filters.Focus(FocusState.Programmatic)
+        );
     }
 
     // A rate keeps room for its longest text, so live rates never move the
@@ -40,15 +63,66 @@ public sealed partial class MainWindow
     // first, until the line fits.
     private void UpdateStatus()
     {
-        if (StatusBar.ActualWidth <= 0) return;
+        if (StatusBar.ActualWidth <= 0)
+            return;
         DownloadRate.Width = UploadRate.Width = 216 * _uiSettings.TextScaleFactor;
-        TextBlock[] labels = [UpdateLabel, FilterLabel, IncomingLabel, AlternativeLabel, PausedLabel, CountLabel];
-        foreach (var label in labels) label.Visibility = Visibility.Visible;
+        ReserveIncoming();
+        ReserveFilter();
+        TextBlock[] labels =
+        [
+            UpdateLabel,
+            FilterLabel,
+            ExternalIpLabel,
+            IncomingLabel,
+            RestrictionLabel,
+            CountLabel,
+        ];
+        foreach (var label in labels)
+            label.Visibility = Visibility.Visible;
         foreach (var label in labels)
         {
-            if (StatusFits()) return;
+            if (StatusFits())
+                return;
             label.Visibility = Visibility.Collapsed;
         }
+    }
+
+    // The connection label changes text with the connection state, and the
+    // labels before it would move with it, so it keeps room for its longest text.
+    private void ReserveIncoming()
+    {
+        var width = 0.0;
+        foreach (
+            var key in new[]
+            {
+                "incoming_status",
+                "no_incoming_status",
+                "proxy_status",
+                "no_adapter_status",
+            }
+        )
+        {
+            var probe = new TextBlock
+            {
+                Style = IncomingLabel.Style,
+                Text = Model.Text.Get("window", key),
+            };
+            probe.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            width = Math.Max(width, probe.DesiredSize.Width);
+        }
+        if (IncomingLabel.MinWidth != width)
+            IncomingLabel.MinWidth = width;
+    }
+
+    // The filter's count changes as torrents change state, and the labels
+    // before it would move with it, so it keeps room for its largest count.
+    private void ReserveFilter()
+    {
+        var probe = new TextBlock { Style = FilterLabel.Style, Text = Model.WidestFilterStatus };
+        probe.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        var width = Math.Min(probe.DesiredSize.Width, FilterLabel.MaxWidth);
+        if (FilterLabel.MinWidth != width)
+            FilterLabel.MinWidth = width;
     }
 
     private bool StatusFits()
@@ -56,66 +130,108 @@ public sealed partial class MainWindow
         var unlimited = new Size(double.PositiveInfinity, double.PositiveInfinity);
         TransferStatus.Measure(unlimited);
         ListStatus.Measure(unlimited);
-        return TransferStatus.DesiredSize.Width + StatusBar.ColumnSpacing + ListStatus.DesiredSize.Width <= StatusBar.ActualWidth;
+        return TransferStatus.DesiredSize.Width
+                + StatusBar.ColumnSpacing
+                + ListStatus.DesiredSize.Width
+            <= StatusBar.ActualWidth;
     }
 
     private void UpdateChrome()
     {
-        if (_allowClose || Root.XamlRoot is null) return;
+        if (_allowClose || Root.XamlRoot is null)
+            return;
         var scale = Root.XamlRoot.RasterizationScale;
         var left = Math.Max(0, AppWindow.TitleBar.LeftInset) / scale;
         var right = Math.Max(0, AppWindow.TitleBar.RightInset) / scale;
         LeftInset.Width = new GridLength(left);
         RightInset.Width = new GridLength(right);
         UpdateMinimum(scale);
-        if (Caption.ActualHeight <= 0) return;
+        if (Caption.ActualHeight <= 0)
+            return;
         var start = AppWindow.TitleBar.LeftInset;
-        var end = Math.Max(start, (int)Math.Round(Caption.ActualWidth * scale) - AppWindow.TitleBar.RightInset);
+        var end = Math.Max(
+            start,
+            (int)Math.Round(Caption.ActualWidth * scale) - AppWindow.TitleBar.RightInset
+        );
         var padding = (int)Math.Ceiling(4 * scale);
         var height = (int)Math.Round(Caption.ActualHeight * scale);
         var rectangles = new List<RectInt32>();
-        var exclusions = new FrameworkElement[] { BackButton, AppIcon, Menus, Search, AddButtons, ThemeButton }
+        var exclusions = new FrameworkElement[]
+        {
+            BackButton,
+            AppIcon,
+            Menus,
+            Search,
+            AddButtons,
+            ThemeButton,
+        }
             .Where(control => control.Visibility == Visibility.Visible && control.ActualWidth > 0)
-            .Select(GetRegion).OrderBy(bounds => bounds.X);
+            .Select(GetRegion)
+            .OrderBy(bounds => bounds.X);
         foreach (var bounds in exclusions)
         {
             var edge = Math.Clamp(bounds.X - padding, start, end);
-            if (edge > start) rectangles.Add(new RectInt32(start, 0, edge - start, height));
+            if (edge > start)
+                rectangles.Add(new RectInt32(start, 0, edge - start, height));
             start = Math.Clamp(bounds.X + bounds.Width + padding, start, end);
         }
-        if (end > start) rectangles.Add(new RectInt32(start, 0, end - start, height));
+        if (end > start)
+            rectangles.Add(new RectInt32(start, 0, end - start, height));
         AppWindow.TitleBar.SetDragRectangles(rectangles.ToArray());
-        InputNonClientPointerSource.GetForWindowId(AppWindow.Id)
+        InputNonClientPointerSource
+            .GetForWindowId(AppWindow.Id)
             .SetRegionRects(NonClientRegionKind.Icon, [GetRegion(AppIcon)]);
     }
 
     private RectInt32 GetRegion(FrameworkElement control)
     {
         var scale = Root.XamlRoot.RasterizationScale;
-        var bounds = control.TransformToVisual(Root).TransformBounds(new Rect(0, 0, control.ActualWidth, control.ActualHeight));
+        var bounds = control
+            .TransformToVisual(Root)
+            .TransformBounds(new Rect(0, 0, control.ActualWidth, control.ActualHeight));
         var left = (int)Math.Floor(bounds.Left * scale);
         var top = (int)Math.Floor(bounds.Top * scale);
-        return new RectInt32(left, top, (int)Math.Ceiling(bounds.Right * scale) - left,
-            (int)Math.Ceiling(bounds.Bottom * scale) - top);
+        return new RectInt32(
+            left,
+            top,
+            (int)Math.Ceiling(bounds.Right * scale) - left,
+            (int)Math.Ceiling(bounds.Bottom * scale) - top
+        );
     }
 
     private void UpdateMinimum(double scale)
     {
-        if (AppWindow.Presenter is not OverlappedPresenter presenter) return;
-        var content = 48 + BackButton.ActualWidth + Menus.ActualWidth + SearchArea.Margin.Left +
-            Search.MinWidth + SearchArea.Margin.Right + AddButtons.ActualWidth + ThemeButton.Width;
+        if (AppWindow.Presenter is not OverlappedPresenter presenter)
+            return;
+        var content =
+            48
+            + BackButton.ActualWidth
+            + Menus.ActualWidth
+            + SearchArea.Margin.Left
+            + Search.MinWidth
+            + SearchArea.Margin.Right
+            + AddButtons.ActualWidth
+            + ThemeButton.Width;
         var frame = AppWindow.Size.Width - AppWindow.ClientSize.Width;
-        var width = (int)Math.Ceiling(Math.Max(720, content + LeftInset.Width.Value + RightInset.Width.Value) * scale) + frame;
+        var width =
+            (int)
+                Math.Ceiling(
+                    Math.Max(720, content + LeftInset.Width.Value + RightInset.Width.Value) * scale
+                ) + frame;
         var height = (int)Math.Ceiling(560 * scale);
-        if (presenter.PreferredMinimumWidth != width) presenter.PreferredMinimumWidth = width;
-        if (presenter.PreferredMinimumHeight != height) presenter.PreferredMinimumHeight = height;
+        if (presenter.PreferredMinimumWidth != width)
+            presenter.PreferredMinimumWidth = width;
+        if (presenter.PreferredMinimumHeight != height)
+            presenter.PreferredMinimumHeight = height;
     }
 
     private void UpdateColors()
     {
-        if (_allowClose) return;
+        if (_allowClose)
+            return;
         var titleBar = AppWindow.TitleBar;
-        titleBar.PreferredTheme = Root.ActualTheme == ElementTheme.Dark ? TitleBarTheme.Dark : TitleBarTheme.Light;
+        titleBar.PreferredTheme =
+            Root.ActualTheme == ElementTheme.Dark ? TitleBarTheme.Dark : TitleBarTheme.Light;
         titleBar.BackgroundColor = Colors.Transparent;
         titleBar.InactiveBackgroundColor = Colors.Transparent;
         titleBar.ForegroundColor = null;
@@ -148,7 +264,15 @@ public sealed partial class MainWindow
     {
         Title = Model.Text.Get("window", "title");
         RefreshTheme();
-        NameButton(BackButton, Model.Text.Format("shortcuts", "tip", Model.Text.Get("menus", "back"), ShortcutText(Model.ShowTorrents)));
+        NameButton(
+            BackButton,
+            Model.Text.Format(
+                "shortcuts",
+                "tip",
+                Model.Text.Get("menus", "back"),
+                ShortcutText(Model.ShowTorrents)
+            )
+        );
         RefreshMenus();
         AutomationProperties.SetName(Torrents, Model.Text.Get("window", "torrents"));
         NameColumn.DisplayName = Model.Text.Get("columns", "name");
@@ -172,7 +296,9 @@ public sealed partial class MainWindow
         NameButton(FiltersClose, Model.Text.Get("filters", "close"));
         AutomationProperties.SetName(Split, Model.Text.Get("inspector", "resize"));
         Torrents.Strings = Model.Text.Table;
-        Root.FlowDirection = Model.Text.IsRightToLeft ? FlowDirection.RightToLeft : FlowDirection.LeftToRight;
+        Root.FlowDirection = Model.Text.IsRightToLeft
+            ? FlowDirection.RightToLeft
+            : FlowDirection.LeftToRight;
         RefreshDialogs();
         _interaction?.RefreshText?.Invoke();
         Torrents.RefreshView();
@@ -186,5 +312,4 @@ public sealed partial class MainWindow
             dialog.FlowDirection = Root.FlowDirection;
         }
     }
-
 }

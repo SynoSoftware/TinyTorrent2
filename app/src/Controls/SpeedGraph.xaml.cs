@@ -6,38 +6,48 @@ using Microsoft.UI.Xaml.Automation.Provider;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
-using Windows.Foundation;
-using Windows.System;
 using Syno.TinyTorrent.Services;
 using Syno.TinyTorrent.Views;
+using Windows.Foundation;
+using Windows.System;
 
 namespace Syno.TinyTorrent.Controls;
 
 // Draws the Speed view as docs/interface.md defines it: averages, not samples.
 public sealed partial class SpeedGraph : UserControl
 {
-    public static readonly DependencyProperty SamplesProperty = DependencyProperty.Register(nameof(Samples),
-        typeof(IReadOnlyList<SpeedSample>), typeof(SpeedGraph), new PropertyMetadata(null, (graph, _) => ((SpeedGraph)graph).OnSamples()));
+    public static readonly DependencyProperty SamplesProperty = DependencyProperty.Register(
+        nameof(Samples),
+        typeof(IReadOnlyList<SpeedSample>),
+        typeof(SpeedGraph),
+        new PropertyMetadata(null, (graph, _) => ((SpeedGraph)graph).OnSamples())
+    );
 
     // Zoom levels, in seconds. Each view averages its samples in 60 buckets.
     private static readonly long[] Lengths = [300, 900, 1800, 3600, 21600, 86400];
+
     // Older history has one sample a minute, so a view shorter than this shows
     // only the present, where per-second samples exist.
     private const long PastMinimum = 1800;
+
     // Samples are at most a minute apart, so a longer pause is unknown time,
     // such as sleep or an engine restart, and the line breaks there.
     private const long Gap = 90;
+
     // One notch of a mouse wheel. A touchpad sends smaller deltas that add up to
     // it, so one swipe does not race through every zoom level.
     private const int Notch = 120;
+
     // The + and - keys of the main keyboard; VirtualKey names only the keypad ones.
     private const VirtualKey Plus = (VirtualKey)0xBB;
     private const VirtualKey Minus = (VirtualKey)0xBD;
     private Strings? _text;
     private long _length = 300;
+
     // Where a past view ends; null while the view follows the newest sample.
     private long? _end;
     private double? _marker;
+
     // Where the pointer rests on the plot, so new data keeps the marker under it.
     private double? _pointer;
     private Drag? _drag;
@@ -56,9 +66,16 @@ public sealed partial class SpeedGraph : UserControl
 
     // Null until the history is read, so the plot stays blank instead of
     // reporting no history.
-    public IReadOnlyList<SpeedSample>? Samples { get => (IReadOnlyList<SpeedSample>?)GetValue(SamplesProperty); set => SetValue(SamplesProperty, value); }
+    public IReadOnlyList<SpeedSample>? Samples
+    {
+        get => (IReadOnlyList<SpeedSample>?)GetValue(SamplesProperty);
+        set => SetValue(SamplesProperty, value);
+    }
 
-    private long Newest => Samples is null || Samples.Count == 0 ? DateTimeOffset.Now.ToUnixTimeSeconds() : Samples[^1].Time;
+    private long Newest =>
+        Samples is null || Samples.Count == 0
+            ? DateTimeOffset.Now.ToUnixTimeSeconds()
+            : Samples[^1].Time;
     private long End => _end ?? Newest;
     private long Start => End - _length;
 
@@ -104,7 +121,9 @@ public sealed partial class SpeedGraph : UserControl
     // Keeps the anchor time at the same place on the plot.
     private void Zoom(int direction, double anchor)
     {
-        var length = Lengths[Math.Clamp(Array.IndexOf(Lengths, _length) + direction, 0, Lengths.Length - 1)];
+        var length = Lengths[
+            Math.Clamp(Array.IndexOf(Lengths, _length) + direction, 0, Lengths.Length - 1)
+        ];
         if (_end is not null)
         {
             length = Math.Max(length, PastMinimum);
@@ -137,7 +156,9 @@ public sealed partial class SpeedGraph : UserControl
         {
             return;
         }
-        Ranges.SelectedItem = _end is null ? Ranges.Items.FirstOrDefault(item => (long)item.Tag == _length) : null;
+        Ranges.SelectedItem = _end is null
+            ? Ranges.Items.FirstOrDefault(item => (long)item.Tag == _length)
+            : null;
         Live.Visibility = _end is null ? Visibility.Collapsed : Visibility.Visible;
         // Averages shorter than a minute need seconds to tell them apart.
         var format = _length < 3600 ? "T" : "t";
@@ -145,21 +166,39 @@ public sealed partial class SpeedGraph : UserControl
         var averages = runs.SelectMany(run => run).ToArray();
         var marked = Nearest(averages, _marker);
         var shown = marked ?? averages.LastOrDefault();
-        double? downloadPeak = averages.Length == 0 ? null : averages.Max(average => average.Download);
+        double? downloadPeak =
+            averages.Length == 0 ? null : averages.Max(average => average.Download);
         double? uploadPeak = averages.Length == 0 ? null : averages.Max(average => average.Upload);
         var top = Ceiling(Math.Max(downloadPeak ?? 0, uploadPeak ?? 0));
         // The legend names the time of any value that is not the present one.
-        var at = shown is not null && (marked is not null || _end is not null) ? text.Format("speed", "at", Time(shown.Time, format)) : null;
+        var at =
+            shown is not null && (marked is not null || _end is not null)
+                ? text.Format("speed", "at", Time(shown.Time, format))
+                : null;
         DownloadValue.Text = Rate(text, shown?.Download);
         UploadValue.Text = Rate(text, shown?.Upload);
         DownloadDetail.Text = at ?? text.Format("speed", "peak", Rate(text, downloadPeak));
         UploadDetail.Text = at ?? text.Format("speed", "peak", Rate(text, uploadPeak));
-        ToolTipService.SetToolTip(DownloadLegend, $"{DownloadLabel.Text} {DownloadValue.Text} · {DownloadDetail.Text}");
-        ToolTipService.SetToolTip(UploadLegend, $"{UploadLabel.Text} {UploadValue.Text} · {UploadDetail.Text}");
+        ToolTipService.SetToolTip(
+            DownloadLegend,
+            $"{DownloadLabel.Text} {DownloadValue.Text} · {DownloadDetail.Text}"
+        );
+        ToolTipService.SetToolTip(
+            UploadLegend,
+            $"{UploadLabel.Text} {UploadValue.Text} · {UploadDetail.Text}"
+        );
         Maximum.Text = averages.Length == 0 ? string.Empty : Rate(text, top);
-        NoHistory.Visibility = Samples is not null && averages.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
-        _value = marked is null ? string.Empty : text.Format("speed", "point", Time(marked.Time, format),
-            Rate(text, marked.Download), Rate(text, marked.Upload));
+        NoHistory.Visibility =
+            Samples is not null && averages.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
+        _value = marked is null
+            ? string.Empty
+            : text.Format(
+                "speed",
+                "point",
+                Time(marked.Time, format),
+                Rate(text, marked.Download),
+                Rate(text, marked.Upload)
+            );
         var extent = new Extent(Plot.ActualWidth, Plot.ActualHeight, Start, _length, top);
         if (extent.Width <= 0 || extent.Height <= 0)
         {
@@ -170,13 +209,19 @@ public sealed partial class SpeedGraph : UserControl
         DrawMarker(extent, marked);
     }
 
-    private static string Rate(Strings text, double? value) => value is { } rate ? text.Format("units", "rate", text.Bytes(rate)) : "—";
+    private static string Rate(Strings text, double? value) =>
+        value is { } rate ? text.Format("units", "rate", text.Bytes(rate)) : "—";
 
     private static string Time(double time, string format) =>
-        DateTimeOffset.FromUnixTimeSeconds((long)Math.Round(time)).ToLocalTime().ToString(format, CultureInfo.CurrentCulture);
+        DateTimeOffset
+            .FromUnixTimeSeconds((long)Math.Round(time))
+            .ToLocalTime()
+            .ToString(format, CultureInfo.CurrentCulture);
 
     private static Average? Nearest(Average[] averages, double? time) =>
-        time is { } target && averages.Length > 0 ? averages.MinBy(average => Math.Abs(average.Time - target)) : null;
+        time is { } target && averages.Length > 0
+            ? averages.MinBy(average => Math.Abs(average.Time - target))
+            : null;
 
     private List<List<Average>> Runs() => Bucket(Samples ?? [], Start, End, _length / 60);
 
@@ -184,7 +229,12 @@ public sealed partial class SpeedGraph : UserControl
 
     // Splits the samples at unknown time, then averages each run in buckets
     // aligned to clock time, so a new sample changes only the newest bucket.
-    private static List<List<Average>> Bucket(IReadOnlyList<SpeedSample> samples, long start, long end, long width)
+    private static List<List<Average>> Bucket(
+        IReadOnlyList<SpeedSample> samples,
+        long start,
+        long end,
+        long width
+    )
     {
         var runs = new List<List<Average>>();
         var bucket = new List<SpeedSample>();
@@ -217,7 +267,14 @@ public sealed partial class SpeedGraph : UserControl
                 return;
             }
             var time = bucket.Average(sample => (double)sample.Time);
-            runs[^1].Add(new Average(time, bucket.Average(sample => sample.DownloadRate), bucket.Average(sample => sample.UploadRate)));
+            runs[^1]
+                .Add(
+                    new Average(
+                        time,
+                        bucket.Average(sample => sample.DownloadRate),
+                        bucket.Average(sample => sample.UploadRate)
+                    )
+                );
             bucket.Clear();
         }
     }
@@ -255,12 +312,24 @@ public sealed partial class SpeedGraph : UserControl
         var upload = new PathGeometry();
         foreach (var run in runs)
         {
-            var downloads = Widen(run.Select(average => extent.At(average.Time, average.Download)).ToArray(), extent.Width);
-            var uploads = Widen(run.Select(average => extent.At(average.Time, average.Upload)).ToArray(), extent.Width);
-            var fill = new PathFigure { StartPoint = new Point(downloads[0].X, extent.Height), IsClosed = true };
+            var downloads = Widen(
+                run.Select(average => extent.At(average.Time, average.Download)).ToArray(),
+                extent.Width
+            );
+            var uploads = Widen(
+                run.Select(average => extent.At(average.Time, average.Upload)).ToArray(),
+                extent.Width
+            );
+            var fill = new PathFigure
+            {
+                StartPoint = new Point(downloads[0].X, extent.Height),
+                IsClosed = true,
+            };
             fill.Segments.Add(new LineSegment { Point = downloads[0] });
             fill.Segments.Add(Curve(downloads));
-            fill.Segments.Add(new LineSegment { Point = new Point(downloads[^1].X, extent.Height) });
+            fill.Segments.Add(
+                new LineSegment { Point = new Point(downloads[^1].X, extent.Height) }
+            );
             area.Figures.Add(fill);
             download.Figures.Add(Line(downloads));
             upload.Figures.Add(Line(uploads));
@@ -298,14 +367,28 @@ public sealed partial class SpeedGraph : UserControl
         }
         var ticks = new GeometryGroup();
         TickLabels.Children.Clear();
-        var offset = (long)TimeZoneInfo.Local.GetUtcOffset(DateTimeOffset.FromUnixTimeSeconds(extent.Start)).TotalSeconds;
+        var offset = (long)
+            TimeZoneInfo
+                .Local.GetUtcOffset(DateTimeOffset.FromUnixTimeSeconds(extent.Start))
+                .TotalSeconds;
         var first = (extent.Start + offset + interval - 1) / interval * interval - offset;
         var right = double.NegativeInfinity;
         for (var time = first; time <= extent.Start + extent.Length; time += interval)
         {
             var x = extent.At(time, 0).X;
-            ticks.Children.Add(new LineGeometry { StartPoint = new Point(x, 0), EndPoint = new Point(x, extent.Height) });
-            var label = new TextBlock { Text = Time(time, "t"), Style = (Style)Resources["SpeedGraphTickStyle"], HorizontalAlignment = HorizontalAlignment.Left };
+            ticks.Children.Add(
+                new LineGeometry
+                {
+                    StartPoint = new Point(x, 0),
+                    EndPoint = new Point(x, extent.Height),
+                }
+            );
+            var label = new TextBlock
+            {
+                Text = Time(time, "t"),
+                Style = (Style)Resources["SpeedGraphTickStyle"],
+                HorizontalAlignment = HorizontalAlignment.Left,
+            };
             TickLabels.Children.Add(label);
             label.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
             var width = label.DesiredSize.Width;
@@ -342,7 +425,12 @@ public sealed partial class SpeedGraph : UserControl
 
     private static PathFigure Line(Point[] points)
     {
-        var figure = new PathFigure { StartPoint = points[0], IsClosed = false, IsFilled = false };
+        var figure = new PathFigure
+        {
+            StartPoint = points[0],
+            IsClosed = false,
+            IsFilled = false,
+        };
         figure.Segments.Add(Curve(points));
         return figure;
     }
@@ -356,8 +444,15 @@ public sealed partial class SpeedGraph : UserControl
         for (var index = 0; index < points.Length - 1; index++)
         {
             var third = (points[index + 1].X - points[index].X) / 3;
-            segment.Points.Add(new Point(points[index].X + third, points[index].Y + slopes[index] * third));
-            segment.Points.Add(new Point(points[index + 1].X - third, points[index + 1].Y - slopes[index + 1] * third));
+            segment.Points.Add(
+                new Point(points[index].X + third, points[index].Y + slopes[index] * third)
+            );
+            segment.Points.Add(
+                new Point(
+                    points[index + 1].X - third,
+                    points[index + 1].Y - slopes[index + 1] * third
+                )
+            );
             segment.Points.Add(points[index + 1]);
         }
         return segment;
@@ -375,7 +470,8 @@ public sealed partial class SpeedGraph : UserControl
         var secants = new double[points.Length - 1];
         for (var index = 0; index < secants.Length; index++)
         {
-            secants[index] = (points[index + 1].Y - points[index].Y) / (points[index + 1].X - points[index].X);
+            secants[index] =
+                (points[index + 1].Y - points[index].Y) / (points[index + 1].X - points[index].X);
         }
         slopes[0] = secants[0];
         slopes[^1] = secants[^1];
@@ -389,7 +485,8 @@ public sealed partial class SpeedGraph : UserControl
             }
             var left = points[index].X - points[index - 1].X;
             var right = points[index + 1].X - points[index].X;
-            slopes[index] = 3 * (left + right) / ((2 * right + left) / before + (right + 2 * left) / after);
+            slopes[index] =
+                3 * (left + right) / ((2 * right + left) / before + (right + 2 * left) / after);
         }
         return slopes;
     }
@@ -412,7 +509,9 @@ public sealed partial class SpeedGraph : UserControl
         {
             return;
         }
-        FrameworkElementAutomationPeer.FromElement(this)?.RaisePropertyChangedEvent(ValuePatternIdentifiers.ValueProperty, _announced, _value);
+        FrameworkElementAutomationPeer
+            .FromElement(this)
+            ?.RaisePropertyChangedEvent(ValuePatternIdentifiers.ValueProperty, _announced, _value);
         _announced = _value;
     }
 
@@ -448,7 +547,10 @@ public sealed partial class SpeedGraph : UserControl
     private void OnPressed(object sender, PointerRoutedEventArgs args)
     {
         Focus(FocusState.Pointer);
-        if (args.GetCurrentPoint(Plot).Properties.IsLeftButtonPressed && Plot.CapturePointer(args.Pointer))
+        if (
+            args.GetCurrentPoint(Plot).Properties.IsLeftButtonPressed
+            && Plot.CapturePointer(args.Pointer)
+        )
         {
             _drag = new Drag(args.GetCurrentPoint(Plot).Position.X, End);
         }
@@ -584,7 +686,9 @@ public sealed partial class SpeedGraph : UserControl
         {
             return;
         }
-        var index = Nearest(averages, _marker) is { } marked ? Array.IndexOf(averages, marked) : averages.Length - 1;
+        var index = Nearest(averages, _marker) is { } marked
+            ? Array.IndexOf(averages, marked)
+            : averages.Length - 1;
         var next = key switch
         {
             VirtualKey.Left => index - 1,
@@ -597,13 +701,21 @@ public sealed partial class SpeedGraph : UserControl
 
     protected override AutomationPeer OnCreateAutomationPeer() => new GraphPeer(this);
 
-    private sealed class GraphPeer(SpeedGraph graph) : FrameworkElementAutomationPeer(graph), IValueProvider
+    private sealed class GraphPeer(SpeedGraph graph)
+        : FrameworkElementAutomationPeer(graph),
+            IValueProvider
     {
         protected override string GetClassNameCore() => nameof(SpeedGraph);
-        protected override AutomationControlType GetAutomationControlTypeCore() => AutomationControlType.Custom;
-        protected override object? GetPatternCore(PatternInterface pattern) => pattern == PatternInterface.Value ? this : base.GetPatternCore(pattern);
+
+        protected override AutomationControlType GetAutomationControlTypeCore() =>
+            AutomationControlType.Custom;
+
+        protected override object? GetPatternCore(PatternInterface pattern) =>
+            pattern == PatternInterface.Value ? this : base.GetPatternCore(pattern);
+
         public bool IsReadOnly => true;
         public string Value => graph._value;
+
         public void SetValue(string value) => throw new InvalidOperationException();
     }
 
@@ -615,6 +727,7 @@ public sealed partial class SpeedGraph : UserControl
 
     private sealed record Extent(double Width, double Height, long Start, long Length, double Top)
     {
-        public Point At(double time, double rate) => new((time - Start) * Width / Length, Height * (1 - rate / Top));
+        public Point At(double time, double rate) =>
+            new((time - Start) * Width / Length, Height * (1 - rate / Top));
     }
 }

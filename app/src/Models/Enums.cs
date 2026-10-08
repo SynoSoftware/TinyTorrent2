@@ -3,27 +3,27 @@ namespace Syno.TinyTorrent.Models;
 public enum WindowPage
 {
     Torrents,
-    Preferences,
-    About
+    Settings,
+    About,
 }
 
 public enum Consumer
 {
     Summary,
     Inspector,
-    Draft
+    Draft,
 }
 
 public enum PieceOrder
 {
     Sequential,
-    FirstLast
+    FirstLast,
 }
 
 public enum FileAction
 {
     Move,
-    Delete
+    Delete,
 }
 
 public enum TorrentFilter
@@ -33,7 +33,7 @@ public enum TorrentFilter
     Seeding,
     Paused,
     Queued,
-    Errors
+    Errors,
 }
 
 public enum SuggestionScope
@@ -41,18 +41,19 @@ public enum SuggestionScope
     Torrent,
     Command,
     Settings,
-    Navigation
+    Navigation,
 }
 
-// The saved window placement stores the section as its number, so members keep
+// The saved window placement stores the category as its number, so members keep
 // their positions; the tab order on the page is separate.
-public enum PreferenceSection
+public enum SettingsCategory
 {
     General,
     Transfers,
     Network,
     Limits,
-    Appearance
+    Appearance,
+    Advanced,
 }
 
 public enum InspectorSection
@@ -62,7 +63,7 @@ public enum InspectorSection
     Peers,
     Trackers,
     Speed,
-    Pieces
+    Pieces,
 }
 
 public enum PieceKind
@@ -72,7 +73,7 @@ public enum PieceKind
     Common,
     Missing,
     Downloading,
-    Verified
+    Verified,
 }
 
 public enum TrackerStatus
@@ -82,14 +83,14 @@ public enum TrackerStatus
     Announcing,
     Working,
     Error,
-    Disabled
+    Disabled,
 }
 
 public enum ScheduleMode
 {
     Normal,
     Alternative,
-    Paused
+    Paused,
 }
 
 public enum LimitMode
@@ -97,29 +98,29 @@ public enum LimitMode
     None,
     Speed,
     Alternative,
-    Schedule
+    Schedule,
 }
 
-internal enum LimitSource
+internal enum LimitOrigin
 {
     Manual,
     Schedule,
-    Override
+    Override,
 }
 
 internal enum PauseReason
 {
     None,
-    Interface,
+    Adapter,
     Manual,
-    Schedule
+    Schedule,
 }
 
 internal enum RefusalReason
 {
     InvalidPeriod,
     DuplicatePeriod,
-    SaveFailed
+    SaveFailed,
 }
 
 internal enum PeriodAction
@@ -127,7 +128,7 @@ internal enum PeriodAction
     Create,
     Move,
     Start,
-    End
+    End,
 }
 
 // In the order of the Edit proxy server dialog's list.
@@ -136,7 +137,7 @@ public enum ProxyType
     None,
     Socks5,
     Socks4,
-    Http
+    Http,
 }
 
 public enum ProxyOutcome
@@ -146,17 +147,16 @@ public enum ProxyOutcome
     Unreachable,
     NotFound,
     WrongType,
-    TimedOut
+    TimedOut,
 }
 
-public enum PreferenceKind
+public enum SettingKind
 {
     Text,
     Boolean,
     Rate,
     Number,
     Integer,
-    Port
 }
 
 #if CAPTURE
@@ -177,7 +177,7 @@ internal enum CaptureMode
     Traffic,
     Edits,
     AddLayout,
-    PreferencesLayout,
-    Footer
+    SettingsLayout,
+    Footer,
 }
 #endif

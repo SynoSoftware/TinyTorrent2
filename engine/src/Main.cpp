@@ -66,6 +66,7 @@ int WINAPI wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ PWSTR, _In_ int)
         bool literal = false;
         std::string registration;
         std::vector<std::string> sources;
+        std::vector<std::wstring> repairClasses;
         std::filesystem::path directory;
         for (int index = 1; index < count; ++index)
         {
@@ -90,12 +91,12 @@ int WINAPI wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ PWSTR, _In_ int)
             {
                 if (++index == count)
                 {
-                    throw std::runtime_error("The --registration option needs an operation.");
+                    throw std::runtime_error("The --registration option needs an action.");
                 }
                 registration = tt::Utf8(arguments[index]);
                 if (registration.empty())
                 {
-                    throw std::runtime_error("The --registration option needs an operation.");
+                    throw std::runtime_error("The --registration option needs an action.");
                 }
             }
             else if (!literal && argument == tt::option::data)
@@ -105,6 +106,14 @@ int WINAPI wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ PWSTR, _In_ int)
                     throw std::runtime_error("The --data option needs a folder.");
                 }
                 directory = arguments[index];
+            }
+            else if (!literal && argument == tt::option::repairClass)
+            {
+                if (++index == count)
+                {
+                    throw std::runtime_error("The --repair-class option needs a class.");
+                }
+                repairClasses.push_back(arguments[index]);
             }
             else
             {
@@ -120,7 +129,7 @@ int WINAPI wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ PWSTR, _In_ int)
         LocalFree(arguments);
         if (!registration.empty() && !sources.empty())
         {
-            throw std::runtime_error("Registration operations cannot include torrent sources.");
+            throw std::runtime_error("Registration actions cannot include torrent sources.");
         }
         if (exiting && (!registration.empty() || !sources.empty() || background || !directory.empty()))
         {
@@ -129,6 +138,19 @@ int WINAPI wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ PWSTR, _In_ int)
         if (!sources.empty() && !tt::desktop::Application::ValidSources(sources))
         {
             throw std::runtime_error("Torrent sources exceed the supported count or length.");
+        }
+        // The window starts this repair as an administrator, and forwarding
+        // would hand it to the person's own engine, which cannot change
+        // all-users entries. It changes nothing an engine owns, so it needs no
+        // instance ownership.
+        if (!repairClasses.empty())
+        {
+            if (!registration.empty() || !sources.empty() || exiting || background || !directory.empty())
+            {
+                throw std::runtime_error("The --repair-class option cannot include other operations.");
+            }
+            tt::Registration().RepairMachine(repairClasses);
+            return 0;
         }
         std::filesystem::path standard;
         PWSTR local = nullptr;
@@ -170,7 +192,7 @@ int WINAPI wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ PWSTR, _In_ int)
             else if (!registration.empty())
             {
                 forwarding =
-                    tt::Pipe::Forward(sid, {{"command", "registration"}, {"operation", registration}});
+                    tt::Pipe::Forward(sid, {{"command", "registration"}, {"action", registration}});
             }
             else if (!sources.empty())
             {
@@ -210,7 +232,7 @@ int WINAPI wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ PWSTR, _In_ int)
         {
             // The window can survive an engine crash and still hold application files.
             tt::OwnedHandle window(OpenMutexW(SYNCHRONIZE | MUTEX_MODIFY_STATE, FALSE,
-                (L"Local\\TinyTorrent.UI." + sid).c_str()));
+                (L"Local\\TinyTorrent.Window." + sid).c_str()));
             if (!window && GetLastError() != ERROR_FILE_NOT_FOUND)
             {
                 throw std::runtime_error("Cannot check window instance ownership.");

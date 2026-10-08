@@ -31,7 +31,12 @@ internal static class Icons
     /// same thing to a different number of columns. The labels name the scope too, so this glyph
     /// reinforces rather than carries.
     /// </remarks>
-    internal static IconElement FitVisibleColumns() => Glyph(Lucide.UnfoldHorizontal);
+    internal static IconElement FitColumns() => Glyph(Lucide.UnfoldHorizontal);
+
+    /// <summary>
+    /// Fitting the visible columns to the table's width: content pushed out to both edges.
+    /// </summary>
+    internal static IconElement FillWidth() => Glyph(Lucide.AlignHorizontalSpaceBetween);
 
     internal static IconElement HideColumn() => Glyph(Lucide.EyeOff);
 
@@ -62,10 +67,11 @@ internal static class Icons
     /// from its text, so the glyph grows into the space the font was leaving empty rather than
     /// making the row taller.
     /// </remarks>
-    private static IconElement Glyph(string glyph) => new FontIcon
-    {
-        FontFamily = Lucide.Font,
-        Glyph = glyph,
-        FontSize = 20,
-    };
+    private static IconElement Glyph(string glyph) =>
+        new FontIcon
+        {
+            FontFamily = Lucide.Font,
+            Glyph = glyph,
+            FontSize = 20,
+        };
 }

@@ -3,36 +3,59 @@ using System.Windows.Input;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Data;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
+using Syno.TinyTorrent.Controls;
+using Syno.TinyTorrent.Models;
+using Syno.TinyTorrent.Views;
 using Windows.ApplicationModel.DataTransfer;
 using Windows.Foundation;
 using Windows.Storage;
 using Windows.System;
-using Syno.TinyTorrent.Controls;
-using Syno.TinyTorrent.Models;
-using Syno.TinyTorrent.Views;
 
 namespace Syno.TinyTorrent;
 
 public sealed partial class MainWindow
 {
-    private FileForm? _filesForm;
+    private FileDialog? _fileDialog;
 
     private void OnQueueKey(object sender, KeyRoutedEventArgs args)
     {
         // VirtualKey omits the Windows OEM plus and minus codes.
         const VirtualKey plus = (VirtualKey)0xBB;
         const VirtualKey minus = (VirtualKey)0xBD;
-        if (args.Key != plus && args.Key != minus || HasDialog || Model.Page != WindowPage.Torrents || HasEditorFocus()) return;
-        if (!Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Control).HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down)) return;
-        if (Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Menu).HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down)) return;
-        var shift = Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Shift).HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
+        if (
+            args.Key != plus && args.Key != minus
+            || HasDialog
+            || Model.Page != WindowPage.Torrents
+            || HasEditorFocus()
+        )
+            return;
+        if (
+            !Microsoft
+                .UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Control)
+                .HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down)
+        )
+            return;
+        if (
+            Microsoft
+                .UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Menu)
+                .HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down)
+        )
+            return;
+        var shift = Microsoft
+            .UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Shift)
+            .HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
         var key = args.Key == plus ? VirtualKey.Add : VirtualKey.Subtract;
-        var modifiers = VirtualKeyModifiers.Control | (shift ? VirtualKeyModifiers.Shift : VirtualKeyModifiers.None);
-        var command = _shortcuts.FirstOrDefault(pair => pair.Value.Key == key && pair.Value.Modifiers == modifiers).Key;
-        if (command is null || !command.CanExecute(null)) return;
+        var modifiers =
+            VirtualKeyModifiers.Control
+            | (shift ? VirtualKeyModifiers.Shift : VirtualKeyModifiers.None);
+        var command = _shortcuts
+            .FirstOrDefault(pair => pair.Value.Key == key && pair.Value.Modifiers == modifiers)
+            .Key;
+        if (command is null || !command.CanExecute(null))
+            return;
         command.Execute(null);
         args.Handled = true;
     }
@@ -51,17 +74,25 @@ public sealed partial class MainWindow
         // MenuBarItem mirrors individual removals into its flyout, but ignores
         // Clear's reset, leaving old entries behind after a language change.
         foreach (var menu in new[] { FileMenu, TorrentMenu, ViewMenu, HelpMenu })
-            while (menu.Items.Count > 0) menu.Items.RemoveAt(menu.Items.Count - 1);
+            while (menu.Items.Count > 0)
+                menu.Items.RemoveAt(menu.Items.Count - 1);
         FileMenu.Items.Add(Menu("add_file", Model.Add, Syno.Lucide.FilePlus));
         FileMenu.Items.Add(Menu("add_magnet", Model.AddMagnet, Syno.Lucide.Link));
         FileMenu.Items.Add(new MenuFlyoutSeparator());
-        FileMenu.Items.Add(Menu("settings", Model.ShowPreferences, Syno.Lucide.Settings));
+        FileMenu.Items.Add(Menu("settings", Model.ShowSettings, Syno.Lucide.Settings));
         FileMenu.Items.Add(new MenuFlyoutSeparator());
-        FileMenu.Items.Add(Menu("exit", Model.CloseWindow, Syno.Lucide.X));
-        FileMenu.Items.Add(Menu("exit_all", Model.Exit, Syno.Lucide.Power));
+        FileMenu.Items.Add(Menu("close", Model.CloseWindow, Syno.Lucide.X));
+        FileMenu.Items.Add(Menu("exit", Model.Exit, Syno.Lucide.Power));
         var selection = new MenuFlyoutItem { IsEnabled = false };
-        selection.SetBinding(MenuFlyoutItem.TextProperty, new Binding { Source = Model,
-            Path = new PropertyPath(nameof(MainViewModel.SelectionText)), Mode = BindingMode.OneWay });
+        selection.SetBinding(
+            MenuFlyoutItem.TextProperty,
+            new Binding
+            {
+                Source = Model,
+                Path = new PropertyPath(nameof(MainViewModel.SelectionText)),
+                Mode = BindingMode.OneWay,
+            }
+        );
         TorrentMenu.Items.Add(selection);
         TorrentMenu.Items.Add(new MenuFlyoutSeparator());
         AddSelection(TorrentMenu.Items, true);
@@ -69,36 +100,93 @@ public sealed partial class MainWindow
         TorrentMenu.Items.Add(Menu("pause_all", Model.PauseAll, Syno.Lucide.Pause));
         TorrentMenu.Items.Add(Menu("resume_all", Model.ResumeAll, Syno.Lucide.Play));
         TorrentMenu.Items.Add(Menu("limits", Model.Limits, Syno.Lucide.Gauge));
-        ViewMenu.Items.Add(Toggle(() => Model.FilterLabel, "filters", Model.SwitchFilters, () => Model.IsFilterOpen, Syno.Lucide.Funnel));
-        ViewMenu.Items.Add(Toggle(() => Model.Text.Get("menus", "toolbar"), "toolbar", Model.SwitchToolbar, () => Model.IsToolbarOpen, Syno.Lucide.PanelTop));
+        ViewMenu.Items.Add(
+            Toggle(
+                () => Model.FilterLabel,
+                "filters",
+                Model.SwitchFilters,
+                () => Model.IsFilterOpen,
+                Syno.Lucide.Funnel
+            )
+        );
+        ViewMenu.Items.Add(
+            Toggle(
+                () => Model.Text.Get("menus", "toolbar"),
+                "toolbar",
+                Model.SwitchToolbar,
+                () => Model.IsToolbarOpen,
+                Syno.Lucide.PanelTop
+            )
+        );
         ClearFiltersButton.Text = Model.Text.Get("window", "clear_filters");
-        ToolTipService.SetToolTip(ClearFiltersButton, Model.Text.Get("window", "clear_filters_tip"));
-        HelpMenu.Items.Add(new MenuFlyoutItem { Text = Model.Text.Get("about", "title"), Command = Model.ShowAbout, Icon = Icon(Syno.Lucide.Info),
-            AccessKey = MenuKey("about") });
-        HelpMenu.Items.Add(new MenuFlyoutItem { Text = Model.UpdateText, Command = Model.OpenUpdate, Icon = Icon(Syno.Lucide.CircleFadingArrowUp),
-            AccessKey = MenuKey("update") });
+        ToolTipService.SetToolTip(
+            ClearFiltersButton,
+            Model.Text.Get("window", "clear_filters_tip")
+        );
+        HelpMenu.Items.Add(
+            new MenuFlyoutItem
+            {
+                Text = Model.Text.Get("about", "title"),
+                Command = Model.ShowAbout,
+                Icon = Icon(Syno.Lucide.Info),
+                AccessKey = MenuKey("about"),
+            }
+        );
+        HelpMenu.Items.Add(
+            new MenuFlyoutItem
+            {
+                Text = Model.UpdateText,
+                Command = Model.OpenUpdate,
+                Icon = Icon(Syno.Lucide.CircleFadingArrowUp),
+                AccessKey = MenuKey("update"),
+            }
+        );
         AutomationProperties.SetName(Toolbar, Model.Text.Get("menus", "toolbar"));
-        foreach (var (button, name, command) in new[] { (AddButton, "add_file", Model.Add), (MagnetButton, "add_magnet", Model.AddMagnet),
-            (ResumeButton, "resume", Model.Resume), (PauseButton, "pause", Model.Pause), (FolderButton, "open_folder", Model.OpenFolder),
-            (PropertiesButton, "properties", Model.Properties), (VerifyButton, "verify", Model.Verify),
-            (RemoveButton, "remove", Model.Remove), (DeleteButton, "delete_files", Model.DeleteFiles),
-            (SettingsButton, "settings", Model.ShowPreferences) })
+        foreach (
+            var (button, name, command) in new[]
+            {
+                (AddButton, "add_file", Model.Add),
+                (MagnetButton, "add_magnet", Model.AddMagnet),
+                (ResumeButton, "resume", Model.Resume),
+                (PauseButton, "pause", Model.Pause),
+                (FolderButton, "open_folder", Model.OpenFolder),
+                (PropertiesButton, "properties", Model.Properties),
+                (VerifyButton, "verify", Model.Verify),
+                (RemoveButton, "remove", Model.Remove),
+                (DeleteButton, "delete_files", Model.DeleteFiles),
+                (SettingsButton, "settings", Model.ShowSettings),
+            }
+        )
         {
             var label = Model.Text.Get("commands", name);
             var shortcut = ShortcutText(command);
             AutomationProperties.SetName(button, label);
-            ToolTipService.SetToolTip(button, shortcut.Length > 0 ? Model.Text.Format("shortcuts", "tip", label, shortcut) : label);
+            ToolTipService.SetToolTip(
+                button,
+                shortcut.Length > 0 ? Model.Text.Format("shortcuts", "tip", label, shortcut) : label
+            );
         }
     }
 
     private void ShowSelectionMenu(FrameworkElement target, Point? position)
     {
         var menu = new MenuFlyout();
-        menu.Items.Add(new MenuFlyoutItem { Text = Torrents.Selection.Items.Count == 1 ?
-            ((Torrent)Torrents.Selection.Items[0]).Name : Model.SelectionText, IsEnabled = false });
+        menu.Items.Add(
+            new MenuFlyoutItem
+            {
+                Text =
+                    Torrents.Selection.Items.Count == 1
+                        ? ((Torrent)Torrents.Selection.Items[0]).Name
+                        : Model.SelectionText,
+                IsEnabled = false,
+            }
+        );
         menu.Items.Add(new MenuFlyoutSeparator());
         AddSelection(menu.Items, !Model.HasInspector);
-        if (position is { } point) menu.ShowAt(target, point); else menu.ShowAt(target);
+        if (position is { } point)
+            menu.ShowAt(target, point);
+        else
+            menu.ShowAt(target);
     }
 
     private void AddSelection(IList<MenuFlyoutItemBase> items, bool properties)
@@ -111,75 +199,156 @@ public sealed partial class MainWindow
         items.Add(Menu("open_folder", Model.OpenFolder, Syno.Lucide.FolderOpen));
         items.Add(Menu("copy_magnet", Model.CopyMagnet, Syno.Lucide.Link));
         items.Add(Menu("copy_hash", Model.CopyHash, Syno.Lucide.Hash));
-        if (properties) items.Add(Menu("properties", Model.Properties, Syno.Lucide.Info));
+        if (properties)
+            items.Add(Menu("properties", Model.Properties, Syno.Lucide.Info));
         items.Add(new MenuFlyoutSeparator());
         items.Add(Menu("verify", Model.Verify, Syno.Lucide.RefreshCw));
         items.Add(Menu("move", Model.MoveFiles, Syno.Lucide.FolderInput));
-        var queue = new MenuFlyoutSubItem { Text = Model.Text.Get("menus", "queue"), Icon = Icon(Syno.Lucide.ListOrdered),
-            AccessKey = MenuKey("queue") };
+        var queue = new MenuFlyoutSubItem
+        {
+            Text = Model.Text.Get("menus", "queue"),
+            Icon = Icon(Syno.Lucide.ListOrdered),
+            AccessKey = MenuKey("queue"),
+        };
         queue.Items.Add(Menu("up", Model.Up, Syno.Lucide.ArrowUp));
         queue.Items.Add(Menu("down", Model.Down, Syno.Lucide.ArrowDown));
         queue.Items.Add(Menu("top", Model.Top, Syno.Lucide.ArrowUpToLine));
         queue.Items.Add(Menu("bottom", Model.Bottom, Syno.Lucide.ArrowDownToLine));
         items.Add(queue);
         items.Add(new MenuFlyoutSeparator());
-        items.Add(Choice(() => Model.Text.Get("commands", "sequential"), "sequential", Model.SwitchSequential, () => Model.Sequential));
-        items.Add(Choice(() => Model.Text.Get("commands", "first_last"), "first_last", Model.SwitchFirstLast, () => Model.FirstLast));
-        items.Add(Choice(() => Model.Text.Get("commands", "speed_limit"), "speed_limit", Model.LimitSpeed, () => Model.Limited));
+        items.Add(
+            Choice(
+                () => Model.Text.Get("commands", "sequential"),
+                "sequential",
+                Model.SwitchSequential,
+                () => Model.Sequential
+            )
+        );
+        items.Add(
+            Choice(
+                () => Model.Text.Get("commands", "first_last"),
+                "first_last",
+                Model.SwitchFirstLast,
+                () => Model.FirstLast
+            )
+        );
+        items.Add(
+            Choice(
+                () => Model.Text.Get("commands", "speed_limit"),
+                "speed_limit",
+                Model.LimitSpeed,
+                () => Model.Limited
+            )
+        );
         items.Add(new MenuFlyoutSeparator());
         items.Add(Menu("remove", Model.Remove, Syno.Lucide.ListX));
         items.Add(Menu("delete_files", Model.DeleteFiles, Syno.Lucide.Trash2));
     }
 
     private MenuFlyoutItem Menu(string name, ICommand command, string glyph) =>
-        new() { Text = Model.Text.Get("commands", name), Command = command,
-            Icon = Icon(glyph), AccessKey = MenuKey(name), KeyboardAcceleratorTextOverride = ShortcutText(command) };
+        new()
+        {
+            Text = Model.Text.Get("commands", name),
+            Command = command,
+            Icon = Icon(glyph),
+            AccessKey = MenuKey(name),
+            KeyboardAcceleratorTextOverride = ShortcutText(command),
+        };
 
     private string MenuKey(string name) => Model.Text.Get("menus", name + "_key");
 
     private string ShortcutText(ICommand command)
     {
-        if (!_shortcuts.TryGetValue(command, out var accelerator)) return string.Empty;
+        if (!_shortcuts.TryGetValue(command, out var accelerator))
+            return string.Empty;
         var parts = new List<string>();
-        if (accelerator.Modifiers.HasFlag(VirtualKeyModifiers.Control)) parts.Add(Model.Text.Get("shortcuts", "control"));
-        if (accelerator.Modifiers.HasFlag(VirtualKeyModifiers.Menu)) parts.Add(Model.Text.Get("shortcuts", "alt"));
-        if (accelerator.Modifiers.HasFlag(VirtualKeyModifiers.Shift)) parts.Add(Model.Text.Get("shortcuts", "shift"));
-        parts.Add(accelerator.Key switch
-        {
-            VirtualKey.Delete => Model.Text.Get("shortcuts", "delete"),
-            VirtualKey.Add => "+",
-            VirtualKey.Subtract => "-",
-            Comma => ",",
-            _ => accelerator.Key.ToString()
-        });
+        if (accelerator.Modifiers.HasFlag(VirtualKeyModifiers.Control))
+            parts.Add(Model.Text.Get("shortcuts", "control"));
+        if (accelerator.Modifiers.HasFlag(VirtualKeyModifiers.Menu))
+            parts.Add(Model.Text.Get("shortcuts", "alt"));
+        if (accelerator.Modifiers.HasFlag(VirtualKeyModifiers.Shift))
+            parts.Add(Model.Text.Get("shortcuts", "shift"));
+        parts.Add(
+            accelerator.Key switch
+            {
+                VirtualKey.Delete => Model.Text.Get("shortcuts", "delete"),
+                VirtualKey.Add => "+",
+                VirtualKey.Subtract => "-",
+                Comma => ",",
+                _ => accelerator.Key.ToString(),
+            }
+        );
         return string.Join("+", parts);
     }
 
     // A plain item showing its state as its icon, not a ToggleMenuFlyoutItem:
     // a toggle gives every item in its menu an empty check column.
-    private MenuFlyoutItem Choice(Func<string> text, string name, ICommand command, Func<bool?> state)
+    private MenuFlyoutItem Choice(
+        Func<string> text,
+        string name,
+        ICommand command,
+        Func<bool?> state
+    )
     {
         var icon = new FontIcon { FontFamily = Syno.Lucide.Font };
-        var item = new MenuFlyoutItem { Command = command, Icon = icon, AccessKey = MenuKey(name) };
-        Follow(item, () =>
+        var item = new MenuFlyoutItem
         {
-            var current = state();
-            item.Text = text();
-            icon.Glyph = current switch { true => Syno.Lucide.SquareCheck, false => Syno.Lucide.Square, null => Syno.Lucide.SquareMinus };
-            AutomationProperties.SetItemStatus(item, Model.Text.Get("menus", current switch { true => "on", false => "off", null => "mixed" }));
-        });
+            Command = command,
+            Icon = icon,
+            AccessKey = MenuKey(name),
+        };
+        Follow(
+            item,
+            () =>
+            {
+                var current = state();
+                item.Text = text();
+                icon.Glyph = current switch
+                {
+                    true => Syno.Lucide.SquareCheck,
+                    false => Syno.Lucide.Square,
+                    null => Syno.Lucide.SquareMinus,
+                };
+                AutomationProperties.SetItemStatus(
+                    item,
+                    Model.Text.Get(
+                        "menus",
+                        current switch
+                        {
+                            true => "on",
+                            false => "off",
+                            null => "mixed",
+                        }
+                    )
+                );
+            }
+        );
         return item;
     }
 
     // For a menu whose items are all toggles, so no check column stands empty.
-    private ToggleMenuFlyoutItem Toggle(Func<string> text, string name, ICommand command, Func<bool> state, string glyph)
+    private ToggleMenuFlyoutItem Toggle(
+        Func<string> text,
+        string name,
+        ICommand command,
+        Func<bool> state,
+        string glyph
+    )
     {
-        var item = new ToggleMenuFlyoutItem { Command = command, Icon = Icon(glyph), AccessKey = MenuKey(name) };
-        Follow(item, () =>
+        var item = new ToggleMenuFlyoutItem
         {
-            item.Text = text();
-            item.IsChecked = state();
-        });
+            Command = command,
+            Icon = Icon(glyph),
+            AccessKey = MenuKey(name),
+        };
+        Follow(
+            item,
+            () =>
+            {
+                item.Text = text();
+                item.IsChecked = state();
+            }
+        );
         return item;
     }
 
@@ -188,15 +357,21 @@ public sealed partial class MainWindow
     {
         void Show(object? sender, PropertyChangedEventArgs args) => show();
         show();
-        item.Loaded += (_, _) => { show(); Model.PropertyChanged += Show; };
+        item.Loaded += (_, _) =>
+        {
+            show();
+            Model.PropertyChanged += Show;
+        };
         item.Unloaded += (_, _) => Model.PropertyChanged -= Show;
     }
 
-    private static FontIcon Icon(string glyph) => new() { FontFamily = Syno.Lucide.Font, Glyph = glyph };
+    private static FontIcon Icon(string glyph) =>
+        new() { FontFamily = Syno.Lucide.Font, Glyph = glyph };
 
     private async Task ConfirmMerge()
     {
-        if (HasDialog || Model.IsClosing) return;
+        if (HasDialog || Model.IsClosing)
+            return;
         await Interact(async interaction =>
         {
             var dialog = new Dialog
@@ -204,22 +379,37 @@ public sealed partial class MainWindow
                 XamlRoot = Root.XamlRoot,
                 DefaultButton = ContentDialogButton.Primary,
                 Glyph = Syno.Lucide.Merge,
-                PrimaryGlyph = Syno.Lucide.Merge
+                PrimaryGlyph = Syno.Lucide.Merge,
             };
-            var choice = await ShowDialog(interaction, dialog, () =>
-            {
-                dialog.Title = Model.Text.Get("add", "merge_title");
-                dialog.PrimaryButtonText = Model.Text.Get("add", "merge");
-                dialog.PrimaryToolTip = Model.Text.Get("add", "merge_tip");
-                dialog.CloseButtonText = Model.Text.Get("add", "cancel");
-                dialog.Content = Lines(Model.Draft.Sources
-                    .Select(source => source.MetadataReady ? Model.Text.Format("units", "detail", source.Name, Model.Text.Bytes(source.Size)) : source.Name)
-                    .Append(Model.Text.Get("add", "already_listed")));
-            });
+            var choice = await ShowDialog(
+                interaction,
+                dialog,
+                () =>
+                {
+                    dialog.Title = Model.Text.Get("add", "merge_title");
+                    dialog.PrimaryButtonText = Model.Text.Get("add", "merge");
+                    dialog.PrimaryToolTip = Model.Text.Get("add", "merge_tip");
+                    dialog.CloseButtonText = Model.Text.Get("add", "cancel");
+                    dialog.Content = Lines(
+                        Model
+                            .AddDraft.Sources.Select(source =>
+                                source.MetadataReady
+                                    ? Model.Text.Format(
+                                        "units",
+                                        "detail",
+                                        source.Name,
+                                        Model.Text.Bytes(source.Size)
+                                    )
+                                    : source.Name
+                            )
+                            .Append(Model.Text.Get("add", "already_listed"))
+                    );
+                }
+            );
             // Either way the person is taken to the torrents already in the list.
-            foreach (var source in Model.Draft.Sources)
+            foreach (var source in Model.AddDraft.Sources)
                 source.Merge = choice == ContentDialogResult.Primary && source.MergeAvailable;
-            await Model.Draft.Submit();
+            await Model.AddDraft.Submit();
             return true;
         });
     }
@@ -239,91 +429,163 @@ public sealed partial class MainWindow
 
     private async Task ConfirmRemove(Torrent[] torrents)
     {
-        if (HasDialog || Model.IsClosing) return;
+        if (HasDialog || Model.IsClosing)
+            return;
         await Interact(async interaction =>
         {
             var dialog = new Dialog
             {
                 XamlRoot = Root.XamlRoot,
-                DefaultButton = ContentDialogButton.Close,
+                DefaultButton = ContentDialogButton.Primary,
                 Glyph = Syno.Lucide.ListX,
-                PrimaryGlyph = Syno.Lucide.ListX
+                PrimaryGlyph = Syno.Lucide.ListX,
             };
-            var choice = await ShowDialog(interaction, dialog, () =>
-            {
-                dialog.Title = Model.Text.Get("remove", "title");
-                dialog.PrimaryButtonText = Model.Text.Get("commands", "remove");
-                dialog.PrimaryToolTip = Model.Text.Get("remove", "tip");
-                dialog.CloseButtonText = Model.Text.Get("add", "cancel");
-                dialog.Content = Lines(torrents.Select(torrent => Model.Text.Format("units", "detail", torrent.Name, torrent.SizeText)));
-            });
-            if (choice == ContentDialogResult.Primary) await Model.RemoveTorrents(torrents);
+            var choice = await ShowDialog(
+                interaction,
+                dialog,
+                () =>
+                {
+                    dialog.Title = Model.Text.Get("remove", "title");
+                    dialog.PrimaryButtonText = Model.Text.Get("commands", "remove");
+                    dialog.PrimaryToolTip = Model.Text.Get("remove", "tip");
+                    dialog.CloseButtonText = Model.Text.Get("add", "cancel");
+                    dialog.Content = Lines(
+                        torrents.Select(torrent =>
+                            Model.Text.Format("units", "detail", torrent.Name, torrent.SizeText)
+                        )
+                    );
+                }
+            );
+            if (choice != ContentDialogResult.Primary)
+                return true;
+            Torrents.Release(torrents);
+            await Model.RemoveTorrents(torrents);
             return true;
         });
     }
 
     private async Task ShowFiles(Torrent[] torrents, FileAction action, bool initialize = true)
     {
-        if (HasDialog || Model.IsClosing) return;
+        if (HasDialog || Model.IsClosing)
+            return;
         await Interact(async interaction =>
         {
-            if (initialize) Model.Files.Begin(torrents, action);
+            if (initialize)
+                Model.FileDraft.Begin(torrents, action);
             if (action == FileAction.Move)
-                interaction.Restore = () => !interaction.IsResolved && torrents.All(Model.Contains) ? ShowFiles(torrents, action, false) : Task.CompletedTask;
+                interaction.Restore = () =>
+                    !interaction.IsResolved && torrents.All(Model.Contains)
+                        ? ShowFiles(torrents, action, false)
+                        : Task.CompletedTask;
             interaction.ResolveDraft = async () =>
             {
-                if (!Model.Files.HasDraft) return true;
-                return interaction.IsResolved = await ResolveDraft("move", Model.Files.Submit, () =>
-                    { Model.Files.Cancel(); return Task.CompletedTask; });
+                if (!Model.FileDraft.HasChanges)
+                    return true;
+                return interaction.IsResolved = await ResolveDraft(
+                    "move",
+                    Model.FileDraft.Submit,
+                    () =>
+                    {
+                        Model.FileDraft.Cancel();
+                        return Task.CompletedTask;
+                    }
+                );
             };
-            var form = new FileForm(Model);
-            form.DestinationRequested += async (_, _) =>
+            var content = new FileDialog(Model);
+            content.DestinationRequested += async (_, _) =>
             {
                 var folder = await PickFolder();
-                if (folder is not null) Model.Files.Destination = folder;
+                if (folder is not null)
+                    Model.FileDraft.Destination = folder;
             };
-            void ResizeForm(object? sender = null, SizeChangedEventArgs? args = null)
+            void Resize(object? sender = null, SizeChangedEventArgs? args = null)
             {
-                form.Width = Math.Min(560, Root.ActualWidth - 80);
+                content.Width = Math.Min(560, Root.ActualWidth - 80);
                 var height = Math.Clamp(Root.ActualHeight - 180, 220, 440);
-                if (action == FileAction.Delete) form.MaxHeight = height;
-                else form.Height = height;
+                if (action == FileAction.Delete)
+                    content.MaxHeight = height;
+                else
+                    content.Height = height;
             }
-            ResizeForm();
-            Root.SizeChanged += ResizeForm;
-            var dialog = new Dialog { XamlRoot = Root.XamlRoot, Content = form,
-                DefaultButton = action == FileAction.Delete ? ContentDialogButton.Close : ContentDialogButton.Primary };
+            Resize();
+            Root.SizeChanged += Resize;
+            var dialog = new Dialog
+            {
+                XamlRoot = Root.XamlRoot,
+                Content = content,
+                DefaultButton = ContentDialogButton.Primary,
+            };
             dialog.Resources["ContentDialogMaxWidth"] = double.PositiveInfinity;
-            var total = new TextBlock { Style = (Style)Application.Current.Resources["TitleDetailTextStyle"],
-                TextTrimming = TextTrimming.CharacterEllipsis };
-            total.SetBinding(TextBlock.TextProperty, new Binding { Source = Model.Files,
-                Path = new PropertyPath(nameof(FileOperation.Total)), Mode = BindingMode.OneWay });
-            if (action == FileAction.Delete) dialog.Footer = total;
-            dialog.SetBinding(ContentDialog.IsPrimaryButtonEnabledProperty, new Binding { Source = Model.Files,
-                Path = new PropertyPath(nameof(FileOperation.CanSubmit)), Mode = BindingMode.OneWay });
-            dialog.PrimaryButtonClick += async (_, args) => await Submit(interaction, args, Model.Files.Submit);
-            dialog.Closing += (_, args) => { if ((Model.Files.IsPending || Model.IsPicking) && !Model.IsClosing) args.Cancel = true; };
-            _filesForm = form;
-            if (initialize) _ = Model.Files.RefreshScope();
+            var total = new TextBlock
+            {
+                Style = (Style)Application.Current.Resources["TinyTorrentTitleDetailTextStyle"],
+                TextTrimming = TextTrimming.CharacterEllipsis,
+            };
+            total.SetBinding(
+                TextBlock.TextProperty,
+                new Binding
+                {
+                    Source = Model.FileDraft,
+                    Path = new PropertyPath(nameof(FileDraft.Total)),
+                    Mode = BindingMode.OneWay,
+                }
+            );
+            if (action == FileAction.Delete)
+                dialog.Footer = total;
+            dialog.SetBinding(
+                ContentDialog.IsPrimaryButtonEnabledProperty,
+                new Binding
+                {
+                    Source = Model.FileDraft,
+                    Path = new PropertyPath(nameof(FileDraft.CanSubmit)),
+                    Mode = BindingMode.OneWay,
+                }
+            );
+            dialog.PrimaryButtonClick += async (_, args) =>
+                await Submit(
+                    interaction,
+                    args,
+                    () =>
+                    {
+                        if (action == FileAction.Delete)
+                            Torrents.Release(torrents);
+                        return Model.FileDraft.Submit();
+                    }
+                );
+            dialog.Closing += (_, args) =>
+            {
+                if ((Model.FileDraft.IsPending || Model.IsPicking) && !Model.IsClosing)
+                    args.Cancel = true;
+            };
+            _fileDialog = content;
+            // Files that other torrents share add a block above the destination,
+            // so the dialog opens with the scope already read.
+            if (initialize)
+                await Model.FileDraft.RefreshScope();
             try
             {
-                await ShowDialog(interaction, dialog, () =>
-                {
-                    dialog.Title = Model.Files.Title;
-                    dialog.Glyph = dialog.PrimaryGlyph = Model.Files.SubmitGlyph;
-                    dialog.PrimaryButtonText = Model.Files.SubmitText;
-                    dialog.PrimaryToolTip = Model.Files.SubmitToolTip;
-                    dialog.CloseButtonText = Model.Text.Get("add", "cancel");
-                    form.RefreshText();
-                });
+                await ShowDialog(
+                    interaction,
+                    dialog,
+                    () =>
+                    {
+                        dialog.Title = Model.FileDraft.Title;
+                        dialog.Glyph = dialog.PrimaryGlyph = Model.FileDraft.SubmitGlyph;
+                        dialog.PrimaryButtonText = Model.FileDraft.SubmitText;
+                        dialog.PrimaryToolTip = Model.FileDraft.SubmitToolTip;
+                        dialog.CloseButtonText = Model.Text.Get("add", "cancel");
+                        content.RefreshText();
+                    }
+                );
                 interaction.IsResolved |= !Model.IsClosing;
             }
             finally
             {
-                Root.SizeChanged -= ResizeForm;
+                Root.SizeChanged -= Resize;
                 dialog.Content = null;
-                _filesForm = null;
-                if (!Model.IsClosing || action == FileAction.Delete) Model.Files.Cancel();
+                _fileDialog = null;
+                if (!Model.IsClosing || action == FileAction.Delete)
+                    Model.FileDraft.Cancel();
             }
             return true;
         });
@@ -331,38 +593,68 @@ public sealed partial class MainWindow
 
     private async Task ShowSpeedLimit(Torrent[] torrents, bool initialize = true)
     {
-        if (HasDialog || Model.IsClosing) return;
+        if (HasDialog || Model.IsClosing)
+            return;
         await Interact(async interaction =>
         {
-            if (initialize) Model.SpeedLimit.Begin(torrents);
-            interaction.Restore = () => !interaction.IsResolved && torrents.All(Model.Contains) ? ShowSpeedLimit(torrents, false) : Task.CompletedTask;
+            if (initialize)
+                Model.SpeedLimit.Begin(torrents);
+            interaction.Restore = () =>
+                !interaction.IsResolved && torrents.All(Model.Contains)
+                    ? ShowSpeedLimit(torrents, false)
+                    : Task.CompletedTask;
             // Closing the window applies typed limits, as leaving any editor
             // does, unless the engine is gone and cannot take them.
             interaction.ResolveDraft = async () =>
-                !Model.SpeedLimit.HasDraft || !Model.CanSave || (interaction.IsResolved = await Model.SpeedLimit.Submit());
-            var form = new SpeedLimitForm(Model);
-            var dialog = new Dialog { XamlRoot = Root.XamlRoot, Content = form, DefaultButton = ContentDialogButton.Primary,
-                Glyph = Syno.Lucide.Gauge, PrimaryGlyph = Syno.Lucide.Check };
-            dialog.SetBinding(ContentDialog.IsPrimaryButtonEnabledProperty, new Binding { Source = Model.SpeedLimit,
-                Path = new PropertyPath(nameof(SpeedLimit.CanSubmit)), Mode = BindingMode.OneWay });
-            dialog.PrimaryButtonClick += async (_, args) => await Submit(interaction, args, Model.SpeedLimit.Submit);
-            dialog.Closing += (_, args) => { if (Model.SpeedLimit.IsPending && !Model.IsClosing) args.Cancel = true; };
+                !Model.SpeedLimit.HasDraft
+                || !Model.CanSave
+                || (interaction.IsResolved = await Model.SpeedLimit.Submit());
+            var content = new SpeedLimitDialog(Model);
+            var dialog = new Dialog
+            {
+                XamlRoot = Root.XamlRoot,
+                Content = content,
+                DefaultButton = ContentDialogButton.Primary,
+                Glyph = Syno.Lucide.Gauge,
+                PrimaryGlyph = Syno.Lucide.Check,
+            };
+            dialog.SetBinding(
+                ContentDialog.IsPrimaryButtonEnabledProperty,
+                new Binding
+                {
+                    Source = Model.SpeedLimit,
+                    Path = new PropertyPath(nameof(SpeedLimit.CanSubmit)),
+                    Mode = BindingMode.OneWay,
+                }
+            );
+            dialog.PrimaryButtonClick += async (_, args) =>
+                await Submit(interaction, args, Model.SpeedLimit.Submit);
+            dialog.Closing += (_, args) =>
+            {
+                if (Model.SpeedLimit.IsPending && !Model.IsClosing)
+                    args.Cancel = true;
+            };
             try
             {
-                await ShowDialog(interaction, dialog, () =>
-                {
-                    dialog.Title = Model.Text.Get("speed_limit", "title");
-                    dialog.PrimaryButtonText = Model.Text.Get("speed_limit", "save");
-                    dialog.PrimaryToolTip = Model.Text.Get("speed_limit", "save_tip");
-                    dialog.CloseButtonText = Model.Text.Get("add", "cancel");
-                    form.RefreshText();
-                });
+                await ShowDialog(
+                    interaction,
+                    dialog,
+                    () =>
+                    {
+                        dialog.Title = Model.Text.Get("speed_limit", "title");
+                        dialog.PrimaryButtonText = Model.Text.Get("speed_limit", "save");
+                        dialog.PrimaryToolTip = Model.Text.Get("speed_limit", "save_tip");
+                        dialog.CloseButtonText = Model.Text.Get("add", "cancel");
+                        content.RefreshText();
+                    }
+                );
                 interaction.IsResolved |= !Model.IsClosing;
             }
             finally
             {
                 dialog.Content = null;
-                if (!Model.IsClosing) Model.SpeedLimit.Cancel();
+                if (!Model.IsClosing)
+                    Model.SpeedLimit.Cancel();
             }
             return true;
         });
@@ -370,46 +662,81 @@ public sealed partial class MainWindow
 
     private async Task ShowProxy(bool initialize = true)
     {
-        if (HasDialog || Model.IsClosing) return;
-        var proxy = Model.Preferences.Proxy;
+        if (HasDialog || Model.IsClosing)
+            return;
+        var proxy = Model.Settings.Proxy;
         await Interact(async interaction =>
         {
-            if (initialize) proxy.Begin();
-            interaction.Restore = () => !interaction.IsResolved ? ShowProxy(false) : Task.CompletedTask;
+            if (initialize)
+                proxy.Begin();
+            interaction.Restore = () =>
+                !interaction.IsResolved ? ShowProxy(false) : Task.CompletedTask;
             // Closing the window saves the typed proxy, as leaving any editor
             // does, unless the engine is gone and cannot take it.
             interaction.ResolveDraft = async () =>
-                !proxy.HasDraft || !Model.CanSave || (interaction.IsResolved = await proxy.Submit());
-            var form = new ProxyForm(Model);
+                !proxy.HasDraft
+                || !Model.CanSave
+                || (interaction.IsResolved = await proxy.Submit());
+            var content = new ProxyDialog(Model);
             // Check, Save and Cancel, in that order, so Save is the secondary
             // button. Check keeps the dialog open.
-            var dialog = new Dialog { XamlRoot = Root.XamlRoot, Content = form, Footer = form.Status,
-                DefaultButton = ContentDialogButton.Secondary, Glyph = Syno.Lucide.Route,
-                PrimaryGlyph = Syno.Lucide.Plug, SecondaryGlyph = Syno.Lucide.Check };
-            dialog.SetBinding(ContentDialog.IsPrimaryButtonEnabledProperty, new Binding { Source = proxy,
-                Path = new PropertyPath(nameof(Proxy.CanCheck)), Mode = BindingMode.OneWay });
-            dialog.SetBinding(ContentDialog.IsSecondaryButtonEnabledProperty, new Binding { Source = proxy,
-                Path = new PropertyPath(nameof(Proxy.CanSubmit)), Mode = BindingMode.OneWay });
+            var dialog = new Dialog
+            {
+                XamlRoot = Root.XamlRoot,
+                Content = content,
+                Footer = content.Status,
+                DefaultButton = ContentDialogButton.Secondary,
+                Glyph = Syno.Lucide.Route,
+                PrimaryGlyph = Syno.Lucide.Plug,
+                SecondaryGlyph = Syno.Lucide.Check,
+            };
+            dialog.SetBinding(
+                ContentDialog.IsPrimaryButtonEnabledProperty,
+                new Binding
+                {
+                    Source = proxy,
+                    Path = new PropertyPath(nameof(Proxy.CanCheck)),
+                    Mode = BindingMode.OneWay,
+                }
+            );
+            dialog.SetBinding(
+                ContentDialog.IsSecondaryButtonEnabledProperty,
+                new Binding
+                {
+                    Source = proxy,
+                    Path = new PropertyPath(nameof(Proxy.CanSubmit)),
+                    Mode = BindingMode.OneWay,
+                }
+            );
             dialog.PrimaryButtonClick += async (_, args) =>
             {
                 args.Cancel = true;
                 await proxy.Check();
             };
-            dialog.SecondaryButtonClick += async (_, args) => await Submit(interaction, args, proxy.Submit);
-            dialog.Closing += (_, args) => { if (proxy.IsPending && !Model.IsClosing) args.Cancel = true; };
+            dialog.SecondaryButtonClick += async (_, args) =>
+                await Submit(interaction, args, proxy.Submit);
+            dialog.Closing += (_, args) =>
+            {
+                if (proxy.IsPending && !Model.IsClosing)
+                    args.Cancel = true;
+            };
             try
             {
-                await ShowDialog(interaction, dialog, () =>
-                {
-                    dialog.Title = Model.Text.Get("preferences", "proxy_title");
-                    dialog.PrimaryButtonText = Model.Text.Get("preferences", "check");
-                    dialog.PrimaryToolTip = Model.Text.Get("preferences", "check_tip");
-                    dialog.SecondaryButtonText = Model.Text.Get("speed_limit", "save");
-                    dialog.SecondaryToolTip = Model.Text.Get("preferences", "proxy_save_tip");
-                    dialog.CloseButtonText = Model.Text.Get("add", "cancel");
-                    dialog.CloseToolTip = Model.Text.Get("preferences", "proxy_cancel_tip");
-                    form.RefreshText();
-                });
+                await ShowDialog(
+                    interaction,
+                    dialog,
+                    () =>
+                    {
+                        dialog.Title = Model.Text.Get("settings", "proxy_title");
+                        dialog.PrimaryButtonText = Model.Text.Get("settings", "check");
+                        dialog.PrimaryToolTip = Model.Text.Get("settings", "check_tip");
+                        dialog.SecondaryButtonText = Model.Text.Get("speed_limit", "save");
+                        dialog.SecondaryToolTip = Model.Text.Get("settings", "proxy_save_tip");
+                        dialog.CloseButtonText = Model.Text.Get("add", "cancel");
+                        dialog.CloseToolTip = Model.Text.Get("settings", "proxy_cancel_tip");
+                        content.RefreshText();
+                    }
+                );
                 interaction.IsResolved |= !Model.IsClosing;
             }
             finally
@@ -422,9 +749,12 @@ public sealed partial class MainWindow
 
     private async void OnInspectorClose(object sender, RoutedEventArgs args)
     {
-        if (Model.IsClosing || Model.Inspector.IsPending) return;
-        if (Model.Inspector.HasDraft && !await LeaveInspector()) return;
-        if (!Model.CloseInspector()) return;
+        if (Model.IsClosing || Model.Inspector.IsPending)
+            return;
+        if (Model.Inspector.HasDraft && !await LeaveInspector())
+            return;
+        if (!Model.CloseInspector())
+            return;
         Torrents.Focus(FocusState.Programmatic);
     }
 
@@ -432,16 +762,23 @@ public sealed partial class MainWindow
     {
         try
         {
-            var content = Clipboard.GetContent();
-            await AddSources(content);
+            var data = Clipboard.GetContent();
+            await AddSources(data);
         }
-        catch (Exception error) { Model.Report(error); }
+        catch (Exception error)
+        {
+            Model.Report(error);
+        }
     }
 
     private void OnDragOver(object sender, DragEventArgs args)
     {
-        if (!Model.CanEdit) return;
-        if (args.DataView.Contains(StandardDataFormats.StorageItems) || args.DataView.Contains(StandardDataFormats.Text))
+        if (!Model.CanEdit)
+            return;
+        if (
+            args.DataView.Contains(StandardDataFormats.StorageItems)
+            || args.DataView.Contains(StandardDataFormats.Text)
+        )
             args.AcceptedOperation = DataPackageOperation.Copy;
     }
 
@@ -451,32 +788,53 @@ public sealed partial class MainWindow
         var deferral = args.GetDeferral();
         try
         {
-            await AddSources(args.DataView, sender as AddForm);
+            await AddSources(args.DataView, sender as AddDialog);
         }
-        catch (Exception error) { Model.Report(error); }
-        finally { deferral.Complete(); }
+        catch (Exception error)
+        {
+            Model.Report(error);
+        }
+        finally
+        {
+            deferral.Complete();
+        }
     }
 
-    private async Task AddSources(DataPackageView content, AddForm? form = null)
+    private async Task AddSources(DataPackageView data, AddDialog? content = null)
     {
-        bool CanApply() => Model.CanEdit &&
-            (form is null || form == _form && form.IsLoaded && Model.Draft.CanEdit);
-        if (!CanApply()) return;
-        if (content.Contains(StandardDataFormats.StorageItems))
+        bool CanApply() =>
+            Model.CanEdit
+            && (
+                content is null
+                || content == _addDialog && content.IsLoaded && Model.AddDraft.CanEdit
+            );
+        if (!CanApply())
+            return;
+        if (data.Contains(StandardDataFormats.StorageItems))
         {
-            var files = await content.GetStorageItemsAsync();
-            if (!CanApply()) return;
+            var files = await data.GetStorageItemsAsync();
+            if (!CanApply())
+                return;
             if (Model.IsAddOpen && files is [StorageFolder folder])
             {
-                if (Model.Draft.CanEdit) Model.Draft.Destination = folder.Path;
+                if (Model.AddDraft.CanEdit)
+                    Model.AddDraft.Destination = folder.Path;
                 return;
             }
-            await Model.AddSources(files.OfType<StorageFile>().Where(file => file.FileType.Equals(".torrent", StringComparison.OrdinalIgnoreCase)).Select(file => file.Path));
+            await Model.AddSources(
+                files
+                    .OfType<StorageFile>()
+                    .Where(file =>
+                        file.FileType.Equals(".torrent", StringComparison.OrdinalIgnoreCase)
+                    )
+                    .Select(file => file.Path)
+            );
         }
-        else if (content.Contains(StandardDataFormats.Text))
+        else if (data.Contains(StandardDataFormats.Text))
         {
-            var text = await content.GetTextAsync();
-            if (!CanApply()) return;
+            var text = await data.GetTextAsync();
+            if (!CanApply())
+                return;
             await Model.AddSources(text.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries));
         }
     }

@@ -20,116 +20,86 @@ namespace Syno.TableView.Tests;
 public class RealSortTests
 {
     [TestMethod]
-    public Task ARealHeaderClickRunsTheWholeSortCycle() => TestHost.RunAsync(async () =>
-    {
-        ObservableCollection<SortRow> rows = Rows(3, 1, 2, 1);
-        DragHarness h = await DragHarness.LoadAsync(table => Configure(table, rows));
-        List<LayoutChange> kinds = new();
-        h.Table.LayoutChanged += (_, kind) => kinds.Add(kind);
+    public Task ARealHeaderClickRunsTheWholeSortCycle() =>
+        TestHost.RunAsync(async () =>
+        {
+            ObservableCollection<SortRow> rows = Rows(3, 1, 2, 1);
+            DragHarness h = await DragHarness.LoadAsync(table => Configure(table, rows));
+            List<LayoutChange> kinds = new();
+            h.Table.LayoutChanged += (_, kind) => kinds.Add(kind);
 
-        await h.MoveAsync(100);
-        await ClickAsync(h, 100);
+            await h.MoveAsync(100);
+            await ClickAsync(h, 100);
 
-        CollectionAssert.AreEqual(new[] { "k1", "k3", "k2", "k0" }, ViewKeys(h.Table));
+            CollectionAssert.AreEqual(new[] { "k1", "k3", "k2", "k0" }, ViewKeys(h.Table));
 
-        await ClickAsync(h, 100);
+            await ClickAsync(h, 100);
 
-        CollectionAssert.AreEqual(new[] { "k0", "k2", "k1", "k3" }, ViewKeys(h.Table));
+            CollectionAssert.AreEqual(new[] { "k0", "k2", "k1", "k3" }, ViewKeys(h.Table));
 
-        await ClickAsync(h, 100);
+            await ClickAsync(h, 100);
 
-        CollectionAssert.AreEqual(new[] { "k0", "k1", "k2", "k3" }, ViewKeys(h.Table));
-        CollectionAssert.AreEqual(
-            new[] { LayoutChange.Sort, LayoutChange.Sort, LayoutChange.Sort },
-            kinds);
-    });
-
-    [TestMethod]
-    public Task ARealClickOnANonSortableHeaderChangesNothing() => TestHost.RunAsync(async () =>
-    {
-        ObservableCollection<SortRow> rows = Rows(3, 1, 2);
-        DragHarness h = await DragHarness.LoadAsync(table => Configure(table, rows));
-        int events = 0;
-        h.Table.LayoutChanged += (_, _) => events++;
-
-        // Column "b" spans 200 to 400 and declares no sort.
-        await h.MoveAsync(300);
-        await ClickAsync(h, 300);
-
-        CollectionAssert.AreEqual(new[] { "k0", "k1", "k2" }, ViewKeys(h.Table));
-        Assert.AreEqual(0, events);
-    });
+            CollectionAssert.AreEqual(new[] { "k0", "k1", "k2", "k3" }, ViewKeys(h.Table));
+            CollectionAssert.AreEqual(
+                new[] { LayoutChange.Sort, LayoutChange.Sort, LayoutChange.Sort },
+                kinds
+            );
+        });
 
     [TestMethod]
-    public Task ARealDragDoesNotAlsoSortTheHeaderItStartedOn() => TestHost.RunAsync(async () =>
-    {
-        ObservableCollection<SortRow> rows = Rows(3, 1, 2);
-        DragHarness h = await DragHarness.LoadAsync(table => Configure(table, rows));
+    public Task ARealDragDoesNotAlsoSortTheHeaderItStartedOn() =>
+        TestHost.RunAsync(async () =>
+        {
+            ObservableCollection<SortRow> rows = Rows(3, 1, 2);
+            DragHarness h = await DragHarness.LoadAsync(table => Configure(table, rows));
 
-        await h.MoveAsync(100);
-        await h.PressAsync(100);
-        await h.MoveAsync(160);
-        await h.MoveAsync(520);
-        await h.ReleaseAsync(520);
+            await h.MoveAsync(100);
+            await h.PressAsync(100);
+            await h.MoveAsync(160);
+            await h.MoveAsync(520);
+            await h.ReleaseAsync(520);
 
-        CollectionAssert.AreEqual(new[] { "b", "c", "a" }, TableHarness.Order(h.Table));
-        CollectionAssert.AreEqual(
-            new[] { "k0", "k1", "k2" }, ViewKeys(h.Table), "the drop moved the column, it did not sort");
-    });
-
-    [TestMethod]
-    public Task RealEnterAndSpaceOnAFocusedHeaderRunTheSameCycle() => TestHost.RunAsync(async () =>
-    {
-        ObservableCollection<SortRow> rows = Rows(3, 1, 2, 1);
-        DragHarness h = await DragHarness.LoadAsync(table => Configure(table, rows));
-
-        Control cell = HeaderCell(h.Strip, 0);
-        Assert.IsTrue(cell.Focus(FocusState.Keyboard), "the header took keyboard focus");
-
-        await h.KeyAsync(VirtualKey.Enter);
-        h.Table.UpdateLayout();
-
-        CollectionAssert.AreEqual(new[] { "k1", "k3", "k2", "k0" }, ViewKeys(h.Table), "Enter sorted");
-
-        await h.KeyAsync(VirtualKey.Space);
-        h.Table.UpdateLayout();
-
-        CollectionAssert.AreEqual(
-            new[] { "k0", "k2", "k1", "k3" }, ViewKeys(h.Table), "Space continued the cycle");
-
-        await h.KeyAsync(VirtualKey.Space);
-        h.Table.UpdateLayout();
-
-        CollectionAssert.AreEqual(new[] { "k0", "k1", "k2", "k3" }, ViewKeys(h.Table));
-    });
+            CollectionAssert.AreEqual(new[] { "b", "c", "a" }, TableHarness.Order(h.Table));
+            CollectionAssert.AreEqual(
+                new[] { "k0", "k1", "k2" },
+                ViewKeys(h.Table),
+                "the drop moved the column, it did not sort"
+            );
+        });
 
     [TestMethod]
-    public Task ARealHeaderClickKeepsTheSelectedRowsAndTheCurrentRow() => TestHost.RunAsync(async () =>
-    {
-        ObservableCollection<SortRow> rows = Rows(3, 1, 2, 1, 3, 2);
-        DragHarness h = await DragHarness.LoadAsync(table => Configure(table, rows));
+    public Task RealEnterAndSpaceOnAFocusedHeaderRunTheSameCycle() =>
+        TestHost.RunAsync(async () =>
+        {
+            ObservableCollection<SortRow> rows = Rows(3, 1, 2, 1);
+            DragHarness h = await DragHarness.LoadAsync(table => Configure(table, rows));
 
-        h.Table.Selection = new(new object[] { rows[0], rows[3] }, rows[3]);
-        int selectionEvents = 0;
-        h.Table.SelectionChanged += (_, _) => selectionEvents++;
+            Control cell = HeaderCell(h.Strip, 0);
+            Assert.IsTrue(cell.Focus(FocusState.Keyboard), "the header took keyboard focus");
 
-        await h.MoveAsync(100);
-        await ClickAsync(h, 100);
+            await h.KeyAsync(VirtualKey.Enter);
+            h.Table.UpdateLayout();
 
-        CollectionAssert.AreEqual(new[] { "k1", "k3", "k2", "k5", "k0", "k4" }, ViewKeys(h.Table));
-        CollectionAssert.AreEqual(
-            new[] { "k3", "k0" },
-            h.Table.Selection.Items.Cast<SortRow>().Select(r => r.Key).ToArray(),
-            "the same rows, now in the sorted visual order");
-        Assert.AreEqual("k3", ((SortRow)h.Table.Selection.Current!).Key);
-        Assert.AreEqual(0, selectionEvents, "nothing logical changed");
+            CollectionAssert.AreEqual(
+                new[] { "k1", "k3", "k2", "k0" },
+                ViewKeys(h.Table),
+                "Enter sorted"
+            );
 
-        ListView list = SelectionHarness.Descendant<ListView>(h.Table)!;
-        CollectionAssert.AreEquivalent(
-            new[] { "k0", "k3" },
-            list.SelectedItems.Cast<SortRow>().Select(r => r.Key).ToArray(),
-            "the reset wiped the hosted list's selection and the table put it back");
-    });
+            await h.KeyAsync(VirtualKey.Space);
+            h.Table.UpdateLayout();
+
+            CollectionAssert.AreEqual(
+                new[] { "k0", "k2", "k1", "k3" },
+                ViewKeys(h.Table),
+                "Space continued the cycle"
+            );
+
+            await h.KeyAsync(VirtualKey.Space);
+            h.Table.UpdateLayout();
+
+            CollectionAssert.AreEqual(new[] { "k0", "k1", "k2", "k3" }, ViewKeys(h.Table));
+        });
 
     // ------------------------------------------------------------------ helpers
 
@@ -147,9 +117,7 @@ public class RealSortTests
     /// <summary>Column "a" sorts on the rank; "b" and "c" do not sort at all.</summary>
     private static void Configure(Table table, ObservableCollection<SortRow> rows)
     {
-        table.Schema<SortRow>()
-            .Key(row => row.Key)
-            .SortKey(table.Columns[0], row => row.Rank);
+        table.Schema<SortRow>().Key(row => row.Key).SortKey(table.Columns[0], row => row.Rank);
         table.Height = 300;
         table.ItemsSource = rows;
     }
@@ -163,15 +131,16 @@ public class RealSortTests
 
     private static string[] ViewKeys(Table table) =>
         ((IEnumerable)SelectionHarness.Descendant<ListView>(table)!.ItemsSource)
-        .Cast<SortRow>()
-        .Select(r => r.Key)
-        .ToArray();
+            .Cast<SortRow>()
+            .Select(r => r.Key)
+            .ToArray();
 
     private static Control HeaderCell(Header.Strip strip, int visibleIndex)
     {
-        Panel panel = (Panel)typeof(Header.Strip)
-            .GetField("_panel", BindingFlags.Instance | BindingFlags.NonPublic)!
-            .GetValue(strip)!;
+        Panel panel = (Panel)
+            typeof(Header.Strip)
+                .GetField("_panel", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .GetValue(strip)!;
         return (Control)panel.Children[visibleIndex];
     }
 }

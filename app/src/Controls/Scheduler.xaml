@@ -1,77 +1,144 @@
 <UserControl
-    x:Class="Syno.TinyTorrent.Controls.Scheduler"
-    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:local="using:Syno.TinyTorrent.Controls"
-    xmlns:icons="using:Syno">
-    <UserControl.Resources>
-        <!-- Each period is a borderless inner card, like the other sub-groups
+  x:Class="Syno.TinyTorrent.Controls.Scheduler"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:local="using:Syno.TinyTorrent.Controls"
+  xmlns:icons="using:Syno"
+>
+  <UserControl.Resources>
+    <!-- Each period is a borderless inner card, like the other sub-groups
              in Settings. -->
-        <ResourceDictionary>
-            <ResourceDictionary.ThemeDictionaries>
-                <ResourceDictionary x:Key="Light">
-                    <StaticResource x:Key="ExpanderHeaderBackground" ResourceKey="TinyTorrentInnerCardBrush" />
-                    <StaticResource x:Key="ExpanderContentBackground" ResourceKey="TinyTorrentInnerCardBrush" />
-                </ResourceDictionary>
-                <ResourceDictionary x:Key="Dark">
-                    <StaticResource x:Key="ExpanderHeaderBackground" ResourceKey="TinyTorrentInnerCardBrush" />
-                    <StaticResource x:Key="ExpanderContentBackground" ResourceKey="TinyTorrentInnerCardBrush" />
-                </ResourceDictionary>
-                <ResourceDictionary x:Key="HighContrast">
-                    <StaticResource x:Key="ExpanderHeaderBackground" ResourceKey="TinyTorrentInnerCardBrush" />
-                    <StaticResource x:Key="ExpanderContentBackground" ResourceKey="TinyTorrentInnerCardBrush" />
-                </ResourceDictionary>
-            </ResourceDictionary.ThemeDictionaries>
-            <Thickness x:Key="ExpanderHeaderBorderThickness">0</Thickness>
-            <Thickness x:Key="ExpanderContentDownBorderThickness">0</Thickness>
-            <HorizontalAlignment x:Key="ExpanderHeaderHorizontalContentAlignment">Stretch</HorizontalAlignment>
-            <Style x:Key="SchedulerPeriodModeStyle" TargetType="TextBlock" BasedOn="{StaticResource TinyTorrentStatusTextStyle}">
-                <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
-                <Setter Property="VerticalAlignment" Value="Center" />
-            </Style>
-            <Style x:Key="SchedulerSwatchStyle" TargetType="Border">
-                <Setter Property="Width" Value="16" />
-                <Setter Property="Height" Value="16" />
-                <Setter Property="BorderThickness" Value="1" />
-                <Setter Property="CornerRadius" Value="3" />
-            </Style>
+    <ResourceDictionary>
+      <ResourceDictionary.ThemeDictionaries>
+        <ResourceDictionary x:Key="Light">
+          <StaticResource
+            x:Key="ExpanderHeaderBackground"
+            ResourceKey="TinyTorrentInnerCardBrush"
+          />
+          <StaticResource
+            x:Key="ExpanderContentBackground"
+            ResourceKey="TinyTorrentInnerCardBrush"
+          />
         </ResourceDictionary>
-    </UserControl.Resources>
-    <StackPanel>
-        <ContentControl x:Name="Timeline" Margin="0,8,0,0" HorizontalContentAlignment="Stretch" IsTabStop="False" />
-        <!-- The periods run only while the weekly schedule is chosen, so
+        <ResourceDictionary x:Key="Dark">
+          <StaticResource
+            x:Key="ExpanderHeaderBackground"
+            ResourceKey="TinyTorrentInnerCardBrush"
+          />
+          <StaticResource
+            x:Key="ExpanderContentBackground"
+            ResourceKey="TinyTorrentInnerCardBrush"
+          />
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="HighContrast">
+          <StaticResource
+            x:Key="ExpanderHeaderBackground"
+            ResourceKey="TinyTorrentInnerCardBrush"
+          />
+          <StaticResource
+            x:Key="ExpanderContentBackground"
+            ResourceKey="TinyTorrentInnerCardBrush"
+          />
+        </ResourceDictionary>
+      </ResourceDictionary.ThemeDictionaries>
+      <Thickness x:Key="ExpanderHeaderBorderThickness">0</Thickness>
+      <Thickness x:Key="ExpanderContentDownBorderThickness">0</Thickness>
+      <HorizontalAlignment x:Key="ExpanderHeaderHorizontalContentAlignment">
+        Stretch
+      </HorizontalAlignment>
+      <Style
+        x:Key="SchedulerPeriodModeStyle"
+        TargetType="TextBlock"
+        BasedOn="{StaticResource TinyTorrentStatusTextStyle}"
+      >
+        <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+      </Style>
+      <Style x:Key="SchedulerSwatchStyle" TargetType="Border">
+        <Setter Property="Width" Value="16" />
+        <Setter Property="Height" Value="16" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="3" />
+      </Style>
+    </ResourceDictionary>
+  </UserControl.Resources>
+  <StackPanel>
+    <ContentControl
+      x:Name="Timeline"
+      Margin="0,8,0,0"
+      HorizontalContentAlignment="Stretch"
+      IsTabStop="False"
+    />
+    <!-- The periods run only while the weekly schedule is chosen, so
              they show only then. -->
-        <StackPanel Visibility="{x:Bind Main.FollowsSchedule, Mode=OneWay}">
-            <StackPanel MinHeight="56" Orientation="Horizontal" Spacing="24">
-                <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                    <Border Style="{StaticResource SchedulerSwatchStyle}" Background="{ThemeResource ControlFillColorSecondaryBrush}" BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}" />
-                    <TextBlock Text="{x:Bind Model.Text.Get('preferences', 'speed'), Mode=OneWay}" Style="{StaticResource TinyTorrentStatusTextStyle}" />
-                </StackPanel>
-                <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                    <Border Style="{StaticResource SchedulerSwatchStyle}" Background="{ThemeResource TinyTorrentAlternativeBrush}" BorderBrush="{ThemeResource AccentFillColorDefaultBrush}" />
-                    <TextBlock Text="{x:Bind Model.Text.Get('preferences', 'alternative'), Mode=OneWay}" Style="{StaticResource TinyTorrentStatusTextStyle}" />
-                </StackPanel>
-                <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                    <Border Style="{StaticResource SchedulerSwatchStyle}" Background="{ThemeResource SystemFillColorCautionBackgroundBrush}" BorderBrush="{ThemeResource SystemFillColorCautionBrush}" />
-                    <TextBlock Text="{x:Bind Model.Text.Get('preferences', 'paused'), Mode=OneWay}" Style="{StaticResource TinyTorrentStatusTextStyle}" />
-                </StackPanel>
-            </StackPanel>
-            <local:SettingsRow x:Name="PeriodsRow" Header="{x:Bind Model.Text.Get('preferences', 'periods'), Mode=OneWay}" Error="{x:Bind Model.PeriodsMessage, Mode=OneWay}">
-                <StackPanel Orientation="Horizontal" Spacing="12">
-                    <TextBlock Text="{x:Bind Model.Text.Get('preferences', 'local_time'), Mode=OneWay}" Style="{StaticResource SchedulerPeriodModeStyle}" />
-                    <local:ActionButton x:Name="AddPeriod" Glyph="{x:Bind icons:Lucide.Plus}" IsEnabled="{x:Bind Model.CanEdit, Mode=OneWay}"
-                        Text="{x:Bind Model.Text.Get('preferences', 'add_period'), Mode=OneWay}" ToolTipService.ToolTip="{x:Bind Model.Text.Get('preferences', 'add_period_tip'), Mode=OneWay}"
-                        Click="OnAdd" AutomationProperties.AutomationId="AddPeriod" />
-                </StackPanel>
-            </local:SettingsRow>
-            <StackPanel Spacing="4">
-                <Border Style="{StaticResource InnerCardStyle}">
-                    <local:SettingsRow Header="{x:Bind Model.Text.Get('preferences', 'other_times'), Mode=OneWay}">
-                        <TextBlock Text="{x:Bind Model.Text.Get('preferences', 'speed'), Mode=OneWay}" Style="{StaticResource SchedulerPeriodModeStyle}" />
-                    </local:SettingsRow>
-                </Border>
-                <StackPanel x:Name="Periods" Spacing="4" />
-            </StackPanel>
+    <StackPanel Visibility="{x:Bind Main.FollowsSchedule, Mode=OneWay}">
+      <StackPanel MinHeight="56" Orientation="Horizontal" Spacing="24">
+        <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+          <Border
+            Style="{StaticResource SchedulerSwatchStyle}"
+            Background="{ThemeResource ControlFillColorSecondaryBrush}"
+            BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
+          />
+          <TextBlock
+            Text="{x:Bind Model.Text.Get('settings', 'speed'), Mode=OneWay}"
+            Style="{StaticResource TinyTorrentStatusTextStyle}"
+          />
         </StackPanel>
+        <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+          <Border
+            Style="{StaticResource SchedulerSwatchStyle}"
+            Background="{ThemeResource TinyTorrentAlternativeBrush}"
+            BorderBrush="{ThemeResource AccentFillColorDefaultBrush}"
+          />
+          <TextBlock
+            Text="{x:Bind Model.Text.Get('settings', 'alternative'), Mode=OneWay}"
+            Style="{StaticResource TinyTorrentStatusTextStyle}"
+          />
+        </StackPanel>
+        <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+          <Border
+            Style="{StaticResource SchedulerSwatchStyle}"
+            Background="{ThemeResource SystemFillColorCautionBackgroundBrush}"
+            BorderBrush="{ThemeResource SystemFillColorCautionBrush}"
+          />
+          <TextBlock
+            Text="{x:Bind Model.Text.Get('settings', 'paused'), Mode=OneWay}"
+            Style="{StaticResource TinyTorrentStatusTextStyle}"
+          />
+        </StackPanel>
+      </StackPanel>
+      <local:SettingsRow
+        x:Name="PeriodsRow"
+        Header="{x:Bind Model.Text.Get('settings', 'periods'), Mode=OneWay}"
+        Error="{x:Bind Model.PeriodsMessage, Mode=OneWay}"
+      >
+        <StackPanel Orientation="Horizontal" Spacing="12">
+          <TextBlock
+            Text="{x:Bind Model.Text.Get('settings', 'local_time'), Mode=OneWay}"
+            Style="{StaticResource SchedulerPeriodModeStyle}"
+          />
+          <local:ActionButton
+            x:Name="AddPeriod"
+            Glyph="{x:Bind icons:Lucide.Plus}"
+            IsEnabled="{x:Bind Model.CanEdit, Mode=OneWay}"
+            Text="{x:Bind Model.Text.Get('settings', 'add_period'), Mode=OneWay}"
+            ToolTipService.ToolTip="{x:Bind Model.Text.Get('settings', 'add_period_tip'), Mode=OneWay}"
+            Click="OnAdd"
+            AutomationProperties.AutomationId="AddPeriod"
+          />
+        </StackPanel>
+      </local:SettingsRow>
+      <StackPanel Spacing="4">
+        <Border Style="{StaticResource TinyTorrentInnerCardStyle}">
+          <local:SettingsRow Header="{x:Bind Model.Text.Get('settings', 'other_times'), Mode=OneWay}">
+            <TextBlock
+              Text="{x:Bind Model.Text.Get('settings', 'speed'), Mode=OneWay}"
+              Style="{StaticResource SchedulerPeriodModeStyle}"
+            />
+          </local:SettingsRow>
+        </Border>
+        <StackPanel x:Name="Periods" Spacing="4" />
+      </StackPanel>
     </StackPanel>
+  </StackPanel>
 </UserControl>

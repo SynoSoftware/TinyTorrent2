@@ -15,17 +15,29 @@ public sealed partial class MainWindow
         public Func<Task<bool>>? ResolveDraft { get; set; }
         public bool IsResolved { get; set; }
         public bool IsDraftDecision { get; init; }
-        public TaskCompletionSource<bool> Completion { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource<bool> Completion { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
     }
 
-    private async Task<bool> Interact(Func<DialogInteraction, Task<bool>> action, bool isDraftDecision = false)
+    private async Task<bool> Interact(
+        Func<DialogInteraction, Task<bool>> action,
+        bool isDraftDecision = false
+    )
     {
-        if (HasDialog) return false;
+        if (HasDialog)
+            return false;
         var interaction = new DialogInteraction { IsDraftDecision = isDraftDecision };
         _interaction = interaction;
         var completed = false;
-        try { completed = await action(interaction); }
-        catch (Exception error) { Model.Report(error); return false; }
+        try
+        {
+            completed = await action(interaction);
+        }
+        catch (Exception error)
+        {
+            Model.Report(error);
+            return false;
+        }
         finally
         {
             _interaction = null;
@@ -37,23 +49,40 @@ public sealed partial class MainWindow
 
     private void ShowDeferredAdd()
     {
-        if (!HasDialog && !Model.IsClosing && !_allowClose && (Model.Draft.Sources.Count > 0 || Model.Draft.EditingMagnet))
+        if (
+            !HasDialog
+            && !Model.IsClosing
+            && !_allowClose
+            && (Model.AddDraft.Sources.Count > 0 || Model.AddDraft.EditingMagnet)
+        )
             _ = ShowAdd();
     }
 
-    private static async Task Submit(DialogInteraction interaction, ContentDialogButtonClickEventArgs args, Func<Task<bool>> submit)
+    private static async Task Submit(
+        DialogInteraction interaction,
+        ContentDialogButtonClickEventArgs args,
+        Func<Task<bool>> submit
+    )
     {
         args.Cancel = true;
         var deferral = args.GetDeferral();
         try
         {
             args.Cancel = !await submit();
-            if (!args.Cancel) interaction.IsResolved = true;
+            if (!args.Cancel)
+                interaction.IsResolved = true;
         }
-        finally { deferral.Complete(); }
+        finally
+        {
+            deferral.Complete();
+        }
     }
 
-    private async Task<ContentDialogResult> ShowDialog(DialogInteraction interaction, ContentDialog dialog, Action refreshText)
+    private async Task<ContentDialogResult> ShowDialog(
+        DialogInteraction interaction,
+        ContentDialog dialog,
+        Action refreshText
+    )
     {
         interaction.Dialog = dialog;
         interaction.RefreshText = refreshText;

@@ -1,5 +1,4 @@
 <Project>
-
   <!--
     Everything the build generates goes under artifacts/ at the repository root, outside every
     project folder, so no project's default globs can read it back as source. .NET projects put
@@ -53,5 +52,4 @@
   <PropertyGroup>
     <DefaultItemExcludes>$(DefaultItemExcludes);**/bin/**;**/obj/**;**/bin-fl/**;**/TestResults/**</DefaultItemExcludes>
   </PropertyGroup>
-
 </Project>

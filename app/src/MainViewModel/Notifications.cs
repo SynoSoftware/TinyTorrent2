@@ -8,55 +8,109 @@ namespace Syno.TinyTorrent;
 public sealed partial class MainViewModel
 {
     private Completion? _completion;
-    private bool _resumeNotice;
+
+    // The torrents the person resumed, which start once every transfer may
+    // run, or none after Resume all; null when no such notice shows.
+    private Torrent[]? _waiting;
+
     private sealed record Completion(string TorrentId, string Name, int Count);
 
     public bool HasCompletion => _completion is not null;
-    public string CompletionName => _completion is { } completion && _byId.TryGetValue(completion.TorrentId, out var torrent)
-        ? torrent.Name : _completion?.Name ?? string.Empty;
-    public string CompletionText => _completion is not { } completion ? string.Empty : completion.Count == 1
-        ? Text.Format("notifications", "completed", CompletionName)
+    public string CompletionName =>
+        _completion is { } completion && _byId.TryGetValue(completion.TorrentId, out var torrent)
+            ? torrent.Name
+            : _completion?.Name ?? string.Empty;
+    public string CompletionText =>
+        _completion is not { } completion ? string.Empty
+        : completion.Count == 1 ? Text.Format("notifications", "completed", CompletionName)
         : Text.Format("notifications", "completed_more", CompletionName, completion.Count - 1);
     public string CompletionTip => Text.Format("notifications", "open_folder_tip", CompletionName);
     public ICommand OpenCompletion { get; }
-    public bool HasResumeNotice => _resumeNotice && IsSessionPaused;
+    public bool HasResumeNotice => _waiting is not null && IsSessionPaused;
+    public string ResumeNotice => _waiting is null ? string.Empty : Waiting(_waiting);
     public ICommand ResolvePause { get; }
-    public string PauseAction => Text.Get("notifications", _pause == PauseReason.Interface ? "settings" : "override");
-    public string PauseActionTip => Text.Get("notifications", _pause switch
-    {
-        PauseReason.Interface => "settings_tip",
-        PauseReason.Schedule => "override_schedule_tip",
-        _ => "override_tip"
-    });
-    public string PauseActionGlyph => _pause == PauseReason.Interface ? Syno.Lucide.Settings : Syno.Lucide.LockKeyholeOpen;
+    public string PauseAction =>
+        _pause == PauseReason.Adapter
+            ? Text.Get("notifications", "settings")
+            : Text.Get("commands", "resume");
+    public string PauseActionTip =>
+        Text.Get(
+            "notifications",
+            _pause switch
+            {
+                PauseReason.Adapter => "settings_tip",
+                PauseReason.Schedule => "resume_schedule_tip",
+                _ => "resume_all_tip",
+            }
+        );
+    public string PauseActionGlyph =>
+        _pause == PauseReason.Adapter ? Syno.Lucide.Settings : Syno.Lucide.Play;
 
     public void DismissResume()
     {
-        _resumeNotice = false;
+        _waiting = null;
         Changed(nameof(HasResumeNotice));
     }
 
-    private bool CanOpenCompletion => CanEdit && _completion is { } completion && _byId.ContainsKey(completion.TorrentId);
+    // Says when the resumed torrents start, so the person knows the resume took
+    // effect although the rows stay paused.
+    private string Waiting(Torrent[] torrents)
+    {
+        if (torrents.Length == 0)
+            return Text.Format("notifications", "starts_all", MissingAdapter);
+        var (key, detail) = _pause switch
+        {
+            PauseReason.Adapter => ("starts_adapter", MissingAdapter),
+            PauseReason.Schedule when Settings.Schedule.NextChange(DateTime.Now) is { } change => (
+                "starts_until",
+                change
+            ),
+            PauseReason.Schedule => ("starts_schedule", string.Empty),
+            _ => ("starts_resume", string.Empty),
+        };
+        return Text.FormatCount("notifications", key, torrents.Length, torrents[0].Name, detail);
+    }
+
+    private bool CanOpenCompletion =>
+        CanEdit && _completion is { } completion && _byId.ContainsKey(completion.TorrentId);
 
     internal void ReceiveNotice(JsonElement notice)
     {
-        if (_closed) return;
+        if (_closed)
+            return;
         var kind = notice.GetProperty("kind").GetString();
         var name = notice.GetProperty("name").GetString() ?? string.Empty;
         var torrentId = notice.GetProperty("torrent_id").GetString() ?? string.Empty;
         var count = notice.TryGetProperty("count", out var total) ? total.GetInt32() : 1;
         if (kind == "completed")
         {
-            _completion = _completion is { } previous ? previous with { Count = previous.Count + count } : new(torrentId, name, count);
+            _completion = _completion is { } previous
+                ? previous with
+                {
+                    Count = previous.Count + count,
+                }
+                : new(torrentId, name, count);
             RefreshCompletion();
         }
         else if (kind is "error" or "add_failed" or "delete_failed")
         {
             var detail = notice.GetProperty("detail").GetString() ?? string.Empty;
-            if (name.Length > 0) detail = Text.Format("errors", "torrent", name, detail);
-            if (count > 1) detail = Text.Format("errors", "detail", detail, Text.Format("errors", "additional_problems", count - 1));
-            var code = kind == "error" ? torrentId.Length == 0 ? "unknown" : "torrent_error" : kind;
-            Report(new CommandFailure(code, detail, Text));
+            if (name.Length > 0)
+                detail = Text.Format("errors", "torrent", name, detail);
+            if (count > 1)
+                detail = Text.Format(
+                    "errors",
+                    "detail",
+                    detail,
+                    Text.Format("errors", "additional_problems", count - 1)
+                );
+            var code =
+                notice.GetProperty("code").GetString() is { Length: > 0 } problem ? problem
+                : kind == "error"
+                    ? torrentId.Length == 0 ? "unknown"
+                        : "torrent_error"
+                : kind;
+            Report(new CommandException(code, detail, Text));
         }
     }
 
@@ -72,9 +126,13 @@ public sealed partial class MainViewModel
         Changed(nameof(CompletionText));
         Changed(nameof(CompletionTip));
         Changed(nameof(HasCompletion));
-        ((Command)OpenCompletion).Refresh();
+        ((RelayCommand)OpenCompletion).Refresh();
     }
 
-    private Task OpenCompleted() => CanOpenCompletion && _completion is { } completion && _byId.TryGetValue(completion.TorrentId, out var torrent)
-        ? OpenTorrent(torrent, true) : Task.CompletedTask;
+    private Task OpenCompleted() =>
+        CanOpenCompletion
+        && _completion is { } completion
+        && _byId.TryGetValue(completion.TorrentId, out var torrent)
+            ? OpenTorrent(torrent, true)
+            : Task.CompletedTask;
 }

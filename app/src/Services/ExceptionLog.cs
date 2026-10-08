@@ -9,12 +9,20 @@ internal static class ExceptionLog
 {
     private static readonly object Gate = new();
 
-    internal static ExceptionReport Write(string directory, Exception error, string source, string? message = null)
+    internal static ExceptionReport Write(
+        string directory,
+        Exception error,
+        string source,
+        string? message = null
+    )
     {
         var report = message ?? error.Message;
         try
         {
-            var version = Assembly.GetEntryAssembly()?.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
+            var version = Assembly
+                .GetEntryAssembly()
+                ?.GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+                ?.InformationalVersion;
             report = $"""
                 TinyTorrent UI exception
                 Time (UTC): {DateTimeOffset.UtcNow:O}
@@ -32,14 +40,16 @@ internal static class ExceptionLog
                 {error}
                 """;
             // This character limit keeps each UTF-8 report below 1 MiB.
-            if (report.Length > 250_000) report = report[..250_000] + "\n[Report truncated]";
+            if (report.Length > 250_000)
+                report = report[..250_000] + "\n[Report truncated]";
             Debug.WriteLine(report);
             lock (Gate)
             {
                 Directory.CreateDirectory(directory);
                 var path = Path.Combine(directory, "ui-error.log");
                 var previous = Path.Combine(directory, "ui-error.previous.log");
-                if (File.Exists(path)) File.Move(path, previous, overwrite: true);
+                if (File.Exists(path))
+                    File.Move(path, previous, overwrite: true);
                 File.WriteAllText(path, report, Encoding.UTF8);
                 return new(report, path);
             }

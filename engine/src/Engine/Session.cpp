@@ -35,8 +35,8 @@ lt::info_hash_t SavedHashes(std::vector<std::string> const& hashes)
 }
 }
 
-Engine::State::State(std::filesystem::path path, std::function<void()> notification) :
-    directory(std::move(path)), store(notification), payload(notification), sources(notification), checks(notification), wake(std::move(notification)),
+Engine::State::State(std::filesystem::path path, std::function<void()> wake) :
+    directory(std::move(path)), store(wake), payload(wake), sources(wake), checks(wake), wake(std::move(wake)),
     language(settings.language)
 {
     // Without a saved document the engine starts from the default settings.
@@ -57,7 +57,7 @@ Engine::State::State(std::filesystem::path path, std::function<void()> notificat
         {
             startupError = outcome.detail;
             startup = Startup::Ready;
-            diagnostics.Write("startup", "", "storage_failed");
+            log.Write("startup", "", "storage_failed");
             return;
         }
         settings = saved->settings;
@@ -87,7 +87,7 @@ Engine::State::State(std::filesystem::path path, std::function<void()> notificat
             {
                 startupError = outcome.detail;
                 startup = Startup::Ready;
-                diagnostics.Write("startup", "", "storage_failed");
+                log.Write("startup", "", "storage_failed");
                 return;
             }
             Start(*saved, *resumes);
@@ -95,7 +95,7 @@ Engine::State::State(std::filesystem::path path, std::function<void()> notificat
     });
 }
 
-std::string Engine::State::Identity()
+std::string Engine::State::NewId()
 {
     GUID guid;
     if (FAILED(CoCreateGuid(&guid)))
@@ -142,10 +142,17 @@ void Engine::State::Start(Document const& saved, Resumes& resumes)
     }
     session->set_peer_class_type_filter(classes);
     RefreshPolicy(true);
-    for (auto const& [id, facts] : saved.torrents)
+    for (auto [id, facts] : saved.torrents)
     {
         lt::add_torrent_params params;
-        if (auto found = resumes.find(id); found != resumes.end())
+        auto found = resumes.find(id);
+        // A record that lost its folder takes the one its resume file holds.
+        if (facts.savePath.empty())
+        {
+            facts.savePath = found != resumes.end() && !found->second.save_path.empty() ?
+                found->second.save_path : saved.settings.destination;
+        }
+        if (found != resumes.end())
         {
             params = std::move(found->second);
             if (facts.verifyFiles || !SameFolder(params.save_path, facts.savePath))
@@ -161,7 +168,7 @@ void Engine::State::Start(Document const& saved, Resumes& resumes)
             // Like a magnet link, the torrent fetches its metadata from peers
             // and then checks the files already on disk. Without saved hashes
             // it cannot come back, and only this log line keeps its identity.
-            diagnostics.Write("startup", id, "resume_unreadable");
+            log.Write("startup", id, "resume_unreadable");
             params.info_hashes = SavedHashes(facts.hashes);
             if (!params.info_hashes.has_v1() && !params.info_hashes.has_v2())
             {
@@ -192,7 +199,7 @@ void Engine::State::Start(Document const& saved, Resumes& resumes)
         torrent.ApplyIntent();
     }
     startup = Startup::Ready;
-    diagnostics.Write("startup", "", "ready");
+    log.Write("startup", "", "ready");
 }
 
 void Engine::State::Restore(std::string const& id, Facts facts, lt::add_torrent_params params)
@@ -214,7 +221,7 @@ void Engine::State::Restore(std::string const& id, Facts facts, lt::add_torrent_
                 other.ApplyIntent();
             }
         }
-        diagnostics.Write("startup", id, "alias_conflict");
+        log.Write("startup", id, "alias_conflict");
         return;
     }
     if (error)
@@ -238,7 +245,7 @@ void Engine::State::RestorePending()
     }
     for (auto& [id, torrent] : torrents)
     {
-        if (!torrent.restore || torrent.deleted || !Duplicate(torrent.status.info_hashes, id).empty())
+        if (!torrent.restore || torrent.deleted || !FindDuplicate(torrent.status.info_hashes, id).empty())
         {
             continue;
         }
@@ -266,18 +273,40 @@ Json Engine::State::Document::ToJson() const
         {"queue_order", queueOrder}};
 }
 
+// Refuses a document of another format, which a save must not rewrite, or
+// without a readable list of torrents, which a save would drop. Every other
+// damaged value is repaired.
 void Engine::State::Document::Read(Json const& saved)
 {
     if (saved.at("format") != format)
     {
         throw std::runtime_error("Unsupported store format");
     }
-    settings.Read(saved.at("settings"));
+    if (!saved.at("torrents").is_array())
+    {
+        throw std::runtime_error("Unreadable torrent list");
+    }
+    if (auto found = saved.find("settings"); found != saved.end())
+    {
+        settings.Read(*found);
+    }
     for (auto const& entry : saved.at("torrents"))
     {
-        torrents.emplace(entry.at("torrent_id").get<std::string>(), Facts::Read(entry));
+        // Without its identity a record cannot find its resume file, so it
+        // comes back from its saved hashes under a new one.
+        auto id = ReadSaved(entry, "torrent_id", std::string());
+        torrents.emplace(id.empty() ? NewId() : id, Facts::Read(entry));
     }
-    queueOrder = saved.value("queue_order", std::vector<std::string>{});
+    if (auto found = saved.find("queue_order"); found != saved.end() && found->is_array())
+    {
+        for (auto const& id : *found)
+        {
+            if (id.is_string())
+            {
+                queueOrder.push_back(id.get<std::string>());
+            }
+        }
+    }
 }
 
 // The state that this document is built from changes only in a commit's
@@ -300,7 +329,7 @@ Engine::State::Document Engine::State::Saved() const
     return document;
 }
 
-std::string Engine::State::Duplicate(lt::info_hash_t const& hashes, std::string const& excluded) const
+std::string Engine::State::FindDuplicate(lt::info_hash_t const& hashes, std::string const& excluded) const
 {
     auto values = Hashes(hashes);
     for (auto const& [id, torrent] : torrents)
@@ -334,43 +363,47 @@ tt::Activity Engine::State::Activity() const
         activity.hasIncoming |= torrent.status.has_incoming;
         if (torrent.Diagnose())
         {
-            ++activity.errors;
+            ++activity.errorCount;
         }
         switch (torrent.Classify(IsPaused()))
         {
         case Status::Downloading:
             activity.downloading = true;
-            ++activity.active;
+            ++activity.activeCount;
             break;
         case Status::Seeding:
         case Status::Completed:
             activity.seeding = true;
-            ++activity.active;
+            ++activity.activeCount;
             break;
         case Status::Metadata:
         case Status::Checking:
-            ++activity.active;
+            ++activity.activeCount;
             break;
         case Status::Queued:
-            ++activity.queued;
+            ++activity.queuedCount;
             break;
         case Status::Error:
         case Status::Paused:
+        case Status::AllPaused:
         case Status::Moving:
             break;
         }
     }
-    activity.downloading = activity.downloading && !stopping;
-    activity.seeding = activity.seeding && !stopping;
-    activity.allPaused = IsPaused();
-    activity.missingInterface = interfaceMissing ? settings.networkInterface : std::string();
+    activity.downloading = activity.downloading && !shuttingDown;
+    activity.seeding = activity.seeding && !shuttingDown;
+    activity.paused = IsPaused();
+    activity.pausedByChoice = IsPausedByChoice();
+    activity.missingAdapter = adapterMissing ? settings.networkAdapter : std::string();
     activity.notificationsEnabled = settings.notificationsEnabled;
-    activity.notifyProblems = settings.notifyProblems;
-    activity.notifyAdded = settings.notifyAdded;
-    activity.preventSleep = settings.preventSleep;
-    activity.preventSleepSeeding = settings.preventSleepSeeding;
+    activity.notifiesProblems = settings.notifiesProblems;
+    activity.notifiesAdded = settings.notifiesAdded;
+    activity.preventsSleep = settings.preventsSleep;
+    activity.preventsSleepSeeding = settings.preventsSleepSeeding;
     activity.backgroundNoticeShown = settings.backgroundNoticeShown;
+    activity.reportedPrograms = settings.reportedPrograms;
     activity.filesBusy = FilesBusy();
+    activity.confirmsExit = settings.confirmsExit;
     return activity;
 }
 
@@ -389,22 +422,31 @@ Json Engine::State::Snapshot() const
     auto activity = Activity();
     auto mode = CurrentLimits();
     auto caps = settings.Caps(mode);
-    auto source = !settings.scheduleEnabled ? "manual" : limitOverride ? "override" : "schedule";
-    auto pause = !IsPaused() ? "" : interfaceMissing ? "interface" : settings.allPaused ? "manual" : "schedule";
+    auto origin = !settings.scheduleEnabled ? "manual" : limitOverride ? "override" : "schedule";
+    // A pause that Resume all lifts comes first, so "adapter" means that only the
+    // missing adapter pauses transfers and the window offers Settings instead.
+    auto pause = !IsPaused() ? "" : settings.allPaused ? "manual" : IsPausedByChoice() ? "schedule" : "adapter";
     return {{"session_id", sessionId}, {"torrents", std::move(rows)}, {"settings", std::move(current)},
         {"language_saved", language == settings.language},
         {"download_rate", activity.downloadRate}, {"upload_rate", activity.uploadRate},
-        {"all_paused", IsPaused()},
-        {"limits", {{"source", source}, {"mode", Settings::Name(mode)},
+        {"session_paused", IsPaused()},
+        {"limits", {{"origin", origin}, {"mode", Settings::Name(mode)},
             {"download", caps.download}, {"upload", caps.upload}, {"pause", pause}}},
-        {"missing_interface", activity.missingInterface},
+        {"missing_adapter", activity.missingAdapter},
         {"has_incoming", activity.hasIncoming},
+        {"external_ipv4", adapterMissing ? "" : externalIpv4},
+        {"external_ipv6", adapterMissing ? "" : externalIpv6},
         {"proxy", proxyOutcome ? Json(std::string(Name(*proxyOutcome))) : Json()},
-        {"proxy_check", !requestedCheck ? Json() : Json{{"check_id", requestedCheck->id},
+        {"proxy_check", !requestedCheck ? Json() : Json{{"check_id", requestedCheck->checkId},
             {"outcome", requestedCheck->result ? Json(std::string(Name(requestedCheck->result->outcome))) : Json()},
             {"milliseconds", requestedCheck->result ? Json(requestedCheck->result->elapsed.count()) : Json()}}},
-        {"stopping", stopping}, {"loading", startup != Startup::Ready}, {"storage_failed", !startupError.empty()},
+        {"shutting_down", shuttingDown}, {"loading", startup != Startup::Ready}, {"storage_failed", !startupError.empty()},
         {"startup_error", startupError}};
+}
+
+Json Engine::State::History(bool day) const
+{
+    return {{"session_id", sessionId}, {"samples", history.Read(day)}};
 }
 
 Torrent* Engine::State::Find(lt::torrent_handle const& handle)
@@ -428,24 +470,26 @@ Torrent& Engine::State::Install(std::string const& id, lt::torrent_handle handle
     return torrent;
 }
 
-void Engine::State::Notify(NoticeKind kind, Torrent const& torrent, std::string detail)
+void Engine::State::Notify(NoticeKind kind, Torrent const& torrent, std::string detail, std::string code)
 {
     if (torrent.deleted && kind != NoticeKind::Error)
     {
         return;
     }
-    Notify(kind, torrent.Name(), std::move(detail), torrent.identity);
+    Notify(kind, torrent.Name(), std::move(detail), torrent.torrentId, std::move(code));
 }
 
-void Engine::State::Notify(NoticeKind kind, std::string name, std::string detail, std::string id)
+void Engine::State::Notify(NoticeKind kind, std::string name, std::string detail, std::string torrentId,
+    std::string code)
 {
-    diagnostics.Write("notification", id, ToString(kind));
+    log.Write("notification", torrentId, ToString(kind));
     if (notices.size() == noticeLimit)
     {
         notices.erase(notices.begin());
     }
     notices.push_back(
-        {.kind = kind, .name = std::move(name), .detail = std::move(detail), .torrentId = std::move(id)});
+        {.kind = kind, .name = std::move(name), .detail = std::move(detail), .code = std::move(code),
+            .torrentId = std::move(torrentId)});
 }
 
 void Engine::State::RecordHashes(Torrent& torrent, lt::info_hash_t const& hashes)
@@ -458,7 +502,7 @@ void Engine::State::RecordHashes(Torrent& torrent, lt::info_hash_t const& hashes
 // the same content is found as a duplicate.
 void Engine::State::RecordHashes(Torrent& torrent)
 {
-    auto id = torrent.identity;
+    auto id = torrent.torrentId;
     auto hashes = torrent.Hashes();
     if (torrent.facts.hashes == hashes)
     {
@@ -484,7 +528,7 @@ void Engine::State::RecordHashes(Torrent& torrent)
             else
             {
                 torrent.hashError = Problem{ProblemKind::StorageFailed, outcome.detail};
-                if (stopping)
+                if (shuttingDown)
                 {
                     saveFailure = outcome.detail;
                 }
@@ -493,7 +537,7 @@ void Engine::State::RecordHashes(Torrent& torrent)
     }))
     {
         torrent.hashError = Problem{ProblemKind::StorageOverloaded};
-        if (stopping)
+        if (shuttingDown)
         {
             saveFailure.emplace();
         }
@@ -523,16 +567,16 @@ void Engine::State::Tick()
         }
         ContinueRename();
         RemoveDeferred();
-        if (!stopping)
+        if (!shuttingDown)
         {
             Maintain();
         }
     }
-    if (stopping)
+    if (shuttingDown)
     {
-        Stop();
+        ContinueShutdown();
     }
-    diagnostics.Flush();
+    log.Flush();
 }
 
 void Engine::State::Maintain()
@@ -552,6 +596,7 @@ void Engine::State::Maintain()
             CompletePriorities(torrent);
             PrepareFiles(torrent);
             FinishFiles(torrent);
+            FinishDownload(torrent);
         }
         session->post_torrent_updates(lt::torrent_handle::query_name);
     }

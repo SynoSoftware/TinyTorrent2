@@ -117,7 +117,7 @@ thread probe cannot establish those visual or interaction outcomes.
 ### Leaving Settings is different from cancelling a draft
 
 The review found that OnFieldDeparture committed only when focus stayed inside
-the form, and Navigate could reject Back while that save was pending. The
+the page, and Navigate could reject Back while that save was pending. The
 [owner rulings](../../interface.md#committing-edits) settle the product behavior;
 the [submission design](README.md#submitted-input-is-not-the-current-draft)
 preserves the requested navigation and distinguishes new typing from explicit
@@ -131,7 +131,7 @@ The two final source documents arrived after the first consolidation. Checking
 their claims against current source exposed concrete gaps in the proposal:
 
 - [Updates](../../../app/src/MainViewModel/Updates.cs) checks its one-day deadline
-  only when ObserveUpdates runs. A preference-change-only trigger would prevent
+  only when ObserveUpdates runs. A setting-change-only trigger would prevent
   repeat checks in a long-lived window. Keep an explicit snapshot trigger and
   prompt enable/disable handling, using the existing in-flight guard.
 - [Finding](../../../app/src/MainViewModel/Finding.cs) uses stable OrderBy over
@@ -166,9 +166,9 @@ element reuse must be deleted. Keep the earlier proportionate reuse decision.
 
 | Proposal | Decision and reason |
 | --- | --- |
-| Preferences owns settings; delete raw settings cache | **Adopt.** One UI owner for confirmed settings, parsing and submission removes actual duplicate knowledge. |
+| Settings owns settings; delete raw settings cache | **Adopt.** One UI owner for confirmed settings, parsing and submission removes actual duplicate knowledge. |
 | Delete Limits dialog | **Adopt as a deliberate behavior change.** Use the same Settings target from every entry point. |
-| Field kinds and Settings sections | **Adopt minimally.** An enum and explicit field metadata replace repeated name tests; no class hierarchy or generic form schema. |
+| Field kinds and Settings categories | **Adopt minimally.** An enum and explicit field metadata replace repeated name tests; no class hierarchy or generic settings schema. |
 | Theme and language | **Unify settings ownership, retain distinct behavior.** Theme can wait for confirmation; language must publish locally before persistence and coalesce choices. Neither needs a competing settings store. |
 | Preserve newer input after save acknowledgement | **First priority.** #112 concerns lost input, not optional cleanup. |
 | Settings on page/window departure | **Follow the owner's current decision.** Save valid input, restore the saved value for invalid ordinary input, and never ask about a setting. Preserve close admission and IME/Cancel semantics. #120 is distinct from #112. |
@@ -196,7 +196,7 @@ element reuse must be deleted. Keep the earlier proportionate reuse decision.
 | Focus and hosted-selection churn on unchanged rebuilds | **Fix inside TableView.** Skip unnecessary native work while retaining logical reconciliation, changed-instance handling and gesture rules. |
 | Status controls / graph shift with changing label width | **Follow #48's fixed-width rate fields.** Preserve rates/limits grouping. Keep the graph scale label right-aligned above the plot, removing its influence on the plot's horizontal position. |
 | Instant live-sort settles with animated arrivals | **Defer the animation change.** Retain current contract until a focused comparison and simple mechanism justify revising it. |
-| Hidden/unrelated scheduler redraws | **Fix at the notification source first.** Quiet unchanged preferences and remove parent fan-out; no mandatory visibility gate. Retain invalid-gesture cancellation. |
+| Hidden/unrelated scheduler redraws | **Fix at the notification source first.** Quiet unchanged settings and remove parent fan-out; no mandatory visibility gate. Retain invalid-gesture cancellation. |
 | PeriodDraft setters versus SetSpan | **Unify mutation semantics.** Publish coherent time changes through one narrow path; no duplicate schedule state. |
 | Delete visual reuse / add separate pools | **Neither by default.** Keep straightforward local reuse with complete initialization; justify a different arrangement by clarity and interaction evidence. |
 | Stable peer/tracker rows | **Adopt the existing Torrent pattern in Inspector.** Avoid replacing every bound row per reply; no flicker claim without observation. |
@@ -206,7 +206,7 @@ element reuse must be deleted. Keep the earlier proportionate reuse decision.
 | TwoWay-bind all selections | **Narrow to synchronous value synchronization.** Draft guards and asynchronous commit/refusal remain explicit. |
 | Adapter choices in view model | **Adopt when touching Settings.** Choices and unavailable-selected-value state are presentation data; native picker/focus work stays in the view. No discovery service is required. |
 | Replace every NumberBox with TextBox | **Reject blanket replacement.** Raw-text drafts can use TextBox; retain useful native stepping elsewhere. |
-| Repeated preference-row templates | **Use only for identical behavior in the Settings slice.** Avoid a form generator, preserve accessible names and focus targets. |
+| Repeated setting-row templates | **Use only for identical behavior in the Settings slice.** Avoid a row generator, preserve accessible names and focus targets. |
 | Typed messages for every reply | **Reject blanket conversion.** No new evidence reverses #12; records do not validate cross-process wire keys by themselves. Use a concrete value only where it removes repeated interpretation. |
 | Remove optional-field fallbacks | **Inspect against protocol when touching readers.** Required fields should fail explicitly; genuinely optional payloads retain their defined handling. No source-wide search-and-replace. |
 | One torrent error predicate | **Adopt in the list/feedback slice.** Counts and filters use the same Torrent concept; moving the error presentation to Inspector is a separate UI choice. |
@@ -239,7 +239,7 @@ responsiveness claim follows from fewer lines of code.
   connection facts, source handoff, selection and commands.
 - [Workspace](../../../app/src/MainWindow/Workspace.cs): selection rollback,
   native prompts and guarded navigation.
-- [Preferences](../../../app/src/Views/Preferences.cs): field acknowledgement,
+- [Settings](../../../app/src/Views/Settings.cs): field acknowledgement,
   conversion and schedule transaction. `SpeedLimits.cs` was a duplicate editor
   at review time and is already being removed; do not recreate it from an old
   review or treat its absence as missing documentation.
@@ -249,8 +249,8 @@ responsiveness claim follows from fewer lines of code.
 - [Week](../../../app/src/Controls/Week.cs): broad model subscription, schedule
   signals, visibility and gesture lifetime.
 - [Merge commands](../../../engine/src/Engine/Commands.cpp),
-  [Edit](../../../engine/src/Engine/Details.cpp) and
-  [History](../../../engine/src/Engine/History.cpp): native consolidation seams.
+  [Edit](../../../engine/src/Engine/Edits.cpp) and
+  [SpeedHistory](../../../engine/src/SpeedHistory.cpp): native consolidation seams.
 
 These links identify inspected owners. Concurrent implementation can move them;
 the behavior and ownership argument is the evidence, not a permanent line number.

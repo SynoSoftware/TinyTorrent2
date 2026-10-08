@@ -58,7 +58,8 @@ internal sealed class SelectionHarness
     internal static async Task<SelectionHarness> LoadAsync(
         int rowCount,
         Action<Table>? configure = null,
-        double height = 220)
+        double height = 220
+    )
     {
         ObservableCollection<Row> rows = new();
         for (int i = 0; i < rowCount; i++)
@@ -70,6 +71,9 @@ internal sealed class SelectionHarness
         table.Schema<Row>().Key(row => row.Key);
         table.Width = 320;
         table.Height = height;
+
+        // Declared widths rather than the first fill, so the rows leave surface beside them.
+        table.Layout = TestData.DeclaredWidths(table);
         configure?.Invoke(table);
         table.ItemsSource = rows;
 
@@ -79,21 +83,26 @@ internal sealed class SelectionHarness
         return new SelectionHarness(table, rows);
     }
 
-    internal string[] SelectedKeys() => Table.Selection.Items.Cast<Row>().Select(r => r.Key).ToArray();
+    internal string[] SelectedKeys() =>
+        Table.Selection.Items.Cast<Row>().Select(r => r.Key).ToArray();
 
     internal string? CurrentKey() => (Table.Selection.Current as Row)?.Key;
 
     internal Row this[int index] => Rows[index];
 
-    /// <summary>The selection the hosted list actually shows, which the table must own.</summary>
+    /// <summary>The selection the row surface actually shows, which the table must own.</summary>
     internal string[] ContainerSelectedKeys()
     {
-        ListView list = HostedList();
-        return list.SelectedItems.Cast<Row>().Select(r => r.Key).OrderBy(k => k, StringComparer.Ordinal).ToArray();
+        ListView list = Surface();
+        return list
+            .SelectedItems.Cast<Row>()
+            .Select(r => r.Key)
+            .OrderBy(k => k, StringComparer.Ordinal)
+            .ToArray();
     }
 
-    internal ListView HostedList() =>
-        Descendant<ListView>(Table) ?? throw new InvalidOperationException("No hosted ListView.");
+    internal ListView Surface() =>
+        Descendant<ListView>(Table) ?? throw new InvalidOperationException("No row surface.");
 
     // ------------------------------------------------------------------ private entry points
 
@@ -128,7 +137,9 @@ internal sealed class SelectionHarness
     internal string HitTest(DependencyObject source)
     {
         MethodInfo method = typeof(Table).GetMethod(
-            "HitTest", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            "HitTest",
+            BindingFlags.Instance | BindingFlags.NonPublic
+        )!;
         object?[] args = { source, null };
         object result = method.Invoke(Table, args)!;
         return result.ToString()!;
@@ -136,8 +147,8 @@ internal sealed class SelectionHarness
 
     private object? Invoke(string name, params object?[] args)
     {
-        MethodInfo method = typeof(Table).GetMethod(
-            name, BindingFlags.Instance | BindingFlags.NonPublic)
+        MethodInfo method =
+            typeof(Table).GetMethod(name, BindingFlags.Instance | BindingFlags.NonPublic)
             ?? throw new MissingMethodException("Table", name);
         return method.Invoke(Table, args);
     }

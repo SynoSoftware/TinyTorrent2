@@ -110,9 +110,10 @@ internal sealed class Drag
             : 0;
     }
 
-    private Rect BoundsInRows(FrameworkElement container) => container
-        .TransformToVisual(_rows)
-        .TransformBounds(new Rect(0, 0, container.ActualWidth, container.ActualHeight));
+    private Rect BoundsInRows(FrameworkElement container) =>
+        container
+            .TransformToVisual(_rows)
+            .TransformBounds(new Rect(0, 0, container.ActualWidth, container.ActualHeight));
 
     // ------------------------------------------------------------------ marker
 

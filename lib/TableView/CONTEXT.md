@@ -1,53 +1,109 @@
 # Table vocabulary
 
 Domain-neutral terms for TableView. Observable requirements belong to the
-[TableView contract](docs/tableview-contract.md); implementation choices belong
-to the [implementation map](docs/tableview-implementation.md).
+[TableView contract](docs/tableview-contract.md) and its
+[hierarchy extension](docs/hierarchy.md); implementation choices belong to the
+[implementation map](docs/tableview-implementation.md).
 
-## Control and host
+## Language
+
+### Control and host
 
 **TableView**: a reusable library for large, changing collections with rich cells.
-Its control is the `Table` type in the `Syno.TableView` namespace.
 
 **Host**: the page or application that supplies rows and configures a table.
 _Avoid_: consumer when naming the same role.
 
 **Schema**: the structural definition of row identity, columns, and interaction
-and sort policy. Localised presentation text is distinct from structural schema.
+and sort policy, with optional hierarchy relationships. Localised presentation
+text is distinct from structural schema.
 
 **Item**: one row object supplied by the host. A cell displays content from that
 same item.
 
+**Row**: the table's presentation of one item across its columns.
+_Avoid_: item, when referring to the presentation rather than the host's object.
+
 **Identity**: the basis for recognising an item across a source change, either
 its object reference or a host-supplied stable key.
 
-## View
+### View
 
-**Source snapshot**: one coherent enumeration of the host's filtered and ordered
-items.
+**Source snapshot**: a coherent capture of the host-supplied items and their
+source order, including child membership in a hierarchical table.
 
-**Base sequence**: the source snapshot in its enumeration order.
+**Base sequence**: the items in source order before header sorting; in a
+hierarchical table, the visible roots and descendants in that order.
 
 **Private view**: the table's display projection over the base sequence.
 
-**Natural order**: the order of the base sequence before header sorting.
+**Natural order**: the host's order before header sorting, applied within each
+sibling group in a hierarchical table.
 
-## Layout
+**Row surface**: the scrollable area of the table that presents its rows.
+
+**Held row**: a row the private view keeps showing, dimmed and non-interactive,
+after it left the source, while the pointer is over the rows or a row's context
+menu is open. A change the person caused is never held.
+
+### Hierarchy
+
+**Root**: an item with no parent in the supplied hierarchy.
+
+**Children**: the immediate items beneath a parent in the supplied hierarchy.
+_Avoid_: descendants, when referring only to immediate children.
+
+**Descendants**: all items beneath a parent, including children at every depth.
+
+**Expansion**: the host-owned choice to show an item's children. A descendant
+appears in the private view only while all its ancestors are expanded.
+
+**Hierarchy column**: the column that presents indentation and expansion controls.
+
+### Layout
 
 **Baseline layout**: the column defaults declared by the host, including the
 control defaults used where none were supplied.
 
-**Baseline width**: a column's default width after its bounds are applied.
+**Baseline width**: a column's declared width, or the control default, raised to
+its minimum width.
 
 **Width override**: a width that takes precedence over the baseline after user
 resizing, explicit fit, or restored layout.
 
+**Fit**: a width override taken from the widest header or cell the table has
+realized for a column.
+_Avoid_: autofit, auto-size.
+
+**Fill**: a fit of the visible columns followed by one proportional scale that
+makes them end where the header buttons begin, or at the table's right edge
+when there are none, wider or narrower.
+_Avoid_: stretch.
+
+**First fill**: the one proportional scale of the baseline widths to the
+table's width that the table applies when it first has a width and no width
+override exists. It measures nothing.
+
+**Trailing space**: the part of the table to the right of the last visible
+column.
+
+**Header buttons**: the fit button and the fill button that a host can let the
+table offer in the trailing space. A person can hide each one.
+_Avoid_: fit buttons, for the pair.
+
+**Visibility override**: a shown or hidden state that takes precedence over the
+baseline after the user shows or hides a column, or after a restored layout.
+
 **Effective layout**: column order, visibility, widths, and sort resolved against
 the baseline and current overrides.
 
-**Layout snapshot**: a data-only record of layout choices that a host can store.
+**Layout snapshot**: a record of column, sort, and header button choices that a
+host can retain and restore, separate from row content and selection.
 
-## Interaction
+### Interaction
+
+**Selection**: the items chosen for table actions, distinct from any checkboxes
+or other choices displayed inside their cells.
 
 **Current item**: the logical current row, which can be selected or unselected.
 It is distinct from physical keyboard focus.

@@ -10,8 +10,12 @@ namespace Syno.TableView;
 /// </summary>
 public sealed class Strings
 {
-    private static readonly Lazy<Strings> Fallback = new(() => new Strings(Read("en")
-        ?? throw new InvalidDataException("The embedded English catalogue is missing.")));
+    private static readonly Lazy<Strings> Fallback = new(() =>
+        new Strings(
+            Read("en")
+                ?? throw new InvalidDataException("The embedded English catalogue is missing.")
+        )
+    );
     internal static Strings English => Fallback.Value;
     private readonly Dictionary<string, Dictionary<string, string>> _text;
 
@@ -54,7 +58,18 @@ public sealed class Strings
 
     internal string FitColumn(string name) => Format("column_menu", "fit", name);
 
-    internal string FitVisibleColumns => Get("column_menu", "fit_visible");
+    internal string FitColumns => Get("column_menu", "fit_columns");
+
+    internal string FillWidth => Get("column_menu", "fill_width");
+
+    // The menu entries that show or hide the header buttons for the two commands above.
+    internal string FitButton => Get("column_menu", "fit_button");
+
+    internal string FillButton => Get("column_menu", "fill_button");
+
+    internal string ButtonShown => Get("column_menu", "button_shown");
+
+    internal string ButtonHidden => Get("column_menu", "button_hidden");
 
     internal string MoveLeft => Get("column_menu", "move_left");
 
@@ -74,7 +89,8 @@ public sealed class Strings
 
     private string Get(string group, string key) =>
         _text.TryGetValue(group, out var messages) && messages.TryGetValue(key, out var text)
-            ? text : group + "." + key;
+            ? text
+            : group + "." + key;
 
     /// <summary>
     /// A label that carries a column's name. The current culture, not the invariant one: this is
@@ -86,23 +102,31 @@ public sealed class Strings
     private static Strings Load(CultureInfo culture)
     {
         Dictionary<string, Dictionary<string, string>> text = English._text.ToDictionary(
-            group => group.Key, group => new Dictionary<string, string>(group.Value));
+            group => group.Key,
+            group => new Dictionary<string, string>(group.Value)
+        );
         Stack<string> languages = new();
         for (CultureInfo current = culture; current.Name.Length > 0; current = current.Parent)
             languages.Push(current.Name);
         foreach (string language in languages)
         {
-            if (language.Equals("en", StringComparison.OrdinalIgnoreCase)) continue;
-            if (Read(language) is not { } translated) continue;
+            if (language.Equals("en", StringComparison.OrdinalIgnoreCase))
+                continue;
+            if (Read(language) is not { } translated)
+                continue;
             foreach (var group in translated)
             {
                 if (!text.TryGetValue(group.Key, out var messages))
                     throw new InvalidDataException($"Unknown text group '{group.Key}'.");
                 foreach (var message in group.Value)
                 {
-                    if (!English._text[group.Key].TryGetValue(message.Key, out string? fallback)
-                        || !Arguments(message.Value).SetEquals(Arguments(fallback)))
-                        throw new InvalidDataException($"Invalid message '{group.Key}.{message.Key}'.");
+                    if (
+                        !English._text[group.Key].TryGetValue(message.Key, out string? fallback)
+                        || !Arguments(message.Value).SetEquals(Arguments(fallback))
+                    )
+                        throw new InvalidDataException(
+                            $"Invalid message '{group.Key}.{message.Key}'."
+                        );
                     messages[message.Key] = message.Value;
                 }
             }
@@ -115,15 +139,19 @@ public sealed class Strings
         HashSet<int> indices = new();
         for (int offset = 0; offset < value.Length; offset++)
         {
-            if (value[offset] != '{') continue;
+            if (value[offset] != '{')
+                continue;
             if (offset + 1 < value.Length && value[offset + 1] == '{')
             {
                 offset++;
                 continue;
             }
             int start = ++offset;
-            while (offset < value.Length && char.IsAsciiDigit(value[offset])) offset++;
-            indices.Add(int.Parse(value.AsSpan(start, offset - start), CultureInfo.InvariantCulture));
+            while (offset < value.Length && char.IsAsciiDigit(value[offset]))
+                offset++;
+            indices.Add(
+                int.Parse(value.AsSpan(start, offset - start), CultureInfo.InvariantCulture)
+            );
         }
         return indices;
     }
@@ -131,9 +159,13 @@ public sealed class Strings
     private static Dictionary<string, Dictionary<string, string>>? Read(string language)
     {
         var assembly = typeof(Strings).Assembly;
-        string? resource = assembly.GetManifestResourceNames().FirstOrDefault(
-            name => name.Equals(language + ".json", StringComparison.OrdinalIgnoreCase));
-        if (resource is null) return null;
+        string? resource = assembly
+            .GetManifestResourceNames()
+            .FirstOrDefault(name =>
+                name.Equals(language + ".json", StringComparison.OrdinalIgnoreCase)
+            );
+        if (resource is null)
+            return null;
         using Stream stream = assembly.GetManifestResourceStream(resource)!;
         using JsonDocument document = JsonDocument.Parse(stream);
         Dictionary<string, Dictionary<string, string>> text = new(StringComparer.Ordinal);
@@ -142,11 +174,16 @@ public sealed class Strings
             Dictionary<string, string> messages = new(StringComparer.Ordinal);
             foreach (JsonProperty message in group.Value.EnumerateObject())
             {
-                string value = message.Value.GetString()
-                    ?? throw new InvalidDataException($"Null message '{group.Name}.{message.Name}'.");
+                string value =
+                    message.Value.GetString()
+                    ?? throw new InvalidDataException(
+                        $"Null message '{group.Name}.{message.Name}'."
+                    );
                 _ = CompositeFormat.Parse(value);
                 if (!messages.TryAdd(message.Name, value))
-                    throw new InvalidDataException($"Duplicate message '{group.Name}.{message.Name}'.");
+                    throw new InvalidDataException(
+                        $"Duplicate message '{group.Name}.{message.Name}'."
+                    );
             }
             if (!text.TryAdd(group.Name, messages))
                 throw new InvalidDataException($"Duplicate text group '{group.Name}'.");

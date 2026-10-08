@@ -6,15 +6,15 @@ using Windows.Foundation;
 
 namespace Syno.TableView.Body;
 
-internal sealed partial class Branch : Grid
+internal sealed partial class HierarchyCell : Grid
 {
     private readonly Table _table;
     private readonly ContentPresenter _content;
-    private readonly Button _expander;
+    private readonly SubtleButton _expander;
     private readonly FontIcon _glyph;
     private readonly RectangleGeometry _clip = new();
 
-    internal Branch(Table table, ContentPresenter content)
+    internal HierarchyCell(Table table, ContentPresenter content)
     {
         _table = table;
         _content = content;
@@ -26,12 +26,15 @@ internal sealed partial class Branch : Grid
         _glyph = new() { FontFamily = Lucide.Font, FontSize = 12 };
         _expander = new()
         {
-            Content = _glyph, Width = 40, MinWidth = 0, Padding = default,
-            IsTabStop = false, AllowFocusOnInteraction = false,
-            VerticalAlignment = VerticalAlignment.Stretch,
-            Style = (Style)Application.Current.Resources["SubtleButtonStyle"]
+            Content = _glyph,
+            Width = 40,
+            IsTabStop = false,
+            AllowFocusOnInteraction = false,
         };
-        AutomationProperties.SetAccessibilityView(_expander, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
+        AutomationProperties.SetAccessibilityView(
+            _expander,
+            Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw
+        );
         Table.SetIsRowGestureEnabled(_expander, false);
         _expander.Click += (_, _) =>
         {
@@ -41,7 +44,7 @@ internal sealed partial class Branch : Grid
         Children.Add(_expander);
         SetColumn(content, 1);
         Children.Add(content);
-        // Unloaded is ignored while the branch is still in the tree, so Loaded
+        // Unloaded is ignored while the cell is still in the tree, so Loaded
         // can repeat; see Table's OnUnloaded.
         Loaded += (_, _) =>
         {
@@ -62,7 +65,11 @@ internal sealed partial class Branch : Grid
 
     internal object? Item
     {
-        set { _content.Content = value; Refresh(); }
+        set
+        {
+            _content.Content = value;
+            Refresh();
+        }
     }
 
     private void OnRowsChanged(object? sender, EventArgs args) => Refresh();
@@ -75,17 +82,25 @@ internal sealed partial class Branch : Grid
 
     private void Refresh()
     {
-        if (_table.Hierarchy is not { } hierarchy || _content.Content is not { } item ||
-            hierarchy.Find(item) is not { } node) return;
+        if (
+            _table.Hierarchy is not { } hierarchy
+            || _content.Content is not { } item
+            || hierarchy.Find(item) is not { } node
+        )
+            return;
         // WinUI TreeView uses a 16-pixel depth step and a 12-pixel glyph between 14-pixel margins.
         double indent = node.Depth * 16;
-        _expander.Margin = FlowDirection == FlowDirection.LeftToRight
-            ? new(indent, 0, 0, 0) : new(0, 0, indent, 0);
+        _expander.Margin =
+            FlowDirection == FlowDirection.LeftToRight
+                ? new(indent, 0, 0, 0)
+                : new(0, 0, indent, 0);
         _expander.Visibility = hierarchy.HasChildren ? Visibility.Visible : Visibility.Collapsed;
         _expander.Opacity = node.Children.Count > 0 ? 1 : 0;
         _expander.IsHitTestVisible = node.Children.Count > 0;
-        _expander.IsEnabled = _table.CanInteract?.Invoke(item) != false;
-        _glyph.Glyph = hierarchy.IsExpanded(item) ? Lucide.ChevronDown :
-            FlowDirection == FlowDirection.LeftToRight ? Lucide.ChevronRight : Lucide.ChevronLeft;
+        _expander.IsEnabled = _table.IsInteractive(item);
+        _glyph.Glyph =
+            hierarchy.IsExpanded(item) ? Lucide.ChevronDown
+            : FlowDirection == FlowDirection.LeftToRight ? Lucide.ChevronRight
+            : Lucide.ChevronLeft;
     }
 }

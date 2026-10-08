@@ -29,10 +29,10 @@ namespace Syno.TableViewSample.Jobs;
 /// </remarks>
 public sealed partial class JobsPage
 {
-    /// <summary>Notifications the hosted list has been sent since the last reset.</summary>
+    /// <summary>Notifications the row surface has been sent since the last reset.</summary>
     private int _notifications;
 
-    /// <summary>Containers the hosted list has prepared since the last reset.</summary>
+    /// <summary>Containers the row surface has prepared since the last reset.</summary>
     private int _realizations;
 
     private ListView? _counted;
@@ -67,8 +67,10 @@ public sealed partial class JobsPage
         await Settle(700);
 
         W($"Sample measurement pass {DateTime.Now:O}");
-        W($"  {Configuration} {System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture}, " +
-          $"RasterizationScale={_scale}, {RowCount} rows, every duration measured by {nameof(Time)}");
+        W(
+            $"  {Configuration} {System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture}, "
+                + $"RasterizationScale={_scale}, {RowCount} rows, every duration measured by {nameof(Time)}"
+        );
 
         // Counting notifications is on for the whole pass rather than switched on around the
         // operations that report a count, so its cost is in every figure equally and cancels out of
@@ -84,7 +86,9 @@ public sealed partial class JobsPage
         if (!Skip("F"))
         {
             Section("F. RenderTargetBitmap of the table");
-            await SavePngAsync(System.IO.Path.Combine(AppContext.BaseDirectory, "sample-table.png"));
+            await SavePngAsync(
+                System.IO.Path.Combine(AppContext.BaseDirectory, "sample-table.png")
+            );
             await ReportBitmapAsync();
         }
 
@@ -140,22 +144,32 @@ public sealed partial class JobsPage
 
         foreach (IGrouping<JobState, Job> group in rows.GroupBy(r => r.State).OrderBy(g => g.Key))
         {
-            W($"  {group.Key,-16} x{group.Count()}");
+            W($"  {group.Key, -16} x{group.Count()}");
         }
 
         W($"  rows carrying a fault  = {rows.Count(r => r.HasFault)}");
         W($"  non-interactive rows   = {rows.Count(r => r.IsPending)}");
-        W($"  progress {rows.Min(r => r.Progress):0.0}% to {rows.Max(r => r.Progress):0.0}%, " +
-          $"{rows.Count(r => r.Progress >= 100)} complete and {rows.Count(r => r.Progress == 0)} at zero");
-        W($"  in rate {rows.Max(r => r.InRate) / 1_000_000:0.0} MB/s at most, " +
-          $"out rate {rows.Max(r => r.OutRate) / 1_000_000:0.0} MB/s at most, " +
-          $"{rows.Count(r => r.InRate == 0 && r.OutRate == 0)} rows moving nothing");
-        W($"  workers busy {rows.Min(r => r.WorkersBusy)} to {rows.Max(r => r.WorkersBusy)} " +
-          $"of pools {rows.Min(r => r.WorkersTotal)} to {rows.Max(r => r.WorkersTotal)}");
+        W(
+            $"  progress {rows.Min(r => r.Progress):0.0}% to {rows.Max(r => r.Progress):0.0}%, "
+                + $"{rows.Count(r => r.Progress >= 100)} complete and {rows.Count(r => r.Progress == 0)} at zero"
+        );
+        W(
+            $"  in rate {rows.Max(r => r.InRate) / 1_000_000:0.0} MB/s at most, "
+                + $"out rate {rows.Max(r => r.OutRate) / 1_000_000:0.0} MB/s at most, "
+                + $"{rows.Count(r => r.InRate == 0 && r.OutRate == 0)} rows moving nothing"
+        );
+        W(
+            $"  workers busy {rows.Min(r => r.WorkersBusy)} to {rows.Max(r => r.WorkersBusy)} "
+                + $"of pools {rows.Min(r => r.WorkersTotal)} to {rows.Max(r => r.WorkersTotal)}"
+        );
         W($"  yield {rows.Min(r => r.Yield):0.00} to {rows.Max(r => r.Yield):0.00}");
-        W($"  no estimate on {rows.Count(r => r.Remaining is null)} rows, " +
-          $"not finished on {rows.Count(r => r.Finished is null)}");
-        W($"  job names {rows.Min(r => r.Name.Length)} to {rows.Max(r => r.Name.Length)} characters");
+        W(
+            $"  no estimate on {rows.Count(r => r.Remaining is null)} rows, "
+                + $"not finished on {rows.Count(r => r.Finished is null)}"
+        );
+        W(
+            $"  job names {rows.Min(r => r.Name.Length)} to {rows.Max(r => r.Name.Length)} characters"
+        );
     }
 
     private async Task ReportRenderAsync()
@@ -167,11 +181,13 @@ public sealed partial class JobsPage
         ListView? list = FindDescendant<ListView>(Table);
         Strip? strip = FindDescendant<Strip>(Table);
         W($"header strip found = {strip is not null}");
-        W($"hosted ListView found = {list is not null}");
+        W($"row surface found = {list is not null}");
         if (list is not null)
         {
-            W($"ListView ActualWidth={list.ActualWidth:0.##} SelectionMode={list.SelectionMode} " +
-              $"IsMultiSelectCheckBoxEnabled={list.IsMultiSelectCheckBoxEnabled} Items={list.Items.Count}");
+            W(
+                $"ListView ActualWidth={list.ActualWidth:0.##} SelectionMode={list.SelectionMode} "
+                    + $"IsMultiSelectCheckBoxEnabled={list.IsMultiSelectCheckBoxEnabled} Items={list.Items.Count}"
+            );
         }
 
         List<Cell> header = new();
@@ -193,9 +209,11 @@ public sealed partial class JobsPage
         ScrollViewer? sv = list is null ? null : FindDescendant<ScrollViewer>(list);
         if (sv is not null)
         {
-            W($"inner ScrollViewer HorizontalScrollMode={sv.HorizontalScrollMode} " +
-              $"ExtentWidth={sv.ExtentWidth:0.##} ViewportWidth={sv.ViewportWidth:0.##} " +
-              $"ExtentHeight={sv.ExtentHeight:0.##} ViewportHeight={sv.ViewportHeight:0.##}");
+            W(
+                $"inner ScrollViewer HorizontalScrollMode={sv.HorizontalScrollMode} "
+                    + $"ExtentWidth={sv.ExtentWidth:0.##} ViewportWidth={sv.ViewportWidth:0.##} "
+                    + $"ExtentHeight={sv.ExtentHeight:0.##} ViewportHeight={sv.ViewportHeight:0.##}"
+            );
         }
 
         Section("B. Content origin and vertical pitch of the row containers");
@@ -203,7 +221,9 @@ public sealed partial class JobsPage
         ReportRowPitch(list, containers);
 
         Section("C. Header cell boundaries vs row cell boundaries");
-        await SavePngAsync(System.IO.Path.Combine(AppContext.BaseDirectory, "sample-boundaries.png"));
+        await SavePngAsync(
+            System.IO.Path.Combine(AppContext.BaseDirectory, "sample-boundaries.png")
+        );
         ReportBoundaries("loaded", header, containers);
     }
 
@@ -219,11 +239,12 @@ public sealed partial class JobsPage
         ListView? list = FindDescendant<ListView>(Table);
         if (list is null)
         {
-            W("  no hosted list");
+            W("  no row surface");
             return;
         }
 
-        Microsoft.UI.Xaml.Media.Animation.TransitionCollection? live = list.ItemContainerTransitions;
+        Microsoft.UI.Xaml.Media.Animation.TransitionCollection? live =
+            list.ItemContainerTransitions;
 
         (string Label, bool Motion)[] cases =
         {
@@ -255,8 +276,9 @@ public sealed partial class JobsPage
 
                 List<object> before = Order(list);
                 _notifications = 0;
-                (double changed, double laidOut) = Time(
-                    () => Table.Sort = new Sort(IndexColumn, SortDirection.Descending));
+                (double changed, double laidOut) = Time(() =>
+                    Table.Sort = new Sort(IndexColumn, SortDirection.Descending)
+                );
 
                 totals.Add(changed + laidOut);
                 changes.Add(changed);
@@ -270,25 +292,34 @@ public sealed partial class JobsPage
             // measured with a ContainerContentChanging subscriber attached.
             Table.Sort = new Sort(IndexColumn);
             await Settle(500);
-            (int realized, double _) = Realizations(
-                () => Table.Sort = new Sort(IndexColumn, SortDirection.Descending));
+            (int realized, double _) = Realizations(() =>
+                Table.Sort = new Sort(IndexColumn, SortDirection.Descending)
+            );
             await Settle(500);
 
             totals.Sort();
             changes.Sort();
             W($"  {label}, {RowCount} rows:");
-            W($"    {sent} notifications, a container was prepared {realized} times, " +
-              $"{collected} gen0/gen2 collections in the last trial");
-            W($"    every position moved, so a reconcile announcing each of them would have raised " +
-              $"a computed {perRow}");
+            W(
+                $"    {sent} notifications, a container was prepared {realized} times, "
+                    + $"{collected} gen0/gen2 collections in the last trial"
+            );
+            W(
+                $"    every position moved, so a reconcile announcing each of them would have raised "
+                    + $"a computed {perRow}"
+            );
 
             // The collection change on its own is the half specification 20 records as 223 ms
             // falling to 13 ms — on a host that no longer exists, so this feed's own numbers are
             // the current ones; the layout it causes is reported beside it, never added into it.
-            W($"    collection change: median {changes[changes.Count / 2]:0} ms, " +
-              $"{changes[0]:0} to {changes[^1]:0} ms across {changes.Count} trials");
-            W($"    change plus layout: median {totals[totals.Count / 2]:0} ms, " +
-              $"{totals[0]:0} to {totals[^1]:0} ms across {totals.Count} trials");
+            W(
+                $"    collection change: median {changes[changes.Count / 2]:0} ms, "
+                    + $"{changes[0]:0} to {changes[^1]:0} ms across {changes.Count} trials"
+            );
+            W(
+                $"    change plus layout: median {totals[totals.Count / 2]:0} ms, "
+                    + $"{totals[0]:0} to {totals[^1]:0} ms across {totals.Count} trials"
+            );
 
             if (!motion)
             {
@@ -318,13 +349,16 @@ public sealed partial class JobsPage
 
             List<object> before = Order(list);
             _notifications = 0;
-            (double changed, double laidOut) = Time(
-                () => Table.Sort = new Sort(IndexColumn, SortDirection.Descending));
+            (double changed, double laidOut) = Time(() =>
+                Table.Sort = new Sort(IndexColumn, SortDirection.Descending)
+            );
 
-            W($"  {what}: {rows.Count} rows, {_notifications} notifications " +
-              $"(against {PerRowNotifications(before, list)} for a reconcile that announced every " +
-              $"moved row), {_collections} collections, changed in {changed:0} ms, laid out in " +
-              $"{laidOut:0} ms, {changed + laidOut:0} ms in all");
+            W(
+                $"  {what}: {rows.Count} rows, {_notifications} notifications "
+                    + $"(against {PerRowNotifications(before, list)} for a reconcile that announced every "
+                    + $"moved row), {_collections} collections, changed in {changed:0} ms, laid out in "
+                    + $"{laidOut:0} ms, {changed + laidOut:0} ms in all"
+            );
         }
 
         Feed? bigger = null;
@@ -364,9 +398,11 @@ public sealed partial class JobsPage
             bigger.Stop();
             bigger.Ticked -= onTick;
 
-            W($"  ticking 20,000 rows sorted by throughput: {ticks} ticks in 8 s, " +
-              $"{_notifications} notifications in all, publish plus layout averaged " +
-              $"{(ticks == 0 ? 0 : total / ticks):0} ms and peaked at {worst:0} ms");
+            W(
+                $"  ticking 20,000 rows sorted by throughput: {ticks} ticks in 8 s, "
+                    + $"{_notifications} notifications in all, publish plus layout averaged "
+                    + $"{(ticks == 0 ? 0 : total / ticks):0} ms and peaked at {worst:0} ms"
+            );
         }
         catch (Exception ex)
         {
@@ -390,10 +426,12 @@ public sealed partial class JobsPage
     private async Task ProbeQuietPlacementAsync()
     {
         ListView? list = FindDescendant<ListView>(Table);
-        if (list?.ItemsSource is not System.Collections.IList view
-            || list.ItemsPanelRoot is not Panel panel)
+        if (
+            list?.ItemsSource is not System.Collections.IList view
+            || list.ItemsPanelRoot is not Panel panel
+        )
         {
-            W("  no hosted list to probe");
+            W("  no row surface to probe");
             return;
         }
 
@@ -417,8 +455,10 @@ public sealed partial class JobsPage
                 object? expected = index < view.Count ? view[index] : null;
                 if (!ReferenceEquals(shown, expected))
                 {
-                    wrong.Add($"{index} shows {(shown as Job)?.Name ?? "nothing"} but the view " +
-                              $"has {(expected as Job)?.Name ?? "nothing"}");
+                    wrong.Add(
+                        $"{index} shows {(shown as Job)?.Name ?? "nothing"} but the view "
+                            + $"has {(expected as Job)?.Name ?? "nothing"}"
+                    );
                 }
             }
 
@@ -445,11 +485,12 @@ public sealed partial class JobsPage
                     reached,
                     row.TransformToVisual(list)
                         .TransformBounds(new Rect(0, 0, row.ActualWidth, row.ActualHeight))
-                        .Bottom);
+                        .Bottom
+                );
             }
 
-            return $"{held} containers reaching {reached:0} of the {viewport:0} the viewport shows" +
-                   (reached >= viewport - 1 ? string.Empty : " — the foot of the viewport is empty");
+            return $"{held} containers reaching {reached:0} of the {viewport:0} the viewport shows"
+                + (reached >= viewport - 1 ? string.Empty : " — the foot of the viewport is empty");
         }
 
         Table.Sort = new Sort(IndexColumn);
@@ -476,9 +517,15 @@ public sealed partial class JobsPage
             int after = list.IndexFromContainer(sample);
             view.Insert(0, first);
 
-            W($"  0. a container at {before}; after removing the row at 0, and before any layout, " +
-              $"it reports {after} — the panel's map is " +
-              (after == before - 1 ? "updated inside the notification" : "deferred to the next measure"));
+            W(
+                $"  0. a container at {before}; after removing the row at 0, and before any layout, "
+                    + $"it reports {after} — the panel's map is "
+                    + (
+                        after == before - 1
+                            ? "updated inside the notification"
+                            : "deferred to the next measure"
+                    )
+            );
         }
         else
         {
@@ -491,11 +538,14 @@ public sealed partial class JobsPage
         Table.Sort = new Sort(IndexColumn);
         await Settle(600);
         _notifications = 0;
-        (double changed, double laidOut) = Time(
-            () => Table.Sort = new Sort(IndexColumn, SortDirection.Descending));
+        (double changed, double laidOut) = Time(() =>
+            Table.Sort = new Sort(IndexColumn, SortDirection.Descending)
+        );
 
-        W($"  1. a full reversal: {_notifications} notifications, {_collections} collections, " +
-          $"changed in {changed:0} ms and laid out in {laidOut:0} ms");
+        W(
+            $"  1. a full reversal: {_notifications} notifications, {_collections} collections, "
+                + $"changed in {changed:0} ms and laid out in {laidOut:0} ms"
+        );
         W($"     {Disagreements()}");
 
         // Whether the rows reach the bottom of the viewport is a different question from whether the
@@ -566,8 +616,10 @@ public sealed partial class JobsPage
             await Settle(1000);
 
             object? arrived = (list.ContainerFromItem(wanted) as ListViewItem)?.Content;
-            W($"  3. ScrollIntoView of view index {wantedIndex} arrived holding " +
-              $"{(ReferenceEquals(arrived, wanted) ? "that row" : "something else")}; {Disagreements()}");
+            W(
+                $"  3. ScrollIntoView of view index {wantedIndex} arrived holding "
+                    + $"{(ReferenceEquals(arrived, wanted) ? "that row" : "something else")}; {Disagreements()}"
+            );
         }
 
         // 4. Two reconciles before one layout, which is a publish and the settle timer landing in
@@ -583,8 +635,10 @@ public sealed partial class JobsPage
         // the list answers no index for any of them until it has laid out. That is a fact about when
         // the question can be asked, not a pass, so this says so rather than reporting nothing wrong
         // out of nothing checked.
-        W($"  4. two reconciles in one callback, before their layout: {Disagreements()} — nothing " +
-          "can be asked of the list here, it answers no index until it lays out");
+        W(
+            $"  4. two reconciles in one callback, before their layout: {Disagreements()} — nothing "
+                + "can be asked of the list here, it answers no index until it lays out"
+        );
         list.UpdateLayout();
         await Settle(400);
         W($"     after the layout, which is where this case is decided: {Disagreements()}");
@@ -605,8 +659,10 @@ public sealed partial class JobsPage
         }
 
         _feed.Stop();
-        W("  5. fifteen seconds sorted by throughput with settling off, publishing every second: " +
-          Disagreements());
+        W(
+            "  5. fifteen seconds sorted by throughput with settling off, publishing every second: "
+                + Disagreements()
+        );
 
         Table.SortInterval = restore;
         Table.Sort = null;
@@ -647,16 +703,20 @@ public sealed partial class JobsPage
         Publish();
         Table.UpdateLayout();
 
-        W($"  one publish, sorted by Throughput with settling off, {RowCount} rows: " +
-          $"{_notifications} collection notifications, against a computed " +
-          $"{PerRowNotifications(beforePublish, list)} for a reconcile announcing every moved row");
+        W(
+            $"  one publish, sorted by Throughput with settling off, {RowCount} rows: "
+                + $"{_notifications} collection notifications, against a computed "
+                + $"{PerRowNotifications(beforePublish, list)} for a reconcile announcing every moved row"
+        );
 
-        foreach ((Column column, TimeSpan settle) in new[]
-        {
-            (ThroughputColumn, original),
-            (ThroughputColumn, TimeSpan.Zero),
-            (NameColumn, original),
-        })
+        foreach (
+            (Column column, TimeSpan settle) in new[]
+            {
+                (ThroughputColumn, original),
+                (ThroughputColumn, TimeSpan.Zero),
+                (NameColumn, original),
+            }
+        )
         {
             Table.SortInterval = settle;
             Table.Sort = new Sort(column, SortDirection.Descending);
@@ -704,13 +764,17 @@ public sealed partial class JobsPage
             feed.CollectionChanged -= burst;
 
             int published = Publishes - publishedBefore;
-            W($"  sorted by {column.DisplayName}, settle {settle.TotalSeconds:0.#}s: {published} publishes " +
-              $"in {seconds:0.0} s, {reorders} of them reordered the view" +
-              (reorders == 0 ? string.Empty : $", one every {seconds / reorders:0.0} s") +
-              $", {_notifications} notifications in all" +
-              (perReorder.Count == 0
-                  ? string.Empty
-                  : $", {perReorder.Sum() / perReorder.Count} per reorder"));
+            W(
+                $"  sorted by {column.DisplayName}, settle {settle.TotalSeconds:0.#}s: {published} publishes "
+                    + $"in {seconds:0.0} s, {reorders} of them reordered the view"
+                    + (reorders == 0 ? string.Empty : $", one every {seconds / reorders:0.0} s")
+                    + $", {_notifications} notifications in all"
+                    + (
+                        perReorder.Count == 0
+                            ? string.Empty
+                            : $", {perReorder.Sum() / perReorder.Count} per reorder"
+                    )
+            );
         }
 
         Table.SortInterval = original;
@@ -843,8 +907,11 @@ public sealed partial class JobsPage
     {
         foreach (UIElement child in panel.Children)
         {
-            if (child is FrameworkElement row && list.IndexFromContainer(child) >= 0
-                && row.ActualHeight > 0)
+            if (
+                child is FrameworkElement row
+                && list.IndexFromContainer(child) >= 0
+                && row.ActualHeight > 0
+            )
             {
                 return row.ActualHeight;
             }
@@ -864,8 +931,12 @@ public sealed partial class JobsPage
                 return;
             }
 
-            w.AppWindow.ResizeClient(new Windows.Graphics.SizeInt32(
-                (int)Math.Ceiling(1400 * _scale), (int)Math.Ceiling(820 * _scale)));
+            w.AppWindow.ResizeClient(
+                new Windows.Graphics.SizeInt32(
+                    (int)Math.Ceiling(1400 * _scale),
+                    (int)Math.Ceiling(820 * _scale)
+                )
+            );
             w.Activate();
         }
         catch (Exception ex)
@@ -892,12 +963,16 @@ public sealed partial class JobsPage
 
         ListViewItem item = containers[0];
         CellsPanel? panel = FindDescendant<CellsPanel>(item);
-        W($"container[0] width={item.ActualWidth:0.##} height={item.ActualHeight:0.##} " +
-          $"padding={item.Padding} x-in-table={XOf(item):0.##}");
+        W(
+            $"container[0] width={item.ActualWidth:0.##} height={item.ActualHeight:0.##} "
+                + $"padding={item.Padding} x-in-table={XOf(item):0.##}"
+        );
         if (panel is not null)
         {
-            W($"row cells panel x-in-container={XOf(panel, item):0.##} " +
-              $"width={panel.ActualWidth:0.##} children={panel.Children.Count}");
+            W(
+                $"row cells panel x-in-container={XOf(panel, item):0.##} "
+                    + $"width={panel.ActualWidth:0.##} children={panel.Children.Count}"
+            );
         }
     }
 
@@ -941,8 +1016,10 @@ public sealed partial class JobsPage
             gaps.Add(Math.Round(shown[i].Top - (shown[i - 1].Top + shown[i - 1].Height), 3));
         }
 
-        W($"  {shown.Count} containers inside the viewport, " +
-          $"{bands.Count - shown.Count} placed outside it");
+        W(
+            $"  {shown.Count} containers inside the viewport, "
+                + $"{bands.Count - shown.Count} placed outside it"
+        );
         W($"  row heights: {Distinct(shown.Select(b => b.Height))}");
         W($"  gaps between them: {Distinct(gaps)}");
         W($"  pitch (top to top): {Distinct(Pitches(shown))}");
@@ -957,12 +1034,14 @@ public sealed partial class JobsPage
     }
 
     /// <summary>Every distinct value with how many times it occurred. One entry is uniform.</summary>
-    private static string Distinct(IEnumerable<double> values) => string.Join(
-        ", ",
-        values
-            .GroupBy(v => Math.Round(v, 3))
-            .OrderBy(g => g.Key)
-            .Select(g => $"{g.Key:0.###} x{g.Count()}"));
+    private static string Distinct(IEnumerable<double> values) =>
+        string.Join(
+            ", ",
+            values
+                .GroupBy(v => Math.Round(v, 3))
+                .OrderBy(g => g.Key)
+                .Select(g => $"{g.Key:0.###} x{g.Count()}")
+        );
 
     private void ReportBoundaries(string label, List<Cell> header, List<ListViewItem> containers)
     {
@@ -978,8 +1057,10 @@ public sealed partial class JobsPage
         {
             TextBlock? text = FindDescendant<TextBlock>(header[i]);
             string where = text is null ? "no label" : $"label x={XOf(text):0.##}";
-            W($"  header[{i}] '{AutomationProperties.GetName(header[i])}' x={headerX[i]:0.##} " +
-              $"w={header[i].ActualWidth:0.##} padding={header[i].Padding} {where}");
+            W(
+                $"  header[{i}] '{AutomationProperties.GetName(header[i])}' x={headerX[i]:0.##} "
+                    + $"w={header[i].ActualWidth:0.##} padding={header[i].Padding} {where}"
+            );
         }
 
         int measured = 0;
@@ -1001,9 +1082,15 @@ public sealed partial class JobsPage
             }
 
             TextBlock? firstText = FindDescendant<TextBlock>(panel);
-            W($"  row container {measured}: cell-vs-header delta = [" +
-              string.Join(", ", deltas.Select(d => d.ToString("0.###", CultureInfo.InvariantCulture))) + "]" +
-              (firstText is null ? "" : $"  first cell text x={XOf(firstText):0.##}"));
+            W(
+                $"  row container {measured}: cell-vs-header delta = ["
+                    + string.Join(
+                        ", ",
+                        deltas.Select(d => d.ToString("0.###", CultureInfo.InvariantCulture))
+                    )
+                    + "]"
+                    + (firstText is null ? "" : $"  first cell text x={XOf(firstText):0.##}")
+            );
 
             if (++measured == 3)
             {
@@ -1028,7 +1115,10 @@ public sealed partial class JobsPage
             DataReader.FromBuffer(buffer).ReadBytes(px);
 
             InMemoryRandomAccessStream stream = new();
-            BitmapEncoder encoder = await BitmapEncoder.CreateAsync(BitmapEncoder.PngEncoderId, stream);
+            BitmapEncoder encoder = await BitmapEncoder.CreateAsync(
+                BitmapEncoder.PngEncoderId,
+                stream
+            );
             encoder.SetPixelData(
                 BitmapPixelFormat.Bgra8,
                 BitmapAlphaMode.Premultiplied,
@@ -1036,7 +1126,8 @@ public sealed partial class JobsPage
                 (uint)rtb.PixelHeight,
                 96 * _scale,
                 96 * _scale,
-                px);
+                px
+            );
             await encoder.FlushAsync();
 
             byte[] file = new byte[stream.Size];
@@ -1079,7 +1170,9 @@ public sealed partial class JobsPage
             }
 
             W($"distinct colours = {histogram.Count}");
-            foreach (KeyValuePair<uint, int> entry in histogram.OrderByDescending(p => p.Value).Take(5))
+            foreach (
+                KeyValuePair<uint, int> entry in histogram.OrderByDescending(p => p.Value).Take(5)
+            )
             {
                 W($"  #{entry.Key:X6} x{entry.Value}");
             }
@@ -1159,10 +1252,15 @@ public sealed partial class JobsPage
                     }
 
                     string lower = key.ToLowerInvariant();
-                    if (lower.Contains("list") || lower.Contains("item") || lower.Contains("header")
-                        || lower.Contains("cell") || lower.Contains("grid"))
+                    if (
+                        lower.Contains("list")
+                        || lower.Contains("item")
+                        || lower.Contains("header")
+                        || lower.Contains("cell")
+                        || lower.Contains("grid")
+                    )
                     {
-                        hits.Add($"  {key,-44} = {thickness}   [{origin}]");
+                        hits.Add($"  {key, -44} = {thickness}   [{origin}]");
                     }
                 }
             }
@@ -1186,7 +1284,9 @@ public sealed partial class JobsPage
         }
 
         Scan(Application.Current.Resources, "app");
-        W($"scanned {scanned} resource entries; Thickness keys mentioning list/item/header/cell/grid:");
+        W(
+            $"scanned {scanned} resource entries; Thickness keys mentioning list/item/header/cell/grid:"
+        );
         foreach (string hit in hits.Distinct().OrderBy(h => h, StringComparer.Ordinal))
         {
             W(hit);
@@ -1220,7 +1320,8 @@ public sealed partial class JobsPage
         }
     }
 
-    private static T? FindDescendant<T>(DependencyObject root) where T : DependencyObject
+    private static T? FindDescendant<T>(DependencyObject root)
+        where T : DependencyObject
     {
         int n = VisualTreeHelper.GetChildrenCount(root);
         for (int i = 0; i < n; i++)
@@ -1241,7 +1342,8 @@ public sealed partial class JobsPage
         return null;
     }
 
-    private static void FindAll<T>(DependencyObject root, List<T> into) where T : DependencyObject
+    private static void FindAll<T>(DependencyObject root, List<T> into)
+        where T : DependencyObject
     {
         int n = VisualTreeHelper.GetChildrenCount(root);
         for (int i = 0; i < n; i++)

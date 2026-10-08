@@ -168,7 +168,7 @@ through `ItemsSource`, causing a fresh hierarchy capture. Assigning the same
 dependency-property value is not a refresh mechanism. Prefer stable notifying
 collections for a live hierarchy, as the Files model already supplies.
 `RefreshView()` reuses captured membership and re-evaluates expansion,
-eligibility and sort values. These two update paths retain the existing
+interactivity and sort values. These two update paths retain the existing
 distinction between a source snapshot and its private view.
 
 The private view is a depth-first sequence: each row precedes its visible
@@ -209,7 +209,7 @@ bound source enumeration, sorting or allocations. Distinguish these costs:
   visible sequence through the existing projection is allowed; a separate
   incremental tree engine is not required to avoid that traversal.
 - Projection visits visible branches. Collapsed descendants need no expansion,
-  eligibility or sort callbacks until they can enter the view. Their membership
+  interactivity or sort callbacks until they can enter the view. Their membership
   remains captured and observed, so deferring presentation work loses no source
   changes and opening them uses current values.
 - Scrolling, pointer movement and column layout do no hierarchy-wide work.
@@ -234,7 +234,7 @@ overrides that column's visibility, hideability and order; other columns retain
 their relative order and ordinary rules. No new per-column locking setting is
 needed. Resizing, fitting and sorting remain available for the hierarchy column.
 
-Indentation and the expander occupy space inside that column's resolved width.
+Indentation and the expander occupy space inside that column's effective width.
 They never shift subsequent columns. Each depth adds one consistent indent;
 siblings reserve the same expander slot whether or not they have children.
 A hierarchy containing only root leaves reserves no expander slot, so an
@@ -278,7 +278,7 @@ domain. One existing comparer contract serves flat rows and sibling rows.
 Row selection is independent of expansion and of controls inside cells.
 Selecting a parent selects that row only. Commands can interpret a folder as
 its descendants; the library never silently adds those descendants to selection.
-Extended selection, Ctrl-click, Shift ranges, marquee and Ctrl+A act on eligible
+Extended selection, Ctrl-click, Shift ranges, marquee and Ctrl+A act on interactive
 rows in the current visible sequence, including rows outside the viewport.
 Collapsed descendants are excluded, so a range cannot select invisible files.
 
@@ -299,13 +299,13 @@ Collapse follows one atomic transition:
 4. Publish at most one `SelectionChanged` for the final exposed packet, and
    reveal the new current row when keyboard focus needed to move.
 
-If no eligible ancestor survives, use the existing removal fallback for current
+If no interactive ancestor survives, use the existing removal fallback for current
 and focus. A collapse must not steal focus from an unrelated control. Reopening
 does not restore hidden selections, so later commands cannot unexpectedly regain
 targets. Ordinary source removal and filtering retain their existing pruning
 rules rather than treating every removal as a collapse.
 
-Explicit `Selection` assignments also resolve only visible eligible rows.
+Explicit `Selection` assignments also resolve only visible interactive rows.
 Selection by a key under a collapsed ancestor does not expand it. Non-interactive
 rows retain the contract's exclusion from input, including expansion, while the
 host can still set their expansion state before refreshing.
@@ -317,10 +317,10 @@ For the passive row surface, use tree navigation in the reading direction:
 | Key in left-to-right layout | Behavior |
 | --- | --- |
 | Right on a collapsed parent | Expand it; keep current and selection. |
-| Right on an expanded parent | Move to its first eligible visible immediate child; if none exists, stay. |
+| Right on an expanded parent | Move to its first interactive visible immediate child; if none exists, stay. |
 | Right on a leaf | Stay. |
 | Left on an expanded parent | Collapse it using the transition above. |
-| Left on a collapsed parent or leaf | Move to the nearest eligible visible ancestor; at a root, stay. |
+| Left on a collapsed parent or leaf | Move to the nearest interactive visible ancestor; at a root, stay. |
 
 Swap Left and Right in right-to-left layout, matching the mirrored arrow.
 Navigation to another row uses the existing selection-mode and modifier rules:
@@ -365,7 +365,7 @@ Selection remains the existing `SelectionItem` behavior; the file checkbox
 retains its own Toggle behavior and accessible name.
 
 Recycled and keyed item peers must resolve the current row's depth, parent,
-expansion and eligibility before acting, so an old peer cannot expand a different
+expansion and interactivity before acting, so an old peer cannot expand a different
 file. Collapsed descendants are absent from the navigable visible collection;
 a cached peer cannot select, invoke or expand them. Off-screen visible rows
 retain the existing virtualization and realization behavior without
@@ -391,7 +391,7 @@ The same `FileBrowser` continues to serve Add and the inspector. Replace its
 hand-built header and TreeView rows with the real TableView. Remove the duplicate
 column widths, `Indent`/`Lead`/`Expander` compensation and 960-DIP table width cap.
 Keep its existing search, summary, Expand all/Collapse all and domain state
-owner. Column widths, the first-rows fit and overflow use TableView's existing
+owner. Column widths, the first fill and overflow use TableView's existing
 behavior; removing the cap does not introduce stretch columns.
 
 The Name column is the hierarchy column. Its host content is the wanted

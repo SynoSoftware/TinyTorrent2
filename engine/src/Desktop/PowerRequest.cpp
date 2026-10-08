@@ -19,9 +19,9 @@ PowerRequest::~PowerRequest()
 void PowerRequest::Update(Activity const& activity, bool exiting)
 {
     SYSTEM_POWER_STATUS source{};
-    bool transferring = activity.downloading || (activity.preventSleepSeeding && activity.seeding);
+    bool transferring = activity.downloading || (activity.preventsSleepSeeding && activity.seeding);
     Hold(!exiting && GetSystemPowerStatus(&source) && source.ACLineStatus == AC_LINE_ONLINE &&
-        activity.preventSleep && transferring);
+        activity.preventsSleep && transferring);
 }
 
 // Windows keeps the reason text it received when the request was created, so

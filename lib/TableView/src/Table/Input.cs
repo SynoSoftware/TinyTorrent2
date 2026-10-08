@@ -38,7 +38,7 @@ public sealed partial class Table
     /// <summary>Set only while the table holds a capture of its own, so it releases nothing else.</summary>
     private Pointer? _gestureCapture;
 
-    /// <summary>The press position, relative to the hosted list: the space the marquee measures in.</summary>
+    /// <summary>The press position, relative to the row surface: the space the marquee measures in.</summary>
     private Point _gestureOrigin;
 
     private object? _gestureItem;
@@ -69,37 +69,167 @@ public sealed partial class Table
 
     private ScrollViewer? _innerScrollViewer;
 
+    /// <summary>
+    /// On by default. A marquee is a selection gesture, so it is meaningful in every table, and
+    /// design decision 16 rules that a press nothing else competes for must not be a dead press.
+    /// </summary>
+    public static readonly DependencyProperty IsMarqueeEnabledProperty =
+        DependencyProperty.Register(
+            nameof(IsMarqueeEnabled),
+            typeof(bool),
+            typeof(Table),
+            new PropertyMetadata(true, OnMarqueeChanged)
+        );
+
+    /// <summary>
+    /// Off by default, and the asymmetry with the marquee is sayable: a reorder is a domain request
+    /// and means something only where the host owns an order, which most tables do not.
+    /// </summary>
+    public static readonly DependencyProperty CanReorderProperty = DependencyProperty.Register(
+        nameof(CanReorder),
+        typeof(bool),
+        typeof(Table),
+        new PropertyMetadata(false, OnReorderChanged)
+    );
+
+    /// <summary>
+    /// Section 7's escape hatch for a custom interactive control the table cannot recognize. Set
+    /// to false on the control's root or an ancestor inside a cell template.
+    /// </summary>
+    public static readonly DependencyProperty IsRowGestureEnabledProperty =
+        DependencyProperty.RegisterAttached(
+            "IsRowGestureEnabled",
+            typeof(bool),
+            typeof(Table),
+            new PropertyMetadata(true)
+        );
+
+    /// <summary>Raised after the table has processed the input that invoked a row.</summary>
+    public event EventHandler<ItemInvokedEventArgs>? ItemInvoked;
+
+    /// <summary>
+    /// Raised after the table has applied section 15's context mechanics, so a handler that reads
+    /// <see cref="SelectedItems"/> sees the packet the menu will act on.
+    /// </summary>
+    public event EventHandler<ItemContextRequestedEventArgs>? ItemContextRequested;
+
+    private EventHandler<ReorderRequestedEventArgs>? _reorderRequested;
+
+    /// <summary>
+    /// Raised once for a completed row drag that asks for a new order. The table has changed
+    /// nothing: it never mutates the source, and it does not infer that the host accepted the
+    /// request.
+    /// </summary>
+    public event EventHandler<ReorderRequestedEventArgs>? ReorderRequested
+    {
+        add => _reorderRequested += value;
+        remove => _reorderRequested -= value;
+    }
+
+    public bool IsMarqueeEnabled
+    {
+        get => (bool)GetValue(IsMarqueeEnabledProperty);
+        set => SetValue(IsMarqueeEnabledProperty, value);
+    }
+
+    public bool CanReorder
+    {
+        get => (bool)GetValue(CanReorderProperty);
+        set => SetValue(CanReorderProperty, value);
+    }
+
+    /// <summary>Section 5.3: withdrawing the marquee mid-gesture cancels it before the flag applies.</summary>
+    private static void OnMarqueeChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        if (d is Table table && !(bool)e.NewValue && table._gesture == RowGesture.Marquee)
+        {
+            table.RestoreSelectionBeforeMarquee();
+            table.CommitSelection();
+        }
+    }
+
+    /// <summary>
+    /// Section 5.3: withdrawing reordering mid-drag cancels it, and raises no request. Either way
+    /// the rows re-read whether they can be dragged, because the cursor they show says so.
+    /// </summary>
+    private static void OnReorderChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        if (d is not Table table)
+        {
+            return;
+        }
+
+        if (!(bool)e.NewValue)
+        {
+            table.CancelRowDrag();
+        }
+
+        table.RowVisualsChanged?.Invoke(table, EventArgs.Empty);
+    }
+
+    public static void SetIsRowGestureEnabled(DependencyObject element, bool value) =>
+        element.SetValue(IsRowGestureEnabledProperty, value);
+
+    public static bool GetIsRowGestureEnabled(DependencyObject element) =>
+        (bool)element.GetValue(IsRowGestureEnabledProperty);
+
     private void AttachInput()
     {
         PreviewKeyDown += OnTablePreviewKeyDown;
 
-        if (_itemsView is null)
+        if (_surface is null)
         {
             return;
         }
 
         // The container handles pointer input first and marks it handled, so every one of these
         // must be registered with handledEventsToo.
-        _itemsView.AddHandler(
-            UIElement.PointerPressedEvent, new PointerEventHandler(OnRowsPointerPressed), true);
-        _itemsView.AddHandler(
-            UIElement.PointerMovedEvent, new PointerEventHandler(OnRowsPointerMoved), true);
-        _itemsView.AddHandler(
-            UIElement.PointerReleasedEvent, new PointerEventHandler(OnRowsPointerReleased), true);
-        _itemsView.AddHandler(
-            UIElement.PointerCanceledEvent, new PointerEventHandler(OnRowsPointerCanceled), true);
-        _itemsView.AddHandler(
-            UIElement.PointerCaptureLostEvent, new PointerEventHandler(OnRowsPointerCaptureLost), true);
-        _itemsView.AddHandler(
-            UIElement.DoubleTappedEvent, new DoubleTappedEventHandler(OnRowsDoubleTapped), true);
-        _itemsView.AddHandler(
-            UIElement.TappedEvent, new TappedEventHandler(OnRowsTapped), true);
+        _surface.AddHandler(
+            UIElement.PointerEnteredEvent,
+            new PointerEventHandler(OnRowsPointerEntered),
+            true
+        );
+        _surface.AddHandler(
+            UIElement.PointerExitedEvent,
+            new PointerEventHandler(OnRowsPointerExited),
+            true
+        );
+        _surface.AddHandler(
+            UIElement.PointerPressedEvent,
+            new PointerEventHandler(OnRowsPointerPressed),
+            true
+        );
+        _surface.AddHandler(
+            UIElement.PointerMovedEvent,
+            new PointerEventHandler(OnRowsPointerMoved),
+            true
+        );
+        _surface.AddHandler(
+            UIElement.PointerReleasedEvent,
+            new PointerEventHandler(OnRowsPointerReleased),
+            true
+        );
+        _surface.AddHandler(
+            UIElement.PointerCanceledEvent,
+            new PointerEventHandler(OnRowsPointerCanceled),
+            true
+        );
+        _surface.AddHandler(
+            UIElement.PointerCaptureLostEvent,
+            new PointerEventHandler(OnRowsPointerCaptureLost),
+            true
+        );
+        _surface.AddHandler(
+            UIElement.DoubleTappedEvent,
+            new DoubleTappedEventHandler(OnRowsDoubleTapped),
+            true
+        );
+        _surface.AddHandler(UIElement.TappedEvent, new TappedEventHandler(OnRowsTapped), true);
 
         // Deliberately not handledEventsToo: a cell control that shows its own context flyout marks
         // this handled, and section 15 leaves that control its own menu.
-        _itemsView.ContextRequested += OnRowsContextRequested;
-        _itemsView.SelectionChanged += OnHostedSelectionChanged;
-
+        _surface.ContextRequested += OnRowsContextRequested;
+        _surface.SelectionChanged += OnSurfaceSelectionChanged;
     }
 
     private void DetachInput()
@@ -107,27 +237,46 @@ public sealed partial class Table
         PreviewKeyDown -= OnTablePreviewKeyDown;
         CancelGesture();
 
-        if (_itemsView is null)
+        if (_surface is null)
         {
             return;
         }
 
-        _itemsView.RemoveHandler(
-            UIElement.PointerPressedEvent, new PointerEventHandler(OnRowsPointerPressed));
-        _itemsView.RemoveHandler(
-            UIElement.PointerMovedEvent, new PointerEventHandler(OnRowsPointerMoved));
-        _itemsView.RemoveHandler(
-            UIElement.PointerReleasedEvent, new PointerEventHandler(OnRowsPointerReleased));
-        _itemsView.RemoveHandler(
-            UIElement.PointerCanceledEvent, new PointerEventHandler(OnRowsPointerCanceled));
-        _itemsView.RemoveHandler(
-            UIElement.PointerCaptureLostEvent, new PointerEventHandler(OnRowsPointerCaptureLost));
-        _itemsView.RemoveHandler(
-            UIElement.DoubleTappedEvent, new DoubleTappedEventHandler(OnRowsDoubleTapped));
-        _itemsView.RemoveHandler(
-            UIElement.TappedEvent, new TappedEventHandler(OnRowsTapped));
-        _itemsView.ContextRequested -= OnRowsContextRequested;
-        _itemsView.SelectionChanged -= OnHostedSelectionChanged;
+        _surface.RemoveHandler(
+            UIElement.PointerEnteredEvent,
+            new PointerEventHandler(OnRowsPointerEntered)
+        );
+        _surface.RemoveHandler(
+            UIElement.PointerExitedEvent,
+            new PointerEventHandler(OnRowsPointerExited)
+        );
+        _surface.RemoveHandler(
+            UIElement.PointerPressedEvent,
+            new PointerEventHandler(OnRowsPointerPressed)
+        );
+        _surface.RemoveHandler(
+            UIElement.PointerMovedEvent,
+            new PointerEventHandler(OnRowsPointerMoved)
+        );
+        _surface.RemoveHandler(
+            UIElement.PointerReleasedEvent,
+            new PointerEventHandler(OnRowsPointerReleased)
+        );
+        _surface.RemoveHandler(
+            UIElement.PointerCanceledEvent,
+            new PointerEventHandler(OnRowsPointerCanceled)
+        );
+        _surface.RemoveHandler(
+            UIElement.PointerCaptureLostEvent,
+            new PointerEventHandler(OnRowsPointerCaptureLost)
+        );
+        _surface.RemoveHandler(
+            UIElement.DoubleTappedEvent,
+            new DoubleTappedEventHandler(OnRowsDoubleTapped)
+        );
+        _surface.RemoveHandler(UIElement.TappedEvent, new TappedEventHandler(OnRowsTapped));
+        _surface.ContextRequested -= OnRowsContextRequested;
+        _surface.SelectionChanged -= OnSurfaceSelectionChanged;
 
         _innerScrollViewer = null;
     }
@@ -138,13 +287,14 @@ public sealed partial class Table
     {
         CancelGesture();
 
-        if (_itemsView is null)
+        if (_surface is null)
         {
             return;
         }
 
-        PointerPoint point = e.GetCurrentPoint(_itemsView);
-        bool mouseOrPen = e.Pointer.PointerDeviceType is PointerDeviceType.Mouse or PointerDeviceType.Pen;
+        PointerPoint point = e.GetCurrentPoint(_surface);
+        bool mouseOrPen =
+            e.Pointer.PointerDeviceType is PointerDeviceType.Mouse or PointerDeviceType.Pen;
         if (!mouseOrPen || !point.Properties.IsLeftButtonPressed)
         {
             return;
@@ -171,12 +321,19 @@ public sealed partial class Table
 
     private void OnRowsPointerMoved(object sender, PointerRoutedEventArgs e)
     {
+        // Under a captured gesture the pointed row stays the one the gesture began on, so the row
+        // being dragged keeps its place as the pointed row does.
+        if (_gestureCapture is null)
+        {
+            PointAt(RowFrom(e.OriginalSource as DependencyObject));
+        }
+
         if (_gesture == RowGesture.None || e.Pointer.PointerId != _gesturePointerId)
         {
             return;
         }
 
-        Point now = e.GetCurrentPoint(_itemsView).Position;
+        Point now = e.GetCurrentPoint(_surface).Position;
 
         if (_gesture == RowGesture.Marquee)
         {
@@ -190,8 +347,10 @@ public sealed partial class Table
             return;
         }
 
-        if (Math.Abs(now.X - _gestureOrigin.X) < DragThresholdDips
-            && Math.Abs(now.Y - _gestureOrigin.Y) < DragThresholdDips)
+        if (
+            Math.Abs(now.X - _gestureOrigin.X) < DragThresholdDips
+            && Math.Abs(now.Y - _gestureOrigin.Y) < DragThresholdDips
+        )
         {
             return;
         }
@@ -207,7 +366,7 @@ public sealed partial class Table
     private void CommitGesture(Pointer pointer)
     {
         RowGesture gesture = GestureAtThreshold();
-        if (_itemsView is not ListView rows || gesture == RowGesture.None)
+        if (_surface is not { } rows || gesture == RowGesture.None)
         {
             return;
         }
@@ -268,9 +427,7 @@ public sealed partial class Table
             return RowGesture.RowDrag;
         }
 
-        return IsMarqueeEnabled && _selection.AllowsMultiple
-            ? RowGesture.Marquee
-            : RowGesture.None;
+        return IsMarqueeEnabled && _selection.AllowsMultiple ? RowGesture.Marquee : RowGesture.None;
     }
 
     /// <summary>Sections 5, 14 and 16: whether the press can become any gesture at all.</summary>
@@ -283,7 +440,7 @@ public sealed partial class Table
         if (ours && _gesture == RowGesture.RowDrag)
         {
             // The drop ends the gesture itself, before the request reaches the host.
-            CompleteRowDrag(e.GetCurrentPoint(_itemsView).Position.Y);
+            CompleteRowDrag(e.GetCurrentPoint(_surface).Position.Y);
             return;
         }
 
@@ -323,9 +480,11 @@ public sealed partial class Table
     /// </summary>
     private void OnRowsPointerCaptureLost(object sender, PointerRoutedEventArgs e)
     {
-        if (_gestureCapture is not null
-            && ReferenceEquals(e.OriginalSource, _itemsView)
-            && e.Pointer.PointerId == _gesturePointerId)
+        if (
+            _gestureCapture is not null
+            && ReferenceEquals(e.OriginalSource, _surface)
+            && e.Pointer.PointerId == _gesturePointerId
+        )
         {
             CancelGesture();
         }
@@ -356,9 +515,13 @@ public sealed partial class Table
     private void ApplyPress()
     {
         _gestureSelection = _selection.Capture();
-        _gestureDeferred = _gestureItem is null
-            || (!_gestureCtrl && !_gestureShift
-                && (_selection.IsSelected(_gestureItem) || _gestureCouldDrag));
+        _gestureDeferred =
+            _gestureItem is null
+            || (
+                !_gestureCtrl
+                && !_gestureShift
+                && (_selection.IsSelected(_gestureItem) || _gestureCouldDrag)
+            );
 
         if (_gestureDeferred)
         {
@@ -400,7 +563,8 @@ public sealed partial class Table
     /// <summary>Section 13's click, tap, and Space selection, applied through one model operation.</summary>
     private void SelectItem(object item, bool ctrl, bool shift)
     {
-        if (ResolveItem(item) is not { } current) return;
+        if (ResolveItem(item) is not { } current)
+            return;
         SyncSelectionPolicy();
         _selection.Select(current, ctrl, shift, View);
         CommitSelection();
@@ -408,9 +572,14 @@ public sealed partial class Table
 
     private void OnRowsTapped(object sender, TappedRoutedEventArgs e)
     {
-        if (e.PointerDeviceType == PointerDeviceType.Touch
-            && SelectFromTap(e.OriginalSource as DependencyObject,
-                IsDown(VirtualKey.Control), IsDown(VirtualKey.Shift)))
+        if (
+            e.PointerDeviceType == PointerDeviceType.Touch
+            && SelectFromTap(
+                e.OriginalSource as DependencyObject,
+                IsDown(VirtualKey.Control),
+                IsDown(VirtualKey.Shift)
+            )
+        )
         {
             e.Handled = true;
         }
@@ -446,7 +615,12 @@ public sealed partial class Table
     {
         _gesture = RowGesture.Marquee;
         _marquee.Begin(
-            rows, InnerScrollViewer(), _marqueeOverlay, _gestureOrigin, ApplyMarqueeCoverage);
+            rows,
+            InnerScrollViewer(),
+            _marqueeOverlay,
+            _gestureOrigin,
+            ApplyMarqueeCoverage
+        );
     }
 
     /// <summary>
@@ -491,7 +665,7 @@ public sealed partial class Table
         if (_gestureCapture is Pointer pointer)
         {
             _gestureCapture = null;
-            _itemsView?.ReleasePointerCapture(pointer);
+            _surface?.ReleasePointerCapture(pointer);
         }
     }
 
@@ -523,7 +697,7 @@ public sealed partial class Table
         foreach (int index in _marquee.CoveredIndices)
         {
             object item = View[index];
-            if (_selection.IsEligible(item))
+            if (_selection.IsInteractive(item))
             {
                 items.Add(item);
             }
@@ -541,7 +715,7 @@ public sealed partial class Table
         List<object> items = new();
         foreach (object item in View)
         {
-            if (_selection.IsEligible(item) && started.Contains(item) != covered.Contains(item))
+            if (_selection.IsInteractive(item) && started.Contains(item) != covered.Contains(item))
             {
                 items.Add(item);
             }
@@ -565,7 +739,7 @@ public sealed partial class Table
         List<object> items = new();
         for (int i = low; i <= high; i++)
         {
-            if (_selection.IsEligible(View[i]))
+            if (_selection.IsInteractive(View[i]))
             {
                 items.Add(View[i]);
             }
@@ -609,11 +783,19 @@ public sealed partial class Table
     internal bool CanBeginRowDrag(object item)
     {
         // The rows ask this for their cursor as soon as they load, which can be before any press
-        // or reconcile has copied the host's eligibility predicate into the model.
+        // or reconcile has copied the host's interaction predicate into the model.
         SyncSelectionPolicy();
-        return _hierarchy is null && CanReorder && ShowsRowOrder && _selection.IsEligible(item) &&
-            (CanReorderItem is null || (CanReorderItem(item) &&
-                (!_selection.IsSelected(item) || SelectedItems.All(CanReorderItem))));
+        return _hierarchy is null
+            && CanReorder
+            && ShowsRowOrder
+            && _selection.IsInteractive(item)
+            && (
+                CanReorderItem is null
+                || (
+                    CanReorderItem(item)
+                    && (!_selection.IsSelected(item) || SelectedItems.All(CanReorderItem))
+                )
+            );
     }
 
     /// <summary>
@@ -709,11 +891,14 @@ public sealed partial class Table
 
         if (status.Length > 0)
         {
-            FrameworkElementAutomationPeer.FromElement(this)?.RaiseNotificationEvent(
-                AutomationNotificationKind.Other,
-                AutomationNotificationProcessing.MostRecent,
-                status,
-                RowDragActivityId);
+            FrameworkElementAutomationPeer
+                .FromElement(this)
+                ?.RaiseNotificationEvent(
+                    AutomationNotificationKind.Other,
+                    AutomationNotificationProcessing.MostRecent,
+                    status,
+                    RowDragActivityId
+                );
         }
     }
 
@@ -735,21 +920,23 @@ public sealed partial class Table
                 CultureInfo.CurrentCulture,
                 Strings.DropBeforeRow,
                 IndexInView(target) + 1,
-                View.Count);
+                View.Count
+            );
     }
 
     /// <summary>
     /// Section 5.1's insertion anchor: the first row at or after the boundary that is not moving,
     /// or null for the end of the view. Naming the row rather than an index is what makes the
     /// request immune to the packet's own removal — once the host has taken the packet out, that
-    /// row is still exactly the one the packet goes before, wherever it has ended up.
+    /// row is still exactly the one the packet goes before, wherever it has ended up. A held row is
+    /// never the anchor, because the host no longer has it.
     /// </summary>
     private object? InsertTarget(int boundary, IReadOnlyList<object> moving)
     {
         HashSet<object> packet = new(moving, _identity);
         for (int i = boundary; i < View.Count; i++)
         {
-            if (!packet.Contains(View[i]))
+            if (!packet.Contains(View[i]) && !IsHeld(View[i]))
             {
                 return View[i];
             }
@@ -768,7 +955,7 @@ public sealed partial class Table
         HashSet<object> packet = new(moving, _identity);
         for (int i = Math.Min(boundary, View.Count) - 1; i >= 0; i--)
         {
-            if (!packet.Contains(View[i]))
+            if (!packet.Contains(View[i]) && !IsHeld(View[i]))
             {
                 return View[i];
             }
@@ -787,22 +974,33 @@ public sealed partial class Table
     /// </summary>
     private bool KeepsOrder(IReadOnlyList<object> moving, object? target, bool reversed)
     {
-        int start = IndexInView(moving[0]);
-        if (start < 0 || start + moving.Count > View.Count)
+        // The row order the request speaks of is the host's, which has no held rows.
+        IReadOnlyList<object> rows =
+            _held.Count == 0 ? View : View.Where(row => !IsHeld(row)).ToList();
+        int start = -1;
+        for (int i = 0; i < rows.Count && start < 0; i++)
+        {
+            if (_selection.IsSame(rows[i], moving[0]))
+            {
+                start = i;
+            }
+        }
+
+        if (start < 0 || start + moving.Count > rows.Count)
         {
             return false;
         }
 
         for (int i = 1; i < moving.Count; i++)
         {
-            if (!_selection.IsSame(View[start + i], moving[i]))
+            if (!_selection.IsSame(rows[start + i], moving[i]))
             {
                 return false;
             }
         }
 
         int beside = reversed ? start - 1 : start + moving.Count;
-        object? neighbour = beside >= 0 && beside < View.Count ? View[beside] : null;
+        object? neighbour = beside >= 0 && beside < rows.Count ? rows[beside] : null;
         return _selection.IsSame(neighbour, target);
     }
 
@@ -820,18 +1018,23 @@ public sealed partial class Table
 
     private void OnRowsDoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
     {
-        if (HitTest(e.OriginalSource as DependencyObject, out object? item) != HitTarget.Row
-            || item is null)
+        if (
+            HitTest(e.OriginalSource as DependencyObject, out object? item) != HitTarget.Row
+            || item is null
+        )
         {
             return;
         }
 
         SyncSelectionPolicy();
-        if (!_selection.IsEligible(item))
+        if (!_selection.IsInteractive(item))
         {
             return;
         }
 
+        // A mouse raises this on the second press, which has already armed a press. Left live, a
+        // movement before its release would start a row drag or a marquee after the invocation.
+        CancelGesture();
         ItemInvoked?.Invoke(this, new ItemInvokedEventArgs(item, SelectedItems));
         e.Handled = true;
     }
@@ -845,8 +1048,11 @@ public sealed partial class Table
     /// </summary>
     private void OnRowsContextRequested(UIElement sender, ContextRequestedEventArgs e)
     {
-        if (_itemsView is null
-            || HitTest(e.OriginalSource as DependencyObject, out object? item) == HitTarget.Suppressed)
+        if (
+            _surface is null
+            || HitTest(e.OriginalSource as DependencyObject, out object? item)
+                == HitTarget.Suppressed
+        )
         {
             return;
         }
@@ -855,7 +1061,7 @@ public sealed partial class Table
         // request that landed on no row is empty surface, and asks for nothing.
         if (item is null)
         {
-            if (e.TryGetPosition(_itemsView, out _))
+            if (e.TryGetPosition(_surface, out _))
             {
                 return;
             }
@@ -863,7 +1069,7 @@ public sealed partial class Table
             item = _selection.Current;
         }
 
-        if (item is null || _itemsView.ContainerFromItem(item) is not FrameworkElement row)
+        if (item is null || _surface.ContainerFromItem(item) is not FrameworkElement row)
         {
             return;
         }
@@ -873,10 +1079,14 @@ public sealed partial class Table
     }
 
     /// <summary>Section 15's mechanics, completed before the request reaches the host.</summary>
-    private bool RequestRowContext(object item, FrameworkElement placementTarget, Point? relativePoint)
+    private bool RequestRowContext(
+        object item,
+        FrameworkElement placementTarget,
+        Point? relativePoint
+    )
     {
         SyncSelectionPolicy();
-        if (!_selection.IsEligible(item))
+        if (!_selection.IsInteractive(item))
         {
             return false;
         }
@@ -887,37 +1097,44 @@ public sealed partial class Table
         SelectForContext(item);
         Selection packet = CommitSelection();
 
-        if (_detached || !_selection.IsEligible(item) || !SameSelection(packet, Selection)
+        if (
+            _detached
+            || !_selection.IsInteractive(item)
+            || !SameSelection(packet, Selection)
             || !View.Any(row => ReferenceEquals(row, item))
-            || _itemsView is null
-            || !ReferenceEquals(_itemsView.ItemFromContainer(placementTarget), item))
+            || _surface is null
+            || !ReferenceEquals(_surface.ItemFromContainer(placementTarget), item)
+        )
             return true;
 
+        IReadOnlyList<Popup> open = OpenPopups();
         ItemContextRequested?.Invoke(
             this,
-            new ItemContextRequestedEventArgs(item, packet.Items, placementTarget, relativePoint));
+            new ItemContextRequestedEventArgs(item, packet.Items, placementTarget, relativePoint)
+        );
+        HoldForMenu(item, open);
         return true;
     }
 
     /// <summary>
-    /// Walk from the input target up to the hosted list. An interactive descendant, an explicit
+    /// Walk from the input target up to the row surface. An interactive descendant, an explicit
     /// <c>IsRowGestureEnabled="False"</c> subtree, and the scroll bars all stop a table gesture; anything
     /// else that reaches the list without passing a container is empty row surface.
     /// </summary>
     private HitTarget HitTest(DependencyObject? source, out object? item)
     {
         item = null;
-        if (_itemsView is null)
+        if (_surface is null)
         {
             return HitTarget.Suppressed;
         }
 
         DependencyObject? node = source;
-        while (node is not null && !ReferenceEquals(node, _itemsView))
+        while (node is not null && !ReferenceEquals(node, _surface))
         {
             if (node is ListViewItem container)
             {
-                item = _itemsView.ItemFromContainer(container);
+                item = _surface.ItemFromContainer(container);
                 return item is null ? HitTarget.Suppressed : HitTarget.Row;
             }
 
@@ -950,12 +1167,16 @@ public sealed partial class Table
             return;
         }
 
-        if (e.Handled || _itemsView is null || RowSurfaceFocusState() == FocusState.Unfocused)
+        if (e.Handled || _surface is null || RowSurfaceFocusState() == FocusState.Unfocused)
         {
             return;
         }
 
-        if (IsDown(VirtualKey.Menu) || IsDown(VirtualKey.LeftWindows) || IsDown(VirtualKey.RightWindows))
+        if (
+            IsDown(VirtualKey.Menu)
+            || IsDown(VirtualKey.LeftWindows)
+            || IsDown(VirtualKey.RightWindows)
+        )
         {
             return;
         }
@@ -1018,7 +1239,7 @@ public sealed partial class Table
     /// </remarks>
     private FocusState RowSurfaceFocusState()
     {
-        if (_itemsView is null || XamlRoot is null)
+        if (_surface is null || XamlRoot is null)
         {
             return FocusState.Unfocused;
         }
@@ -1028,7 +1249,7 @@ public sealed partial class Table
             return FocusState.Unfocused;
         }
 
-        if (ReferenceEquals(focused, this) || ReferenceEquals(focused, _itemsView))
+        if (ReferenceEquals(focused, this) || ReferenceEquals(focused, _surface))
         {
             return ((Control)focused).FocusState;
         }
@@ -1043,7 +1264,7 @@ public sealed partial class Table
         DependencyObject? current = node;
         while (current is not null)
         {
-            if (ReferenceEquals(current, _itemsView))
+            if (ReferenceEquals(current, _surface))
             {
                 return true;
             }
@@ -1056,58 +1277,61 @@ public sealed partial class Table
 
     private bool MoveCurrentBy(int delta, bool extend, bool ctrl)
     {
-        List<object> eligible = EligibleItems();
-        if (eligible.Count == 0)
+        List<object> interactive = InteractiveItems();
+        if (interactive.Count == 0)
         {
             return false;
         }
 
-        int index = IndexOfCurrent(eligible);
-        int target = index < 0
-            ? (delta > 0 ? 0 : eligible.Count - 1)
-            : Math.Clamp(index + delta, 0, eligible.Count - 1);
+        int index = IndexOfCurrent(interactive);
+        int target =
+            index < 0
+                ? (delta > 0 ? 0 : interactive.Count - 1)
+                : Math.Clamp(index + delta, 0, interactive.Count - 1);
 
-        return MoveCurrentTo(eligible[target], extend, ctrl);
+        return MoveCurrentTo(interactive[target], extend, ctrl);
     }
 
     private bool MoveCurrentToEdge(bool first, bool extend, bool ctrl)
     {
-        List<object> eligible = EligibleItems();
-        if (eligible.Count == 0)
+        List<object> interactive = InteractiveItems();
+        if (interactive.Count == 0)
         {
             return false;
         }
 
-        return MoveCurrentTo(first ? eligible[0] : eligible[^1], extend, ctrl);
+        return MoveCurrentTo(first ? interactive[0] : interactive[^1], extend, ctrl);
     }
 
     private bool MoveCurrentTo(object item, bool extend, bool ctrl)
     {
         _selection.Navigate(item, ctrl, extend, View);
         CommitSelection();
-        if (_detached || !ReferenceEquals(_selection.Current, item)) return true;
+        if (_detached || !ReferenceEquals(_selection.Current, item))
+            return true;
 
         ScrollIntoView(item);
 
         // Keyboard navigation is the one path that should show the platform's focus ring: this is
         // reached from the arrow, Home, End and page keys, and section 19 requires a visible focus
         // cue for exactly this case.
-        if (!_detached && ReferenceEquals(_selection.Current, item)) FocusRow(item, FocusState.Keyboard);
+        if (!_detached && ReferenceEquals(_selection.Current, item))
+            FocusRow(item, FocusState.Keyboard);
         return true;
     }
 
     private bool SelectFocusedItem(bool ctrl, bool shift)
     {
-        if (_itemsView is null || RowSurfaceFocusState() == FocusState.Unfocused)
+        if (_surface is null || RowSurfaceFocusState() == FocusState.Unfocused)
         {
             return false;
         }
 
         object? item = FocusManager.GetFocusedElement(XamlRoot) is ListViewItem row
-            ? _itemsView.ItemFromContainer(row)
+            ? _surface.ItemFromContainer(row)
             : _selection.Current;
         SyncSelectionPolicy();
-        if (item is null || !_selection.IsEligible(item))
+        if (item is null || !_selection.IsInteractive(item))
         {
             return false;
         }
@@ -1132,7 +1356,7 @@ public sealed partial class Table
     private bool InvokeCurrentItem()
     {
         SyncSelectionPolicy();
-        if (_selection.Current is not object item || !_selection.IsEligible(item))
+        if (_selection.Current is not object item || !_selection.IsInteractive(item))
         {
             return false;
         }
@@ -1141,27 +1365,27 @@ public sealed partial class Table
         return true;
     }
 
-    private List<object> EligibleItems()
+    private List<object> InteractiveItems()
     {
         SyncSelectionPolicy();
 
-        List<object> eligible = new();
+        List<object> interactive = new();
         foreach (object item in View)
         {
-            if (_selection.IsEligible(item))
+            if (_selection.IsInteractive(item))
             {
-                eligible.Add(item);
+                interactive.Add(item);
             }
         }
 
-        return eligible;
+        return interactive;
     }
 
-    private int IndexOfCurrent(List<object> eligible)
+    private int IndexOfCurrent(List<object> interactive)
     {
-        for (int i = 0; i < eligible.Count; i++)
+        for (int i = 0; i < interactive.Count; i++)
         {
-            if (_selection.IsSame(eligible[i], _selection.Current))
+            if (_selection.IsSame(interactive[i], _selection.Current))
             {
                 return i;
             }
@@ -1180,12 +1404,12 @@ public sealed partial class Table
     /// <summary>The height of the first row in the viewport, or 0 while no row is realized.</summary>
     private double FirstVisibleRowHeight()
     {
-        if (_itemsView?.ItemsPanelRoot is not ItemsStackPanel rows || rows.FirstVisibleIndex < 0)
+        if (_surface?.ItemsPanelRoot is not ItemsStackPanel rows || rows.FirstVisibleIndex < 0)
         {
             return 0;
         }
 
-        return _itemsView.ContainerFromIndex(rows.FirstVisibleIndex) is FrameworkElement container
+        return _surface.ContainerFromIndex(rows.FirstVisibleIndex) is FrameworkElement container
             ? container.ActualHeight
             : 0;
     }
@@ -1196,8 +1420,8 @@ public sealed partial class Table
     public void ScrollIntoView(object item)
     {
         // ItemsStackPanel's first request can land one row short while estimating its extent.
-        _itemsView?.ScrollIntoView(item);
-        _itemsView?.ScrollIntoView(item);
+        _surface?.ScrollIntoView(item);
+        _surface?.ScrollIntoView(item);
     }
 
     /// <summary>
@@ -1213,12 +1437,16 @@ public sealed partial class Table
     /// </remarks>
     private void RestoreRowFocus(FocusState state, object? row = null)
     {
-        if (state == FocusState.Unfocused || (row ?? _selection.Focus) is not object item || _itemsView is null)
+        if (
+            state == FocusState.Unfocused
+            || (row ?? _selection.Focus) is not object item
+            || _surface is null
+        )
         {
             return;
         }
 
-        if (_itemsView.ContainerFromItem(item) is Control container)
+        if (_surface.ContainerFromItem(item) is Control container)
         {
             container.Focus(state);
             return;
@@ -1226,32 +1454,40 @@ public sealed partial class Table
 
         object? handoff = row is null ? null : FocusManager.GetFocusedElement(XamlRoot);
         object? focus = _selection.Focus;
-        DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
-        {
-            if ((row is null ? _selection.IsSame(item, _selection.Focus) :
-                ReferenceEquals(FocusManager.GetFocusedElement(XamlRoot), handoff) &&
-                ReferenceEquals(_selection.Focus, focus) && View.Contains(item))
-                && _itemsView?.ContainerFromItem(item) is Control realized)
+        DispatcherQueue.TryEnqueue(
+            Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,
+            () =>
             {
-                realized.Focus(state);
+                if (
+                    (
+                        row is null
+                            ? _selection.IsSame(item, _selection.Focus)
+                            : ReferenceEquals(FocusManager.GetFocusedElement(XamlRoot), handoff)
+                                && ReferenceEquals(_selection.Focus, focus)
+                                && View.Contains(item)
+                    ) && _surface?.ContainerFromItem(item) is Control realized
+                )
+                {
+                    realized.Focus(state);
+                }
             }
-        });
+        );
     }
 
     private void FocusRow(object item, FocusState state)
     {
-        if (_itemsView is null)
+        if (_surface is null)
         {
             return;
         }
 
         // A realized row takes focus as it is. The forced layout pass is only for a row that
         // ScrollIntoView has just asked for and the list has not built yet.
-        Control? container = _itemsView.ContainerFromItem(item) as Control;
+        Control? container = _surface.ContainerFromItem(item) as Control;
         if (container is null)
         {
-            _itemsView.UpdateLayout();
-            container = _itemsView.ContainerFromItem(item) as Control;
+            _surface.UpdateLayout();
+            container = _surface.ContainerFromItem(item) as Control;
         }
 
         container?.Focus(state);
@@ -1259,12 +1495,12 @@ public sealed partial class Table
 
     private ScrollViewer? InnerScrollViewer()
     {
-        if (_innerScrollViewer is not null || _itemsView is null)
+        if (_innerScrollViewer is not null || _surface is null)
         {
             return _innerScrollViewer;
         }
 
-        _innerScrollViewer = FindDescendant<ScrollViewer>(_itemsView);
+        _innerScrollViewer = FindDescendant<ScrollViewer>(_surface);
         return _innerScrollViewer;
     }
 
@@ -1289,7 +1525,6 @@ public sealed partial class Table
         return null;
     }
 
-    private static bool IsDown(VirtualKey key) => InputKeyboardSource
-        .GetKeyStateForCurrentThread(key)
-        .HasFlag(CoreVirtualKeyStates.Down);
+    private static bool IsDown(VirtualKey key) =>
+        InputKeyboardSource.GetKeyStateForCurrentThread(key).HasFlag(CoreVirtualKeyStates.Down);
 }

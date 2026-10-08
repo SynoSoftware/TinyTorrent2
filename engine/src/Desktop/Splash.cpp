@@ -30,7 +30,7 @@ int Scale(int value, UINT dpi)
     return MulDiv(value, dpi, USER_DEFAULT_SCREEN_DPI);
 }
 
-bool Preference(wchar_t const* name)
+bool IsEnabled(wchar_t const* name)
 {
     DWORD value = 1;
     DWORD size = sizeof(value);
@@ -232,7 +232,7 @@ void Splash::ApplyTheme()
     foreground_ = GetSysColor(COLOR_WINDOWTEXT);
     background_ = GetSysColor(COLOR_WINDOW);
     BOOL dark = !highContrast &&
-        (theme_ == "dark" || (theme_ != "light" && !Preference(L"AppsUseLightTheme")));
+        (theme_ == "dark" || (theme_ != "light" && !IsEnabled(L"AppsUseLightTheme")));
     if (!highContrast)
     {
         foreground_ = dark ? RGB(255, 255, 255) : RGB(0, 0, 0);
@@ -243,7 +243,7 @@ void Splash::ApplyTheme()
     DwmSetWindowAttribute(window_, DWMWA_WINDOW_CORNER_PREFERENCE, &corners, sizeof(corners));
     auto backdrop = DWMSBT_NONE;
     DwmSetWindowAttribute(window_, DWMWA_SYSTEMBACKDROP_TYPE, &backdrop, sizeof(backdrop));
-    auto blur = !highContrast && buffered_ && Preference(L"EnableTransparency");
+    auto blur = !highContrast && buffered_ && IsEnabled(L"EnableTransparency");
     acrylic_ = SetBlur(window_, blur) && blur;
     InvalidateRect(window_, nullptr, FALSE);
 }

@@ -13,22 +13,25 @@ namespace Syno.TableView;
 /// </summary>
 public sealed partial class Table : Control
 {
-    protected override AutomationPeer OnCreateAutomationPeer() => new FrameworkElementAutomationPeer(this);
+    protected override AutomationPeer OnCreateAutomationPeer() =>
+        new FrameworkElementAutomationPeer(this);
 
     private const string HeaderStripPartName = "PART_HeaderStrip";
-    private const string ItemsViewPartName = "PART_ItemsView";
-    private const string StateLayerPartName = "PART_StateLayer";
+    private const string SurfacePartName = "PART_Surface";
+    private const string PlaceholderPartName = "PART_Placeholder";
     private const string MarqueeOverlayPartName = "PART_MarqueeOverlay";
     private const string RowInsertionMarkerPartName = "PART_RowInsertionMarker";
 
+    private readonly ItemIdentity _identity = new();
+
     private readonly Body.Source _source;
     private readonly Body.View _view;
-    private readonly List<ResolvedColumn> _resolved = new();
+    private readonly List<EffectiveColumn> _baselineOrder = new();
     private readonly SelectionState _selection;
 
     private Header.Strip? _headerStrip;
-    private ListView? _itemsView;
-    private ContentPresenter? _stateLayer;
+    private Body.Surface? _surface;
+    private ContentPresenter? _placeholderPresenter;
     private FrameworkElement? _marqueeOverlay;
     private FrameworkElement? _rowInsertionMarker;
 
@@ -36,14 +39,13 @@ public sealed partial class Table : Control
     private ColumnLayout? _pendingLayout;
     private double? _pendingScroll;
 
-    private UIElement? _shippedPlaceholder;
-    private Placeholder _shippedPlaceholderKind;
-
     public Table()
     {
         DefaultStyleKey = typeof(Table);
         _view = new Body.View(_identity);
-        _selection = new SelectionState(_identity);
+        _held = new HashSet<object>(_identity);
+        _released = new Dictionary<object, bool>(_identity);
+        _selection = new SelectionState(_identity) { CanInteract = IsInteractive };
         _source = new Body.Source(DispatcherQueue);
         _source.SnapshotChanged += OnSnapshotChanged;
         Loaded += OnLoaded;
@@ -65,11 +67,11 @@ public sealed partial class Table : Control
     /// </summary>
     public event EventHandler<LayoutChange>? LayoutChanged;
 
-    /// <summary>The single geometry source read by the header panel and every realized row panel.</summary>
-    internal ResolvedLayout Geometry { get; } = new();
+    /// <summary>The effective layout read by the header panel and every realized row panel.</summary>
+    internal EffectiveLayout EffectiveLayout { get; } = new();
 
     /// <summary>
-    /// The effective column layout, as data the host can store. Reading gives an independent
+    /// The layout snapshot, as data the host can store. Reading gives an independent
     /// snapshot of the overrides only; assigning restores one defensively — unknown, stale, or
     /// impossible entries are ordinary compatibility input, recovered as section 18 defines, not a
     /// configuration error.
@@ -92,11 +94,13 @@ public sealed partial class Table : Control
             if (!_schemaCaptured && _pendingLayout is not null)
             {
                 ColumnLayout pending = CopyLayout(_pendingLayout);
-                return _hasPendingSort ? pending with
-                {
-                    SortColumnId = _pendingSort?.Column.Id,
-                    SortDirection = _pendingSort?.Direction ?? SortDirection.Ascending,
-                } : pending;
+                return _hasPendingSort
+                    ? pending with
+                    {
+                        SortColumnId = _pendingSort?.Column.Id,
+                        SortDirection = _pendingSort?.Direction ?? SortDirection.Ascending,
+                    }
+                    : pending;
             }
             List<string> order = new();
             Dictionary<string, bool> visibility = new(StringComparer.Ordinal);
@@ -104,7 +108,7 @@ public sealed partial class Table : Control
 
             if (_schemaCaptured)
             {
-                foreach (ResolvedColumn column in Geometry.Order)
+                foreach (EffectiveColumn column in EffectiveLayout.Order)
                 {
                     if (column.Id is not string id)
                     {
@@ -113,7 +117,10 @@ public sealed partial class Table : Control
 
                     order.Add(id);
 
-                    if (column.VisibilityOverride is bool visible && visible != column.BaselineVisibility)
+                    if (
+                        column.VisibilityOverride is bool visible
+                        && visible != column.IsBaselineVisible
+                    )
                     {
                         visibility[id] = visible;
                     }
@@ -136,10 +143,16 @@ public sealed partial class Table : Control
             }
 
             Sort? sort = Sort;
-            return new ColumnLayout(order, visibility, widths, sort?.Column.Id,
-                sort?.Direction ?? SortDirection.Ascending);
+            return new ColumnLayout(
+                order,
+                visibility,
+                widths,
+                sort?.Column.Id,
+                sort?.Direction ?? SortDirection.Ascending,
+                _fitButtonHidden,
+                _fillButtonHidden
+            );
         }
-
         set
         {
             ArgumentNullException.ThrowIfNull(value);
@@ -158,14 +171,25 @@ public sealed partial class Table : Control
             {
                 RebuildView();
             }
+
+            _headerStrip?.UpdateButtons();
         }
     }
 
-    private static ColumnLayout CopyLayout(ColumnLayout value) => new(
-        value.Order?.ToArray() ?? Array.Empty<string>(),
-        value.Visibility is null ? new Dictionary<string, bool>() : new Dictionary<string, bool>(value.Visibility),
-        value.Widths is null ? new Dictionary<string, double>() : new Dictionary<string, double>(value.Widths),
-        value.SortColumnId, value.SortDirection);
+    private static ColumnLayout CopyLayout(ColumnLayout value) =>
+        new(
+            value.Order?.ToArray() ?? Array.Empty<string>(),
+            value.VisibilityOverrides is null
+                ? new Dictionary<string, bool>()
+                : new Dictionary<string, bool>(value.VisibilityOverrides),
+            value.WidthOverrides is null
+                ? new Dictionary<string, double>()
+                : new Dictionary<string, double>(value.WidthOverrides),
+            value.SortColumnId,
+            value.SortDirection,
+            value.FitButtonHidden,
+            value.FillButtonHidden
+        );
 
     protected override void OnApplyTemplate()
     {
@@ -173,25 +197,28 @@ public sealed partial class Table : Control
         DetachTemplateParts();
 
         _headerStrip = GetTemplateChild(HeaderStripPartName) as Header.Strip;
-        _itemsView = GetTemplateChild(ItemsViewPartName) as ListView;
-        _stateLayer = GetTemplateChild(StateLayerPartName) as ContentPresenter;
+        _surface = GetTemplateChild(SurfacePartName) as Body.Surface;
+        _placeholderPresenter = GetTemplateChild(PlaceholderPartName) as ContentPresenter;
         _marqueeOverlay = GetTemplateChild(MarqueeOverlayPartName) as FrameworkElement;
         _rowInsertionMarker = GetTemplateChild(RowInsertionMarkerPartName) as FrameworkElement;
 
-        _headerStrip?.Attach(this);
-
-        if (_itemsView is not null)
+        if (_headerStrip is not null)
         {
-            _itemsView.ItemsSource = _view;
-            if (!_firstRowsFitted)
+            _headerStrip.Attach(this);
+            if (!_filledOnce)
             {
-                _itemsView.LayoutUpdated += OnRowsLayoutUpdated;
+                _headerStrip.SizeChanged += OnHeaderSizeChanged;
             }
+        }
+
+        if (_surface is not null)
+        {
+            _surface.ItemsSource = _view;
         }
 
         AttachInput();
 
-        UpdateStateLayer();
+        UpdatePlaceholder();
         ApplySelectionToContainers();
     }
 
@@ -199,9 +226,9 @@ public sealed partial class Table : Control
     {
         DetachInput();
 
-        if (_itemsView is not null)
+        if (_headerStrip is not null)
         {
-            _itemsView.LayoutUpdated -= OnRowsLayoutUpdated;
+            _headerStrip.SizeChanged -= OnHeaderSizeChanged;
         }
 
         // A settle waiting to fire would rebuild a view whose template parts have just been taken
@@ -222,9 +249,16 @@ public sealed partial class Table : Control
         }
 
         _detached = true;
+
+        // A table taken out of the tree sees no exit, and nothing points at rows it no longer shows.
+        _pointerOver = false;
+        _pointedRow = null;
+        _menuRow = null;
         _source.Suspend();
-        if (_itemsView is not null) _itemsView.ItemsSource = null;
-        foreach (Column column in Columns) column.TextChanged -= OnColumnTextChanged;
+        if (_surface is not null)
+            _surface.ItemsSource = null;
+        foreach (Column column in Columns)
+            column.TextChanged -= OnColumnTextChanged;
         _settleDue?.Stop();
         if (!CancelCommittedGesture())
         {
@@ -236,7 +270,8 @@ public sealed partial class Table : Control
     {
         _source.Resume();
         _detached = false;
-        if (_itemsView is not null) _itemsView.ItemsSource = _view;
+        if (_surface is not null)
+            _surface.ItemsSource = _view;
         foreach (Column column in Columns)
         {
             column.TextChanged -= OnColumnTextChanged;
@@ -255,6 +290,52 @@ public sealed partial class Table : Control
 
     // ---------------------------------------------------------------- schema
 
+    private object? _schema;
+    private Type? _rowType;
+
+    /// <summary>
+    /// State the row type once, and hand over the identity selector, the interaction predicate and
+    /// every column's sort key with it. Setup-only, like <see cref="Columns"/>: the table captures
+    /// the schema at its first <c>Loaded</c> and asking for one afterwards is a configuration error.
+    /// </summary>
+    public Schema<TRow> Schema<TRow>()
+        where TRow : class
+    {
+        RequireSetup();
+        if (_schema is Schema<TRow> existing)
+            return existing;
+        if (_schema is not null)
+            throw ConfigurationError("A table has one schema row type.");
+        _rowType = typeof(TRow);
+        Schema<TRow> schema = new(this);
+        _schema = schema;
+        return schema;
+    }
+
+    internal void RequireSetup()
+    {
+        if (_schemaCaptured)
+            throw ConfigurationError("The schema is fixed at first Loaded.");
+    }
+
+    /// <summary>
+    /// A stable key per item, from <see cref="Schema{TRow}"/>. Without one identity is
+    /// object reference.
+    /// </summary>
+    internal Func<object, object>? ItemKey { get; set; }
+
+    internal IEqualityComparer<object> KeyComparer { get; set; } = EqualityComparer<object>.Default;
+
+    /// <summary>
+    /// Which items the user may act on, from <see cref="Schema{TRow}"/>. Null means all of them.
+    /// The predicate is fixed; what it answers for an item need not be, and the table does not
+    /// watch for that. Section 5.3's rule covers it: after a change to anything the predicate
+    /// reads, the host calls <see cref="RefreshView"/> once, and the rows re-read their
+    /// interactivity and the cursor that shows it there.
+    /// </summary>
+    internal Func<object, bool>? CanInteract { get; set; }
+    internal Func<object, bool>? CanReorderItem { get; set; }
+
     /// <summary>
     /// Capture the setup-only schema exactly once, validate it, and resolve the first effective
     /// layout — including a layout state the host applied before load.
@@ -263,10 +344,10 @@ public sealed partial class Table : Control
     {
         ValidateColumns();
 
-        _resolved.Clear();
+        _baselineOrder.Clear();
         foreach (Column column in Columns)
         {
-            _resolved.Add(new ResolvedColumn(column, IsHierarchyColumn(column)));
+            _baselineOrder.Add(new EffectiveColumn(column, IsHierarchyColumn(column)));
         }
 
         _schemaCaptured = true;
@@ -277,11 +358,11 @@ public sealed partial class Table : Control
         _identity.KeyComparer = KeyComparer;
         _selection.RehashIdentity();
 
-        Geometry.SetOrder(_resolved);
+        EffectiveLayout.SetOrder(_baselineOrder);
         if (_hierarchy is not null)
         {
-            _resolved.Clear();
-            _resolved.AddRange(Geometry.Order);
+            _baselineOrder.Clear();
+            _baselineOrder.AddRange(EffectiveLayout.Order);
         }
 
         if (_pendingLayout is not null)
@@ -290,6 +371,10 @@ public sealed partial class Table : Control
             _pendingLayout = null;
             ApplyLayoutCore(pending);
         }
+
+        // The strip sized itself in the layout pass before this Loaded, against no columns.
+        _headerStrip?.UpdateButtons();
+        FillOnce();
 
         if (_hasPendingSort)
         {
@@ -335,33 +420,23 @@ public sealed partial class Table : Control
 
             if (string.IsNullOrEmpty(column.DisplayName))
             {
-                throw ConfigurationError($"Column '{Describe(column)}' needs a non-empty DisplayName.");
+                throw ConfigurationError(
+                    $"Column '{Describe(column)}' needs a non-empty DisplayName."
+                );
             }
 
             if (!double.IsFinite(column.Width) || column.Width <= 0)
             {
                 throw ConfigurationError(
-                    $"Column '{Describe(column)}' needs a finite Width greater than zero.");
+                    $"Column '{Describe(column)}' needs a finite Width greater than zero."
+                );
             }
 
             if (!double.IsFinite(column.MinWidth) || column.MinWidth < 0)
             {
                 throw ConfigurationError(
-                    $"Column '{Describe(column)}' needs a finite, non-negative MinWidth.");
-            }
-
-            bool maxWidthValid = double.IsPositiveInfinity(column.MaxWidth)
-                || (double.IsFinite(column.MaxWidth) && column.MaxWidth > 0);
-            if (!maxWidthValid)
-            {
-                throw ConfigurationError(
-                    $"Column '{Describe(column)}' needs a finite positive MaxWidth or positive infinity.");
-            }
-
-            if (column.MinWidth > column.MaxWidth)
-            {
-                throw ConfigurationError(
-                    $"Column '{Describe(column)}' has MinWidth greater than MaxWidth.");
+                    $"Column '{Describe(column)}' needs a finite, non-negative MinWidth."
+                );
             }
 
             // Sortability is no longer two properties that had to agree: a column carries a sort
@@ -389,8 +464,9 @@ public sealed partial class Table : Control
 
     private void OnColumnsMutatedAfterCapture(object? sender, NotifyCollectionChangedEventArgs e) =>
         throw ConfigurationError(
-            "Columns is setup-only. Adding, removing, or replacing a column after the first " +
-            "Loaded is a configuration error.");
+            "Columns is setup-only. Adding, removing, or replacing a column after the first "
+                + "Loaded is a configuration error."
+        );
 
     private static InvalidOperationException ConfigurationError(string message) => new(message);
 
@@ -402,8 +478,8 @@ public sealed partial class Table : Control
     /// <returns>True when the restored sort is not the one that was already in force.</returns>
     private bool ApplyLayoutCore(ColumnLayout state)
     {
-        Dictionary<string, ResolvedColumn> byId = new(StringComparer.Ordinal);
-        foreach (ResolvedColumn column in _resolved)
+        Dictionary<string, EffectiveColumn> byId = new(StringComparer.Ordinal);
+        foreach (EffectiveColumn column in _baselineOrder)
         {
             if (column.Id is string id)
             {
@@ -413,14 +489,18 @@ public sealed partial class Table : Control
 
         // Order: known IDs first, duplicates dropped after their first valid occurrence, then every
         // column the snapshot did not name — a new one, or one with no Id — in definition order.
-        List<ResolvedColumn> ordered = new();
-        HashSet<ResolvedColumn> placed = new();
+        List<EffectiveColumn> ordered = new();
+        HashSet<EffectiveColumn> placed = new();
 
         if (state.Order is not null)
         {
             foreach (string id in state.Order)
             {
-                if (id is null || !byId.TryGetValue(id, out ResolvedColumn? column) || !placed.Add(column))
+                if (
+                    id is null
+                    || !byId.TryGetValue(id, out EffectiveColumn? column)
+                    || !placed.Add(column)
+                )
                 {
                     continue;
                 }
@@ -429,7 +509,7 @@ public sealed partial class Table : Control
             }
         }
 
-        foreach (ResolvedColumn column in _resolved)
+        foreach (EffectiveColumn column in _baselineOrder)
         {
             if (placed.Add(column))
             {
@@ -438,17 +518,17 @@ public sealed partial class Table : Control
         }
 
         // Both maps are complete override maps: an omitted ID clears any earlier override.
-        foreach (ResolvedColumn column in ordered)
+        foreach (EffectiveColumn column in ordered)
         {
             column.WidthOverride = null;
             column.VisibilityOverride = null;
         }
 
-        if (state.Widths is not null)
+        if (state.WidthOverrides is not null)
         {
-            foreach (KeyValuePair<string, double> entry in state.Widths)
+            foreach (KeyValuePair<string, double> entry in state.WidthOverrides)
             {
-                if (entry.Key is null || !byId.TryGetValue(entry.Key, out ResolvedColumn? column))
+                if (entry.Key is null || !byId.TryGetValue(entry.Key, out EffectiveColumn? column))
                 {
                     continue;
                 }
@@ -458,16 +538,15 @@ public sealed partial class Table : Control
                     continue;
                 }
 
-                column.WidthOverride = ResolvedColumn.Clamp(
-                    entry.Value, column.Column.MinWidth, column.Column.MaxWidth);
+                column.WidthOverride = column.Clamp(entry.Value);
             }
         }
 
-        if (state.Visibility is not null)
+        if (state.VisibilityOverrides is not null)
         {
-            foreach (KeyValuePair<string, bool> entry in state.Visibility)
+            foreach (KeyValuePair<string, bool> entry in state.VisibilityOverrides)
             {
-                if (entry.Key is null || !byId.TryGetValue(entry.Key, out ResolvedColumn? column))
+                if (entry.Key is null || !byId.TryGetValue(entry.Key, out EffectiveColumn? column))
                 {
                     continue;
                 }
@@ -485,20 +564,22 @@ public sealed partial class Table : Control
         EnsureOneVisibleColumn(ordered);
 
         bool sortChanged = RestoreSort(state, byId);
+        _fitButtonHidden = state.FitButtonHidden;
+        _fillButtonHidden = state.FillButtonHidden;
 
-        // SetOrder republishes the geometry, which re-applies each header cell's sort indicator.
-        Geometry.SetOrder(ordered);
+        // SetOrder republishes the layout, which re-applies each header cell's sort indicator.
+        EffectiveLayout.SetOrder(ordered);
         return sortChanged;
     }
 
-    private static void EnsureOneVisibleColumn(List<ResolvedColumn> ordered)
+    private static void EnsureOneVisibleColumn(List<EffectiveColumn> ordered)
     {
         if (ordered.Count == 0)
         {
             return;
         }
 
-        foreach (ResolvedColumn column in ordered)
+        foreach (EffectiveColumn column in ordered)
         {
             if (column.IsVisible)
             {
@@ -506,10 +587,10 @@ public sealed partial class Table : Control
             }
         }
 
-        ResolvedColumn fallback = ordered[0];
-        foreach (ResolvedColumn column in ordered)
+        EffectiveColumn fallback = ordered[0];
+        foreach (EffectiveColumn column in ordered)
         {
-            if (column.BaselineVisibility)
+            if (column.IsBaselineVisible)
             {
                 fallback = column;
                 break;
@@ -521,9 +602,29 @@ public sealed partial class Table : Control
 
     // ---------------------------------------------------------------- source
 
+    public static readonly DependencyProperty ItemsSourceProperty = DependencyProperty.Register(
+        nameof(ItemsSource),
+        typeof(IEnumerable),
+        typeof(Table),
+        new PropertyMetadata(null, OnItemsSourceChanged)
+    );
+
+    /// <summary>The host's already filtered projection. The table never filters it further.</summary>
+    public IEnumerable? ItemsSource
+    {
+        get => (IEnumerable?)GetValue(ItemsSourceProperty);
+        set => SetValue(ItemsSourceProperty, value);
+    }
+
+    private static void OnItemsSourceChanged(
+        DependencyObject d,
+        DependencyPropertyChangedEventArgs e
+    ) => ((Table)d).SetItemsSource(e.NewValue as IEnumerable);
+
     private void SetItemsSource(IEnumerable? source) => _source.SetSource(source);
 
-    private void OnSnapshotChanged(object? sender, IReadOnlyList<object> snapshot) => RebuildView(snapshot);
+    private void OnSnapshotChanged(object? sender, IReadOnlyList<object> snapshot) =>
+        RebuildView(snapshot);
 
     // -------------------------------------------------------- scroll offset
 
@@ -552,12 +653,12 @@ public sealed partial class Table : Control
 
     private void ApplyPendingScroll()
     {
-        if (_pendingScroll is not double offset || !_schemaCaptured || _itemsView is null)
+        if (_pendingScroll is not double offset || !_schemaCaptured || _surface is null)
         {
             return;
         }
 
-        _itemsView.UpdateLayout();
+        _surface.UpdateLayout();
         if (InnerScrollViewer() is not ScrollViewer scroller)
         {
             return;
@@ -565,85 +666,5 @@ public sealed partial class Table : Control
 
         _pendingScroll = null;
         scroller.ChangeView(null, offset, null, disableAnimation: true);
-    }
-
-    // ------------------------------------------------- loading / empty states
-
-    /// <summary>
-    /// Section 17. It reads the resolved view, not <see cref="Placeholder"/>, so existing rows stay
-    /// visible during a refresh; the placeholder says only which presentation an empty view gets.
-    /// </summary>
-    private void UpdateStateLayer()
-    {
-        if (_stateLayer is null)
-        {
-            return;
-        }
-
-        if (_view.Count > 0)
-        {
-            _stateLayer.Content = null;
-            _stateLayer.ContentTemplate = null;
-            _stateLayer.Visibility = Visibility.Collapsed;
-            return;
-        }
-
-        Placeholder kind = Placeholder;
-        (object? content, DataTemplate? template) = kind switch
-        {
-            Placeholder.Loading => (LoadingContent, LoadingContentTemplate),
-            Placeholder.NoResults => (NoResultsContent, NoResultsContentTemplate),
-            _ => (EmptyContent, EmptyContentTemplate),
-        };
-
-        _stateLayer.Content = content ?? (template is null ? ShippedPlaceholder(kind) : null);
-        _stateLayer.ContentTemplate = template;
-        _stateLayer.Visibility = Visibility.Visible;
-    }
-
-    /// <summary>
-    /// What an empty table shows when the host has configured nothing. Kept while the kind holds,
-    /// so a table that rebuilds an empty view does not restart the ring it is showing.
-    /// </summary>
-    /// <remarks>
-    /// Deliberately the least the platform can say: the ring at its own size, the two messages in
-    /// the inherited foreground. No spacing, no colour and no font size is chosen here, because
-    /// none of them is derivable and a host that wants more sets <see cref="LoadingContent"/>,
-    /// <see cref="EmptyContent"/>, or <see cref="NoResultsContent"/>. What this replaces is a blank
-    /// rectangle, which is what a table with no rows and nothing configured used to render.
-    /// </remarks>
-    private UIElement ShippedPlaceholder(Placeholder kind)
-    {
-        if (_shippedPlaceholder is not null && _shippedPlaceholderKind == kind)
-        {
-            return _shippedPlaceholder;
-        }
-
-        _shippedPlaceholderKind = kind;
-        _shippedPlaceholder = kind == Placeholder.Loading
-            ? Centred(new ProgressRing { IsActive = true }, Strings.Loading)
-            : Centred(
-                new TextBlock
-                {
-                    Text = kind == Placeholder.NoResults
-                        ? Strings.NoResults
-                        : Strings.Empty,
-                },
-                null);
-
-        return _shippedPlaceholder;
-    }
-
-    private static FrameworkElement Centred(FrameworkElement element, string? accessibleName)
-    {
-        element.HorizontalAlignment = HorizontalAlignment.Center;
-        element.VerticalAlignment = VerticalAlignment.Center;
-
-        if (accessibleName is not null)
-        {
-            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(element, accessibleName);
-        }
-
-        return element;
     }
 }

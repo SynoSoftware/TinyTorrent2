@@ -15,11 +15,52 @@ namespace
 // reply. A key is file format: renaming one needs a migration.
 namespace setting
 {
+// A whole-number setting and the values it accepts.
+struct Number
+{
+    char const* key;
+    int minimum;
+    int maximum;
+
+    bool Accepts(Json const& value) const
+    {
+        return value.is_number_integer() && value >= minimum && value <= maximum;
+    }
+
+    // A saved number outside the range takes the nearest value it accepts.
+    int Read(Json const& saved, int fallback) const
+    {
+        auto found = saved.find(key);
+        if (found == saved.end() || !found->is_number_integer())
+        {
+            return fallback;
+        }
+        if (*found < minimum)
+        {
+            return minimum;
+        }
+        if (*found > maximum)
+        {
+            return maximum;
+        }
+        return found->get<int>();
+    }
+};
+
 constexpr char destination[] = "default_destination";
+constexpr char incompleteFolder[] = "incomplete_folder";
+constexpr char usesIncompleteFolder[] = "use_incomplete_folder";
+constexpr char appendsSuffix[] = "append_suffix";
+constexpr char confirmsExit[] = "confirm_exit";
+constexpr char showsExternalIp[] = "show_external_ip";
+constexpr Number diskBuffer{"disk_buffer_mib", 1, 1024};
+constexpr Number checkingMemory{"checking_memory_mib", 1, 1024};
+constexpr Number hashingThreads{"hashing_threads", 1, 64};
+constexpr Number filePool{"file_pool_size", 1, 10000};
 constexpr char language[] = "language";
 constexpr char theme[] = "theme";
 constexpr char portMapping[] = "port_mapping";
-constexpr char listenPort[] = "listen_port";
+constexpr Number listenPort{"listen_port", 1, 65535};
 constexpr char networkInterface[] = "network_interface";
 constexpr char activeDownloads[] = "active_downloads";
 constexpr char activeSeeds[] = "active_seeds";
@@ -27,7 +68,7 @@ constexpr char connections[] = "connection_limit";
 constexpr char encryption[] = "encryption";
 constexpr char proxyType[] = "proxy_type";
 constexpr char proxyHost[] = "proxy_host";
-constexpr char proxyPort[] = "proxy_port";
+constexpr Number proxyPort{"proxy_port", 0, 65535};
 constexpr char proxyUsername[] = "proxy_username";
 constexpr char proxyPassword[] = "proxy_password";
 constexpr char ratio[] = "ratio_limit";
@@ -50,6 +91,7 @@ constexpr char notifyAdded[] = "notify_added";
 constexpr char preventSleep[] = "prevent_sleep";
 constexpr char preventSleepSeeding[] = "prevent_sleep_seeding";
 constexpr char backgroundNoticeShown[] = "background_notice_shown";
+constexpr char reportedPrograms[] = "reported_programs";
 }
 
 constexpr std::size_t periodLimit = 128;
@@ -122,6 +164,16 @@ bool IsHost(std::string const& host)
     return !host.empty() && host.size() <= hostLimit && std::none_of(host.begin(), host.end(),
         [](unsigned char character) { return character <= 0x20 || character == 0x7F; });
 }
+
+bool IsTheme(std::string const& theme)
+{
+    return theme == "system" || theme == "light" || theme == "dark";
+}
+
+bool IsRatio(Json const& value)
+{
+    return value.is_number() && value >= 0 && std::isfinite(value.get<double>());
+}
 }
 
 char const* Engine::State::Settings::Name(LimitMode mode)
@@ -169,6 +221,7 @@ Engine::State::Settings Engine::State::Defaults()
     if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_Downloads, 0, nullptr, &downloads)))
     {
         defaults.destination = Utf8(downloads);
+        defaults.incompleteFolder = Utf8((std::filesystem::path(downloads) / L"Incomplete").wstring());
         CoTaskMemFree(downloads);
     }
     defaults.language = Strings::DefaultLanguage();
@@ -184,18 +237,27 @@ Json Engine::State::Settings::ToJson() const
     }
     return {
         {setting::destination, destination},
+        {setting::incompleteFolder, incompleteFolder},
+        {setting::usesIncompleteFolder, usesIncompleteFolder},
+        {setting::appendsSuffix, appendsSuffix},
+        {setting::confirmsExit, confirmsExit},
+        {setting::showsExternalIp, showsExternalIp},
+        {setting::diskBuffer.key, diskBufferMib},
+        {setting::checkingMemory.key, checkingMib},
+        {setting::hashingThreads.key, hashingThreads},
+        {setting::filePool.key, fileLimit},
         {setting::language, language},
         {setting::theme, theme},
-        {setting::portMapping, portMapping},
-        {setting::listenPort, listenPort},
-        {setting::networkInterface, networkInterface},
+        {setting::portMapping, mapsPorts},
+        {setting::listenPort.key, listenPort},
+        {setting::networkInterface, networkAdapter},
         {setting::activeDownloads, activeDownloads},
         {setting::activeSeeds, activeSeeds},
         {setting::connections, connections},
         {setting::encryption, Word(encryptions, encryption)},
         {setting::proxyType, Word(proxyTypes, proxy.type)},
         {setting::proxyHost, proxy.host},
-        {setting::proxyPort, proxy.port},
+        {setting::proxyPort.key, proxy.port},
         {setting::proxyUsername, proxy.username},
         {setting::proxyPassword, proxy.password},
         {setting::ratio, ratio},
@@ -213,11 +275,12 @@ Json Engine::State::Settings::ToJson() const
         {setting::alternativeUpload, alternative.upload},
         {setting::limitMode, Name(limitMode)},
         {setting::notificationsEnabled, notificationsEnabled},
-        {setting::notifyProblems, notifyProblems},
-        {setting::notifyAdded, notifyAdded},
-        {setting::preventSleep, preventSleep},
-        {setting::preventSleepSeeding, preventSleepSeeding},
-        {setting::backgroundNoticeShown, backgroundNoticeShown}};
+        {setting::notifyProblems, notifiesProblems},
+        {setting::notifyAdded, notifiesAdded},
+        {setting::preventSleep, preventsSleep},
+        {setting::preventSleepSeeding, preventsSleepSeeding},
+        {setting::backgroundNoticeShown, backgroundNoticeShown},
+        {setting::reportedPrograms, reportedPrograms}};
 }
 
 Json Engine::State::Settings::ToFile() const
@@ -227,76 +290,111 @@ Json Engine::State::Settings::ToFile() const
     return values;
 }
 
+// A value that settings.json holds incorrectly keeps its default, so the
+// person never has to repair the file; the next save writes the default.
 void Engine::State::Settings::Read(Json const& saved)
 {
-    destination = saved.value(setting::destination, destination);
-    language = saved.value(setting::language, language);
-    theme = saved.value(setting::theme, theme);
-    portMapping = saved.value(setting::portMapping, portMapping);
-    listenPort = saved.value(setting::listenPort, listenPort);
-    networkInterface = saved.value(setting::networkInterface, networkInterface);
-    activeDownloads = saved.value(setting::activeDownloads, activeDownloads);
-    activeSeeds = saved.value(setting::activeSeeds, activeSeeds);
-    connections = saved.value(setting::connections, connections);
-    if (saved.contains(setting::encryption))
+    if (auto chosen = ReadSaved(saved, setting::destination, std::string()); IsAbsolute(chosen))
     {
-        auto chosen = Parse(encryptions, saved.at(setting::encryption).get<std::string>());
-        if (!chosen)
-        {
-            throw std::invalid_argument("Invalid saved encryption");
-        }
+        destination = std::move(chosen);
+    }
+    // The engine saves an empty folder when Windows has no Downloads folder;
+    // a folder it cannot use turns the incomplete folder off.
+    auto folder = ReadSaved(saved, setting::incompleteFolder, std::string());
+    if (IsAbsolute(folder))
+    {
+        incompleteFolder = folder;
+    }
+    usesIncompleteFolder = ReadSaved(saved, setting::usesIncompleteFolder, usesIncompleteFolder) &&
+        (folder.empty() || IsAbsolute(folder)) && IsAbsolute(incompleteFolder);
+    appendsSuffix = ReadSaved(saved, setting::appendsSuffix, appendsSuffix);
+    confirmsExit = ReadSaved(saved, setting::confirmsExit, confirmsExit);
+    showsExternalIp = ReadSaved(saved, setting::showsExternalIp, showsExternalIp);
+    diskBufferMib = setting::diskBuffer.Read(saved, diskBufferMib);
+    checkingMib = setting::checkingMemory.Read(saved, checkingMib);
+    hashingThreads = setting::hashingThreads.Read(saved, hashingThreads);
+    fileLimit = setting::filePool.Read(saved, fileLimit);
+    if (auto chosen = ReadSaved(saved, setting::language, std::string()); Strings::Supports(chosen))
+    {
+        language = std::move(chosen);
+    }
+    if (auto chosen = ReadSaved(saved, setting::theme, std::string()); IsTheme(chosen))
+    {
+        theme = std::move(chosen);
+    }
+    mapsPorts = ReadSaved(saved, setting::portMapping, mapsPorts);
+    listenPort = setting::listenPort.Read(saved, listenPort);
+    // An adapter name that matches no adapter keeps blocking transfers, so it
+    // is kept rather than replaced by any adapter.
+    networkAdapter = ReadSaved(saved, setting::networkInterface, networkAdapter);
+    activeDownloads = ReadSaved(saved, setting::activeDownloads, activeDownloads);
+    activeSeeds = ReadSaved(saved, setting::activeSeeds, activeSeeds);
+    connections = ReadSaved(saved, setting::connections, connections);
+    if (auto chosen = Parse(encryptions, ReadSaved(saved, setting::encryption, std::string())))
+    {
         encryption = *chosen;
     }
-    if (saved.contains(setting::proxyType))
+    if (auto chosen = Parse(proxyTypes, ReadSaved(saved, setting::proxyType, std::string())))
     {
-        auto chosen = Parse(proxyTypes, saved.at(setting::proxyType).get<std::string>());
-        if (!chosen)
-        {
-            throw std::invalid_argument("Invalid saved proxy type");
-        }
         proxy.type = *chosen;
     }
-    proxy.host = saved.value(setting::proxyHost, proxy.host);
-    proxy.port = saved.value(setting::proxyPort, proxy.port);
-    proxy.username = saved.value(setting::proxyUsername, proxy.username);
-    proxy.password = Unprotect(saved.value(setting::proxyPassword, std::string()));
-    ratio = saved.value(setting::ratio, ratio);
-    seedingMinutes = saved.value(setting::seedingMinutes, seedingMinutes);
-    checksUpdates = saved.value(setting::checksUpdates, checksUpdates);
-    scheduleEnabled = saved.value(setting::scheduleEnabled, scheduleEnabled);
+    if (auto host = ReadSaved(saved, setting::proxyHost, std::string()); IsHost(host))
+    {
+        proxy.host = std::move(host);
+    }
+    proxy.port = setting::proxyPort.Read(saved, proxy.port);
+    if (auto name = ReadSaved(saved, setting::proxyUsername, std::string()); name.size() <= credentialLimit)
+    {
+        proxy.username = std::move(name);
+    }
+    proxy.password = Unprotect(ReadSaved(saved, setting::proxyPassword, std::string()));
+    if (auto found = saved.find(setting::ratio); found != saved.end() && IsRatio(*found))
+    {
+        ratio = found->get<double>();
+    }
+    seedingMinutes = ReadSaved(saved, setting::seedingMinutes, seedingMinutes);
+    checksUpdates = ReadSaved(saved, setting::checksUpdates, checksUpdates);
+    scheduleEnabled = ReadSaved(saved, setting::scheduleEnabled, scheduleEnabled);
     schedule.clear();
-    for (auto const& value : saved.value(setting::schedule, Json::array()))
+    if (auto found = saved.find(setting::schedule); found != saved.end() && found->is_array())
     {
-        auto period = Period::Read(value);
-        if (!period)
+        for (auto const& value : *found)
         {
-            throw std::invalid_argument("Invalid saved schedule period");
+            if (auto period = Period::Read(value))
+            {
+                schedule.push_back(std::move(*period));
+            }
         }
-        schedule.push_back(std::move(*period));
     }
-    showsAdd = saved.value(setting::showsAdd, showsAdd);
-    showsSplash = saved.value(setting::showsSplash, showsSplash);
-    startsInTray = saved.value(setting::startsInTray, startsInTray);
-    allPaused = saved.value(setting::allPaused, allPaused);
-    limits.download = saved.value(setting::downloadLimit, limits.download);
-    limits.upload = saved.value(setting::uploadLimit, limits.upload);
-    alternative.download = saved.value(setting::alternativeDownload, alternative.download);
-    alternative.upload = saved.value(setting::alternativeUpload, alternative.upload);
-    if (saved.contains(setting::limitMode))
+    showsAdd = ReadSaved(saved, setting::showsAdd, showsAdd);
+    showsSplash = ReadSaved(saved, setting::showsSplash, showsSplash);
+    startsInTray = ReadSaved(saved, setting::startsInTray, startsInTray);
+    allPaused = ReadSaved(saved, setting::allPaused, allPaused);
+    limits.download = ReadSaved(saved, setting::downloadLimit, limits.download);
+    limits.upload = ReadSaved(saved, setting::uploadLimit, limits.upload);
+    alternative.download = ReadSaved(saved, setting::alternativeDownload, alternative.download);
+    alternative.upload = ReadSaved(saved, setting::alternativeUpload, alternative.upload);
+    if (auto found = saved.find(setting::limitMode); found != saved.end())
     {
-        auto mode = Named(saved.at(setting::limitMode));
-        if (!mode)
-        {
-            throw std::invalid_argument("Invalid saved limit mode");
-        }
-        limitMode = *mode;
+        limitMode = Named(*found).value_or(limitMode);
     }
-    notificationsEnabled = saved.value(setting::notificationsEnabled, notificationsEnabled);
-    notifyProblems = saved.value(setting::notifyProblems, notifyProblems);
-    notifyAdded = saved.value(setting::notifyAdded, notifyAdded);
-    preventSleep = saved.value(setting::preventSleep, preventSleep);
-    preventSleepSeeding = saved.value(setting::preventSleepSeeding, preventSleepSeeding);
-    backgroundNoticeShown = saved.value(setting::backgroundNoticeShown, backgroundNoticeShown);
+    notificationsEnabled = ReadSaved(saved, setting::notificationsEnabled, notificationsEnabled);
+    notifiesProblems = ReadSaved(saved, setting::notifyProblems, notifiesProblems);
+    notifiesAdded = ReadSaved(saved, setting::notifyAdded, notifiesAdded);
+    preventsSleep = ReadSaved(saved, setting::preventSleep, preventsSleep);
+    preventsSleepSeeding = ReadSaved(saved, setting::preventSleepSeeding, preventsSleepSeeding);
+    backgroundNoticeShown = ReadSaved(saved, setting::backgroundNoticeShown, backgroundNoticeShown);
+    if (auto found = saved.find(setting::reportedPrograms); found != saved.end() && found->is_array())
+    {
+        reportedPrograms.clear();
+        for (auto const& program : *found)
+        {
+            if (program.is_string())
+            {
+                reportedPrograms.push_back(program.get<std::string>());
+            }
+        }
+    }
 }
 
 std::optional<Engine::State::Settings> Engine::State::Settings::With(Json const& changes) const
@@ -309,7 +407,7 @@ std::optional<Engine::State::Settings> Engine::State::Settings::With(Json const&
         {
             next.language = value.get<std::string>();
         }
-        else if (key == setting::theme && (value == "system" || value == "light" || value == "dark"))
+        else if (key == setting::theme && value.is_string() && IsTheme(value.get<std::string>()))
         {
             next.theme = value.get<std::string>();
         }
@@ -321,6 +419,42 @@ std::optional<Engine::State::Settings> Engine::State::Settings::With(Json const&
         {
             next.showsAdd = value;
         }
+        else if (key == setting::incompleteFolder && value.is_string() && IsAbsolute(value.get<std::string>()))
+        {
+            next.incompleteFolder = value.get<std::string>();
+        }
+        else if (key == setting::usesIncompleteFolder && value.is_boolean())
+        {
+            next.usesIncompleteFolder = value;
+        }
+        else if (key == setting::appendsSuffix && value.is_boolean())
+        {
+            next.appendsSuffix = value;
+        }
+        else if (key == setting::confirmsExit && value.is_boolean())
+        {
+            next.confirmsExit = value;
+        }
+        else if (key == setting::showsExternalIp && value.is_boolean())
+        {
+            next.showsExternalIp = value;
+        }
+        else if (key == setting::diskBuffer.key && setting::diskBuffer.Accepts(value))
+        {
+            next.diskBufferMib = value;
+        }
+        else if (key == setting::checkingMemory.key && setting::checkingMemory.Accepts(value))
+        {
+            next.checkingMib = value;
+        }
+        else if (key == setting::hashingThreads.key && setting::hashingThreads.Accepts(value))
+        {
+            next.hashingThreads = value;
+        }
+        else if (key == setting::filePool.key && setting::filePool.Accepts(value))
+        {
+            next.fileLimit = value;
+        }
         else if (key == setting::showsSplash && value.is_boolean())
         {
             next.showsSplash = value;
@@ -331,9 +465,9 @@ std::optional<Engine::State::Settings> Engine::State::Settings::With(Json const&
         }
         else if (key == setting::portMapping && value.is_boolean())
         {
-            next.portMapping = value;
+            next.mapsPorts = value;
         }
-        else if (key == setting::listenPort && isLimit && value >= 1 && value <= 65535)
+        else if (key == setting::listenPort.key && setting::listenPort.Accepts(value))
         {
             next.listenPort = value;
         }
@@ -355,7 +489,7 @@ std::optional<Engine::State::Settings> Engine::State::Settings::With(Json const&
                     return std::nullopt;
                 }
             }
-            next.networkInterface = std::move(name);
+            next.networkAdapter = std::move(name);
         }
         else if (key == setting::activeDownloads && isLimit)
         {
@@ -381,7 +515,7 @@ std::optional<Engine::State::Settings> Engine::State::Settings::With(Json const&
         {
             next.proxy.host = value.get<std::string>();
         }
-        else if (key == setting::proxyPort && value.is_number_integer() && value >= 0 && value <= 65535)
+        else if (key == setting::proxyPort.key && setting::proxyPort.Accepts(value))
         {
             next.proxy.port = value;
         }
@@ -393,8 +527,7 @@ std::optional<Engine::State::Settings> Engine::State::Settings::With(Json const&
         {
             next.proxy.password = value.get<std::string>();
         }
-        else if (key == setting::ratio && value.is_number() && value >= 0 &&
-            std::isfinite(value.get<double>()))
+        else if (key == setting::ratio && IsRatio(value))
         {
             next.ratio = value;
         }
@@ -436,19 +569,19 @@ std::optional<Engine::State::Settings> Engine::State::Settings::With(Json const&
         }
         else if (key == setting::notifyProblems && value.is_boolean())
         {
-            next.notifyProblems = value;
+            next.notifiesProblems = value;
         }
         else if (key == setting::notifyAdded && value.is_boolean())
         {
-            next.notifyAdded = value;
+            next.notifiesAdded = value;
         }
         else if (key == setting::preventSleep && value.is_boolean())
         {
-            next.preventSleep = value;
+            next.preventsSleep = value;
         }
         else if (key == setting::preventSleepSeeding && value.is_boolean())
         {
-            next.preventSleepSeeding = value;
+            next.preventsSleepSeeding = value;
         }
         else if (key == setting::downloadLimit && isLimit)
         {
@@ -472,6 +605,10 @@ std::optional<Engine::State::Settings> Engine::State::Settings::With(Json const&
         }
     }
     if (changes.contains(setting::limitMode) && changes.at(setting::limitMode).is_null() && !next.scheduleEnabled)
+    {
+        return std::nullopt;
+    }
+    if (next.usesIncompleteFolder && !IsAbsolute(next.incompleteFolder))
     {
         return std::nullopt;
     }
@@ -548,21 +685,30 @@ void Engine::State::Configure(Json const& choices, Reply reply)
     }
 }
 
+std::string Engine::State::Settings::SavePath(std::string const& destination) const
+{
+    if (!usesIncompleteFolder || !IsAbsolute(destination) || SameFolder(destination, incompleteFolder))
+    {
+        return destination;
+    }
+    return incompleteFolder;
+}
+
 bool Engine::State::IsAbsolute(std::string const& path)
 {
     return std::filesystem::path(Wide(path)).is_absolute();
 }
 
-void Engine::State::PauseSession(bool paused, std::function<void(Outcome)> done)
+void Engine::State::PauseSession(bool paused, std::function<void(Outcome)> completion)
 {
-    if (!changes.Queue([this, paused, done]
+    if (!changes.Queue([this, paused, completion]
     {
         RefreshPolicy();
-        auto finish = [this, paused, done]
+        auto finish = [this, paused, completion]
         {
             bypassesScheduledPause = !paused && ScheduledMode() == ScheduleMode::Paused;
             RefreshPolicy();
-            done({});
+            completion({});
         };
         if (settings.allPaused == paused)
         {
@@ -571,11 +717,11 @@ void Engine::State::PauseSession(bool paused, std::function<void(Outcome)> done)
         }
         auto document = Saved();
         document.settings.allPaused = paused;
-        changes.Commit(document.ToJson(), [this, paused, finish, done](StorageOutcome outcome)
+        changes.Commit(document.ToJson(), [this, paused, finish, completion](StorageOutcome outcome)
         {
             if (!outcome.succeeded)
             {
-                done({ErrorCode::StorageFailed, outcome.detail});
+                completion({ErrorCode::StorageFailed, outcome.detail});
                 return;
             }
             settings.allPaused = paused;
@@ -583,34 +729,56 @@ void Engine::State::PauseSession(bool paused, std::function<void(Outcome)> done)
         });
     }))
     {
-        done({ErrorCode::Overloaded});
+        completion({ErrorCode::Overloaded});
     }
 }
 
-void Engine::State::RecordBackgroundNotice(std::function<void(Outcome)> done)
+void Engine::State::RecordBackgroundNotice(std::function<void(Outcome)> completion)
 {
-    if (!changes.Queue([this, done]
+    if (!changes.Queue([this, completion]
     {
         if (settings.backgroundNoticeShown)
         {
-            done({});
+            completion({});
             return;
         }
         auto document = Saved();
         document.settings.backgroundNoticeShown = true;
-        changes.Commit(document.ToJson(), [this, done](StorageOutcome outcome)
+        changes.Commit(document.ToJson(), [this, completion](StorageOutcome outcome)
         {
             if (!outcome.succeeded)
             {
-                done({ErrorCode::StorageFailed, outcome.detail});
+                completion({ErrorCode::StorageFailed, outcome.detail});
                 return;
             }
             settings.backgroundNoticeShown = true;
-            done({});
+            completion({});
         });
     }))
     {
-        done({ErrorCode::Overloaded});
+        completion({ErrorCode::Overloaded});
+    }
+}
+
+void Engine::State::RecordPrograms(std::vector<std::string> programs, std::function<void(Outcome)> completion)
+{
+    if (!changes.Queue([this, programs = std::move(programs), completion]
+    {
+        auto document = Saved();
+        document.settings.reportedPrograms = programs;
+        changes.Commit(document.ToJson(), [this, programs, completion](StorageOutcome outcome)
+        {
+            if (!outcome.succeeded)
+            {
+                completion({ErrorCode::StorageFailed, outcome.detail});
+                return;
+            }
+            settings.reportedPrograms = programs;
+            completion({});
+        });
+    }))
+    {
+        completion({ErrorCode::Overloaded});
     }
 }
 }

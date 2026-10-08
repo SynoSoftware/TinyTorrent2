@@ -19,6 +19,11 @@ struct Problem
 {
     ProblemKind kind;
     std::string detail;
+    // Why a move did not start. The row and the notice report it instead of
+    // the kind, so the window can say why.
+    std::optional<ErrorCode> refusal;
+
+    char const* Code() const;
 };
 
 char const* ToString(ProblemKind kind);
@@ -27,6 +32,8 @@ char const* ToString(ProblemKind kind);
 struct Facts
 {
     std::string savePath;
+    std::string finalFolder;
+    bool appendsSuffix = true;
     std::string moveDestination;
     bool verifyFiles = false;
     Intent intent = Intent::Resumed;
@@ -48,15 +55,15 @@ struct Facts
     static Facts Read(Json const& saved);
 };
 
-// Reads file priorities as the document and the add command write them.
-// Throws when a value is not a whole number from 0 to 255.
+// Reads file priorities as the add command sends them. Throws when a value is
+// not a whole number from 0 to 255.
 std::vector<lt::download_priority_t> ReadPriorities(Json const& values);
 
 // A torrent in the list: its libtorrent handle, the facts the document saves
 // about it, and what the engine knows about its errors and checkpoints.
 struct Torrent
 {
-    std::string identity;
+    std::string torrentId;
     lt::torrent_handle handle;
     Facts facts;
     // A conflicting restored identity keeps its parameters until its other
@@ -77,15 +84,14 @@ struct Torrent
     std::string diskError;
     std::string notifiedError;
     bool receivedPayload = false;
-    lt::torrent_status::state_t fileState = lt::torrent_status::checking_resume_data;
+    lt::torrent_status::state_t transferState = lt::torrent_status::checking_resume_data;
     NamePhase namePhase = NamePhase::Pending;
     bool needsRecheck = false;
     std::set<lt::file_index_t> completedFiles;
     std::set<lt::file_index_t> renaming;
     std::chrono::steady_clock::time_point renameAt{};
-    // The torrent finished downloading, and libtorrent is still writing its
-    // data to disk; until it ends, the torrent does not show as complete.
-    bool flushing = false;
+    // While Flushing, the torrent does not show as complete.
+    CompletionPhase completionPhase = CompletionPhase::Idle;
     Reply priorityReply;
     bool moving = false;
     std::optional<Problem> moveError;
@@ -102,13 +108,13 @@ struct Torrent
     std::optional<Problem> Diagnose() const;
     // The torrent's own files are being prepared, renamed or moved.
     bool FilesBusy() const;
-    Status Classify(bool allPaused) const;
+    Status Classify(bool sessionPaused) const;
     bool IsChanged() const;
     // Takes the newest status, and remembers when it shows new payload.
     void Update(lt::torrent_status latest);
     Json Describe() const;
     Json Describe(TorrentView view, bool includeFiles) const;
-    Json Row(bool allPaused) const;
+    Json Row(bool sessionPaused) const;
     void ApplyIntent();
     // libtorrent sets piece priorities again from the file priorities each
     // time those change, so this runs again after each change settles.

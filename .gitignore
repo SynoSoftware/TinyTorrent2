@@ -14,3 +14,4 @@ TestResults/
 .idea/
 *.suo
 /3rdParty.old
+/app/tests/Store/{ECE5E9CC-3FBB-452B-96ED-7F8E895285EE}.resume

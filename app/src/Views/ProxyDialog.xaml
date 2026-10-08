@@ -1,0 +1,131 @@
+<UserControl
+  x:Class="Syno.TinyTorrent.Views.ProxyDialog"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:icons="using:Syno"
+  xmlns:local="using:Syno.TinyTorrent.Views"
+>
+  <Grid x:Name="Root">
+    <StackPanel Spacing="12">
+      <ComboBox
+        HorizontalAlignment="Stretch"
+        Header="{x:Bind Model.Text.Get('settings', 'proxy_type'), Mode=OneWay}"
+        SelectedIndex="{x:Bind Proxy.TypeIndex, Mode=TwoWay}"
+        IsEnabled="{x:Bind Proxy.CanSubmit, Mode=OneWay}"
+        ToolTipService.ToolTip="{x:Bind Model.Text.Get('settings', 'proxy_type_tip'), Mode=OneWay}"
+        AutomationProperties.HelpText="{x:Bind Model.Text.Get('settings', 'proxy_type_tip'), Mode=OneWay}"
+        AutomationProperties.AutomationId="ProxyType"
+      >
+        <ComboBoxItem Content="{x:Bind Model.Text.Get('settings', 'proxy_none'), Mode=OneWay}" />
+        <ComboBoxItem Content="SOCKS5" />
+        <ComboBoxItem Content="SOCKS4" />
+        <ComboBoxItem Content="HTTP" />
+      </ComboBox>
+      <TextBox
+        Text="{x:Bind Proxy.Host, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+        IsEnabled="{x:Bind Proxy.CanEditAddress, Mode=OneWay}"
+        MaxLength="253"
+        AutomationProperties.Name="{x:Bind Model.Text.Get('settings', 'proxy_host'), Mode=OneWay}"
+        AutomationProperties.HelpText="{x:Bind Proxy.HostError, Mode=OneWay}"
+        AutomationProperties.AutomationId="ProxyHost"
+      >
+        <TextBox.Header>
+          <TextBlock TextTrimming="CharacterEllipsis">
+            <Run Text="{x:Bind Model.Text.Get('settings', 'proxy_host'), Mode=OneWay}" />
+            <Run
+              Text="{x:Bind local:ProxyDialog.Separated(Proxy.HostError), Mode=OneWay}"
+              Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+            />
+          </TextBlock>
+        </TextBox.Header>
+      </TextBox>
+      <NumberBox
+        x:Name="Port"
+        Text="{x:Bind Proxy.Port, Mode=OneWay}"
+        IsEnabled="{x:Bind Proxy.CanEditAddress, Mode=OneWay}"
+        ValidationMode="Disabled"
+        Loaded="OnPortLoaded"
+        AutomationProperties.Name="{x:Bind Model.Text.Get('settings', 'proxy_port'), Mode=OneWay}"
+        AutomationProperties.HelpText="{x:Bind Proxy.PortError, Mode=OneWay}"
+        AutomationProperties.AutomationId="ProxyPort"
+      >
+        <NumberBox.Header>
+          <TextBlock TextTrimming="CharacterEllipsis">
+            <Run Text="{x:Bind Model.Text.Get('settings', 'proxy_port'), Mode=OneWay}" />
+            <Run
+              Text="{x:Bind local:ProxyDialog.Separated(Proxy.PortError), Mode=OneWay}"
+              Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+            />
+          </TextBlock>
+        </NumberBox.Header>
+      </NumberBox>
+      <!-- A disabled field shows no tooltip and passes the pointer to its
+                 parent, so this panel says why SOCKS4 disables the fields. -->
+      <StackPanel
+        Spacing="12"
+        Background="Transparent"
+        ToolTipService.ToolTip="{x:Bind Proxy.SignInTip, Mode=OneWay}"
+      >
+        <TextBox
+          Header="{x:Bind Model.Text.Get('settings', 'proxy_username'), Mode=OneWay}"
+          Text="{x:Bind Proxy.Username, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+          IsEnabled="{x:Bind Proxy.CanSignIn, Mode=OneWay}"
+          MaxLength="255"
+          AutomationProperties.HelpText="{x:Bind Proxy.SignInTip, Mode=OneWay}"
+          AutomationProperties.AutomationId="ProxyUsername"
+        />
+        <PasswordBox
+          Header="{x:Bind Model.Text.Get('settings', 'proxy_password'), Mode=OneWay}"
+          Password="{x:Bind Proxy.Password, Mode=TwoWay}"
+          IsEnabled="{x:Bind Proxy.CanSignIn, Mode=OneWay}"
+          MaxLength="255"
+          AutomationProperties.HelpText="{x:Bind Proxy.SignInTip, Mode=OneWay}"
+          AutomationProperties.AutomationId="ProxyPassword"
+        />
+      </StackPanel>
+    </StackPanel>
+    <Grid
+      x:Name="Status"
+      x:FieldModifier="internal"
+      ColumnSpacing="8"
+      Background="Transparent"
+      ToolTipService.ToolTip="{x:Bind Proxy.ResultTip, Mode=OneWay}"
+    >
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="*" />
+      </Grid.ColumnDefinitions>
+      <ProgressRing
+        Width="16"
+        Height="16"
+        IsActive="{x:Bind Proxy.IsChecking, Mode=OneWay}"
+        Visibility="{x:Bind Proxy.IsChecking, Mode=OneWay}"
+      />
+      <FontIcon
+        FontFamily="{x:Bind icons:Lucide.Font}"
+        Glyph="{x:Bind icons:Lucide.CircleCheck}"
+        FontSize="16"
+        Foreground="{ThemeResource SystemFillColorSuccessBrush}"
+        Visibility="{x:Bind Proxy.Succeeded, Mode=OneWay}"
+        AutomationProperties.AccessibilityView="Raw"
+      />
+      <FontIcon
+        FontFamily="{x:Bind icons:Lucide.Font}"
+        Glyph="{x:Bind icons:Lucide.CircleX}"
+        FontSize="16"
+        Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+        Visibility="{x:Bind Proxy.Failed, Mode=OneWay}"
+        AutomationProperties.AccessibilityView="Raw"
+      />
+      <TextBlock
+        Grid.Column="1"
+        Text="{x:Bind Proxy.Result, Mode=OneWay}"
+        Style="{StaticResource TinyTorrentBodyTextStyle}"
+        VerticalAlignment="Center"
+        TextTrimming="CharacterEllipsis"
+        AutomationProperties.HelpText="{x:Bind Proxy.ResultTip, Mode=OneWay}"
+        AutomationProperties.LiveSetting="Polite"
+      />
+    </Grid>
+  </Grid>
+</UserControl>

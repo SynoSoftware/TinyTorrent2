@@ -1,17 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Application
-    x:Class="Syno.TableViewSample.App"
-    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:local="using:Syno.TableViewSample">
-    <Application.Resources>
-        <ResourceDictionary>
-            <ResourceDictionary.MergedDictionaries>
-                <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
-                <!-- Other merged dictionaries here -->
-            </ResourceDictionary.MergedDictionaries>
+  x:Class="Syno.TableViewSample.App"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:local="using:Syno.TableViewSample"
+>
+  <Application.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.MergedDictionaries>
+        <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
+        <!-- Other merged dictionaries here -->
+      </ResourceDictionary.MergedDictionaries>
 
-            <!--
+      <!--
                 The focus visual, for the whole application. The platform default is a two-tone
                 rectangle, a thick near-black stroke with a thin near-white one inside it, drawn
                 that way so it stays visible over anything. Wherever it lands on this page — a menu
@@ -37,24 +38,32 @@
                 and never take effect. High contrast keeps the platform's own pair: the accent
                 measures 1.00:1 in contrast themes, which is the case the two-tone pair exists for.
             -->
-            <ResourceDictionary.ThemeDictionaries>
-                <ResourceDictionary x:Key="Default">
-                    <SolidColorBrush x:Key="FocusStrokeColorOuterBrush" Color="Transparent" />
-                    <SolidColorBrush x:Key="FocusStrokeColorInnerBrush"
-                                     Color="{ThemeResource SystemAccentColorLight2}" />
-                </ResourceDictionary>
-                <ResourceDictionary x:Key="Light">
-                    <SolidColorBrush x:Key="FocusStrokeColorOuterBrush" Color="Transparent" />
-                    <SolidColorBrush x:Key="FocusStrokeColorInnerBrush"
-                                     Color="{ThemeResource SystemAccentColorDark1}" />
-                </ResourceDictionary>
-                <ResourceDictionary x:Key="HighContrast">
-                    <SolidColorBrush x:Key="FocusStrokeColorOuterBrush"
-                                     Color="{ThemeResource FocusStrokeColorOuter}" />
-                    <SolidColorBrush x:Key="FocusStrokeColorInnerBrush"
-                                     Color="{ThemeResource FocusStrokeColorInner}" />
-                </ResourceDictionary>
-            </ResourceDictionary.ThemeDictionaries>
+      <ResourceDictionary.ThemeDictionaries>
+        <ResourceDictionary x:Key="Default">
+          <SolidColorBrush x:Key="FocusStrokeColorOuterBrush" Color="Transparent" />
+          <SolidColorBrush
+            x:Key="FocusStrokeColorInnerBrush"
+            Color="{ThemeResource SystemAccentColorLight2}"
+          />
         </ResourceDictionary>
-    </Application.Resources>
+        <ResourceDictionary x:Key="Light">
+          <SolidColorBrush x:Key="FocusStrokeColorOuterBrush" Color="Transparent" />
+          <SolidColorBrush
+            x:Key="FocusStrokeColorInnerBrush"
+            Color="{ThemeResource SystemAccentColorDark1}"
+          />
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="HighContrast">
+          <SolidColorBrush
+            x:Key="FocusStrokeColorOuterBrush"
+            Color="{ThemeResource FocusStrokeColorOuter}"
+          />
+          <SolidColorBrush
+            x:Key="FocusStrokeColorInnerBrush"
+            Color="{ThemeResource FocusStrokeColorInner}"
+          />
+        </ResourceDictionary>
+      </ResourceDictionary.ThemeDictionaries>
+    </ResourceDictionary>
+  </Application.Resources>
 </Application>

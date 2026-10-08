@@ -23,8 +23,12 @@ public sealed partial class Strip : Control
 
     private sealed class Peer(Strip strip) : FrameworkElementAutomationPeer(strip)
     {
-        protected override AutomationControlType GetAutomationControlTypeCore() => AutomationControlType.Header;
-        protected override AutomationOrientation GetOrientationCore() => AutomationOrientation.Horizontal;
+        protected override AutomationControlType GetAutomationControlTypeCore() =>
+            AutomationControlType.Header;
+
+        protected override AutomationOrientation GetOrientationCore() =>
+            AutomationOrientation.Horizontal;
+
         protected override bool IsContentElementCore() => false;
     }
 
@@ -32,6 +36,7 @@ public sealed partial class Strip : Control
     private const string PanelPartName = "PART_HeaderPanel";
     private const string InsertionMarkerPartName = "PART_ColumnInsertionMarker";
     private const string FitButtonPartName = "PART_FitButton";
+    private const string FillButtonPartName = "PART_FillButton";
     private const string ResizeGuidePartName = "PART_ResizeGuide";
 
     /// <summary>Half of the separator hit width, so the grab zone is centred on the boundary.</summary>
@@ -40,8 +45,16 @@ public sealed partial class Strip : Control
     /// <summary>Horizontal movement below this is a click on the header, not a column drag.</summary>
     private const double DragThresholdDips = 4;
 
-    private static readonly InputCursor ResizeCursor =
-        InputSystemCursor.Create(InputSystemCursorShape.SizeWestEast);
+    /// <summary>
+    /// How far the columns may end past <see cref="Room"/> and still leave the buttons shown. Fill
+    /// scales widths in floating point, so columns it ends at the room can sum a rounding error
+    /// past it, and that error would hide the button just clicked.
+    /// </summary>
+    private const double OverlapDips = 0.5;
+
+    private static readonly InputCursor ResizeCursor = InputSystemCursor.Create(
+        InputSystemCursorShape.SizeWestEast
+    );
 
     private readonly KeyEventHandler _cancelOnEscape;
     private readonly TranslateTransform _markerOffset = new();
@@ -51,13 +64,14 @@ public sealed partial class Strip : Control
     private FrameworkElement? _marker;
     private Popup? _resizeGuide;
     private Button? _fitButton;
+    private Button? _fillButton;
     private Table? _owner;
     private int _activeIndex = -1;
 
     private HeaderGesture _gesture;
     private uint _pointerId;
     private double _originX;
-    private ResolvedColumn? _column;
+    private EffectiveColumn? _column;
     private double _startWidth;
 
     /// <summary>The width the release would apply. No width changes until then.</summary>
@@ -66,6 +80,12 @@ public sealed partial class Strip : Control
     /// <summary>Where the resized edge stood when the gesture began, in the strip's coordinates.</summary>
     private double _resizeEdgeOrigin;
     private Cell? _cell;
+
+    /// <summary>
+    /// The current press became a resize or a column drag. The tap the platform still raises on
+    /// its release is then not a click on the header.
+    /// </summary>
+    private bool _dragged;
     private UIElement? _escapeRoot;
     private bool _showingResizeCursor;
 
@@ -76,8 +96,13 @@ public sealed partial class Strip : Control
         AutomationProperties.SetName(this, Text.HeaderStripAccessibleName);
         if (_fitButton is not null)
         {
-            AutomationProperties.SetName(_fitButton, Text.FitVisibleColumns);
-            ToolTipService.SetToolTip(_fitButton, Text.FitVisibleColumns);
+            AutomationProperties.SetName(_fitButton, Text.FitColumns);
+            ToolTipService.SetToolTip(_fitButton, Text.FitColumns);
+        }
+        if (_fillButton is not null)
+        {
+            AutomationProperties.SetName(_fillButton, Text.FillWidth);
+            ToolTipService.SetToolTip(_fillButton, Text.FillWidth);
         }
         _panel?.RefreshHeaderCells();
     }
@@ -117,10 +142,16 @@ public sealed partial class Strip : Control
             _fitButton.Click -= OnFitClick;
         }
 
+        if (_fillButton is not null)
+        {
+            _fillButton.Click -= OnFillClick;
+        }
+
         _clip = GetTemplateChild(ClipPartName) as FrameworkElement;
         _panel = GetTemplateChild(PanelPartName) as CellsPanel;
         _marker = GetTemplateChild(InsertionMarkerPartName) as FrameworkElement;
         _fitButton = GetTemplateChild(FitButtonPartName) as Button;
+        _fillButton = GetTemplateChild(FillButtonPartName) as Button;
         _resizeGuide = GetTemplateChild(ResizeGuidePartName) as Popup;
 
         if (_clip is not null)
@@ -133,7 +164,13 @@ public sealed partial class Strip : Control
             _fitButton.Click += OnFitClick;
             // The all-columns glyph, because that is the command this button is: it fits every visible
             // column, not the one nearest to it.
-            _fitButton.Content = Icons.FitVisibleColumns();
+            _fitButton.Content = Icons.FitColumns();
+        }
+
+        if (_fillButton is not null)
+        {
+            _fillButton.Click += OnFillClick;
+            _fillButton.Content = Icons.FillWidth();
         }
 
         if (_marker is not null)
@@ -161,34 +198,77 @@ public sealed partial class Strip : Control
             Rect = new Rect(0, 0, e.NewSize.Width, e.NewSize.Height),
         };
 
-        UpdateFitButton();
+        UpdateButtons();
     }
 
     private void OnFitClick(object sender, RoutedEventArgs e) => _owner?.FitColumns();
 
+    private void OnFillClick(object sender, RoutedEventArgs e) => _owner?.FillWidth();
+
+    private bool OffersFit => _owner is { ShowsHeaderButtons: true, FitButtonHidden: false };
+
+    private bool OffersFill => _owner is { ShowsHeaderButtons: true, FillButtonHidden: false };
+
     /// <summary>
-    /// Show the fit-all command only while the strip's trailing space is genuinely free.
+    /// The width the columns can take while the buttons this strip offers keep their place.
+    /// <see cref="Table.FillWidth"/> ends the columns here, so a clicked button stays under the
+    /// pointer.
     /// </summary>
-    /// <remarks>
-    /// The threshold is the button's own width rather than a number chosen here: if the columns
-    /// reach far enough right that the button would sit over one, there is nothing to offer and it
-    /// goes. That covers the two cases without a second rule — columns wider than the strip leave
-    /// no trailing space at all, and a narrow set of columns leaves plenty.
-    /// </remarks>
-    internal void UpdateFitButton()
+    internal double Room
     {
-        if (_fitButton is null || _clip is null)
+        get
+        {
+            if (_clip is null)
+            {
+                return 0;
+            }
+
+            return _clip.ActualWidth
+                - WidthOf(_fitButton, OffersFit)
+                - WidthOf(_fillButton, OffersFill);
+
+            static double WidthOf(Button? button, bool offered)
+            {
+                if (button is null || !offered)
+                {
+                    return 0;
+                }
+
+                // A collapsed button measures to nothing, so it is shown to be measured.
+                Visibility visibility = button.Visibility;
+                button.Visibility = Visibility.Visible;
+                button.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+                double width = button.DesiredSize.Width;
+                button.Visibility = visibility;
+                return width;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Show the fit-all buttons the person has not hidden, and only while the columns end within
+    /// <see cref="Room"/>, so a button never sits over a column.
+    /// </summary>
+    internal void UpdateButtons()
+    {
+        if (_clip is null)
         {
             return;
         }
 
-        _fitButton.Visibility = Visibility.Visible;
-        _fitButton.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        bool free =
+            _owner is { EffectiveLayout: { } layout } && layout.TotalWidth - Room <= OverlapDips;
 
-        bool offered = _owner is { ShowsFitButton: true, Geometry: { } layout }
-            && _clip.ActualWidth - layout.TotalWidth >= _fitButton.DesiredSize.Width;
+        Show(_fitButton, OffersFit && free);
+        Show(_fillButton, OffersFill && free);
 
-        _fitButton.Visibility = offered ? Visibility.Visible : Visibility.Collapsed;
+        static void Show(Button? button, bool shown)
+        {
+            if (button is not null)
+            {
+                button.Visibility = shown ? Visibility.Visible : Visibility.Collapsed;
+            }
+        }
     }
 
     private void OnHeaderGotFocus(object sender, RoutedEventArgs e)
@@ -231,8 +311,8 @@ public sealed partial class Strip : Control
         }
 
         int count = _panel?.Children.Count ?? 0;
-        bool navigationKey = e.Key is VirtualKey.Left or VirtualKey.Right
-            or VirtualKey.Home or VirtualKey.End;
+        bool navigationKey =
+            e.Key is VirtualKey.Left or VirtualKey.Right or VirtualKey.Home or VirtualKey.End;
 
         if (count == 0 || !navigationKey)
         {
@@ -271,10 +351,13 @@ public sealed partial class Strip : Control
             CancelGesture();
         }
 
+        _dragged = false;
         PointerPoint point = e.GetCurrentPoint(this);
-        if (_owner is null
+        if (
+            _owner is null
             || !IsMouseOrPen(e.Pointer.PointerDeviceType)
-            || !point.Properties.IsLeftButtonPressed)
+            || !point.Properties.IsLeftButtonPressed
+        )
         {
             return;
         }
@@ -294,7 +377,7 @@ public sealed partial class Strip : Control
         // Section 11 arms a drag from the passive header only, and leaves the click itself
         // unhandled so a press that never crosses the threshold still reaches the header's sort.
         Cell? cell = FindCell(e.OriginalSource as DependencyObject, out bool passive);
-        if (!passive || ColumnOf(cell) is not ResolvedColumn column)
+        if (!passive || ColumnOf(cell) is not EffectiveColumn column)
         {
             return;
         }
@@ -316,7 +399,7 @@ public sealed partial class Strip : Control
 
         if (_gesture == HeaderGesture.None)
         {
-            ShowResizeCursor(SeparatorNear(x) is not null);
+            ShowResizeCursor(SeparatorNear(x) is not null && !IsOnButton(e.OriginalSource));
             return;
         }
 
@@ -409,7 +492,13 @@ public sealed partial class Strip : Control
     {
         base.OnTapped(e);
 
-        if (IsMouseOrPen(e.PointerDeviceType) && SeparatorNear(e.GetPosition(this).X) is not null)
+        if (
+            _dragged
+            || (
+                IsMouseOrPen(e.PointerDeviceType)
+                && SeparatorNear(e.GetPosition(this).X) is not null
+            )
+        )
         {
             return;
         }
@@ -424,17 +513,23 @@ public sealed partial class Strip : Control
     {
         base.OnDoubleTapped(e);
 
-        if (!IsMouseOrPen(e.PointerDeviceType)
-            || SeparatorNear(e.GetPosition(this).X) is not ResolvedColumn column)
+        if (
+            !IsMouseOrPen(e.PointerDeviceType)
+            || IsOnButton(e.OriginalSource)
+            || SeparatorNear(e.GetPosition(this).X) is not EffectiveColumn column
+        )
         {
             return;
         }
 
+        // A mouse raises this on the second press, which has already begun a resize. Left live,
+        // its release would apply the width from before the fit.
+        CancelGesture();
         _owner!.Fit(column);
         e.Handled = true;
     }
 
-    private void Begin(HeaderGesture gesture, ResolvedColumn column, uint pointerId, double x)
+    private void Begin(HeaderGesture gesture, EffectiveColumn column, uint pointerId, double x)
     {
         _gesture = gesture;
         _column = column;
@@ -497,12 +592,13 @@ public sealed partial class Strip : Control
     /// <returns>False when no resizable separator is there, which starts no gesture.</returns>
     private bool BeginResizeAt(double x, uint pointerId)
     {
-        if (SeparatorNear(x) is not ResolvedColumn separator)
+        if (SeparatorNear(x) is not EffectiveColumn separator)
         {
             return false;
         }
 
         Begin(HeaderGesture.Resizing, separator, pointerId, x);
+        _dragged = true;
         _startWidth = separator.Width;
         _previewWidth = separator.Width;
         _resizeEdgeOrigin = TrailingEdgeOf(separator);
@@ -511,14 +607,13 @@ public sealed partial class Strip : Control
     }
 
     /// <summary>
-    /// Take the preview to this header-strip x. Section 10 clamps to the column's own limits and
+    /// Take the preview to this header-strip x. Section 10 stops it at the column's minimum and
     /// nothing else, so the guide stops exactly where the width would; and a movement now changes
     /// no width at all, which is a stronger form of never being a persistence event.
     /// </summary>
     private void TrackResize(double x)
     {
-        _previewWidth = ResolvedColumn.Clamp(
-            _startWidth + (x - _originX), _column!.Column.MinWidth, _column.Column.MaxWidth);
+        _previewWidth = _column!.Clamp(_startWidth + (x - _originX));
 
         ShowResizeGuide(_resizeEdgeOrigin + (_previewWidth - _startWidth));
     }
@@ -530,7 +625,7 @@ public sealed partial class Strip : Control
     /// </summary>
     private void CompleteResize()
     {
-        ResolvedColumn column = _column!;
+        EffectiveColumn column = _column!;
         double width = _previewWidth;
 
         EndGesture();
@@ -542,12 +637,12 @@ public sealed partial class Strip : Control
     }
 
     /// <summary>This column's trailing edge in the strip's own coordinates.</summary>
-    private double TrailingEdgeOf(ResolvedColumn column)
+    private double TrailingEdgeOf(EffectiveColumn column)
     {
-        int index = _owner!.Geometry.IndexOfVisible(column);
+        int index = _owner!.EffectiveLayout.IndexOfVisible(column);
         return index < 0
             ? _originX
-            : _owner.Geometry.VisibleColumns[index].Offset + column.Width;
+            : _owner.EffectiveLayout.VisibleColumns[index].Offset + column.Width;
     }
 
     /// <summary>
@@ -580,21 +675,43 @@ public sealed partial class Strip : Control
     }
 
     /// <summary>The resizable column this header-strip x would resize, or null.</summary>
-    private ResolvedColumn? SeparatorNear(double x)
+    private EffectiveColumn? SeparatorNear(double x)
     {
         if (_owner is null)
         {
             return null;
         }
 
-        int index = _owner.Geometry.TrailingEdgeNear(x, SeparatorReachDips);
+        int index = _owner.EffectiveLayout.TrailingEdgeNear(x, SeparatorReachDips);
         if (index < 0)
         {
             return null;
         }
 
-        ResolvedColumn column = _owner.Geometry.VisibleColumns[index].Column;
+        EffectiveColumn column = _owner.EffectiveLayout.VisibleColumns[index].Column;
         return column.Column.CanResize ? column : null;
+    }
+
+    /// <summary>
+    /// Whether this input landed on the fit or fill button. Fill ends the columns where the
+    /// buttons begin, so the last separator's grab zone reaches over a button, and there the
+    /// button takes the press.
+    /// </summary>
+    private bool IsOnButton(object source)
+    {
+        for (
+            DependencyObject? node = source as DependencyObject;
+            node is not null && !ReferenceEquals(node, this);
+            node = VisualTreeHelper.GetParent(node)
+        )
+        {
+            if (ReferenceEquals(node, _fitButton) || ReferenceEquals(node, _fillButton))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private void ShowResizeCursor(bool onSeparator)
@@ -612,7 +729,8 @@ public sealed partial class Strip : Control
 
     private bool BeginColumnDrag(Pointer pointer)
     {
-        if (_column?.IsHierarchy == true) return false;
+        if (_column?.IsHierarchy == true)
+            return false;
         // Without the capture the drop would be lost as soon as the pointer left the strip.
         if (!CapturePointer(pointer))
         {
@@ -621,13 +739,14 @@ public sealed partial class Strip : Control
         }
 
         _gesture = HeaderGesture.Dragging;
+        _dragged = true;
         _cell?.SetDragging(true);
         return true;
     }
 
     private void CompleteMove(double x, Pointer pointer)
     {
-        ResolvedColumn column = _column!;
+        EffectiveColumn column = _column!;
         int boundary = DropBoundary(x, column);
 
         EndGesture();
@@ -643,10 +762,10 @@ public sealed partial class Strip : Control
     /// The boundary this drop asks for, counted the way <see cref="Table.MoveColumnTo"/> counts:
     /// among the visible columns with the dragged one taken out.
     /// </summary>
-    private int DropBoundary(double x, ResolvedColumn dragged)
+    private int DropBoundary(double x, EffectiveColumn dragged)
     {
         int boundary = BoundaryAt(x);
-        int index = _owner!.Geometry.IndexOfVisible(dragged);
+        int index = _owner!.EffectiveLayout.IndexOfVisible(dragged);
         return boundary > index ? boundary - 1 : boundary;
     }
 
@@ -657,7 +776,7 @@ public sealed partial class Strip : Control
     /// </summary>
     private int BoundaryAt(double x)
     {
-        IReadOnlyList<VisibleColumn> visible = _owner!.Geometry.VisibleColumns;
+        IReadOnlyList<VisibleColumn> visible = _owner!.EffectiveLayout.VisibleColumns;
 
         for (int i = 0; i < visible.Count; i++)
         {
@@ -677,9 +796,10 @@ public sealed partial class Strip : Control
             return;
         }
 
-        IReadOnlyList<VisibleColumn> visible = _owner!.Geometry.VisibleColumns;
+        IReadOnlyList<VisibleColumn> visible = _owner!.EffectiveLayout.VisibleColumns;
         int boundary = BoundaryAt(x);
-        double boundaryX = boundary < visible.Count ? visible[boundary].Offset : _owner.Geometry.TotalWidth;
+        double boundaryX =
+            boundary < visible.Count ? visible[boundary].Offset : _owner.EffectiveLayout.TotalWidth;
 
         // Held inside the strip so the first and last boundaries do not show half a marker.
         double centred = boundaryX - (_marker.Width / 2);
@@ -733,7 +853,7 @@ public sealed partial class Strip : Control
         // A flyout returns focus to the element it was shown from when it closes, and the state it
         // returns is not the state the header was focused with: a menu opened by right-click and
         // dismissed by invoking a command left a keyboard focus ring around the header, which is
-        // the ring the owner saw around Size after Fit visible columns. Focusing again with the
+        // the ring the owner saw around Size after Fit columns. Focusing again with the
         // state the request actually arrived in is what takes it off.
         if (cell is not null)
         {
@@ -753,9 +873,10 @@ public sealed partial class Strip : Control
     }
 
     /// <summary>The bottom-left corner of a header cell, in the strip's own coordinates.</summary>
-    private Point? CornerOf(Cell? cell) => cell is null
-        ? null
-        : cell.TransformToVisual(this).TransformPoint(new Point(0, cell.ActualHeight));
+    private Point? CornerOf(Cell? cell) =>
+        cell is null
+            ? null
+            : cell.TransformToVisual(this).TransformPoint(new Point(0, cell.ActualHeight));
 
     /// <summary>
     /// Run section 9's sort cycle for the passive header this input came from.
@@ -764,8 +885,13 @@ public sealed partial class Strip : Control
     private bool ActivateSortFrom(DependencyObject? source)
     {
         Cell? cell = FindCell(source, out bool passive);
-        if (_owner is null || cell is null || !passive || ColumnOf(cell) is not ResolvedColumn column
-            || !column.Column.CanSort)
+        if (
+            _owner is null
+            || cell is null
+            || !passive
+            || ColumnOf(cell) is not EffectiveColumn column
+            || !column.Column.CanSort
+        )
         {
             return false;
         }
@@ -777,9 +903,9 @@ public sealed partial class Strip : Control
     private static bool IsMouseOrPen(PointerDeviceType type) =>
         type is PointerDeviceType.Mouse or PointerDeviceType.Pen;
 
-    /// <summary>The resolved column this header cell shows, or null when it shows none.</summary>
-    private ResolvedColumn? ColumnOf(Cell? cell) =>
-        cell?.Column is Column declared ? _owner?.Geometry.Find(declared) : null;
+    /// <summary>The effective column this header cell shows, or null when it shows none.</summary>
+    private EffectiveColumn? ColumnOf(Cell? cell) =>
+        cell?.Column is Column declared ? _owner?.EffectiveLayout.Find(declared) : null;
 
     /// <summary>
     /// The header cell this element sits in, and whether the path to it crossed a control the host

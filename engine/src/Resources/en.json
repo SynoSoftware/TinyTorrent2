@@ -8,9 +8,13 @@
     "pause": "Pause Transfers",
     "resume": "Resume Transfers",
     "open": "Show window",
-    "missing_interface": "Network interface unavailable: {0}",
+    "missing_adapter": "Network adapter unavailable: {0}",
     "exit": "Exit",
     "background": "Transfers continue in the notification area. Choose Exit from the TinyTorrent menu to stop."
+  },
+  "exit": {
+    "title": "Exit TinyTorrent?",
+    "active": "Transfers are still active. Exiting will stop them."
   },
   "startup": {
     "opening": "Opening TinyTorrent…",
@@ -31,7 +35,9 @@
     "aggregate": "{0} transfer updates.",
     "add_failed": "{0} could not be added.",
     "delete_failed": "Files for {0} could not be fully deleted.",
-    "failures": "Transfer errors: {0}. {1}: {2}"
+    "failures": "Transfer errors: {0}. {1}: {2}",
+    "missing_program": "Torrents are set to open with a program that is missing: {0}. Select this to repair it in Settings.",
+    "missing_programs": "Torrents are set to open with programs that are missing: {0} and {1} more. Select this to repair them in Settings."
   },
   "power": {
     "transfers": "TinyTorrent is transferring files."

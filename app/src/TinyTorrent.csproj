@@ -13,9 +13,12 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>..\..\resources\TinyTorrent.ico</ApplicationIcon>
     <Platforms>x64;ARM64</Platforms>
-    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == '' and '$(Platform)' != '' and '$(Platform)' != 'AnyCPU'">win-$([System.String]::Copy('$(Platform)').ToLowerInvariant())</RuntimeIdentifier>
+    <RuntimeIdentifier
+      Condition="'$(RuntimeIdentifier)' == '' and '$(Platform)' != '' and '$(Platform)' != 'AnyCPU'"
+      >win-$([System.String]::Copy('$(Platform)').ToLowerInvariant())</RuntimeIdentifier>
     <!-- The OS, not the build process, so a 32-bit MSBuild still builds x64. -->
-    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">win-$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant())</RuntimeIdentifier>
+    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''"
+      >win-$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant())</RuntimeIdentifier>
     <UseWinUI>true</UseWinUI>
     <WinUISDKReferences>false</WinUISDKReferences>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -39,12 +42,25 @@
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.4.0" />
     <ProjectReference Include="..\..\lib\TableView\src\TableView.csproj" />
     <EmbeddedResource Include="Resources\*.json" LogicalName="%(Filename)%(Extension)" />
-    <Content Include="..\..\resources\TinyTorrent.ico" Link="Assets\TinyTorrent.ico" CopyToOutputDirectory="PreserveNewest" />
-    <Content Include="..\..\resources\tinyTorrent.svg" Link="Assets\tinyTorrent.svg" CopyToOutputDirectory="PreserveNewest" />
+    <Content
+      Include="..\..\resources\TinyTorrent.ico"
+      Link="Assets\TinyTorrent.ico"
+      CopyToOutputDirectory="PreserveNewest"
+    />
+    <Content
+      Include="..\..\resources\tinyTorrent.svg"
+      Link="Assets\tinyTorrent.svg"
+      CopyToOutputDirectory="PreserveNewest"
+    />
     <!-- The window and the engine each start only the other executable beside
          them, so the window's output holds the engine from the same configuration.
          TinyTorrent.slnx builds the engine first. -->
-    <None Include="$(ArtifactsPath)\bin\Engine\$(Configuration)\$(EngineTargetName).exe" Link="$(EngineTargetName).exe" CopyToOutputDirectory="PreserveNewest" Visible="false" />
+    <None
+      Include="$(ArtifactsPath)\bin\Engine\$(Configuration)\$(EngineTargetName).exe"
+      Link="$(EngineTargetName).exe"
+      CopyToOutputDirectory="PreserveNewest"
+      Visible="false"
+    />
     <AssemblyMetadata Include="EngineFile" Value="$(EngineTargetName).exe" />
   </ItemGroup>
 </Project>

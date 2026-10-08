@@ -16,7 +16,7 @@ Revalidate the referenced behavior against the release selected for the build.
 libtorrent executes transfers and supplies metadata. The engine's main Win32
 message-loop thread owns application state and serializes changes from alerts
 and commands. Use libtorrent's queueing and transfer limits; the engine owns the
-user's policy, not another transfer scheduler. The tray, pipe, and UI cannot
+user's policy, not another transfer scheduler. The tray, pipe, and window cannot
 implement their own queue policy or reconstruct state from command
 acknowledgements.
 
@@ -58,7 +58,7 @@ not solve this. Copy or move borrowed alert data needed after the next
 the notification callback only wakes the state owner.
 
 An operation can be accepted, still running, completed, or failed. Cancellation
-of a caller's wait does not undo accepted work. The confirmed list the UI reads
+of a caller's wait does not undo accepted work. The confirmed list the window reads
 again is a command's outcome, so the engine keeps no store of past outcomes. A
 move shows its progress and failure on its torrent. A file deletion continues
 after its torrent leaves the list, so its failure is
@@ -102,7 +102,7 @@ telemetry does not invalidate an editor.
 
 Check durable torrent identity and whether the requested operation is legal
 when it executes. A removed target or a path held by an unfinished move is still
-a reason to refuse. With one active UI, there is no general draft-revision or
+a reason to refuse. With one active window, there is no general draft-revision or
 conflict-resolution protocol. The [interface](interface.md#committing-edits)
 decides when an edit is committed; confirmation and persistence still follow
 this contract even when the interaction applies a choice immediately.
@@ -141,7 +141,7 @@ each torrent's own value. The engine applies them with `torrent_handle`'s
 [peer class](https://github.com/arvidn/libtorrent/blob/v2.1.2/src/torrent.cpp)
 of its own. libtorrent throttles each peer by every class it belongs to, so the
 lower of the torrent's limit and the current
-[global limit](#network-preferences) applies. The schedule, alternative limits
+[global limit](#network-settings) applies. The schedule, alternative limits
 and Pause all therefore need no knowledge of torrent limits, and a torrent
 limit above the global one is valid. The class belongs to the torrent, not to a
 socket type, so a torrent's limits include LAN and loopback peers, as the
@@ -153,7 +153,7 @@ window shows the engine's choice rather than its own copy.
 ## Addition and identity
 
 libtorrent is the sole metadata parser, including v1, v2, and hybrid torrents.
-The UI supplies source and choices and renders the engine's preview. Magnet
+The window supplies source and choices and renders the engine's preview. Magnet
 metadata acquisition must neither download payload nor create payload files
 before confirmation. Establish that guard before adding the preview; reacting
 to metadata arrival is too late. libtorrent's
@@ -169,10 +169,10 @@ payload-enabling modes such as `share_mode`. The pinned [initializer](https://gi
 applies piece priorities after file priorities. Validate that no payload is
 downloaded or created with the pinned build.
 
-An unconfirmed preview belongs to its UI connection and is released on disconnect.
+An unconfirmed preview belongs to its window connection and is released on disconnect.
 Cancel releases that preview, never the files of an existing duplicate. Confirm
 rechecks duplicates and transfers ownership to the engine; the accepted addition
-survives UI exit. When the Show the Add form preference is off, direct addition
+survives closing the window. When Show dialog when adding torrents is off, direct addition
 confirms the same workflow without opening WinUI.
 
 Matching sources staged by the same connection share one preview and merge their
@@ -182,7 +182,7 @@ new save path before committing membership; its payload guard remains in place.
 Unknown metadata still permits confirmation with all files wanted. Known metadata
 accepts priorities 0 (unwanted), 1 (low), 4 (normal), and 7 (high), with at least
 one wanted file. A batch shares destination and paused intent; individual file
-choices belong to a single-source form or the Files inspector after addition.
+choices belong to a single-source Add dialog or the Files inspector after addition.
 
 Add to top of queue commits the new torrent at the front of the saved download
 order before releasing its payload guard. The queue owner reapplies that order
@@ -218,7 +218,7 @@ Receiving an existing handle does not give a preview ownership of that torrent.
 
 Assign each accepted addition a durable torrent identity, distinct from its
 info hashes and transient libtorrent handle. Use it for commands, saved state,
-and UI drafts. Late alerts and file-operation outcomes belong to that addition;
+and window drafts. Late alerts and file-operation outcomes belong to that addition;
 remove/re-add creates a new identity even for the same content. An old draft or
 completion must never target the new addition.
 
@@ -249,6 +249,23 @@ torrent again from the hashes `settings.json` saved, as a magnet link: it
 fetches the metadata from peers and checks the files already on disk, so no
 downloaded data is lost. An unreadable `settings.json` still refuses the whole
 store, because it is the list of torrents.
+
+**Owner ruling:** a value that `settings.json` holds incorrectly is repaired
+when the store loads, not refused, because the product keeps working and the
+person should not have to repair files. A number outside its range takes the
+nearest value it accepts. A value of the wrong type, an unknown word, a
+relative folder or a negative count takes its default, and an unreadable
+schedule period is dropped. An incomplete-download folder that cannot be used
+turns that folder off. An adapter name that matches no adapter is kept,
+because it blocks transfers instead of letting them use another adapter. In a
+torrent's record, each damaged value takes its default; a record without its
+folder takes the one in its resume file, and a record without its identity
+comes back from its saved hashes under a new one. The next save writes the
+repaired values. Only loading repairs: a settings command with an invalid
+value is still refused, so the window keeps the person at that field. The
+store is refused only when `settings.json` is not JSON, names another format
+or holds no readable list of torrents, because then no correct value exists
+and a save would drop the person's torrents.
 
 - Checkpoint dirty transfer state periodically; recovery cannot depend on a
   successful final shutdown.
@@ -297,8 +314,10 @@ refuses a second torrent with the same info hash; the engine adds no other
 ownership check. A
 torrent that finds existing files verifies them before using them and downloads
 the pieces that do not match, which overwrites those files. The
-[Add form](interface.md#add) therefore names the torrents that already use files
-at the chosen destination before the person confirms.
+[Add dialog](interface.md#add) therefore names the torrents that already use files
+where the new torrent will save, before the person confirms. That is the
+incomplete-download folder while one is in use, and otherwise the chosen
+destination.
 
 Delete files and Move must not reach the files of a torrent outside the command.
 When either runs, compare its full paths, without case as Windows compares names,
@@ -313,7 +332,7 @@ flag, which verifies there instead of moving again. libtorrent permits
 so a deletion or move that has not finished stays in this comparison after its
 torrent leaves the list.
 
-### Removal and relocation
+### Removal and moves
 
 For delete-data, commit membership removal before deleting payload. If that
 commit fails, do not delete files. Removal and deletion have separate outcomes:
@@ -322,7 +341,7 @@ interrupted by a crash is not repeated, because repeating an uncertain
 destructive action is unsafe; the remaining files stay on disk, and recovery
 does not restore the removed torrent.
 
-A relocation moves the torrent's own files, as libtorrent's
+A move takes only the torrent's own files, as libtorrent's
 [`move_storage`](https://github.com/arvidn/libtorrent/blob/v2.1.2/include/libtorrent/torrent_handle.hpp)
 does: other files in its folder, such as added subtitles, stay where they are,
 and only folders left empty are removed. Use `fail_if_exist`, so a file already
@@ -383,7 +402,7 @@ into the old folder. Moving it to the folder that holds the files offers Use the
 files there, and verification establishes what is there. The user's running or
 paused intent does not change, and the move is neither rolled back nor repeated.
 
-A completed relocation requires verification after restart until a safe
+A completed move requires verification after restart until a safe
 destination checkpoint has committed. Restoring discards old piece claims and
 seed mode when that verification is pending or the checkpoint names an older
 path. Clear this requirement only after the saved destination checkpoint claims
@@ -393,13 +412,12 @@ not establish that the bytes match the torrent.
 
 ### Unfinished files
 
-A file that is still downloading has the `.!tt` suffix after its real name, such
-as `movie.mkv.!tt`, so a file with its real name is always a finished file.
-People, media libraries, and other programs then never take a partial file for
-a finished one. Nearly everyone wants this, so it is fixed behavior with no
-setting.
+New torrents use the `.!tt` suffix for incomplete files by default, such as
+`movie.mkv.!tt`, so other programs can distinguish unfinished downloads.
+Transfers settings can turn it off for new torrents. Each torrent retains its
+choice, so changing the default does not rename an existing library.
 
-- When a torrent is added, each file that does not exist at the destination
+- When the suffix is enabled, each file that does not exist at the destination
   gets its suffixed name through `add_torrent_params::renamed_files`. A file
   that already exists there keeps its name, so verification finds it instead of
   downloading it again.
@@ -418,6 +436,17 @@ setting.
   watching a video during a sequential download still works in players that
   read the content.
 
+An optional incomplete-download folder applies to new torrents. Each torrent
+retains its chosen final folder separately from its current save path. After
+its wanted files finish and their names settle, the owner of moves
+takes them to that final folder before notifying completion. Collisions and
+interrupted moves use the same refusal and recovery as a manual move; no file
+is replaced automatically. A refused move shows its reason on the torrent.
+While another torrent still acquires metadata, the torrent shows that reason
+with the other torrent's name, and the move starts once the metadata arrives,
+so one magnet that never gets metadata cannot hold every finished torrent back
+without a sign. A successful manual move supersedes the final folder.
+
 ## Startup and activation
 
 Opening TinyTorrent starts or activates the engine and opens WinUI. Optional
@@ -434,9 +463,9 @@ shortcut, set the window's [relaunch command and display-name resource](https://
 together. Verify pin/close/relaunch with the selected unpackaged installer.
 
 A WinUI executable started directly, for example from the debugger, starts the
-engine if none is running and then connects like any other UI. It needs no
+engine if none is running and then connects like any other window. It needs no
 launch token or process check, because [protocol isolation](protocol.md#isolation)
-already admits only the same user and logon. A UI already running when the
+already admits only the same user and logon. A window already running when the
 engine restarts reconnects through the same pipe.
 
 WinUI acquires one logon-scoped [mutex](https://learn.microsoft.com/en-us/windows/win32/sync/using-mutex-objects)
@@ -446,10 +475,12 @@ that cannot acquire the mutex forwards its activation through the engine to the
 existing window and exits. The mutex stores no product state; the engine still
 owns launch policy.
 
-An existing UI receives incoming sources and applies the shared Add-form choice,
-so they join its open draft and reveal confirmed additions despite table filters.
-With no UI and Show the Add form off, the engine confirms through the same
-guarded addition workflow at the default destination.
+When Show dialog when adding torrents is on, incoming sources open or activate
+the window and join its Add dialog. When it is off, the engine adds them through
+the same guarded workflow at the default destination without opening or raising
+the window, even if it is already running. Duplicate sources report the existing
+torrent instead of opening a tracker-merge prompt. Queue and pause policy still
+apply, so a background addition cannot lift a deliberate pause.
 
 Bound pending additions and report overload. Readiness means the engine can
 answer, rather than merely having a process or tray icon. While a WinUI the
@@ -475,8 +506,10 @@ torrent has an error. The complete menu has
 two live, nonclickable status rows, a separator, Show window and Pause Transfers,
 a separator, and Exit. The first status row shows aggregate download and upload
 speed; the second shows active and queued counts. While the session is paused,
-the second row is Paused with the torrent count, and Resume Transfers replaces
-Pause Transfers. The pause command uses the saved session pause above and keeps
+the second row is Paused with the torrent count. Resume Transfers replaces
+Pause Transfers only while the person or the schedule paused transfers, because
+Resume cannot lift a missing adapter's pause; the tooltip names that adapter
+instead. The pause command uses the saved session pause above and keeps
 each torrent's own choice. A single left-click shows this same lightweight menu;
 it never opens WinUI. Wait for Windows' double-click interval before showing it,
 so a double-click opens the application once without first opening the menu.
@@ -510,7 +543,7 @@ the transfers have loaded, so a large library delays a cold start's first frame;
 showing the window earlier needs a protocol state for loaded settings.
 
 The engine owns only the splash timing, and shows a splash only while it waits
-for a window to appear and the Show the splash screen preference allows it. The
+for a window to appear and the Show the splash screen setting allows it. The
 splash never waits before it appears. A cold launch, where the engine still
 loads, always shows it. A warm launch shows it unless the average of the recent
 warm launches, each timed from starting the window process to `ready`, is
@@ -540,7 +573,7 @@ continue after a failed Open. A late ready window ends the splash wait.
 
 One engine component registers, unregisters, and reads TinyTorrent's per-user
 file/link handlers and start-at-sign-in entry. The registry is the authority for
-these registrations; do not mirror them in saved preferences. Read the expected
+these registrations; do not mirror them in saved settings. Read the expected
 values and target paths, not just whether a key exists, and report partial or
 failed changes truthfully.
 
@@ -562,25 +595,84 @@ the observed defaults when they return. Keep this small query at the registratio
 owner; do not modify UserChoice or build an application chooser. Cancelling
 Windows' choice leaves the existing defaults intact.
 
+Observation also reports every `.torrent` or `magnet:` handler that starts a
+missing executable, whichever application registered it, because choosing it
+fails with no sign of why: the current default, the extension's or protocol's
+own key and default class, the Open with lists, and each registered
+application's class, for the current user and for all users. The request to
+open torrents with TinyTorrent first removes, for the current user, each
+broken class's open command and the references that offer that class for
+`.torrent` or `magnet:`, so the next open asks which app to use instead of
+failing. Nothing else of the class goes, because a class can serve other
+types or hold shell extensions that still work, and a registered application
+keeps its other associations; only an `Applications` key, which describes the
+one missing program, goes whole. References stay while an all-users command of
+the same class still works, because Windows then uses it. A removal Windows
+refuses leaves that class reported and does not stop the others. It opens
+Windows' choice only while another working app is the default for either kind,
+because only the person can change that; a broken or removed default makes
+Windows ask at the next open instead. Broken classes registered for all users
+need an administrator, so the window's Repair then starts the engine with one
+`--repair-class` option per reported class through Windows' administrator
+prompt. The window names the classes because the administrator can be another
+account, whose registry does not show which classes the person's Windows uses.
+The engine checks each named class again and removes only an all-users open
+command that starts a missing program, so the command line cannot remove a
+working one. It keeps the references, which belong to the person's account.
+That run changes nothing an engine owns, so it runs without instance
+ownership, and declining the prompt leaves those classes reported. The same
+rule as for TinyTorrent's
+own entries decides that an executable is missing: only a full path on a fixed
+local drive can be missing, and a network or removable drive, a name Windows
+searches for, or a check that does not finish counts as existing.
+
+Removal of other applications' entries waits for the person, but they learn of
+it: once loading has ended, the engine looks for broken handlers and, while
+Notify about problems is on, shows one problem notification that names the
+first missing program not reported before and counts the others. It adds the
+reported programs to `settings.json` and keeps them after they are no longer
+found, so a problem the person leaves alone, or a check that timed out once,
+does not return at every start. Selecting the notification opens Settings.
+
+Every start also moves what only the product before this one wrote: a per-user
+command on the `.torrent` or `magnet` key that starts a `TinyTorrent.exe`
+becomes this copy's command while the handlers are registered and is removed
+while they are not, and a `.torrent` default naming TinyTorrent's class is
+removed while they are not. It points the installer's Start menu shortcut and
+any taskbar pin to this copy when they start a missing TinyTorrent executable,
+because the window sets its pins to start whichever copy was running. Shortcut
+folders on a network share are skipped, because an unreachable share would
+hold the start.
+
 The sign-in switch adds or removes the Run entry through this same owner. It
 expresses TinyTorrent's startup setting; Windows can independently disable
 startup. Provide access to Windows Startup settings without trying to reverse
 its override through undocumented keys. Neither registration nor observation
-creates a second saved preference.
+creates a second saved setting.
 
-**Owner ruling:** registrations follow the copy the person runs. Every start
-of an engine on the default store moves TinyTorrent's existing handler and
-sign-in entries to its own executable, so a moved, rebuilt or upgraded copy
-keeps working and no entry points to a deleted folder. It never re-registers
-what the person turned off. An engine started with its own store (`--data`),
-such as a test's, is not the person's copy and leaves the entries alone.
-Observation reports each registration as starting this copy, another
-TinyTorrent copy (with that executable), or nothing.
+**Owner ruling:** registrations stay with the registered copy while its
+executable exists. Every start of an engine on the default store moves
+TinyTorrent's existing handler and sign-in entries to its own executable only
+when they start a missing one, so a moved copy keeps working and no entry
+points to a deleted folder. Entries that start another existing copy stay
+with it, because running a test copy, a build output or a second download
+must not take them from the installed copy and leave them broken when that
+copy is deleted. Only entries in this product's command form count as another
+copy's: the product before this one used the same names with other commands,
+and its entries move to this copy. Use this copy in Settings moves an entry to
+this copy. A copy that is not on a fixed local drive counts as existing,
+because checking a network path can stall the engine and a removable drive
+can return. Handler entries without the recorded request are the remains of a
+partial change and are removed; a start never re-registers what the person
+turned off. An engine started with its own store (`--data`), such as a
+test's, is not the person's copy and leaves the entries alone. Observation
+reports each registration as starting this copy, another TinyTorrent copy
+(with that executable), or nothing.
 
 The installer registers on first installation and unregisters before removing
 program files, through the engine's maintenance commands, with individual
-operations for any deselected setup choice. Preferences sends the same
-operations through the pipe. Maintenance
+actions for any deselected setup choice. Settings sends the same
+actions through the pipe. Maintenance
 launches forward to a running engine or use the same owner in a short-lived
 native process under instance exclusion, without starting transfers or WinUI.
 Registration is completed for the installing user, not an administrator account
@@ -596,17 +688,20 @@ setup reports the condition and can be retried. No process is force-terminated.
 
 Closing WinUI normally exits without confirmation. Resolve actual unfinished
 edits according to [the interface](interface.md#committing-edits), and do not
-silently drop changes already committed in the UI but still being submitted.
+silently drop changes already committed in the window but still being submitted.
 Hide the window before waiting when no draft, dialog or picker needs it, so
 closing does not leave a disabled window on screen. Show it again if an edit
 decision or failed close needs the person's attention.
-Accepted operations and transfers continue in the engine. UI-only snapshots and
+Accepted operations and transfers continue in the engine. Window-only snapshots and
 detail collection stop or are released with their last consumer; tray status,
 queue policy, swarm activity, [speed history](#state-and-work), and persistence
 continue.
 
-Exit is in the tray menu and, as Exit and stop transfers, in the window's File
-menu; the window's own Exit only closes the window. Engine Exit first closes
+Exit is in the tray menu and in the window's File menu; the window's Close
+only closes the window. The optional active-transfer
+confirmation is on by default and belongs to the desktop host, so tray Exit and
+window Exit use one check even when WinUI is closed. Windows shutdown and
+headless operation bypass it. After confirmation, engine Exit closes
 the window by the same rules as Close: a prompt appears only for actual unfinished
 input, and Cancel in that prompt cancels Exit. If a move or file deletion is running, Exit
 waits for it to finish without a second prompt, because stopping it midway leaves
@@ -625,8 +720,8 @@ files in two places. Then:
 An active draft prompt is not an unresponsive window. WinUI acknowledges when
 Exit is waiting for that choice; the window timeout pauses for the person and
 resumes when closing continues. A failed window-close preparation cancels Exit
-and preserves the window. Open during Exit is refused as stopping rather than
-acknowledged and discarded. Reopening a disconnected but living UI retains its
+and preserves the window. Open during Exit is refused as shutting down rather than
+acknowledged and discarded. Reopening a disconnected but living window retains its
 process and starts the same bounded readiness wait used for a new window.
 
 If the final save fails, report it through the tray and keep the engine alive.
@@ -644,13 +739,13 @@ In the pinned [implementation](https://github.com/arvidn/libtorrent/blob/v2.1.2/
 `save_resume_data(flush_disk_cache)` does not wait for file-release completion
 before posting resume data. Its name is not a power-loss durability guarantee.
 
-A hung UI ends the close wait with a tray notification and cancels that Exit
+A hung window ends the close wait with a tray notification and cancels that Exit
 attempt, preserving unfinished input. The tray can request Exit again when the
 window responds. Windows logoff/shutdown uses a bounded persistence path
 that does not depend on an interactive confirmation. Abrupt termination may lose
 changes since the last successful checkpoint; do not promise zero loss.
 
-A UI crash leaves transfers running and the tray able to reopen it. An engine
+A window crash leaves transfers running and the tray able to reopen it. An engine
 failure makes WinUI report that downloads stopped and offer restart. Register the
 engine for [Windows application restart](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-registerapplicationrestart)
 with arguments that restore background state, never replay the original addition
@@ -665,17 +760,17 @@ The [installed-update path](architecture.md#installation-and-updates) waits for
 coordinated application Exit; window close alone does not stop the engine.
 Postpone replacement if Exit is cancelled
 or cannot finish safely, preserving the installation and saved data. Launch the
-engine and UI from the same release. An externally forced termination still
+engine and window from the same release. An externally forced termination still
 uses the crash-recovery path. This rule does not require a resident updater.
 
-## Network preferences
+## Network settings
 
 Use libtorrent's port mapping with UPnP and NAT-PMP enabled by default, one
-on/off preference, and a configurable listen port. The engine applies those
+on/off setting, and a configurable listen port. The engine applies those
 choices; it does not implement another router client. Mapping success is not
 proof of public reachability or firewall permission.
 
-The encryption preference shows people that TinyTorrent encrypts, and lets them
+The encryption setting shows people that TinyTorrent encrypts, and lets them
 choose how strictly. Each choice sets libtorrent's encryption policy:
 
 - Preferred, the default, encrypts the data with every peer that supports it:
@@ -687,7 +782,7 @@ choose how strictly. Each choice sets libtorrent's encryption policy:
   `prefer_rc4`.
 - Disabled uses plain connections only: `pe_disabled`.
 
-The proxy preference sends peer and tracker connections through a SOCKS5,
+The proxy setting sends peer and tracker connections through a SOCKS5,
 SOCKS4 or HTTP proxy. Its type, address, port, user name and password save
 together, and a proxy without its address or port is refused, because it
 would stop every connection. settings.json holds the password encrypted with
@@ -704,7 +799,7 @@ engine checks the proxy itself each time it applies one: it connects, signs in
 and reports the outcome in the snapshot. The `check_proxy` command runs the
 same check on values that are not saved.
 
-The network interface preference, by default any interface, limits torrent
+The network adapter setting, by default any adapter, limits torrent
 traffic to one adapter, such as a VPN, through libtorrent's listen and outgoing
 interface settings. While that adapter is absent, no torrent traffic flows and
 the window and the tray tooltip say why, so traffic never leaks onto another
@@ -733,8 +828,11 @@ A limit choice never resumes paused transfers. An absent selected adapter
 still blocks transfers. These temporary schedule overrides are not saved or
 replayed after restart. The saved limit choice remains the manual default
 when scheduling is disabled. Snapshots report the applied mode and caps, their
-controlling source and the current pause reason together, so the window does not infer
-effective policy from saved preferences or an unfinished Settings edit.
+controlling origin and the current pause reason together, so the window does not infer
+effective policy from saved settings or an unfinished Settings edit. The pause
+reason names a pause that Resume all lifts first, the person's and then the
+schedule's, so the adapter is the reason only when nothing else pauses
+transfers, and the window then offers Settings instead of Resume.
 
 Queue limits start at libtorrent's defaults: three downloads, five seeds and
 200 connections. Zero means unlimited in these controls. Ratio and seeding-time
@@ -747,8 +845,9 @@ per-torrent exemption, so it does not pause again immediately or after restart.
 
 The engine keeps the defaults of the pinned libtorrent release, v2.1.2, because
 they are tuned and a changed value can slow transfers without a visible
-benefit. Preferences change only the settings in
-[Network preferences](#network-preferences), and the disk backend stays at its
+benefit. The Settings page changes only the libtorrent settings in
+[Network settings](#network-settings) and the four Advanced controls described
+in [Disk write caching](#disk-write-caching). The disk backend stays at its
 default ([Disk write caching](#disk-write-caching)). The engine changes three
 more defaults:
 
@@ -772,14 +871,17 @@ By default, success is quiet and problems interrupt. A person who asked for a
 download does not need to be told that it happened, but does need to know when
 it stopped. Three switches let a person choose otherwise, including turning
 every notification off: Notify when a download finishes and Notify when a
-torrent is added start off; Notify about problems starts on.
+torrent is added start off; Notify about problems starts on. A failure of
+something the person just asked for, such as the final save on Exit, opening a
+source or starting the window, is not one of these notifications and always
+shows, because staying silent would leave the person believing it worked.
 
 A Windows notification uses the existing tray's
 [`Shell_NotifyIcon`](https://learn.microsoft.com/en-us/windows/win32/shell/notification-area)
 path. Respect Windows notification suppression and quiet time; delivery is best
 effort and needs no WinUI process or new notification runtime. Send one only
-while no window is open, because the open window shows the same events, and
-only when its switch is on:
+when its switch is on. Problems and completions use the open window when one
+exists; background additions still use the tray so they do not raise that window:
 
 - **Finished.** Clicking a single notification opens the torrent's current
   folder; a combined one opens the application.
@@ -800,15 +902,16 @@ appear in it instead, following
 In the open window, a finished download shows a short message with Open folder.
 A torrent finishes when its currently wanted files finish downloading, not when
 an existing seed is restored or rechecked, and only after libtorrent has written
-the finished data to disk, so a file opened from that folder is whole.
+the finished data to disk and the finished files have their real names, so a
+file opened from that folder is whole.
 
 The first time the window closes while the engine keeps running, show one
 notification that TinyTorrent is still running in the notification area and that
 Exit is in its menu. Windows 11 places new tray icons in the hidden overflow, so
 without it the person cannot tell that transfers continue.
 
-The idle-sleep preference starts enabled for active payload downloads on mains
-power. A second preference, also while seeding, starts disabled; it keeps the PC
+The idle-sleep setting starts enabled for active payload downloads on mains
+power. A second setting, also while seeding, starts disabled; it keeps the PC
 awake for a person who seeds overnight. Paused/queued torrents, metadata
 previews, and torrents blocked by an error do not keep the PC awake. The first
 switch governs idle-sleep prevention; Also while seeding extends it when enabled.
@@ -838,17 +941,42 @@ or upload anything. Fatal failures show a native Windows dialog with the report
 path, Copy log and instructions to reopen the window. Copy log copies the report
 itself, including when its file could not be saved, and confirms success without
 closing the dialog. Close retains the runtime's normal termination behavior.
-Unobserved task failures are logged without forcing a
-shutdown. A failed report write must not replace the original failure.
+Unobserved task failures are logged without closing the
+window. A failed report write must not replace the original failure.
 
 ## Disk write caching
 
 Use the selected libtorrent release's default Windows disk backend and write
 policy, leaving `session_params::disk_io_constructor` unset. In the reviewed
 2.1.2 release that is pread with write-through, which `disk_write_mode` does not
-configure. Disk caching is automatic engine policy, with no Preferences control
-or saved override; add a choice only if a concrete user need and measured
-behavior justify it. An imported `disk_cache_mb` value does not create one.
+configure. Libtorrent 2.1 has no configurable disk-cache size. Advanced settings
+instead exposes `max_queued_disk_bytes` as Disk write buffer, saved as
+`disk_buffer_mib`: 1–1024 MiB, initially libtorrent's 100 MiB default. Lowering
+this threshold can reduce memory for writes waiting on a slow disk by applying
+backpressure to peers; it may reduce download speed. It is neither a strict
+allocation ceiling nor a limit on the engine's total memory or Windows' cache.
+An imported `disk_cache_mb` value does not change this setting.
+
+Advanced also exposes three controls for verification and large seeding libraries:
+
+- Checking memory (`checking_memory_mib`): 1–1024 MiB, default 4. This sets
+  `checking_mem_usage` in 16 KiB blocks (64 blocks per MiB). It targets the
+  outstanding reads per checking torrent, not all checking memory: libtorrent
+  keeps at least two pieces outstanding per hashing thread, so large pieces
+  can exceed the target.
+- Checking threads (`hashing_threads`): 1–64, default 1. A single thread suits
+  sequential hard-drive access; extra threads allow parallel verification on
+  faster storage at the cost of CPU and memory. Download-time hashing retains
+  the regular disk threads.
+- Open-file limit (`file_pool_size`): 1–10000, default 40. A larger pool reduces
+  reopen work across many active files but retains more operating-system resources.
+
+Defaults match the pinned libtorrent release. Changes use the existing settings
+commit and session update, including after restart. Windows working-set trimming,
+disk backend selection, cache bypasses, and protocol tuning are not controls:
+they add paging or change storage behavior without an established benefit for
+this backend. A Windows working-set limit would not cap allocations or the
+separate WinUI process.
 
 The default is the starting point, not a claim of lower memory use. Take the
 first real workload measurement required by [testing](testing.md#resource-checks),

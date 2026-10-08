@@ -69,13 +69,13 @@ TableView owns the generic keys for its menus, placeholders, and accessibility
 text in its own `en.json`, so the reusable control does not depend on the
 torrent application. Standalone samples and other hosts receive complete English
 without loading product messages, starting the engine, or reading its
-preferences.
+settings.
 
 The product's process-local localisation owner prepares TableView's immutable
 `Strings` value with `Strings.Load(language)`, alongside its
 own text and on the same background thread. It publishes `Table.Strings`, host bindings, language and flow direction
 together on the UI thread. TableView keeps catalogue lookup internal and owns no
-saved language preference. New views bind to the same current prepared value.
+saved language setting. New views bind to the same current prepared value.
 Standalone English uses the same presentation refresh path without host setup.
 
 The [TableView contract](../lib/TableView/docs/tableview-contract.md) owns what a
@@ -84,11 +84,11 @@ records the implementation and the remaining runtime verification.
 
 ## Ownership and live behavior
 
-The engine owns the selected BCP-47 language tag in its preferences,
+The engine owns the selected BCP-47 language tag in its settings,
 because tray text must work with WinUI closed. First use matches the Windows
 language against shipped catalogues, falling back to English. The engine's
 `Strings` owns its list of shipped catalogues and how a tag matches one;
-preference validation asks it instead of keeping a second list. Preserve an explicit
+setting validation asks it instead of keeping a second list. Preserve an explicit
 selection across UI and engine restarts. Show languages by their own names so a
 user can recover from an unfamiliar selection.
 
@@ -111,14 +111,14 @@ together and retain the current language if preparation fails. Coalesce rapid
 choices so older work or an acknowledgement cannot overwrite the latest selection.
 
 Language is chosen in Settings, and only one UI runs. The selector uses the
-existing preference owner and live refresh path so switching stays immediate. The UI
+existing Settings owner and live refresh path so switching stays immediate. The UI
 sends the choice through the ordinary settings command, and the engine updates the tray
 from it; nothing needs to flow back, so there is no language notification and no
 other transport or event bus. Saving runs asynchronously under the [engine persistence contract](engine.md#persistence-and-file-safety):
-distinguish the live language from a successfully saved preference, report save
+distinguish the live language from a successfully saved setting, report save
 failure, and never silently claim persistence. The engine selects the validated
 language when accepting the command; storage completion updates only the saved
-preference. A failed save keeps the current language until another selection or
+setting. A failed save keeps the current language until another selection or
 restart. Snapshot settings carry that live selection and `language_saved`
 states whether it matches the saved choice. Reconnecting reads the engine's
 language again. Tray menus use the current catalogue when shown; an already-open
@@ -146,7 +146,7 @@ that message without being treated as translated product copy.
 Use locale-correct plural forms for counted messages, not an English singular/
 plural rule for every language. Select forms using the message's resolved language,
 including when it falls back to English. Keep regional number/date/unit formatting
-consistent with Windows regional preferences; UI language and region are separate
+consistent with Windows regional settings; UI language and region are separate
 choices, without adding a second settings panel. Selecting a UI language must not
 assign that language to the regional formatting/parsing culture. Use platform
 globalization facilities, including the [ICU C APIs](https://learn.microsoft.com/en-us/windows/win32/intl/international-components-for-unicode--icu-)
@@ -171,7 +171,7 @@ Use the owned refresh path for product text. Microsoft's
 [language override documentation](https://learn.microsoft.com/en-us/windows/windows-app-sdk/api/winrt/microsoft.windows.globalization.applicationlanguages.primarylanguageoverride)
 notes that already-loaded UI resources may not update immediately and that the
 override persists for packaged apps. If platform controls require an override,
-derive and reapply it from the engine's language. Never read it as a second preference
+derive and reapply it from the engine's language. Never read it as a second setting
 authority or rely on it to refresh existing bindings.
 
 ## Cost and proportionate evidence

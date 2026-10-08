@@ -35,7 +35,7 @@ public enum LayoutChange
 }
 
 /// <summary>
-/// What changed about the resolved layout, in increasing order of what a subscriber has to redo.
+/// What changed about the effective layout, in increasing order of what a subscriber has to redo.
 /// </summary>
 internal enum LayoutInvalidationReason
 {

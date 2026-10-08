@@ -158,7 +158,7 @@ integrate.
    does not require a data-grid, drag, or command-adapter package.
 7. **Pay only for enabled behavior.** Marquee selection and row reordering do
    no work when disabled or idle. Fit measurement happens only for a fit
-   command and for the first-rows fit (section 10).
+   command (section 10); the first fill measures nothing.
 8. **One local view projection.** Header sort operates on one private view, so
    selection, layout, and visible order have a single authority.
 9. **Be a Windows control, not a visual subsystem.** The control uses the
@@ -222,7 +222,7 @@ host source + columns
 
 The table emits requests and events. It MUST NOT execute domain actions or
 mutate `ItemsSource` or the baseline column definitions. User layout changes
-affect its private resolved layout only.
+affect its private effective layout only.
 
 ## 5. Public control contract
 
@@ -258,13 +258,15 @@ public sealed class Table : Control
     public ColumnLayout Layout { get; set; }
     public Sort? Sort { get; set; }
     public TimeSpan SortInterval { get; set; }
-    public bool ShowsFitButton { get; set; }     // default false
+    public bool ShowsHeaderButtons { get; set; }    // default false
     public void RefreshView();
+    public void Release(IEnumerable<object> items);
     public void ScrollIntoView(object item);
     public double VerticalOffset { get; }
     public void ScrollTo(double verticalOffset);
     public void Fit(Column column);
     public void FitColumns();
+    public void FillWidth();
     public void ResetLayout();
 
     public event EventHandler<Selection> SelectionChanged;
@@ -343,7 +345,7 @@ may populate it in XAML or code before then; calling `Schema<TRow>()`
 afterwards, changing a setup-only value, or structurally adding, removing, or
 replacing a column afterwards, is a configuration error. This fixed schema
 keeps cell templates, persisted layout, identity semantics, and selection rules
-stable. Runtime changes belong in bindable state or the resolved layout, not in
+stable. Runtime changes belong in bindable state or the effective layout, not in
 the schema. Localized presentation text, including `DisplayName`, remains live
 under section 6.1; changing language does not change structural schema.
 
@@ -370,7 +372,7 @@ selection/current raises one `SelectionChanged`. After load, unavailable selecti
 items are discarded immediately rather than retained as future requests.
 
 Assigning `Selection` atomically replaces the table-owned selection and current
-item after resolving both to eligible instances in the current private view. An
+item after resolving both to interactive instances in the current private view. An
 omitted or `null` `Current` uses the first selected item in current visual
 order, or `null` when nothing is selected. A supplied `Current` may be
 unselected. An unavailable supplied `Current` is treated as `null` and uses that
@@ -393,7 +395,7 @@ This allows display rows outside a domain order to retain their ordinary actions
 `Schema<TRow>().CanInteract` defaults to every row being interactive. When the
 predicate returns false, the item still renders but cannot be selected, invoked,
 context-clicked, or included in a row drag packet. Keyboard navigation skips it.
-Eligibility is evaluated on each view rebuild and immediately before an item
+Interactivity is evaluated on each view rebuild and immediately before an item
 interaction.
 
 `Schema<TRow>().Key` is optional. Without it, identity is object reference.
@@ -408,7 +410,7 @@ The API is intentionally non-generic at the XAML boundary, matching WinUI item
 controls and keeping the control directly usable from XAML. Type erasure is
 confined to the item boundary (`ItemsSource` and the event payloads); typed
 `DataTemplate`s with `x:DataType` retain the host's row type for rendering, and
-`Schema<TRow>()` retains it for identity, eligibility, and sorting. There is no
+`Schema<TRow>()` retains it for identity, interactivity, and sorting. There is no
 generic control hierarchy, reflection, property-path API, or untyped row
 wrapper. The row-type cast happens once, inside the schema, rather than once per
 selector and comparer at the host; a wrong row type is a configuration error and
@@ -442,7 +444,7 @@ Equal values retain source order, including descending sorts.
 Events are the component's callback API for completed gestures or table-state
 changes. They fire only after the table has completed its own mechanics.
 `SelectionChanged` can also result from assigning `Selection` or from
-source/eligibility reconciliation. Its immutable payload is the updated
+source/interactivity reconciliation. Its immutable payload is the updated
 `Selection`, including when only the current row changes.
 Every selected-item packet below is in current visual row order. Event payloads
 are immutable snapshots:
@@ -520,7 +522,7 @@ same. The enumerable must be finite and stable for each enumeration. A one-shot
 iterator is treated as a snapshot and the host supplies a new iterator for a
 later source update.
 
-The private view is handed to the native item surface in full. That surface
+The private view is handed to the native row surface in full. That surface
 reads a row only when it realizes the row's position, and for every other
 position it keeps nothing but the count. A source update or sort therefore
 raises a collection notification for two things and nothing else: every
@@ -547,8 +549,39 @@ visible natural order is that sequence. In a sorted view, the same latest
 sequence breaks equal comparer values. Clearing sort always returns to this
 latest natural order; it never restores an earlier visual order.
 
+**Owner ruling: rows that leave are held while the pointer is over the rows.**
+While the pointer is over the row surface, or a row's context menu is open, a
+row that leaves the source stays where it is, dimmed and non-interactive, and
+rows that arrive wait. When the pointer leaves the rows, or the menu closes,
+the held changes apply at once. Without the hold, a filter change or a removal
+moves every row below it up under the pointer and an arrival pushes rows down,
+so the person acts on a row they did not aim at; people do not forgive things
+moving while they work.
+
+- The hold is a presentation of the source. The host's collection is never
+  modified, and the latest snapshot is still the base sequence the next
+  update and `RefreshView()` start from.
+- A held row cannot be selected, invoked, context-clicked, or dragged, and
+  keyboard navigation skips it, as for a non-interactive item. Selection
+  pruning follows the rule below, so the selected packet never names a held
+  row, and a reorder request never names one as `Before`.
+- A change the person caused applies at once, even with the pointer over the
+  rows, because the rule is that nothing moves unless the person caused it. The
+  table cannot tell who caused an update, so the host names the rows whose
+  presence the person's command changes with `Release(items)`, before the
+  change reaches the source or while the table holds it. The update that
+  carries the change applies whole, held rows and waiting rows included. Every
+  other update stays held. A named change that never comes, such as a refused
+  removal, leaves its rows named until their presence next changes.
+- A held row that comes back into the source stops being held.
+- A table that shows no rows takes its arrivals at once: nothing on screen can
+  move.
+- A sort change moves every row anyway, so it takes the source whole.
+- A hierarchical table holds nothing. Expansion and collapse are the person's
+  own commands and arrive through the same refresh as any other change.
+
 `INotifyPropertyChanged` on a row redraws ordinary bound cell content only.
-It does not automatically re-sort or re-evaluate eligibility.
+It does not automatically re-sort or re-evaluate interactivity.
 After a batch changes any value used by the active sort or the schema's
 interaction predicate, the host calls `RefreshView()` once.
 `RefreshView()` re-evaluates the current source snapshot, applies the current
@@ -661,7 +694,6 @@ public sealed class Column : DependencyObject
 
     public double Width { get; set; } = 150; // DIPs, the baseline
     public double MinWidth { get; set; } = 48;
-    public double MaxWidth { get; set; } = double.PositiveInfinity;
 
     public bool IsVisible { get; set; } = true;
     public bool CanHide { get; set; } = true;
@@ -705,9 +737,9 @@ Required invariants:
 - `CellTemplate` receives the row item as its `DataContext`/content.
 - `Width`, `MinWidth`, and persisted widths are finite
   device-independent pixels (DIPs). `Width` is greater than zero;
-  `MinWidth` is non-negative; `MaxWidth` is either a finite positive DIP value
-  or `double.PositiveInfinity`; and `MinWidth <= MaxWidth`;
-- the resolved width is clamped to `[MinWidth, MaxWidth]`;
+  `MinWidth` is non-negative;
+- the effective width is never below `MinWidth`. There is no maximum, because
+  how wide a person makes a column is their choice;
 - at least one column remains visible, which a table declaring no columns at
   all does not satisfy;
 - `CanHide == false` prevents hiding that column;
@@ -716,7 +748,7 @@ Required invariants:
 - at most one column has `DefinesRowOrder`; its ascending values are the host's
   row order, the order the unsorted view shows and a row drag changes (section
   16);
-- hidden columns retain their resolved position and most recent width;
+- hidden columns retain their effective position and most recent width;
 - the declaration order, `Width`, `IsVisible`, and the control's documented
   width defaults form the reset baseline; runtime layout lives only in
   `ColumnLayout`.
@@ -750,8 +782,7 @@ Regional formatting remains separate from UI language. The desktop
 composition protection; the library does not persist a language preference.
 
 The declared defaults are: visible, hideable, resizable, non-sortable,
-left-aligned, a `Width` of 150 DIPs, a `MinWidth` of 48 DIPs, and an
-unbounded `MaxWidth`. A host SHOULD explicitly declare width and minimum policy
+left-aligned, a `Width` of 150 DIPs, and a `MinWidth` of 48 DIPs. A host SHOULD explicitly declare width and minimum policy
 for rich cells whose footprint is meaningful—such as progress, button clusters,
 sparklines, or status pills—rather than treating the generic default as domain
 policy.
@@ -821,7 +852,7 @@ shared by headers and rows:
 
 - use one vertical scrolling owner rather than nesting vertical scroll surfaces;
 - render each realized row from its row item and the visible column templates;
-- derive header and row widths from the same resolved column values;
+- derive header and row widths from the same effective column values;
 - keep the header visible during vertical scrolling;
 - retain columns at narrow widths rather than silently hiding or reflowing
   data.
@@ -918,13 +949,26 @@ Sorting requirements:
 - the host calls `RefreshView()` after a batch changes any active
   view-affecting value;
 - while a sort is applied, the view converges on the sorted order within a
-  bounded interval. Membership is never deferred; only relative position is. A
-  row that arrives appears at once and a row that leaves goes at once, while
-  existing rows trade places on the settling interval. `SortInterval`
-  sets that interval, and `TimeSpan.Zero` restores immediate re-sorting. A
-  sort by the column that `DefinesRowOrder` never settles: that order changes
-  only when the host reorders, usually on the person's own command, so holding
-  it would delay that command.
+  bounded interval. Membership is deferred only by section 5.3's hold while
+  the rows are pointed at; otherwise a row that arrives appears at once and a
+  row that leaves goes at once, while existing rows trade places on the
+  settling interval. `SortInterval` sets that interval, and `TimeSpan.Zero`
+  restores immediate re-sorting. A sort by the column that `DefinesRowOrder`
+  never settles: that order changes only when the host reorders, usually on
+  the person's own command, so holding it would delay that command.
+
+**Owner ruling: a live sort freezes only the row under the pointer.** Whenever
+the rows take their sorted order, the row under the pointer keeps its
+position and the other rows take their sorted order around it. The same holds
+for the row whose context menu is open, and during a pointer gesture over the
+rows the frozen row stays the one the gesture began on. When the pointer moves
+to another row, that row is
+the frozen one from then on; nothing re-sorts merely because the pointer moved.
+Rows section 5.3 holds keep their positions the same way. The owner chose this
+over freezing the whole table, so the table stays useful while the pointed
+target stays still. It applies under a sort that reorders: natural order and
+the column that `DefinesRowOrder` show the host's own order, and a hierarchical
+table freezes nothing, because a frozen row could be separated from its parent.
 
 Avoiding automatic re-sorts on every property notification is important for
 rapidly changing data such as speed and progress.
@@ -938,8 +982,10 @@ the position wait. It does so by never merging the two. A snapshot that adds or
 removes a row is not a settling case at all: the table takes the sorted order
 for it whole, which is also where an arriving row belongs, and only a snapshot
 of exactly the same rows can hold its position. The rule is therefore structural
-rather than a promise — no path through the table can defer a membership change,
-rather than no path choosing to.
+rather than a promise — the settling path cannot defer a membership change,
+rather than choosing not to. Only section 5.3's hold defers one, for its own
+reason, and while it does the rows are the same rows, so settling sees no
+membership change either.
 
 Measured on the original host's 2,002-row list, per host publish, because with settling off
 every publish reorders and the two units are then the same one: sorted by
@@ -996,26 +1042,36 @@ a real host requires it.
 has no star, fill, percentage, or viewport-responsive width mode. Extra space at
 the right remains table surface, and columns that do not fit are cut off
 (section 8). Resizing the host window never redistributes or re-measures column
-widths.
+widths. There are two exceptions, each applied once and leaving fixed widths
+behind: the first fill below, and the explicit command `FillWidth()`, which
+fits the columns to the table's width when the person asks.
 
 Every column has a deterministic baseline width. A declared `Width` is
-used exactly after its `MinWidth`/`MaxWidth` bounds are applied. When a host
+used exactly after it is raised to its `MinWidth`. When a host
 does not declare one, the control's 150-DIP default is used. The baseline is
-the width a column has before its first rows appear.
+the width a column has before the first fill.
 
-**Owner ruling: a table fits its columns to the first rows it shows.** When
-rows first appear on screen and no column has a width override, the table runs
-`FitColumns()` once. A width override is a width the person chose: restored
-from a saved layout, set by a resize, or set by a fit. The person's choice wins
-over the content, so a table restored with saved widths keeps them. The
-declared widths alone would cut off or waste space on first use, and the person
-would have to fit the columns by hand. The fit sees the rows present at the
-first layout pass that shows one, so a host supplies its first rows as one
-list, not one row per update. After that one fit, later data, property
-updates, sorting, filtering, scrolling, and visibility changes MUST NOT
-silently widen or narrow a column.
+**Owner ruling: a table fills its width once, when it first has one.** When
+the table first has a usable width and no column has a width override, it
+scales the visible resizable columns from their baseline widths by the scaling
+step of `FillWidth()`, so they end where the header buttons begin, or at the
+table's right edge. A width override is a width the person chose: restored
+from a saved layout, set by a resize, or set by a fit. The person's choice
+wins, so a table restored with saved widths keeps them. The declared widths
+alone would cut off or waste space on first use. Filling depends only on the
+width, so it runs before or regardless of rows, and data that arrives later
+never resizes a column; a fit to the first rows resized the columns in front
+of the person whenever data arrived after the table was on screen. The first
+fill does not run `FillWidth()`'s fit, because that fit would measure whichever
+rows happen to be realized at that moment and replace the host's declared
+proportions with them. It is part of the table's initial layout, so like the
+rest of that layout it raises no `LayoutChanged`; a host that saves the layout
+on `LayoutChanged` saves the filled widths with the person's first change.
+After that one fill, later data, property updates, sorting, filtering,
+scrolling, window resizing, and visibility changes MUST NOT silently widen or
+narrow a column.
 
-An applied valid `ColumnLayout.Widths` entry, a completed direct
+An applied valid `ColumnLayout.WidthOverrides` entry, a completed direct
 resize, or an explicit fit creates a width override.
 It wins over the baseline until another override or `ResetLayout()`
 replaces it. A user may resize down to the declared `MinWidth` even when cell
@@ -1026,20 +1082,23 @@ Every resizable visible column has a mouse/pen resize separator. Touch and
 keyboard use the generated header-menu fit commands, so version one does not add
 a competing direct-touch resize recognizer to a dense header.
 
-- mouse/pen dragging captures the pointer and updates the shared resolved width;
-- the width is clamped only to the column limits;
+- mouse/pen dragging captures the pointer and updates the shared effective width;
+- the width stops only at the column's `MinWidth`;
 - Escape cancels the active drag and restores the starting width;
 - double-clicking the mouse/pen separator fits that column;
-- the header menu includes **Fit this column** and **Fit visible columns** when
-  applicable, and offers no per-step width command;
-- `ShowsFitButton` offers that same **Fit visible columns** command as a
-  button in the header's trailing space. It is off by default, because a table
-  must not add a visible control to a host's header uninvited and a host with
-  its own fit button would then show two; turning it on is not a guarantee that
-  it appears, since the strip withholds it whenever the columns reach far enough
-  right to want that space;
+- the header menu includes **Fit this column**, **Fit columns**, and
+  **Fill width** when applicable, and offers no
+  per-step width command;
+- `ShowsHeaderButtons` offers the same two visible-column commands as buttons in
+  the header's trailing space. It is off by default, because a table must not
+  add a visible control to a host's header uninvited and a host with its own
+  buttons for these commands would then show two of each; turning it on is not a guarantee that
+  they appear, since the strip withholds both whenever the columns reach far
+  enough right to want that space. The person can hide either button from the
+  header menu; that choice persists in `Layout`, and `ResetLayout()` shows both
+  again;
 - the table raises one coalesced `LayoutChanged` notification when a gesture,
-  fit, or menu width command changes the resolved layout, not one persistence
+  fit, or menu width command changes the effective layout, not one persistence
   write per pointer movement.
 
 An earlier version of this clause required **Narrow this column** and **Widen
@@ -1062,14 +1121,27 @@ where auto-repeat does the work, and not as a menu item invoked once per step.
 `Fit(Column)` and `FitColumns()` are explicit fit commands, not an
 automatic sizing mode. A fit considers only the header and cells available to
 the current normal visual layout, includes normal padding and the sort glyph,
-and clamps the result to that column's limits. It MUST NOT enumerate source data
+and raises the result to that column's `MinWidth`. It MUST NOT enumerate source data
 solely to size columns, instantiate off-screen row templates, or maintain a
 hidden measurement table. A per-column fit changes only that column; it MUST
 NOT fall back to a fit of other columns when its result is unchanged.
 
+`FillWidth()` runs the same fit as `FitColumns()` and then scales the
+visible resizable columns by one factor so the visible columns end where the
+header buttons the table offers begin, or at the table's right edge when it
+offers none: wider when space is left, narrower when they run past it. The
+buttons therefore keep their place, and the Fill button a person just clicked
+stays under the pointer instead of disappearing. One factor keeps the fitted
+proportions, so the widest fitted columns, which a fit that sees only realized
+rows marks as the most likely to hold longer values, keep the most room. A column the factor would take below its `MinWidth` stays
+at `MinWidth` and the others share what is left; when even the minimums do not
+fit, the columns run past the edge as section 8 describes. It produces at most
+one `LayoutChanged` event, of kind `Fit`, and like any fit creates width
+overrides.
+
 `FitColumns` fits each currently visible, resizable column independently
 and produces at most one `LayoutChanged` event. Hidden columns retain their
-resolved width and are not fitted; a direct fit request for a hidden or
+effective width and are not fitted; a direct fit request for a hidden or
 non-resizable column is a no-op, while a column this table does not hold, or
 any column before the first `Loaded` captures the schema, is an argument error. A value that has not entered the current visual layout may require a
 later fit after scrolling. This is an intentional limitation of a virtualized
@@ -1077,10 +1149,9 @@ convenience action, not a promise to discover the widest value in the source.
 
 Hiding or showing a column does not discard, recompute, or fit its width.
 `ResetLayout()` discards width overrides and restores the captured
-baseline widths; it does not fit the current data. The first-rows fit has the
-same bounded behavior and persistence semantics as a user fit: it raises one
-`LayoutChanged` of kind `Fit`, so a host that saves the layout keeps the fitted
-widths.
+baseline widths; it neither fits the current data nor fills the width again.
+The first fill creates width overrides as a fill does, so a reset discards
+them too.
 
 ## 11. Column drag reordering
 
@@ -1129,11 +1200,18 @@ pointer actions and keyboard-accessible alternatives:
 - **Hide column “Name”** for the column the menu was opened on, while it is
   hideable and another column can remain, which becomes **Show column “Name”**
   once that column is hidden;
-- **Fit column “Name”** for a resizable active column, and **Fit visible
-  columns** when at least one visible column is resizable;
+- **Fit column “Name”** for a resizable active column, and **Fit columns**
+  and **Fill width** when at least one
+  visible column is resizable;
 - **Move left** and **Move right** for the active column;
 - one item per declared column, hidden ones included, carrying a check when the
-  column is visible.
+  column is visible;
+- when `ShowsHeaderButtons` is on, a separator and then one item per header
+  button, **Fit button** and **Fill button**, carrying a check when that button
+  is not hidden. They are shown and hidden the way the columns above them are,
+  and the separator keeps them from reading as columns.
+
+Labels stay short because the longest one sets the width of the whole menu.
 
 The three commands that act on a single column name it, in typographic quotation
 marks: the label is a sentence a translation owns, and a test asserts the
@@ -1167,7 +1245,7 @@ carry icons gives the menu two glyph columns and indents every label past both.
 The cost is that the state is no longer reported through the toggle pattern, so
 it MUST be published another way; `AutomationProperties.ItemStatus` carries it.
 
-The two fit commands differ by glyph and MUST NOT differ by colour alone. A menu
+The fit commands differ by glyph and MUST NOT differ by colour alone. A menu
 icon inherits the text foreground and is monochrome by design, so a coloured one
 reads as status rather than as category; High Contrast overrides icon colour
 outright, which would take the distinction from the readers who most need it;
@@ -1217,7 +1295,7 @@ display rows are skipped by pointer and keyboard selection.
 
 `None` permits no selected items, `Single` permits at most one, and `Multiple`
 and `Extended` permit many. Assigning `Selection` applies those limits after
-resolving eligible current-view items: it clears selection in `None`, retains
+resolving interactive current-view items: it clears selection in `None`, retains
 the first resolved item in current visual order in `Single`, and retains all
 resolved items in `Multiple` and `Extended`. In `None`, `Selection.Items`
 remains empty, but a passive row may still become current for invocation or
@@ -1234,7 +1312,7 @@ The generated passive header strip is one composite control region in page tab
 order. Tab enters or leaves the strip instead of visiting every passive header.
 Left/Right moves its active visible header, Home/End moves to the first/last,
 and Enter, Space, Menu, and Shift+F10 use the active header's defined
-sort/menu behavior. The row item surface is the following normal reachable
+sort/menu behavior. The row surface is the following normal reachable
 region; within it, the platform's arrow-key navigation is retained. Decorative
 elements and the marquee overlay are not tab stops. Interactive header
 descendants and interactive cell controls retain their own normal tab, focus,
@@ -1294,7 +1372,7 @@ selection is inactive. Touch remains native scrolling/selection/context-menu
 input; it does not begin a marquee gesture.
 
 - the rectangle is drawn in an overlay above rows and below menus;
-- a plain marquee replaces selection with its intersected eligible rows;
+- a plain marquee replaces selection with its intersected interactive rows;
 - Ctrl adds/toggles against the selection captured at gesture start;
 - Shift extends from the current anchor;
 - intersection with a realized row's band selects that row;
@@ -1381,7 +1459,7 @@ target is not an interactive cell descendant. `ItemInvoked` supplies the row
 item and the current selection. It does not execute a command itself.
 
 Context invocation includes right-click, touch press-and-hold, and the Menu key
-or Shift+F10 on the current/focused eligible row. The platform's normal
+or Shift+F10 on the current/focused interactive row. The platform's normal
 press-and-hold recognition resolves touch context invocation; row drag begins
 only from a mouse/pen gesture after its normal drag threshold. The table adds no
 competing long-press timer.
@@ -1518,10 +1596,12 @@ The table exposes, but does not store, a data-only snapshot:
 ```csharp
 public sealed record ColumnLayout(
     IReadOnlyList<string> Order,
-    IReadOnlyDictionary<string, bool> Visibility,
-    IReadOnlyDictionary<string, double> Widths,
+    IReadOnlyDictionary<string, bool> VisibilityOverrides,
+    IReadOnlyDictionary<string, double> WidthOverrides,
     string? SortColumnId,
-    SortDirection SortDirection);
+    SortDirection SortDirection,
+    bool FitButtonHidden = false,
+    bool FillButtonHidden = false);
 ```
 
 The snapshot is read and written through one property, `Table.Layout`.
@@ -1537,12 +1617,16 @@ to version its stored envelope, that envelope is the version boundary.
 The only valid persisted directions for an active sort are ascending and
 descending; `SortDirection` is ignored when `SortColumnId` is `null`.
 
-`Visibility` and `Widths` are intentionally sparse: they contain
+`VisibilityOverrides` and `WidthOverrides` are intentionally sparse: they contain
 only values that override declared visibility and width baselines. A missing
 column ID means “use that column's baseline.” Reading `Layout` follows the
 same rule, so untouched defaults do not become duplicate persisted
 configuration. A column with no `Id` is not persisted at all: it appears in
 neither `Order` nor either override map.
+
+`FitButtonHidden` and `FillButtonHidden` record that the person hid that header
+button from the menu. False is the baseline, so a snapshot stored before these
+fields existed restores both buttons shown.
 
 Persist:
 
@@ -1564,10 +1648,10 @@ Applying saved state MUST be defensive:
 - ignore unknown IDs;
 - ignore duplicate IDs after their first valid occurrence;
 - append newly introduced columns in definition order;
-- treat `Visibility` and `Widths` as complete override maps:
+- treat `VisibilityOverrides` and `WidthOverrides` as complete override maps:
   omitted values use their column baseline and clear any earlier override;
-- ignore non-finite, non-positive, and non-resizable-column widths; clamp valid
-  finite widths to the column's bounds;
+- ignore non-finite, non-positive, and non-resizable-column widths; raise valid
+  finite widths to the column's `MinWidth`;
 - restore required columns if saved as hidden;
 - restore the saved sort when its column is currently sortable, visible once the
   saved visibility has been applied, and its direction is valid; otherwise use
@@ -1670,13 +1754,13 @@ The component supports dense, frequently updating lists. Its performance
 contract is expressed as invariants rather than an unproven source-count or
 throughput target.
 
-- Vertical rows MUST be virtualized and recycled by the native item surface.
+- Vertical rows MUST be virtualized and recycled by the native row surface.
 - No work may scale with all rows during normal scrolling, column drag, resize,
   or visibility changes.
 - A display-only row update MUST NOT rebuild the whole table. A source, sort,
   or `RefreshView()` change may recompute the private view as specified.
 - A sort or source update raises collection notifications for membership
-  changes and for the positions the item surface holds a container for, and
+  changes and for the positions the row surface holds a container for, and
   for nothing else (section 5.3). The number of notifications a reorder
   raises is bounded by realized containers, never by the row count. Measured
   once, on the original host's 2,002 rows in Release, with no collection inside the
@@ -1698,7 +1782,7 @@ throughput target.
   the foot of the viewport stays blank until something else forces a pass.
 - A reorder MUST need no forced layout. Two reconciles arriving in one dispatcher
   callback — a source publish and the settle timer landing together with a sort
-  applied — resolve without one, because the item surface updates its own map of
+  applied — resolve without one, because the row surface updates its own map of
   container to index inside the notification rather than at the next layout pass.
   This is stated because the defensive fix is expensive and invisible: a reader
   worrying about a stale realized set adds an `UpdateLayout` to the reconcile
@@ -1730,7 +1814,7 @@ host integration, with validation scope set by [testing](../../../docs/testing.m
 2. A representative large source keeps realized rows driven by the viewport,
    aligns headers and rows, and does not traverse the full source during normal
    scrolling or direct column-layout gestures.
-3. A view-affecting batch followed by one `RefreshView()` applies eligibility
+3. A view-affecting batch followed by one `RefreshView()` applies interactivity
    and sort without re-enumerating a plain source.
 4. Header mouse/pen click, touch tap, and keyboard activation cycle ascending,
    descending, and natural stable order without interfering with embedded
@@ -1739,7 +1823,8 @@ host integration, with validation scope set by [testing](../../../docs/testing.m
 5. Mouse/pen column drag and touch/keyboard header commands produce the same
    order; the header menu respects hide, visibility, fit, resize, and move
    eligibility and never leaves zero visible columns.
-6. Declared and restored widths remain stable across data and layout changes.
+6. Restored widths, and declared widths after the first fill, remain stable
+   across data and layout changes.
    Direct resize, bounded fit, hide/show, reset, and save/reload preserve their
    specified baseline/override behavior without off-screen measurement.
 7. `None`, `Single`, `Multiple`, and `Extended` selection limits work with
@@ -1764,7 +1849,8 @@ host integration, with validation scope set by [testing](../../../docs/testing.m
 13. Collection updates establish the latest source order; display-only property
     changes do not rebuild or sort. View-changing updates reconcile state,
     cancel incompatible marquee or row-drag gestures, and retain live cell
-    bindings.
+    bindings. While the pointer is over the rows, a leaving row stays dimmed in
+    place, arrivals wait, and a re-sort leaves the pointed row where it is.
 14. Policy callbacks are pure; `SelectionChanged` and the other four
     events carry their documented immutable post-mechanics state without
     invoking domain work. The component contains no domain types, commands, or

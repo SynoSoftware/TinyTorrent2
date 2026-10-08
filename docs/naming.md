@@ -65,7 +65,7 @@ its outcome rather than name a domain concept.
 - A boolean switch uses the platform's frame for its kind, so a WinUI reader recognizes it: `Can`
   for a capability (`Column.CanHide`, `Table.CanReorder`, as `ListView.CanReorderItems`),
   `Is…Enabled` for a gesture (`IsMarqueeEnabled`, as `UIElement.IsTapEnabled`), and `Shows` for
-  optional chrome (`ShowsFitButton`, as `ListViewBase.ShowsScrollingPlaceholders`). The frame does
+  optional chrome (`ShowsHeaderButtons`, as `ListViewBase.ShowsScrollingPlaceholders`). The frame does
   not count toward the word guidance above. A property's change callback drops the frame and keeps
   the concept: `OnReorderChanged` for `CanReorder`, because the frame adds nothing to a callback
   that only that property calls.
@@ -211,9 +211,10 @@ apps do, so the same folder answers the same question in each of them:
 
 - The root holds `App`, `MainWindow` and `MainViewModel` with their parts folders. The main view
   model owns every other view model, so the owner sits above the folders that hold what it owns.
-- `Views/` holds each form beside the view model it binds to. The forms are user controls that the
-  main window hosts; the app has no navigation frame, so the folder is not `Pages/`.
-- `Controls/` holds the custom controls that a form or the main window places in its layout, with
+- `Views/` holds each page and dialog content beside the view model it binds to. They are user
+  controls that the main window hosts; the app has no navigation frame, so the folder is not
+  `Pages/`. A `*Dialog` view is the content placed inside `Controls/Dialog`.
+- `Controls/` holds the custom controls that a view or the main window places in its layout, with
   the state a control owns, such as `FileSelection` for `FileBrowser`.
 - `Models/` holds the data the views show, value types such as `PeriodSpan`, and `Enums.cs`.
 - `Services/` holds input and output: the engine pipe and the language catalogues.

@@ -13,7 +13,12 @@ std::string Code(lt::error_code const& error)
 
 void Engine::State::Handle(lt::alert* alert)
 {
-    if (auto updated = lt::alert_cast<lt::state_update_alert>(alert))
+    if (auto external = lt::alert_cast<lt::external_ip_alert>(alert))
+    {
+        auto& address = external->external_address.is_v4() ? externalIpv4 : externalIpv6;
+        address = external->external_address.to_string();
+    }
+    else if (auto updated = lt::alert_cast<lt::state_update_alert>(alert))
     {
         On(*updated);
     }
@@ -21,7 +26,7 @@ void Engine::State::Handle(lt::alert* alert)
     {
         if (auto torrent = Find(state->handle))
         {
-            torrent->fileState = state->state;
+            torrent->transferState = state->state;
             if (state->state == lt::torrent_status::downloading)
                 ApplyQueue();
         }
@@ -110,9 +115,9 @@ void Engine::State::Handle(lt::alert* alert)
     else if (auto paused = lt::alert_cast<lt::torrent_paused_alert>(alert))
     {
         std::erase(pausing, paused->handle);
-        if (relocation)
+        if (move)
         {
-            std::erase(relocation->waiting, paused->handle);
+            std::erase(move->waiting, paused->handle);
             ContinueMove();
         }
         if (rename && rename->phase == RenamePhase::Waiting &&
@@ -146,7 +151,7 @@ void Engine::State::On(lt::state_update_alert const& alert)
             auto error = problem ? problem->detail : std::string();
             if (!error.empty() && error != torrent->notifiedError)
             {
-                Notify(NoticeKind::Error, *torrent, error);
+                Notify(NoticeKind::Error, *torrent, error, problem->Code());
             }
             torrent->notifiedError = std::move(error);
         }
@@ -171,7 +176,7 @@ void Engine::State::AwaitCompletion(Torrent& torrent)
     if (torrent.status.is_finished && torrent.receivedPayload)
     {
         torrent.receivedPayload = false;
-        torrent.flushing = true;
+        torrent.completionPhase = CompletionPhase::Flushing;
     }
 }
 
@@ -186,12 +191,12 @@ void Engine::State::On(lt::cache_flushed_alert const& alert)
         ContinueRename();
     }
     auto torrent = Find(alert.handle);
-    if (!torrent || !torrent->flushing)
+    if (!torrent || torrent->completionPhase != CompletionPhase::Flushing)
     {
         return;
     }
-    torrent->flushing = false;
-    Notify(NoticeKind::Completed, *torrent);
+    torrent->completionPhase = CompletionPhase::Settling;
+    FinishDownload(*torrent);
 }
 
 // Two torrents added under different info hashes turned out to be the
@@ -251,7 +256,7 @@ void Engine::State::On(lt::torrent_error_alert const& alert)
 {
     if (auto torrent = Find(alert.handle))
     {
-        diagnostics.Write("torrent", torrent->identity, Code(alert.error));
+        log.Write("torrent", torrent->torrentId, Code(alert.error));
     }
 }
 
@@ -264,7 +269,7 @@ void Engine::State::On(lt::file_error_alert const& alert)
         {
             std::exchange(torrent->priorityReply, nullptr)(Failure(ProblemKind::TorrentError, torrent->diskError));
         }
-        diagnostics.Write("file", torrent->identity, Code(alert.error));
+        log.Write("file", torrent->torrentId, Code(alert.error));
     }
 }
 
@@ -275,11 +280,11 @@ void Engine::State::On(lt::file_error_alert const& alert)
 void Engine::State::On(lt::alerts_dropped_alert const&)
 {
     RecoverFiles();
-    if (stopping && !pausing.empty())
+    if (shuttingDown && !pausing.empty())
     {
         saveFailure.emplace();
         pausing.clear();
-        diagnostics.Write("shutdown", "", "recovery_required");
+        log.Write("shutdown", "", "recovery_required");
     }
     for (auto& [id, torrent] : torrents)
     {
@@ -299,11 +304,11 @@ void Engine::State::On(lt::alerts_dropped_alert const&)
         torrent.unsaved = true;
         AwaitCompletion(torrent);
         // flush_cache posts a new cache_flushed_alert in place of a lost one.
-        if (torrent.flushing)
+        if (torrent.completionPhase == CompletionPhase::Flushing)
         {
             torrent.handle.flush_cache();
         }
-        if (!stopping)
+        if (!shuttingDown)
         {
             torrent.ApplyIntent();
         }
@@ -311,6 +316,6 @@ void Engine::State::On(lt::alerts_dropped_alert const&)
     }
     RecoverAdditions();
     ApplyQueue();
-    diagnostics.Write("alerts", "", "dropped");
+    log.Write("alerts", "", "dropped");
 }
 }

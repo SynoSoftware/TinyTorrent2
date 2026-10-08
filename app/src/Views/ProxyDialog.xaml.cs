@@ -4,16 +4,16 @@ using Syno.TinyTorrent.Helpers;
 
 namespace Syno.TinyTorrent.Views;
 
-public sealed partial class ProxyForm : UserControl
+public sealed partial class ProxyDialog : UserControl
 {
     public MainViewModel Model { get; }
-    public Proxy Proxy => Model.Preferences.Proxy;
+    public Proxy Proxy => Model.Settings.Proxy;
 
-    public ProxyForm(MainViewModel model)
+    public ProxyDialog(MainViewModel model)
     {
         Model = model;
         InitializeComponent();
-        // The dialog shows the Check result in its footer, outside the form.
+        // The dialog shows the Check result in its footer, outside this content.
         Root.Children.Remove(Status);
     }
 
@@ -25,6 +25,7 @@ public sealed partial class ProxyForm : UserControl
     // reads what is typed from its editor, as Settings does.
     private void OnPortLoaded(object sender, RoutedEventArgs args)
     {
-        if (TextEditor.Find(Port) is { } editor) editor.TextChanged += (_, _) => Proxy.Port = editor.Text;
+        if (TextEditor.Find(Port) is { } editor)
+            editor.TextChanged += (_, _) => Proxy.Port = editor.Text;
     }
 }

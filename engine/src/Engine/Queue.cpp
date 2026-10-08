@@ -61,14 +61,14 @@ void Engine::State::Queue(std::vector<std::string> const& ids, QueueMove move, s
     {
         if (torrents.at(id).restore || !IsQueued(torrents.at(id).handle.queue_position()))
         {
-            reply(Failure(ErrorCode::InvalidTargets));
+            reply(Failure(ErrorCode::InvalidTorrents));
             return;
         }
     }
     bool unknownTarget = !before.empty() && (!torrents.contains(before) || torrents.at(before).deleted);
     if (move == QueueMove::Before && (unknownTarget || Contains(ids, before)))
     {
-        reply(Failure(ErrorCode::InvalidTargets));
+        reply(Failure(ErrorCode::InvalidTorrents));
         return;
     }
     auto order = Reorder(CurrentQueue(), ids, move, before);

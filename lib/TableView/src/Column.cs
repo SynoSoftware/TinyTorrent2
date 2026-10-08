@@ -18,7 +18,11 @@ public sealed partial class Column : DependencyObject
 
     /// <summary>Non-empty localized plain-text name used by generated menus and UI Automation.</summary>
     public static readonly DependencyProperty DisplayNameProperty = DependencyProperty.Register(
-        nameof(DisplayName), typeof(string), typeof(Column), new PropertyMetadata(string.Empty, OnDisplayNameChanged));
+        nameof(DisplayName),
+        typeof(string),
+        typeof(Column),
+        new PropertyMetadata(string.Empty, OnDisplayNameChanged)
+    );
 
     public string DisplayName
     {
@@ -28,7 +32,10 @@ public sealed partial class Column : DependencyObject
 
     internal event EventHandler? TextChanged;
 
-    private static void OnDisplayNameChanged(DependencyObject sender, DependencyPropertyChangedEventArgs args)
+    private static void OnDisplayNameChanged(
+        DependencyObject sender,
+        DependencyPropertyChangedEventArgs args
+    )
     {
         if (args.NewValue is not string { Length: > 0 })
             throw new ArgumentException("DisplayName must be non-empty.");
@@ -38,7 +45,11 @@ public sealed partial class Column : DependencyObject
     /// <summary>Header content. When null and <see cref="HeaderTemplate"/> is null the table
     /// generates a trimmed one-line label from <see cref="DisplayName"/>.</summary>
     public static readonly DependencyProperty HeaderProperty = DependencyProperty.Register(
-        nameof(Header), typeof(object), typeof(Column), new PropertyMetadata(null, OnHeaderChanged));
+        nameof(Header),
+        typeof(object),
+        typeof(Column),
+        new PropertyMetadata(null, OnHeaderChanged)
+    );
 
     public object? Header
     {
@@ -46,8 +57,10 @@ public sealed partial class Column : DependencyObject
         set => SetValue(HeaderProperty, value);
     }
 
-    private static void OnHeaderChanged(DependencyObject sender, DependencyPropertyChangedEventArgs args) =>
-        ((Column)sender).TextChanged?.Invoke(sender, EventArgs.Empty);
+    private static void OnHeaderChanged(
+        DependencyObject sender,
+        DependencyPropertyChangedEventArgs args
+    ) => ((Column)sender).TextChanged?.Invoke(sender, EventArgs.Empty);
 
     public DataTemplate? HeaderTemplate { get; set; }
 
@@ -59,9 +72,6 @@ public sealed partial class Column : DependencyObject
 
     /// <summary>Lower width bound in DIPs. Finite and non-negative.</summary>
     public double MinWidth { get; set; } = 48;
-
-    /// <summary>Upper width bound in DIPs. A finite positive value or positive infinity.</summary>
-    public double MaxWidth { get; set; } = double.PositiveInfinity;
 
     /// <summary>Whether the column is shown before the user or a restored layout says otherwise.</summary>
     public bool IsVisible { get; set; } = true;

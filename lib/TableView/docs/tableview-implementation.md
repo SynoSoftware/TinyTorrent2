@@ -14,11 +14,12 @@ for this documentation review.
 | Source subscription and coherent source capture | [Body.Source](../src/Body/Source.cs). |
 | Optional child membership, subscriptions and sibling projection | [Hierarchy](../src/Hierarchy.cs), configured by `Schema<TRow>.Hierarchy`. |
 | Displayed sequence and collection reconciliation | [Body.View](../src/Body/View.cs). |
-| Effective column geometry | [ResolvedLayout](../src/ResolvedLayout.cs). |
+| Effective layout | [EffectiveLayout](../src/EffectiveLayout.cs). |
 | Shared header and row arrangement | [CellsPanel](../src/CellsPanel.cs). |
-| Hierarchy cell indentation and disclosure | [Body.Branch](../src/Body/Branch.cs), created only for the hierarchy column. |
+| Hierarchy cell indentation and disclosure | [Body.HierarchyCell](../src/Body/HierarchyCell.cs), created only for the hierarchy column, with a `SubtleButton` as its expander. |
 | Selection, current item, anchor, and logical focus | [SelectionState](../src/SelectionState.cs). |
 | Row pointer arbitration | [Table input](../src/Table/Input.cs). |
+| Held rows and the pointed row's frozen place | [Table holding](../src/Table/Holding.cs), applied by the view order in [Table sorting](../src/Table/Sorting.cs). |
 | Marquee geometry and row insertion feedback | [Body.Marquee](../src/Body/Marquee.cs) and [Body.Drag](../src/Body/Drag.cs), driven by the arbiter. |
 | Header gestures and generated menu | [Header.Strip](../src/Header/Strip.cs) and [Header.Menu](../src/Header/Menu.cs). |
 | Generic control text | [Strings](../src/Strings.cs), reading the embedded [en.json](../src/Resources/en.json). |
@@ -39,7 +40,7 @@ large collapsed branch.
 ## Rendering and interaction
 
 The body uses a virtualized `ListView`; the header is a sibling. Header and rows
-use the same panel and resolved geometry. The body's native scroller owns the
+use the same panel and effective layout. The body's native scroller owns the
 vertical axis, and nothing scrolls sideways. Wrapping that list in another
 vertical scroller or calculating column positions in a second place breaks those
 responsibilities.
@@ -114,7 +115,7 @@ Broader virtualization, Narrator and RTL scenarios remain unverified.
 - **Automation exposure:** [Header.Cell](../src/Header/Cell.cs)
   and [Header.Strip](../src/Header/Strip.cs) expose HeaderItem and Header peers
   outside the content view. Sortable headers share one operation across pointer,
-  keyboard and automation input and raise its invoked event. The hosted list
+  keyboard and automation input and raise its invoked event. The row surface
   extends native list automation and the table peer supports drag notifications.
 - **Keyboard location:** [Generic.xaml](../src/Themes/Generic.xaml)
   enables native row focus. Before reconciliation removes containers, physical
@@ -156,7 +157,7 @@ journey also ran in the product; detached reload, wider automation behavior and
 full caller ergonomics still need their relevant runtime evidence.
 
 The existing non-interactive context check also covers a selection callback that
-makes its row ineligible without replacing it. Context invocation rechecks the
+makes its row non-interactive without replacing it. Context invocation rechecks the
 same interaction policy after the callback; otherwise the host receives a menu
 request for a row it just made unavailable.
 

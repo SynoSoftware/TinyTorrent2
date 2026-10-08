@@ -1,6 +1,6 @@
 using System.Buffers.Binary;
-using System.Diagnostics;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.IO.Pipes;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -16,13 +16,17 @@ internal sealed class PipeClient : IDisposable
     private const int MaximumFrame = 16 * 1024 * 1024;
     private const int CommandLimit = 32;
     private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(15);
+
     // TinyTorrent.csproj records the engine's file name from the shared build properties.
-    private static readonly string EngineFile = typeof(PipeClient).Assembly
-        .GetCustomAttributes<AssemblyMetadataAttribute>().Single(metadata => metadata.Key == "EngineFile").Value!;
+    private static readonly string EngineFile = typeof(PipeClient)
+        .Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
+        .Single(metadata => metadata.Key == "EngineFile")
+        .Value!;
     private readonly Strings _strings;
     private readonly object _gate = new();
     private readonly CancellationTokenSource _lifetime = new();
     private readonly Queue<Command> _commands = new();
+
     // At most one unsent read per consumer, oldest first, so consumers take turns.
     private readonly List<Command> _reads = [];
     private readonly SemaphoreSlim _queued = new(0);
@@ -43,23 +47,33 @@ internal sealed class PipeClient : IDisposable
         using var identity = WindowsIdentity.GetCurrent();
         const int tokenLogonSid = 28;
         GetTokenInformation(identity.AccessToken, tokenLogonSid, IntPtr.Zero, 0, out var length);
-        if (length == 0) throw new Win32Exception(Marshal.GetLastWin32Error());
+        if (length == 0)
+            throw new Win32Exception(Marshal.GetLastWin32Error());
         var buffer = Marshal.AllocHGlobal(checked((int)length));
         try
         {
             if (!GetTokenInformation(identity.AccessToken, tokenLogonSid, buffer, length, out _))
                 throw new Win32Exception(Marshal.GetLastWin32Error());
             var groups = Marshal.PtrToStructure<TokenGroups>(buffer);
-            if (groups.Count != 1) throw new InvalidDataException("The token has no unique logon SID.");
+            if (groups.Count != 1)
+                throw new InvalidDataException("The token has no unique logon SID.");
             return new SecurityIdentifier(groups.Group.Sid).Value;
         }
-        finally { Marshal.FreeHGlobal(buffer); }
+        finally
+        {
+            Marshal.FreeHGlobal(buffer);
+        }
     }
 
     [DllImport("advapi32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool GetTokenInformation(SafeAccessTokenHandle token, int informationClass,
-        IntPtr information, uint length, out uint requiredLength);
+    private static extern bool GetTokenInformation(
+        SafeAccessTokenHandle token,
+        int informationClass,
+        IntPtr information,
+        uint length,
+        out uint requiredLength
+    );
 
     [StructLayout(LayoutKind.Sequential)]
     private struct SidAttributes
@@ -86,7 +100,8 @@ internal sealed class PipeClient : IDisposable
     {
         lock (_gate)
         {
-            if (_disposed || _pump is not null) return;
+            if (_disposed || _pump is not null)
+                return;
             _pump = Task.Run(Run);
         }
     }
@@ -96,9 +111,13 @@ internal sealed class PipeClient : IDisposable
         lock (_gate)
         {
             if (_disposed || !_connected)
-                return Task.FromException<JsonElement>(new IOException(_strings.Get("connection", "unavailable")));
+                return Task.FromException<JsonElement>(
+                    new IOException(_strings.Get("connection", "unavailable"))
+                );
             if (_commands.Count >= CommandLimit)
-                return Task.FromException<JsonElement>(new IOException(_strings.Get("connection", "overload")));
+                return Task.FromException<JsonElement>(
+                    new IOException(_strings.Get("connection", "overload"))
+                );
             var command = new Command(name, arguments);
             _commands.Enqueue(command);
             _queued.Release();
@@ -114,7 +133,9 @@ internal sealed class PipeClient : IDisposable
         lock (_gate)
         {
             if (_disposed || !_connected)
-                return Task.FromException<JsonElement>(new IOException(_strings.Get("connection", "unavailable")));
+                return Task.FromException<JsonElement>(
+                    new IOException(_strings.Get("connection", "unavailable"))
+                );
             if (_reads.Find(read => read.Consumer == consumer) is { } pending)
             {
                 pending.Replace(name, arguments);
@@ -133,7 +154,8 @@ internal sealed class PipeClient : IDisposable
     {
         lock (_gate)
         {
-            if (_reads.Find(read => read.Consumer == consumer) is not { } pending) return;
+            if (_reads.Find(read => read.Consumer == consumer) is not { } pending)
+                return;
             _reads.Remove(pending);
             pending.Completion.TrySetCanceled();
         }
@@ -143,8 +165,10 @@ internal sealed class PipeClient : IDisposable
     {
         lock (_gate)
         {
-            if (_commands.TryDequeue(out var command)) return command;
-            if (_reads.Count == 0) return null;
+            if (_commands.TryDequeue(out var command))
+                return command;
+            if (_reads.Count == 0)
+                return null;
             var read = _reads[0];
             _reads.RemoveAt(0);
             return read;
@@ -170,17 +194,31 @@ internal sealed class PipeClient : IDisposable
                 using var pipe = CreatePipe();
                 try
                 {
-                    try { await pipe.ConnectAsync(1000, token); }
+                    try
+                    {
+                        await pipe.ConnectAsync(1000, token);
+                    }
                     catch (TimeoutException) when (launchedAt is null && !_hasConnected)
                     {
                         launchedAt = Environment.TickCount64;
-                        try { LaunchEngine(); }
-                        catch (Exception error) { launchFailure = error; throw; }
+                        try
+                        {
+                            LaunchEngine();
+                        }
+                        catch (Exception error)
+                        {
+                            launchFailure = error;
+                            throw;
+                        }
                         throw;
                     }
                     var hello = await ReadGreeting(pipe, _strings, token);
-                    _ = hello.GetProperty("session_id").GetString() ?? throw new InvalidDataException();
-                    _dataDirectory = hello.TryGetProperty("data_directory", out var directory) ? directory.GetString() : _dataDirectory;
+                    _ =
+                        hello.GetProperty("session_id").GetString()
+                        ?? throw new InvalidDataException();
+                    _dataDirectory = hello.TryGetProperty("data_directory", out var directory)
+                        ? directory.GetString()
+                        : _dataDirectory;
                     _hasConnected = true;
                     lock (_gate)
                     {
@@ -194,19 +232,36 @@ internal sealed class PipeClient : IDisposable
                 catch (Exception error) when (!token.IsCancellationRequested)
                 {
                     Disconnect(error);
-                    var starting = error is TimeoutException && launchFailure is null &&
-                        launchedAt is { } launched && Environment.TickCount64 - launched < StartGrace.TotalMilliseconds;
+                    var starting =
+                        error is TimeoutException
+                        && launchFailure is null
+                        && launchedAt is { } launched
+                        && Environment.TickCount64 - launched < StartGrace.TotalMilliseconds;
                     if (!starting)
                     {
                         // A timeout adds nothing to the window's own disconnected message.
-                        var message = error is TimeoutException ? launchFailure?.Message ?? string.Empty : error.Message;
-                        if (message != lastFailure) Disconnected?.Invoke(message);
+                        var message =
+                            error is TimeoutException
+                                ? launchFailure?.Message ?? string.Empty
+                                : error.Message;
+                        if (message != lastFailure)
+                            Disconnected?.Invoke(message);
                         lastFailure = message;
                     }
-                    try { await Task.Delay(1000, token); } catch (OperationCanceledException) { }
+                    try
+                    {
+                        await Task.Delay(1000, token);
+                    }
+                    catch (OperationCanceledException) { }
                 }
-                catch (OperationCanceledException) when (token.IsCancellationRequested) { break; }
-                catch (IOException) when (token.IsCancellationRequested) { break; }
+                catch (OperationCanceledException) when (token.IsCancellationRequested)
+                {
+                    break;
+                }
+                catch (IOException) when (token.IsCancellationRequested)
+                {
+                    break;
+                }
             }
         }
         finally
@@ -226,9 +281,11 @@ internal sealed class PipeClient : IDisposable
             await Execute(pipe, new Command("snapshot", null), connection.Token);
             while (true)
             {
-                while (Next() is { } command) await Execute(pipe, command, connection.Token);
+                while (Next() is { } command)
+                    await Execute(pipe, command, connection.Token);
                 var queued = _queued.WaitAsync(connection.Token);
-                if (await Task.WhenAny(queued, receive) == receive) await receive;
+                if (await Task.WhenAny(queued, receive) == receive)
+                    await receive;
                 await queued;
             }
         }
@@ -236,7 +293,11 @@ internal sealed class PipeClient : IDisposable
         {
             connection.Cancel();
             pipe.Dispose();
-            try { await receive; } catch (Exception) when (connection.IsCancellationRequested) { }
+            try
+            {
+                await receive;
+            }
+            catch (Exception) when (connection.IsCancellationRequested) { }
         }
     }
 
@@ -247,8 +308,12 @@ internal sealed class PipeClient : IDisposable
             _connected = false;
             foreach (var command in _commands.Concat(_reads))
             {
-                if (error is null) command.Completion.TrySetCanceled(_lifetime.Token);
-                else command.Completion.TrySetException(new IOException(_strings.Get("connection", "unavailable"), error));
+                if (error is null)
+                    command.Completion.TrySetCanceled(_lifetime.Token);
+                else
+                    command.Completion.TrySetException(
+                        new IOException(_strings.Get("connection", "unavailable"), error)
+                    );
             }
             _commands.Clear();
             _reads.Clear();
@@ -270,7 +335,10 @@ internal sealed class PipeClient : IDisposable
     internal async Task RefreshSnapshot()
     {
         // The connection loop reports failures from these optional refreshes.
-        try { await Read(Consumer.Summary, "snapshot"); }
+        try
+        {
+            await Read(Consumer.Summary, "snapshot");
+        }
         catch (Exception) { }
     }
 
@@ -281,19 +349,28 @@ internal sealed class PipeClient : IDisposable
         try
         {
             var requestId = Interlocked.Increment(ref _requestId);
-            var fields = command.Arguments is null ? new Dictionary<string, JsonElement>() :
-                JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(JsonSerializer.Serialize(command.Arguments))!;
+            var fields = command.Arguments is null
+                ? new Dictionary<string, JsonElement>()
+                : JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
+                    JsonSerializer.Serialize(command.Arguments)
+                )!;
             fields["request_id"] = JsonSerializer.SerializeToElement(requestId);
             fields["command"] = JsonSerializer.SerializeToElement(command.Name);
-            _reply = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
+            _reply = new TaskCompletionSource<JsonElement>(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
             _awaitingId = requestId;
             await Write(pipe, fields, deadline.Token);
             var reply = await _reply.Task.WaitAsync(deadline.Token);
             var data = ReadOutcome(reply, _strings, command.Name);
-            if (command.Name == "snapshot") Snapshot?.Invoke(data);
+            if (command.Name == "snapshot")
+                Snapshot?.Invoke(data);
             command.Completion.TrySetResult(data);
         }
-        catch (CommandFailure error) { command.Completion.TrySetException(error); }
+        catch (CommandException error)
+        {
+            command.Completion.TrySetException(error);
+        }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
             command.Completion.TrySetCanceled(token);
@@ -310,7 +387,10 @@ internal sealed class PipeClient : IDisposable
             command.Completion.TrySetException(error);
             throw;
         }
-        finally { _reply = null; }
+        finally
+        {
+            _reply = null;
+        }
     }
 
     private async Task Receive(NamedPipeClientStream pipe, CancellationToken token)
@@ -322,15 +402,22 @@ internal sealed class PipeClient : IDisposable
                 var message = await Read(pipe, token);
                 if (message.TryGetProperty("type", out var type))
                 {
-                    if (type.GetString() is "activate" or "close" or "sources") Control?.Invoke(type.GetString()!);
-                    else if (type.GetString() == "notice") Notice?.Invoke(message);
+                    if (type.GetString() is "activate" or "close" or "activations" or "settings")
+                        Control?.Invoke(type.GetString()!);
+                    else if (type.GetString() == "notice")
+                        Notice?.Invoke(message);
                 }
-                else if (message.TryGetProperty("request_id", out var id) && id.GetInt64() == _awaitingId)
+                else if (
+                    message.TryGetProperty("request_id", out var id)
+                    && id.GetInt64() == _awaitingId
+                )
                     _reply?.TrySetResult(message);
             }
         }
-        catch (Exception error) when (token.IsCancellationRequested &&
-            error is OperationCanceledException or IOException or ObjectDisposedException)
+        catch (Exception error)
+            when (token.IsCancellationRequested
+                && error is OperationCanceledException or IOException or ObjectDisposedException
+            )
         {
             _reply?.TrySetCanceled(token);
         }
@@ -341,28 +428,45 @@ internal sealed class PipeClient : IDisposable
         }
     }
 
-    private static NamedPipeClientStream CreatePipe() => new(".", "TinyTorrent." + LogonSid,
-        PipeDirection.InOut, PipeOptions.Asynchronous, TokenImpersonationLevel.Identification);
+    private static NamedPipeClientStream CreatePipe() =>
+        new(
+            ".",
+            "TinyTorrent." + LogonSid,
+            PipeDirection.InOut,
+            PipeOptions.Asynchronous,
+            TokenImpersonationLevel.Identification
+        );
 
     private static JsonElement ReadOutcome(JsonElement reply, Strings strings, string command)
     {
         if (!reply.GetProperty("ok").GetBoolean())
         {
             var error = reply.GetProperty("error");
-            throw new CommandFailure(error.GetProperty("code").GetString()!,
-                error.TryGetProperty("detail", out var detail) ? detail.GetString() : null, strings, command);
+            throw new CommandException(
+                error.GetProperty("code").GetString()!,
+                error.TryGetProperty("detail", out var detail) ? detail.GetString() : null,
+                strings,
+                command
+            );
         }
         return reply.TryGetProperty("data", out var value) ? value : default;
     }
 
-    private static async Task<JsonElement> ReadGreeting(Stream pipe, Strings strings, CancellationToken token)
+    private static async Task<JsonElement> ReadGreeting(
+        Stream pipe,
+        Strings strings,
+        CancellationToken token
+    )
     {
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
         deadline.CancelAfter(RequestTimeout);
         try
         {
             var hello = await Read(pipe, deadline.Token);
-            if (hello.GetProperty("type").GetString() != "hello" || hello.GetProperty("version").GetInt32() != 7)
+            if (
+                hello.GetProperty("type").GetString() != "hello"
+                || hello.GetProperty("version").GetInt32() != 8
+            )
                 throw new InvalidDataException(strings.Get("connection", "version"));
             return hello;
         }
@@ -384,7 +488,8 @@ internal sealed class PipeClient : IDisposable
             while (true)
             {
                 var reply = await Read(pipe, timeout.Token);
-                if (!reply.TryGetProperty("request_id", out var id) || id.GetInt64() != 1) continue;
+                if (!reply.TryGetProperty("request_id", out var id) || id.GetInt64() != 1)
+                    continue;
                 ReadOutcome(reply, strings, "open");
                 return;
             }
@@ -401,8 +506,13 @@ internal sealed class PipeClient : IDisposable
     internal void LaunchEngine()
     {
         var adjacent = Path.Combine(AppContext.BaseDirectory, EngineFile);
-        if (!File.Exists(adjacent)) throw new FileNotFoundException(_strings.Format("connection", "missing", EngineFile));
-        var start = new ProcessStartInfo(adjacent) { UseShellExecute = false, CreateNoWindow = true };
+        if (!File.Exists(adjacent))
+            throw new FileNotFoundException(_strings.Format("connection", "missing", EngineFile));
+        var start = new ProcessStartInfo(adjacent)
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
         start.ArgumentList.Add("--background");
         if (_dataDirectory is not null)
         {
@@ -412,12 +522,39 @@ internal sealed class PipeClient : IDisposable
         Process.Start(start);
     }
 
+    // Runs the engine beside the window as an administrator to remove the
+    // all-users open commands of `classes` that start a missing program. A
+    // declined prompt, a failed start or a failed repair all leave those
+    // handlers reported, which is the person's evidence that they remain.
+    internal async Task RepairMachine(IEnumerable<string> classes)
+    {
+        var start = new ProcessStartInfo(Path.Combine(AppContext.BaseDirectory, EngineFile))
+        {
+            UseShellExecute = true,
+            Verb = "runas",
+        };
+        start.ArgumentList.Add("--headless");
+        foreach (var progId in classes)
+        {
+            start.ArgumentList.Add("--repair-class");
+            start.ArgumentList.Add(progId);
+        }
+        try
+        {
+            using var process = Process.Start(start);
+            if (process is not null)
+                await process.WaitForExitAsync();
+        }
+        catch (Win32Exception) { }
+    }
+
     private static async Task<JsonElement> Read(Stream pipe, CancellationToken token)
     {
         var header = new byte[4];
         await pipe.ReadExactlyAsync(header, token);
         var length = BinaryPrimitives.ReadInt32LittleEndian(header);
-        if (length <= 0 || length > MaximumFrame) throw new InvalidDataException("Invalid pipe frame length.");
+        if (length <= 0 || length > MaximumFrame)
+            throw new InvalidDataException("Invalid pipe frame length.");
         var bytes = new byte[length];
         await pipe.ReadExactlyAsync(bytes, token);
         using var document = JsonDocument.Parse(bytes);
@@ -427,7 +564,8 @@ internal sealed class PipeClient : IDisposable
     private static async Task Write(Stream pipe, object message, CancellationToken token)
     {
         var bytes = JsonSerializer.SerializeToUtf8Bytes(message);
-        if (bytes.Length > MaximumFrame) throw new InvalidDataException("Pipe frame exceeds the limit.");
+        if (bytes.Length > MaximumFrame)
+            throw new InvalidDataException("Pipe frame exceeds the limit.");
         var header = new byte[4];
         BinaryPrimitives.WriteInt32LittleEndian(header, bytes.Length);
         await pipe.WriteAsync(header, token);
@@ -439,7 +577,8 @@ internal sealed class PipeClient : IDisposable
     {
         lock (_gate)
         {
-            if (_disposed) return;
+            if (_disposed)
+                return;
             _disposed = true;
             _connected = false;
             _lifetime.Cancel();
@@ -452,10 +591,17 @@ internal sealed class PipeClient : IDisposable
     {
         try
         {
-            if (_pump is { } pump) await pump.ConfigureAwait(false);
+            if (_pump is { } pump)
+                await pump.ConfigureAwait(false);
         }
-        catch (Exception error) { Debug.WriteLine($"Pipe client stopped: {error.Message}"); }
-        finally { _lifetime.Dispose(); }
+        catch (Exception error)
+        {
+            Debug.WriteLine($"Pipe client stopped: {error.Message}");
+        }
+        finally
+        {
+            _lifetime.Dispose();
+        }
     }
 
     private sealed class Command(string name, object? arguments, Consumer? consumer = null)
@@ -463,7 +609,8 @@ internal sealed class PipeClient : IDisposable
         internal string Name { get; private set; } = name;
         internal object? Arguments { get; private set; } = arguments;
         internal Consumer? Consumer { get; } = consumer;
-        internal TaskCompletionSource<JsonElement> Completion { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal TaskCompletionSource<JsonElement> Completion { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         internal void Replace(string name, object? arguments)
         {
@@ -473,7 +620,12 @@ internal sealed class PipeClient : IDisposable
     }
 }
 
-internal sealed class CommandFailure(string code, string? detail, Strings strings, string? command = null) : Exception
+internal sealed class CommandException(
+    string code,
+    string? detail,
+    Strings strings,
+    string? command = null
+) : Exception
 {
     public string Code { get; } = code;
     public string? Command { get; } = command;

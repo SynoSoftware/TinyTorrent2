@@ -43,7 +43,7 @@ public:
     {
         // Read when the client connects, because the pipe instance serves
         // other clients after this one disconnects.
-        ULONG process = 0;
+        ULONG processId = 0;
         HANDLE cancel = CreateEventW(nullptr, TRUE, FALSE, nullptr);
         std::string connectionId;
         std::mutex mutex;
@@ -56,11 +56,10 @@ public:
         void Send(Json message);
     };
     // The protocol version that the hello message announces.
-    static constexpr int version = 7;
-    using Client = std::shared_ptr<Connection>;
+    static constexpr int version = 8;
     // Receives each request with the reply that answers it, and a null request
     // with no reply when the client disconnects.
-    using Dispatch = std::function<void(Client, Json, Reply)>;
+    using Dispatch = std::function<void(std::shared_ptr<Connection>, Json, Reply)>;
 
     Pipe(std::wstring const& sid, SECURITY_ATTRIBUTES& security, Json hello, Dispatch dispatch);
     ~Pipe();
@@ -72,7 +71,7 @@ public:
 private:
     static std::wstring Name(std::wstring const& sid);
     void Serve(HANDLE handle);
-    void Deliver(Client client, HANDLE handle);
+    void Deliver(std::shared_ptr<Connection> client, HANDLE handle);
     Json hello_;
     Dispatch dispatch_;
     std::atomic<bool> stopping_ = false;

@@ -1,0 +1,79 @@
+{
+  "format": 1,
+  "queue_order": [
+    "{ECE5E9CC-3FBB-452B-96ED-7F8E895285EE}"
+  ],
+  "settings": {
+    "active_downloads": 3,
+    "active_seeds": 5,
+    "all_paused": true,
+    "alternative_download_limit": 10240,
+    "alternative_limits": false,
+    "alternative_upload_limit": 10240,
+    "background_notice_shown": false,
+    "check_for_updates": false,
+    "connection_limit": 200,
+    "default_destination": "",
+    "download_limit": 0,
+    "language": "en",
+    "listen_port": 6881,
+    "network_interface": "",
+    "notifications_enabled": true,
+    "port_mapping": false,
+    "prevent_sleep": true,
+    "prevent_sleep_seeding": false,
+    "ratio_limit": 0.0,
+    "schedule": [
+      {
+        "start": 0,
+        "days": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ],
+        "mode": "paused",
+        "end": 420
+      },
+      {
+        "start": 540,
+        "days": [
+          0,
+          1,
+          2,
+          3,
+          4
+        ],
+        "mode": "alternative",
+        "end": 1080
+      }
+    ],
+    "schedule_enabled": false,
+    "seeding_minutes": 0,
+    "show_add": true,
+    "theme": "system",
+    "upload_limit": 0
+  },
+  "torrents": [
+    {
+      "added": 1791201402,
+      "forced": false,
+      "hashes": [
+        "e30133b62af6b9450dcabbc486c142b91b169eaa"
+      ],
+      "ignores_seed_limits": false,
+      "move_destination": "",
+      "paused": true,
+      "priorities": [
+        0
+      ],
+      "save_path": "",
+      "torrent_id": "{ECE5E9CC-3FBB-452B-96ED-7F8E895285EE}",
+      "trackers": [],
+      "verify_files": false
+    }
+  ]
+}

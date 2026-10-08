@@ -51,7 +51,8 @@ public sealed partial class Strip : Panel
         return finalSize;
     }
 
-    private UIElement[] Visible() => Children.Where(child => child.Visibility == Visibility.Visible).ToArray();
+    private UIElement[] Visible() =>
+        Children.Where(child => child.Visibility == Visibility.Visible).ToArray();
 
     private int Columns(UIElement[] children, double width)
     {

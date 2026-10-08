@@ -6,10 +6,12 @@
 #include <cstring>
 #include <filesystem>
 #include <functional>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -33,6 +35,7 @@ constexpr wchar_t background[] = L"--background";
 constexpr wchar_t exit[] = L"--exit";
 constexpr wchar_t registration[] = L"--registration";
 constexpr wchar_t data[] = L"--data";
+constexpr wchar_t repairClass[] = L"--repair-class";
 }
 
 constexpr std::string_view magnetScheme = "magnet:";
@@ -60,6 +63,9 @@ struct Notice
     NoticeKind kind;
     std::string name;
     std::string detail;
+    // The code of the torrent problem the notice reports, which the window
+    // explains; empty for other notices.
+    std::string code;
     std::string torrentId;
     unsigned count = 1;
 };
@@ -85,22 +91,26 @@ struct Activity
 {
     std::int64_t downloadRate = 0;
     std::int64_t uploadRate = 0;
-    unsigned active = 0;
-    unsigned queued = 0;
-    unsigned errors = 0;
+    unsigned activeCount = 0;
+    unsigned queuedCount = 0;
+    unsigned errorCount = 0;
     std::size_t torrentCount = 0;
-    bool allPaused = false;
-    std::string missingInterface;
+    bool paused = false;
+    // The tray's Pause item offers Resume only for a pause Resume can lift.
+    bool pausedByChoice = false;
+    std::string missingAdapter;
     bool downloading = false;
     bool seeding = false;
     bool hasIncoming = false;
     bool notificationsEnabled = false;
-    bool notifyProblems = true;
-    bool notifyAdded = false;
-    bool preventSleep = true;
-    bool preventSleepSeeding = false;
+    bool notifiesProblems = true;
+    bool notifiesAdded = false;
+    bool preventsSleep = true;
+    bool preventsSleepSeeding = false;
     bool backgroundNoticeShown = false;
+    std::vector<std::string> reportedPrograms;
     bool filesBusy = false;
+    bool confirmsExit = true;
 };
 
 class Engine
@@ -114,16 +124,18 @@ public:
     Engine(Engine const&) = delete;
     Engine& operator=(Engine const&) = delete;
 
-    void Execute(Json const& request, std::string const& connection, Reply reply);
+    void Execute(Json const& request, std::string const& connectionId, Reply reply);
     void Tick();
-    void Disconnect(std::string const& connection);
+    void Disconnect(std::string const& connectionId);
     // The completion receives nothing when the final save succeeded, and
     // otherwise its cause, which is empty when the cause is unknown.
     void Shutdown(std::function<void(std::optional<std::string> failure)> completion);
-    void PauseSession(bool paused, std::function<void(Outcome)> done);
-    void RecordBackgroundNotice(std::function<void(Outcome)> done);
+    void PauseSession(bool paused, std::function<void(Outcome)> completion);
+    void RecordBackgroundNotice(std::function<void(Outcome)> completion);
+    // Saves the missing programs that torrent handlers start, once reported.
+    void RecordPrograms(std::vector<std::string> programs, std::function<void(Outcome)> completion);
     // Adds a source to the default destination with the default file choices.
-    void Add(std::string const& source, std::function<void(Outcome, Added)> done);
+    void Add(std::string const& source, std::function<void(Outcome, Added)> completion);
     Json Snapshot() const;
     tt::Activity Activity() const;
     std::vector<Notice> TakeNotices();
@@ -131,7 +143,7 @@ public:
     std::string Folder(std::string const& torrentId) const;
     std::string Language() const;
     std::string Theme() const;
-    bool IsStopping() const;
+    bool IsShuttingDown() const;
     bool IsLoading() const;
     bool HasStorageFailure() const;
     std::string StartupError() const;
@@ -160,6 +172,39 @@ std::optional<Value> Parse(std::pair<std::string_view, Value> const (&names)[Siz
     return std::nullopt;
 }
 
+// Reads a value from settings.json, or returns `fallback` when the key is
+// missing or holds a value of another type, so a damaged file still loads with
+// every value it holds correctly. Every whole number saved there is zero or
+// more.
+template <typename Value>
+Value ReadSaved(Json const& saved, char const* key, Value fallback)
+{
+    auto found = saved.find(key);
+    if (found == saved.end())
+    {
+        return fallback;
+    }
+    if constexpr (std::is_same_v<Value, bool>)
+    {
+        if (!found->is_boolean())
+        {
+            return fallback;
+        }
+    }
+    else if constexpr (std::is_same_v<Value, std::string>)
+    {
+        if (!found->is_string())
+        {
+            return fallback;
+        }
+    }
+    else if (!found->is_number_integer() || *found < 0 || *found > (std::numeric_limits<Value>::max)())
+    {
+        return fallback;
+    }
+    return found->get<Value>();
+}
+
 // The protocol word for a value, from the same table that Parse reads.
 template <typename Value, std::size_t Size>
 std::string_view Word(std::pair<std::string_view, Value> const (&names)[Size], Value value)
@@ -179,6 +224,7 @@ std::wstring Wide(std::string const& value);
 std::string Base64(std::string_view bytes);
 std::wstring Executable();
 char const* ToString(NoticeKind kind);
+char const* ToString(ErrorCode code);
 Json Success(Json data = Json::object());
 Json Failure(ErrorCode code, std::string detail = {});
 // A request refused because of a torrent's problem reports that problem.

@@ -51,7 +51,8 @@ public static class TestHost
                 _ = callbackParams;
                 DispatcherQueue queue = DispatcherQueue.GetForCurrentThread();
                 SynchronizationContext.SetSynchronizationContext(
-                    new DispatcherQueueSynchronizationContext(queue));
+                    new DispatcherQueueSynchronizationContext(queue)
+                );
                 _ = new UnitTestApp();
             });
         })
@@ -120,8 +121,11 @@ public static class TestHost
 
                 if (_unexpected is Exception stray)
                 {
-                    tcs.TrySetException(new AssertFailedException(
-                        "An unexpected exception reached the UI thread: " + stray));
+                    tcs.TrySetException(
+                        new AssertFailedException(
+                            "An unexpected exception reached the UI thread: " + stray
+                        )
+                    );
                 }
                 else
                 {
@@ -141,7 +145,9 @@ public static class TestHost
 
         if (!enqueued)
         {
-            tcs.TrySetException(new InvalidOperationException("Could not reach the test UI thread."));
+            tcs.TrySetException(
+                new InvalidOperationException("Could not reach the test UI thread.")
+            );
         }
 
         return tcs.Task.WaitAsync(TimeSpan.FromSeconds(30));

@@ -131,7 +131,7 @@ affected a recommendation.
 | Advice | Disposition |
 | --- | --- |
 | Protect normal downloads as well as destructive work. | Accepted as a missing rule; [payload ownership](../engine.md#payload-ownership) now covers accepted torrents, path resolution, and restart. |
-| Commit removal before deletion; protect both ends of relocation and recover partial moves. | Accepted; [removal and relocation](../engine.md#removal-and-relocation) now states ordering and recovery. The pinned move contract confirms the overwrite race and unrelated-source-file risk. |
+| Commit removal before deletion; protect both ends of relocation and recover partial moves. | Accepted; [removal and relocation](../engine.md#removal-and-moves) now states ordering and recovery. The pinned move contract confirms the overwrite race and unrelated-source-file risk. |
 | Prevent stale drafts from overwriting newer choices. | Accepted at this review; [engine edits](../engine.md#committed-edits) has subsequently been revised. |
 | Define expired results and delivery of asynchronous outcomes. | Accepted; [protocol outcomes](../protocol.md#outcomes-and-reconnection) uses summary snapshots and explicit unavailable outcomes, separately from unfinished-file recovery. |
 | Windows defaults to pread in 2.1.2, not mmap. | Verified in the pinned `session.cpp`. [Disk settings](../engine.md#disk-write-caching) now explicitly selects mmap for the existing baseline and requires comparison with the default; a lower-memory claim for either backend remains unmeasured. |

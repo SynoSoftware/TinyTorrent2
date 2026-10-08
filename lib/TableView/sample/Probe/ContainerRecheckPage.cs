@@ -26,22 +26,47 @@ public sealed partial class ContainerRecheckPage : Page
     private double _scale = 1.0;
     private bool _finished;
     private static readonly Color Grey = Color.FromArgb(255, 128, 128, 128);
-    private static readonly string Out = System.IO.Path.Combine(AppContext.BaseDirectory, "container-recheck-results.txt");
-    private static readonly string Ready = System.IO.Path.Combine(AppContext.BaseDirectory, "container-recheck-uia-ready.txt");
+    private static readonly string Out = System.IO.Path.Combine(
+        AppContext.BaseDirectory,
+        "container-recheck-results.txt"
+    );
+    private static readonly string Ready = System.IO.Path.Combine(
+        AppContext.BaseDirectory,
+        "container-recheck-uia-ready.txt"
+    );
 
-    public ContainerRecheckPage() { InitializeComponent(); Loaded += OnLoaded; }
+    public ContainerRecheckPage()
+    {
+        InitializeComponent();
+        Loaded += OnLoaded;
+    }
 
     private void W(string s) => _log.AppendLine(s);
-    private void Section(string s) { W(""); W("========================================================"); W(s); W("========================================================"); }
+
+    private void Section(string s)
+    {
+        W("");
+        W("========================================================");
+        W(s);
+        W("========================================================");
+    }
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
         Loaded -= OnLoaded;
-        try { File.Delete(Ready); } catch { }
+        try
+        {
+            File.Delete(Ready);
+        }
+        catch { }
         var timer = DispatcherQueue.CreateTimer();
         timer.Interval = TimeSpan.FromSeconds(420);
         timer.IsRepeating = false;
-        timer.Tick += (_, _) => { W("WATCHDOG"); Finish(); };
+        timer.Tick += (_, _) =>
+        {
+            W("WATCHDOG");
+            Finish();
+        };
         timer.Start();
 
         _scale = XamlRoot?.RasterizationScale ?? 1.0;
@@ -62,14 +87,29 @@ public sealed partial class ContainerRecheckPage : Page
     }
 
     private async Task G(string n, Func<Task> b)
-    { try { await b(); } catch (Exception ex) { W($"*** {n} THREW {ex.GetType().Name}: {ex.Message}"); W(ex.StackTrace ?? ""); } }
+    {
+        try
+        {
+            await b();
+        }
+        catch (Exception ex)
+        {
+            W($"*** {n} THREW {ex.GetType().Name}: {ex.Message}");
+            W(ex.StackTrace ?? "");
+        }
+    }
 
     private void Finish()
     {
-        if (_finished) return;
+        if (_finished)
+            return;
         _finished = true;
         W($"container recheck finished {DateTime.Now:O}");
-        try { File.WriteAllText(Out, _log.ToString()); } catch { }
+        try
+        {
+            File.WriteAllText(Out, _log.ToString());
+        }
+        catch { }
         Application.Current.Exit();
     }
 
@@ -78,46 +118,91 @@ public sealed partial class ContainerRecheckPage : Page
         try
         {
             var w = MainWindow.Instance;
-            if (w is null) return;
-            w.AppWindow.ResizeClient(new Windows.Graphics.SizeInt32((int)(940 * _scale), (int)(700 * _scale)));
+            if (w is null)
+                return;
+            w.AppWindow.ResizeClient(
+                new Windows.Graphics.SizeInt32((int)(940 * _scale), (int)(700 * _scale))
+            );
             w.Activate();
         }
-        catch (Exception ex) { W("resize failed " + ex.Message); }
+        catch (Exception ex)
+        {
+            W("resize failed " + ex.Message);
+        }
     }
 
     private async Task Settle(int ms = 250)
-    { Host.UpdateLayout(); await Task.Delay(ms); Host.UpdateLayout(); await Task.Delay(60); }
+    {
+        Host.UpdateLayout();
+        await Task.Delay(ms);
+        Host.UpdateLayout();
+        await Task.Delay(60);
+    }
 
     private async Task ShowAsync(UIElement el, int ms = 450)
     {
         Host.Children.Clear();
         CountingPanel.Live.Clear();
-        if (el is FrameworkElement fe) { fe.HorizontalAlignment = HorizontalAlignment.Left; fe.VerticalAlignment = VerticalAlignment.Top; }
+        if (el is FrameworkElement fe)
+        {
+            fe.HorizontalAlignment = HorizontalAlignment.Left;
+            fe.VerticalAlignment = VerticalAlignment.Top;
+        }
         Host.Children.Add(el);
         await Settle(ms);
     }
 
     private static List<Item> MakeItems(int n)
-    { var l = new List<Item>(n); for (int i = 0; i < n; i++) l.Add(new Item { Index = i, Name = "item " + i }); return l; }
+    {
+        var l = new List<Item>(n);
+        for (int i = 0; i < n; i++)
+            l.Add(new Item { Index = i, Name = "item " + i });
+        return l;
+    }
 
-    private static T? FindDescendant<T>(DependencyObject root) where T : DependencyObject
+    private static T? FindDescendant<T>(DependencyObject root)
+        where T : DependencyObject
     {
         int n = VisualTreeHelper.GetChildrenCount(root);
         for (int i = 0; i < n; i++)
-        { var c = VisualTreeHelper.GetChild(root, i); if (c is T t) return t; var r = FindDescendant<T>(c); if (r is not null) return r; }
+        {
+            var c = VisualTreeHelper.GetChild(root, i);
+            if (c is T t)
+                return t;
+            var r = FindDescendant<T>(c);
+            if (r is not null)
+                return r;
+        }
         return null;
     }
 
-    private static void FindAll<T>(DependencyObject root, List<T> into) where T : DependencyObject
+    private static void FindAll<T>(DependencyObject root, List<T> into)
+        where T : DependencyObject
     {
         int n = VisualTreeHelper.GetChildrenCount(root);
-        for (int i = 0; i < n; i++) { var c = VisualTreeHelper.GetChild(root, i); if (c is T t) into.Add(t); FindAll(c, into); }
+        for (int i = 0; i < n; i++)
+        {
+            var c = VisualTreeHelper.GetChild(root, i);
+            if (c is T t)
+                into.Add(t);
+            FindAll(c, into);
+        }
     }
 
-    private static Point Origin(UIElement c, UIElement a) => c.TransformToVisual(a).TransformPoint(new Point(0, 0));
+    private static Point Origin(UIElement c, UIElement a) =>
+        c.TransformToVisual(a).TransformPoint(new Point(0, 0));
 
     // ------------------------------------------------------------ capture
-    private sealed class Shot { public int W, H; public byte[] Px = Array.Empty<byte>(); public bool Ok; public string Err = ""; public override string ToString() => Ok ? $"{W}x{H}" : "FAILED " + Err; }
+    private sealed class Shot
+    {
+        public int W,
+            H;
+        public byte[] Px = Array.Empty<byte>();
+        public bool Ok;
+        public string Err = "";
+
+        public override string ToString() => Ok ? $"{W}x{H}" : "FAILED " + Err;
+    }
 
     private async Task<Shot> CaptureAsync(UIElement el)
     {
@@ -129,9 +214,15 @@ public sealed partial class ContainerRecheckPage : Page
             var buf = await rtb.GetPixelsAsync();
             var bytes = new byte[buf.Length];
             DataReader.FromBuffer(buf).ReadBytes(bytes);
-            s.W = rtb.PixelWidth; s.H = rtb.PixelHeight; s.Px = bytes; s.Ok = true;
+            s.W = rtb.PixelWidth;
+            s.H = rtb.PixelHeight;
+            s.Px = bytes;
+            s.Ok = true;
         }
-        catch (Exception ex) { s.Err = ex.GetType().Name + ": " + ex.Message; }
+        catch (Exception ex)
+        {
+            s.Err = ex.GetType().Name + ": " + ex.Message;
+        }
         return s;
     }
 
@@ -139,16 +230,24 @@ public sealed partial class ContainerRecheckPage : Page
 
     private double FirstBlueX(Shot s, double y0, double h, double w = 140)
     {
-        if (!s.Ok) return double.NaN;
+        if (!s.Ok)
+            return double.NaN;
         for (double dx = 0; dx <= w; dx += 0.5)
         {
             int px = (int)Math.Round(dx * _scale);
-            if (px < 0 || px >= s.W) continue;
-            for (int py = (int)Math.Round(y0 * _scale); py < (int)Math.Round((y0 + h) * _scale); py++)
+            if (px < 0 || px >= s.W)
+                continue;
+            for (
+                int py = (int)Math.Round(y0 * _scale);
+                py < (int)Math.Round((y0 + h) * _scale);
+                py++
+            )
             {
-                if (py < 0 || py >= s.H) continue;
+                if (py < 0 || py >= s.H)
+                    continue;
                 int i = (py * s.W + px) * 4;
-                if (IsBlue(s.Px[i], s.Px[i + 1], s.Px[i + 2])) return dx;
+                if (IsBlue(s.Px[i], s.Px[i + 1], s.Px[i + 2]))
+                    return dx;
             }
         }
         return double.NaN;
@@ -156,44 +255,68 @@ public sealed partial class ContainerRecheckPage : Page
 
     private string RawScan(Shot s, double dipY, double x0, double x1)
     {
-        if (!s.Ok) return "capture-failed";
+        if (!s.Ok)
+            return "capture-failed";
         int y = (int)Math.Round(dipY * _scale);
-        var sb = new StringBuilder(); string last = "";
+        var sb = new StringBuilder();
+        string last = "";
         for (double x = x0; x <= x1; x += 1)
         {
             int px = (int)Math.Round(x * _scale);
-            if (px < 0 || px >= s.W || y < 0 || y >= s.H) continue;
+            if (px < 0 || px >= s.W || y < 0 || y >= s.H)
+                continue;
             int i = (y * s.W + px) * 4;
             var c = $"({s.Px[i]},{s.Px[i + 1]},{s.Px[i + 2]})";
-            if (c != last) { sb.Append($" x{x:0}={c}"); last = c; }
+            if (c != last)
+            {
+                sb.Append($" x{x:0}={c}");
+                last = c;
+            }
         }
         return sb.Length == 0 ? "(nothing)" : sb.ToString();
     }
 
     private static string GroupsOf(ListViewItem c)
     {
-        if (VisualTreeHelper.GetChildrenCount(c) == 0) return "no template root";
-        if (VisualTreeHelper.GetChild(c, 0) is not FrameworkElement root) return "root not FE";
+        if (VisualTreeHelper.GetChildrenCount(c) == 0)
+            return "no template root";
+        if (VisualTreeHelper.GetChild(c, 0) is not FrameworkElement root)
+            return "root not FE";
         var g = VisualStateManager.GetVisualStateGroups(root);
-        if (g is null || g.Count == 0) return "0 groups";
+        if (g is null || g.Count == 0)
+            return "0 groups";
         var parts = new List<string>();
         foreach (var grp in g)
-            parts.Add($"'{grp.Name}' current='{grp.CurrentState?.Name ?? "(null)"}' states({grp.States.Count}): {string.Join(", ", grp.States.Select(x => x.Name))}");
+            parts.Add(
+                $"'{grp.Name}' current='{grp.CurrentState?.Name ?? "(null)"}' states({grp.States.Count}): {string.Join(", ", grp.States.Select(x => x.Name))}"
+            );
         return $"{g.Count} group(s) -> " + string.Join(" | ", parts);
     }
 
     // ================================================= V1
     private async Task V1_StatesInstantiation()
     {
-        Section("V1  Are the container visual state groups really absent without an ItemContainerStyle,\n" +
-                "    or merely not instantiated yet? Read, force with GoToState, read again.");
+        Section(
+            "V1  Are the container visual state groups really absent without an ItemContainerStyle,\n"
+                + "    or merely not instantiated yet? Read, force with GoToState, read again."
+        );
 
-        foreach (var (label, mode, style) in new (string, ListViewSelectionMode, string?)[]
-        {
-            ("SelectionMode=None, NO ItemContainerStyle", ListViewSelectionMode.None, null),
-            ("SelectionMode=Multiple, NO ItemContainerStyle", ListViewSelectionMode.Multiple, null),
-            ("SelectionMode=Multiple, TightItemStyle3", ListViewSelectionMode.Multiple, "TightItemStyle3"),
-        })
+        foreach (
+            var (label, mode, style) in new (string, ListViewSelectionMode, string?)[]
+            {
+                ("SelectionMode=None, NO ItemContainerStyle", ListViewSelectionMode.None, null),
+                (
+                    "SelectionMode=Multiple, NO ItemContainerStyle",
+                    ListViewSelectionMode.Multiple,
+                    null
+                ),
+                (
+                    "SelectionMode=Multiple, TightItemStyle3",
+                    ListViewSelectionMode.Multiple,
+                    "TightItemStyle3"
+                ),
+            }
+        )
         {
             W("");
             W($"---- {label} ----");
@@ -210,8 +333,15 @@ public sealed partial class ContainerRecheckPage : Page
                 Height = 300,
             };
             await ShowAsync(lv);
-            if (lv.ContainerFromIndex(0) is not ListViewItem c) { W("  container 0 not realized"); continue; }
-            var root = VisualTreeHelper.GetChildrenCount(c) > 0 ? VisualTreeHelper.GetChild(c, 0) as FrameworkElement : null;
+            if (lv.ContainerFromIndex(0) is not ListViewItem c)
+            {
+                W("  container 0 not realized");
+                continue;
+            }
+            var root =
+                VisualTreeHelper.GetChildrenCount(c) > 0
+                    ? VisualTreeHelper.GetChild(c, 0) as FrameworkElement
+                    : null;
             W($"  template root = {root?.GetType().FullName ?? "(none)"}");
             W($"  BEFORE any GoToState: {GroupsOf(c)}");
 
@@ -231,9 +361,15 @@ public sealed partial class ContainerRecheckPage : Page
             if (mode != ListViewSelectionMode.None)
             {
                 var src = (List<Item>)lv.ItemsSource;
-                if (mode == ListViewSelectionMode.Multiple) lv.SelectedItems.Add(src[0]); else lv.SelectedIndex = 0;
+                if (mode == ListViewSelectionMode.Multiple)
+                    lv.SelectedItems.Add(src[0]);
+                else
+                    lv.SelectedIndex = 0;
             }
-            else { c.IsSelected = true; }
+            else
+            {
+                c.IsSelected = true;
+            }
             await Settle(250);
             W($"  AFTER a real selection change: {GroupsOf(c)}");
 
@@ -247,6 +383,7 @@ public sealed partial class ContainerRecheckPage : Page
     {
         public int Id { get; init; }
         public int Gen { get; init; }
+
         public override string ToString() => $"#{Id} gen{Gen}";
     }
 
@@ -255,7 +392,8 @@ public sealed partial class ContainerRecheckPage : Page
         Section("V2  Collection Reset under Multiple. Instance identity asserted, not assumed.");
 
         var coll = new ObservableCollection<ResetItem>();
-        for (int i = 0; i < 12; i++) coll.Add(new ResetItem { Id = i, Gen = 1 });
+        for (int i = 0; i < 12; i++)
+            coll.Add(new ResetItem { Id = i, Gen = 1 });
         var gen1 = coll.ToList();
 
         var lv = new ListView
@@ -270,86 +408,153 @@ public sealed partial class ContainerRecheckPage : Page
             Width = 800,
             Height = 380,
         };
-        int ev = 0, add = 0, rem = 0;
-        lv.SelectionChanged += (_, e2) => { ev++; add += e2.AddedItems.Count; rem += e2.RemovedItems.Count; };
+        int ev = 0,
+            add = 0,
+            rem = 0;
+        lv.SelectionChanged += (_, e2) =>
+        {
+            ev++;
+            add += e2.AddedItems.Count;
+            rem += e2.RemovedItems.Count;
+        };
         await ShowAsync(lv, 500);
 
-        lv.SelectedItems.Add(gen1[2]); lv.SelectedItems.Add(gen1[5]); lv.SelectedItems.Add(gen1[9]);
+        lv.SelectedItems.Add(gen1[2]);
+        lv.SelectedItems.Add(gen1[5]);
+        lv.SelectedItems.Add(gen1[9]);
         await Settle(250);
         (lv.ContainerFromIndex(5) as ListViewItem)?.Focus(FocusState.Keyboard);
         await Settle(250);
-        W($"  BEFORE reset: Items={lv.Items.Count} SelectedItems={lv.SelectedItems.Count} SelectedIndex={lv.SelectedIndex}");
-        W($"    selected ids = {string.Join(",", lv.SelectedItems.Select(o => ((ResetItem)o).Id))}");
+        W(
+            $"  BEFORE reset: Items={lv.Items.Count} SelectedItems={lv.SelectedItems.Count} SelectedIndex={lv.SelectedIndex}"
+        );
+        W(
+            $"    selected ids = {string.Join(",", lv.SelectedItems.Select(o => ((ResetItem)o).Id))}"
+        );
         W($"    focus = {Desc(FocusManager.GetFocusedElement(XamlRoot), lv)}");
 
-        ev = 0; add = 0; rem = 0;
+        ev = 0;
+        add = 0;
+        rem = 0;
         coll.Clear();
         await Settle(250);
-        W($"  right after Clear(): SelectedItems={lv.SelectedItems.Count} SelectedIndex={lv.SelectedIndex} Items={lv.Items.Count}");
+        W(
+            $"  right after Clear(): SelectedItems={lv.SelectedItems.Count} SelectedIndex={lv.SelectedIndex} Items={lv.Items.Count}"
+        );
         var gen2 = new List<ResetItem>();
-        for (int i = 0; i < 12; i++) { var it = new ResetItem { Id = i, Gen = 2 }; gen2.Add(it); coll.Add(it); }
+        for (int i = 0; i < 12; i++)
+        {
+            var it = new ResetItem { Id = i, Gen = 2 };
+            gen2.Add(it);
+            coll.Add(it);
+        }
         await Settle(500);
 
         int sameRef = 0;
-        for (int i = 0; i < 12; i++) if (ReferenceEquals(gen1[i], gen2[i])) sameRef++;
+        for (int i = 0; i < 12; i++)
+            if (ReferenceEquals(gen1[i], gen2[i]))
+                sameRef++;
         W("");
-        W($"  IDENTITY ASSERTION: ReferenceEquals(gen1[i], gen2[i]) true for {sameRef} of 12; 0 means the re-added items are genuinely new objects");
+        W(
+            $"  IDENTITY ASSERTION: ReferenceEquals(gen1[i], gen2[i]) true for {sameRef} of 12; 0 means the re-added items are genuinely new objects"
+        );
         W($"    gen1[2] hash={gen1[2].GetHashCode()}  gen2[2] hash={gen2[2].GetHashCode()}");
-        W($"    any shared reference between gen1 and gen2 = {gen1.Any(x => gen2.Any(y => ReferenceEquals(x, y)))}");
-        W($"  AFTER reset with NEW instances: Items={lv.Items.Count} SelectedItems={lv.SelectedItems.Count} SelectedIndex={lv.SelectedIndex}");
-        W($"    selected = {(lv.SelectedItems.Count == 0 ? "(none)" : string.Join(",", lv.SelectedItems.Select(o => o.ToString())))}");
+        W(
+            $"    any shared reference between gen1 and gen2 = {gen1.Any(x => gen2.Any(y => ReferenceEquals(x, y)))}"
+        );
+        W(
+            $"  AFTER reset with NEW instances: Items={lv.Items.Count} SelectedItems={lv.SelectedItems.Count} SelectedIndex={lv.SelectedIndex}"
+        );
+        W(
+            $"    selected = {(lv.SelectedItems.Count == 0 ? "(none)" : string.Join(",", lv.SelectedItems.Select(o => o.ToString())))}"
+        );
         W($"    SelectionChanged during reset: {ev} events, {add} added, {rem} removed");
         W($"    focus = {Desc(FocusManager.GetFocusedElement(XamlRoot), lv)}");
         for (int i = 0; i < Math.Min(12, lv.Items.Count); i++)
-            if (lv.ContainerFromIndex(i) is ListViewItem cc && (cc.FocusState != FocusState.Unfocused || cc.IsSelected))
+            if (
+                lv.ContainerFromIndex(i) is ListViewItem cc
+                && (cc.FocusState != FocusState.Unfocused || cc.IsSelected)
+            )
                 W($"    container[{i}] IsSelected={cc.IsSelected} FocusState={cc.FocusState}");
 
         W("");
         W("  ---- second reset: Clear() then re-add the SAME references, same order ----");
-        lv.SelectedItems.Clear(); await Settle(200);
-        lv.SelectedItems.Add(gen2[2]); lv.SelectedItems.Add(gen2[5]); lv.SelectedItems.Add(gen2[9]);
+        lv.SelectedItems.Clear();
+        await Settle(200);
+        lv.SelectedItems.Add(gen2[2]);
+        lv.SelectedItems.Add(gen2[5]);
+        lv.SelectedItems.Add(gen2[9]);
         await Settle(300);
-        W($"    before: SelectedItems={lv.SelectedItems.Count} ids={string.Join(",", lv.SelectedItems.Select(o => ((ResetItem)o).Id))}");
-        ev = 0; add = 0; rem = 0;
+        W(
+            $"    before: SelectedItems={lv.SelectedItems.Count} ids={string.Join(",", lv.SelectedItems.Select(o => ((ResetItem)o).Id))}"
+        );
+        ev = 0;
+        add = 0;
+        rem = 0;
         var same = coll.ToList();
-        coll.Clear(); await Settle(200);
-        foreach (var it in same) coll.Add(it);
+        coll.Clear();
+        await Settle(200);
+        foreach (var it in same)
+            coll.Add(it);
         await Settle(500);
         int stillSame = 0;
-        for (int i = 0; i < 12; i++) if (ReferenceEquals(same[i], coll[i])) stillSame++;
-        W($"    IDENTITY ASSERTION: re-added item is the same reference for {stillSame} of 12; 12 means identity was preserved");
+        for (int i = 0; i < 12; i++)
+            if (ReferenceEquals(same[i], coll[i]))
+                stillSame++;
+        W(
+            $"    IDENTITY ASSERTION: re-added item is the same reference for {stillSame} of 12; 12 means identity was preserved"
+        );
         W($"    after: SelectedItems={lv.SelectedItems.Count} SelectedIndex={lv.SelectedIndex}");
-        W($"      selected = {(lv.SelectedItems.Count == 0 ? "(none)" : string.Join(",", lv.SelectedItems.Select(o => o.ToString())))}");
+        W(
+            $"      selected = {(lv.SelectedItems.Count == 0 ? "(none)" : string.Join(",", lv.SelectedItems.Select(o => o.ToString())))}"
+        );
         W($"      SelectionChanged: {ev} events, {add} added, {rem} removed");
         W($"      focus = {Desc(FocusManager.GetFocusedElement(XamlRoot), lv)}");
 
         W("");
         W("  ---- re-applying the selection after the reset ----");
-        foreach (var id in new[] { 2, 5, 9 }) { var it = coll.FirstOrDefault(x => x.Id == id); if (it is not null) lv.SelectedItems.Add(it); }
+        foreach (var id in new[] { 2, 5, 9 })
+        {
+            var it = coll.FirstOrDefault(x => x.Id == id);
+            if (it is not null)
+                lv.SelectedItems.Add(it);
+        }
         await Settle(300);
-        W($"    after re-apply: SelectedItems={lv.SelectedItems.Count} ids={string.Join(",", lv.SelectedItems.Select(o => ((ResetItem)o).Id))}");
+        W(
+            $"    after re-apply: SelectedItems={lv.SelectedItems.Count} ids={string.Join(",", lv.SelectedItems.Select(o => ((ResetItem)o).Id))}"
+        );
     }
 
     private string Desc(object? o, ListView lv)
     {
-        if (o is null) return "null";
-        if (o is ListViewItem i) return $"ListViewItem index {lv.IndexFromContainer(i)} content={i.Content} FocusState={i.FocusState} IsSelected={i.IsSelected}";
+        if (o is null)
+            return "null";
+        if (o is ListViewItem i)
+            return $"ListViewItem index {lv.IndexFromContainer(i)} content={i.Content} FocusState={i.FocusState} IsSelected={i.IsSelected}";
         return o.GetType().Name;
     }
 
     // ================================================= V3
     private async Task V3_InsetNoStyle()
     {
-        Section("V3  Content inset measured by pixels with NO ItemContainerStyle at all, so the\n" +
-                "    result does not depend on the container probe's TightItemStyle.");
+        Section(
+            "V3  Content inset measured by pixels with NO ItemContainerStyle at all, so the\n"
+                + "    result does not depend on the container probe's TightItemStyle."
+        );
 
-        foreach (var (label, mode, cb) in new (string, ListViewSelectionMode, bool?)[]
-        {
-            ("None", ListViewSelectionMode.None, null),
-            ("Single", ListViewSelectionMode.Single, null),
-            ("Multiple, check box default", ListViewSelectionMode.Multiple, null),
-            ("Multiple, IsMultiSelectCheckBoxEnabled=False", ListViewSelectionMode.Multiple, false),
-        })
+        foreach (
+            var (label, mode, cb) in new (string, ListViewSelectionMode, bool?)[]
+            {
+                ("None", ListViewSelectionMode.None, null),
+                ("Single", ListViewSelectionMode.Single, null),
+                ("Multiple, check box default", ListViewSelectionMode.Multiple, null),
+                (
+                    "Multiple, IsMultiSelectCheckBoxEnabled=False",
+                    ListViewSelectionMode.Multiple,
+                    false
+                ),
+            }
+        )
         {
             var lv = new ListView
             {
@@ -362,23 +567,37 @@ public sealed partial class ContainerRecheckPage : Page
                 Width = 800,
                 Height = 300,
             };
-            if (cb.HasValue) lv.IsMultiSelectCheckBoxEnabled = cb.Value;
+            if (cb.HasValue)
+                lv.IsMultiSelectCheckBoxEnabled = cb.Value;
             await ShowAsync(lv);
-            if (lv.ContainerFromIndex(0) is not ListViewItem c) { W($"  {label}: not realized"); continue; }
+            if (lv.ContainerFromIndex(0) is not ListViewItem c)
+            {
+                W($"  {label}: not realized");
+                continue;
+            }
             var shot = await CaptureAsync(lv);
             var o = Origin(c, lv);
             double h = c.ActualHeight;
             W("");
-            W($"  ---- {label} ---- no ItemContainerStyle; container Padding={c.Padding} size={c.ActualWidth:0.##}x{h:0.##} origin=({o.X:0.##},{o.Y:0.##})");
-            W($"    capture={shot}  first BLUE x = {F(FirstBlueX(shot, o.Y + 1, h - 2))} DIP from the ListView left edge");
+            W(
+                $"  ---- {label} ---- no ItemContainerStyle; container Padding={c.Padding} size={c.ActualWidth:0.##}x{h:0.##} origin=({o.X:0.##},{o.Y:0.##})"
+            );
+            W(
+                $"    capture={shot}  first BLUE x = {F(FirstBlueX(shot, o.Y + 1, h - 2))} DIP from the ListView left edge"
+            );
             W($"    raw scan y=mid x0..48 ={RawScan(shot, o.Y + h / 2, 0, 48)}");
 
-            if (mode == ListViewSelectionMode.None) c.IsSelected = true;
-            else if (mode == ListViewSelectionMode.Single) lv.SelectedIndex = 0;
-            else lv.SelectedItems.Add(((List<Item>)lv.ItemsSource)[0]);
+            if (mode == ListViewSelectionMode.None)
+                c.IsSelected = true;
+            else if (mode == ListViewSelectionMode.Single)
+                lv.SelectedIndex = 0;
+            else
+                lv.SelectedItems.Add(((List<Item>)lv.ItemsSource)[0]);
             await Settle(350);
             var shot2 = await CaptureAsync(lv);
-            W($"    SELECTED: first BLUE x = {F(FirstBlueX(shot2, o.Y + 1, h - 2))} DIP   groups={GroupsOf(c)}");
+            W(
+                $"    SELECTED: first BLUE x = {F(FirstBlueX(shot2, o.Y + 1, h - 2))} DIP   groups={GroupsOf(c)}"
+            );
             W($"    SELECTED raw scan y=mid x0..48 ={RawScan(shot2, o.Y + h / 2, 0, 48)}");
         }
     }
@@ -388,8 +607,10 @@ public sealed partial class ContainerRecheckPage : Page
     // ================================================= V4
     private async Task V4_MeasureCounters()
     {
-        Section("V4  Offset change by InvalidateArrange alone. MeasureOverride counted per panel,\n" +
-                "    plus a construction counter so a panel made during the change cannot hide a measure.");
+        Section(
+            "V4  Offset change by InvalidateArrange alone. MeasureOverride counted per panel,\n"
+                + "    plus a construction counter so a panel made during the change cannot hide a measure."
+        );
 
         CountingPanel.SharedOffset = 0;
         CountingPanel.Constructed = 0;
@@ -413,31 +634,51 @@ public sealed partial class ContainerRecheckPage : Page
         await ShowAsync(lv, 900);
 
         var sv = FindDescendant<ScrollViewer>(lv);
-        W($"  realized containers = {lv.ItemsPanelRoot?.Children.Count ?? -1}  panel={lv.ItemsPanelRoot?.GetType().Name}");
+        W(
+            $"  realized containers = {lv.ItemsPanelRoot?.Children.Count ?? -1}  panel={lv.ItemsPanelRoot?.GetType().Name}"
+        );
         W($"  CountingPanel objects constructed so far = {CountingPanel.Constructed}");
-        if (sv is not null) W($"  ExtentWidth={sv.ExtentWidth:0.##} ViewportWidth={sv.ViewportWidth:0.##} HOffset={sv.HorizontalOffset:0.##} ScrollableWidth={sv.ScrollableWidth:0.##}");
+        if (sv is not null)
+            W(
+                $"  ExtentWidth={sv.ExtentWidth:0.##} ViewportWidth={sv.ViewportWidth:0.##} HOffset={sv.HorizontalOffset:0.##} ScrollableWidth={sv.ScrollableWidth:0.##}"
+            );
 
         var panels = new List<CountingPanel>();
-        if (lv.ItemsPanelRoot is not null) FindAll(lv.ItemsPanelRoot, panels);
-        int mBefore = panels.Sum(p => p.MeasureCount), aBefore = panels.Sum(p => p.ArrangeCount);
+        if (lv.ItemsPanelRoot is not null)
+            FindAll(lv.ItemsPanelRoot, panels);
+        int mBefore = panels.Sum(p => p.MeasureCount),
+            aBefore = panels.Sum(p => p.ArrangeCount);
         int ctorBefore = CountingPanel.Constructed;
-        W($"  BEFORE: panels={panels.Count} sum(MeasureCount)={mBefore} sum(ArrangeCount)={aBefore} constructed={ctorBefore}");
+        W(
+            $"  BEFORE: panels={panels.Count} sum(MeasureCount)={mBefore} sum(ArrangeCount)={aBefore} constructed={ctorBefore}"
+        );
 
         CountingPanel.SharedOffset = 1200;
-        foreach (var p in panels) p.InvalidateArrange();
+        foreach (var p in panels)
+            p.InvalidateArrange();
         await Settle(450);
 
-        int mAfter = panels.Sum(p => p.MeasureCount), aAfter = panels.Sum(p => p.ArrangeCount);
+        int mAfter = panels.Sum(p => p.MeasureCount),
+            aAfter = panels.Sum(p => p.ArrangeCount);
         var panelsNow = new List<CountingPanel>();
-        if (lv.ItemsPanelRoot is not null) FindAll(lv.ItemsPanelRoot, panelsNow);
+        if (lv.ItemsPanelRoot is not null)
+            FindAll(lv.ItemsPanelRoot, panelsNow);
         int newPanels = panelsNow.Count(p => !panels.Contains(p));
-        W($"  AFTER InvalidateArrange alone: sum(MeasureCount)={mAfter} delta={mAfter - mBefore}   sum(ArrangeCount)={aAfter} delta={aAfter - aBefore}");
-        W($"    per-panel MeasureCount distinct values = {string.Join(",", panels.Select(p => p.MeasureCount).Distinct().OrderBy(x => x))}");
-        W($"    panels constructed during the change = {CountingPanel.Constructed - ctorBefore}; live panels not in the before-list = {newPanels}");
+        W(
+            $"  AFTER InvalidateArrange alone: sum(MeasureCount)={mAfter} delta={mAfter - mBefore}   sum(ArrangeCount)={aAfter} delta={aAfter - aBefore}"
+        );
+        W(
+            $"    per-panel MeasureCount distinct values = {string.Join(",", panels.Select(p => p.MeasureCount).Distinct().OrderBy(x => x))}"
+        );
+        W(
+            $"    panels constructed during the change = {CountingPanel.Constructed - ctorBefore}; live panels not in the before-list = {newPanels}"
+        );
         var c0 = lv.ContainerFromIndex(0) as ListViewItem;
         var r0 = c0 is null ? null : FindDescendant<CountingPanel>(c0);
         if (r0 is not null)
-            W($"    row 0 arrange rects x = {string.Join(" ", r0.LastArrangeRects.Take(4).Select(r => r.X.ToString("0.#")))}");
+            W(
+                $"    row 0 arrange rects x = {string.Join(" ", r0.LastArrangeRects.Take(4).Select(r => r.X.ToString("0.#")))}"
+            );
         var shot = await CaptureAsync(lv);
         if (c0 is not null)
         {
@@ -445,35 +686,54 @@ public sealed partial class ContainerRecheckPage : Page
             W($"    pixel x=100 expect c6 BGR(192,0,144) = {Px(shot, 100, y)}");
             W($"    pixel x=700 expect c9 BGR(64,64,64)  = {Px(shot, 700, y)}");
         }
-        if (sv is not null) W($"    after: HOffset={sv.HorizontalOffset:0.##} ExtentWidth={sv.ExtentWidth:0.##} ScrollableWidth={sv.ScrollableWidth:0.##}");
+        if (sv is not null)
+            W(
+                $"    after: HOffset={sv.HorizontalOffset:0.##} ExtentWidth={sv.ExtentWidth:0.##} ScrollableWidth={sv.ScrollableWidth:0.##}"
+            );
 
         W("");
         W("  --- scroll to the real end of the extent, offset still 1200 ---");
         double target = sv?.ScrollableHeight ?? 0;
-        W($"    ScrollableHeight={target:0.##}; the container probe asked ChangeView for 100000 and labelled it the end");
+        W(
+            $"    ScrollableHeight={target:0.##}; the container probe asked ChangeView for 100000 and labelled it the end"
+        );
         sv?.ChangeView(null, target, null, true);
         await Settle(900);
         var panels3 = new List<CountingPanel>();
-        if (lv.ItemsPanelRoot is not null) FindAll(lv.ItemsPanelRoot, panels3);
+        if (lv.ItemsPanelRoot is not null)
+            FindAll(lv.ItemsPanelRoot, panels3);
         int fresh = panels3.Count(p => !panelsNow.Contains(p));
-        W($"    VerticalOffset={sv?.VerticalOffset:0.##} realized={lv.ItemsPanelRoot?.Children.Count ?? -1}");
-        W($"    live panels={panels3.Count}, not seen before the scroll={fresh}, total constructed={CountingPanel.Constructed}");
+        W(
+            $"    VerticalOffset={sv?.VerticalOffset:0.##} realized={lv.ItemsPanelRoot?.Children.Count ?? -1}"
+        );
+        W(
+            $"    live panels={panels3.Count}, not seen before the scroll={fresh}, total constructed={CountingPanel.Constructed}"
+        );
         if (panels3.Count > 0)
         {
             var p0 = panels3[0];
-            W($"    first live panel arrange rects x = {string.Join(" ", p0.LastArrangeRects.Take(4).Select(r => r.X.ToString("0.#")))}");
+            W(
+                $"    first live panel arrange rects x = {string.Join(" ", p0.LastArrangeRects.Take(4).Select(r => r.X.ToString("0.#")))}"
+            );
             if (p0.Children.Count > 6)
-                W($"    cell0 x-in-ListView={Origin(p0.Children[0], lv).X:0.##}  cell6 x-in-ListView={Origin(p0.Children[6], lv).X:0.##}");
+                W(
+                    $"    cell0 x-in-ListView={Origin(p0.Children[0], lv).X:0.##}  cell6 x-in-ListView={Origin(p0.Children[6], lv).X:0.##}"
+                );
         }
         var shot2 = await CaptureAsync(lv);
-        W($"    pixel (100,200) = {Px(shot2, 100, 200)}  c6 BGR(192,0,144) means recycled rows carry the offset");
+        W(
+            $"    pixel (100,200) = {Px(shot2, 100, 200)}  c6 BGR(192,0,144) means recycled rows carry the offset"
+        );
     }
 
     private string Px(Shot s, double dx, double dy)
     {
-        if (!s.Ok) return "capture-failed";
-        int x = (int)Math.Round(dx * _scale), y = (int)Math.Round(dy * _scale);
-        if (x < 0 || y < 0 || x >= s.W || y >= s.H) return "out of range";
+        if (!s.Ok)
+            return "capture-failed";
+        int x = (int)Math.Round(dx * _scale),
+            y = (int)Math.Round(dy * _scale);
+        if (x < 0 || y < 0 || x >= s.W || y >= s.H)
+            return "out of range";
         int i = (y * s.W + x) * 4;
         return $"BGR({s.Px[i]},{s.Px[i + 1]},{s.Px[i + 2]})";
     }
@@ -481,17 +741,21 @@ public sealed partial class ContainerRecheckPage : Page
     // ================================================= V6
     private async Task V6_AccentBar()
     {
-        Section("V6  Selection chrome in the left gutter, with and without an ItemContainerStyle.\n" +
-                "    The container probe reported 'no accent selection bar is drawn at all' and that Multiple+False\n" +
-                "    is byte-for-byte the same as Single. Both cases are measured here side by side.");
+        Section(
+            "V6  Selection chrome in the left gutter, with and without an ItemContainerStyle.\n"
+                + "    The container probe reported 'no accent selection bar is drawn at all' and that Multiple+False\n"
+                + "    is byte-for-byte the same as Single. Both cases are measured here side by side."
+        );
 
         foreach (var styleName in new string?[] { null, "TightItemStyle3" })
         {
-            foreach (var (label, mode, cb) in new (string, ListViewSelectionMode, bool?)[]
-            {
-                ("Single", ListViewSelectionMode.Single, null),
-                ("Multiple, check box False", ListViewSelectionMode.Multiple, false),
-            })
+            foreach (
+                var (label, mode, cb) in new (string, ListViewSelectionMode, bool?)[]
+                {
+                    ("Single", ListViewSelectionMode.Single, null),
+                    ("Multiple, check box False", ListViewSelectionMode.Multiple, false),
+                }
+            )
             {
                 var lv = new ListView
                 {
@@ -505,20 +769,33 @@ public sealed partial class ContainerRecheckPage : Page
                     Width = 800,
                     Height = 300,
                 };
-                if (cb.HasValue) lv.IsMultiSelectCheckBoxEnabled = cb.Value;
+                if (cb.HasValue)
+                    lv.IsMultiSelectCheckBoxEnabled = cb.Value;
                 await ShowAsync(lv);
-                if (lv.ContainerFromIndex(0) is not ListViewItem c) { W("  not realized"); continue; }
-                if (mode == ListViewSelectionMode.Single) lv.SelectedIndex = 0;
-                else lv.SelectedItems.Add(((List<Item>)lv.ItemsSource)[0]);
+                if (lv.ContainerFromIndex(0) is not ListViewItem c)
+                {
+                    W("  not realized");
+                    continue;
+                }
+                if (mode == ListViewSelectionMode.Single)
+                    lv.SelectedIndex = 0;
+                else
+                    lv.SelectedItems.Add(((List<Item>)lv.ItemsSource)[0]);
                 await Settle(400);
                 var shot = await CaptureAsync(lv);
                 var o = Origin(c, lv);
                 double h = c.ActualHeight;
                 W("");
-                W($"  ---- {label}, ItemContainerStyle={(styleName ?? "(none)")} ---- container {c.ActualWidth:0.##}x{h:0.##} Padding={c.Padding}");
-                W($"    accent BGR(192,103,0)-like pixels in the left 20 DIP: {AccentRange(shot, o.Y + 1, h - 2, 20)}");
+                W(
+                    $"  ---- {label}, ItemContainerStyle={(styleName ?? "(none)")} ---- container {c.ActualWidth:0.##}x{h:0.##} Padding={c.Padding}"
+                );
+                W(
+                    $"    accent BGR(192,103,0)-like pixels in the left 20 DIP: {AccentRange(shot, o.Y + 1, h - 2, 20)}"
+                );
                 W($"    selected row raw scan y=mid x0..20 ={RawScan(shot, o.Y + h / 2, 0, 20)}");
-                W($"    unselected row 2 raw scan y=mid x0..20 ={RawScan(shot, o.Y + h * 2 + h / 2, 0, 20)}");
+                W(
+                    $"    unselected row 2 raw scan y=mid x0..20 ={RawScan(shot, o.Y + h * 2 + h / 2, 0, 20)}"
+                );
                 W($"    groups = {GroupsOf(c)}");
             }
         }
@@ -526,21 +803,40 @@ public sealed partial class ContainerRecheckPage : Page
 
     private string AccentRange(Shot s, double y0, double hh, double w)
     {
-        if (!s.Ok) return "capture-failed";
-        double first = double.NaN, last = double.NaN;
+        if (!s.Ok)
+            return "capture-failed";
+        double first = double.NaN,
+            last = double.NaN;
         for (double dx = 0; dx <= w; dx += 0.5)
         {
             int px = (int)Math.Round(dx * _scale);
-            if (px < 0 || px >= s.W) continue;
+            if (px < 0 || px >= s.W)
+                continue;
             bool hit = false;
-            for (int py = (int)Math.Round(y0 * _scale); py < (int)Math.Round((y0 + hh) * _scale); py++)
+            for (
+                int py = (int)Math.Round(y0 * _scale);
+                py < (int)Math.Round((y0 + hh) * _scale);
+                py++
+            )
             {
-                if (py < 0 || py >= s.H) continue;
+                if (py < 0 || py >= s.H)
+                    continue;
                 int i = (py * s.W + px) * 4;
-                byte b = s.Px[i], g = s.Px[i + 1], r = s.Px[i + 2];
-                if (b > 140 && g > 55 && g < 175 && r < 95) { hit = true; break; }
+                byte b = s.Px[i],
+                    g = s.Px[i + 1],
+                    r = s.Px[i + 2];
+                if (b > 140 && g > 55 && g < 175 && r < 95)
+                {
+                    hit = true;
+                    break;
+                }
             }
-            if (hit) { if (double.IsNaN(first)) first = dx; last = dx; }
+            if (hit)
+            {
+                if (double.IsNaN(first))
+                    first = dx;
+                last = dx;
+            }
         }
         return double.IsNaN(first) ? "none" : $"x {first:0.#} .. {last:0.#} DIP";
     }
@@ -548,11 +844,13 @@ public sealed partial class ContainerRecheckPage : Page
     // ================================================= V5
     private async Task V5_UiaSetup()
     {
-        Section("V5  Three ListViews left on screen for an OUT-OF-PROCESS UIA client.\n" +
-                "    LvA = custom container peer + custom ListView peer, the container probe's configuration\n" +
-                "    LvB = custom container peer, STOCK ListView peer, the decisive case\n" +
-                "    LvC = stock ListView\n" +
-                "    The container probe only asked the in-process helpers.");
+        Section(
+            "V5  Three ListViews left on screen for an OUT-OF-PROCESS UIA client.\n"
+                + "    LvA = custom container peer + custom ListView peer, the container probe's configuration\n"
+                + "    LvB = custom container peer, STOCK ListView peer, the decisive case\n"
+                + "    LvC = stock ListView\n"
+                + "    The container probe only asked the in-process helpers."
+        );
 
         var panel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
 
@@ -566,7 +864,8 @@ public sealed partial class ContainerRecheckPage : Page
             lv.Background = new SolidColorBrush(Grey);
             lv.BorderThickness = new Thickness(0);
             lv.Padding = new Thickness(0);
-            lv.Width = 280; lv.Height = 300;
+            lv.Width = 280;
+            lv.Height = 300;
             AutomationProperties.SetAutomationId(lv, id);
             panel.Children.Add(lv);
             return lv;
@@ -587,34 +886,68 @@ public sealed partial class ContainerRecheckPage : Page
             W("");
             W($"  {name}: ListView type={lv.GetType().Name} container type={c0?.GetType().Name}");
             var cp = c0 is null ? null : FrameworkElementAutomationPeer.FromElement(c0);
-            W($"    in-process FromElement(container) = {cp?.GetType().Name ?? "null"}  ClassName={(cp is null ? "-" : Try(() => cp.GetClassName()))}");
+            W(
+                $"    in-process FromElement(container) = {cp?.GetType().Name ?? "null"}  ClassName={(cp is null ? "-" : Try(() => cp.GetClassName()))}"
+            );
             var lp = FrameworkElementAutomationPeer.FromElement(lv);
             W($"    in-process FromElement(ListView)  = {lp?.GetType().Name ?? "null"}");
-            W($"    SelectedItems={lv.SelectedItems.Count} container0.IsSelected={(c0 as ListViewItem)?.IsSelected}");
+            W(
+                $"    SelectedItems={lv.SelectedItems.Count} container0.IsSelected={(c0 as ListViewItem)?.IsSelected}"
+            );
         }
         W($"  ItemPeer instances created = {ItemPeer.Created}");
 
         var pid = System.Diagnostics.Process.GetCurrentProcess().Id;
         W("");
         W($"  process id = {pid}. Waiting up to 120 s for the out-of-process UIA client.");
-        try { File.WriteAllText(Ready, pid.ToString()); } catch (Exception ex) { W("  ready file failed: " + ex.Message); }
+        try
+        {
+            File.WriteAllText(Ready, pid.ToString());
+        }
+        catch (Exception ex)
+        {
+            W("  ready file failed: " + ex.Message);
+        }
 
         for (int i = 0; i < 120; i++)
         {
             await Task.Delay(1000);
-            if (File.Exists(Ready + ".done")) { W($"  client signalled done after {i + 1} s."); break; }
+            if (File.Exists(Ready + ".done"))
+            {
+                W($"  client signalled done after {i + 1} s.");
+                break;
+            }
         }
-        try { File.Delete(Ready); } catch { }
-        try { File.Delete(Ready + ".done"); } catch { }
+        try
+        {
+            File.Delete(Ready);
+        }
+        catch { }
+        try
+        {
+            File.Delete(Ready + ".done");
+        }
+        catch { }
     }
 
-    private static string Try(Func<string> f) { try { return f(); } catch (Exception ex) { return "threw " + ex.GetType().Name; } }
+    private static string Try(Func<string> f)
+    {
+        try
+        {
+            return f();
+        }
+        catch (Exception ex)
+        {
+            return "threw " + ex.GetType().Name;
+        }
+    }
 }
 
 /// <summary>Custom containers and custom container peer, but the STOCK ListView peer.</summary>
 public partial class StockPeerList : ListView
 {
     protected override DependencyObject GetContainerForItemOverride() => new PeerItem();
+
     protected override bool IsItemItsOwnContainerOverride(object item) => item is PeerItem;
 }
 
@@ -626,14 +959,21 @@ public sealed class CountingPanel : Panel
     public static int Constructed;
     public static readonly List<CountingPanel> Live = new();
 
-    public Size LastMeasureAvailable, LastMeasureReturned, LastArrangeFinal;
+    public Size LastMeasureAvailable,
+        LastMeasureReturned,
+        LastArrangeFinal;
     public readonly List<Rect> LastArrangeRects = new();
-    public int MeasureCount, ArrangeCount;
+    public int MeasureCount,
+        ArrangeCount;
 
     public CountingPanel()
     {
         Constructed++;
-        Loaded += (_, _) => { if (!Live.Contains(this)) Live.Add(this); };
+        Loaded += (_, _) =>
+        {
+            if (!Live.Contains(this))
+                Live.Add(this);
+        };
         Unloaded += (_, _) => Live.Remove(this);
     }
 
@@ -642,8 +982,13 @@ public sealed class CountingPanel : Panel
         MeasureCount++;
         LastMeasureAvailable = availableSize;
         double h = 0;
-        foreach (var ch in Children) { ch.Measure(new Size(ColumnWidth, double.PositiveInfinity)); h = Math.Max(h, ch.DesiredSize.Height); }
-        if (h <= 0) h = 28;
+        foreach (var ch in Children)
+        {
+            ch.Measure(new Size(ColumnWidth, double.PositiveInfinity));
+            h = Math.Max(h, ch.DesiredSize.Height);
+        }
+        if (h <= 0)
+            h = 28;
         LastMeasureReturned = new Size(ColumnWidth * Children.Count, h);
         return LastMeasureReturned;
     }

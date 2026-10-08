@@ -23,8 +23,14 @@ public sealed class Peer : INotifyPropertyChanged
     public string UploadText => _text.Format("units", "rate", _text.Bytes(UploadRate));
     public string DownloadedText => _text.Bytes(Downloaded);
     public string UploadedText => _text.Bytes(Uploaded);
-    public string ConnectionText => _text.Format("peers", "connection", Transport.ToUpperInvariant(),
-        _text.Get("peers", Incoming ? "incoming" : "outgoing"), _text.Get("peers", Encrypted ? "encrypted" : "unencrypted"));
+    public string ConnectionText =>
+        _text.Format(
+            "peers",
+            "connection",
+            Transport.ToUpperInvariant(),
+            _text.Get("peers", Incoming ? "incoming" : "outgoing"),
+            _text.Get("peers", Encrypted ? "encrypted" : "unencrypted")
+        );
     public event PropertyChangedEventHandler? PropertyChanged;
 
     internal Peer(Strings text, JsonElement data)
@@ -48,6 +54,8 @@ public sealed class Peer : INotifyPropertyChanged
         RefreshText();
     }
 
-    internal void RefreshText() => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
+    internal void RefreshText() =>
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
+
     public override string ToString() => Endpoint;
 }

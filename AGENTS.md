@@ -56,6 +56,10 @@ permanent design, code, and review cost that the user never sees.
   [TableView instructions](lib/TableView/AGENTS.md).
 - Before writing, changing, deleting, choosing, or running tests, read
   [testing](docs/testing.md). It decides whether a test is worth writing.
+- Before designing or changing a type, an enum, an interface, or where a seam
+  goes, use the `/codebase-design` skill. It gives every session the same design
+  vocabulary and principles, so a design is judged by one standard instead of
+  each agent's own.
 - Use [product vocabulary](CONTEXT.md) and, for controls,
   [table vocabulary](lib/TableView/CONTEXT.md).
 
@@ -108,8 +112,9 @@ do not define this product.
 - Build affected native targets when compilation evidence is needed. Make all
   the edits first and build once, because each build holds the owner's
   machine. Launch applications and desktop test hosts only when explicitly
-  requested. Close what you launched and report what was verified and any
-  material gaps.
+  requested; the off-screen [capture review](app/AGENTS.md#capture-review) is
+  the one exception. Close what you launched and report what was verified and
+  any material gaps.
 - Build Debug x64. Build Release only when the result depends on the
   optimised build: a timing or performance measurement, `engine/tests/Checks.ps1`,
   which runs the Release engine, a release candidate, or an owner request.

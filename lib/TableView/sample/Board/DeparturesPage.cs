@@ -25,7 +25,8 @@ public sealed partial class DeparturesPage : Page
     {
         InitializeComponent();
 
-        Table.Schema<Departure>()
+        Table
+            .Schema<Departure>()
             .SortKey(TimeColumn, row => row.Scheduled)
             .SortKey(FlightColumn, row => row.Flight)
             .SortKey(DestinationColumn, row => row.Destination)
@@ -50,9 +51,10 @@ public sealed partial class DeparturesPage : Page
 
         Table.ItemsSource = Departure.Post(DepartureCount, ++_edition);
 
-        Status.Text = selected == 0
-            ? $"board {_edition}, {DepartureCount} departures"
-            : $"board {_edition} — the {selected} selected rows are gone with the board that held them";
+        Status.Text =
+            selected == 0
+                ? $"board {_edition}, {DepartureCount} departures"
+                : $"board {_edition} — the {selected} selected rows are gone with the board that held them";
     }
 
     private void OnSelectionChanged(object? sender, Selection selection) =>

@@ -24,117 +24,11 @@ $directory = Join-Path $repository ('artifacts/evidence/' + $Check + '-' + [guid
 $null = New-Item -ItemType Directory -Path $directory
 $payload = Join-Path $directory 'payload'
 $null = New-Item -ItemType Directory -Path $payload
-Add-Type -TypeDefinition @'
-using System;
-using System.ComponentModel;
-using System.Runtime.InteropServices;
-using System.Security.Principal;
-public static class CheckIdentity {
-    [DllImport("kernel32.dll", SetLastError = true)]
-    static extern bool GetNamedPipeServerProcessId(IntPtr pipe, out uint process);
-    [DllImport("advapi32.dll", SetLastError = true)]
-    static extern bool GetTokenInformation(IntPtr token, int information, IntPtr buffer, int size, out int needed);
-    public static uint ServerProcess(IntPtr pipe) {
-        if (!GetNamedPipeServerProcessId(pipe, out var process)) throw new Win32Exception();
-        return process;
-    }
-    public static string LogonSid() {
-        using var identity = WindowsIdentity.GetCurrent();
-        var token = identity.AccessToken.DangerousGetHandle();
-        GetTokenInformation(token, 28, IntPtr.Zero, 0, out var size);
-        var buffer = Marshal.AllocHGlobal(size);
-        try {
-            if (!GetTokenInformation(token, 28, buffer, size, out size)) throw new Win32Exception();
-            return new SecurityIdentifier(Marshal.ReadIntPtr(buffer, IntPtr.Size)).Value;
-        } finally { Marshal.FreeHGlobal(buffer); }
-    }
-}
-'@
-$logon = [CheckIdentity]::LogonSid()
-$script:sequence = 0
-$script:process = $null
-$script:pipe = $null
+. (Join-Path $PSScriptRoot 'Engine.ps1')
 $stalled = $null
 $heldFile = $null
 $peer = $null
 $peerDirectory = Join-Path $directory 'peer'
-
-function Assert([bool] $condition, [string] $failure) {
-    if (-not $condition) { throw $failure }
-}
-
-function Read-Bytes([IO.Stream] $stream, [int] $count) {
-    $bytes = [byte[]]::new($count)
-    $offset = 0
-    while ($offset -lt $count) {
-        $read = $stream.ReadAsync($bytes, $offset, $count - $offset)
-        if (-not $read.Wait(10000)) { $stream.Dispose(); throw 'Pipe reply did not arrive' }
-        if ($read.Result -eq 0) { throw 'Pipe disconnected during a frame' }
-        $offset += $read.Result
-    }
-    return ,$bytes
-}
-
-function Read-Frame([IO.Stream] $stream) {
-    $header = Read-Bytes $stream 4
-    $size = [BitConverter]::ToInt32($header, 0)
-    Assert ($size -gt 0 -and $size -le 16777216) 'Reply frame violates its limit'
-    $bytes = Read-Bytes $stream $size
-    return [Text.Encoding]::UTF8.GetString($bytes) | ConvertFrom-Json
-}
-
-function Connect-Pipe {
-    $stream = [IO.Pipes.NamedPipeClientStream]::new('.', "TinyTorrent.$logon",
-        [IO.Pipes.PipeDirection]::InOut, [IO.Pipes.PipeOptions]::Asynchronous)
-    $stream.Connect(10000)
-    if ([CheckIdentity]::ServerProcess($stream.SafePipeHandle.DangerousGetHandle()) -ne $script:process.Id) {
-        $stream.Dispose()
-        throw 'TinyTorrent is already running. The check refuses to command an engine it did not start.'
-    }
-    $hello = Read-Frame $stream
-    Assert ($hello.type -eq 'hello' -and $hello.version -eq 7) 'Invalid version handshake'
-    return $stream
-}
-
-function Send-Command([hashtable] $fields) {
-    $fields.request_id = ++$script:sequence
-    $bytes = [Text.Encoding]::UTF8.GetBytes(($fields | ConvertTo-Json -Depth 20 -Compress))
-    $header = [BitConverter]::GetBytes([int]$bytes.Length)
-    $script:pipe.Write($header, 0, 4)
-    $script:pipe.Write($bytes, 0, $bytes.Length)
-    $reply = Read-Frame $script:pipe
-    Assert ($reply.request_id -eq $fields.request_id) 'Reply belongs to another request'
-    return $reply
-}
-
-function Start-Engine {
-    $script:process = Start-Process -FilePath $executable -ArgumentList @('--headless', '--background', '--data', ('"' + $directory + '"')) -WindowStyle Hidden -PassThru
-    $script:pipe = Connect-Pipe
-    $until = [DateTime]::UtcNow.AddSeconds(15)
-    do {
-        $reply = Send-Command @{ command = 'snapshot' }
-        Assert $reply.ok 'Engine refused its initial snapshot'
-        if (-not $reply.data.loading) {
-            Assert (-not $reply.data.storage_failed) 'New store could not load'
-            return $reply.data
-        }
-        [Threading.Thread]::Yield() | Out-Null
-    } while ([DateTime]::UtcNow -lt $until)
-    throw 'Engine startup did not become ready'
-}
-
-function Stop-Engine {
-    if ($script:pipe) {
-        try { $null = Send-Command @{ command = 'exit' } }
-        finally { $script:pipe.Dispose(); $script:pipe = $null }
-    }
-    if ($script:process) {
-        Assert ($script:process.WaitForExit(15000)) 'Coordinated Exit did not stop the engine'
-        Assert ($script:process.ExitCode -eq 0) 'Final storage commit failed'
-        $script:process.Dispose()
-        $script:process = $null
-    }
-}
 
 function Preview {
     $reply = Send-Command @{ command = 'preview'; source = $TorrentFile; destination = $payload }
@@ -153,19 +47,12 @@ function Measure-Download {
     return ($snapshot.data.torrents[0].downloaded - $bytes) / $watch.Elapsed.TotalSeconds
 }
 
-function Payload-Hash([string] $path) {
-    $stream = [IO.File]::Open($path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
-    $hasher = [Security.Cryptography.SHA256]::Create()
-    try { return [Convert]::ToHexString($hasher.ComputeHash($stream)) }
-    finally { $hasher.Dispose(); $stream.Dispose() }
-}
-
 function Assert-Paused([string] $torrentId) {
     # The stale libtorrent tick list asserts on the next one-second tick.
     $until = [DateTime]::UtcNow.AddSeconds(3)
     do {
         $snapshot = (Send-Command @{ command = 'snapshot' }).data
-        Assert ($snapshot.all_paused -and $snapshot.torrents.Count -eq 1 -and
+        Assert ($snapshot.session_paused -and $snapshot.torrents.Count -eq 1 -and
             $snapshot.torrents[0].torrent_id -eq $torrentId -and $snapshot.torrents[0].paused) `
             'Pause all lost the accepted magnet or its individual paused intent'
         Start-Sleep -Milliseconds 100
@@ -179,7 +66,7 @@ try {
             function Exit-Code {
                 $exiting = Start-Process -FilePath $executable -ArgumentList '--headless', '--exit' -WindowStyle Hidden -PassThru
                 try {
-                    Assert ($exiting.WaitForExit(35000)) 'The shutdown gate did not finish'
+                    Assert ($exiting.WaitForExit(35000)) 'The Exit gate did not finish'
                     return $exiting.ExitCode
                 }
                 finally {
@@ -188,23 +75,23 @@ try {
                 }
             }
             Stop-Engine
-            Assert ((Exit-Code) -eq 0) 'Shutdown refused an absent engine and window'
-            $window = [Threading.Mutex]::new($false, "Local\TinyTorrent.UI.$logon")
+            Assert ((Exit-Code) -eq 0) 'Exit refused an absent engine and window'
+            $window = [Threading.Mutex]::new($false, "Local\TinyTorrent.Window.$logon")
             $owned = $false
             try {
                 $owned = $window.WaitOne(0)
                 Assert $owned 'The window instance is already owned'
-                Assert ((Exit-Code) -eq 1) 'Shutdown reported success while a window survived the engine'
+                Assert ((Exit-Code) -eq 1) 'Exit reported success while a window survived the engine'
                 $null = Start-Engine
-                Assert ((Exit-Code) -eq 1) 'Forwarded shutdown ignored a surviving window'
-                Assert ($script:process.WaitForExit(15000)) 'Forwarded Exit did not stop the disposable engine'
+                Assert ((Exit-Code) -eq 1) 'Forwarded Exit ignored a surviving window'
+                Assert ($script:process.WaitForExit(15000)) 'Forwarded Exit did not shut down the disposable engine'
                 $script:pipe.Dispose()
                 $script:pipe = $null
                 $script:process.Dispose()
                 $script:process = $null
                 $window.ReleaseMutex()
                 $owned = $false
-                Assert ((Exit-Code) -eq 0) 'Shutdown refused a released window instance'
+                Assert ((Exit-Code) -eq 0) 'Exit refused a released window instance'
             }
             finally {
                 if ($owned) { $window.ReleaseMutex() }
@@ -280,13 +167,13 @@ try {
             $torrentId = $reply.data.torrent_id
             foreach ($command in 'pause', 'remove', 'delete_files') {
                 $reply = Send-Command @{ command = $command; torrent_ids = @($torrentId, $torrentId) }
-                Assert (-not $reply.ok -and $reply.error.code -eq 'invalid_targets') 'Repeated targets were accepted'
+                Assert (-not $reply.ok -and $reply.error.code -eq 'invalid_torrents') 'Repeated torrents were accepted'
                 $rows = (Send-Command @{ command = 'snapshot' }).data.torrents
-                Assert ($rows.Count -eq 1 -and $rows[0].torrent_id -eq $torrentId) 'Refused targets changed membership'
+                Assert ($rows.Count -eq 1 -and $rows[0].torrent_id -eq $torrentId) 'Refused torrents changed membership'
             }
             Stop-Engine
             $snapshot = Start-Engine
-            Assert ($snapshot.torrents.Count -eq 1 -and $snapshot.torrents[0].torrent_id -eq $torrentId) 'Refused targets changed saved membership'
+            Assert ($snapshot.torrents.Count -eq 1 -and $snapshot.torrents[0].torrent_id -eq $torrentId) 'Refused torrents changed saved membership'
         }
         'Facts' {
             $reply = Send-Command @{ command = 'add'; preview_id = (Preview); destination = $payload; paused = $true }
@@ -325,20 +212,20 @@ try {
             $reply = Send-Command @{ command = 'resume'; torrent_ids = @($torrentId) }
             Assert $reply.ok 'Individual Resume was refused while all paused'
             $snapshot = (Send-Command @{ command = 'snapshot' }).data
-            Assert ($snapshot.all_paused -and -not $snapshot.torrents[0].paused) 'Individual Resume changed Pause all or lost its intent'
+            Assert ($snapshot.session_paused -and -not $snapshot.torrents[0].paused) 'Individual Resume changed Pause all or lost its intent'
             $reply = Send-Command @{ command = 'pause'; torrent_ids = @($torrentId) }
             Assert $reply.ok 'Individual Pause was refused while all paused'
             Assert-Paused $torrentId
 
             Stop-Engine
             $snapshot = Start-Engine
-            Assert ($snapshot.all_paused -and $snapshot.torrents.Count -eq 1 -and
+            Assert ($snapshot.session_paused -and $snapshot.torrents.Count -eq 1 -and
                 $snapshot.torrents[0].torrent_id -eq $torrentId -and $snapshot.torrents[0].paused) `
                 'Restart lost the magnet or either paused intent'
             $reply = Send-Command @{ command = 'session_pause'; paused = $false }
             Assert $reply.ok 'Resume all was refused'
             $snapshot = (Send-Command @{ command = 'snapshot' }).data
-            Assert (-not $snapshot.all_paused -and $snapshot.torrents[0].paused) 'Resume all changed individual paused intent'
+            Assert (-not $snapshot.session_paused -and $snapshot.torrents[0].paused) 'Resume all changed individual paused intent'
             Assert (@(Get-ChildItem -LiteralPath $payload -Recurse -File).Count -eq 0) 'The paused magnet created payload'
         }
         'FileNames' {
@@ -593,8 +480,8 @@ try {
             Assert (@($trackers).Count -eq 0) 'An explicit empty tracker list restored the original trackers'
         }
         'SettingsPolicy' {
-            Assert ($initial.settings.notify_problems -eq $true -and $initial.settings.notifications_enabled -eq $false -and $initial.settings.notify_added -eq $false) 'Fresh notification preferences do not keep successes quiet and problems visible'
-            Assert ($initial.settings.encryption -eq 'preferred' -and $initial.settings.proxy_type -eq 'none') 'Fresh network preferences do not prefer encryption without a proxy'
+            Assert ($initial.settings.notify_problems -eq $true -and $initial.settings.notifications_enabled -eq $false -and $initial.settings.notify_added -eq $false) 'Fresh notification settings do not keep successes quiet and problems visible'
+            Assert ($initial.settings.encryption -eq 'preferred' -and $initial.settings.proxy_type -eq 'none') 'Fresh network settings do not prefer encryption without a proxy'
             $previewId = Preview
             $reply = Send-Command @{ command = 'add'; preview_id = $previewId; destination = $payload; paused = $true }
             Assert $reply.ok 'Settings policy fixture addition failed'
@@ -603,11 +490,11 @@ try {
             $reply = Send-Command @{ command = 'settings'; changes = @{ schedule_enabled = $true; schedule = @($period); check_for_updates = $false; active_downloads = 1; port_mapping = $false; notify_problems = $false; notifications_enabled = $true; notify_added = $true } }
             Assert $reply.ok 'The weekly schedule could not be committed'
             $snapshot = (Send-Command @{ command = 'snapshot' }).data
-            Assert $snapshot.all_paused 'An all-day paused period did not pause the session'
+            Assert $snapshot.session_paused 'An all-day paused period did not pause the session'
             $reply = Send-Command @{ command = 'session_pause'; paused = $false }
             Assert $reply.ok 'Explicit session resume was refused during a scheduled pause'
             $snapshot = (Send-Command @{ command = 'snapshot' }).data
-            Assert (-not $snapshot.all_paused) 'Explicit resume did not override the current scheduled pause'
+            Assert (-not $snapshot.session_paused) 'Explicit resume did not override the current scheduled pause'
             Assert ($snapshot.torrents[0].paused -and $snapshot.torrents[0].torrent_id -eq $torrentId) 'Schedule resume changed individual pause intent'
             $period.mode = 'alternative'
             $reply = Send-Command @{ command = 'settings'; changes = @{ schedule = @($period) } }
@@ -637,7 +524,7 @@ try {
             Stop-Engine
             $snapshot = Start-Engine
             Assert ($snapshot.settings.schedule.Count -eq 1 -and $snapshot.settings.schedule[0].mode -eq 'alternative') 'A committed weekly period was lost at restart'
-            Assert ($snapshot.settings.active_downloads -eq 1 -and -not $snapshot.settings.check_for_updates -and -not $snapshot.settings.port_mapping) 'Committed preferences were lost at restart'
+            Assert ($snapshot.settings.active_downloads -eq 1 -and -not $snapshot.settings.check_for_updates -and -not $snapshot.settings.port_mapping) 'Committed settings were lost at restart'
             Assert ($snapshot.settings.notify_problems -eq $false -and $snapshot.settings.notifications_enabled -eq $true -and $snapshot.settings.notify_added -eq $true) 'Notification choices were lost at restart'
             Assert ($snapshot.settings.proxy_type -eq 'socks5' -and $snapshot.settings.proxy_password -eq $secret) 'The proxy and its password were lost at restart'
             Assert (-not [IO.File]::ReadAllText((Join-Path $directory 'settings.json')).Contains($secret)) 'settings.json holds the proxy password as plain text'
@@ -646,15 +533,15 @@ try {
             $reply = Send-Command @{ command = 'settings'; changes = @{ network_interface = $missing } }
             Assert $reply.ok 'An unavailable saved adapter choice was refused'
             $snapshot = (Send-Command @{ command = 'snapshot' }).data
-            Assert ($snapshot.all_paused -and $snapshot.missing_interface -eq $missing) 'An unavailable selected adapter did not block the session'
+            Assert ($snapshot.session_paused -and $snapshot.missing_adapter -eq $missing) 'An unavailable selected adapter did not block the session'
             $reply = Send-Command @{ command = 'session_pause'; paused = $false }
             Assert $reply.ok 'Resume could not preserve the adapter block'
             $snapshot = (Send-Command @{ command = 'snapshot' }).data
-            Assert $snapshot.all_paused 'Manual resume bypassed an unavailable selected adapter'
+            Assert $snapshot.session_paused 'Manual resume bypassed an unavailable selected adapter'
             $reply = Send-Command @{ command = 'settings'; changes = @{ network_interface = ''; schedule_enabled = $false } }
             Assert $reply.ok 'The saved adapter block could not be cleared'
             $snapshot = (Send-Command @{ command = 'snapshot' }).data
-            Assert (-not $snapshot.all_paused -and $snapshot.limits.mode -eq 'speed') 'Disabling the schedule lost the saved limit choice'
+            Assert (-not $snapshot.session_paused -and $snapshot.limits.mode -eq 'speed') 'Disabling the schedule lost the saved limit choice'
             Assert $snapshot.torrents[0].paused 'Returning to ordinary policy resumed an individually paused torrent'
         }
         'CheckpointRetry' {
@@ -808,7 +695,7 @@ try {
             $reply = Send-Command @{ command = 'pause'; torrent_ids = @($torrentId) }
             Assert $reply.ok 'Completed selected torrent could not pause'
             $reply = Send-Command @{ command = 'preview'; source = ('magnet:?xt=urn:btih:' + $hash + '&tr=http%3A%2F%2F127.0.0.1%3A1%2Fannounce'); destination = (Join-Path $directory 'wrong-destination') }
-            Assert ($reply.ok -and $reply.data.duplicate -eq $torrentId -and $reply.data.merge_available) 'Duplicate new tracker was not offered for merge'
+            Assert ($reply.ok -and $reply.data.torrent_id -eq $torrentId -and $reply.data.merge_available) 'Duplicate new tracker was not offered for merge'
             $previewId = $reply.data.preview_id
             $reply = Send-Command @{ command = 'merge_trackers'; preview_id = $previewId; torrent_id = $torrentId }
             Assert $reply.ok 'Explicit tracker merge failed'
@@ -831,7 +718,7 @@ try {
             Assert (-not $reply.data.torrents[0].forced -and -not $reply.data.torrents[0].paused) 'Ordinary resume retained force intent'
         }
         'Frames' {
-            $reply = Send-Command @{ command = 'registration'; operation = 42 }
+            $reply = Send-Command @{ command = 'registration'; action = 42 }
             Assert (-not $reply.ok -and $reply.error.code -eq 'invalid_request') 'Malformed registration terminated the download owner instead of being refused'
             $reply = Send-Command @{ command = 'snapshot' }
             Assert $reply.ok 'Malformed registration broke the subsequent valid command'
@@ -875,7 +762,7 @@ try {
             Stop-Engine
             $snapshot = Start-Engine
             Assert (@($snapshot.torrents).Count -eq 0) 'Orphan resume data resurrected an uncommitted addition'
-            Assert ($snapshot.settings.language -eq $initial.settings.language) 'Unsaved language survived as a saved preference'
+            Assert ($snapshot.settings.language -eq $initial.settings.language) 'Unsaved language survived as a saved setting'
         }
         'Restart' {
             $previewId = Preview
@@ -891,7 +778,7 @@ try {
             $reply = Send-Command @{ command = 'session_pause'; paused = $true }
             Assert $reply.ok 'Session pause was not saved'
             $reply = Send-Command @{ command = 'settings'; changes = @{ language = 'es'; theme = 'dark' } }
-            Assert $reply.ok 'Appearance preferences were not saved'
+            Assert $reply.ok 'Appearance settings were not saved'
             Stop-Engine
             $snapshot = Start-Engine
             Assert (@($snapshot.torrents).Count -eq 1) 'Saved torrent disappeared after restart'
@@ -900,12 +787,12 @@ try {
             Assert ($snapshot.torrents[0].sequential -and $snapshot.torrents[0].first_last) 'Saved download order was lost after restart'
             Assert ($snapshot.torrents[0].download_limit -eq 51200 -and $snapshot.torrents[0].upload_limit -eq 0) `
                 'Saved torrent speed limit was lost after restart'
-            Assert $snapshot.all_paused 'Saved session pause was lost after restart'
-            Assert ($snapshot.settings.language -eq 'es' -and $snapshot.settings.theme -eq 'dark') 'Saved appearance preferences were lost after restart'
+            Assert $snapshot.session_paused 'Saved session pause was lost after restart'
+            Assert ($snapshot.settings.language -eq 'es' -and $snapshot.settings.theme -eq 'dark') 'Saved appearance settings were lost after restart'
             $reply = Send-Command @{ command = 'session_pause'; paused = $false }
             Assert $reply.ok 'Restored session could not resume'
             $snapshot = Send-Command @{ command = 'snapshot' }
-            Assert $snapshot.data.torrents[0].paused 'Session resume changed an individually stopped torrent'
+            Assert $snapshot.data.torrents[0].paused 'Session resume changed an individually paused torrent'
             $reply = Send-Command @{ command = 'resume'; torrent_ids = @($torrentId) }
             Assert $reply.ok 'Restored torrent could not resume'
             Stop-Engine

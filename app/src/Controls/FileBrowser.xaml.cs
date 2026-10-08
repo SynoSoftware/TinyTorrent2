@@ -12,25 +12,45 @@ namespace Syno.TinyTorrent.Controls;
 
 public sealed partial class FileBrowser : UserControl
 {
-    public static readonly DependencyProperty ModelProperty = DependencyProperty.Register(nameof(Model), typeof(FileSelection), typeof(FileBrowser), new PropertyMetadata(null, OnModelChanged));
-    public FileSelection Model { get => (FileSelection)GetValue(ModelProperty); set => SetValue(ModelProperty, value); }
+    public static readonly DependencyProperty ModelProperty = DependencyProperty.Register(
+        nameof(Model),
+        typeof(FileSelection),
+        typeof(FileBrowser),
+        new PropertyMetadata(null, OnModelChanged)
+    );
+    public FileSelection Model
+    {
+        get => (FileSelection)GetValue(ModelProperty);
+        set => SetValue(ModelProperty, value);
+    }
 
     public FileBrowser(FileSelection model)
     {
         Model = model;
         InitializeComponent();
-        if (!Model.ShowsProgress) Files.Columns.Remove(ProgressColumn);
-        var schema = Files.Schema<FileNode>()
+        if (!Model.ShowsProgress)
+            Files.Columns.Remove(ProgressColumn);
+        var schema = Files
+            .Schema<FileNode>()
             .Key(node => node.Path)
-            .Hierarchy(NameColumn, node => node.Children, node => node.IsExpanded,
-                (node, expanded) => node.IsExpanded = expanded)
+            .Hierarchy(
+                NameColumn,
+                node => node.Children,
+                node => node.IsExpanded,
+                (node, expanded) => node.IsExpanded = expanded
+            )
             .SortKey(NameColumn, node => node.Name)
             .SortKey(SizeColumn, node => node.TotalSize)
             .SortKey(PriorityColumn, node => node.Priority);
-        if (Model.ShowsProgress) schema.SortKey(ProgressColumn, node => node.Progress);
+        if (Model.ShowsProgress)
+            schema.SortKey(ProgressColumn, node => node.Progress);
         Files.SelectionChanged += (_, _) => RefreshActions();
         Files.ItemContextRequested += (_, args) =>
-            ShowPriority(args.Target, args.SelectedItems.OfType<FileNode>().ToArray(), args.Position);
+            ShowPriority(
+                args.Target,
+                args.SelectedItems.OfType<FileNode>().ToArray(),
+                args.Position
+            );
         // WinUI can deliver Unloaded while this control is still in the tree, as
         // ContentDialog does, so a late Unloaded is ignored and Loaded can repeat.
         Loaded += (_, _) =>
@@ -49,13 +69,18 @@ public sealed partial class FileBrowser : UserControl
         RefreshText();
     }
 
-    private static void OnModelChanged(DependencyObject sender, DependencyPropertyChangedEventArgs args)
+    private static void OnModelChanged(
+        DependencyObject sender,
+        DependencyPropertyChangedEventArgs args
+    )
     {
         var browser = (FileBrowser)sender;
-        if (browser.Files is null) return;
+        if (browser.Files is null)
+            return;
         if (browser.IsLoaded)
         {
-            if (args.OldValue is FileSelection previous) previous.Changed -= browser.OnChanged;
+            if (args.OldValue is FileSelection previous)
+                previous.Changed -= browser.OnChanged;
             browser.Model.Changed += browser.OnChanged;
         }
         browser.Files.Selection = Selection.Empty;
@@ -80,7 +105,8 @@ public sealed partial class FileBrowser : UserControl
     private void OnChanged(object? sender, EventArgs args)
     {
         RefreshActions();
-        if (Files.Sort is not null) Files.RefreshView();
+        if (Files.Sort is not null)
+            Files.RefreshView();
     }
 
     private void RefreshActions()
@@ -112,26 +138,33 @@ public sealed partial class FileBrowser : UserControl
 
     private void ShowPriority(FrameworkElement target, FileNode[] nodes, Point? position = null)
     {
-        if (!Model.IsEnabled || nodes.Length == 0) return;
+        if (!Model.IsEnabled || nodes.Length == 0)
+            return;
         MenuFlyout menu = new();
-        foreach (var (key, priority) in new[] { ("skip", 0), ("low", 1), ("normal", 4), ("high", 7) })
+        foreach (
+            var (key, priority) in new[] { ("skip", 0), ("low", 1), ("normal", 4), ("high", 7) }
+        )
         {
             MenuFlyoutItem item = new() { Text = Model.Text.Get("files", key) };
             item.Click += (_, _) => Model.Change(nodes, priority);
             menu.Items.Add(item);
         }
         FlyoutShowOptions options = new();
-        if (position is { } point) options.Position = point;
+        if (position is { } point)
+            options.Position = point;
         menu.ShowAt(target, options);
     }
 
     private void OnFilesKey(object sender, KeyRoutedEventArgs args)
     {
-        if (args.Key != VirtualKey.F2) return;
+        if (args.Key != VirtualKey.F2)
+            return;
         FrameworkElement? target = null;
-        for (var element = FocusManager.GetFocusedElement(XamlRoot) as DependencyObject;
-             element is not null;
-             element = VisualTreeHelper.GetParent(element))
+        for (
+            var element = FocusManager.GetFocusedElement(XamlRoot) as DependencyObject;
+            element is not null;
+            element = VisualTreeHelper.GetParent(element)
+        )
         {
             if (element is ListViewItem row)
             {
@@ -143,11 +176,14 @@ public sealed partial class FileBrowser : UserControl
                 target = Files;
                 break;
             }
-            if (element is ButtonBase or ComboBox or TextBox or PasswordBox or Slider) return;
+            if (element is ButtonBase or ComboBox or TextBox or PasswordBox or Slider)
+                return;
         }
-        if (target is null || Files.Selection.Current is not FileNode current) return;
+        if (target is null || Files.Selection.Current is not FileNode current)
+            return;
         FileNode[] nodes = Files.Selection.Items.Contains(current)
-            ? Files.Selection.Items.OfType<FileNode>().ToArray() : [current];
+            ? Files.Selection.Items.OfType<FileNode>().ToArray()
+            : [current];
         ShowPriority(target, nodes);
         args.Handled = true;
     }

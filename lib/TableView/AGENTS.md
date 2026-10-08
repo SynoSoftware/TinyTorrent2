@@ -45,7 +45,7 @@ press/release decisions in contract sections 14 and 16; the time a person holds
 an input is not evidence of a slow handler.
 
 Use the platform value when Windows owns a threshold, theme metric, or behavior;
-use resolved geometry for geometric values and the contract for specified
+use the effective layout for geometric values and the contract for specified
 baselines. Verify resource names against the installed platform rather than
 inventing them. A local template default is not a named design token; the table's
 resource constraints and reasons live in its contract.

@@ -3,7 +3,7 @@ using System.Collections.ObjectModel;
 namespace Syno.TableView.Body;
 
 /// <summary>
-/// The private view handed to the hosted <c>ListView</c>. A source snapshot is applied in place, as
+/// The private view handed to the row surface. A source snapshot is applied in place, as
 /// removals, insertions and replacements matched by section 5 identity, so a row that did not
 /// change keeps its container and the list animates only what moved. Never <c>Move</c>: see
 /// <see cref="MoveItem"/>. Never <c>Clear</c>: see <see cref="ClearItems"/>.
@@ -45,7 +45,15 @@ internal sealed class View : ObservableCollection<object>
     /// removes.
     /// </para>
     /// </remarks>
-    internal bool Reconcile(IReadOnlyList<object> snapshot, IReadOnlyList<int> realized)
+    /// <param name="pinned">
+    /// Rows that stand at the same index in the view and the snapshot and must keep their
+    /// containers, so they do not animate out and back in under the pointer.
+    /// </param>
+    internal bool Reconcile(
+        IReadOnlyList<object> snapshot,
+        IReadOnlyList<int> realized,
+        IReadOnlySet<object> pinned
+    )
     {
         if (IsAlready(snapshot))
         {
@@ -64,7 +72,7 @@ internal sealed class View : ObservableCollection<object>
         Membership(snapshot, place, held);
 
         List<(int Start, int End)> runs = Runs(held);
-        List<int> removed = RemoveFromRuns(place, runs);
+        List<int> removed = RemoveFromRuns(place, runs, pinned);
         PlaceQuietly(snapshot, runs, removed);
         InsertIntoRuns(snapshot, runs);
 
@@ -76,7 +84,11 @@ internal sealed class View : ObservableCollection<object>
     /// for a row it has not realized, so this pass is announced in full however far off screen it
     /// is, and raising it at the true index leaves the panel's scroll anchoring as it is today.
     /// </summary>
-    private void Membership(IReadOnlyList<object> snapshot, Dictionary<object, int> place, List<int> held)
+    private void Membership(
+        IReadOnlyList<object> snapshot,
+        Dictionary<object, int> place,
+        List<int> held
+    )
     {
         for (int i = Count - 1; i >= 0; i--)
         {
@@ -179,14 +191,18 @@ internal sealed class View : ObservableCollection<object>
     /// would hold a duplicate of every row arriving in a run from off screen until its old home was
     /// overwritten, and a focused row pinned far from the viewport makes a second run ordinary.
     /// </remarks>
-    private List<int> RemoveFromRuns(Dictionary<object, int> place, List<(int Start, int End)> runs)
+    private List<int> RemoveFromRuns(
+        Dictionary<object, int> place,
+        List<(int Start, int End)> runs,
+        IReadOnlySet<object> pinned
+    )
     {
         List<int> removed = new();
 
         for (int r = runs.Count - 1; r >= 0; r--)
         {
             (int start, int end) = runs[r];
-            bool[] stays = RunSurvivors(place, start, end);
+            bool[] stays = RunSurvivors(place, start, end, pinned);
 
             for (int i = end - 1; i >= start; i--)
             {
@@ -208,7 +224,10 @@ internal sealed class View : ObservableCollection<object>
     /// row if it ever scrolls there.
     /// </summary>
     private void PlaceQuietly(
-        IReadOnlyList<object> snapshot, List<(int Start, int End)> runs, List<int> removed)
+        IReadOnlyList<object> snapshot,
+        List<(int Start, int End)> runs,
+        List<int> removed
+    )
     {
         int gone = 0;
         int next = 0;
@@ -299,8 +318,18 @@ internal sealed class View : ObservableCollection<object>
     /// with. Restricted to the run, the arithmetic also stays neutral — a run holds the same number
     /// of positions in both orders, so what it removes here it takes back in insertions, and the
     /// runs below it never move.
+    /// <para>
+    /// A row that would have to cross a pinned row moves instead of it. Every row left can then be
+    /// joined by the pinned rows in an increasing run, so the longest run contains them all and a
+    /// pinned row is never removed.
+    /// </para>
     /// </remarks>
-    private bool[] RunSurvivors(Dictionary<object, int> place, int start, int end)
+    private bool[] RunSurvivors(
+        Dictionary<object, int> place,
+        int start,
+        int end,
+        IReadOnlySet<object> pinned
+    )
     {
         int count = end - start;
         int[] target = new int[count];
@@ -308,6 +337,45 @@ internal sealed class View : ObservableCollection<object>
         {
             int to = place[this[start + row]];
             target[row] = to >= start && to < end ? to : -1;
+        }
+
+        if (pinned.Count > 0)
+        {
+            int above = -1;
+            for (int row = 0; row < count; row++)
+            {
+                if (target[row] < 0)
+                {
+                    continue;
+                }
+
+                if (pinned.Contains(this[start + row]))
+                {
+                    above = target[row];
+                }
+                else if (target[row] < above)
+                {
+                    target[row] = -1;
+                }
+            }
+
+            int below = int.MaxValue;
+            for (int row = count - 1; row >= 0; row--)
+            {
+                if (target[row] < 0)
+                {
+                    continue;
+                }
+
+                if (pinned.Contains(this[start + row]))
+                {
+                    below = target[row];
+                }
+                else if (target[row] > below)
+                {
+                    target[row] = -1;
+                }
+            }
         }
 
         // Patience sorting. runEnd[k] is the row ending the increasing run of length k + 1 whose
@@ -364,11 +432,12 @@ internal sealed class View : ObservableCollection<object>
     /// </summary>
     protected override void ClearItems() =>
         throw new NotSupportedException(
-            "Never Clear a displayed collection: the list drops every container and nothing " +
-            "animates. Reconcile the snapshot in place instead.");
+            "Never Clear a displayed collection: the list drops every container and nothing "
+                + "animates. Reconcile the snapshot in place instead."
+        );
 
     /// <summary>
-    /// Refused. A Move notification makes the hosted <c>ListView</c> stop its item transitions and
+    /// Refused. A Move notification makes the row surface stop its item transitions and
     /// flash the whole list, not the moved row; the owner measured it by debugging it directly,
     /// twice, in two other products. A reorder is <c>RemoveAt</c> then <c>Insert</c>, which
     /// animates only the row that moved. The base class exposes <c>Move</c> publicly, so the rule
@@ -376,6 +445,7 @@ internal sealed class View : ObservableCollection<object>
     /// </summary>
     protected override void MoveItem(int oldIndex, int newIndex) =>
         throw new NotSupportedException(
-            "Never Move a displayed row: the hosted ListView stops its transitions and flashes the " +
-            "whole list. Reorder with RemoveAt then Insert.");
+            "Never Move a displayed row: the row surface stops its transitions and flashes the "
+                + "whole list. Reorder with RemoveAt then Insert."
+        );
 }

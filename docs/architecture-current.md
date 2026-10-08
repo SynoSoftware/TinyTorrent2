@@ -59,9 +59,9 @@ The product follows MVVM. `MainViewModel` owns membership, accepted selection,
 commands and connection facts. It publishes a completed visible list only when
 membership or order changes; routine snapshots refresh window state, while
 connection and language transitions propagate to the affected child owners.
-`Preferences` owns confirmed settings, ordinary field drafts, adapter choices,
+`Settings` owns confirmed settings, ordinary field drafts, adapter choices,
 conversion and submission. Its concrete `Schedule` owns period editing and whole-list saves.
-`AddDraft`, `Inspector` and `FileOperation` own their unfinished operations.
+`AddDraft`, `Inspector` and `FileDraft` own their unfinished operations.
 Inspector retains peer/tracker row identity within the current session and target.
 
 `MainWindow` retains native pickers, chrome, focus and TableView gestures. Menu
@@ -138,7 +138,7 @@ flowchart TB
     Control --> View["Body.View: displayed collection"]
     View --> Rows["Virtualized ListView rows"]
     Control --> Selection["SelectionState: selection, current item, anchor"]
-    Control --> Geometry["ResolvedLayout: shared column geometry"]
+    Control --> Geometry["EffectiveLayout: shared column geometry"]
     Geometry --> Header["Header CellsPanel"]
     Geometry --> Cells["Row CellsPanel"]
     Rows --> Cells
@@ -154,7 +154,7 @@ order for the native list. These are presentation projections of the same host
 items, not independent domain authorities.
 
 The selection model reconciles object references or supplied stable keys.
-Resolved geometry is shared by header and row panels; the table owns horizontal
+The effective layout is shared by header and row panels; the table owns horizontal
 offset and the body's native scroller owns vertical scrolling. The input arbiter
 chooses between a press, marquee selection, and row drag. Its visual helpers do
 not choose the gesture. These owners hide real mechanics from both sample hosts;

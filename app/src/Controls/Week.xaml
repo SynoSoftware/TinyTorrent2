@@ -1,57 +1,81 @@
-<UserControl x:Class="Syno.TinyTorrent.Controls.Week"
-    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-    <UserControl.Resources>
-        <Style x:Key="WeekTextStyle" TargetType="TextBlock" BasedOn="{StaticResource BodyTextStyle}">
-            <Setter Property="Foreground" Value="{ThemeResource TextFillColorPrimaryBrush}" />
-        </Style>
-        <Style x:Key="WeekSecondaryStyle" TargetType="TextBlock" BasedOn="{StaticResource WeekTextStyle}">
-            <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
-        </Style>
-        <Style x:Key="WeekTrackStyle" TargetType="Border">
-            <Setter Property="Background" Value="{ThemeResource ControlFillColorSecondaryBrush}" />
-            <Setter Property="BorderBrush" Value="{ThemeResource ControlStrokeColorDefaultBrush}" />
-        </Style>
-        <Style x:Key="WeekLineStyle" TargetType="Border">
-            <Setter Property="Background" Value="{ThemeResource ControlStrokeColorDefaultBrush}" />
-        </Style>
-        <Style x:Key="WeekStandardStyle" TargetType="Border">
-            <Setter Property="BorderBrush" Value="Transparent" />
-        </Style>
-        <Style x:Key="WeekAlternativeStyle" TargetType="Border">
-            <Setter Property="Background" Value="{ThemeResource TinyTorrentAlternativeBrush}" />
-            <Setter Property="BorderBrush" Value="{ThemeResource AccentFillColorDefaultBrush}" />
-        </Style>
-        <Style x:Key="WeekPausedStyle" TargetType="Border">
-            <Setter Property="Background" Value="{ThemeResource SystemFillColorCautionBackgroundBrush}" />
-            <Setter Property="BorderBrush" Value="{ThemeResource SystemFillColorCautionBrush}" />
-        </Style>
-        <Style x:Key="WeekOutlineStyle" TargetType="Border">
-            <Setter Property="BorderBrush" Value="{ThemeResource TextFillColorPrimaryBrush}" />
-        </Style>
-        <Style x:Key="WeekHandleStyle" TargetType="Border">
-            <Setter Property="Background" Value="{ThemeResource TextFillColorPrimaryBrush}" />
-        </Style>
-        <Style x:Key="WeekNowStyle" TargetType="Border">
-            <Setter Property="Background" Value="{ThemeResource TextFillColorPrimaryBrush}" />
-        </Style>
-        <Style x:Key="WeekTipStyle" TargetType="Border">
-            <Setter Property="Background" Value="{ThemeResource SolidBackgroundFillColorBaseBrush}" />
-            <Setter Property="BorderBrush" Value="{ThemeResource ControlStrokeColorDefaultBrush}" />
-        </Style>
-    </UserControl.Resources>
-    <ToolTipService.ToolTip><ToolTip x:Name="HoverTip" /></ToolTipService.ToolTip>
-    <Grid Background="Transparent">
-        <Canvas x:Name="Backdrop" IsHitTestVisible="False" />
-        <Canvas x:Name="Blocks" IsHitTestVisible="False" />
-        <Canvas IsHitTestVisible="False">
-            <Border x:Name="NowLine" Width="2" Style="{StaticResource WeekNowStyle}" AutomationProperties.AccessibilityView="Raw" />
-        </Canvas>
-        <Canvas x:Name="Outlines" IsHitTestVisible="False" />
-        <Canvas x:Name="Feedback" IsHitTestVisible="False">
-            <Border x:Name="Tip" Padding="8" BorderThickness="1" Style="{StaticResource WeekTipStyle}" Visibility="Collapsed" AutomationProperties.AccessibilityView="Raw">
-                <TextBlock x:Name="TipText" Style="{StaticResource WeekTextStyle}" />
-            </Border>
-        </Canvas>
-    </Grid>
+<UserControl
+  x:Class="Syno.TinyTorrent.Controls.Week"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+>
+  <UserControl.Resources>
+    <Style
+      x:Key="WeekTextStyle"
+      TargetType="TextBlock"
+      BasedOn="{StaticResource TinyTorrentBodyTextStyle}"
+    >
+      <Setter Property="Foreground" Value="{ThemeResource TextFillColorPrimaryBrush}" />
+    </Style>
+    <Style
+      x:Key="WeekSecondaryStyle"
+      TargetType="TextBlock"
+      BasedOn="{StaticResource WeekTextStyle}"
+    >
+      <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+    </Style>
+    <Style x:Key="WeekTrackStyle" TargetType="Border">
+      <Setter Property="Background" Value="{ThemeResource ControlFillColorSecondaryBrush}" />
+      <Setter Property="BorderBrush" Value="{ThemeResource ControlStrokeColorDefaultBrush}" />
+    </Style>
+    <Style x:Key="WeekLineStyle" TargetType="Border">
+      <Setter Property="Background" Value="{ThemeResource ControlStrokeColorDefaultBrush}" />
+    </Style>
+    <Style x:Key="WeekStandardStyle" TargetType="Border">
+      <Setter Property="BorderBrush" Value="Transparent" />
+    </Style>
+    <Style x:Key="WeekAlternativeStyle" TargetType="Border">
+      <Setter Property="Background" Value="{ThemeResource TinyTorrentAlternativeBrush}" />
+      <Setter Property="BorderBrush" Value="{ThemeResource AccentFillColorDefaultBrush}" />
+    </Style>
+    <Style x:Key="WeekPausedStyle" TargetType="Border">
+      <Setter Property="Background" Value="{ThemeResource SystemFillColorCautionBackgroundBrush}" />
+      <Setter Property="BorderBrush" Value="{ThemeResource SystemFillColorCautionBrush}" />
+    </Style>
+    <Style x:Key="WeekOutlineStyle" TargetType="Border">
+      <Setter Property="BorderBrush" Value="{ThemeResource TextFillColorPrimaryBrush}" />
+    </Style>
+    <Style x:Key="WeekHandleStyle" TargetType="Border">
+      <Setter Property="Background" Value="{ThemeResource TextFillColorPrimaryBrush}" />
+    </Style>
+    <Style x:Key="WeekNowStyle" TargetType="Border">
+      <Setter Property="Background" Value="{ThemeResource TextFillColorPrimaryBrush}" />
+    </Style>
+    <Style x:Key="WeekTipStyle" TargetType="Border">
+      <Setter Property="Background" Value="{ThemeResource SolidBackgroundFillColorBaseBrush}" />
+      <Setter Property="BorderBrush" Value="{ThemeResource ControlStrokeColorDefaultBrush}" />
+    </Style>
+  </UserControl.Resources>
+  <ToolTipService.ToolTip>
+    <ToolTip x:Name="HoverTip" />
+  </ToolTipService.ToolTip>
+  <Grid Background="Transparent">
+    <Canvas x:Name="Backdrop" IsHitTestVisible="False" />
+    <Canvas x:Name="Blocks" IsHitTestVisible="False" />
+    <Canvas IsHitTestVisible="False">
+      <Border
+        x:Name="NowLine"
+        Width="2"
+        Style="{StaticResource WeekNowStyle}"
+        AutomationProperties.AccessibilityView="Raw"
+      />
+    </Canvas>
+    <Canvas x:Name="Outlines" IsHitTestVisible="False" />
+    <Canvas x:Name="Feedback" IsHitTestVisible="False">
+      <Border
+        x:Name="Tip"
+        Padding="8"
+        BorderThickness="1"
+        Style="{StaticResource WeekTipStyle}"
+        Visibility="Collapsed"
+        AutomationProperties.AccessibilityView="Raw"
+      >
+        <TextBlock x:Name="TipText" Style="{StaticResource WeekTextStyle}" />
+      </Border>
+    </Canvas>
+  </Grid>
 </UserControl>

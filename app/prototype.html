@@ -20,7 +20,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 input,select,textarea { min-height:32px; background:var(--field); border:1px solid var(--line); border-bottom-color:var(--scroll); border-radius:4px; padding:6px 10px; caret-color:var(--accent); }
 input:focus,textarea:focus { border-bottom:2px solid var(--accent); }
 ::selection { background:var(--accent); color:var(--card); }
-.table-region,.detail,.dialog-body,.preferences-page { scrollbar-width:thin; scrollbar-color:var(--scroll) transparent; }
+.table-region,.detail,.dialog-body,.settings-page { scrollbar-width:thin; scrollbar-color:var(--scroll) transparent; }
 input[type=checkbox] { min-height:0; accent-color:var(--accent); }
 input[type=range] { padding:0; accent-color:var(--accent); }
 textarea { width:100%; min-height:116px; resize:vertical; }
@@ -268,14 +268,14 @@ dialog::backdrop { background:#0005; }
 .help { color:var(--muted); font-size:12px; margin-top:8px; }
 .sample-controls { display:flex; gap:6px; margin:16px 0; }
 .sample-controls button { font-size:12px; }
-.preferences-shell { flex:1; min-height:0; display:flex; flex-direction:column; background:var(--surface); border-top:1px solid var(--line); }
-.preferences-page { flex:1; min-height:0; overflow:auto; background:var(--surface); }
-.preferences-content { width:calc(100% - 48px); max-width:800px; margin:24px auto 40px; }
-.preferences-heading { display:flex; align-items:center; gap:12px; margin-bottom:24px; }
-.preferences-heading h1 { font-size:28px; font-weight:600; }
-.preference-tabs { gap:24px; padding:0; margin-bottom:16px; }
-.preference-tabs button { display:flex; align-items:center; gap:8px; }
-.preference-tabs svg { width:16px; height:16px; }
+.settings-shell { flex:1; min-height:0; display:flex; flex-direction:column; background:var(--surface); border-top:1px solid var(--line); }
+.settings-page { flex:1; min-height:0; overflow:auto; background:var(--surface); }
+.settings-content { width:calc(100% - 48px); max-width:800px; margin:24px auto 40px; }
+.settings-heading { display:flex; align-items:center; gap:12px; margin-bottom:24px; }
+.settings-heading h1 { font-size:28px; font-weight:600; }
+.settings-tabs { gap:24px; padding:0; margin-bottom:16px; }
+.settings-tabs button { display:flex; align-items:center; gap:8px; }
+.settings-tabs svg { width:16px; height:16px; }
 .settings-card { padding:24px; margin-bottom:16px; background:var(--card); border:1px solid var(--line); border-radius:4px; }
 .settings-card-heading { display:flex; align-items:center; gap:16px; margin-bottom:20px; }
 .settings-card-heading > svg { width:32px; height:32px; color:var(--accent); stroke-width:1.4; }
@@ -401,7 +401,7 @@ const variants = {
   B:{name:'Focused library',reason:'Full-width transfers · search and error recovery'},
   C:{name:'Inspector focus',reason:'Compact torrent list · larger details · vertical inspector tabs'}
 };
-const preferenceGroups = [['Downloads','folder'],['Transfers','download'],['Scheduler','clock'],['Connection','link'],['Application','settings']];
+const settingsCategories = [['Downloads','folder'],['Transfers','download'],['Scheduler','clock'],['Connection','link'],['Application','settings']];
 const tabs = ['General','Files','Peers','Trackers','Speed','Pieces'];
 const mintFiles = [['linuxmint-22.2-cinnamon-64bit.iso',2.9,true,'Normal'],['sha256sum.txt',.000001,true,'Normal']];
 const movieFiles = [
@@ -434,7 +434,7 @@ const defaults = {folder:'C:\\Users\\Alex\\Downloads',showAdd:true,downLimit:0,u
 const weekdays = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
 const modes = {normal:'Normal limits',alternative:'Alternative limits',paused:'Paused'};
 const defaultSchedule = {enabled:false,periods:[{days:[0,1,2,3,4,5,6],start:'00:00',end:'07:00',mode:'paused'},{days:[0,1,2,3,4],start:'09:00',end:'18:00',mode:'alternative'}]};
-const state = {variant:variants[new URLSearchParams(location.search).get('variant')] ? new URLSearchParams(location.search).get('variant') : 'C',page:'torrents',preferenceGroup:'Downloads',scenario:'normal',filter:'All',filtersOpen:false,fileSearch:{add:'',torrent:''},fileCollapsed:{add:[],torrent:[]},detailSort:{Peers:null,Trackers:null},detailSelection:{Peers:[],Trackers:[]},selection:[1],tab:'General',inspector:false,split:{},allPaused:false,alternative:false,sort:'',descending:false,settings:{...defaults},schedule:structuredClone(defaultSchedule),draft:null,picker:null};
+const state = {variant:variants[new URLSearchParams(location.search).get('variant')] ? new URLSearchParams(location.search).get('variant') : 'C',page:'torrents',settingsCategory:'Downloads',scenario:'normal',filter:'All',filtersOpen:false,fileSearch:{add:'',torrent:''},fileCollapsed:{add:[],torrent:[]},detailSort:{Peers:null,Trackers:null},detailSelection:{Peers:[],Trackers:[]},selection:[1],tab:'General',inspector:false,split:{},allPaused:false,alternative:false,sort:'',descending:false,settings:{...defaults},schedule:structuredClone(defaultSchedule),draft:null,picker:null};
 let torrents = structuredClone(samples);
 let timer;
 const app = document.getElementById('app');
@@ -756,7 +756,7 @@ function render() {
   const focusTorrent = focus?.dataset.torrent;
   const focusFilter = focus?.dataset.filter;
   app.className = `window variant-${state.variant}`;
-  app.innerHTML = `<header class="caption"><div class="brand"><button class="brand-toggle" data-action="app-menu" aria-label="Application menu" title="Application menu" aria-haspopup="menu" aria-expanded="false" aria-controls="action-menu"><span class="brand-scene" aria-hidden="true"><span class="brand-face brand-front"><img src="${logo}" alt=""></span><span class="brand-face brand-back">${icon('menu')}</span></span></button><button class="brand-home" data-action="torrents" title="Torrents" aria-label="TinyTorrent · Return to torrents">TinyTorrent</button>${state.page==='torrents'?`<button class="filter-toggle ${state.filter==='All'?'':'active'}" data-action="filters" aria-expanded="${state.filtersOpen}" aria-controls="torrent-filters" title="Torrent filters">${icon('filter')}<span>${state.filter==='All'?'Filters':`${filters.find(([filter])=>filter===state.filter)[1]} · ${rows().length}`}</span></button>`:`<span class="caption-page">/ ${state.page==='preferences'?'Settings':'About'}</span>`}</div><label class="caption-search">${icon('search')}<input id="global-search" role="combobox" aria-label="Search torrents, commands and settings" aria-autocomplete="list" aria-controls="command-search" aria-expanded="false" placeholder="Search TinyTorrent" autocomplete="off" spellcheck="false"><kbd>Ctrl+K</kbd></label><div class="caption-controls">${state.page==='torrents'?`${addCommands.map(([action,label,name,shortcut])=>command(action,`${label} · ${shortcut}`,name,!connected())).join('')}<span class="divider"></span><div class="selection-tools" aria-label="Selected torrent commands">${command('pause','Pause · Ctrl+P','pause',!connected()||!selected().length)}${command('resume','Resume · Ctrl+S','play',!connected()||!selected().length)}${command('actions',`More actions · ${selected().length} ${selected().length===1?'torrent':'torrents'} selected`,'more',!connected()||!selected().length)}</div>`:''}${command('theme',document.body.classList.contains('dark')?'Switch to light theme':'Switch to dark theme','theme')}<span class="divider"></span><span class="caption-glyph" aria-hidden="true">${icon('minimize')}</span><span class="caption-glyph" aria-hidden="true">${icon('maximize')}</span><span class="caption-glyph" aria-hidden="true">${icon('close')}</span></div></header>${state.scenario==='offline'?'<div class="notice" role="status">'+icon('alert')+'<span><strong>Connection lost</strong> · Showing last-known transfers. Actions are unavailable while reconnecting.</span><button data-action="reconnect">Reconnect sample</button></div>':''}${state.page==='preferences'?preferencesContent():state.page==='about'?`<section class="about-page"><img src="${logo}" alt=""><h1>TinyTorrent</h1><p>Windows torrent client</p><p>UI prototype · Sample data</p></section>`:`<div class="content">${filterPane()}<section class="workspace"><div class="table-region">${table()}</div>${inspector()}</section></div>`}${statusbar()}`;
+  app.innerHTML = `<header class="caption"><div class="brand"><button class="brand-toggle" data-action="app-menu" aria-label="Application menu" title="Application menu" aria-haspopup="menu" aria-expanded="false" aria-controls="action-menu"><span class="brand-scene" aria-hidden="true"><span class="brand-face brand-front"><img src="${logo}" alt=""></span><span class="brand-face brand-back">${icon('menu')}</span></span></button><button class="brand-home" data-action="torrents" title="Torrents" aria-label="TinyTorrent · Return to torrents">TinyTorrent</button>${state.page==='torrents'?`<button class="filter-toggle ${state.filter==='All'?'':'active'}" data-action="filters" aria-expanded="${state.filtersOpen}" aria-controls="torrent-filters" title="Torrent filters">${icon('filter')}<span>${state.filter==='All'?'Filters':`${filters.find(([filter])=>filter===state.filter)[1]} · ${rows().length}`}</span></button>`:`<span class="caption-page">/ ${state.page==='settings'?'Settings':'About'}</span>`}</div><label class="caption-search">${icon('search')}<input id="global-search" role="combobox" aria-label="Search torrents, commands and settings" aria-autocomplete="list" aria-controls="command-search" aria-expanded="false" placeholder="Search TinyTorrent" autocomplete="off" spellcheck="false"><kbd>Ctrl+K</kbd></label><div class="caption-controls">${state.page==='torrents'?`${addCommands.map(([action,label,name,shortcut])=>command(action,`${label} · ${shortcut}`,name,!connected())).join('')}<span class="divider"></span><div class="selection-tools" aria-label="Selected torrent commands">${command('pause','Pause · Ctrl+P','pause',!connected()||!selected().length)}${command('resume','Resume · Ctrl+S','play',!connected()||!selected().length)}${command('actions',`More actions · ${selected().length} ${selected().length===1?'torrent':'torrents'} selected`,'more',!connected()||!selected().length)}</div>`:''}${command('theme',document.body.classList.contains('dark')?'Switch to light theme':'Switch to dark theme','theme')}<span class="divider"></span><span class="caption-glyph" aria-hidden="true">${icon('minimize')}</span><span class="caption-glyph" aria-hidden="true">${icon('maximize')}</span><span class="caption-glyph" aria-hidden="true">${icon('close')}</span></div></header>${state.scenario==='offline'?'<div class="notice" role="status">'+icon('alert')+'<span><strong>Connection lost</strong> · Showing last-known transfers. Actions are unavailable while reconnecting.</span><button data-action="reconnect">Reconnect sample</button></div>':''}${state.page==='settings'?settingsContent():state.page==='about'?`<section class="about-page"><img src="${logo}" alt=""><h1>TinyTorrent</h1><p>Windows torrent client</p><p>UI prototype · Sample data</p></section>`:`<div class="content">${filterPane()}<section class="workspace"><div class="table-region">${table()}</div>${inspector()}</section></div>`}${statusbar()}`;
   prepareTips(app);
   for(const button of app.querySelectorAll('[data-action=actions],[data-action=app-menu]'))button.setAttribute('aria-haspopup','menu');
   document.getElementById('variant-label').textContent = `${state.variant} · ${variants[state.variant].name}`;
@@ -891,9 +891,9 @@ function remove(files=false) {
   openDialog(`<h2 id="dialog-title">${files?'Delete files':'Remove'} ${items.length===1?'torrent':`${items.length} torrents`}?</h2><p>${files?'Files are permanently deleted, bypassing the Recycle Bin. Files used by other torrents are kept.':'The downloaded files are kept. To restore a removed torrent, you need its torrent file or magnet link.'}</p><ul>${items.map(torrent=>`<li>${escape(torrent.name)}</li>`).join('')}</ul>${files?`<p>File scope: ${items.reduce((total,torrent)=>total+torrent.files.length,0)} sample files in the selected torrents’ save folders.</p>`:''}<p class="help">This prototype changes the sample list only.</p>`,`${cancel.replace('<button','<button class="primary"')}<button data-action="confirm-remove">${files?'Delete files':'Remove'}</button>`);
   showState();
 }
-function preferences(group=state.preferenceGroup) {
-  state.page='preferences';
-  state.preferenceGroup=group;
+function settings(group=state.settingsCategory) {
+  state.page='settings';
+  state.settingsCategory=group;
   render();
   app.querySelector(`[data-group="${group}"]`).focus();
 }
@@ -922,7 +922,7 @@ function updatePeriod() {
   document.getElementById('period-error').textContent=valid?'':'Choose at least one start day and valid times in 30-minute steps.';
   showState();
 }
-function preferencesContent(group=state.preferenceGroup) {
+function settingsContent(group=state.settingsCategory) {
   const settings=state.settings;
   const toggle=(key,label,help='')=>`<div class="setting"${help?` title="${escape(help)}"`:''}><div>${label}</div><button class="switch" role="switch" aria-label="${label}" aria-checked="${settings[key]}" data-setting="${key}" ${connected()?'':'disabled'}></button></div>`;
   const number=(key,label,help='')=>`<label class="setting-number"><span>${label}</span><input type="number" min="0" data-setting="${key}" value="${settings[key]}"${help?` title="${escape(help)}"`:''} ${connected()?'':'disabled'}></label>`;
@@ -934,9 +934,9 @@ function preferencesContent(group=state.preferenceGroup) {
     Connection:card('Network','Choose the connection TinyTorrent uses.','link',`<label class="setting"><span>Network interface</span><select data-setting="interface" ${connected()?'':'disabled'}>${['Any interface','Ethernet','Sample VPN'].map(value=>`<option ${settings.interface===value?'selected':''}>${value}</option>`).join('')}</select></label>${toggle('portMapping','Automatic port mapping','UPnP / NAT-PMP')}<div class="setting-grid" style="margin-top:20px">${number('port','Listen port')}</div>`)+card('Connection limits','','all',`<div class="setting-grid">${number('connections','Maximum connections')}${number('perTorrent','Connections per torrent')}</div>`),
     Application:card('Startup','Keep Windows sign-in behavior under your control.','play',`${toggle('startup','Start when I sign in')}<div class="settings-actions"><button data-action="windows-startup">Windows Startup settings</button></div>`)+card('Power and updates','','settings',`${toggle('sleep','Prevent sleep while downloading on mains power')}${toggle('seedSleep','Prevent sleep while seeding on mains power')}${toggle('updates','Check for updates')}`)+card('Default app','Open torrent files and magnet links with TinyTorrent.','file',`<div class="settings-actions"><button data-action="unregister">Remove as a handler</button><button data-action="register">Choose defaults</button></div>`)+card('Language','','all',`<label class="setting"><span>Application language</span><select data-setting="language" title="English is the only catalogue in this prototype." disabled><option>English</option></select></label>`)
   };
-  return `<section class="preferences-shell" aria-label="Settings" title="Prototype: changes apply immediately to the sample. Nothing is saved."><section class="preferences-page"><div class="preferences-content"><div class="preferences-heading"><h1>Settings</h1></div><div class="tabs preference-tabs" role="tablist" aria-label="Preference categories">${preferenceGroups.map(([name,glyph])=>`<button role="tab" data-group="${name}" id="preference-${name}" aria-controls="preference-panel" aria-selected="${state.preferenceGroup===name}" tabindex="${state.preferenceGroup===name?0:-1}" class="${state.preferenceGroup===name?'active':''}">${icon(glyph)}${name}</button>`).join('')}</div><div id="preference-panel" role="tabpanel" aria-labelledby="preference-${state.preferenceGroup}">${bodies[group]}</div></div></section></section>`;
+  return `<section class="settings-shell" aria-label="Settings" title="Prototype: changes apply immediately to the sample. Nothing is saved."><section class="settings-page"><div class="settings-content"><div class="settings-heading"><h1>Settings</h1></div><div class="tabs settings-tabs" role="tablist" aria-label="Settings categories">${settingsCategories.map(([name,glyph])=>`<button role="tab" data-group="${name}" id="settings-${name}" aria-controls="settings-panel" aria-selected="${state.settingsCategory===name}" tabindex="${state.settingsCategory===name?0:-1}" class="${state.settingsCategory===name?'active':''}">${icon(glyph)}${name}</button>`).join('')}</div><div id="settings-panel" role="tabpanel" aria-labelledby="settings-${state.settingsCategory}">${bodies[group]}</div></div></section></section>`;
 }
-const pageCommands = [['torrents','Torrents','panel',''],['preferences','Settings','settings','Alt+O'],['about','About','file',''],['exit','Exit','exit','Ctrl+Q']];
+const pageCommands = [['torrents','Torrents','panel',''],['settings','Settings','settings','Alt+O'],['about','About','file',''],['exit','Exit','exit','Ctrl+Q']];
 const addCommands = [['add','Add torrent file','plus','Ctrl+O'],['magnet','Add magnet link','link','Ctrl+Shift+O']];
 const torrentGroups = [
   [['pause','Pause','pause','Ctrl+P'],['resume','Resume','play','Ctrl+S']],
@@ -950,7 +950,7 @@ function actions(scope='selection',point) {
   menu.dataset.invoker=scope==='app'?'app-menu':'actions';
   menu.dataset.torrent=scope==='context'?(document.activeElement.dataset.torrent || ''):'';
   menu.setAttribute('aria-label',scope==='app'?'Application menu':scope==='selection'?'More actions for selected torrents':'Torrent context menu');
-  menu.innerHTML=(['selection','context'].includes(scope)?`<div class="menu-scope">${scope==='context'&&selected().length===1?escape(selected()[0].name):`${selected().length} ${selected().length===1?'torrent':'torrents'} selected`}</div><hr role="separator">`:'')+groups.map((group,index)=>(index?'<hr role="separator">':'')+group.map(([action,label,name,shortcut])=>`<button role="${action==='alternative'?'menuitemcheckbox':'menuitem'}" ${action==='alternative'?`aria-checked="${state.alternative}"`:state.page===({torrents:'torrents',preferences:'preferences',about:'about'})[action]?'aria-current="page"':''} tabindex="-1" data-action="${action}" ${!['torrents','preferences','about','exit','properties'].includes(action)&&(!connected() || (['selection','context'].includes(scope)&&!selected().length))?'disabled':''}>${icon(name)}${label}<span class="shortcut">${shortcut}</span></button>`).join('')).join('');
+  menu.innerHTML=(['selection','context'].includes(scope)?`<div class="menu-scope">${scope==='context'&&selected().length===1?escape(selected()[0].name):`${selected().length} ${selected().length===1?'torrent':'torrents'} selected`}</div><hr role="separator">`:'')+groups.map((group,index)=>(index?'<hr role="separator">':'')+group.map(([action,label,name,shortcut])=>`<button role="${action==='alternative'?'menuitemcheckbox':'menuitem'}" ${action==='alternative'?`aria-checked="${state.alternative}"`:state.page===({torrents:'torrents',settings:'settings',about:'about'})[action]?'aria-current="page"':''} tabindex="-1" data-action="${action}" ${!['torrents','settings','about','exit','properties'].includes(action)&&(!connected() || (['selection','context'].includes(scope)&&!selected().length))?'disabled':''}>${icon(name)}${label}<span class="shortcut">${shortcut}</span></button>`).join('')).join('');
   const anchor=app.querySelector(`[data-action=${menu.dataset.invoker}]`).getBoundingClientRect();
   menu.style.left=`${Math.max(8,Math.min(innerWidth-284,point?.x??(scope==='app'?anchor.left:anchor.right-276)))}px`;
   menu.style.top='8px';
@@ -962,13 +962,13 @@ function searchEntries() {
   const entries=[];
   entries.push({group:'Commands',label:'Filters',name:'filter',action:'filters',detail:'Torrent states'});
   for(const [filter,label] of filters)entries.push({group:'Commands',label,name:filter==='All'?'all':glyph(filter),filter,detail:'Torrent filter'});
-  for(const [action,label,name,shortcut] of [...pageCommands,...addCommands,...sessionCommands(),['theme','Switch theme','theme','']])entries.push({group:'Commands',label,name,shortcut,action,detail:['pause-all','resume-all','alternative'].includes(action)?'All torrents':'TinyTorrent',disabled:!['torrents','preferences','about','exit','theme'].includes(action)&&!connected()});
+  for(const [action,label,name,shortcut] of [...pageCommands,...addCommands,...sessionCommands(),['theme','Switch theme','theme','']])entries.push({group:'Commands',label,name,shortcut,action,detail:['pause-all','resume-all','alternative'].includes(action)?'All torrents':'TinyTorrent',disabled:!['torrents','settings','about','exit','theme'].includes(action)&&!connected()});
   for(const [action,label,name,shortcut] of torrentGroups.flat())entries.push({group:'Commands',label,name,shortcut,action,detail:`${selected().length} ${selected().length===1?'torrent':'torrents'} selected`,disabled:!connected()||!selected().length});
   for(const [action,label,name] of trackerCommands)entries.push({group:'Commands',label,name,action,detail:selected().length===1?selected()[0].name:'One torrent required',disabled:!connected()||selected().length!==1});
   if(selected().length===1)for(const tab of tabs)entries.push({group:'Commands',label:tab,name:'panel',tab,detail:`Properties · ${selected()[0].name}`});
-  for(const [category,name] of preferenceGroups){
+  for(const [category,name] of settingsCategories){
     entries.push({group:'Settings',label:category,name,category,detail:'Settings'});
-    const template=document.createElement('template');template.innerHTML=preferencesContent(category);
+    const template=document.createElement('template');template.innerHTML=settingsContent(category);
     for(const control of template.content.querySelectorAll('[data-setting],[data-action]')){
       const label=control.getAttribute('aria-label')||control.closest('label')?.querySelector('span')?.textContent||control.closest('.setting')?.querySelector('div')?.textContent||control.textContent.trim();
       entries.push({group:'Settings',label,name,category,setting:control.dataset.setting,action:control.dataset.action,detail:`Settings · ${category}`,keywords:`${control.title} ${control.closest('.settings-card')?.querySelector('h2')?.textContent||''}`,disabled:control.disabled});
@@ -980,7 +980,7 @@ function showSearch() {
   const input=app.querySelector('#global-search');
   const words=input.value.toLowerCase().trim().split(/\s+/).filter(Boolean);
   const entries=searchEntries();
-  searchMatches=words.length?entries.filter(entry=>words.every(word=>`${entry.label} ${entry.detail} ${entry.keywords||''}`.toLowerCase().includes(word))):entries.filter(entry=>entry.group==='Commands'&&['torrents','preferences','about','add','magnet',state.allPaused?'resume-all':'pause-all'].includes(entry.action));
+  searchMatches=words.length?entries.filter(entry=>words.every(word=>`${entry.label} ${entry.detail} ${entry.keywords||''}`.toLowerCase().includes(word))):entries.filter(entry=>entry.group==='Commands'&&['torrents','settings','about','add','magnet',state.allPaused?'resume-all':'pause-all'].includes(entry.action));
   searchMenu.innerHTML=searchMatches.length?['Torrents','Commands','Settings'].map(group=>{const matches=searchMatches.map((entry,index)=>({entry,index})).filter(({entry})=>entry.group===group);return matches.length?`<div class="search-group" role="presentation">${group}</div>${matches.map(({entry,index})=>`<button class="search-result" role="option" tabindex="-1" id="search-result-${index}" data-search-result="${index}" aria-selected="false" ${entry.disabled?'disabled':''}>${icon(entry.name)}<span><strong>${escape(entry.label)}</strong><small>${escape(entry.detail)}</small></span>${entry.shortcut?`<span class="shortcut">${entry.shortcut}</span>`:''}</button>`).join('')}`:'';}).join(''):'<div class="search-empty" role="presentation">No results</div>';
   if(!searchMenu.matches(':popover-open'))searchMenu.showPopover();
   positionSearch();
@@ -1008,7 +1008,7 @@ function chooseSearch(index) {
   if(entry.filter){state.page='torrents';state.filtersOpen=true;return filterTorrents(entry.filter);}
   if(entry.tab){state.page='torrents';state.inspector=true;state.tab=entry.tab;render();app.querySelector(`[data-tab="${entry.tab}"]`).focus();return;}
   if(entry.category){
-    preferences(entry.category);
+    settings(entry.category);
     const control=entry.setting?app.querySelector(`[data-setting="${entry.setting}"]`):entry.action?app.querySelector(`[data-action="${entry.action}"]`):app.querySelector(`[data-group="${entry.category}"]`);
     control?.scrollIntoView({block:'nearest'});control?.focus();
     if(entry.action&&control?.getAttribute('role')!=='switch')handle(entry.action);return;
@@ -1030,14 +1030,14 @@ function handle(action) {
   if (action==='next') return switchVariant(1);
   if (action==='state') { const panel=document.getElementById('state-panel'); panel.hidden=!panel.hidden; document.querySelector('[data-action=state]').setAttribute('aria-expanded',String(!panel.hidden)); return; }
   if (action==='theme') { document.body.classList.toggle('dark'); document.getElementById('theme-button').textContent=document.body.classList.contains('dark')?'Light theme':'Dark theme'; render();return; }
-  if (action==='reset') { torrents=structuredClone(samples); Object.assign(state,{page:'torrents',preferenceGroup:'Downloads',scenario:'normal',filter:'All',filtersOpen:false,fileSearch:{add:'',torrent:''},fileCollapsed:{add:[],torrent:[]},detailSort:{Peers:null,Trackers:null},detailSelection:{Peers:[],Trackers:[]},selection:[1],tab:'General',inspector:false,split:{},allPaused:false,alternative:false,sort:'',descending:false,settings:{...defaults},schedule:structuredClone(defaultSchedule),draft:null,picker:null}); if(dialog.open)dialog.close(); return render(); }
+  if (action==='reset') { torrents=structuredClone(samples); Object.assign(state,{page:'torrents',settingsCategory:'Downloads',scenario:'normal',filter:'All',filtersOpen:false,fileSearch:{add:'',torrent:''},fileCollapsed:{add:[],torrent:[]},detailSort:{Peers:null,Trackers:null},detailSelection:{Peers:[],Trackers:[]},selection:[1],tab:'General',inspector:false,split:{},allPaused:false,alternative:false,sort:'',descending:false,settings:{...defaults},schedule:structuredClone(defaultSchedule),draft:null,picker:null}); if(dialog.open)dialog.close(); return render(); }
   if (action==='reconnect') { state.scenario='normal'; return render(); }
   if (action==='clear') return filterTorrents('All');
   if (action==='filter-errors') { state.page='torrents'; return filterTorrents(state.filter==='Error'?'All':'Error'); }
   if (action==='filters') { state.page='torrents';state.filtersOpen=!state.filtersOpen;render();(state.filtersOpen?app.querySelector(`[data-filter="${state.filter}"]`):app.querySelector('[data-action=filters]')).focus();return; }
   if (action==='close-dialog') return closeDialog();
   if (action==='properties' || action==='hide-inspector') { state.inspector=action==='properties'; return render(); }
-  if (action==='preferences') return preferences();
+  if (action==='settings') return settings();
   if (action==='browse-folder') return pickFolder();
   if (action==='browse-add-folder') return pickFolder('add');
   if (action==='select-folder') { const target=state.picker;(target==='add'?state.draft:state.settings)[target==='add'?'destination':'folder']=document.getElementById('folder-choice').value;closeDialog();if(target==='settings')render();return; }
@@ -1092,7 +1092,7 @@ document.addEventListener('click',event=>{
   if (button?.dataset.tab) { state.tab=button.dataset.tab; return render(); }
   if(button?.dataset.detailSort!==undefined){const view=button.dataset.detailView,column=Number(button.dataset.detailSort),previous=state.detailSort[view];state.detailSort[view]={column,descending:previous?.column===column?!previous.descending:false};app.querySelector('.detail').innerHTML=detail();app.querySelector(`[data-detail-sort="${column}"]`)?.focus();showState();return;}
   if (button?.dataset.sort) { state.descending=state.sort===button.dataset.sort?!state.descending:false; state.sort=button.dataset.sort; return render(); }
-  if (button?.dataset.group) return preferences(button.dataset.group);
+  if (button?.dataset.group) return settings(button.dataset.group);
   if(button?.dataset.folderToggle){const {scope,folderToggle:path}=button.dataset;return expandFolder(scope,path,state.fileCollapsed[scope].includes(path));}
   if (button?.dataset.fileBulk) { const scope=button.dataset.scope;return applyFileChoices(scope,shownFiles(scope).map(({index})=>index),2,button.dataset.fileBulk==='all'); }
   if (button?.dataset.scheduleDay!==undefined && connected()) return editPeriod(null,Number(button.dataset.scheduleDay));
@@ -1184,8 +1184,8 @@ document.addEventListener('keydown',event=>{
   }
   const group=event.target.closest('[data-group]');
   if(group && ['ArrowLeft','ArrowRight','Home','End'].includes(event.key)) {
-    event.preventDefault(); const names=preferenceGroups.map(([name])=>name); const index=names.indexOf(state.preferenceGroup);
-    return preferences(names[event.key==='Home'?0:event.key==='End'?names.length-1:(index+(event.key==='ArrowLeft'?-1:1)+names.length)%names.length]);
+    event.preventDefault(); const names=settingsCategories.map(([name])=>name); const index=names.indexOf(state.settingsCategory);
+    return settings(names[event.key==='Home'?0:event.key==='End'?names.length-1:(index+(event.key==='ArrowLeft'?-1:1)+names.length)%names.length]);
   }
   if(state.page!=='torrents' && event.key==='Escape'){event.preventDefault();return handle('torrents');}
   const tab=event.target.closest('[data-tab]');
@@ -1208,7 +1208,7 @@ document.addEventListener('keydown',event=>{
   if(!event.ctrlKey&&!event.altKey && ['ArrowLeft','ArrowRight'].includes(event.key)){event.preventDefault();return switchVariant(event.key==='ArrowLeft'?-1:1);}
   if(event.ctrlKey && ['f','e'].includes(key)){event.preventDefault();app.querySelector('#global-search').focus();return showSearch();}
   if(event.ctrlKey && key==='o'){event.preventDefault();return handle(event.shiftKey?'magnet':'add');}
-  if(event.altKey && key==='o'){event.preventDefault();return preferences();}
+  if(event.altKey && key==='o'){event.preventDefault();return settings();}
   if(event.ctrlKey && key==='q'){event.preventDefault();return handle('exit');}
   if(row && event.ctrlKey && key==='a'){event.preventDefault();selectTorrents(rows().map(torrent=>torrent.torrentId));return;}
   if(state.page==='torrents' && event.ctrlKey && ['p','s','m','r'].includes(key)){

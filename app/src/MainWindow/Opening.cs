@@ -19,11 +19,15 @@ public sealed partial class MainWindow
                 hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this),
                 lpFile = args.Path,
                 lpClass = args.Extension,
-                nShow = SW_SHOWNORMAL
+                nShow = SW_SHOWNORMAL,
             };
-            if (!ShellExecuteExW(ref open)) throw new Win32Exception(Marshal.GetLastWin32Error());
+            if (!ShellExecuteExW(ref open))
+                throw new Win32Exception(Marshal.GetLastWin32Error());
         }
-        catch (Exception error) { Model.Report(error); }
+        catch (Exception error)
+        {
+            Model.Report(error);
+        }
     }
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]

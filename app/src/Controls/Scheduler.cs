@@ -3,14 +3,14 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
-using Windows.System;
 using Syno.TinyTorrent.Views;
+using Windows.System;
 
 namespace Syno.TinyTorrent.Controls;
 
 public sealed partial class Scheduler : UserControl
 {
-    private readonly PeriodForm _editor;
+    private readonly PeriodEditor _editor;
     public Schedule Model { get; }
     public MainViewModel Main { get; }
 
@@ -19,7 +19,7 @@ public sealed partial class Scheduler : UserControl
         Model = model;
         Main = main;
         InitializeComponent();
-        _editor = new PeriodForm(model);
+        _editor = new PeriodEditor(model);
         _editor.Removing += (_, _) => FocusAdd();
         Timeline.Content = new Week(model, main);
         Loaded += OnLoaded;
@@ -58,9 +58,12 @@ public sealed partial class Scheduler : UserControl
         await Model.Add();
         DispatcherQueue.TryEnqueue(() =>
         {
-            if (!IsLoaded || !Model.IsOpen) return;
+            if (!IsLoaded || !Model.IsOpen)
+                return;
             UpdateLayout();
-            var row = Periods.Children.Cast<Expander>().FirstOrDefault(row => row.Tag == Model.OpenPeriod);
+            var row = Periods
+                .Children.Cast<Expander>()
+                .FirstOrDefault(row => row.Tag == Model.OpenPeriod);
             if (row is not null && FocusManager.FindFirstFocusableElement(row) is Control header)
                 header.Focus(FocusState.Programmatic);
         });
@@ -68,25 +71,34 @@ public sealed partial class Scheduler : UserControl
 
     private async void OnExpanding(Expander sender, ExpanderExpandingEventArgs args)
     {
-        if (sender.Tag is SchedulePeriod period) await Model.Open(period);
+        if (sender.Tag is SchedulePeriod period)
+            await Model.Open(period);
     }
 
     private async void OnCollapsed(Expander sender, ExpanderCollapsedEventArgs args)
     {
-        if (sender.Tag is SchedulePeriod period) await Model.Close(period);
+        if (sender.Tag is SchedulePeriod period)
+            await Model.Close(period);
     }
 
     private void OnEditorKey(object sender, KeyRoutedEventArgs args)
     {
-        if (args.Handled || args.Key != VirtualKey.Escape || sender is not Expander { IsExpanded: true } row) return;
+        if (
+            args.Handled
+            || args.Key != VirtualKey.Escape
+            || sender is not Expander { IsExpanded: true } row
+        )
+            return;
         args.Handled = true;
         row.IsExpanded = false;
-        if (FocusManager.FindFirstFocusableElement(row) is Control header) header.Focus(FocusState.Programmatic);
+        if (FocusManager.FindFirstFocusableElement(row) is Control header)
+            header.Focus(FocusState.Programmatic);
     }
 
     private void RefreshPeriods()
     {
-        if (!IsLoaded) return;
+        if (!IsLoaded)
+            return;
         while (Periods.Children.Count > Model.Periods.Count)
         {
             ((Expander)Periods.Children[^1]).Content = null;
@@ -98,7 +110,7 @@ public sealed partial class Scheduler : UserControl
             {
                 Padding = new Thickness(16, 0, 16, 0),
                 HorizontalAlignment = HorizontalAlignment.Stretch,
-                HorizontalContentAlignment = HorizontalAlignment.Stretch
+                HorizontalContentAlignment = HorizontalAlignment.Stretch,
             };
             row.Expanding += OnExpanding;
             row.Collapsed += OnCollapsed;
@@ -117,7 +129,8 @@ public sealed partial class Scheduler : UserControl
 
     private void ShowPeriod()
     {
-        if (!IsLoaded || Model.IsPending) return;
+        if (!IsLoaded || Model.IsPending)
+            return;
         Expander? selected = null;
         foreach (Expander row in Periods.Children)
         {
@@ -135,7 +148,8 @@ public sealed partial class Scheduler : UserControl
             selected.Content = _editor;
             selected.IsExpanded = true;
         }
-        if (!Model.HasScheduleError) return;
+        if (!Model.HasScheduleError)
+            return;
         UpdateLayout();
         FrameworkElement feedback = Model.IsOpen ? _editor.Feedback : PeriodsRow;
         feedback.StartBringIntoView(new BringIntoViewOptions { AnimationDesired = false });

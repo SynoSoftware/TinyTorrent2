@@ -52,19 +52,19 @@ verify the resulting value. Explicit schedule drafts retain their own guard.
 
 Then route every speed-limit entry point to Settings. Remove SpeedLimits,
 LimitChoice, ShowLimits, LimitsRequested and their lifetime/capture branches.
-Give preference fields explicit kinds and sections, centralize conversions and
+Give setting fields explicit kinds and categories, centralize conversions and
 settings submission, and remove `_settings`, duplicate readers and obsolete
 pending flags once callers have moved. Carry language's immediate publication
 and latest-choice behavior through the move. Keep effective alternative mode
-separate from its saved preference: an explicit normal-mode command must reach
+separate from its saved setting: an explicit normal-mode command must reach
 the engine when a schedule currently selects alternative, even if normal is
 already the saved value.
 
 Move schedule state and its whole-list submission into a concrete owner while
 making these edits, rather than scheduling a separate file-only shuffle first.
-Ordinary preference saves and period-list saves remain different transactions.
+Ordinary setting saves and period-list saves remain different transactions.
 Settings presentation fixes can accompany this slice where they touch the same
-fields, but are not an excuse to rewrite every form.
+fields, but are not an excuse to rewrite every page.
 
 **Evidence:** use the existing Settings/search/recovery journeys. The important
 new outcome is that editing again during a held save reply preserves the second
@@ -166,9 +166,9 @@ Use a plain ordered Torrents list with the existing dictionary index, retaining
 equal-QueueOrder tie order. Keep TableView's source contract and reconciliation.
 
 After Settings ownership settles, separate window-only refresh from rare broad
-propagation. Quiet unchanged Preferences snapshots and use schedule-specific
+propagation. Quiet unchanged Settings snapshots and use schedule-specific
 signals; do not introduce a hidden-page gate or mandatory per-row comparisons.
-Call ObserveUpdates once per applied snapshot and on relevant preference changes
+Call ObserveUpdates once per applied snapshot and on relevant setting changes
 so daily checking and immediate disable remain intact. Retain gesture invalidation.
 
 Once projection batching has landed, exempt the row-order column from settling
@@ -217,15 +217,15 @@ in the proposal.
 
 ## 5. Replace mechanical binding code
 
-Preserve the existing language publication path, migrate one representative form, then
-remove equivalent manual label assignments from touched forms. Use TwoWay
+Preserve the existing language publication path, migrate one representative page or dialog, then
+remove equivalent manual label assignments from touched pages and dialogs. Use TwoWay
 binding only for ordinary synchronous values. Keep prompt/commit logic, focus
 and necessary menu/header updates explicit. Decide numeric control choice per
 field; do not delete useful stepping to remove a helper.
 
 **Evidence:** compilation verifies binding syntax; a live language change checks
 visible and newly shown content, dialog text, accessibility metadata and retained
-input/focus. Do not build once per form: settle a coherent implementation batch
+input/focus. Do not build once per page or dialog: settle a coherent implementation batch
 and build the affected target once. No text or XAML-source assertion suite.
 
 **Contracts:** the catalogue and live-language behavior remain unchanged.

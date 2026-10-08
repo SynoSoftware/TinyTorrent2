@@ -17,7 +17,7 @@ constexpr ULONG adapterLimit = 1024 * 1024;
 // A schedule period starts and ends at a minute of the day.
 constexpr int dayMinutes = 24 * 60;
 
-bool InterfaceAvailable(std::string const& name)
+bool IsAdapterAvailable(std::string const& name)
 {
     if (name.empty())
     {
@@ -143,8 +143,12 @@ ScheduleMode Engine::State::ScheduledMode() const
 
 bool Engine::State::IsPaused() const
 {
-    return settings.allPaused || interfaceMissing ||
-        (scheduledMode == ScheduleMode::Paused && !bypassesScheduledPause);
+    return IsPausedByChoice() || adapterMissing;
+}
+
+bool Engine::State::IsPausedByChoice() const
+{
+    return settings.allPaused || (scheduledMode == ScheduleMode::Paused && !bypassesScheduledPause);
 }
 
 LimitMode Engine::State::CurrentLimits() const
@@ -169,11 +173,11 @@ void Engine::State::RefreshPolicy(bool configure)
         bypassesScheduledPause = false;
         limitOverride.reset();
     }
-    interfaceMissing = !InterfaceAvailable(settings.networkInterface);
-    auto adapter = AdapterName(settings.networkInterface);
+    adapterMissing = !IsAdapterAvailable(settings.networkAdapter);
+    auto adapter = AdapterName(settings.networkAdapter);
     auto port = std::to_string(settings.listenPort);
     auto listen = adapter.empty() ? "0.0.0.0:" + port + ",[::]:" + port : adapter + ":" + port;
-    if (interfaceMissing)
+    if (adapterMissing)
     {
         listen.clear();
     }
@@ -186,6 +190,11 @@ void Engine::State::RefreshPolicy(bool configure)
     if (!configure && !networkChanged && appliedPause == paused && appliedLimits == limits)
     {
         return;
+    }
+    if (appliedListen != listen || proxyChanged)
+    {
+        externalIpv4.clear();
+        externalIpv6.clear();
     }
     if (networkChanged)
     {
@@ -201,7 +210,7 @@ void Engine::State::RefreshPolicy(bool configure)
         auto const& proxy = settings.proxy;
         // Peers cannot connect in through a proxy, so there is no port to
         // forward.
-        auto maps = settings.portMapping && !interfaceMissing && proxy.type == ProxyType::None;
+        auto maps = settings.mapsPorts && !adapterMissing && proxy.type == ProxyType::None;
         pack.set_bool(lt::settings_pack::enable_upnp, maps);
         pack.set_bool(lt::settings_pack::enable_natpmp, maps);
         pack.set_str(lt::settings_pack::listen_interfaces, listen);
@@ -231,6 +240,11 @@ void Engine::State::RefreshPolicy(bool configure)
     if (configure)
     {
         pack.set_int(lt::settings_pack::active_downloads, settings.activeDownloads ? settings.activeDownloads : -1);
+        pack.set_int(lt::settings_pack::max_queued_disk_bytes, settings.diskBufferMib * 1024 * 1024);
+        // libtorrent counts checking memory in 16 KiB blocks.
+        pack.set_int(lt::settings_pack::checking_mem_usage, settings.checkingMib * 64);
+        pack.set_int(lt::settings_pack::hashing_threads, settings.hashingThreads);
+        pack.set_int(lt::settings_pack::file_pool_size, settings.fileLimit);
         pack.set_int(lt::settings_pack::active_seeds, settings.activeSeeds ? settings.activeSeeds : -1);
         pack.set_int(lt::settings_pack::active_limit, -1);
         pack.set_int(lt::settings_pack::active_dht_limit, -1);
@@ -285,7 +299,7 @@ void Engine::State::LimitSeeds()
         if (ReachedSeedLimit(torrent))
         {
             ids.push_back(id);
-            if (ids.size() == targetLimit)
+            if (ids.size() == torrentLimit)
             {
                 break;
             }
@@ -304,7 +318,7 @@ void Engine::State::LimitSeeds()
         }
         if (!outcome.at("ok").get<bool>())
         {
-            diagnostics.Write("seeding_limit", "", "pause_failed");
+            log.Write("seeding_limit", "", "pause_failed");
         }
     }, [this](auto const& ids, Reply reply)
     {

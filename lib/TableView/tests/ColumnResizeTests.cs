@@ -1,4 +1,6 @@
 using System.Reflection;
+using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Markup;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace Syno.TableView.Tests;
@@ -18,191 +20,251 @@ public class ColumnResizeTests
     // ------------------------------------------------------------------ where a resize can start
 
     [TestMethod]
-    public Task AResizeStartsOnlyOnASeparator() => TestHost.RunAsync(async () =>
-    {
-        Table table = await LoadAsync();
-        Header.Strip strip = Strip(table);
+    public Task AResizeStartsOnlyOnASeparator() =>
+        TestHost.RunAsync(async () =>
+        {
+            Table table = await LoadAsync();
+            Header.Strip strip = Strip(table);
 
-        Assert.IsFalse(BeginResizeAt(strip, 100), "the middle of a header is not a separator");
-        Assert.IsTrue(BeginResizeAt(strip, FirstSeparator), "its trailing edge is");
+            Assert.IsFalse(BeginResizeAt(strip, 100), "the middle of a header is not a separator");
+            Assert.IsTrue(BeginResizeAt(strip, FirstSeparator), "its trailing edge is");
 
-        CancelGesture(strip);
+            CancelGesture(strip);
 
-        Assert.IsTrue(BeginResizeAt(strip, FirstSeparator + 3), "and so is 3 DIP either side of it");
-        CancelGesture(strip);
-        Assert.IsFalse(BeginResizeAt(strip, FirstSeparator + 6), "6 DIP away is not");
-    });
+            Assert.IsTrue(
+                BeginResizeAt(strip, FirstSeparator + 3),
+                "and so is 3 DIP either side of it"
+            );
+            CancelGesture(strip);
+            Assert.IsFalse(BeginResizeAt(strip, FirstSeparator + 6), "6 DIP away is not");
+
+            Assert.IsTrue(
+                BeginResizeAt(strip, 2 * FirstSeparator),
+                "every column's trailing edge is one"
+            );
+            CancelGesture(strip);
+        });
 
     [TestMethod]
-    public Task AColumnTheHostFixedHasNoSeparator() => TestHost.RunAsync(async () =>
-    {
-        Table table = await LoadAsync(column => column.CanResize = false);
+    public Task AColumnTheHostFixedHasNoSeparator() =>
+        TestHost.RunAsync(async () =>
+        {
+            Table table = await LoadAsync(column => column.CanResize = false);
 
-        Assert.IsFalse(BeginResizeAt(Strip(table), FirstSeparator));
-    });
+            Assert.IsFalse(BeginResizeAt(Strip(table), FirstSeparator));
+        });
 
     // ------------------------------------------------------------------ the live gesture
 
     [TestMethod]
-    public Task TrackingMovesTheGuideAndNoWidthAtAll() => TestHost.RunAsync(async () =>
-    {
-        Table table = await LoadAsync();
-        Header.Strip strip = Strip(table);
-        Func<int> events = LayoutChanges(table);
-
-        BeginResizeAt(strip, FirstSeparator);
-        TrackResize(strip, FirstSeparator + 40);
-
-        Assert.AreEqual(240d, Preview(strip), "the guide follows the pointer");
-        Assert.AreEqual(200d, TableHarness.ResolvedWidth(table, "a"), "and no width has moved");
-        Assert.AreEqual(200d, TableHarness.ResolvedWidth(table, "b"), "the next column is untouched");
-
-        TrackResize(strip, FirstSeparator + 90);
-        TrackResize(strip, FirstSeparator + 60);
-
-        Assert.AreEqual(260d, Preview(strip), "and follows it back");
-        Assert.AreEqual(200d, TableHarness.ResolvedWidth(table, "a"), "still without moving one");
-        Assert.AreEqual(0, events(), "and no pointer movement is a persistence event");
-
-        CompleteResize(strip);
-
-        Assert.AreEqual(260d, TableHarness.ResolvedWidth(table, "a"), "the release applies it");
-        Assert.AreEqual(1, events(), "one gesture, one notification");
-    });
-
-    /// <summary>Section 10: a resize is clamped to the column's own limits and to nothing else.</summary>
-    [TestMethod]
-    public Task ADragIsClampedToTheColumnsOwnLimits() => TestHost.RunAsync(async () =>
-    {
-        Table table = await LoadAsync(column =>
+    public Task TrackingMovesTheGuideAndNoWidthAtAll() =>
+        TestHost.RunAsync(async () =>
         {
-            column.MinWidth = 120;
-            column.MaxWidth = 300;
+            Table table = await LoadAsync();
+            Header.Strip strip = Strip(table);
+            Func<int> events = LayoutChanges(table);
+
+            BeginResizeAt(strip, FirstSeparator);
+            TrackResize(strip, FirstSeparator + 40);
+
+            Assert.AreEqual(240d, Preview(strip), "the guide follows the pointer");
+            Assert.AreEqual(
+                200d,
+                TableHarness.EffectiveWidth(table, "a"),
+                "and no width has moved"
+            );
+            Assert.AreEqual(
+                200d,
+                TableHarness.EffectiveWidth(table, "b"),
+                "the next column is untouched"
+            );
+
+            TrackResize(strip, FirstSeparator + 90);
+            TrackResize(strip, FirstSeparator + 60);
+
+            Assert.AreEqual(260d, Preview(strip), "and follows it back");
+            Assert.AreEqual(
+                200d,
+                TableHarness.EffectiveWidth(table, "a"),
+                "still without moving one"
+            );
+            Assert.AreEqual(0, events(), "and no pointer movement is a persistence event");
+
+            CompleteResize(strip);
+
+            Assert.AreEqual(
+                260d,
+                TableHarness.EffectiveWidth(table, "a"),
+                "the release applies it"
+            );
+            Assert.AreEqual(1, events(), "one gesture, one notification");
         });
-        Header.Strip strip = Strip(table);
 
-        BeginResizeAt(strip, FirstSeparator);
+    /// <summary>Section 10: a resize stops at the column's MinWidth and at nothing else.</summary>
+    [TestMethod]
+    public Task ADragStopsAtTheColumnsMinWidth() =>
+        TestHost.RunAsync(async () =>
+        {
+            Table table = await LoadAsync(column => column.MinWidth = 120);
+            Header.Strip strip = Strip(table);
 
-        TrackResize(strip, FirstSeparator - 400);
-        Assert.AreEqual(120d, Preview(strip), "it stops at MinWidth");
+            BeginResizeAt(strip, FirstSeparator);
 
-        TrackResize(strip, FirstSeparator + 400);
-        Assert.AreEqual(300d, Preview(strip), "and at MaxWidth");
+            TrackResize(strip, FirstSeparator - 400);
+            Assert.AreEqual(120d, Preview(strip), "it stops at MinWidth");
 
-        TrackResize(strip, FirstSeparator + 50);
-        Assert.AreEqual(250d, Preview(strip),
-            "and comes back off the limit from the position it was captured at, not from the limit");
+            TrackResize(strip, FirstSeparator + 50);
+            Assert.AreEqual(
+                250d,
+                Preview(strip),
+                "and comes back off the limit from the position it was captured at, not from the limit"
+            );
 
-        CompleteResize(strip);
+            CompleteResize(strip);
 
-        Assert.AreEqual(250d, TableHarness.ResolvedWidth(table, "a"), "and the release applies that");
-    });
+            Assert.AreEqual(
+                250d,
+                TableHarness.EffectiveWidth(table, "a"),
+                "and the release applies that"
+            );
+        });
 
     /// <summary>
     /// Section 10: the table surface is not a constraint. A column may be widened past the
     /// viewport, and narrowed below its content, because the cell template owns its overflow.
     /// </summary>
     [TestMethod]
-    public Task AResizeIsNotLimitedByTheViewportOrByTheContent() => TestHost.RunAsync(async () =>
-    {
-        Table table = await LoadAsync(column => column.MinWidth = 10);
-        Header.Strip strip = Strip(table);
+    public Task AResizeIsNotLimitedByTheViewportOrByTheContent() =>
+        TestHost.RunAsync(async () =>
+        {
+            Table table = await LoadAsync(
+                column =>
+                {
+                    column.MinWidth = 10;
+                    column.CellTemplate = WideCell;
+                },
+                new[] { new FitRow(), new FitRow() }
+            );
+            Header.Strip strip = Strip(table);
 
-        BeginResizeAt(strip, FirstSeparator);
-        TrackResize(strip, FirstSeparator + 900);
-        CompleteResize(strip);
+            BeginResizeAt(strip, FirstSeparator);
+            TrackResize(strip, FirstSeparator + 900);
+            CompleteResize(strip);
 
-        Assert.AreEqual(1100d, TableHarness.ResolvedWidth(table, "a"));
-        Assert.AreEqual(1500d, TableHarness.TotalWidth(table), "the columns run past the right edge");
+            Assert.AreEqual(1100d, TableHarness.EffectiveWidth(table, "a"));
+            Assert.AreEqual(
+                1500d,
+                TableHarness.TotalWidth(table),
+                "the columns run past the right edge"
+            );
 
-        BeginResizeAt(strip, 1100);
-        TrackResize(strip, 20);
-        CompleteResize(strip);
+            BeginResizeAt(strip, 1100);
+            TrackResize(strip, 20);
+            CompleteResize(strip);
 
-        Assert.AreEqual(20d, TableHarness.ResolvedWidth(table, "a"),
-            "observed content never becomes a new hard minimum");
-    });
+            Assert.AreEqual(
+                20d,
+                TableHarness.EffectiveWidth(table, "a"),
+                "observed content never becomes a new hard minimum"
+            );
+        });
 
     // ------------------------------------------------------------------ ending the gesture
 
     [TestMethod]
-    public Task EscapeLeavesTheWidthTheGestureStartedFrom() => TestHost.RunAsync(async () =>
-    {
-        Table table = await LoadAsync();
-        Header.Strip strip = Strip(table);
-        Func<int> events = LayoutChanges(table);
+    public Task EscapeLeavesTheWidthTheGestureStartedFrom() =>
+        TestHost.RunAsync(async () =>
+        {
+            Table table = await LoadAsync();
+            Header.Strip strip = Strip(table);
+            Func<int> events = LayoutChanges(table);
 
-        BeginResizeAt(strip, FirstSeparator);
-        TrackResize(strip, FirstSeparator + 60);
-        Assert.AreEqual(260d, Preview(strip), "the guide had moved");
+            BeginResizeAt(strip, FirstSeparator);
+            TrackResize(strip, FirstSeparator + 60);
+            Assert.AreEqual(260d, Preview(strip), "the guide had moved");
 
-        CancelGesture(strip);
+            CancelGesture(strip);
 
-        Assert.AreEqual(200d, TableHarness.ResolvedWidth(table, "a"), "and no width ever did");
-        Assert.AreEqual(0, events(), "a cancelled gesture changed no layout");
-    });
-
-    /// <summary>The width captured at the press is the one in force then, not the baseline.</summary>
-    [TestMethod]
-    public Task EscapeRestoresAPreviousOverrideRatherThanTheBaseline() => TestHost.RunAsync(async () =>
-    {
-        Table table = await LoadAsync();
-        Header.Strip strip = Strip(table);
-
-        BeginResizeAt(strip, FirstSeparator);
-        TrackResize(strip, FirstSeparator + 100);
-        CompleteResize(strip);
-
-        BeginResizeAt(strip, 300);
-        TrackResize(strip, 500);
-        CancelGesture(strip);
-
-        Assert.AreEqual(300d, TableHarness.ResolvedWidth(table, "a"));
-    });
+            Assert.AreEqual(200d, TableHarness.EffectiveWidth(table, "a"), "and no width ever did");
+            Assert.AreEqual(0, events(), "a cancelled gesture changed no layout");
+        });
 
     [TestMethod]
-    public Task AGestureThatChangedNoWidthReportsNothing() => TestHost.RunAsync(async () =>
-    {
-        Table table = await LoadAsync();
-        Header.Strip strip = Strip(table);
-        Func<int> events = LayoutChanges(table);
+    public Task AGestureThatChangedNoWidthReportsNothing() =>
+        TestHost.RunAsync(async () =>
+        {
+            Table table = await LoadAsync();
+            Header.Strip strip = Strip(table);
+            Func<int> events = LayoutChanges(table);
 
-        BeginResizeAt(strip, FirstSeparator);
-        TrackResize(strip, FirstSeparator + 40);
-        TrackResize(strip, FirstSeparator);
-        CompleteResize(strip);
+            BeginResizeAt(strip, FirstSeparator);
+            TrackResize(strip, FirstSeparator + 40);
+            TrackResize(strip, FirstSeparator);
+            CompleteResize(strip);
 
-        Assert.AreEqual(200d, TableHarness.ResolvedWidth(table, "a"));
-        Assert.AreEqual(0, events());
-    });
+            Assert.AreEqual(200d, TableHarness.EffectiveWidth(table, "a"));
+            Assert.AreEqual(0, events());
+        });
 
     /// <summary>A completed resize is a width override, and section 18 persists it.</summary>
     [TestMethod]
-    public Task ACompletedResizeBecomesAPersistedOverride() => TestHost.RunAsync(async () =>
-    {
-        Table table = await LoadAsync();
-        Header.Strip strip = Strip(table);
+    public Task ACompletedResizeBecomesAPersistedOverride() =>
+        TestHost.RunAsync(async () =>
+        {
+            Table table = await LoadAsync();
+            Header.Strip strip = Strip(table);
 
-        BeginResizeAt(strip, FirstSeparator);
-        TrackResize(strip, FirstSeparator + 75);
-        CompleteResize(strip);
+            BeginResizeAt(strip, FirstSeparator);
+            TrackResize(strip, FirstSeparator + 75);
+            CompleteResize(strip);
 
-        Assert.AreEqual(275d, table.Layout.Widths["a"]);
-    });
+            Assert.AreEqual(275d, table.Layout.WidthOverrides["a"]);
+        });
 
     // ------------------------------------------------------------------ helpers
 
-    private static async Task<Table> LoadAsync(Action<Column>? configureFirst = null)
+    /// <summary>A cell 300 DIPs wide, so a column has content that a narrow width must not respect.</summary>
+    private static readonly DataTemplate WideCell = (DataTemplate)
+        XamlReader.Load(
+            """
+            <DataTemplate xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation">
+                <Border Width="300" Height="24" />
+            </DataTemplate>
+            """
+        );
+
+    /// <summary>A table that keeps its declared widths instead of filling its width.</summary>
+    /// <param name="rows">Rows to realize.</param>
+    private static async Task<Table> LoadAsync(
+        Action<Column>? configureFirst = null,
+        IReadOnlyList<FitRow>? rows = null
+    )
     {
         Table table = TestData.Table(
-            TestData.Column("a", 200), TestData.Column("b", 200), TestData.Column("c", 200));
+            TestData.Column("a", 200),
+            TestData.Column("b", 200),
+            TestData.Column("c", 200)
+        );
         configureFirst?.Invoke(table.Columns[0]);
 
         table.Width = 700;
         table.Height = 200;
+        table.Layout = TestData.DeclaredWidths(table);
+
+        if (rows is not null)
+        {
+            table.ItemsSource = rows;
+        }
 
         await TableHarness.LoadAsync(table);
         table.UpdateLayout();
+
+        if (rows is not null)
+        {
+            await Task.Delay(250);
+            table.UpdateLayout();
+        }
+
         return table;
     }
 
@@ -234,15 +296,18 @@ public class ColumnResizeTests
 
     /// <summary>The width the release would apply. Nothing else in the gesture changes a width.</summary>
     private static double Preview(Header.Strip strip) =>
-        (double)strip.GetType()
-            .GetField("_previewWidth", BindingFlags.Instance | BindingFlags.NonPublic)!
-            .GetValue(strip)!;
+        (double)
+            strip
+                .GetType()
+                .GetField("_previewWidth", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .GetValue(strip)!;
 
     /// <summary>What Escape and a lost pointer capture both run.</summary>
     private static void CancelGesture(Header.Strip strip) => Invoke(strip, "CancelGesture");
 
     private static object? Invoke(object target, string method, params object[] arguments) =>
-        target.GetType()
+        target
+            .GetType()
             .GetMethod(method, BindingFlags.Instance | BindingFlags.NonPublic)!
             .Invoke(target, arguments);
 }

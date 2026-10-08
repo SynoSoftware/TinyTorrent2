@@ -6,7 +6,6 @@ using Microsoft.UI.Xaml.Automation.Provider;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Media;
-using Windows.Foundation;
 
 namespace Syno.TableView.Tests;
 
@@ -45,7 +44,8 @@ internal static class Proof
 
     internal static object? Call(object target, string method, params object?[] args)
     {
-        MethodInfo info = Find(target.GetType(), method)
+        MethodInfo info =
+            Find(target.GetType(), method)
             ?? throw new MissingMethodException(target.GetType().Name, method);
         return info.Invoke(target, args);
     }
@@ -68,7 +68,9 @@ internal static class Proof
         for (Type? t = type; t is not null; t = t.BaseType)
         {
             MethodInfo? found = t.GetMethod(
-                name, BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+                name,
+                BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public
+            );
             if (found is not null)
             {
                 return found;
@@ -83,7 +85,9 @@ internal static class Proof
         for (Type? t = type; t is not null; t = t.BaseType)
         {
             FieldInfo? found = t.GetField(
-                name, BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+                name,
+                BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public
+            );
             if (found is not null)
             {
                 return found;
@@ -147,7 +151,8 @@ internal static class Proof
     /// </summary>
     internal static void InvokeMenuItem(MenuFlyoutItemBase item)
     {
-        AutomationPeer peer = FrameworkElementAutomationPeer.CreatePeerForElement(item)
+        AutomationPeer peer =
+            FrameworkElementAutomationPeer.CreatePeerForElement(item)
             ?? throw new InvalidOperationException($"No peer for '{Label(item)}'.");
 
         if (peer.GetPattern(PatternInterface.Toggle) is IToggleProvider toggle)
@@ -162,29 +167,21 @@ internal static class Proof
             return;
         }
 
-        throw new InvalidOperationException($"'{Label(item)}' exposes no invoke or toggle pattern.");
+        throw new InvalidOperationException(
+            $"'{Label(item)}' exposes no invoke or toggle pattern."
+        );
     }
 
-    internal static string Label(MenuFlyoutItemBase item) => item switch
-    {
-        MenuFlyoutSeparator => "---",
-        MenuFlyoutSubItem sub => sub.Text,
-        MenuFlyoutItem plain => plain.Text,
-        _ => item.GetType().Name,
-    };
-
-    internal static string Describe(MenuFlyoutItemBase item)
-    {
-        string check = item is MenuFlyoutItem { Icon: not null } ? "[x] " : string.Empty;
-        string enabled = item.IsEnabled ? string.Empty : " (disabled)";
-        return check + Label(item) + enabled;
-    }
+    internal static string Label(MenuFlyoutItemBase item) =>
+        item switch
+        {
+            MenuFlyoutSeparator => "---",
+            MenuFlyoutSubItem sub => sub.Text,
+            MenuFlyoutItem plain => plain.Text,
+            _ => item.GetType().Name,
+        };
 
     // ---------------------------------------------------------------- geometry
-
-    internal static Rect BoundsIn(FrameworkElement element, UIElement reference) => element
-        .TransformToVisual(reference)
-        .TransformBounds(new Rect(0, 0, element.ActualWidth, element.ActualHeight));
 
     internal static double TranslateX(UIElement element) =>
         element.RenderTransform is TranslateTransform t ? t.X : 0;

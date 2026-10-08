@@ -36,7 +36,8 @@ internal sealed class Source
         Hierarchy?.Invalidate();
         Detach();
         _source = source;
-        if (!_suspended) Attach();
+        if (!_suspended)
+            Attach();
         SnapshotChanged?.Invoke(this, next);
     }
 
@@ -49,7 +50,8 @@ internal sealed class Source
 
     internal void Resume()
     {
-        if (!_suspended) return;
+        if (!_suspended)
+            return;
         _suspended = false;
         Hierarchy?.Resume();
         Attach();
@@ -62,19 +64,22 @@ internal sealed class Source
     private void Attach()
     {
         _notifier = _source as INotifyCollectionChanged;
-        if (_notifier is not null) _notifier.CollectionChanged += OnSourceCollectionChanged;
+        if (_notifier is not null)
+            _notifier.CollectionChanged += OnSourceCollectionChanged;
     }
 
     private void Detach()
     {
-        if (_notifier is not null) _notifier.CollectionChanged -= OnSourceCollectionChanged;
+        if (_notifier is not null)
+            _notifier.CollectionChanged -= OnSourceCollectionChanged;
         _notifier = null;
     }
 
     private void OnSourceCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
         RequireUiThread();
-        if (!_suspended) SnapshotChanged?.Invoke(this, Capture(_source));
+        if (!_suspended)
+            SnapshotChanged?.Invoke(this, Capture(_source));
     }
 
     /// <summary>
@@ -88,7 +93,8 @@ internal sealed class Source
         {
             foreach (object? item in source)
             {
-                if (item is null) throw new InvalidOperationException("ItemsSource contains a null row.");
+                if (item is null)
+                    throw new InvalidOperationException("ItemsSource contains a null row.");
                 next.Add(item);
             }
         }
@@ -101,8 +107,9 @@ internal sealed class Source
         if (!_dispatcher.HasThreadAccess)
         {
             throw new InvalidOperationException(
-                "Table is UI-thread-affine. ItemsSource assignment and collection notifications " +
-                "must occur on the control's DispatcherQueue.");
+                "Table is UI-thread-affine. ItemsSource assignment and collection notifications "
+                    + "must occur on the control's DispatcherQueue."
+            );
         }
     }
 }

@@ -17,16 +17,20 @@ public sealed partial class Cell : Control
 
     private sealed class Peer(Cell cell) : FrameworkElementAutomationPeer(cell), IInvokeProvider
     {
-        protected override AutomationControlType GetAutomationControlTypeCore() => AutomationControlType.HeaderItem;
+        protected override AutomationControlType GetAutomationControlTypeCore() =>
+            AutomationControlType.HeaderItem;
+
         protected override bool IsContentElementCore() => false;
 
         protected override object GetPatternCore(PatternInterface pattern) =>
             pattern == PatternInterface.Invoke && cell.Column?.CanSort == true
-                ? this : base.GetPatternCore(pattern);
+                ? this
+                : base.GetPatternCore(pattern);
 
         public void Invoke()
         {
-            if (!IsEnabled()) throw new ElementNotEnabledException();
+            if (!IsEnabled())
+                throw new ElementNotEnabledException();
             cell.ActivateSort();
         }
     }
@@ -54,9 +58,12 @@ public sealed partial class Cell : Control
 
     internal void ActivateSort()
     {
-        if (Column?.CanSort != true || Body.Row.FindOwner(this) is not Table table) return;
+        if (Column?.CanSort != true || Body.Row.FindOwner(this) is not Table table)
+            return;
         table.ActivateSort(Column);
-        FrameworkElementAutomationPeer.FromElement(this)?.RaiseAutomationEvent(AutomationEvents.InvokePatternOnInvoked);
+        FrameworkElementAutomationPeer
+            .FromElement(this)
+            ?.RaiseAutomationEvent(AutomationEvents.InvokePatternOnInvoked);
     }
 
     /// <summary>
@@ -65,7 +72,11 @@ public sealed partial class Cell : Control
     /// transition because section 19 requires drag feedback to track the input.
     /// </summary>
     internal void SetDragging(bool dragging) =>
-        VisualStateManager.GoToState(this, dragging ? "Dragging" : "NotDragging", useTransitions: false);
+        VisualStateManager.GoToState(
+            this,
+            dragging ? "Dragging" : "NotDragging",
+            useTransitions: false
+        );
 
     /// <summary>
     /// Section 10's fit includes the sort glyph. A column that can sort shows no glyph while
@@ -73,9 +84,10 @@ public sealed partial class Cell : Control
     /// </summary>
     internal Size MeasureWithSortGlyph(Size available)
     {
-        FontIcon? revealed = Column?.CanSort == true && _sortGlyph?.Visibility == Visibility.Collapsed
-            ? _sortGlyph
-            : null;
+        FontIcon? revealed =
+            Column?.CanSort == true && _sortGlyph?.Visibility == Visibility.Collapsed
+                ? _sortGlyph
+                : null;
 
         if (revealed is not null)
         {
@@ -138,12 +150,15 @@ public sealed partial class Cell : Control
 
     private void ApplySort()
     {
-        AutomationProperties.SetItemStatus(this, _sort switch
-        {
-            SortDirection.Ascending => _strings.SortedAscending,
-            SortDirection.Descending => _strings.SortedDescending,
-            _ => string.Empty,
-        });
+        AutomationProperties.SetItemStatus(
+            this,
+            _sort switch
+            {
+                SortDirection.Ascending => _strings.SortedAscending,
+                SortDirection.Descending => _strings.SortedDescending,
+                _ => string.Empty,
+            }
+        );
 
         if (_sortGlyph is null)
         {

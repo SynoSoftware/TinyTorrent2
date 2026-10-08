@@ -4,10 +4,14 @@
 #include <windows.h>
 #include <oleacc.h>
 #include <optional>
-#include <vector>
 
 namespace tt::desktop
 {
+// Whether a notice goes to the open window instead of the tray. Problems and
+// completions do; additions and the background notice always use the tray, so
+// they do not raise the window.
+bool UsesWindow(NoticeKind kind);
+
 // The notification-area icon: its tooltip, its menu and its balloon
 // notifications.
 class Tray
@@ -24,8 +28,8 @@ public:
     BOOL Measure(MEASUREITEMSTRUCT& item);
     BOOL Draw(DRAWITEMSTRUCT const& item);
     void Queue(Notice notice);
-    std::vector<Notice> Notify(bool windowShows);
-    std::optional<Notice> TakeNotification();
+    void Notify();
+    std::optional<Notice> TakeNotice();
 private:
     struct Row
     {
@@ -45,6 +49,7 @@ private:
         ULONGLONG due = 0;
     };
     void Apply(DWORD action);
+    void Flush();
     void Balloon(std::wstring const& message, bool error);
     Row* Find(UINT id);
     Row& Fill(TrayItem item);
@@ -72,6 +77,6 @@ private:
     Row rates_;
     Row counts_;
     Batch batch_;
-    std::optional<Notice> notification_;
+    std::optional<Notice> notice_;
 };
 }

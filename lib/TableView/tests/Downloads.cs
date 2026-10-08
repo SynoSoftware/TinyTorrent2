@@ -53,39 +53,44 @@ internal static class Downloads
         ("completedOn", 110, 48),
     };
 
-    private static readonly HashSet<string> HiddenOnFirstRun =
-        new(StringComparer.Ordinal) { "eta", "ratio", "added", "completedOn" };
+    private static readonly HashSet<string> HiddenOnFirstRun = new(StringComparer.Ordinal)
+    {
+        "eta",
+        "ratio",
+        "added",
+        "completedOn",
+    };
 
     private static readonly (string Id, string Display)[] Names =
     {
-        ("name", "Name"), ("progress", "Progress"), ("status", "Status"), ("queue", "Queue"),
-        ("eta", "ETA"), ("speed", "Speed"), ("peers", "Peers"), ("size", "Size"),
-        ("ratio", "Ratio"), ("added", "Added"), ("completedOn", "Completed on"),
+        ("name", "Name"),
+        ("progress", "Progress"),
+        ("status", "Status"),
+        ("queue", "Queue"),
+        ("eta", "ETA"),
+        ("speed", "Speed"),
+        ("peers", "Peers"),
+        ("size", "Size"),
+        ("ratio", "Ratio"),
+        ("added", "Added"),
+        ("completedOn", "Completed on"),
     };
-
-    internal static string[] Ids => Declared.Select(d => d.Id).ToArray();
 
     /// <summary>Six rows whose queue positions are deliberately not their source order.</summary>
-    internal static ObservableCollection<Download> Rows() => new()
-    {
-        new Download("t0", "ubuntu.iso", 4, 94.8, 6_400_000_000),
-        new Download("t1", "debian.iso", 1, 31.4, 2_100_000_000),
-        new Download("t2", "fedora.iso", 6, 63.7, 3_300_000_000),
-        new Download("t3", "arch.iso", 2, 75.5, 900_000_000),
-        new Download("t4", "alpine.iso", 5, 12.0, 150_000_000),
-        new Download("t5", "gentoo.iso", 3, 100.0, 4_800_000_000),
-    };
-
-    internal static string[] NaturalNames => new[]
-    {
-        "ubuntu.iso", "debian.iso", "fedora.iso", "arch.iso", "alpine.iso", "gentoo.iso",
-    };
+    internal static ObservableCollection<Download> Rows() =>
+        new()
+        {
+            new Download("t0", "ubuntu.iso", 4, 94.8, 6_400_000_000),
+            new Download("t1", "debian.iso", 1, 31.4, 2_100_000_000),
+            new Download("t2", "fedora.iso", 6, 63.7, 3_300_000_000),
+            new Download("t3", "arch.iso", 2, 75.5, 900_000_000),
+            new Download("t4", "alpine.iso", 5, 12.0, 150_000_000),
+            new Download("t5", "gentoo.iso", 3, 100.0, 4_800_000_000),
+        };
 
     /// <summary>The same six rows in queue order: 1,2,3,4,5,6.</summary>
-    internal static string[] QueueAscending => new[]
-    {
-        "debian.iso", "arch.iso", "gentoo.iso", "ubuntu.iso", "alpine.iso", "fedora.iso",
-    };
+    internal static string[] QueueAscending =>
+        new[] { "debian.iso", "arch.iso", "gentoo.iso", "ubuntu.iso", "alpine.iso", "fedora.iso" };
 
     internal static Table Build()
     {
@@ -141,15 +146,18 @@ internal static class Downloads
     /// <summary>The cells panel of each realized row container, in view order.</summary>
     internal static List<CellsPanel> RowPanels(Table table)
     {
-        ListView list = Proof.Descendant<ListView>(table)
-            ?? throw new AssertFailedException("The table realized no hosted list.");
+        ListView list =
+            Proof.Descendant<ListView>(table)
+            ?? throw new AssertFailedException("The table realized no row surface.");
         list.UpdateLayout();
 
         List<CellsPanel> panels = new();
         foreach (object item in ((System.Collections.IEnumerable)list.ItemsSource!))
         {
-            if (list.ContainerFromItem(item) is DependencyObject container
-                && Proof.Descendant<CellsPanel>(container) is CellsPanel panel)
+            if (
+                list.ContainerFromItem(item) is DependencyObject container
+                && Proof.Descendant<CellsPanel>(container) is CellsPanel panel
+            )
             {
                 panels.Add(panel);
             }
@@ -166,8 +174,6 @@ internal static class Downloads
             .Select(r => r.Name)
             .ToArray();
     }
-
-    internal static string ViewNames(Table table) => string.Join(", ", ViewNameArray(table));
 
     // ---------------------------------------------------------------- schema parts
 
@@ -206,9 +212,11 @@ internal static class Downloads
             _ => "Id",
         };
 
-        return (DataTemplate)Microsoft.UI.Xaml.Markup.XamlReader.Load(
-            "<DataTemplate xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation'>" +
-            $"<TextBlock Text='{{Binding {path}}}' Margin='6,0' VerticalAlignment='Center'/>" +
-            "</DataTemplate>");
+        return (DataTemplate)
+            Microsoft.UI.Xaml.Markup.XamlReader.Load(
+                "<DataTemplate xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation'>"
+                    + $"<TextBlock Text='{{Binding {path}}}' Margin='6,0' VerticalAlignment='Center'/>"
+                    + "</DataTemplate>"
+            );
     }
 }

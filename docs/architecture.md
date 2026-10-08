@@ -10,7 +10,7 @@ the [documentation guide](README.md) identifies each contract's authority.
 ## Usability comes first
 
 Common sense, ease of use, and intuitive behavior take precedence over other
-design preferences in these plans. The contracts and implementation exist to
+design choices in these plans. The contracts and implementation exist to
 serve the person's task. Prefer familiar actions, sensible defaults, and
 automatic handling of routine work; change a mechanism that adds avoidable steps
 or exposes internal bookkeeping. Ask the user to decide only when their intent
@@ -34,7 +34,7 @@ addition, including several sources at once and drag-and-drop, metadata preview,
 destination and file choices, paused addition, duplicate detection with tracker
 merging, pause/resume, force start, queue order, global and alternative speed
 limits, scheduled pauses and speed limits, peer limits, seeding policies,
-verification, relocation, a `.!tt` suffix on unfinished files so a file with
+verification, moving files, a `.!tt` suffix on unfinished files so a file with
 its real name is always finished, and distinct
 remove versus delete-data actions. It opens downloaded files and folders, copies
 magnet links and info hashes, and finds torrents by text or isolates errors. It exposes
@@ -48,7 +48,7 @@ panel, and torrent creation are outside scope. History, blocklists, and
 automation, such as a watched folder or running a program when a download
 finishes, need an identified user requirement before they become implementation
 work. The initial release includes automatic port mapping (UPnP/NAT-PMP), an
-editable listen port, binding torrent traffic to one network interface such as a
+editable listen port, binding torrent traffic to one network adapter such as a
 VPN, notifications, preventing idle sleep while downloading on mains power, and
 an update check. Port mapping, notifications about problems, idle-sleep
 prevention while downloading, and the update check start enabled and can be
@@ -66,7 +66,7 @@ permanent.
 
 Several torrents can use the same files, so the same content can be seeded from
 several trackers, as established clients allow. The
-[shared-files policy](engine.md#shared-files) keeps file deletion and relocation
+[shared-files policy](engine.md#shared-files) keeps file deletion and moves
 from reaching another torrent's files. Automatic replacement of an existing
 torrent is outside the initial scope.
 
@@ -89,12 +89,12 @@ flowchart LR
         Tray["Tray and activation"] --> Commands
         Commands --> Torrents["libtorrent"]
         Commands --> Saved["Persistence"]
-        Tray --> Launch["UI launch and splash"]
+        Tray --> Launch["Window launch and splash"]
     end
     Launch -.->|"starts or activates"| Views
 ```
 
-Two processes allow the UI runtime to disappear and a UI crash to leave transfers
+Two processes allow the WinUI runtime to disappear and a window crash to leave transfers
 running. A measurement on 2026-10-04 sized the first reason: a minimal
 unpackaged WinUI window (Windows App SDK 2.4, .NET 10, Release, a 200-row list)
 whose process stays alive after the window closes keeps about 32 MB private
@@ -103,7 +103,7 @@ Hiding the window frees almost nothing. Trimming the working set drops it to
 2 MB, but it grew back to 5 MB within 30 idle seconds, and the commit stays. Two
 processes keep that cost out of start at sign-in and out of the closed-window
 state this product measures first. The second reason is real too: WinUI ends
-its process on an unhandled UI exception, and in one process that would stop
+its process on an unhandled exception, and in one process that would stop
 every download. The price is a cold WinUI start on every Open, which the splash
 covers, and the pipe with its reconnect path. The first milestone's
 [resource check](testing.md#resource-checks) measures the time from Open to a
@@ -113,7 +113,7 @@ A separate tray process would add another resident executable and
 supervision path without earning its cost. The engine loads neither .NET nor
 WinUI. It builds as one executable; focused native checks can link the same
 implementation units. Its startup, commands, and shutdown also work without tray
-windows or UI files, so headless checks use the production implementation.
+windows or WinUI files, so headless checks use the production implementation.
 
 **Owner ruling: the engine is `TinyTorrent.exe` and the WinUI window is
 `TinyTorrentUI.exe`.** The engine is the program people start: shortcuts, file
@@ -134,12 +134,12 @@ each process starts the other by name and two copies of a name drift apart.
 | Application commands, torrent membership, queue and transfer policy | Engine |
 | Durable identities, saved settings, resume checkpoints | Engine persistence |
 | File operations and their recovery | Engine |
-| Tray, splash, activation routing, UI launch, application lifetime | Engine |
+| Tray, splash, activation routing, window launch, application lifetime | Engine |
 | File/link handler and start-at-sign-in registration | Engine registration owner |
 | Installation files, prerequisites, shortcuts, and uninstall entry | Installer |
-| Background preferences and selected application language | Engine |
+| Background settings and selected application language | Engine |
 | Framing, decoding, request correlation, connection failures | Pipe adapter at each endpoint |
-| Display copies, filters, drafts, dialogs, window placement, UI-only preferences | WinUI |
+| Display copies, filters, drafts, dialogs, window placement, window-only settings | WinUI |
 | Table geometry, sorting, selection, and gestures | TableView |
 | Resource lookup and live text refresh | One localisation component per process, following the [localisation contract](localisation.md#ownership-and-live-behavior) |
 
@@ -245,7 +245,7 @@ architecture, and web state models do not define this product.
 Runtime memory while downloading or seeding with WinUI closed is the primary
 resource measure. Correctness, durable downloads, required features, and useful
 throughput remain constraints. Package size is secondary. Closing WinUI releases
-its process and engine work retained solely for that UI.
+its process and engine work retained solely for that window.
 
 Retain libtorrent and the networking/crypto dependencies needed for torrent
 interoperability. Removing application HTTP/RPC does not remove HTTPS trackers,
@@ -343,7 +343,7 @@ reuses compatible installed ones, and fetches missing ones from Microsoft's
 official distribution. Prerequisite installation can need elevation or be blocked by machine policy;
 report that outcome instead of promising every machine a no-admin installation.
 Cancelling a prerequisite must leave a retryable installation, not launch a
-broken UI. Updating TinyTorrent does not redownload an already compatible runtime.
+broken window. Updating TinyTorrent does not redownload an already compatible runtime.
 
 First installation offers opening torrents with TinyTorrent, selected by
 default, and starting at sign-in, not selected by default, because people do not
@@ -351,8 +351,8 @@ expect a torrent client to start and upload at sign-in unless they asked for it.
 Setup performs the registration and, when
 Windows requires the person's default-app choice, takes them to that choice.
 Declining it leaves the application installed and usable. The installer calls
-the engine's [registration operations](engine.md#windows-registration);
-Preferences calls the same owner. Upgrades preserve disabled registrations and
+the engine's [registration actions](engine.md#windows-registration);
+Settings calls the same owner. Upgrades preserve disabled registrations and
 existing default-app choices without repeating setup prompts. The installer owns
 the engine-targeting shortcut and Installed apps entry, not a second handler writer.
 Uninstall requests coordinated Exit, unregisters TinyTorrent, and removes its
@@ -368,13 +368,13 @@ Updates use the same release installer, after the coordinated
 [Exit](engine.md#closing-and-shutdown). When TinyTorrent was running before the
 update, the installer starts it again, so downloads do not stay stopped until
 the person remembers to open it. Stage and validate a complete release
-before replacing it; never launch an engine/UI pair from different releases.
+before replacing it; never launch an engine/window pair from different releases.
 Keep an interrupted update recoverable without modifying downloads.
 
 Without an update check, most installations keep an old libtorrent and its known
 network-facing defects. When the window opens, WinUI asks the project's release
 page for the latest version, at most once a day, unless the Check for updates
-preference is off. A newer release shows Update available in the window, which
+setting is off. A newer release shows Update available in the window, which
 opens the release page; installing it is the person's action. There is no silent
 update, resident updater, or check while the window is closed.
 
@@ -383,7 +383,7 @@ beside its window layout. The check uses the project's public latest-release
 API, without credentials, with an eight-second limit. Cache the attempt before
 requesting, including an unsuccessful attempt, so reopening an offline window
 does not repeat the request within 24 hours. Unavailable releases and network
-failures do not interrupt torrent work. Turning the preference off or closing
+failures do not interrupt torrent work. Turning the setting off or closing
 WinUI cancels a pending request. The update command opens only the project's
 release page, never a download URL supplied in a reply.
 
@@ -413,11 +413,11 @@ The [testing policy](testing.md) governs evidence and desktop execution.
 | Milestone | What it establishes | Completion evidence |
 | --- | --- | --- |
 | First usable download | The narrow path above: libtorrent state, durable identity, one command and persistence owner, [safe addition](engine.md#addition-and-identity), and [bounded diagnostics](engine.md#diagnostics). One pipe connects the WinUI host to that engine, and a minimal tray icon offers Open and Exit. Use [text catalogues](localisation.md#one-catalogue-per-project) from the first screen. | Add a real torrent, see progress, pause and resume. Closing WinUI leaves the transfer running; Open from the tray restores confirmed state, and Exit stops the engine. Membership and intent survive engine restart; failed storage is not reported as saved. Complete a hands-on [journey review](interface.md#implementation-review) with pointer and keyboard and the first [resource check](testing.md#resource-checks) before expanding the UI. |
-| Everyday torrent actions | Extend the same Add path with magnet metadata preview and file choices, several sources in one form, drag-and-drop and paste, and tracker merging for duplicates. Then add queue ordering, force start, verification, Remove keeping files, text search and the Errors shortcut, the [main window commands](interface.md#main-window), and the global and alternative speed limits. Establish the [preview guard](engine.md#addition-and-identity) before acquiring magnet metadata. | Preview writes no payload; cancellation and duplicates preserve existing downloads. Intended choices reach the engine. Thirty torrent files opened from Explorer arrive in one Add form. A confirmed removal stays removed after restart while its files remain. Reconnect reconciles pending work without silently repeating uncertain commands. |
-| Background and desktop behavior | Complete tray, activation, splash, startup failure feedback, coordinated Exit, and [Windows registration](engine.md#windows-registration). Add the scoped completion and error notifications, the first-close notice, and idle-sleep behavior. | Tray and launch actions reach the same engine; engine restart reattaches a surviving UI; saved work survives shutdown and Exit protects unfinished input. Registration uses one owner. Notifications and sleep behavior work with WinUI closed. |
-| Details and preferences | Add the [inspector journeys](interface.md#inspector-and-edits) and [Preferences](interface.md#preferences), one task at a time. Include file choices and priorities, trackers, peer information, speed/pieces visuals, live language switching, and RTL header navigation. | Committed choices apply without unnecessary save prompts; real drafts survive failed edits. Hidden views stop detail work. The Speed view shows transfer from while WinUI was closed. Switching languages updates existing surfaces, controls, and tray without losing input or breaking keyboard navigation; the [live-switch exercise](localisation.md#cost-and-proportionate-evidence) proves it. Review each adopted surface in use. |
-| Move and delete files | Relocation and explicit delete-data, following [removal and relocation](engine.md#removal-and-relocation) and the [shared-files policy](engine.md#shared-files). | A destination collision is reported, not replaced. A move interrupted by a crash leaves the torrent paused with Move interrupted instead of downloading again. Neither deletion nor relocation reaches the files of a torrent outside the command; cross-seeded torrents move and delete together. |
-| Distribution | The selected [installer and runtime delivery](#installation-and-updates). | Complete the whole-application [resource and release checks](testing.md#resource-checks), fresh installation with missing prerequisites, preserved preferences on upgrade, taskbar/handler/sign-in activation, and safe uninstall; no downloads or shared runtimes removed. |
+| Everyday torrent actions | Extend the same Add path with magnet metadata preview and file choices, several sources in one Add dialog, drag-and-drop and paste, and tracker merging for duplicates. Then add queue ordering, force start, verification, Remove keeping files, text search and the Errors shortcut, the [main window commands](interface.md#main-window), and the global and alternative speed limits. Establish the [preview guard](engine.md#addition-and-identity) before acquiring magnet metadata. | Preview writes no payload; cancellation and duplicates preserve existing downloads. Intended choices reach the engine. Thirty torrent files opened from Explorer arrive in one Add dialog. A confirmed removal stays removed after restart while its files remain. Reconnect reconciles pending work without silently repeating uncertain commands. |
+| Background and desktop behavior | Complete tray, activation, splash, startup failure feedback, coordinated Exit, and [Windows registration](engine.md#windows-registration). Add the scoped completion and error notifications, the first-close notice, and idle-sleep behavior. | Tray and launch actions reach the same engine; engine restart reattaches a surviving window; saved work survives shutdown and Exit protects unfinished input. Registration uses one owner. Notifications and sleep behavior work with WinUI closed. |
+| Details and Settings | Add the [inspector journeys](interface.md#inspector-and-edits) and [Settings](interface.md#settings), one task at a time. Include file choices and priorities, trackers, peer information, speed/pieces visuals, live language switching, and RTL header navigation. | Committed choices apply without unnecessary save prompts; real drafts survive failed edits. Hidden views stop detail work. The Speed view shows transfer from while WinUI was closed. Switching languages updates existing surfaces, controls, and tray without losing input or breaking keyboard navigation; the [live-switch exercise](localisation.md#cost-and-proportionate-evidence) proves it. Review each adopted surface in use. |
+| Move and delete files | Moves and explicit delete-data, following [removal and moves](engine.md#removal-and-moves) and the [shared-files policy](engine.md#shared-files). | A destination collision is reported, not replaced. A move interrupted by a crash leaves the torrent paused with Move interrupted instead of downloading again. Neither deletion nor a move reaches the files of a torrent outside the command; cross-seeded torrents move and delete together. |
+| Distribution | The selected [installer and runtime delivery](#installation-and-updates). | Complete the whole-application [resource and release checks](testing.md#resource-checks), fresh installation with missing prerequisites, preserved settings on upgrade, taskbar/handler/sign-in activation, and safe uninstall; no downloads or shared runtimes removed. |
 
 Choose concrete message fields and project boundaries as that path requires
 them. Add complexity only after naming the behavior that the simpler
@@ -439,5 +439,5 @@ unrelated questions remain open.
 | Decision | When it matters | Owner |
 | --- | --- | --- |
 | Release prerequisites and installation mechanics | With the first release build. Pin supported runtime versions/architectures and official downloads, signing configuration, and recoverable upgrade ordering for the selected installer. | [Installation and updates](#installation-and-updates) |
-| Preferences, screen layouts, and tray contents | Before each affected journey. Choose the controls needed for the agreed scope. | [Product scope](#product-and-scope), [engine](engine.md), and [interface](interface.md) |
+| Settings, screen layouts, and tray contents | Before each affected journey. Choose the controls needed for the agreed scope. | [Product scope](#product-and-scope), [engine](engine.md), and [interface](interface.md) |
 | Table row appearance | With hands-on testing before product integration. Review row hover, selection accent, corner shape, and focus treatment. Retain the existing appearance until that review; invisible keyboard location remains an accessibility gap. | [TableView visual contract](../lib/TableView/docs/tableview-contract.md#8-rendering-layout-and-visual-language) |

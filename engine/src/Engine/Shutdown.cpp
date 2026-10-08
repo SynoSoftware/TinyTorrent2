@@ -5,9 +5,9 @@ namespace tt
 {
 namespace
 {
-// Exit gives each step this long: file priority edits to complete, then
+// Shutdown gives each phase this long: file priority edits to complete, then
 // every torrent to pause.
-constexpr auto stepTimeout = std::chrono::seconds(30);
+constexpr auto phaseTimeout = std::chrono::seconds(30);
 }
 
 void Engine::State::Shutdown(std::function<void(std::optional<std::string> failure)> completion)
@@ -16,11 +16,11 @@ void Engine::State::Shutdown(std::function<void(std::optional<std::string> failu
     {
         return;
     }
-    // Exit after a failed final save starts its steps again.
-    if (stopping && session)
+    // Exit after a failed final save starts its phases again.
+    if (shuttingDown && session)
     {
         saveFailure.reset();
-        exitStep = ExitStep::Draining;
+        shutdownPhase = ShutdownPhase::Draining;
         pausing.clear();
     }
     for (auto& [id, torrent] : torrents)
@@ -30,17 +30,17 @@ void Engine::State::Shutdown(std::function<void(std::optional<std::string> failu
             RecordHashes(torrent);
         }
     }
-    stopping = true;
-    stepStarted.reset();
+    shuttingDown = true;
+    phaseStarted.reset();
     Discard([](Preview const&) { return true; });
-    diagnostics.Write("shutdown", "", "requested");
+    log.Write("shutdown", "", "requested");
     shutdown = std::move(completion);
 }
 
-// Exit waits for queued changes and additions, pauses every torrent,
+// Shutdown waits for queued changes and additions, pauses every torrent,
 // waits for outstanding checkpoints, and then saves every torrent a
 // final time.
-void Engine::State::Stop()
+void Engine::State::ContinueShutdown()
 {
     if (!shutdown)
     {
@@ -48,7 +48,7 @@ void Engine::State::Stop()
     }
     if (!session)
     {
-        if (startup == Startup::Ready && store.IsIdle() && diagnostics.IsFlushed())
+        if (startup == Startup::Ready && store.IsIdle() && log.IsFlushed())
         {
             Finish();
         }
@@ -64,17 +64,17 @@ void Engine::State::Stop()
     {
         if (rename)
         {
-            if (!stepStarted)
-                stepStarted = std::chrono::steady_clock::now();
-            if (std::chrono::steady_clock::now() - *stepStarted >= stepTimeout)
+            if (!phaseStarted)
+                phaseStarted = std::chrono::steady_clock::now();
+            if (std::chrono::steady_clock::now() - *phaseStarted >= phaseTimeout)
             {
                 saveFailure.emplace();
-                diagnostics.Write("shutdown", "", "rename_pending");
+                log.Write("shutdown", "", "rename_pending");
                 Finish();
                 return;
             }
         }
-        bool unknown = (relocation && relocation->phase == RelocationPhase::Unknown) ||
+        bool unknown = (move && move->phase == MovePhase::Unknown) ||
             std::any_of(deletions.begin(), deletions.end(),
                 [](auto const& deletion) { return deletion.phase == DeletionPhase::Unknown; });
         if (!unknown)
@@ -85,11 +85,11 @@ void Engine::State::Stop()
         Finish();
         return;
     }
-    if (exitStep == ExitStep::Draining)
+    if (shutdownPhase == ShutdownPhase::Draining)
     {
-        if (!stepStarted)
+        if (!phaseStarted)
         {
-            stepStarted = std::chrono::steady_clock::now();
+            phaseStarted = std::chrono::steady_clock::now();
         }
         bool pending = false;
         for (auto& [id, torrent] : torrents)
@@ -99,21 +99,21 @@ void Engine::State::Stop()
             {
                 continue;
             }
-            if (std::chrono::steady_clock::now() - *stepStarted < stepTimeout)
+            if (std::chrono::steady_clock::now() - *phaseStarted < phaseTimeout)
             {
                 pending = true;
                 continue;
             }
             std::exchange(torrent.priorityReply, nullptr)(Failure(ErrorCode::RecoveryRequired));
             saveFailure.emplace();
-            diagnostics.Write("edit", id, "recovery_required");
+            log.Write("edit", id, "recovery_required");
         }
         if (pending)
         {
             return;
         }
-        exitStep = ExitStep::Pausing;
-        stepStarted = std::chrono::steady_clock::now();
+        shutdownPhase = ShutdownPhase::Pausing;
+        phaseStarted = std::chrono::steady_clock::now();
         if (!session->is_paused())
         {
             for (auto const& [id, torrent] : torrents)
@@ -126,17 +126,17 @@ void Engine::State::Stop()
         }
         session->pause();
     }
-    if (exitStep == ExitStep::Pausing)
+    if (shutdownPhase == ShutdownPhase::Pausing)
     {
         if (!pausing.empty())
         {
-            if (std::chrono::steady_clock::now() - *stepStarted < stepTimeout)
+            if (std::chrono::steady_clock::now() - *phaseStarted < phaseTimeout)
             {
                 return;
             }
             pausing.clear();
             saveFailure.emplace();
-            diagnostics.Write("shutdown", "", "recovery_required");
+            log.Write("shutdown", "", "recovery_required");
         }
         for (auto const& [id, torrent] : torrents)
         {
@@ -149,8 +149,8 @@ void Engine::State::Stop()
         {
             return;
         }
-        exitStep = ExitStep::Saving;
-        diagnostics.Write("shutdown", "", "checkpoint");
+        shutdownPhase = ShutdownPhase::Saving;
+        log.Write("shutdown", "", "checkpoint");
         for (auto& [id, torrent] : torrents)
         {
             torrent.unsaved = true;
@@ -171,7 +171,7 @@ void Engine::State::Stop()
         bool checkpointing = torrent.checkpointPhase != CheckpointPhase::Idle;
         pending |= checkpointing || (torrent.unsaved && !saveFailure);
     }
-    if (pending || !store.IsIdle() || !diagnostics.IsFlushed())
+    if (pending || !store.IsIdle() || !log.IsFlushed())
     {
         return;
     }

@@ -276,7 +276,7 @@ std::string_view Engine::State::Name(ProxyOutcome outcome)
     return Word(outcomes, outcome);
 }
 
-void Engine::State::CheckProxy(Settings::Proxy proxy, std::function<void(std::optional<ProxyCheck>)> done)
+void Engine::State::CheckProxy(Settings::Proxy proxy, std::function<void(std::optional<ProxyCheck>)> completion)
 {
     auto check = std::make_shared<ProxyCheck>();
     checks.Run([proxy = std::move(proxy), check, stop = checkStop.get_token()]
@@ -296,9 +296,9 @@ void Engine::State::CheckProxy(Settings::Proxy proxy, std::function<void(std::op
             check->outcome = outcome;
         }
         check->elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - started);
-    }, [check, done](StorageOutcome outcome)
+    }, [check, completion](StorageOutcome outcome)
     {
-        done(outcome.succeeded ? std::optional(*check) : std::nullopt);
+        completion(outcome.succeeded ? std::optional(*check) : std::nullopt);
     });
 }
 }

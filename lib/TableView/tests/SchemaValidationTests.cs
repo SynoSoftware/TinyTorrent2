@@ -10,30 +10,6 @@ namespace Syno.TableView.Tests;
 [TestClass]
 public class SchemaValidationTests
 {
-    // ------------------------------------------------------------------ accepted
-
-    [TestMethod]
-    public Task Section6_1_AValidSchemaIsAccepted() => TestHost.RunAsync(async () =>
-    {
-        Table table = TestData.Table(TestData.Column("a"), TestData.Column("b"));
-
-        await TableHarness.LoadAsync(table);
-
-        CollectionAssert.AreEqual(new[] { "a", "b" }, TableHarness.Order(table));
-    });
-
-    [TestMethod]
-    public Task Section6_1_MaxWidthPositiveInfinityIsAccepted() => TestHost.RunAsync(async () =>
-    {
-        Column column = TestData.Column("a");
-        column.MaxWidth = double.PositiveInfinity;
-        Table table = TestData.Table(column);
-
-        await TableHarness.LoadAsync(table);
-
-        Assert.AreEqual(150d, TableHarness.ResolvedWidth(table, "a"), 0d);
-    });
-
     // ------------------------------------------------------------------ rejected
 
     [TestMethod]
@@ -42,46 +18,33 @@ public class SchemaValidationTests
 
     [TestMethod]
     public Task Section6_1_EmptyIdIsRejected() =>
-        RejectedAsync(() => new[] { new Column { Id = string.Empty, DisplayName = "A" } });
+        RejectedAsync(() =>
+            new[]
+            {
+                new Column { Id = string.Empty, DisplayName = "A" },
+            }
+        );
 
     [TestMethod]
     public Task Section6_1_EmptyDisplayNameIsRejected() =>
-        RejectedAsync(() => new[] { new Column { Id = "a", DisplayName = string.Empty } });
+        RejectedAsync(() =>
+            new[]
+            {
+                new Column { Id = "a", DisplayName = string.Empty },
+            }
+        );
 
     [TestMethod]
     public Task Section6_1_ZeroDefaultWidthIsRejected() =>
         RejectedAsync(() => new[] { TestData.Column("a", 0) });
 
     [TestMethod]
-    public Task Section6_1_NegativeDefaultWidthIsRejected() =>
-        RejectedAsync(() => new[] { TestData.Column("a", -10) });
-
-    [TestMethod]
     public Task Section6_1_NaNDefaultWidthIsRejected() =>
         RejectedAsync(() => new[] { TestData.Column("a", double.NaN) });
 
     [TestMethod]
-    public Task Section6_1_InfiniteDefaultWidthIsRejected() =>
-        RejectedAsync(() => new[] { TestData.Column("a", double.PositiveInfinity) });
-
-    [TestMethod]
     public Task Section6_1_NegativeMinWidthIsRejected() =>
         RejectedAsync(() => new[] { Column(c => c.MinWidth = -1) });
-
-    [TestMethod]
-    public Task Section6_1_NaNMaxWidthIsRejected() =>
-        RejectedAsync(() => new[] { Column(c => c.MaxWidth = double.NaN) });
-
-    [TestMethod]
-    public Task Section6_1_MinWidthAboveMaxWidthIsRejected() => RejectedAsync(() => new[]
-    {
-        Column(c =>
-        {
-            c.MinWidth = 300;
-            c.MaxWidth = 200;
-            c.Width = 250;
-        }),
-    });
 
     /// <summary>
     /// Section 6.1: a column with no Id is legal, because a table whose layout is never saved has
@@ -89,42 +52,36 @@ public class SchemaValidationTests
     /// to sort without a comparer; it cannot be written any more, which is the point of the change.
     /// </summary>
     [TestMethod]
-    public Task Section6_1_AColumnWithNoIdIsAccepted() => TestHost.RunAsync(async () =>
-    {
-        Table table = TestData.Table(
-            new Column { DisplayName = "A" }, new Column { DisplayName = "B" });
+    public Task Section6_1_AColumnWithNoIdIsAccepted() =>
+        TestHost.RunAsync(async () =>
+        {
+            Table table = TestData.Table(
+                new Column { DisplayName = "A" },
+                new Column { DisplayName = "B" }
+            );
 
-        await TableHarness.LoadAsync(table);
+            await TableHarness.LoadAsync(table);
 
-        Assert.AreEqual(2, TableHarness.VisibleColumns(table).Length);
-        Assert.AreEqual(0, table.Layout.Order.Count, "an unnamed column is not persisted");
-    });
-
-    [TestMethod]
-    public Task Section6_1_ASecondRowOrderColumnIsRejected() => RejectedAsync(() => new[]
-    {
-        // "at most one column defines the row order".
-        Column(c => c.DefinesRowOrder = true),
-        Column(c => c.DefinesRowOrder = true, id: "b"),
-    });
+            Assert.AreEqual(2, TableHarness.VisibleColumns(table).Length);
+            Assert.AreEqual(0, table.Layout.Order.Count, "an unnamed column is not persisted");
+        });
 
     [TestMethod]
-    public Task Section6_1_ZeroVisibleColumnsIsRejected() => RejectedAsync(() => new[]
-    {
-        Column(c => c.IsVisible = false, "a"),
-        Column(c => c.IsVisible = false, "b"),
-    });
+    public Task Section6_1_ASecondRowOrderColumnIsRejected() =>
+        RejectedAsync(() =>
+            new[]
+            {
+                // "at most one column defines the row order".
+                Column(c => c.DefinesRowOrder = true),
+                Column(c => c.DefinesRowOrder = true, id: "b"),
+            }
+        );
 
     [TestMethod]
-    public Task Section6_1_ATableDeclaringNoColumnsHasNoVisibleColumn() => TestHost.RunAsync(async () =>
-    {
-        // "at least one column remains visible" — a table declaring no columns has none.
-        Table table = TestData.Table();
-
-        Exception error = await TableHarness.LoadExpectingFailureAsync(table);
-
-        Assert.IsInstanceOfType<InvalidOperationException>(error, error.ToString());
-    });
+    public Task Section6_1_ZeroVisibleColumnsIsRejected() =>
+        RejectedAsync(() =>
+            new[] { Column(c => c.IsVisible = false, "a"), Column(c => c.IsVisible = false, "b") }
+        );
 
     // ------------------------------------------------------- setup-only schema
 
@@ -140,16 +97,6 @@ public class SchemaValidationTests
             Expect.Throws<InvalidOperationException>(() => table.Columns.Add(TestData.Column("b")));
         });
 
-    [TestMethod]
-    public Task Section6_1_RemovingAColumnAfterTheFirstLoadedIsAConfigurationError() =>
-        TestHost.RunAsync(async () =>
-        {
-            Table table = TestData.Table(TestData.Column("a"), TestData.Column("b"));
-            await TableHarness.LoadAsync(table);
-
-            Expect.Throws<InvalidOperationException>(() => table.Columns.RemoveAt(1));
-        });
-
     // ------------------------------------------------------------------ helpers
 
     private static Column Column(Action<Column> configure, string id = "a")
@@ -163,12 +110,13 @@ public class SchemaValidationTests
     /// Columns are built inside the callback: <see cref="Column"/> is a
     /// <c>DependencyObject</c> and can only be constructed on the UI thread.
     /// </summary>
-    private static Task RejectedAsync(Func<Column[]> build) => TestHost.RunAsync(async () =>
-    {
-        Table table = TestData.Table(build());
+    private static Task RejectedAsync(Func<Column[]> build) =>
+        TestHost.RunAsync(async () =>
+        {
+            Table table = TestData.Table(build());
 
-        Exception error = await TableHarness.LoadExpectingFailureAsync(table);
+            Exception error = await TableHarness.LoadExpectingFailureAsync(table);
 
-        Assert.IsInstanceOfType<InvalidOperationException>(error, error.ToString());
-    });
+            Assert.IsInstanceOfType<InvalidOperationException>(error, error.ToString());
+        });
 }

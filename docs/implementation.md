@@ -1166,7 +1166,7 @@ when opening Pieces. General adds comment, creator, created (Unix seconds),
 piece_size and nullable private; Files adds downloaded bytes. Peer rows contain
 endpoint, client, transport, incoming, encrypted, progress, download_rate,
 upload_rate, downloaded and uploaded. Tracker rows contain url, tier, status,
-seeds, leechers, downloaded, next_announce (Unix seconds or zero), and message.
+seed_count, leecher_count, download_count, next_announce (Unix seconds or zero), and message.
 Pieces returns metadata_ready, piece_size, peers, verified booleans, per-piece
 availability, downloading index/progress pairs and, on opening, files with path,
 first_piece and exclusive end_piece. `history` takes range five_minutes/day and
@@ -1255,9 +1255,9 @@ records the ruling and the arrangement that replaced vcpkg.
 
 ## Wire representation
 
-Protocol version 7 uses a four-byte little-endian UTF-8 JSON frame length,
+Protocol version 8 uses a four-byte little-endian UTF-8 JSON frame length,
 bounded to 16 MiB. The endpoint is `TinyTorrent.<logon SID>`; each connecting
-client first receives `{type:"hello",version:7,session_id:"...",data_directory:"..."}`. The absolute data directory
+client first receives `{type:"hello",version:8,session_id:"...",data_directory:"..."}`. The absolute data directory
 keeps the same store for explicit Restart, which starts the engine beside the
 window rather than a path a pipe peer reports. Requests are
 `{request_id:integer,command:string,...}`. Replies repeat `request_id` and have
@@ -1266,10 +1266,10 @@ notifications are `{type:"activate"}`, `{type:"close"}`, and `{type:"sources"}`.
 passes the engine each request's connection beside the request, so no request field
 can claim another connection's previews.
 
-Desktop notices use `{type:"notice",kind,torrent_id,name,detail,count}` on that
-same connection while the window is open. `count` defaults to one; handing off
-a pending tray burst retains one representative failure and completion with
-their counts. The UI keeps completion feedback bounded and uses the current
+Desktop notices use `{type:"notice",kind,torrent_id,name,detail,code,count}` on that
+same connection while the window is open. `count` is one: a notice queued in
+the tray stays there, and the window never receives a tray burst. The window
+keeps completion feedback bounded and uses the current
 torrent identity to resolve Open folder. Windows delivery is reserved for a
 closed window and obeys the corresponding notification preference.
 
@@ -1283,7 +1283,7 @@ or before_torrent_id: string/null for a row drop; null means end),
 `piece_order` (torrent_ids with sequential, first_last or both as booleans; an
 absent one keeps each torrent's choice),
 `session_pause` (paused), `settings` (changes), `check_proxy` (proxy), `open`, `ready`,
-`ui_closed`, `activate_reply` (available boolean), `close_reply` (state:
+`window_closed`, `activate_reply` (available boolean), `close_reply` (state:
 waiting/closing/cancelled), and `exit`. Activation acknowledgement lets Open wait through an
 old window's close path without losing the request. Current settings changes accept language (`en`, `es`)
 and theme (`system`, `light`, `dark`); unknown fields or values are refused. A
@@ -1308,12 +1308,22 @@ fields, and starts a check that connects to that proxy and signs in within 10
 seconds without changing the session. It replies at once with `check_id`,
 because the check can take longer than a client waits for a reply; the
 snapshot reports the result.
+Settings also accept `incomplete_folder` (absolute path), `use_incomplete_folder`
+(default false), `append_suffix` (default true), `confirm_exit` (default true),
+`show_external_ip` (default false), and `disk_buffer_mib` (integer 1–1024,
+default 100). Each added torrent saves `append_suffix` and, when using a separate
+incomplete folder, `final_folder`; `save_path` remains its current location.
+Advanced also accepts `checking_memory_mib` (integer 1–1024, default 4),
+`hashing_threads` (integer 1–64, default 1), and `file_pool_size` (integer
+1–10000, default 40). The existing `disk_buffer_mib` key is unchanged when
+its control moves to Advanced. These settings use the existing settings reply
+and snapshot object.
 Existing saved notification choices keep their value.
 Session pause is persisted as `all_paused` through
 its command and preserves individual torrent intent. The desktop host records
 `background_notice_shown` through its own engine call; the settings command
 refuses it.
-`registration` takes an `operation` string: `observe`, `register_handlers`,
+`registration` takes an `action` string: `observe`, `register_handlers`,
 `unregister_handlers`, `enable_startup`, `disable_startup`, `open_defaults`, or
 `open_startup`. Its data contains `handlers`, `handlers_target`, `startup`,
 `startup_target`, `torrent_default` and `magnet_default`. The two registration
@@ -1327,14 +1337,14 @@ a failed save leaves the live choice selected and reports the failure.
 Preview replies contain preview_id, name, size, files (index, path, size,
 priority, padding), metadata_ready, hashes (full v1/v2 hexadecimal strings),
 trackers (URLs), merge_available, error, shared_with (torrent names), and
-duplicate torrent identity when present. Add returns torrent_id after storage
+torrent_id of the existing torrent when the source is a duplicate. Add returns torrent_id after storage
 commit with duplicate:false, or the existing torrent_id with duplicate:true.
 File preview parses
 metadata without creating a payload handle; destination is applied at Add.
 Another instance of the storage worker reads and parses preview sources, so a
 slow share cannot hold up metadata commits; destruction cancels its blocked read.
 Snapshot contains session_id, torrents, settings, language_saved, download_rate,
-upload_rate, all_paused, limits, has_incoming, proxy, proxy_check, stopping, loading, storage_failed, and startup_error.
+upload_rate, paused, limits, has_incoming, proxy, proxy_check, stopping, loading, storage_failed, and startup_error.
 Protocol version 7 adds `proxy` and `proxy_check`. A proxy check's outcome is
 `connected`, `sign_in_failed`, `unreachable`, `not_found`, `wrong_type` or
 `timed_out`. `proxy` is the outcome of the engine's check of the proxy in use,
@@ -1342,12 +1352,16 @@ or null while no proxy is in use and until the check ends. `proxy_check` is the
 check that `check_proxy` started last: `check_id`, and `outcome` and
 `milliseconds`, which are null while it runs. It is null before the first
 check and when that check could not run.
+Protocol version 8 adds `external_ipv4` and `external_ipv6` to snapshots. Each
+is an address string or empty when unavailable. Torrent rows add `final_folder`,
+empty unless they will move on completion, so recent download folders do not
+mistake the incomplete folder for the chosen final destination.
 Torrent rows contain torrent_id, name,
 size (wanted bytes), completed (wanted bytes present), progress (0..1 for the
 current task, including verification), status (stable code), paused, download_rate and
 upload_rate (bytes/second), save_path, error (stable code), diagnostic detail,
-added (Unix seconds), seeds and peers (connected; peers includes seeds),
-swarm_seeds and swarm_peers (tracker scrape totals, else known peers),
+added (Unix seconds), seed_count and peer_count (connected; peers include seeds),
+swarm_seed_count and swarm_peer_count (tracker scrape totals, else known peers),
 downloaded/uploaded (bytes), queue
 (libtorrent position), complete, incoming, forced, sequential, first_last, and
 hashes. Protocol version 6 adds `completed`, so content totals and remaining time
@@ -1357,8 +1371,8 @@ and magnet link.
 All identities are strings. Settings are intended changes rather than replacement
 snapshots. Input sources are bounded to 32 KiB and retained previews/parses to
 256. `activate_sources` forwards sources, preserving relative-path meaning at
-the launching process. `pending_sources` returns activations with activation_id
-and sources; `sources_received` acknowledges activation_ids after the UI owns
+the launching process. `pending_activations` returns activations with activation_id
+and sources; `activations_received` acknowledges activation_ids after the UI owns
 them. The engine retains each accepted batch until that acknowledgement. A
 window that has begun closing takes no more sources, so they stay with the
 engine.
@@ -1549,11 +1563,11 @@ Settings now persist the UI's queue, connection, seeding, network, update-check
 and weekly-period choices through the existing document queue. Periods carry
 Monday-zero days, start/end minutes and paused/alternative mode, with at most
 128 definitions. Zero queue/connection limits mean unlimited. The summary's
-top-level all_paused describes effective pause policy. Its `limits` object carries
-`source` (manual/override/schedule), `alternative` (the effective pair), `download`
+top-level paused describes effective pause policy. Its `limits` object carries
+`origin` (manual/override/schedule), `alternative` (the effective pair), `download`
 and `upload` (caps in bytes per second, zero unlimited), and `pause` (empty,
-manual/schedule/interface). The settings object retains manual choices.
-missing_interface identifies an absent selected adapter. The status bar reads
+manual/schedule/adapter). The settings object retains manual choices.
+missing_adapter identifies an absent selected adapter. The status bar reads
 these facts through its view model without an interactive limits control.
 Settings > Transfers owns the native pair selector, serializes choices and
 keeps errors beside the picker. Same-mode schedule edits preserve an override;

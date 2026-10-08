@@ -26,13 +26,13 @@ internal sealed class ItemIdentity : IEqualityComparer<object>
             return false;
         }
 
-        return KeySelector is not null
-            && KeyComparer.Equals(KeySelector(x), KeySelector(y));
+        return KeySelector is not null && KeyComparer.Equals(KeySelector(x), KeySelector(y));
     }
 
-    public int GetHashCode(object obj) => KeySelector is null
-        ? RuntimeHelpers.GetHashCode(obj)
-        : KeyComparer.GetHashCode(KeySelector(obj));
+    public int GetHashCode(object obj) =>
+        KeySelector is null
+            ? RuntimeHelpers.GetHashCode(obj)
+            : KeyComparer.GetHashCode(KeySelector(obj));
 }
 
 /// <summary>
@@ -57,7 +57,7 @@ internal sealed class SelectionState
     internal ListViewSelectionMode Mode { get; set; } = ListViewSelectionMode.Extended;
 
     /// <summary>Section 5's interaction predicate. Null means every item is interactive.</summary>
-    internal Func<object, bool>? Eligible { get; set; }
+    internal Func<object, bool>? CanInteract { get; set; }
 
     internal object? Current { get; private set; }
 
@@ -67,13 +67,23 @@ internal sealed class SelectionState
     /// <summary>Logical row focus. Not the same thing as physical keyboard focus.</summary>
     internal object? Focus { get; private set; }
 
-    internal sealed record Checkpoint(object[] Items, object? Current, object? Anchor, object? Focus);
+    internal sealed record Checkpoint(
+        object[] Items,
+        object? Current,
+        object? Anchor,
+        object? Focus
+    );
 
     internal Checkpoint Capture() => new(_selected.ToArray(), Current, Anchor, Focus);
 
     internal void Restore(Checkpoint checkpoint, IReadOnlyList<object> view)
     {
-        Apply(new List<object>(checkpoint.Items), checkpoint.Current, checkpoint.Anchor, checkpoint.Focus);
+        Apply(
+            new List<object>(checkpoint.Items),
+            checkpoint.Current,
+            checkpoint.Anchor,
+            checkpoint.Focus
+        );
         Reconcile(view);
     }
 
@@ -82,7 +92,7 @@ internal sealed class SelectionState
 
     internal bool IsSelected(object item) => _selected.Contains(item);
 
-    internal bool IsEligible(object item) => Eligible is null || Eligible(item);
+    internal bool IsInteractive(object item) => CanInteract is null || CanInteract(item);
 
     internal bool IsSame(object? a, object? b) =>
         a is null || b is null ? a is null && b is null : _identity.Equals(a, b);
@@ -101,7 +111,7 @@ internal sealed class SelectionState
     /// </summary>
     internal void Select(object item, bool ctrl, bool shift, IReadOnlyList<object> view)
     {
-        if (!IsEligible(item))
+        if (!IsInteractive(item))
         {
             return;
         }
@@ -130,7 +140,7 @@ internal sealed class SelectionState
     /// <summary>Plain replace: one row selected, and it becomes current, anchor, and focus.</summary>
     internal void Replace(object item)
     {
-        if (!IsEligible(item))
+        if (!IsInteractive(item))
         {
             return;
         }
@@ -140,7 +150,7 @@ internal sealed class SelectionState
 
     internal void Toggle(object item)
     {
-        if (!IsEligible(item))
+        if (!IsInteractive(item))
         {
             return;
         }
@@ -160,7 +170,7 @@ internal sealed class SelectionState
 
     internal void Navigate(object item, bool ctrl, bool shift, IReadOnlyList<object> view)
     {
-        if (!IsEligible(item))
+        if (!IsInteractive(item))
         {
             return;
         }
@@ -186,7 +196,7 @@ internal sealed class SelectionState
     /// </summary>
     internal void Range(object item, bool add, IReadOnlyList<object> view)
     {
-        if (!IsEligible(item))
+        if (!IsInteractive(item))
         {
             return;
         }
@@ -224,7 +234,7 @@ internal sealed class SelectionState
         HashSet<object> seen = new(next, _identity);
         for (int i = low; i <= high; i++)
         {
-            if (IsEligible(view[i]) && seen.Add(view[i]))
+            if (IsInteractive(view[i]) && seen.Add(view[i]))
             {
                 next.Add(view[i]);
             }
@@ -244,7 +254,7 @@ internal sealed class SelectionState
         List<object> next = new();
         foreach (object item in view)
         {
-            if (IsEligible(item))
+            if (IsInteractive(item))
             {
                 next.Add(item);
             }
@@ -270,7 +280,11 @@ internal sealed class SelectionState
     /// Resolve requested identities against the view, excluding duplicate,
     /// unavailable and non-interactive items, then apply the mode limit in one step.
     /// </summary>
-    internal void SetSelection(IEnumerable<object> items, object? currentItem, IReadOnlyList<object> view)
+    internal void SetSelection(
+        IEnumerable<object> items,
+        object? currentItem,
+        IReadOnlyList<object> view
+    )
     {
         List<object> resolved = ResolveSelection(items, currentItem, view, out object? current);
         current ??= resolved.Count > 0 ? resolved[0] : null;
@@ -278,7 +292,11 @@ internal sealed class SelectionState
     }
 
     private List<object> ResolveSelection(
-        IEnumerable<object> items, object? currentItem, IReadOnlyList<object> view, out object? current)
+        IEnumerable<object> items,
+        object? currentItem,
+        IReadOnlyList<object> view,
+        out object? current
+    )
     {
         HashSet<object> requested = new(_identity);
         foreach (object item in items)
@@ -293,7 +311,7 @@ internal sealed class SelectionState
         current = null;
         foreach (object item in view)
         {
-            if (!IsEligible(item))
+            if (!IsInteractive(item))
             {
                 continue;
             }
@@ -316,7 +334,11 @@ internal sealed class SelectionState
     /// Section 5.3's reconciliation. One pass over the new view rehydrates every tracked identity
     /// onto the new instances, prunes what left or became non-interactive, and repairs current.
     /// </summary>
-    internal void Reconcile(IReadOnlyList<object> view, object? currentFallback = null, object? focusFallback = null)
+    internal void Reconcile(
+        IReadOnlyList<object> view,
+        object? currentFallback = null,
+        object? focusFallback = null
+    )
     {
         List<object> kept = new();
         object? current = null;
@@ -325,7 +347,7 @@ internal sealed class SelectionState
 
         foreach (object item in view)
         {
-            if (!IsEligible(item))
+            if (!IsInteractive(item))
             {
                 continue;
             }
@@ -367,12 +389,13 @@ internal sealed class SelectionState
 
     // ------------------------------------------------------------------ internals
 
-    private List<object> Limit(List<object> items) => Mode switch
-    {
-        ListViewSelectionMode.None => new List<object>(),
-        ListViewSelectionMode.Single when items.Count > 1 => new List<object> { items[0] },
-        _ => items,
-    };
+    private List<object> Limit(List<object> items) =>
+        Mode switch
+        {
+            ListViewSelectionMode.None => new List<object>(),
+            ListViewSelectionMode.Single when items.Count > 1 => new List<object> { items[0] },
+            _ => items,
+        };
 
     /// <summary>
     /// Always adopt the resolved instances, even when their identities are unchanged.

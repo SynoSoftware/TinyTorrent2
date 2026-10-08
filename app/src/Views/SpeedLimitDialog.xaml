@@ -1,0 +1,46 @@
+<UserControl
+  x:Class="Syno.TinyTorrent.Views.SpeedLimitDialog"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+>
+  <StackPanel Spacing="12">
+    <TextBlock
+      Text="{x:Bind Model.SpeedLimit.Subject, Mode=OneWay}"
+      Style="{StaticResource TinyTorrentGroupTitleTextStyle}"
+      TextTrimming="CharacterEllipsis"
+      IsTextSelectionEnabled="True"
+      ToolTipService.ToolTip="{x:Bind Model.SpeedLimit.Subject, Mode=OneWay}"
+    />
+    <NumberBox
+      x:Name="Download"
+      Header="{x:Bind Model.Text.Get('limits', 'download_limit'), Mode=OneWay}"
+      Text="{x:Bind Model.SpeedLimit.Download, Mode=OneWay}"
+      PlaceholderText="{x:Bind Model.SpeedLimit.DownloadHint, Mode=OneWay}"
+      ValidationMode="Disabled"
+      IsEnabled="{x:Bind Model.SpeedLimit.CanSubmit, Mode=OneWay}"
+      ToolTipService.ToolTip="{x:Bind Model.SpeedLimit.Global, Mode=OneWay}"
+      AutomationProperties.HelpText="{x:Bind Model.SpeedLimit.Global, Mode=OneWay}"
+      Loaded="OnNumberLoaded"
+      AutomationProperties.AutomationId="TorrentDownloadLimit"
+    />
+    <NumberBox
+      x:Name="Upload"
+      Header="{x:Bind Model.Text.Get('limits', 'upload_limit'), Mode=OneWay}"
+      Text="{x:Bind Model.SpeedLimit.Upload, Mode=OneWay}"
+      PlaceholderText="{x:Bind Model.SpeedLimit.UploadHint, Mode=OneWay}"
+      ValidationMode="Disabled"
+      IsEnabled="{x:Bind Model.SpeedLimit.CanSubmit, Mode=OneWay}"
+      ToolTipService.ToolTip="{x:Bind Model.SpeedLimit.Global, Mode=OneWay}"
+      AutomationProperties.HelpText="{x:Bind Model.SpeedLimit.Global, Mode=OneWay}"
+      Loaded="OnNumberLoaded"
+      AutomationProperties.AutomationId="TorrentUploadLimit"
+    />
+    <InfoBar
+      IsClosable="False"
+      Severity="Error"
+      IsOpen="{x:Bind Model.SpeedLimit.HasError, Mode=OneWay}"
+      Visibility="{x:Bind Model.SpeedLimit.HasError, Mode=OneWay}"
+      Message="{x:Bind Model.SpeedLimit.Message, Mode=OneWay}"
+    />
+  </StackPanel>
+</UserControl>

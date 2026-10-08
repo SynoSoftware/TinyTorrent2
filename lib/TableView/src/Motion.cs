@@ -13,7 +13,7 @@ namespace Syno.TableView;
 /// </summary>
 /// <remarks>
 /// Each affected cell is put back where it was rendered, as a composition translation, and animated
-/// to zero. Nothing about the resolved layout is involved: the cells are already arranged where the
+/// to zero. Nothing about the effective layout is involved: the cells are already arranged where the
 /// new layout says they belong, so an interrupted or overtaken animation ends in the correct place.
 /// Section 19 also requires no substitute motion when the system disables animations, which is why
 /// this does nothing at all in that case.
@@ -28,7 +28,7 @@ internal static class Motion
     private static readonly UISettings SystemSettings = new();
 
     /// <summary>Where each visible column's cells are rendered now.</summary>
-    internal static Dictionary<Column, double> CaptureOffsets(ResolvedLayout layout)
+    internal static Dictionary<Column, double> CaptureOffsets(EffectiveLayout layout)
     {
         Dictionary<Column, double> offsets = new();
 
@@ -60,7 +60,7 @@ internal static class Motion
         // only thing that has to move them back.
         owner.UpdateLayout();
 
-        IReadOnlyList<VisibleColumn> visible = owner.Geometry.VisibleColumns;
+        IReadOnlyList<VisibleColumn> visible = owner.EffectiveLayout.VisibleColumns;
 
         foreach (CellsPanel panel in owner.RealizedPanels())
         {
@@ -98,7 +98,11 @@ internal static class Motion
         slide.InsertKeyFrame(
             1,
             Vector3.Zero,
-            compositor.CreateCubicBezierEasingFunction(new Vector2(0.1f, 0.9f), new Vector2(0.2f, 1)));
+            compositor.CreateCubicBezierEasingFunction(
+                new Vector2(0.1f, 0.9f),
+                new Vector2(0.2f, 1)
+            )
+        );
         slide.Duration = Duration;
 
         visual.StartAnimation("Translation", slide);

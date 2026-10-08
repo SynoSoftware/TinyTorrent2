@@ -22,8 +22,10 @@ public sealed partial class JobsPage : Page
     /// <summary>Present only while an agent measures the control. A packaged launch inherits no
     /// arguments, so the switch is also a file; this project is unpackaged, so prefer the
     /// argument.</summary>
-    private static readonly string MeasureFlagPath =
-        System.IO.Path.Combine(AppContext.BaseDirectory, "sample-measure.flag");
+    private static readonly string MeasureFlagPath = System.IO.Path.Combine(
+        AppContext.BaseDirectory,
+        "sample-measure.flag"
+    );
 
     private readonly StringBuilder _log = new();
     private Feed? _feed;
@@ -38,7 +40,8 @@ public sealed partial class JobsPage : Page
         // it cannot be selected, invoked, context-clicked, or joined to a packet. Each column
         // joins to its sort key through the field the XAML compiler generates for x:Name, so
         // renaming a column is a build break.
-        Table.Schema<Job>()
+        Table
+            .Schema<Job>()
             .Key(row => row.Id)
             .CanInteract(row => !row.IsPending)
             .SortKey(IndexColumn, row => row.Index)
@@ -48,12 +51,20 @@ public sealed partial class JobsPage : Page
             .SortKey(ThroughputColumn, row => row.ActiveRate)
             .SortKey(WorkersColumn, row => row.WorkersBusy)
             .SortKey(YieldColumn, row => row.Yield)
-            .SortKey(RemainingColumn, row => row.Remaining, Comparer<TimeSpan?>.Create((left, right) =>
-            {
-                if (!left.HasValue) return right.HasValue ? 1 : 0;
-                if (!right.HasValue) return -1;
-                return left.Value.CompareTo(right.Value);
-            }))
+            .SortKey(
+                RemainingColumn,
+                row => row.Remaining,
+                Comparer<TimeSpan?>.Create(
+                    (left, right) =>
+                    {
+                        if (!left.HasValue)
+                            return right.HasValue ? 1 : 0;
+                        if (!right.HasValue)
+                            return -1;
+                        return left.Value.CompareTo(right.Value);
+                    }
+                )
+            )
             .SortKey(SubmittedColumn, row => row.SubmittedText)
             .SortKey(FinishedColumn, row => row.FinishedOrder);
 
@@ -135,7 +146,11 @@ public sealed partial class JobsPage : Page
         DispatcherQueueTimer watchdog = DispatcherQueue.CreateTimer();
         watchdog.Interval = TimeSpan.FromMinutes(10);
         watchdog.IsRepeating = false;
-        watchdog.Tick += (_, _) => { W("\n!!! WATCHDOG FIRED !!!"); Finish(); };
+        watchdog.Tick += (_, _) =>
+        {
+            W("\n!!! WATCHDOG FIRED !!!");
+            Finish();
+        };
         watchdog.Start();
 
         try
@@ -179,8 +194,11 @@ public sealed partial class JobsPage : Page
     {
         foreach (string argument in Environment.GetCommandLineArgs())
         {
-            if (argument.StartsWith("--rows:", StringComparison.OrdinalIgnoreCase)
-                && int.TryParse(argument[7..], out int rows) && rows > 0)
+            if (
+                argument.StartsWith("--rows:", StringComparison.OrdinalIgnoreCase)
+                && int.TryParse(argument[7..], out int rows)
+                && rows > 0
+            )
             {
                 return rows;
             }
@@ -217,7 +235,8 @@ public sealed partial class JobsPage : Page
             {
                 _only = new HashSet<string>(
                     argument[(colon + 1)..].Split(',', StringSplitOptions.RemoveEmptyEntries),
-                    StringComparer.OrdinalIgnoreCase);
+                    StringComparer.OrdinalIgnoreCase
+                );
             }
         }
 
@@ -244,7 +263,10 @@ public sealed partial class JobsPage : Page
         }
     }
 
-    private static readonly string ResultsPath = System.IO.Path.Combine(AppContext.BaseDirectory, "sample-results.txt");
+    private static readonly string ResultsPath = System.IO.Path.Combine(
+        AppContext.BaseDirectory,
+        "sample-results.txt"
+    );
 
     private void Finish()
     {
@@ -260,7 +282,9 @@ public sealed partial class JobsPage : Page
         try
         {
             File.WriteAllText(
-                Path.Combine(AppContext.BaseDirectory, "sample-results.txt"), _log.ToString());
+                Path.Combine(AppContext.BaseDirectory, "sample-results.txt"),
+                _log.ToString()
+            );
         }
         catch
         {

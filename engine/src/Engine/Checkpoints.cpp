@@ -48,7 +48,7 @@ void Engine::State::CheckpointUnsaved()
         ++entry;
         if (torrent.unsaved && torrent.checkpointPhase == CheckpointPhase::Idle && now >= torrent.retryAt)
         {
-            torrent.Checkpoint(stopping);
+            torrent.Checkpoint(shuttingDown);
             ++outstanding;
             checkpointCursor = id;
         }
@@ -60,9 +60,9 @@ void Engine::State::FailCheckpoint(Torrent& torrent, Problem problem)
 {
     if (!torrent.checkpointError || torrent.checkpointError->kind != problem.kind)
     {
-        diagnostics.Write("checkpoint", torrent.identity, ToString(problem.kind));
+        log.Write("checkpoint", torrent.torrentId, ToString(problem.kind));
     }
-    if (stopping)
+    if (shuttingDown)
     {
         saveFailure = problem.detail;
     }
@@ -92,7 +92,7 @@ void Engine::State::On(lt::save_resume_data_alert const& alert)
 void Engine::State::SaveCheckpoint(Torrent& torrent, lt::add_torrent_params params)
 {
     torrent.checkpointPhase = CheckpointPhase::Writing;
-    auto id = torrent.identity;
+    auto id = torrent.torrentId;
     auto completion = [this, id, uploaded = params.total_uploaded, path = params.save_path,
         pieces = params.have_pieces, seeded = bool(params.flags & lt::torrent_flags::seed_mode)](StorageOutcome outcome)
     {
@@ -155,12 +155,12 @@ void Engine::State::SaveCheckpoint(Torrent& torrent, lt::add_torrent_params para
                 }
                 else
                 {
-                    diagnostics.Write("move", id, "verification_checkpoint_failed");
+                    log.Write("move", id, "verification_checkpoint_failed");
                 }
             });
         }))
         {
-            diagnostics.Write("move", id, "verification_checkpoint_overloaded");
+            log.Write("move", id, "verification_checkpoint_overloaded");
         }
     };
     WriteResume(id, std::move(params), std::move(completion));

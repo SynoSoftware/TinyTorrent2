@@ -53,7 +53,7 @@ do not override WinUI's control semantics or require a second design system.
 
 The visual and interaction reference is `app/prototype.html`, variant
 C, commit `8614126` on `main`. Preserve its compact table, collapsible status
-drawer, caption search and Preferences composition.
+drawer, caption search and Settings composition.
 Implement them with native WinUI controls and the existing TableView and command
 owners. The owner's inspector-section decision below supersedes the prototype's
 vertical inspector sections, and the owner's MenuBar decision supersedes its shell
@@ -104,7 +104,7 @@ the left of the title bar, before the app icon, and Alt+Left route to it, with
 the existing draft guards. The arrow sits in the title bar, as in Windows
 Settings, so the page keeps its full height. Keep continuous acrylic.
 
-A second UI launch forwards Open to the existing application. Check its outcome
+A second window launch forwards Open to the existing application. Check its outcome
 before exiting. If forwarding fails before a WinUI window exists, a native
 Windows error dialog explains the failure; it does not create a second workspace
 or block the engine.
@@ -146,7 +146,7 @@ what a control or choice does. It appears only on a surface dedicated to help
 and in
 [tooltips](https://fluent2.microsoft.design/components/web/react/core/tooltip/usage/),
 available on keyboard focus as well as hover. A work surface, such as the main
-window, a form, a dialog or Settings, shows labels, values, states and errors.
+window, a dialog or Settings, shows labels, values, states and errors.
 Labels and the layout carry the meaning, and a sentence that explains them is
 help text. Errors stay visible beside the control they concern.
 
@@ -192,13 +192,13 @@ accessibility names, formatting, and direction follow the single
 [localisation contract](localisation.md).
 
 Choose text by its role, not by the screen: page titles use the Title role;
-dialog and form titles use Subtitle; group headings use Body
+dialog and pane titles use Subtitle; group headings use Body
 Strong; field labels, values, commands and status text use Body. Secondary facts
 such as free space keep that body size and use the secondary text brush instead
 of smaller type. App.xaml owns the shared title and body styles.
 Equivalent groups use the same heading treatment and content inset, so a person
 can recognise the hierarchy without learning a different visual language in each
-pane. Native controls keep their internal spacing; a form does not compensate
+pane. Native controls keep their internal spacing; a dialog or page does not compensate
 for it with negative margins.
 
 ## Buttons
@@ -244,6 +244,14 @@ confirmation draws no panel around its text, because the dialog's frame,
 spacing and buttons already separate its parts. A confirmation with no fact
 beyond its title and buttons has no body.
 
+**Owner ruling: a confirmation's default button is the act the person chose.**
+Remove and Delete default to Remove and Delete, not Cancel, because the person
+already chose the act and the dialog only confirms it, as File Explorer's
+permanent-delete confirmation does. A Cancel default answers a request with its
+opposite. The one exception is the question that a pending Add or Move raises
+when the window closes: it asks about an act the person did not choose, so Keep
+editing is its default.
+
 A button runs a command or opens a surface. A control that directly changes a
 setting, such as View > Toolbar, is a toggle or a selection control: it
 shows which state is current, and a button looks the same in every state.
@@ -257,15 +265,14 @@ Label wording and icon use follow
   names for one act read as two acts.
 - **The accent marks the default button.** The platform's accent style goes on a
   surface's default button, the one Enter runs, and every other button keeps the
-  standard style. The default is the commit, such as Add or Save, except in the
-  Remove and Delete files dialogs, where Cancel is the default so that Enter cannot
-  remove a torrent or delete data. A surface with no commit has no accent. The
-  accent then never points at an act
+  standard style. The default is the commit, such as Add or Save, and in a
+  confirmation it is the act the person chose, as ruled above. A surface with
+  no commit has no accent. The accent then never points at an act
   that Enter does not run, and a row of accents never hides the main action.
 - **An icon-only button names itself in a tooltip,** with its accelerator, on
   keyboard focus as well as on hover. With no visible label, the tooltip is where
   a person learns what the icon does.
-- **An icon-only button is subtle.** It uses App.xaml's `SubtleButtonStyle`:
+- **An icon-only button is subtle.** It uses App.xaml's `TinyTorrentSubtleButtonStyle`:
   no fill or border until pointed at, as the window's caption buttons are. A
   pane's Close then looks like the window's Close, and one act does not look
   like two different controls.
@@ -305,7 +312,7 @@ Menus, flyouts, and other transient surfaces keep the platform's acrylic. A mate
 is never a substitute for readable content or hierarchy.
 
 Use theme resources for values that change with Light, Dark, or contrast themes.
-Respect system accent, contrast, animation, and text preferences. Preserve the
+Respect system accent, contrast, animation, and text settings. Preserve the
 expected rest, hover, pressed, selected, focused, disabled, loading, and error
 states of standard controls. Meaning must survive without color or motion.
 
@@ -337,7 +344,7 @@ indicator. Follow Microsoft's
 Input precedence is the composing editor or popup, then the active dialog/view,
 then the shell. Editors retain text selection, clipboard, undo, cursor, Delete,
 Enter, and Escape behavior. A Delete inside an editor cannot remove a torrent;
-Enter in a multiline editor cannot commit the entire form. Follow
+Enter in a multiline editor cannot commit the entire dialog. Follow
 [composition protection](localisation.md#ownership-and-live-behavior).
 
 F6/Shift+F6 may move between substantial task regions; use it where that reduces
@@ -364,7 +371,7 @@ keeps focus, and shows nothing until the save fails. This follows
 the distinction in Microsoft's [toggle guidance](https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/toggles).
 
 Use an explicit Save/Cancel editor only when values form one coherent change:
-a tracker list, a schedule period, the Add form, or moving or deleting files.
+a tracker list, a schedule period, the Add dialog, or moving or deleting files.
 Keep its draft until submitted or cancelled. Viewing details, changing a setting
 that has already applied, and ordinary navigation do not create a dirty page. A
 pending accepted command is engine work, not an unsaved draft requiring another
@@ -426,11 +433,10 @@ Language selection retains its immediate, in-place behavior.
 ### Main window
 
 The download window extends acrylic content into its custom title bar.
-The File menu contains Add torrent file, Add magnet link, Settings, Exit and
-Exit and stop transfers. **Owner ruling:** Exit closes the window, as Alt+F4
-does, and transfers continue in the tray; Exit and stop transfers is the
-tray's Exit, which stops the engine. Exit is the everyday way to leave the
-window, and stopping every download is the separate, named decision.
+The File menu contains Add torrent file, Add magnet link, Settings, Close and
+Exit. **Owner ruling:** Close closes the window, as Alt+F4 does, and transfers
+continue in the tray; Exit is the tray's Exit, which closes the window and stops
+the engine. One word then names one action in the window, the tray and search.
 Torrent contains the existing selection commands, queue actions, Pause all,
 Resume all and Speed limits. **Owner ruling:** Speed limits opens Settings at
 the speed limits, as its search result does; there is no separate limits dialog,
@@ -444,13 +450,13 @@ The first window has a 560 effective-pixel minimum height; its minimum width
 keeps the complete title-bar row usable, starting at 720 effective pixels.
 Native dragging, resizing, caption semantics and DPI behavior remain.
 Add torrent file opens the native picker first; cancelling returns to the table
-without a draft. The selected source then opens the Add form for destination,
-Start paused and Add/Cancel, following the Show the Add form preference.
+without a draft. The selected source then opens the Add dialog for destination,
+Start paused and Add/Cancel, following the Show dialog when adding torrents setting.
 
 The torrent table is the primary workspace, with an optional inspector and
-focused Add and Preferences tasks. The caption contains native search for
+focused Add and Settings tasks. The caption contains native search for
 torrents, commands and settings. Selecting a result reveals its torrent, runs
-the existing command, or opens and focuses the named preference without changing
+the existing command, or opens and focuses the named setting without changing
 it. Typing this global search does not silently filter the torrent table.
 Ctrl+K, Ctrl+F and Ctrl+E focus it. Scope labels distinguish a command for the
 selection from a command for all torrents.
@@ -465,7 +471,7 @@ pause. The drawer starts closed so the table keeps its full
 width until the person asks to filter. Status and progress remain visible and
 sortable in the table. Tracker information
 belongs in the selected torrent's inspector. TableView owns generic interaction.
-Settings opens from File and About from Help. Exit and Exit and stop transfers
+Settings opens from File and About from Help. Close and Exit
 are File commands and keep their existing pending-work and draft guards.
 Keyboard and search paths invoke the same owners. About shows the product
 identity and running version on the same acrylic surface. The current page
@@ -516,19 +522,23 @@ of a single-file torrent, or the folder of a multi-file torrent, to Windows as
 Explorer does, only on the person's request. Double-click and Enter on a row
 open the inspector; Properties in the torrent context menu does the same. The
 panel has a Close action rather than an ambiguous toolbar toggle, because its
-entry points already identify the torrent being inspected. Add torrent file opens
+entry points already identify the torrent being inspected. Only Close closes
+the panel. When no torrent or several are selected, or the inspected torrent is
+removed, the panel stays open and shows how many are selected, because a panel that
+closes and reopens as rows are selected moves the table under the person.
+Add torrent file opens
 the native picker, and Add magnet
-link opens a field for the link even when the Add form is turned off; the
-source then follows the Show the Add form preference. Pause all and Resume all
+link opens a field for the link even when the Add dialog is turned off; the
+source then follows the Show dialog when adding torrents setting. Pause all and Resume all
 are in the window and the tray, and keep each torrent's own
-[paused or running state](engine.md#state-and-work). Exit and stop transfers is
-in the window as well as the tray, where it is named Exit.
+[paused or running state](engine.md#state-and-work). Exit is in the window as
+well as the tray.
 
 Limit torrent speed… sits beside the piece-order choices in Torrent, the row
 context menu and command search. Its name says torrent because Speed limits…
 already opens the global limits. It opens a dialog that names the torrent, or
 the count for several, with a download limit and an upload limit in the rate
-units Preferences uses; an empty field or 0 means no limit. When the selected
+units Settings uses; an empty field or 0 means no limit. When the selected
 torrents differ, a field starts empty and reads Mixed, and leaving it so keeps
 each torrent's own limit. Save applies both fields; a refusal keeps the dialog
 open with its error. Each limit is one fixed cap. The lower of the torrent's
@@ -560,34 +570,54 @@ toolbar is one Tab stop, and the arrow keys move inside it. It starts visible,
 and the window layout remembers it.
 
 Dropping torrent files or magnet text on the window, or pasting them with Ctrl+V
-while the table has focus, follows the same Show the Add form preference. Sources
-join an already-open Add task; otherwise that preference decides whether the
-form opens or addition proceeds directly. An empty list says how
+while the table has focus, follows the same Show dialog when adding torrents setting. Sources
+join an already-open Add task; otherwise that setting decides whether the
+dialog opens or addition proceeds directly. An empty list says how
 to add a torrent.
 
 The status bar shows status only, on one line, and holds no buttons, because
 a control there is easy to miss and mixes acting with reading. Each label is
 short and starts with a Lucide icon so the person finds it at a glance; its
-tooltip and accessible name give the full sentence. The left group describes
-transfers: total download and upload speed, each followed by its cap while one
-applies, such as "1.2 MB/s of 5 MB/s", so a download that a limit holds back
-explains itself; Alternative limits, only while the alternative pair applies,
-with the caps and what turned them on in its tooltip; and the reason transfers
-are paused, including the end time for a scheduled pause when known, so a
-successful torrent resume that a global pause blocks explains itself.
-A rate's tooltip names its limit and the pair it comes from,
-or says that no limit applies. The right group describes the list and the
-connection: the number of torrents and, while some are selected, how many, as
-File Explorer counts items; the active filter and its count while one is
-chosen; whether incoming connections arrive, a proxy is in use, or the
-selected network interface is absent; and Update available when a newer release exists. A rate keeps room
-for its longest text, so live rates never move the labels after it. When the
+tooltip and accessible name give the full sentence. The left group answers how
+fast transfers go and what holds them back. It shows the total download and
+upload speed, each followed by its cap while one applies, such as "1.2 MB/s of
+5 MB/s", so a download that a limit holds back explains itself. A rate's tooltip
+names its limit and the pair it comes from, or says that no limit applies.
+After the speeds, one item says what holds transfers back, and changes in place:
+
+| Situation | Item |
+| --- | --- |
+| Nothing holds transfers back | None |
+| The alternative pair applies | Alternative limits, with "until" and the time when the schedule ends them; the caps and what turned them on are in its tooltip |
+| The person paused transfers | All paused |
+| The schedule paused transfers | Paused by schedule, with "until" and the time when known |
+| Only the absent network adapter pauses transfers | Paused; the connection item names the missing adapter, so this item does not repeat it, and the full sentence is in its tooltip |
+
+A pause wins over the alternative limits, because limits change nothing while
+nothing moves; for the same reason, the speeds show no cap while transfers are
+paused. The item tells a person whose torrent resume a global pause blocks why
+nothing moves. When the item changes on its own, such as when the schedule
+pauses transfers, screen readers announce the new state, because nothing else
+tells a person who cannot see the status bar. The right group describes the list and the
+connection. From the left, it shows: Update available when a newer release
+exists; the external IP while Appearance shows it; the number of torrents and,
+while some are selected, how many, as File Explorer counts items; the active
+filter and its count while one is chosen; and whether incoming connections
+arrive, a proxy is in use, or the selected network adapter is absent. The
+right group is aligned to the right edge, so an item that appears or changes
+moves the items to its left. Update available appears on its own, so it comes
+first, where it moves nothing; the external IP follows it, because its address
+changes on its own. The filter keeps room for its count with every torrent in
+the list, so a torrent that changes state never moves the labels before it. A
+rate keeps room for its longest text, so live rates never move the labels after
+it. When the
 line is too narrow, labels shorten to their icons, least important first.
 Help > Update and command search open the download page. Double-clicking an
-item opens the place that changes it, as Windows status bars do: a rate or
-Alternative limits opens the limits choice in Settings > Speed limits; the filter
+item opens the place that changes it, as Windows status bars do: a rate,
+Alternative limits or a scheduled pause opens the limits choice in Settings >
+Speed limits; the pause item opens the network adapter while it is absent; the filter
 opens the filter pane; the connection item opens the port in Settings >
-Network, the proxy server while one is in use, or the network interface while
+Network, the proxy server while one is in use, or the network adapter while
 it is absent; and Update available
 opens the download page. The torrent count has nothing to change, and All
 paused ends with Resume all, a command that a double-click must not run because
@@ -609,7 +639,7 @@ scheduled change, because a choice that expires by itself surprises the person.
 The periods stay saved. A pair's caps are editable only while that pair applies,
 or will apply under the weekly schedule: standard limits whenever the schedule
 is followed, alternative limits when it has an alternative period. Editing caps
-that cannot apply looks like it changes the speed and does not. Caps, source and
+that cannot apply looks like it changes the speed and does not. Caps, origin and
 pause reason come together from the engine snapshot. The picker shows a pending choice at once,
 keeps that choice focusable and temporarily disables the other choices. The
 rest of the page shows the engine's confirmed choice, so it changes once, when
@@ -643,8 +673,8 @@ editor keeps its own keys.
 | Delete | Remove |
 | Shift+Delete | Delete files |
 | Ctrl+, | Settings |
-| Alt+F4 | Exit (close the window) |
-| Ctrl+Q | Exit and stop transfers |
+| Alt+F4 | Close |
+| Ctrl+Q | Exit |
 
 **Owner ruling:** Alt+F4 closes the window and Ctrl+Q closes the window and the
 engine; the File menu shows both keys. Alt+F4 is how Windows closes a window and
@@ -685,12 +715,13 @@ message cannot be the only explanation of unfinished or failed work.
 | Situation | Surface |
 | --- | --- |
 | Routine pause, resume, addition in the open window or applied setting | The changed state and one accessible outcome announcement; no visible success toast. |
-| Resume or Force start while a global pause prevents transfers | A dismissible warning gives the pause reason. Override lifts the global pause; its tooltip explains that a scheduled pause is bypassed only until the next schedule change and individually paused torrents stay paused. An unavailable interface offers Settings instead. The warning clears when the pause ends. |
+| Resume or Force start while a global pause prevents transfers | The resume takes effect, so the row changes from Paused to All paused at once, and a dismissible informational notice says when the torrent starts: when all transfers resume, at the time the scheduled pause ends, or when the network adapter is available. It never says the resume failed, because the person would press it again. Resume lifts the global pause; its tooltip says that a scheduled pause is lifted only until the next schedule change and individually paused torrents stay paused. An unavailable adapter offers Settings instead. Screen readers hear the notice instead of the routine announcement. The notice clears when the pause ends. |
+| Resume all while the network adapter is absent | Resume all lifts the person's own pause, but the missing adapter still pauses every transfer, so the same notice says that transfers start when the adapter is available and offers Settings. |
 | Refused setting or failed editor action | Persistent feedback beside the field or inside that editor, following [Committing edits](#committing-edits). |
 | Failed command without an editor, such as Pause or Open folder | A dismissible app-level error message, separate from connection status; no timed disappearance. Retain the existing policy for clearing it after later command outcomes. |
 | Connection loss or unavailable storage affecting the application | A persistent InfoBar over the bottom of the workspace, above the status footer. It overlays every page without resizing its content; recovery clears the condition. |
-| Useful, noncritical event elsewhere in the open application | A temporary overlay in one consistent corner of the window, without moving page content. Add this only for a named event whose existing presentation is insufficient. |
-| A finished download | The temporary overlay, with the torrent name and Open folder, as the [notification policy](engine.md#notifications-and-sleep) defines a finished download. |
+| Useful, noncritical event elsewhere in the open application | A temporary overlay in one consistent corner of the window, without moving page content and without covering a control or a row the person can click. Add this only for a named event whose existing presentation is insufficient. |
+| A finished download | The temporary overlay, with the torrent name and Open folder, as the [notification policy](engine.md#notifications-and-sleep) defines a finished download. It sits bottom-right, above the status bar, with the window's other notices. It takes no room, so showing or hiding it moves nothing. |
 | A torrent stopped by an error, or a deletion that failed after removal | The dismissible app-level error message; a stopped torrent also stays in the Errors count. With the window closed, the engine's [notification policy](engine.md#notifications-and-sleep) sends a Windows notification instead. |
 | A decision requiring consent | The existing dialog for that operation. |
 
@@ -728,15 +759,15 @@ Getting metadata transfers pending magnet text into the staged source once.
 
 Show preview progress immediately, keep cancellation available while acquiring
 metadata, and expose file choices when metadata is ready. The engine supplies
-that metadata; the UI does not parse torrents or impose an old client's
+that metadata; the window does not parse torrents or impose an old client's
 file-choices-only-after-add limitation. Unknown metadata is an explicit state,
 never an invented file list or silently started payload transfer. Add is
 available before magnet metadata arrives, so a slow swarm does not hold the
-person in the form; the torrent then wants every file, and file choices move to
+person in the dialog; the torrent then wants every file, and file choices move to
 the inspector's Files view.
 
 **Owner ruling: several sources added together are added at once, with no
-form and no question.** This covers one drop or paste, and several files opened
+dialog and no question.** This covers one drop or paste, and several files opened
 from Explorer that reach the window together. They go to the default folder with
 the default options, and the torrents they add are selected in the list, so the
 person sees that all of them arrived. A torrent already in the list is selected
@@ -745,10 +776,10 @@ question. A source that fails is reported in the window's error bar and
 dropped. File choices for each torrent are made later in the Files view. One
 drop of thirty torrents opens nothing, because a cascade of dialogs is the
 failure this protects against. Several files chosen through Add torrent file
-open one form, because choosing that command asks for it. Sources that arrive
-while the form is open join it, so a second dialog never opens. The form has a
-Don't show the Add form again check box, which turns off the Show the Add form preference
-where the person meets the form.
+open one Add dialog, because choosing that command asks for it. Sources that arrive
+while the Add dialog is open join it, so a second dialog never opens. The dialog has a
+Don't show this dialog again check box, which turns off the Show dialog when adding torrents setting
+where the person meets the dialog.
 If a source has no wanted files when a single-source task becomes a batch,
 Select all files beside that source restores a valid choice. Keep prior file
 choices until this explicit action; adding another source does not reset them.
@@ -758,10 +789,10 @@ Reconnect reacquires them through the engine's existing preview owner, preservin
 distinct tracker URLs and the user's choices. Literal input deduplication keeps
 case-sensitive tracker paths distinct.
 
-When sources require the Add form, those arriving during another modal task
-remain in the Add draft and open when that task closes. Turning Show the Add
-form off allows direct addition during other tasks; an already-open Add form
-still owns new sources and its choices. Failure to show a form does not cancel
+When sources require the Add dialog, those arriving during another modal task
+remain in the Add draft and open when that task closes. Turning Show dialog when adding torrents
+off allows direct addition during other tasks; an already-open Add dialog
+still owns new sources and its choices. Failure to show a dialog does not cancel
 its input. One window-owned shortcut path keeps application actions out of modal editors;
 Close and Exit still follow the unfinished-input rules.
 
@@ -787,17 +818,17 @@ The destination also offers recent folders: the default folder and the folders o
 the newest torrents, six at most. They are derived from the default folder and
 existing torrents rather than stored, so removing a torrent removes its folder
 from the list. Dropping a single
-folder on the open form makes it the destination. Free space for the destination's
+folder on the open dialog makes it the destination. Free space for the destination's
 drive appears under it, and a warning replaces it when the wanted files do not
 fit; the warning never blocks Add, because the person may free space first.
 Network drives show no free space, because asking a disconnected one can block the
 window.
 
-The form sets settings on the left and files on the right, with a splitter between
-them that keeps its share of the width while the dialog is open. Hide settings
-gives the files the whole width; the settings start hidden when the files would
+The dialog shows the folder and options on the left and files on the right, with a splitter between
+them that keeps its share of the width while the dialog is open. Hide folder and options
+gives the files the whole width; the left side starts hidden when the files would
 have too little room beside them, so file names stay readable in a small window. ContentDialog cannot
-be resized by dragging, so the form has Maximize and Restore in its header: the
+be resized by dragging, so the dialog has Maximize and Restore in its header: the
 default size suits a typical torrent, and Maximize fills the window and follows it.
 Close follows Maximize at the right of the header, where Windows places it, and
 does what Cancel does.
@@ -809,7 +840,7 @@ so its height cannot hide the preview.
 The commit button names its result, Add or Add paused, and Add all or Add all
 paused when several torrents, including typed magnet text, will be added.
 
-Keep one form with a reachable native footer. A long body scrolls; the virtualized
+Keep one dialog with a reachable native footer. A long body scrolls; the virtualized
 file list has a finite viewport and owns its collection scrolling. Do not create
 another page or state model solely to accommodate a short window.
 
@@ -823,16 +854,16 @@ an uncertain outcome follows the protocol's reconciliation rules.
 A new torrent may use files another torrent already uses, such as the same
 content from a second tracker; the [shared-files policy](engine.md#shared-files)
 allows it, and verification reuses the files. Pieces that do not match are
-downloaded again over those files, so the form names the torrents that already
+downloaded again over those files, so the dialog names the torrents that already
 use files at the chosen destination before Add. To replace an older torrent, the
 person removes it, keeping its files, and adds the new one; the initial release
 has no automatic Replace action.
 
-### Preferences
+### Settings
 
 Group settings by user task and the actual libtorrent product, not the old
 daemon's fields or fixed categories. Background choices have one engine owner;
-UI-only preferences have one WinUI owner. There are no remote profiles or
+Window-only settings have one WinUI owner. There are no remote profiles or
 connected-server scopes in this local product.
 
 **Owner ruling: the Settings page background is the window's acrylic with two
@@ -848,10 +879,10 @@ both; only the owner removes them.
 Use the [commit rules](#committing-edits): ordinary settings apply individually,
 with no page-wide Save step or confirmation on close. Reveal dependent fields
 when relevant; keep an explicit editor's actions reachable. Native navigation
-and scrolling handle smaller windows. Preferences uses a full page with horizontal
+and scrolling handle smaller windows. Settings uses a full page with horizontal
 category selection and grouped sections, so settings have room without obscuring
 the task. Returning to torrents preserves selection and the inspector view.
-Preferences keeps this LabForms layout independently of the torrent inspector.
+Settings keeps this LabForms layout independently of the torrent inspector.
 Each category holds LabForms sections: a borderless card headed by an icon, a
 title and a description. Each setting in a section is one row: its name and a
 short description on the left, its control on the right, and its error in the
@@ -859,16 +890,30 @@ same row, so feedback never moves the rest of the page. Rows have no separator
 lines; rows that belong together, such as a pair of limits, sit on a borderless
 inner card, because spacing and grouping separate them without the visual noise
 of a rule under every row.
-Put Browse beside the default download path,
+Put Browse beside the default and incomplete download paths,
 and beside Add's destination, using the native Windows folder picker. Cancelling
 the picker preserves the current path and other unfinished input.
-Do not show an engine field dump. Disk
-caching remains [automatic engine policy](engine.md#disk-write-caching), not a
-Preferences choice.
+Do not show an engine field dump. Advanced holds Memory and files (Disk write
+buffer and Open-file limit) and Torrent checking (Checking memory and Checking
+threads), following the [engine policy](engine.md#disk-write-caching). Each
+control names its units, range, default, and speed/resource tradeoff in its
+help. Buffer targets do not claim to cap total memory. The category strip
+scrolls horizontally when its labels do not fit, so Advanced stays reachable
+at smaller widths and larger text sizes.
 
-Include, grouped by task: the default download folder and Show the Add form;
+Transfers groups Adding torrents, Files, Queue, and Seeding limits.
+Files holds the default folder, the incomplete-filename suffix, and an optional
+separate incomplete folder. Folder and suffix defaults apply to new torrents;
+the help makes that scope explicit. Turning off Show dialog when adding torrents
+lets torrent files and magnet links add in the background, respecting pause and
+queue choices. General holds Default app, Closing, Notifications, Startup, Power,
+and Updates. Closing offers confirmation before Exit stops active transfers;
+the engine's desktop host owns that native Windows prompt so it also works
+without WinUI. Closing only the window does not ask to stop transfers.
+
+Include, grouped by task: the default download folder and Show dialog when adding torrents;
 standard and alternative speed limits and when they apply; queue limits for active downloads and
-seeds; seeding ratio and time limits; connection limits; the network interface,
+seeds; seeding ratio and time limits; connection limits; the network adapter,
 port mapping, listen port, connection encryption and proxy server; the
 [notification switches](engine.md#notifications-and-sleep); preventing idle sleep
 while downloading on mains power, and also while seeding; Check for updates,
@@ -928,7 +973,7 @@ replacing the editor, so save timing cannot discard a change. Period changes
 run in the order they are asked for, so a click made during one is never lost.
 Add saves Monday to Friday, 09:00 to 17:00, with alternative limits, and opens
 it; when the schedule already holds that period, Add opens it instead.
-The scheduler is one control embedded in Preferences, sharing its period and
+The scheduler is one control embedded in Settings, sharing its period and
 save owner with the period editor rather than implementing scheduling rules twice.
 
 Dragging empty time saves a period for that day and range and opens it. A click
@@ -967,7 +1012,10 @@ periods end on the following day. Weekly schedule is not chosen by default; the
 schedule repeats in local time. Its engine owner preserves individually paused torrents and manual
 Pause all, so a scheduled boundary cannot undo the person's explicit pause.
 
-Appearance offers the application language and Follow Windows, Light, and Dark
+Appearance offers Show external IP in the status bar, off by default. The status
+bar shows the IPv4 and IPv6 addresses libtorrent reports, or Not available until
+one is known. A changed network clears the old addresses; no external lookup
+service is needed. Appearance also offers the application language and Follow Windows, Light, and Dark
 through the existing theme owner. General's Startup group holds Start when I
 sign in, a Start in the notification area switch, and a Show the splash screen
 while opening switch. Start in the notification area, off by default, makes
@@ -975,22 +1023,32 @@ starting TinyTorrent start only the engine in the tray; opening TinyTorrent
 while it runs still shows the window. The splash switch, on by default, serves
 a person who opens TinyTorrent often and finds the splash in the way. All categories
 share one viewport-constrained, centred content column, so a change of
-category cannot move the form or push its actions outside the viewport.
+category cannot move the page or push its actions outside the viewport.
 
-Preferences offers a Start when I sign in switch and an Open torrents with
+Settings offers a Start when I sign in switch and an Open torrents with
 TinyTorrent switch covering `.torrent` files and magnet links. Both call the
 engine's [registration owner](engine.md#windows-registration) and show its
 observed state. Turning the handler switch on finishes automatically when
 TinyTorrent is already the default; otherwise it takes the person to the
 supported Windows choice and refreshes on return. While Windows still opens
 either kind with another app, a Windows Default apps link sits under the
-switch. Turning it off removes TinyTorrent as a handler. Present mixed
+switch. While any torrent or magnet handler starts a program that is missing,
+whichever app registered it, the switch's caution line names that program and
+the link becomes Repair, which removes the broken handlers, asking Windows for
+an administrator when some were registered for all users, and registers
+TinyTorrent. Only Repair asks for an administrator, and it then shows
+Windows' shield beside its name; the switch never asks. A problem notification about such a handler opens this page.
+Turning it off removes TinyTorrent as a handler. Present mixed
 file/link defaults in ordinary language only when they need action, without a
 registry-status panel.
 
 **Owner ruling:** an entry that starts another TinyTorrent copy is still
 TinyTorrent's registration, so its switch shows on, with a caution line naming
 that copy's executable; it never shows as unregistered.
+
+While an entry starts another copy, the link under its switch becomes Use this
+copy, which moves that entry to the running copy. Each switch keeps one link
+that names the next step, so the row never changes height.
 
 Keep a Windows Startup settings link beside the sign-in control for Windows'
 independent override. Open the relevant [Windows Settings page](https://learn.microsoft.com/en-us/windows/apps/develop/launch/launch-settings),
@@ -1071,7 +1129,7 @@ folder the files will be in, so choosing the torrent's own folder instead of
 the folder that contains it is visible before the move. Preserve choices when
 submission is refused, so the person can correct them without starting over.
 When files are already at the destination, offer Use files there,
-following [engine relocation](engine.md#removal-and-relocation). When other
+following [engine moves](engine.md#removal-and-moves). When other
 torrents use the files, name them and offer to move them together.
 
 Move files and Delete files are available from selection actions, the row context
@@ -1081,7 +1139,7 @@ folder with each torrent's size, shows the torrent count and total size beside
 its buttons, warns that deletion is permanent, and lists outside torrents whose
 shared files will be kept. It opens at once with nothing to wait for, and
 Delete is always available, following
-[the deletion ruling](engine.md#removal-and-relocation). Cancel remains its
+[the deletion ruling](engine.md#removal-and-moves). Cancel remains its
 default button.
 
 Move files shows the current source folders, the chosen destination parent and

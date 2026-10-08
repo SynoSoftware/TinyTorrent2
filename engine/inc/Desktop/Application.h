@@ -28,22 +28,23 @@ private:
     void OnTray(WPARAM first, LPARAM second);
     void ShowMenu(POINT point);
     void OnTimer();
-    void Dispatch(Pipe::Client client, Json request, Reply reply);
-    void Receive(Pipe::Client const& client, Json const& request, Reply const& reply);
-    void OnReady(Pipe::Client const& client, Reply const& reply);
+    void Dispatch(std::shared_ptr<Pipe::Connection> client, Json request, Reply reply);
+    void Receive(std::shared_ptr<Pipe::Connection> const& client, Json const& request, Reply const& reply);
+    void OnReady(std::shared_ptr<Pipe::Connection> const& client, Reply const& reply);
     void OnClosed(Reply const& reply);
-    void OnActivateReply(Pipe::Client const& client, bool available, Reply const& reply);
-    void OnCloseReply(Pipe::Client const& client, CloseState state, Reply const& reply);
-    void OnPendingSources(Pipe::Client const& client, Reply const& reply);
-    void OnSourcesReceived(Pipe::Client const& client, std::vector<std::string> const& ids,
+    void OnActivateReply(std::shared_ptr<Pipe::Connection> const& client, bool available, Reply const& reply);
+    void OnCloseReply(std::shared_ptr<Pipe::Connection> const& client, CloseState state, Reply const& reply);
+    void OnPendingActivations(std::shared_ptr<Pipe::Connection> const& client, Reply const& reply);
+    void OnActivationsReceived(std::shared_ptr<Pipe::Connection> const& client, std::vector<std::string> const& ids,
         Reply const& reply);
-    void Disconnect(Pipe::Client const& client);
+    void Disconnect(std::shared_ptr<Pipe::Connection> const& client);
     void ForgetWindow();
     void ExplainBackground();
     bool Open();
     bool IsWindowRunning() const;
     void Exit();
     void Shutdown();
+    bool IsExiting() const;
     void CancelExit();
     void EndSession();
     void Tick();
@@ -53,20 +54,25 @@ private:
     Json Activate(std::vector<std::string> sources);
     void AddSources();
     void FinishSource(Outcome const& outcome, Added const& added);
+    void CheckPrograms();
+    void ShowSettings();
     void Notify(Notice notice);
     void ShowError(std::string const& key, std::wstring detail = {});
     bool headless_;
-    bool exiting_ = false;
+    ExitPhase exit_ = ExitPhase::Idle;
     bool ticking_ = false;
     bool adding_ = false;
     bool reopen_ = false;
     // A plain start opens the window once startup has read whether the person
     // chose to start in the tray.
     bool pendingStart_ = false;
-    bool ending_ = false;
     std::optional<bool> endSaved_;
+    // The final save runs during Exiting and during Ending, so it is not a
+    // stage of its own.
     bool saving_ = false;
     bool noticeSaving_ = false;
+    bool programsChecked_ = false;
+    bool showsSettings_ = false;
     unsigned sequence_ = 0;
     ULONGLONG waitingSince_ = 0;
     // Cold when the current wait for a window began while the engine loaded.
@@ -81,7 +87,7 @@ private:
     Splash splash_;
     PowerRequest power_;
     Registration registration_;
-    Pipe::Client ui_;
+    std::shared_ptr<Pipe::Connection> windowClient_;
     std::deque<Activation> incoming_;
     std::deque<Activation> offered_;
     std::mutex mutex_;
@@ -90,7 +96,7 @@ private:
     // pipe, whose dispatch uses mutex_ and requests_, then the engine, then the
     // tray and the windows that they use.
     OwnedHandle ownership_;
-    OwnedWindow window_;
+    OwnedWindow owner_;
     OwnedWindow broadcast_;
     std::unique_ptr<Tray> tray_;
     OwnedHandle process_;

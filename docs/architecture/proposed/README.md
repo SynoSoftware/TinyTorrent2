@@ -46,9 +46,9 @@ flowchart LR
     subgraph UI[WinUI process]
         W[MainWindow: native interactions] --> M[MainViewModel: product transitions]
         W --> T[TableView: control mechanics]
-        M --> P[Preferences: settings and drafts]
+        M --> P[Settings: settings and drafts]
         P --> S[Schedule editor: period transaction]
-        M --> D[AddDraft / Inspector / FileOperation]
+        M --> D[AddDraft / Inspector / FileDraft]
         M --> C[One concrete PipeClient]
         P --> C
         D --> C
@@ -70,9 +70,9 @@ hold up durable commits.
 | --- | --- | --- |
 | Engine | Torrent membership, accepted operations, legality, saved choices and effective outcomes | Presentation drafts and native dialog lifetime |
 | MainViewModel | Accepted product selection, navigation consequences, command availability, connection presentation and source admission | Control mechanics, field parsing and engine policy |
-| Preferences | Confirmed settings, field input, validation/conversion and settings submission | Native controls and catalogue preparation |
+| Settings | Confirmed settings, field input, validation/conversion and settings submission | Native controls and catalogue preparation |
 | Schedule editor | Period collection, period draft, schedule submission and its outcome | Timeline geometry, pointer capture and engine scheduling policy |
-| AddDraft / Inspector / FileOperation | Their concrete draft, target, pending operation and recovery | A universal editor protocol |
+| AddDraft / Inspector / FileDraft | Their concrete draft, target, pending operation and recovery | A universal editor protocol |
 | MainWindow and views | Dialogs, pickers, focus, chrome, binding and native interaction | A second accepted selection or settings model |
 | PipeClient | Framing, correlation, reconnect and command/read scheduling | Draft policy and torrent operations |
 | TableView | Source capture, view order, control selection, gestures and virtualization | Torrent eligibility, queue policy and persistence |
@@ -87,31 +87,31 @@ one setting two interaction models and repeats parsing and presentation state.
 This implements the owner's decision now recorded in
 [the interface contract](../../interface.md#main-window).
 
-`Preferences` becomes the UI authority for confirmed settings and intended
+`Settings` becomes the UI authority for confirmed settings and intended
 changes. The engine remains the durable authority. Remove MainViewModel's raw
-`_settings` cache and readers that duplicate preference values. Commands, search
+`_settings` cache and readers that duplicate setting values. Commands, search
 targets, Add defaults and views read the same confirmed fields.
 
-Each field declares its value kind and Settings section once. Use a small enum
-and ordinary parsing code, not a class per kind or a generated form schema.
+Each field declares its value kind and Settings category once. Use a small enum
+and ordinary parsing code, not a class per kind or a generated settings schema.
 Rate conversion, finite/range checks and display conversion have one owner;
 field-specific constraints such as a valid port remain explicit. A wire key is
 an identifier, not the way the application discovers the field's meaning.
 
-Settings writes use the Preferences submission path, including alternative-limit
+Settings writes use the Settings submission path, including alternative-limit
 commands and theme changes. That path sends only intended fields and requests
 confirmed state through the existing pipe. It does not need another request
 queue or a global lock that prevents independent fields being edited.
 
-Keep the saved alternative-limit preference distinct from the engine's effective
+Keep the saved alternative-limit setting distinct from the engine's effective
 mode, which includes the schedule and its temporary override. An explicit mode
-command still reaches the engine when its value equals the saved preference:
+command still reaches the engine when its value equals the saved setting:
 selecting normal limits must override a currently alternative schedule. Sharing
 submission does not make a saved-value equality check valid for that command.
 
 Language retains its special interaction: prepare and publish the newest local
 catalogue before waiting for persistence, coalesce rapid choices, and report
-unsaved state honestly. Preferences owns the selected/saved preference and its
+unsaved state honestly. Settings owns the selected/saved setting and its
 submission; the existing MainViewModel.ChangeLanguage path can retain catalogue
 preparation, publication and latest-choice coordination, calling the shared
 settings submission operation. Do not relocate that orchestration merely to make
@@ -154,7 +154,7 @@ in the existing presentation/close owners.
 ### Give the schedule its own transaction
 
 Move period state and behavior together into one concrete owner under
-Preferences. A source-only partial-file move would improve navigation but leave
+Settings. A source-only partial-file move would improve navigation but leave
 the same unrestricted state sharing. A real owner earns its place here because
 the schedule submits a whole period list and has its own draft, error and pending
 lifetime. Keep ordinary settings fields outside that transaction.
@@ -198,7 +198,7 @@ Scope the choice to the identified editor, then recheck remaining draft owners
 before closing so saving one editor cannot discard another owner's input.
 
 Common theme/flow updates address that
-slot; form-specific content and commit behavior stay beside the form. One
+slot; dialog-specific content and commit behavior stay beside the dialog. One
 deferred-Add decision runs after the current interaction settles and closing is
 no longer suppressing presentation. Draft state survives view recreation.
 
@@ -280,7 +280,7 @@ snapshot, not the protocol or threading model.
 | Transfer telemetry | Row values, counters and one table reconciliation for active sorting/eligibility; no recursive refresh of all child owners |
 | Membership, filter or source queue order | One completed visible projection publication and selection reconciliation |
 | Accepted selection / pending operation | Relevant inspector transition and command availability |
-| Preference confirmation | Changed confirmed fields, preserving drafts; no unrelated schedule redraw |
+| Setting confirmation | Changed confirmed fields, preserving drafts; no unrelated schedule redraw |
 | Period, draft, schedule availability or selection | Schedule notifications and visible timeline drawing |
 | Language | One prepared publication, translated/formatted content and necessary geometry updates |
 | Theme or geometry | Affected visual work, without reapplying settings or rebuilding torrent membership |
@@ -289,7 +289,7 @@ Use two presentation paths: a window-only notification for ordinary snapshots,
 selection and filtering, and the existing broader propagation when connection,
 access or language changes affect child owners. An empty-property notification
 on one small owner is acceptable. The duplication to remove is routine recursive
-refresh of every child, not every broad notification. Preferences detects changes
+refresh of every child, not every broad notification. Settings detects changes
 to its confirmed fields, and draft edits notify their actual consumers.
 
 Keep ordinary Torrent row notification and per-snapshot command refresh initially.
@@ -320,9 +320,9 @@ ready transition rather than on every model event.
 
 Keep daily update checking alive. ObserveUpdates currently supplies the periodic
 opportunity for CheckUpdates to notice its one-day deadline. Call it explicitly
-once per applied snapshot, and react promptly when the update preference changes;
-remove its accidental invocation on every Preferences event. Moving it only to
-the preference-change event would stop subsequent daily checks in a window that
+once per applied snapshot, and react promptly when the update setting changes;
+remove its accidental invocation on every Settings event. Moving it only to
+the setting-change event would stop subsequent daily checks in a window that
 stays open. Reuse the existing deadline and in-flight guard, not another timer.
 
 ### Publish a completed table projection
@@ -358,7 +358,7 @@ the application's projection protocol.
 
 For [#114](https://github.com/SynoSoftware/TinyTorrent2/issues/114), use the
 existing schedule/text signals, geometry and theme changes. Make unchanged
-Preferences snapshots quiet and stop refreshing Preferences from every parent
+Settings snapshots quiet and stop refreshing Settings from every parent
 snapshot. That removes the periodic hidden redraw at its source, without adding
 a page-visibility gate or hidden dirty state. A genuine schedule change can
 update a loaded hidden control. Retain existing load/unload lifetime and the
@@ -420,7 +420,7 @@ Verify the chosen layout at narrow window widths as well as changing rates.
 
 Retain current row-arrival/departure animations and live-sort settling behavior
 until a focused visual comparison supports changing settle animation separately.
-The platform review's instant-settle preference is reasonable, but animation
+The platform review's instant-settle choice is reasonable, but animation
 mechanics and the existing control contract require more than a source guess.
 
 ## Let binding remove mechanical synchronization
@@ -434,7 +434,7 @@ Keep catalogue publication as one deliberate notification path. Strings currentl
 swaps an internal catalogue without implementing `INotifyPropertyChanged`, but
 the existing Publish path notifies its presentation owners. Retain that language
 notification while narrowing routine snapshot propagation, then migrate one
-representative form and check live switching. Do not add a second Strings
+representative page or dialog and check live switching. Do not add a second Strings
 notification system if the existing path updates the generated bindings correctly.
 If it does not, correct notification at that owner instead of restoring per-tick
 refresh. Microsoft's
@@ -445,7 +445,7 @@ alone does not prove the application's refresh path.
 Keep explicit menu reconstruction and table-header updates where necessary.
 Remove `x:Name` only when nothing still needs it for focus, automation or events.
 Use shared styles/templates only where repeated rows have the same behavior;
-avoid a metadata-driven form engine.
+avoid a metadata-driven settings engine.
 
 For numeric editors, retain NumberBox when stepping and numeric behavior serve
 the interaction. Where arbitrary unfinished text must survive and the application

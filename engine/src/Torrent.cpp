@@ -22,6 +22,7 @@ char const* ToString(Status status)
     case Status::Moving: return "moving";
     case Status::Error: return "error";
     case Status::Paused: return "paused";
+    case Status::AllPaused: return "all_paused";
     case Status::Checking: return "checking";
     case Status::Metadata: return "metadata";
     case Status::Queued: return "queued";
@@ -31,6 +32,17 @@ char const* ToString(Status status)
     }
     return "";
 }
+
+// A file priority as the document and the add command write it.
+bool IsPriority(Json const& value)
+{
+    return value.is_number_integer() && value >= 0 && value <= 255;
+}
+}
+
+char const* Problem::Code() const
+{
+    return refusal ? ToString(*refusal) : ToString(kind);
 }
 
 char const* ToString(ProblemKind kind)
@@ -169,6 +181,8 @@ Json Facts::ToJson() const
     }
     Json saved = {
         {"save_path", savePath},
+        {"final_folder", finalFolder},
+        {"append_suffix", appendsSuffix},
         {"move_destination", moveDestination},
         {"verify_files", verifyFiles},
         {"paused", intent == Intent::Paused},
@@ -192,36 +206,60 @@ Json Facts::ToJson() const
     return saved;
 }
 
+// A value the record holds incorrectly keeps its default, so one damaged value
+// does not cost the torrent or the rest of the list.
 Facts Facts::Read(Json const& saved)
 {
     Facts facts;
-    facts.savePath = saved.at("save_path").get<std::string>();
-    facts.moveDestination = saved.value("move_destination", "");
-    facts.verifyFiles = saved.value("verify_files", false);
-    if (saved.at("paused").get<bool>())
+    facts.savePath = ReadSaved(saved, "save_path", std::string());
+    facts.finalFolder = ReadSaved(saved, "final_folder", std::string());
+    facts.appendsSuffix = ReadSaved(saved, "append_suffix", true);
+    facts.moveDestination = ReadSaved(saved, "move_destination", std::string());
+    facts.verifyFiles = ReadSaved(saved, "verify_files", false);
+    if (ReadSaved(saved, "paused", false))
     {
         facts.intent = Intent::Paused;
     }
-    else if (saved.value("forced", false))
+    else if (ReadSaved(saved, "forced", false))
     {
         facts.intent = Intent::Forced;
     }
-    facts.added = saved.at("added").get<std::int64_t>();
-    facts.ignoresSeedLimits = saved.value("ignores_seed_limits", false);
-    facts.priorities = ReadPriorities(saved.at("priorities"));
-    facts.hashes = saved.value("hashes", std::vector<std::string>{});
-    facts.sequential = saved.value("sequential", false);
-    facts.firstLast = saved.value("first_last", false);
-    facts.downloadLimit = saved.value("download_limit", 0);
-    facts.uploadLimit = saved.value("upload_limit", 0);
-    if (saved.contains("trackers"))
+    facts.added = ReadSaved(saved, "added", std::int64_t{0});
+    facts.ignoresSeedLimits = ReadSaved(saved, "ignores_seed_limits", false);
+    if (auto found = saved.find("priorities"); found != saved.end() && found->is_array())
+    {
+        for (auto const& value : *found)
+        {
+            facts.priorities.push_back(IsPriority(value) ? lt::download_priority_t(value.get<std::uint8_t>()) :
+                lt::default_priority);
+        }
+    }
+    if (auto found = saved.find("hashes"); found != saved.end() && found->is_array())
+    {
+        for (auto const& value : *found)
+        {
+            if (value.is_string())
+            {
+                facts.hashes.push_back(value.get<std::string>());
+            }
+        }
+    }
+    facts.sequential = ReadSaved(saved, "sequential", false);
+    facts.firstLast = ReadSaved(saved, "first_last", false);
+    facts.downloadLimit = ReadSaved(saved, "download_limit", 0);
+    facts.uploadLimit = ReadSaved(saved, "upload_limit", 0);
+    if (auto found = saved.find("trackers"); found != saved.end() && found->is_array())
     {
         facts.trackers.emplace();
-        for (auto const& entry : saved.at("trackers"))
+        for (auto const& entry : *found)
         {
-            lt::announce_entry tracker(entry.is_string() ? entry.get<std::string>() :
-                entry.at("url").get<std::string>());
-            tracker.tier = entry.is_string() ? 0 : entry.at("tier").get<std::uint8_t>();
+            auto url = entry.is_string() ? entry.get<std::string>() : ReadSaved(entry, "url", std::string());
+            if (url.empty())
+            {
+                continue;
+            }
+            lt::announce_entry tracker(url);
+            tracker.tier = static_cast<std::uint8_t>(std::min(ReadSaved(entry, "tier", 0), 255));
             facts.trackers->push_back(std::move(tracker));
         }
     }
@@ -237,7 +275,7 @@ std::vector<lt::download_priority_t> ReadPriorities(Json const& values)
     std::vector<lt::download_priority_t> priorities;
     for (auto const& value : values)
     {
-        if (!value.is_number_integer() || value < 0 || value > 255)
+        if (!IsPriority(value))
         {
             throw std::invalid_argument("A file priority is not a whole number from 0 to 255.");
         }
@@ -334,7 +372,7 @@ bool Torrent::FilesBusy() const
     return moving || namePhase == NamePhase::Preparing || !renaming.empty();
 }
 
-Status Torrent::Classify(bool allPaused) const
+Status Torrent::Classify(bool sessionPaused) const
 {
     if (moving)
     {
@@ -344,9 +382,13 @@ Status Torrent::Classify(bool allPaused) const
     {
         return Status::Error;
     }
-    if (facts.intent == Intent::Paused || allPaused)
+    if (facts.intent == Intent::Paused)
     {
         return Status::Paused;
+    }
+    if (sessionPaused)
+    {
+        return Status::AllPaused;
     }
     if (status.state == lt::torrent_status::checking_files ||
         status.state == lt::torrent_status::checking_resume_data)
@@ -361,7 +403,7 @@ Status Torrent::Classify(bool allPaused) const
     {
         return Status::Queued;
     }
-    if (flushing)
+    if (completionPhase == CompletionPhase::Flushing)
     {
         return Status::Downloading;
     }
@@ -450,9 +492,9 @@ Json DescribeTracker(lt::announce_entry const& tracker, lt::info_hash_t const& h
     bool updating = false;
     bool working = false;
     bool failed = false;
-    int seeds = -1;
-    int leechers = -1;
-    int downloaded = -1;
+    int seedCount = -1;
+    int leecherCount = -1;
+    int downloadCount = -1;
     std::int64_t next = 0;
     std::string message;
     for (auto const& endpoint : tracker.endpoints)
@@ -473,9 +515,9 @@ Json DescribeTracker(lt::announce_entry const& tracker, lt::info_hash_t const& h
             updating |= usable && state.updating;
             working |= usable && state.start_sent && !state.last_error && state.fails == 0;
             failed |= bool(state.last_error) || state.fails > 0;
-            seeds = std::max(seeds, state.scrape_complete);
-            leechers = std::max(leechers, state.scrape_incomplete);
-            downloaded = std::max(downloaded, state.scrape_downloaded);
+            seedCount = std::max(seedCount, state.scrape_complete);
+            leecherCount = std::max(leecherCount, state.scrape_incomplete);
+            downloadCount = std::max(downloadCount, state.scrape_downloaded);
             if (usable && state.next_announce != (lt::time_point32::min)())
             {
                 auto time = wall + std::max<std::int64_t>(0,
@@ -498,8 +540,8 @@ Json DescribeTracker(lt::announce_entry const& tracker, lt::info_hash_t const& h
     }
     auto state = !enabled ? "disabled" : updating ? "announcing" :
         working ? "working" : failed ? "error" : "waiting";
-    return {{"url", tracker.url}, {"tier", tracker.tier}, {"status", state}, {"seeds", seeds},
-        {"leechers", leechers}, {"downloaded", downloaded}, {"next_announce", next},
+    return {{"url", tracker.url}, {"tier", tracker.tier}, {"status", state}, {"seed_count", seedCount},
+        {"leecher_count", leecherCount}, {"download_count", downloadCount}, {"next_announce", next},
         {"message", message}};
 }
 
@@ -572,7 +614,7 @@ Json DescribePieces(lt::torrent_handle const& handle,
     auto count = metadata ? metadata->num_pieces() : 0;
     Json data;
     data["piece_size"] = metadata ? metadata->piece_length() : 0;
-    data["peers"] = current.num_peers;
+    data["peer_count"] = current.num_peers;
     data["verified"] = Json::array();
     for (int index = 0; index < count; ++index)
     {
@@ -631,7 +673,7 @@ Json DescribePieces(lt::torrent_handle const& handle,
 Json Torrent::Describe(TorrentView view, bool includeFiles) const
 {
     auto metadata = handle.torrent_file();
-    Json data = {{"torrent_id", identity}, {"metadata_ready", bool(metadata)}};
+    Json data = {{"torrent_id", torrentId}, {"metadata_ready", bool(metadata)}};
     switch (view)
     {
     case TorrentView::Peers:
@@ -653,27 +695,28 @@ Json Torrent::Describe(TorrentView view, bool includeFiles) const
     return data;
 }
 
-Json Torrent::Row(bool allPaused) const
+Json Torrent::Row(bool sessionPaused) const
 {
     auto problem = Diagnose();
-    return {{"torrent_id", identity}, {"save_path", facts.savePath},
+    return {{"torrent_id", torrentId}, {"save_path", facts.savePath}, {"final_folder", facts.finalFolder},
         {"moving", moving}, {"move_destination", facts.moveDestination},
         {"paused", facts.intent == Intent::Paused}, {"forced", facts.intent == Intent::Forced},
         {"sequential", facts.sequential}, {"first_last", facts.firstLast},
         {"download_limit", facts.downloadLimit}, {"upload_limit", facts.uploadLimit},
         {"added", facts.added}, {"name", Name()}, {"size", status.total_wanted},
         {"completed", status.total_wanted_done},
-        {"progress", status.progress}, {"status", ToString(Classify(allPaused))},
+        {"progress", status.progress}, {"status", ToString(Classify(sessionPaused))},
         {"download_rate", status.download_payload_rate}, {"upload_rate", status.upload_payload_rate},
-        {"error", problem ? ToString(problem->kind) : ""}, {"detail", problem ? problem->detail : ""},
-        {"seeds", status.num_seeds}, {"peers", status.num_peers},
+        {"error", !problem ? "" : problem->Code()},
+        {"detail", problem ? problem->detail : ""},
+        {"seed_count", status.num_seeds}, {"peer_count", status.num_peers},
         // The tracker's scrape counts the whole swarm; without one, the peers this session has heard of
         // are the best estimate, as qBittorrent shows them.
-        {"swarm_seeds", status.num_complete >= 0 ? status.num_complete : status.list_seeds},
-        {"swarm_peers", status.num_incomplete >= 0 ? status.num_incomplete : status.list_peers - status.list_seeds},
+        {"swarm_seed_count", status.num_complete >= 0 ? status.num_complete : status.list_seeds},
+        {"swarm_leecher_count", status.num_incomplete >= 0 ? status.num_incomplete : status.list_peers - status.list_seeds},
         {"downloaded", status.all_time_download}, {"uploaded", status.all_time_upload},
         {"queue", static_cast<int>(status.queue_position)},
-        {"complete", status.has_metadata && status.is_finished && !flushing},
+        {"complete", status.has_metadata && status.is_finished && completionPhase != CompletionPhase::Flushing},
         {"incoming", status.has_incoming}, {"hashes", Hashes()}};
 }
 

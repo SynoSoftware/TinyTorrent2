@@ -31,10 +31,12 @@ public sealed partial class MainWindow : Window
     }
 
     private void OnPageSelected(SelectorBar sender, SelectorBarSelectionChangedEventArgs args) =>
-        RootFrame.Navigate(sender.Items.IndexOf(sender.SelectedItem) switch
-        {
-            1 => typeof(DeparturesPage),
-            2 => typeof(PlanPage),
-            _ => typeof(JobsPage)
-        });
+        RootFrame.Navigate(
+            sender.Items.IndexOf(sender.SelectedItem) switch
+            {
+                1 => typeof(DeparturesPage),
+                2 => typeof(PlanPage),
+                _ => typeof(JobsPage),
+            }
+        );
 }

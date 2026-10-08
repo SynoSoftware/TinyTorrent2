@@ -20,8 +20,9 @@ public sealed partial class Row : ContentControl
     /// reproduce it. The reference shows its grab cursor for the same reason. Move rather than
     /// Hand, because Hand promises a click.
     /// </summary>
-    private static readonly InputSystemCursor MoveCursor =
-        InputSystemCursor.Create(InputSystemCursorShape.SizeAll);
+    private static readonly InputSystemCursor MoveCursor = InputSystemCursor.Create(
+        InputSystemCursorShape.SizeAll
+    );
 
     private Table? _owner;
 
@@ -85,12 +86,13 @@ public sealed partial class Row : ContentControl
     private void OnRowItemChanged(FrameworkElement sender, DataContextChangedEventArgs args) =>
         UpdateStates(useTransitions: false);
 
-    private void OnRowVisualsChanged(object? sender, EventArgs e) => UpdateStates(useTransitions: true);
+    private void OnRowVisualsChanged(object? sender, EventArgs e) =>
+        UpdateStates(useTransitions: true);
 
     /// <summary>
-    /// This control paints the drag cue; selection and keyboard focus stay the native container's
-    /// visuals. The cursor is the one other cue: the move cursor while the table
-    /// would drag this row, which is also how a sorted table, where the table
+    /// This control paints the drag cue and the dimming of a held row; selection and keyboard focus
+    /// stay the native container's visuals. The cursor is the one other cue: the move cursor while
+    /// the table would drag this row, which is also how a sorted table, where the table
     /// withholds the drag, says so before the press. Without the move cursor a
     /// drag from the row is section 14's sweep.
     /// </summary>
@@ -99,8 +101,10 @@ public sealed partial class Row : ContentControl
         object? item = DataContext;
         bool dragging = _owner is not null && _owner.IsRowDragging(item);
         bool draggable = _owner is not null && item is not null && _owner.CanBeginRowDrag(item);
+        bool held = _owner is not null && _owner.IsHeld(item);
 
         VisualStateManager.GoToState(this, dragging ? "Dragging" : "NotDragging", useTransitions);
+        VisualStateManager.GoToState(this, held ? "Held" : "NotHeld", useTransitions);
         ProtectedCursor = draggable ? MoveCursor : null;
     }
 

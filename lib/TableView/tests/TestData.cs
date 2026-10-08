@@ -5,14 +5,20 @@ namespace Syno.TableView.Tests;
 internal static class TestData
 {
     /// <summary>A column that satisfies every section 6.1 invariant.</summary>
-    internal static Column Column(string id) => new() { Id = id, DisplayName = id.ToUpperInvariant() };
+    internal static Column Column(string id) =>
+        new() { Id = id, DisplayName = id.ToUpperInvariant() };
 
     internal static Column Column(string id, double defaultWidth) =>
-        new() { Id = id, DisplayName = id.ToUpperInvariant(), Width = defaultWidth };
+        new()
+        {
+            Id = id,
+            DisplayName = id.ToUpperInvariant(),
+            Width = defaultWidth,
+        };
 
     /// <summary>
     /// A saved layout holding every column's declared width, so the table keeps those widths
-    /// instead of fitting its first rows.
+    /// instead of filling its width.
     /// </summary>
     internal static ColumnLayout DeclaredWidths(Table table) =>
         Layout(widths: table.Columns.ToDictionary(column => column.Id!, column => column.Width));
@@ -34,13 +40,15 @@ internal static class TestData
         IReadOnlyDictionary<string, bool>? visibility = null,
         IReadOnlyDictionary<string, double>? widths = null,
         string? sortColumnId = null,
-        SortDirection direction = SortDirection.Ascending) =>
+        SortDirection direction = SortDirection.Ascending
+    ) =>
         new(
             order ?? Array.Empty<string>(),
             visibility ?? new Dictionary<string, bool>(),
             widths ?? new Dictionary<string, double>(),
             sortColumnId,
-            direction);
+            direction
+        );
 }
 
 internal static class Expect
@@ -64,7 +72,8 @@ internal static class Expect
         catch (Exception other)
         {
             throw new AssertFailedException(
-                $"Expected {typeof(T).Name} but got {other.GetType().Name}: {other.Message}");
+                $"Expected {typeof(T).Name} but got {other.GetType().Name}: {other.Message}"
+            );
         }
 
         throw new AssertFailedException($"Expected {typeof(T).Name} but nothing was thrown.");

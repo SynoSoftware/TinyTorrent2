@@ -235,7 +235,7 @@ void Pipe::Serve(HANDLE handle)
             break;
         }
         auto client = std::make_shared<Connection>();
-        GetNamedPipeClientProcessId(handle, &client->process);
+        GetNamedPipeClientProcessId(handle, &client->processId);
         client->connectionId = std::to_string(++sequence_);
         client->Send(hello_);
         std::thread writer([this, client, handle] { Deliver(client, handle); });
@@ -280,7 +280,7 @@ void Pipe::Serve(HANDLE handle)
     }
 }
 
-void Pipe::Deliver(Client client, HANDLE handle)
+void Pipe::Deliver(std::shared_ptr<Connection> client, HANDLE handle)
 {
     std::unique_lock lock(client->mutex);
     while (!client->closed)
@@ -341,10 +341,10 @@ Forwarding Pipe::Forward(std::wstring const& sid, Json request)
     }
     if (outcome == Forwarding::Accepted)
     {
-        ULONG process = 0;
-        if (GetNamedPipeServerProcessId(handle, &process))
+        ULONG processId = 0;
+        if (GetNamedPipeServerProcessId(handle, &processId))
         {
-            AllowSetForegroundWindow(process);
+            AllowSetForegroundWindow(processId);
         }
         request["request_id"] = 1;
         auto bytes = request.dump();

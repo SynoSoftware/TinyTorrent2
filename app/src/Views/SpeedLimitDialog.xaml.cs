@@ -4,11 +4,11 @@ using Syno.TinyTorrent.Helpers;
 
 namespace Syno.TinyTorrent.Views;
 
-public sealed partial class SpeedLimitForm : UserControl
+public sealed partial class SpeedLimitDialog : UserControl
 {
     public MainViewModel Model { get; }
 
-    public SpeedLimitForm(MainViewModel model)
+    public SpeedLimitDialog(MainViewModel model)
     {
         Model = model;
         InitializeComponent();
@@ -20,11 +20,14 @@ public sealed partial class SpeedLimitForm : UserControl
     // reads what is typed from its editor, as Settings does.
     private void OnNumberLoaded(object sender, RoutedEventArgs args)
     {
-        if (sender is not NumberBox number || TextEditor.Find(number) is not { } editor) return;
+        if (sender is not NumberBox number || TextEditor.Find(number) is not { } editor)
+            return;
         editor.TextChanged += (_, _) =>
         {
-            if (number == Download) Model.SpeedLimit.Download = editor.Text;
-            else Model.SpeedLimit.Upload = editor.Text;
+            if (number == Download)
+                Model.SpeedLimit.Download = editor.Text;
+            else
+                Model.SpeedLimit.Upload = editor.Text;
         };
     }
 }

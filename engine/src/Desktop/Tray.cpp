@@ -80,7 +80,7 @@ void Tray::Apply(DWORD action)
     icon.uID = iconId;
     icon.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP | NIF_SHOWTIP;
     icon.uCallbackMessage = callback_;
-    icon.hIcon = activity_.notifyProblems && activity_.errors && errorIcon_ ? errorIcon_ :
+    icon.hIcon = activity_.notifiesProblems && activity_.errorCount && errorIcon_ ? errorIcon_ :
         LoadIconW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDI_TINYTORRENT));
     tooltip_ = Tooltip();
     wcsncpy_s(icon.szTip, tooltip_.c_str(), _TRUNCATE);
@@ -93,7 +93,7 @@ void Tray::Apply(DWORD action)
 
 void Tray::Update(Activity activity, bool loading, bool pausable)
 {
-    bool hadError = activity_.notifyProblems && activity_.errors;
+    bool hadError = activity_.notifiesProblems && activity_.errorCount;
     activity_ = std::move(activity);
     loading_ = loading;
     pausable_ = pausable;
@@ -104,7 +104,7 @@ void Tray::Update(Activity activity, bool loading, bool pausable)
         Rename(TrayItem::Pause, PauseText());
         EnableMenuItem(menu_, Id(TrayItem::Pause), MF_BYCOMMAND | (pausable_ ? MF_ENABLED : MF_GRAYED));
     }
-    if (Tooltip() != tooltip_ || hadError != (activity_.notifyProblems && activity_.errors))
+    if (Tooltip() != tooltip_ || hadError != (activity_.notifiesProblems && activity_.errorCount))
     {
         Apply(NIM_MODIFY);
     }
@@ -282,27 +282,27 @@ std::wstring Tray::Rates() const
 std::wstring Tray::Counts() const
 {
     auto count = activity_.torrentCount;
-    if (activity_.allPaused)
+    if (activity_.paused)
     {
         return strings_.Format("tray", count == 1 ? "paused_one" : "paused", {std::to_wstring(count)});
     }
-    auto active = std::to_wstring(activity_.active);
-    auto queued = std::to_wstring(activity_.queued);
+    auto active = std::to_wstring(activity_.activeCount);
+    auto queued = std::to_wstring(activity_.queuedCount);
     return strings_.Format("tray", "counts", {active, queued});
 }
 
 std::wstring Tray::Tooltip() const
 {
-    auto errors = activity_.errors ? strings_.Format("tray", "errors", {std::to_wstring(activity_.errors)}) + L"\n" : std::wstring();
+    auto errors = activity_.errorCount ? strings_.Format("tray", "errors", {std::to_wstring(activity_.errorCount)}) + L"\n" : std::wstring();
     if (loading_)
     {
         return errors + strings_.Text("startup", "loading");
     }
-    if (activity_.allPaused)
+    if (activity_.paused)
     {
-        if (!activity_.missingInterface.empty())
+        if (!activity_.missingAdapter.empty())
         {
-            return errors + strings_.Format("tray", "missing_interface", {Wide(activity_.missingInterface)});
+            return errors + strings_.Format("tray", "missing_adapter", {Wide(activity_.missingAdapter)});
         }
         return errors + Counts();
     }
@@ -311,18 +311,34 @@ std::wstring Tray::Tooltip() const
 
 std::wstring Tray::PauseText() const
 {
-    return strings_.Text("tray", activity_.allPaused ? "resume" : "pause");
+    return strings_.Text("tray", activity_.pausedByChoice ? "resume" : "pause");
+}
+
+bool UsesWindow(NoticeKind kind)
+{
+    return kind == NoticeKind::Error || kind == NoticeKind::AddFailed || kind == NoticeKind::DeleteFailed ||
+        kind == NoticeKind::Completed;
 }
 
 void Tray::Queue(Notice notice)
 {
     auto kind = notice.kind;
-    bool failure = kind == NoticeKind::Error || kind == NoticeKind::AddFailed || kind == NoticeKind::DeleteFailed;
+    bool failure = kind == NoticeKind::Error || kind == NoticeKind::AddFailed || kind == NoticeKind::DeleteFailed ||
+        kind == NoticeKind::Failure;
     bool added = kind == NoticeKind::Added || kind == NoticeKind::Duplicate;
-    if (headless_ || (failure && !activity_.notifyProblems) ||
-        (kind == NoticeKind::Completed && !activity_.notificationsEnabled) || (added && !activity_.notifyAdded))
+    if (headless_ || (failure && kind != NoticeKind::Failure && !activity_.notifiesProblems) ||
+        (kind == NoticeKind::MissingProgram && !activity_.notifiesProblems) ||
+        (kind == NoticeKind::Completed && !activity_.notificationsEnabled) || (added && !activity_.notifiesAdded))
     {
         return;
+    }
+    // A failure balloon names only the failures, so a batch never mixes
+    // notices for the window with tray-only ones. A missing program is shown
+    // once and its balloon opens Settings, so it never joins a batch.
+    if (batch_.first && (UsesWindow(batch_.first->kind) != UsesWindow(kind) ||
+        batch_.first->kind == NoticeKind::MissingProgram || kind == NoticeKind::MissingProgram))
+    {
+        Flush();
     }
     if (failure)
     {
@@ -352,42 +368,29 @@ void Tray::Queue(Notice notice)
     }
 }
 
-// An open window takes the pending failure and completion counts; otherwise
-// due notices share a balloon, with a failure summary when one exists.
-std::vector<Notice> Tray::Notify(bool windowShows)
+void Tray::Notify()
 {
-    if (windowShows)
+    if (batch_.due && GetTickCount64() >= batch_.due)
     {
-        auto pending = std::exchange(batch_, {});
-        std::vector<Notice> notices;
-        if (pending.failure)
-        {
-            pending.failure->count = pending.failureCount;
-            notices.push_back(std::move(*pending.failure));
-        }
-        if (pending.completion)
-        {
-            pending.completion->count = pending.completionCount;
-            notices.push_back(std::move(*pending.completion));
-        }
-        return notices;
+        Flush();
     }
-    if (!batch_.due || GetTickCount64() < batch_.due)
-    {
-        return {};
-    }
+}
+
+void Tray::Flush()
+{
     auto batch = std::exchange(batch_, {});
-    if ((batch.failure && !activity_.notifyProblems) || (batch.completion && !activity_.notificationsEnabled) ||
-        (batch.added && !activity_.notifyAdded))
+    if ((batch.failure && batch.failure->kind != NoticeKind::Failure && !activity_.notifiesProblems) ||
+        (batch.completion && !activity_.notificationsEnabled) ||
+        (batch.added && !activity_.notifiesAdded))
     {
-        return {};
+        return;
     }
-    notification_ = batch.count == 1 ? std::move(*batch.first) : Notice{NoticeKind::Aggregate};
+    notice_ = batch.count == 1 ? std::move(*batch.first) : Notice{NoticeKind::Aggregate};
     QUERY_USER_NOTIFICATION_STATE state{};
     bool accepted = SUCCEEDED(SHQueryUserNotificationState(&state)) && state == QUNS_ACCEPTS_NOTIFICATIONS;
     if (!accepted)
     {
-        notification_.reset();
+        notice_.reset();
     }
     else if (batch.failure)
     {
@@ -395,9 +398,8 @@ std::vector<Notice> Tray::Notify(bool windowShows)
     }
     else
     {
-        Balloon(Message(*notification_, batch.count), false);
+        Balloon(Message(*notice_, batch.count), false);
     }
-    return {};
 }
 
 std::wstring Tray::Message(Notice const& notice, unsigned count) const
@@ -410,6 +412,11 @@ std::wstring Tray::Message(Notice const& notice, unsigned count) const
     else if (notice.kind == NoticeKind::Background)
     {
         message = strings_.Text("tray", "background");
+    }
+    else if (notice.kind == NoticeKind::MissingProgram && notice.count > 1)
+    {
+        message = strings_.Format("notification", "missing_programs",
+            {Wide(notice.name), std::to_wstring(notice.count - 1)});
     }
     else
     {
@@ -447,8 +454,8 @@ void Tray::Balloon(std::wstring const& message, bool error)
     Shell_NotifyIconW(NIM_MODIFY, &icon);
 }
 
-std::optional<Notice> Tray::TakeNotification()
+std::optional<Notice> Tray::TakeNotice()
 {
-    return std::exchange(notification_, std::nullopt);
+    return std::exchange(notice_, std::nullopt);
 }
 }

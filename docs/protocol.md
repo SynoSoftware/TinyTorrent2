@@ -12,19 +12,20 @@ listening TCP port or web server. It still requires serialization, validation,
 and explicit disconnect handling; the transport does not make commands atomic.
 See Microsoft's [named-pipe overview](https://learn.microsoft.com/en-us/dotnet/standard/io/how-to-use-named-pipes-for-network-interprocess-communication).
 
-Start with one duplex UI connection, asynchronous I/O, and one request awaiting
+Start with one duplex window connection, asynchronous I/O, and one request awaiting
 its reply. Queue long-running engine work and return promptly; a move must not
 hold the request slot until all files have moved. Launch forwarding uses bounded
-short-lived pipe instances at the same endpoint and contract, so an attached UI
+short-lived pipe instances at the same endpoint and contract, so an attached window
 cannot prevent another launch from forwarding its request.
 
 The engine also sends bounded control notifications for activation, close
-requests and desktop notices. One receive dispatcher separates them from replies;
+requests, desktop notices, and opening Settings after the person selects a
+notification about a broken torrent handler. One receive dispatcher separates them from replies;
 one writer per connection serializes whole frames so notifications and replies
 cannot interleave. A close request for Exit runs asynchronously, outside the
 request slot and receive loop, so committed edits are sent and unfinished input
-can be prompted before the window closes. A clean UI closes without prompting;
-the [interface](interface.md#committing-edits) owns that behavior. A UI whose
+can be prompted before the window closes. A clean window closes without prompting;
+the [interface](interface.md#committing-edits) owns that behavior. A window whose
 user keeps unfinished input replies that Exit is cancelled. The same close reply
 distinguishes waiting for the person from continuing closure, so an unanswered
 draft prompt cannot trigger an unresponsive-window warning. The engine's
@@ -32,7 +33,7 @@ draft prompt cannot trigger an unresponsive-window warning. The engine's
 another transport or event bus.
 
 Commands take priority over optional refreshes. Bound the command queue and
-report overload. A slow or absent UI cannot block transfers or create an
+report overload. A slow or absent window cannot block transfers or create an
 unlimited notification backlog.
 
 ## Encoding and validation
@@ -51,7 +52,7 @@ Define each message's fields, units, and limits once, beside the implementation.
 Handle partial reads/writes and reject a length over the limit before
 allocating. Keep blocking I/O away from the WinUI thread. Transport validation
 checks structure and bounds; the engine checks whether an operation is legal in
-current application state. Start with the operations the actual UI needs.
+current application state. Start with the operations the actual window needs.
 
 The first message carries the protocol version and an engine-session identity.
 Both executables ship together, so reject a different version with a usable
@@ -61,7 +62,7 @@ engine per user and otherwise fail on a missing field instead of this error. The
 previews and other transient references; durable torrent identities survive a
 restart, and info hashes do not replace them.
 The greeting also gives the engine executable and absolute data-directory paths
-for an explicit Restart, so a surviving UI restarts the same saved store rather
+for an explicit Restart, so a surviving window restarts the same saved store rather
 than silently choosing a different developer or user-data location.
 
 ## Outcomes and reconnection
@@ -73,10 +74,10 @@ a wait does not cancel work the engine already accepted.
 Each command names the state the user wants, not a step: Pause means "make it
 paused", and adding a torrent the engine already holds returns that torrent.
 Repeating a command after an uncertain reply is therefore safe. After a
-reconnect the UI reads the list again, and the confirmed list is the outcome; no
+reconnect the window reads the list again, and the confirmed list is the outcome; no
 store of past outcomes is needed.
 
-Delete-data and relocation are the exception, because repeating them is not
+Delete-data and moves are the exception, because repeating them is not
 safe. Never repeat one automatically after an uncertain reply. The list read
 after reconnecting shows whether it was accepted: a deleted torrent has left the
 list, and a moving torrent shows its move. A missing row does not prove the files
@@ -88,7 +89,7 @@ Edit commands carry the intended fields and target identity defined by
 [committed edits](engine.md#committed-edits). Report an engine refusal distinctly
 from transport failure. There is no separate draft-conflict message family.
 
-Send stable status/error codes and typed arguments, not English sentences the UI
+Send stable status/error codes and typed arguments, not English sentences the window
 must parse. The [localisation contract](localisation.md) owns rendering, including
 a generic message for unknown codes and optional raw diagnostic detail.
 
@@ -105,10 +106,10 @@ While WinUI is connected, refresh the summary once a second, as other clients do
 and after each command. Allow at most one refresh in flight. Commands go before
 refresh and detail reads, and each view keeps at most one unsent read: a newer
 read replaces it, and a closed or changed view withdraws it. Use stable torrent
-identity to preserve UI selection, focus, and drafts across refresh/reconnect.
+identity to preserve the window's selection, focus, and drafts across refresh/reconnect.
 If the torrent was removed, recover focus predictably and mark its draft target
 unavailable; never attach that draft to a re-added torrent with the same hashes.
-The UI owns those presentation states, not another torrent database.
+The window owns those presentation states, not another torrent database.
 
 A detail reply also belongs to the engine session, torrent, and inspector context
 that requested it. Apply it on the UI dispatcher only while that same consumer
@@ -122,7 +123,7 @@ so the 16 MiB limit holds well over ten thousand torrents; add paging only when 
 real set exceeds it. Paging must then still deliver one coherent snapshot, let
 commands run between pages, and complete while transfers continue.
 
-Stop refresh work when its UI consumer exits. Details and old snapshots do not
+Stop refresh work when its window consumer exits. Details and old snapshots do not
 accumulate behind a disconnected client. Speed history is engine state with its
 own [bound](engine.md#state-and-work), not data kept for a client, so it continues. Do not add field-level
 patches, replay logs, or another cache authority to avoid modest summary copies.
@@ -152,7 +153,7 @@ instructions cannot misdirect an Add or priority edit.
 `delete_files` reads `torrent_ids`, commits removal, and replies with
 `kept_files`. Payload deletion then continues without the removed rows; failures
 are notified and logged. It never refuses because files are busy, following
-[the deletion ruling](engine.md#removal-and-relocation): a torrent whose own
+[the deletion ruling](engine.md#removal-and-moves): a torrent whose own
 files are moving or being renamed, or that is deleted while an addition runs,
 leaves the snapshot at once and is removed when that work ends. Cancellation or disconnect cannot undo
 accepted file work, and reconnect never repeats an uncertain destructive command.

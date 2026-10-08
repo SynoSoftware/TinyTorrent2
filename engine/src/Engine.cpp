@@ -68,8 +68,6 @@ Json Success(Json data)
     return {{"ok", true}, {"data", std::move(data)}};
 }
 
-namespace
-{
 char const* ToString(ErrorCode code)
 {
     switch (code)
@@ -81,11 +79,11 @@ char const* ToString(ErrorCode code)
     case ErrorCode::InvalidDestination: return "invalid_destination";
     case ErrorCode::InvalidPriorities: return "invalid_priorities";
     case ErrorCode::InvalidTrackers: return "invalid_trackers";
-    case ErrorCode::InvalidTargets: return "invalid_targets";
+    case ErrorCode::InvalidTorrents: return "invalid_torrents";
     case ErrorCode::ResponseTooLarge: return "response_too_large";
-    case ErrorCode::UiConnected: return "ui_connected";
+    case ErrorCode::WindowConnected: return "window_connected";
     case ErrorCode::Starting: return "starting";
-    case ErrorCode::Stopping: return "stopping";
+    case ErrorCode::ShuttingDown: return "shutting_down";
     case ErrorCode::Unavailable: return "unavailable";
     case ErrorCode::Overloaded: return "overloaded";
     case ErrorCode::StorageFailed: return "storage_failed";
@@ -94,6 +92,7 @@ char const* ToString(ErrorCode code)
     case ErrorCode::SharedFiles: return "shared_files";
     case ErrorCode::DestinationConflict: return "destination_conflict";
     case ErrorCode::DestinationInUse: return "destination_in_use";
+    case ErrorCode::MoveInterrupted: return "move_interrupted";
     case ErrorCode::MetadataUnavailable: return "metadata_unavailable";
     case ErrorCode::PreviewExpired: return "preview_expired";
     case ErrorCode::PreviewFailed: return "preview_failed";
@@ -104,6 +103,8 @@ char const* ToString(ErrorCode code)
     return "";
 }
 
+namespace
+{
 Json Error(char const* code, std::string detail)
 {
     return {{"ok", false}, {"error", {{"code", code}, {"detail", std::move(detail)}}}};
@@ -143,7 +144,9 @@ char const* ToString(NoticeKind kind)
     case NoticeKind::Duplicate: return "duplicate";
     case NoticeKind::AddFailed: return "add_failed";
     case NoticeKind::DeleteFailed: return "delete_failed";
+    case NoticeKind::Failure: return "failure";
     case NoticeKind::Background: return "background";
+    case NoticeKind::MissingProgram: return "missing_program";
     case NoticeKind::Aggregate: return "aggregate";
     }
     return "";
@@ -153,11 +156,11 @@ char const* ToString(NoticeKind kind)
 Engine::Engine(std::filesystem::path directory, std::function<void()> wake) :
     state_(std::make_unique<State>(std::move(directory), std::move(wake))) {}
 Engine::~Engine() = default;
-void Engine::Execute(Json const& request, std::string const& connection, Reply reply)
+void Engine::Execute(Json const& request, std::string const& connectionId, Reply reply)
 {
     try
     {
-        state_->Execute(request, connection, reply);
+        state_->Execute(request, connectionId, reply);
     }
     catch (std::exception const& error)
     {
@@ -165,34 +168,43 @@ void Engine::Execute(Json const& request, std::string const& connection, Reply r
     }
 }
 void Engine::Tick() { state_->Tick(); }
-void Engine::Disconnect(std::string const& connection) { state_->Disconnect(connection); }
+void Engine::Disconnect(std::string const& connectionId) { state_->Disconnect(connectionId); }
 void Engine::Shutdown(std::function<void(std::optional<std::string> failure)> completion) { state_->Shutdown(std::move(completion)); }
-void Engine::PauseSession(bool paused, std::function<void(Outcome)> done)
+void Engine::PauseSession(bool paused, std::function<void(Outcome)> completion)
 {
     if (auto refusal = state_->Refusal())
     {
-        done({*refusal});
+        completion({*refusal});
         return;
     }
-    state_->PauseSession(paused, std::move(done));
+    state_->PauseSession(paused, std::move(completion));
 }
-void Engine::RecordBackgroundNotice(std::function<void(Outcome)> done)
+void Engine::RecordBackgroundNotice(std::function<void(Outcome)> completion)
 {
     if (auto refusal = state_->Refusal())
     {
-        done({*refusal});
+        completion({*refusal});
         return;
     }
-    state_->RecordBackgroundNotice(std::move(done));
+    state_->RecordBackgroundNotice(std::move(completion));
 }
-void Engine::Add(std::string const& source, std::function<void(Outcome, Added)> done)
+void Engine::RecordPrograms(std::vector<std::string> programs, std::function<void(Outcome)> completion)
 {
     if (auto refusal = state_->Refusal())
     {
-        done({*refusal}, {});
+        completion({*refusal});
         return;
     }
-    state_->AddSource(source, std::move(done));
+    state_->RecordPrograms(std::move(programs), std::move(completion));
+}
+void Engine::Add(std::string const& source, std::function<void(Outcome, Added)> completion)
+{
+    if (auto refusal = state_->Refusal())
+    {
+        completion({*refusal}, {});
+        return;
+    }
+    state_->AddSource(source, std::move(completion));
 }
 Json Engine::Snapshot() const { return state_->Snapshot(); }
 Activity Engine::Activity() const { return state_->Activity(); }
@@ -217,7 +229,7 @@ bool Engine::IsSource(std::string const& source)
     return !source.empty() && source.size() <= 32'768 && source.find('\0') == std::string::npos;
 }
 
-bool Engine::IsStopping() const { return state_->stopping; }
+bool Engine::IsShuttingDown() const { return state_->shuttingDown; }
 bool Engine::IsLoading() const { return state_->startup != Startup::Ready; }
 bool Engine::HasStorageFailure() const { return !state_->startupError.empty(); }
 std::string Engine::StartupError() const { return state_->startupError; }

@@ -163,13 +163,13 @@ Capture journeys are excluded from ordinary builds. Build the app with
 `/p:EnableCapture=true` to include them; its output and intermediates use the
 `_capture` suffix under `artifacts/`, so a diagnostic build cannot replace the
 ordinary product. The option does not launch anything.
-Launch the window executable in `artifacts/bin/TinyTorrent/debug_win-x64_capture/`,
-or `release_win-x64_capture` for a Release build, with the engine beside it;
-[Directory.Build.props](../Directory.Build.props)
-names both.
-Historical disposable launchers that name
-`release_win-x64` must have both executable paths changed before reuse; capture
-environment variables do not enable diagnostics in an ordinary binary.
+Run a review with the launcher, [Capture.ps1](../app/tests/Capture.ps1) `-Review <mode>`.
+It prepares a disposable store from the fixture in `app/tests/Store/`, or
+generates the torrents a mode needs, then starts the engine and hidden window
+from `artifacts/bin/TinyTorrent/debug_win-x64_capture/` and fails when the
+review reports a failure. Pass `-ArtifactsPath` when the capture build is in a
+lane. Evidence goes to `evidence/Capture-<mode>-<id>` in that output folder.
+Capture environment variables do not enable diagnostics in an ordinary binary.
 
 For UI reviews, use the automation tree for controls, state, bounds and focus;
 capture pixels when they establish a visual finding. A review launch may set
@@ -185,7 +185,7 @@ application. Normal launches perform no automatic capture.
 Use `TINYTORRENT_CAPTURE_REVIEW=smoke` to rerun the recovery journeys without
 repeating the Settings viewport or full themes-and-sizes batches.
 Use `TINYTORRENT_CAPTURE_REVIEW=add-layout` for the workspace headers and empty/long-link
-magnet Add form in English and Spanish, Light and Dark, at the three review sizes.
+magnet Add dialog in English and Spanish, Light and Dark, at the three review sizes.
 It also captures the connection overlay with its action at the right and records
 workspace bounds before and after; this is presentation evidence with a connected
 engine, not a simulated connection failure.
@@ -203,6 +203,11 @@ The Paused/All filter changes use the real owner with an idle disposable torrent
 error and update states are presentation overrides retained through binding
 refresh. The report records their survival and workspace bounds for review,
 not layout assertions. It does not trigger an engine failure or open an update.
+It then resumes the paused fixture through the real Resume command while every
+transfer stays paused, and checks at every size, language and theme that the row
+shows All paused and that the informational notice names the torrent and offers
+Resume. It does not press that button, and pauses the fixture again afterwards.
+It does not cover a scheduled pause or a missing adapter.
 Use `TINYTORRENT_CAPTURE_REVIEW=shell` for the title-bar menus, narrow layouts,
 themes, selection commands, secondary pages and retained filter state.
 It also queries the review window's native `WM_NCHITTEST` response at the app
@@ -210,7 +215,7 @@ icon, menu and command centers, and unused caption space. This catches controls
 classified as draggable or an icon without system-menu semantics. It sends no
 input and establishes only top-level hit classification, not physical pointer
 delivery, child input routing or native caption-button actions.
-Use `TINYTORRENT_CAPTURE_REVIEW=preferences-layout` for General Settings and
+Use `TINYTORRENT_CAPTURE_REVIEW=settings-layout` for General Settings and
 completion feedback in English and Spanish, Light and Dark, at the three review
 sizes. It reveals Startup and Default app sections, checks native registration
 switches against their observed model state, and leaves Windows registrations
@@ -224,7 +229,7 @@ navigation, named-setting focus and reopening suggestions. It captures localized
 results across themes and sizes; it does not synthesize Ctrl+K keyboard input.
 Use `TINYTORRENT_CAPTURE_REVIEW=edits` for ordinary Settings departure,
 new input and explicit commits during a pending acknowledgement, and schedule
-Save/Discard/Cancel. The acknowledgement races change the preference input
+Save/Discard/Cancel. The acknowledgement races change the setting input
 synchronously before the UI thread yields and verify its native display
 afterward; ordinary departure uses native editors. A two-field departure edits
 Download again when Upload starts saving, then verifies that the first navigation
@@ -232,7 +237,7 @@ applies both values. This catches an earlier field being left unsaved after the
 departure loop has passed it. The check restores its
 fixture values and periods. It does not simulate keyboard delivery or engine
 refusal.
-Use `TINYTORRENT_CAPTURE_REVIEW=library` only with the disposable library
+Use `TINYTORRENT_CAPTURE_REVIEW=library` only with the
 launcher's `library-capture.json` manifest. It checks native filter and named
 torrent selection with 300 real paused torrents, then captures the populated
 workspace, filter drawer, multi-file inspector and Pieces. Native hierarchy
@@ -245,27 +250,28 @@ with mixed states, partial progress and 20,000 aggregated pieces. They replace
 only the diagnostic map temporarily; the live torrent header describes another
 fixture. These images establish rendering, not engine accuracy or live transfers.
 No live traffic is implied by this paused fixture.
-Use `TINYTORRENT_CAPTURE_REVIEW=traffic` only with the disposable loopback
+Use `TINYTORRENT_CAPTURE_REVIEW=traffic` only with the
 launcher's `traffic-capture.json` manifest. It captures the active workspace,
 General, populated Peers, mixed Pieces and nonzero Speed history across the
 same matrix. It uses the existing Transfer peer and current engine; it does
-not repeat completed-download integrity checks or send desktop input.
+not repeat completed-download integrity checks or send desktop input. Like the
+engine's transfer checks, it runs only when the owner asks, with `-Transfer`.
 Use `TINYTORRENT_CAPTURE_REVIEW=schedule` for exact-minute overnight editing,
 validation, cancellation, moving and removal, with the schedule overview,
 selection and editor at all three sizes in English and Spanish, Light and Dark.
-Use `TINYTORRENT_CAPTURE_REVIEW=desktop` with the disposable desktop launcher for
+Use `TINYTORRENT_CAPTURE_REVIEW=desktop` through the launcher for
 declining Exit with unfinished input and reconnecting an open tracker draft.
 Its restart handshake affects only the launcher's own fixture engine; it does
 not automate the desktop or establish native notification/power behavior.
 Use `TINYTORRENT_CAPTURE_REVIEW=details` for the native priority, tracker,
-live-language and preference recovery journeys without repeating the full
+live-language and setting recovery journeys without repeating the full
 layout matrix. It captures populated Trackers in both languages and themes at
 the three review sizes after saving several URLs and tiers through the real
 editor, then restores the original list. The disposable fixture stays paused;
 this establishes populated layout and edit outcomes, not live tracker responses.
 `details-files` limits correction captures to Files and localized selected
 Settings choices; it does not repeat those behavioral journeys.
-Use `TINYTORRENT_CAPTURE_REVIEW=files` with the disposable files launcher for
+Use `TINYTORRENT_CAPTURE_REVIEW=files` through the launcher for
 shared Move/Delete confirmations, native submissions, collision refusal and
 byte preservation. `files-layout` stops after the Move layout and ownership
 refusal, preserving fixture membership and payload. These modes require the
@@ -279,7 +285,7 @@ surfaces, color, state, and responsive layout against relevant Windows and
 Fluent guidance. A sequential roleplay of representative human users is an
 additional usability smoke test: check discoverability, task completion and
 avoidable friction. It is reasoning, not runtime evidence, and native WinUI
-design principles take precedence when preferences conflict. Record both the
+design principles take precedence when they conflict. Record both the
 judgment and the actual evidence; neither replaces the other.
 
 XAML images exclude native window chrome, system dialogs and desktop acrylic.
@@ -325,5 +331,5 @@ required.
 Data-integrity changes need focused evidence when they occur. Broader fault and
 release checks cover simultaneous launches, Unicode paths, malformed messages,
 write failures, remove/re-add races, incoming seeding, actual peer limits, and
-shutdown during relocation. These scenarios guide relevant checks, not a suite
+shutdown during a move. These scenarios guide relevant checks, not a suite
 to run after every edit. Report untested conditions honestly.

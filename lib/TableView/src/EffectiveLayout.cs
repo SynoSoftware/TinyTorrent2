@@ -1,16 +1,16 @@
 namespace Syno.TableView;
 
 /// <summary>
-/// One column's resolved state. Width and visibility are baseline plus an optional override so
+/// One column's effective state. Width and visibility are baseline plus an optional override so
 /// that section 18's sparse override maps can be emitted without guessing.
 /// </summary>
-internal sealed class ResolvedColumn
+internal sealed class EffectiveColumn
 {
-    internal ResolvedColumn(Column column, bool hierarchy = false)
+    internal EffectiveColumn(Column column, bool hierarchy = false)
     {
         Column = column;
         IsHierarchy = hierarchy;
-        BaselineWidth = Clamp(column.Width, column.MinWidth, column.MaxWidth);
+        BaselineWidth = Clamp(column.Width);
     }
 
     internal Column Column { get; }
@@ -20,10 +20,10 @@ internal sealed class ResolvedColumn
     /// <summary>The persistence key, or null for a column the host does not persist.</summary>
     internal string? Id => Column.Id;
 
-    /// <summary>Declared default width after the column's own bounds are applied.</summary>
+    /// <summary>Declared default width, raised to the column's minimum.</summary>
     internal double BaselineWidth { get; }
 
-    internal bool BaselineVisibility => IsHierarchy || Column.IsVisible;
+    internal bool IsBaselineVisible => IsHierarchy || Column.IsVisible;
 
     internal double? WidthOverride { get; set; }
 
@@ -31,34 +31,22 @@ internal sealed class ResolvedColumn
 
     internal double Width => WidthOverride ?? BaselineWidth;
 
-    internal bool IsVisible => IsHierarchy || (VisibilityOverride ?? BaselineVisibility);
+    internal bool IsVisible => IsHierarchy || (VisibilityOverride ?? IsBaselineVisible);
 
-    internal static double Clamp(double value, double min, double max)
-    {
-        if (value < min)
-        {
-            value = min;
-        }
-
-        if (value > max)
-        {
-            value = max;
-        }
-
-        return value;
-    }
+    /// <summary>This width raised to the column's minimum, the only bound a width has.</summary>
+    internal double Clamp(double width) => Math.Max(width, Column.MinWidth);
 }
 
 /// <summary>A visible column with its derived geometry.</summary>
 internal readonly struct VisibleColumn
 {
-    internal VisibleColumn(ResolvedColumn column, double offset)
+    internal VisibleColumn(EffectiveColumn column, double offset)
     {
         Column = column;
         Offset = offset;
     }
 
-    internal ResolvedColumn Column { get; }
+    internal EffectiveColumn Column { get; }
 
     /// <summary>Cumulative x of this column's left edge.</summary>
     internal double Offset { get; }
@@ -67,30 +55,30 @@ internal readonly struct VisibleColumn
 }
 
 /// <summary>
-/// The single geometry source. The header panel and every realized row panel read it and
+/// The single layout source. The header panel and every realized row panel read it and
 /// nothing else computes column geometry.
 /// </summary>
-internal sealed class ResolvedLayout
+internal sealed class EffectiveLayout
 {
-    private readonly List<ResolvedColumn> _order = new();
+    private readonly List<EffectiveColumn> _order = new();
     private readonly List<VisibleColumn> _visible = new();
     private double _totalWidth;
 
     internal event EventHandler<LayoutInvalidationReason>? Invalidated;
 
     /// <summary>The complete ordered column list, including hidden columns.</summary>
-    internal IReadOnlyList<ResolvedColumn> Order => _order;
+    internal IReadOnlyList<EffectiveColumn> Order => _order;
 
     /// <summary>Derived visible geometry, in effective order.</summary>
     internal IReadOnlyList<VisibleColumn> VisibleColumns => _visible;
 
-    /// <summary>Sum of visible resolved widths.</summary>
+    /// <summary>Sum of visible effective widths.</summary>
     internal double TotalWidth => _totalWidth;
 
-    /// <summary>The resolved column with this ID, or null when no column declares it.</summary>
-    internal ResolvedColumn? Find(string id)
+    /// <summary>The effective column with this ID, or null when no column declares it.</summary>
+    internal EffectiveColumn? Find(string id)
     {
-        foreach (ResolvedColumn column in _order)
+        foreach (EffectiveColumn column in _order)
         {
             if (string.Equals(column.Id, id, StringComparison.Ordinal))
             {
@@ -102,12 +90,12 @@ internal sealed class ResolvedLayout
     }
 
     /// <summary>
-    /// The resolved column for this definition, or null when the table did not declare it. By
+    /// The effective column for this definition, or null when the table did not declare it. By
     /// reference, so it answers for a column the host chose not to give a persistence key.
     /// </summary>
-    internal ResolvedColumn? Find(Column declared)
+    internal EffectiveColumn? Find(Column declared)
     {
-        foreach (ResolvedColumn column in _order)
+        foreach (EffectiveColumn column in _order)
         {
             if (ReferenceEquals(column.Column, declared))
             {
@@ -119,7 +107,7 @@ internal sealed class ResolvedLayout
     }
 
     /// <summary>This column's place among the visible ones, or -1 when it is hidden.</summary>
-    internal int IndexOfVisible(ResolvedColumn column)
+    internal int IndexOfVisible(EffectiveColumn column)
     {
         for (int i = 0; i < _visible.Count; i++)
         {
@@ -150,7 +138,7 @@ internal sealed class ResolvedLayout
         return -1;
     }
 
-    internal void SetOrder(IEnumerable<ResolvedColumn> columns)
+    internal void SetOrder(IEnumerable<EffectiveColumn> columns)
     {
         _order.Clear();
         _order.AddRange(columns);
@@ -165,19 +153,22 @@ internal sealed class ResolvedLayout
         // Always the structural reason, whatever the new order turns out to look like. This call is
         // also what re-applies each header cell's sort indicator, and both a reset and a restored
         // layout can change the sort while leaving the visible columns exactly as they were.
-        Resolve(LayoutInvalidationReason.Columns);
+        Publish(LayoutInvalidationReason.Columns);
     }
 
     /// <summary>Recompute derived visible geometry and announce what changed about it.</summary>
-    internal void Rebuild() => Resolve(VisibleColumnsUnchanged()
-        ? LayoutInvalidationReason.Widths
-        : LayoutInvalidationReason.Columns);
+    internal void Rebuild() =>
+        Publish(
+            VisibleColumnsUnchanged()
+                ? LayoutInvalidationReason.Widths
+                : LayoutInvalidationReason.Columns
+        );
 
-    private void Resolve(LayoutInvalidationReason reason)
+    private void Publish(LayoutInvalidationReason reason)
     {
         _visible.Clear();
         double x = 0;
-        foreach (ResolvedColumn column in _order)
+        foreach (EffectiveColumn column in _order)
         {
             if (!column.IsVisible)
             {
@@ -197,7 +188,7 @@ internal sealed class ResolvedLayout
     /// </summary>
     /// <remarks>
     /// A resize moves widths inside a set that has not changed, and it does so on every pointer
-    /// move of the drag. Told only that the geometry moved, every realized row panel reconciles its
+    /// move of the drag. Told only that the layout changed, every realized row panel reconciles its
     /// cells against the visible columns before measuring — a scan per child and a content write per
     /// cell, across every realized row — to arrive at the children it already had. Separating the
     /// two lets a resize ask for the measure it needs and nothing else.
@@ -206,15 +197,14 @@ internal sealed class ResolvedLayout
     {
         int published = 0;
 
-        foreach (ResolvedColumn column in _order)
+        foreach (EffectiveColumn column in _order)
         {
             if (!column.IsVisible)
             {
                 continue;
             }
 
-            if (published >= _visible.Count
-                || !ReferenceEquals(_visible[published].Column, column))
+            if (published >= _visible.Count || !ReferenceEquals(_visible[published].Column, column))
             {
                 return false;
             }

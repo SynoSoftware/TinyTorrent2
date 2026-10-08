@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Windows.Foundation;
@@ -5,15 +6,110 @@ using Windows.Foundation;
 namespace Syno.TableView;
 
 /// <summary>
-/// Every operation on the resolved column layout: section 10's widths and fits, section 11's move,
-/// and the visibility change section 12's menu makes. Each one has a matching predicate, so a menu
-/// item is enabled by the same rule that decides whether the operation changes anything.
+/// The column baseline, the cell padding and header buttons settings, and every operation on the
+/// effective column layout: section 10's widths and fits, section 11's move, and the visibility
+/// change section 12's menu makes. Each operation has a matching predicate, so a menu item is
+/// enabled by the same rule that decides whether the operation changes anything.
 /// </summary>
 public sealed partial class Table
 {
     private static readonly Size Unbounded = new(double.PositiveInfinity, double.PositiveInfinity);
 
-    private bool _firstRowsFitted;
+    private bool _filledOnce;
+    private bool _fitButtonHidden;
+    private bool _fillButtonHidden;
+
+    private static readonly Thickness DefaultCellPadding = new(12, 6, 12, 6);
+
+    public static readonly DependencyProperty ShowsHeaderButtonsProperty =
+        DependencyProperty.Register(
+            nameof(ShowsHeaderButtons),
+            typeof(bool),
+            typeof(Table),
+            new PropertyMetadata(false, OnHeaderButtonsChanged)
+        );
+
+    public static readonly DependencyProperty CellPaddingProperty = DependencyProperty.Register(
+        nameof(CellPadding),
+        typeof(Thickness),
+        typeof(Table),
+        new PropertyMetadata(DefaultCellPadding)
+    );
+
+    /// <summary>
+    /// The immutable column baseline. Setup-only: the table captures it at its first
+    /// <c>Loaded</c> and a structural change afterwards is a configuration error.
+    /// </summary>
+    public ObservableCollection<Column> Columns { get; } = new();
+
+    /// <summary>
+    /// Offer <see cref="FitColumns"/> and <see cref="FillWidth"/> as buttons in the header's
+    /// trailing space. Off by default.
+    /// </summary>
+    /// <remarks>
+    /// The commands already exist in the header context menu of section 12; these are the same
+    /// commands made discoverable, in space that is otherwise empty. It is opt-in rather than on
+    /// by default because the table should not add a visible control to a host's header uninvited,
+    /// and a host with its own buttons for these commands would otherwise show two of each.
+    /// <para>
+    /// Turning it on does not guarantee they are shown. The strip hides them whenever the columns
+    /// reach far enough right to want that space, so they never cover a header.
+    /// </para>
+    /// </remarks>
+    public bool ShowsHeaderButtons
+    {
+        get => (bool)GetValue(ShowsHeaderButtonsProperty);
+        set => SetValue(ShowsHeaderButtonsProperty, value);
+    }
+
+    /// <summary>
+    /// The inset inside every column, applied to the header cell and the row cell alike so that
+    /// the two cannot drift apart. Read as each cell is realized, so a host that wants its own
+    /// sets it in XAML or in an implicit <c>Style</c>, the way any control default is overridden.
+    /// </summary>
+    /// <remarks>
+    /// The horizontal 12 is the platform's: it is what the resource tree publishes for an item in a
+    /// list, corroborated three ways — <c>ListBoxItemPadding</c> 12,9,12,12,
+    /// <c>SelectorBarItemPadding</c> 12,10,12,7, and <c>PivotItemMargin</c> 12,0,12,0 — and it is
+    /// also what both hosts here had arrived at independently. The vertical 6 has no platform
+    /// source: enumerating all 7,484 <c>Thickness</c> resources found no cell padding at all, and
+    /// what settles it is that the two hosts had independently written 6 as well.
+    /// </remarks>
+    public Thickness CellPadding
+    {
+        get => (Thickness)GetValue(CellPaddingProperty);
+        set => SetValue(CellPaddingProperty, value);
+    }
+
+    /// <summary>
+    /// The person hid the <see cref="FitColumns"/> button from the header menu. It persists in
+    /// <see cref="Layout"/>, as a hidden column does.
+    /// </summary>
+    internal bool FitButtonHidden
+    {
+        get => _fitButtonHidden;
+        set
+        {
+            _fitButtonHidden = value;
+            RaiseLayoutChanged(LayoutChange.Visibility);
+        }
+    }
+
+    /// <summary>The same choice for the <see cref="FillWidth"/> button.</summary>
+    internal bool FillButtonHidden
+    {
+        get => _fillButtonHidden;
+        set
+        {
+            _fillButtonHidden = value;
+            RaiseLayoutChanged(LayoutChange.Visibility);
+        }
+    }
+
+    private static void OnHeaderButtonsChanged(
+        DependencyObject d,
+        DependencyPropertyChangedEventArgs e
+    ) => ((Table)d)._headerStrip?.UpdateButtons();
 
     /// <summary>
     /// Fit one column to the header and cells the current visual layout has already realized.
@@ -23,7 +119,7 @@ public sealed partial class Table
     public void Fit(Column column) => Fit(RequireColumn(column, nameof(column)));
 
     /// <summary>The same fit for a column the header's separator and menu have resolved.</summary>
-    internal void Fit(ResolvedColumn column)
+    internal void Fit(EffectiveColumn column)
     {
         if (FitColumn(column))
         {
@@ -36,51 +132,144 @@ public sealed partial class Table
     /// </summary>
     public void FitColumns()
     {
-        bool changed = false;
-
-        // Each fit republishes the geometry, so the visible set is taken before the first one.
-        foreach (VisibleColumn visible in Geometry.VisibleColumns.ToArray())
-        {
-            changed |= FitColumn(visible.Column);
-        }
-
-        if (changed)
+        if (FitVisible())
         {
             RaiseLayoutChanged(LayoutChange.Fit);
         }
     }
 
     /// <summary>
-    /// Section 10's first-rows fit: once rows are on screen, fit every column, unless a column
-    /// already has a width the person chose. That width came from a saved layout, a resize or a
-    /// fit, and the person's choice wins over the content.
+    /// Fit each visible resizable column, then scale those columns so they end where the header
+    /// buttons begin, or at the table's right edge when it offers none, and report the whole
+    /// operation once.
     /// </summary>
-    private void OnRowsLayoutUpdated(object? sender, object e)
+    public void FillWidth()
     {
-        if (_itemsView?.ItemsPanelRoot is not ItemsStackPanel { FirstVisibleIndex: >= 0 })
+        // The fit and the scale each move widths, and a second fill moves them away and back, so
+        // only the widths the command ends with say whether it changed anything.
+        double[] before = EffectiveLayout.VisibleColumns.Select(visible => visible.Width).ToArray();
+
+        FitVisible();
+        ScaleToWidth();
+
+        if (!EffectiveLayout.VisibleColumns.Select(visible => visible.Width).SequenceEqual(before))
+        {
+            RaiseLayoutChanged(LayoutChange.Fit);
+        }
+    }
+
+    /// <summary>
+    /// Scale the visible resizable columns by one factor so the visible columns end at the
+    /// header strip's room: wider when there is space left, narrower when they run past it.
+    /// </summary>
+    /// <remarks>
+    /// One factor keeps the fitted proportions, so the columns a fit found widest, which are the
+    /// most likely to hold longer values in rows not yet shown, keep the most room. A column the
+    /// factor would take below its <see cref="Column.MinWidth"/> stays there and the others share
+    /// what is left; when even the minimums do not fit, the columns run past the edge as section 8
+    /// allows.
+    /// </remarks>
+    private void ScaleToWidth()
+    {
+        double width = _headerStrip?.Room ?? 0;
+        if (width <= 0)
         {
             return;
         }
 
-        _firstRowsFitted = true;
-        _itemsView.LayoutUpdated -= OnRowsLayoutUpdated;
+        List<EffectiveColumn> scaled = EffectiveLayout
+            .VisibleColumns.Select(visible => visible.Column)
+            .Where(CanFitColumn)
+            .ToList();
 
-        if (Geometry.Order.All(column => column.WidthOverride is null))
+        // What the scaled columns share: the room less the visible columns that keep theirs.
+        double room = width - EffectiveLayout.TotalWidth + scaled.Sum(column => column.Width);
+
+        while (scaled.Count > 0)
         {
-            FitColumns();
+            double factor = Math.Max(room, 0) / scaled.Sum(column => column.Width);
+            EffectiveColumn[] floored = scaled
+                .Where(column => column.Width * factor < column.Column.MinWidth)
+                .ToArray();
+
+            if (floored.Length == 0)
+            {
+                foreach (EffectiveColumn column in scaled)
+                {
+                    SetColumnWidth(column, column.Width * factor);
+                }
+
+                break;
+            }
+
+            foreach (EffectiveColumn column in floored)
+            {
+                SetColumnWidth(column, column.Column.MinWidth);
+                room -= column.Column.MinWidth;
+                scaled.Remove(column);
+            }
+        }
+    }
+
+    /// <returns>False when no width changed.</returns>
+    private bool FitVisible()
+    {
+        bool changed = false;
+
+        // Each fit republishes the layout, so the visible set is taken before the first one.
+        foreach (VisibleColumn visible in EffectiveLayout.VisibleColumns.ToArray())
+        {
+            changed |= FitColumn(visible.Column);
+        }
+
+        return changed;
+    }
+
+    private void OnHeaderSizeChanged(object sender, SizeChangedEventArgs e) => FillOnce();
+
+    /// <summary>
+    /// Section 10's first fill: the first time the table has a width, scale the declared widths to
+    /// it, unless a column already has a width the person chose. That width came from a saved
+    /// layout, a resize or a fit, and the person's choice wins.
+    /// </summary>
+    /// <remarks>
+    /// The scale alone, without <see cref="FillWidth"/>'s fit: a fit would measure whatever rows
+    /// happen to be realized at that moment, and the declared widths are the host's proportions.
+    /// Silent, as the rest of the initial layout is.
+    /// </remarks>
+    private void FillOnce()
+    {
+        if (_filledOnce || !_schemaCaptured || _headerStrip is not { Room: > 0 } strip)
+        {
+            return;
+        }
+
+        _filledOnce = true;
+        strip.SizeChanged -= OnHeaderSizeChanged;
+
+        if (EffectiveLayout.Order.All(column => column.WidthOverride is null))
+        {
+            ScaleToWidth();
+            strip.UpdateButtons();
         }
     }
 
     /// <summary>
     /// Sections 5 and 10: return to the captured baseline. Every width and visibility override is
-    /// discarded, the effective order returns to the declared one, and because that baseline
-    /// carries no sort criterion the local sort goes with it. It fits nothing to the current data.
+    /// discarded, hidden header buttons are shown again, the effective order returns to the
+    /// declared one, and because that baseline carries no sort criterion the local sort goes with
+    /// it. It fits nothing to the current data.
     /// </summary>
     public void ResetLayout()
     {
-        bool changed = !Geometry.Order.SequenceEqual(_resolved);
+        bool changed =
+            !EffectiveLayout.Order.SequenceEqual(_baselineOrder)
+            || _fitButtonHidden
+            || _fillButtonHidden;
+        _fitButtonHidden = false;
+        _fillButtonHidden = false;
 
-        foreach (ResolvedColumn column in _resolved)
+        foreach (EffectiveColumn column in _baselineOrder)
         {
             changed |= column.WidthOverride is not null || column.VisibilityOverride is not null;
             column.WidthOverride = null;
@@ -93,9 +282,9 @@ public sealed partial class Table
             return;
         }
 
-        // SetOrder republishes the geometry, which re-realizes each header cell and so clears the
+        // SetOrder republishes the layout, which re-realizes each header cell and so clears the
         // sort glyph of the column that had one.
-        Geometry.SetOrder(_resolved);
+        EffectiveLayout.SetOrder(_baselineOrder);
 
         if (sorted)
         {
@@ -106,23 +295,24 @@ public sealed partial class Table
     }
 
     /// <summary>Section 12: a fit is offered for a visible column the host allows to be resized.</summary>
-    internal bool CanFitColumn(ResolvedColumn column) => column.IsVisible && column.Column.CanResize;
+    internal bool CanFitColumn(EffectiveColumn column) =>
+        column.IsVisible && column.Column.CanResize;
 
     internal bool CanFitColumns =>
-        Geometry.VisibleColumns.Any(visible => CanFitColumn(visible.Column));
+        EffectiveLayout.VisibleColumns.Any(visible => CanFitColumn(visible.Column));
 
-    /// <summary>Give this column a width override and republish the geometry.</summary>
-    /// <returns>False when the clamped width is the width already resolved.</returns>
-    internal bool SetColumnWidth(ResolvedColumn column, double width)
+    /// <summary>Give this column a width override and republish the layout.</summary>
+    /// <returns>False when the clamped width is already the effective width.</returns>
+    internal bool SetColumnWidth(EffectiveColumn column, double width)
     {
-        double clamped = ResolvedColumn.Clamp(width, column.Column.MinWidth, column.Column.MaxWidth);
+        double clamped = column.Clamp(width);
         if (clamped == column.Width)
         {
             return false;
         }
 
         column.WidthOverride = clamped;
-        Geometry.Rebuild();
+        EffectiveLayout.Rebuild();
         return true;
     }
 
@@ -131,17 +321,17 @@ public sealed partial class Table
     /// remain. It is also what disables the last visible column's toggle, so the menu cannot reach
     /// a state with no visible column.
     /// </summary>
-    internal bool CanHideColumn(ResolvedColumn column) =>
-        column.IsVisible && column.CanHide && Geometry.VisibleColumns.Count > 1;
+    internal bool CanHideColumn(EffectiveColumn column) =>
+        column.IsVisible && column.CanHide && EffectiveLayout.VisibleColumns.Count > 1;
 
-    internal void SetColumnVisibility(ResolvedColumn column, bool visible)
+    internal void SetColumnVisibility(EffectiveColumn column, bool visible)
     {
         if (visible == column.IsVisible || (!visible && !CanHideColumn(column)))
         {
             return;
         }
 
-        // Section 10: a column keeps its resolved width across a hide and a show.
+        // Section 10: a column keeps its effective width across a hide and a show.
         column.VisibilityOverride = visible;
 
         // Section 9: the header is the only place the sort shows and the only place it is
@@ -150,7 +340,7 @@ public sealed partial class Table
         // section 16, no row drag either, and nothing on screen to explain why.
         bool sortCleared = !visible && ReferenceEquals(_sortColumn, column) && ClearSort();
 
-        Geometry.Rebuild();
+        EffectiveLayout.Rebuild();
         if (sortCleared)
         {
             RebuildView();
@@ -166,29 +356,33 @@ public sealed partial class Table
     /// it back where it was. Every other column, hidden ones included, keeps its relative order.
     /// </summary>
     /// <returns>False when the placement leaves the order as it is.</returns>
-    internal bool MoveColumnTo(ResolvedColumn column, int boundary, FocusState? focus)
+    internal bool MoveColumnTo(EffectiveColumn column, int boundary, FocusState? focus)
     {
-        int index = Geometry.IndexOfVisible(column);
+        int index = EffectiveLayout.IndexOfVisible(column);
         if (index < 0 || column.IsHierarchy)
         {
             return false;
         }
 
-        boundary = Math.Clamp(boundary, _hierarchy is null ? 0 : 1, Geometry.VisibleColumns.Count - 1);
+        boundary = Math.Clamp(
+            boundary,
+            _hierarchy is null ? 0 : 1,
+            EffectiveLayout.VisibleColumns.Count - 1
+        );
         if (boundary == index)
         {
             return false;
         }
 
-        List<ResolvedColumn> order = new(Geometry.Order);
+        List<EffectiveColumn> order = new(EffectiveLayout.Order);
         order.Remove(column);
         order.Insert(InsertionPoint(order, boundary), column);
 
         // Section 19: the move has to read as movement. Where every cell is rendered now is the
         // only thing the animation needs; everything after this is an ordinary layout change.
-        Dictionary<Column, double> before = Motion.CaptureOffsets(Geometry);
+        Dictionary<Column, double> before = Motion.CaptureOffsets(EffectiveLayout);
 
-        Geometry.SetOrder(order);
+        EffectiveLayout.SetOrder(order);
         Motion.SlideFrom(this, before);
         FocusHeaderOf(column, focus);
         RaiseLayoutChanged(LayoutChange.Move);
@@ -202,15 +396,20 @@ public sealed partial class Table
     /// arrived in. Asking for focus here put a focus visual on a header behind an open menu, and
     /// put it there for a mouse click, which draws a focus visual nowhere else in the table.
     /// </summary>
-    internal bool MoveColumnBy(ResolvedColumn column, int step) =>
-        MoveColumnTo(column, Geometry.IndexOfVisible(column) + step, focus: null);
+    internal bool MoveColumnBy(EffectiveColumn column, int step) =>
+        MoveColumnTo(column, EffectiveLayout.IndexOfVisible(column) + step, focus: null);
 
     /// <summary>A move is offered while there is a neighbouring visible place to move into.</summary>
-    internal bool CanMoveColumnBy(ResolvedColumn column, int step)
+    internal bool CanMoveColumnBy(EffectiveColumn column, int step)
     {
-        int index = Geometry.IndexOfVisible(column);
-        return !column.IsHierarchy && index >= 0 &&
-            Math.Clamp(index + step, _hierarchy is null ? 0 : 1, Geometry.VisibleColumns.Count - 1) != index;
+        int index = EffectiveLayout.IndexOfVisible(column);
+        return !column.IsHierarchy
+            && index >= 0
+            && Math.Clamp(
+                index + step,
+                _hierarchy is null ? 0 : 1,
+                EffectiveLayout.VisibleColumns.Count - 1
+            ) != index;
     }
 
     /// <summary>
@@ -223,16 +422,19 @@ public sealed partial class Table
     /// its focus visual for Keyboard and for Programmatic, and suppresses it only for Pointer. So a
     /// header drag left a focus ring behind on the moved header.
     /// </remarks>
-    private void FocusHeaderOf(ResolvedColumn column, FocusState? focus)
+    private void FocusHeaderOf(EffectiveColumn column, FocusState? focus)
     {
         if (focus is null)
         {
             return;
         }
 
-        int index = Geometry.IndexOfVisible(column);
-        if (_headerStrip?.Panel is Panel header && index < header.Children.Count
-            && header.Children[index] is Control cell)
+        int index = EffectiveLayout.IndexOfVisible(column);
+        if (
+            _headerStrip?.Panel is Panel header
+            && index < header.Children.Count
+            && header.Children[index] is Control cell
+        )
         {
             cell.Focus(focus.Value);
         }
@@ -243,7 +445,7 @@ public sealed partial class Table
     /// column, so a hidden column beside the boundary is not stepped over and a drop on the moving
     /// column's own boundary stays a no-op.
     /// </summary>
-    private static int InsertionPoint(List<ResolvedColumn> order, int boundary)
+    private static int InsertionPoint(List<EffectiveColumn> order, int boundary)
     {
         int visible = 0;
         int afterLastVisible = 0;
@@ -270,16 +472,16 @@ public sealed partial class Table
     internal void RaiseLayoutChanged(LayoutChange kind)
     {
         // Widths, visibility and order all move where the columns end, which is what decides
-        // whether the strip has trailing space to offer its fit command in.
-        _headerStrip?.UpdateFitButton();
+        // whether the strip has trailing space to offer its fit commands in.
+        _headerStrip?.UpdateButtons();
         LayoutChanged?.Invoke(this, kind);
     }
 
-    private ResolvedColumn RequireColumn(Column column, string parameter)
+    private EffectiveColumn RequireColumn(Column column, string parameter)
     {
         ArgumentNullException.ThrowIfNull(column, parameter);
 
-        if (Geometry.Find(column) is ResolvedColumn resolved)
+        if (EffectiveLayout.Find(column) is EffectiveColumn resolved)
         {
             return resolved;
         }
@@ -288,21 +490,22 @@ public sealed partial class Table
             _schemaCaptured
                 ? "That column is not one of this table's columns."
                 : "The column schema is captured at the first Loaded, so no column resolves yet.",
-            parameter);
+            parameter
+        );
     }
 
     /// <summary>
     /// Section 10's bounded fit: the widest realized header cell or row cell for this column,
-    /// clamped to the column's limits. Nothing realized means nothing to fit.
+    /// raised to the column's minimum. Nothing realized means nothing to fit.
     /// </summary>
-    private bool FitColumn(ResolvedColumn column)
+    private bool FitColumn(EffectiveColumn column)
     {
         if (!CanFitColumn(column))
         {
             return false;
         }
 
-        int index = Geometry.IndexOfVisible(column);
+        int index = EffectiveLayout.IndexOfVisible(column);
         double widest = 0;
         bool measured = false;
 
@@ -321,7 +524,7 @@ public sealed partial class Table
             measured = true;
 
             // An unbounded desired size is not the one the panel arranges with, and the panel is
-            // the only thing that measures a cell at its resolved width.
+            // the only thing that measures a cell at its effective width.
             panel.InvalidateMeasure();
         }
 
@@ -359,7 +562,7 @@ public sealed partial class Table
             yield return header;
         }
 
-        if (_itemsView?.ItemsPanelRoot is not ItemsStackPanel rows)
+        if (_surface?.ItemsPanelRoot is not ItemsStackPanel rows)
         {
             yield break;
         }
@@ -373,8 +576,10 @@ public sealed partial class Table
 
         for (int index = first; index <= last; index++)
         {
-            if (_itemsView.ContainerFromIndex(index) is DependencyObject container
-                && FindDescendant<CellsPanel>(container) is CellsPanel panel)
+            if (
+                _surface.ContainerFromIndex(index) is DependencyObject container
+                && FindDescendant<CellsPanel>(container) is CellsPanel panel
+            )
             {
                 yield return panel;
             }

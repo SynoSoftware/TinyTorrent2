@@ -19,101 +19,100 @@ public class RealColumnResizeTests
     private const double FirstSeparator = 200;
 
     [TestMethod]
-    public Task ARealSeparatorDragResizesOnlyThatColumn() => TestHost.RunAsync(async () =>
-    {
-        DragHarness h = await DragHarness.LoadAsync(Bounded);
-        int events = 0;
-        h.Table.LayoutChanged += (_, kind) =>
+    public Task ARealSeparatorDragResizesOnlyThatColumn() =>
+        TestHost.RunAsync(async () =>
         {
-            Assert.AreEqual(LayoutChange.Resize, kind);
-            events++;
-        };
+            DragHarness h = await DragHarness.LoadAsync(Bounded);
+            int events = 0;
+            h.Table.LayoutChanged += (_, kind) =>
+            {
+                Assert.AreEqual(LayoutChange.Resize, kind);
+                events++;
+            };
 
-        await h.MoveAsync(FirstSeparator);
-        await h.PressAsync(FirstSeparator);
-        await h.MoveAsync(FirstSeparator + 40);
+            await h.MoveAsync(FirstSeparator);
+            await h.PressAsync(FirstSeparator);
+            await h.MoveAsync(FirstSeparator + 40);
 
-        Assert.AreEqual(240, Width(h, "a"), 2, "the width tracks the pointer");
-        Assert.AreEqual(0, events, "and a pointer move is not a persistence event");
+            Assert.AreEqual(
+                200,
+                Width(h, "a"),
+                0.01,
+                "only a guide follows the pointer, not the width"
+            );
+            Assert.AreEqual(0, events, "and a pointer move is not a persistence event");
 
-        await h.MoveAsync(FirstSeparator + 80);
-        await h.ReleaseAsync(FirstSeparator + 80);
+            await h.MoveAsync(FirstSeparator + 80);
+            await h.ReleaseAsync(FirstSeparator + 80);
 
-        Assert.AreEqual(280, Width(h, "a"), 2);
-        Assert.AreEqual(200, Width(h, "b"), 0.01, "the next column keeps its own width");
-        Assert.AreEqual(1, events, "one gesture, one notification");
-    });
-
-    [TestMethod]
-    public Task ARealDragIsClampedToTheColumnsOwnLimits() => TestHost.RunAsync(async () =>
-    {
-        DragHarness h = await DragHarness.LoadAsync(Bounded);
-
-        await h.MoveAsync(FirstSeparator);
-        await h.PressAsync(FirstSeparator);
-        await h.MoveAsync(FirstSeparator - 150);
-
-        Assert.AreEqual(120, Width(h, "a"), 0.01, "it stops at MinWidth");
-
-        await h.MoveAsync(FirstSeparator + 200);
-
-        Assert.AreEqual(300, Width(h, "a"), 0.01, "and at MaxWidth");
-
-        await h.ReleaseAsync(FirstSeparator + 200);
-    });
+            Assert.AreEqual(280, Width(h, "a"), 2);
+            Assert.AreEqual(200, Width(h, "b"), 0.01, "the next column keeps its own width");
+            Assert.AreEqual(1, events, "one gesture, one notification");
+        });
 
     [TestMethod]
-    public Task EscapeRestoresTheWidthTheDragStartedFrom() => TestHost.RunAsync(async () =>
-    {
-        DragHarness h = await DragHarness.LoadAsync(Bounded);
-        int events = 0;
-        h.Table.LayoutChanged += (_, _) => events++;
-
-        await h.MoveAsync(FirstSeparator);
-        await h.PressAsync(FirstSeparator);
-        await h.MoveAsync(FirstSeparator + 60);
-
-        Assert.AreEqual(260, Width(h, "a"), 2);
-
-        await h.EscapeAsync();
-
-        Assert.AreEqual(200, Width(h, "a"), 0.01, "the width captured at the press comes back");
-
-        await h.ReleaseAsync(FirstSeparator + 60);
-
-        Assert.AreEqual(200, Width(h, "a"), 0.01, "and the release after the cancel changes nothing");
-        Assert.AreEqual(0, events, "a cancelled gesture changed no layout");
-    });
-
-    [TestMethod]
-    public Task ARealDoubleClickOnTheSeparatorFitsThatColumn() => TestHost.RunAsync(async () =>
-    {
-        DragHarness h = await DragHarness.LoadAsync(Bounded);
-        int fits = 0;
-        h.Table.LayoutChanged += (_, kind) =>
+    public Task EscapeRestoresTheWidthTheDragStartedFrom() =>
+        TestHost.RunAsync(async () =>
         {
-            Assert.AreEqual(LayoutChange.Fit, kind);
-            fits++;
-        };
+            DragHarness h = await DragHarness.LoadAsync(Bounded);
+            int events = 0;
+            h.Table.LayoutChanged += (_, _) => events++;
 
-        await h.MoveAsync(FirstSeparator);
-        await h.PressAsync(FirstSeparator);
-        await h.ReleaseAsync(FirstSeparator);
-        await h.PressAsync(FirstSeparator);
-        await h.ReleaseAsync(FirstSeparator);
+            await h.MoveAsync(FirstSeparator);
+            await h.PressAsync(FirstSeparator);
+            await h.MoveAsync(FirstSeparator + 60);
 
-        Assert.AreEqual(120, Width(h, "a"), 0.01,
-            "the header label is narrower than MinWidth, so the fit clamps there");
-        Assert.AreEqual(200, Width(h, "b"), 0.01, "and no other column was fitted");
-        Assert.AreEqual(1, fits);
-    });
+            await h.EscapeAsync();
 
-    /// <summary>The first column takes bounds, so the clamp and the fit have known numbers.</summary>
-    private static void Bounded(Table table)
-    {
-        table.Columns[0].MinWidth = 120;
-        table.Columns[0].MaxWidth = 300;
-    }
+            Assert.AreEqual(
+                200,
+                Width(h, "a"),
+                0.01,
+                "the width is still the one the drag started from"
+            );
 
-    private static double Width(DragHarness h, string id) => TableHarness.ResolvedWidth(h.Table, id);
+            await h.ReleaseAsync(FirstSeparator + 60);
+
+            Assert.AreEqual(
+                200,
+                Width(h, "a"),
+                0.01,
+                "and the release after the cancel changes nothing"
+            );
+            Assert.AreEqual(0, events, "a cancelled gesture changed no layout");
+        });
+
+    [TestMethod]
+    public Task ARealDoubleClickOnTheSeparatorFitsThatColumn() =>
+        TestHost.RunAsync(async () =>
+        {
+            DragHarness h = await DragHarness.LoadAsync(Bounded);
+            int fits = 0;
+            h.Table.LayoutChanged += (_, kind) =>
+            {
+                Assert.AreEqual(LayoutChange.Fit, kind);
+                fits++;
+            };
+
+            await h.MoveAsync(FirstSeparator);
+            await h.PressAsync(FirstSeparator);
+            await h.ReleaseAsync(FirstSeparator);
+            await h.PressAsync(FirstSeparator);
+            await h.ReleaseAsync(FirstSeparator);
+
+            Assert.AreEqual(
+                120,
+                Width(h, "a"),
+                0.01,
+                "the header label is narrower than MinWidth, so the fit clamps there"
+            );
+            Assert.AreEqual(200, Width(h, "b"), 0.01, "and no other column was fitted");
+            Assert.AreEqual(1, fits);
+        });
+
+    /// <summary>The first column takes a minimum, so the drag and the fit have known numbers.</summary>
+    private static void Bounded(Table table) => table.Columns[0].MinWidth = 120;
+
+    private static double Width(DragHarness h, string id) =>
+        TableHarness.EffectiveWidth(h.Table, id);
 }

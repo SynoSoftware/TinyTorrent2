@@ -15,7 +15,7 @@ public sealed partial class Table
     /// </summary>
     private static readonly TimeSpan DefaultSortInterval = TimeSpan.FromSeconds(3);
 
-    private ResolvedColumn? _sortColumn;
+    private EffectiveColumn? _sortColumn;
     private SortDirection _sortDirection;
     private Sort? _pendingSort;
     private bool _hasPendingSort;
@@ -46,8 +46,9 @@ public sealed partial class Table
     /// column that <see cref="Column.DefinesRowOrder"/> never waits.
     /// </summary>
     /// <remarks>
-    /// Only relative position waits. Membership never does: a row that arrives appears at once, at
-    /// the place the sort gives it, and a row that leaves goes at once. The distinction is the
+    /// Only relative position waits for the interval. Membership does not: a row that arrives
+    /// appears at once, at the place the sort gives it, and a row that leaves goes at once, unless
+    /// the rows are pointed at, when section 5.3's hold keeps both back. The distinction is the
     /// reason this lives in the table rather than in the host — a host publishes one snapshot
     /// carrying membership and position together, so throttling it would delay the arrival that
     /// made it necessary, while the table holds both the old order and the new one and can take one
@@ -124,11 +125,13 @@ public sealed partial class Table
             }
             if (value is Sort requested && !Enum.IsDefined(requested.Direction))
                 throw new ArgumentOutOfRangeException(nameof(value));
-            ResolvedColumn? column = value is Sort sort ? RequireSortable(sort.Column) : null;
+            EffectiveColumn? column = value is Sort sort ? RequireSortable(sort.Column) : null;
             SortDirection direction = value?.Direction ?? SortDirection.Ascending;
 
-            if (ReferenceEquals(column, _sortColumn)
-                && (column is null || direction == _sortDirection))
+            if (
+                ReferenceEquals(column, _sortColumn)
+                && (column is null || direction == _sortDirection)
+            )
             {
                 return;
             }
@@ -148,22 +151,25 @@ public sealed partial class Table
 
     private Sort? PendingSort()
     {
-        if (_pendingLayout?.SortColumnId is not string id) return null;
+        if (_pendingLayout?.SortColumnId is not string id)
+            return null;
         Column? column = Columns.FirstOrDefault(candidate => candidate.Id == id);
         return column is not null && Enum.IsDefined(_pendingLayout.SortDirection)
-            ? new Sort(column, _pendingLayout.SortDirection) : null;
+            ? new Sort(column, _pendingLayout.SortDirection)
+            : null;
     }
 
-    private ResolvedColumn RequireSortable(Column column)
+    private EffectiveColumn RequireSortable(Column column)
     {
-        ResolvedColumn resolved = RequireColumn(column, "value");
+        EffectiveColumn resolved = RequireColumn(column, "value");
 
         if (!column.CanSort)
         {
             throw new ArgumentException(
-                $"Column '{column.DisplayName}' has no sort key. Give it one with " +
-                "Schema<TRow>().SortKey(column, row => …).",
-                "value");
+                $"Column '{column.DisplayName}' has no sort key. Give it one with "
+                    + "Schema<TRow>().SortKey(column, row => …).",
+                "value"
+            );
         }
 
         if (!resolved.IsVisible)
@@ -184,7 +190,7 @@ public sealed partial class Table
     /// </summary>
     internal void ActivateSort(Column column) => ActivateSort(RequireSortable(column));
 
-    internal void ActivateSort(ResolvedColumn column)
+    internal void ActivateSort(EffectiveColumn column)
     {
         if (!column.Column.CanSort)
         {
@@ -192,11 +198,11 @@ public sealed partial class Table
         }
 
         // Through the property, so the header and a host request apply a sort by one path.
-        Sort = !ReferenceEquals(_sortColumn, column)
-            ? new Sort(column.Column)
+        Sort =
+            !ReferenceEquals(_sortColumn, column) ? new Sort(column.Column)
             : _sortDirection == SortDirection.Ascending
                 ? new Sort(column.Column, SortDirection.Descending)
-                : null;
+            : null;
     }
 
     /// <summary>
@@ -219,7 +225,8 @@ public sealed partial class Table
 
     /// <summary>
     /// The order the rows are actually shown in: the sorted snapshot, except that rows already on
-    /// screen are left where they are between reorders.
+    /// screen are left where they are between reorders, and that held rows and the pointed row keep
+    /// their index.
     /// </summary>
     /// <remarks>
     /// A sort over a value the source keeps changing would otherwise re-order the whole table every
@@ -234,51 +241,63 @@ public sealed partial class Table
     /// row being reached for moves out from under the pointer. The owner chose a cadence for that
     /// reason, not for the milliseconds.
     /// <para>
-    /// Membership is never delayed, only position. A row that arrives appears at once, at the place
-    /// the sort gives it among the rows already shown, and a row that leaves goes at once. What
-    /// waits is existing rows trading places.
+    /// Membership waits only while the rows are pointed at, by the hold of section 5.3. Otherwise a
+    /// row that arrives appears at once, at the place the sort gives it among the rows already
+    /// shown, and a row that leaves goes at once. When the rows do take their sorted places, the
+    /// pointed row keeps its own (section 9).
     /// </para>
     /// </remarks>
-    private IReadOnlyList<object> ViewOrder(IReadOnlyList<object> snapshot)
+    /// <returns>The order, and the rows that keep their index, whose containers the reconcile keeps.</returns>
+    private (IReadOnlyList<object> Order, IReadOnlySet<object> Pinned) ViewOrder(
+        IReadOnlyList<object> snapshot
+    )
     {
-        if (_hierarchy is not null && _sortColumn is null) return snapshot;
+        if (_hierarchy is not null && _sortColumn is null)
+            return (snapshot, _held);
+        IReadOnlyList<object> shown = Hold(snapshot);
+
         // Natural order belongs to the host, which reorders when it means to, and the row-order
         // column shows that same order, so holding it would delay the person's own reorder; an
         // empty view has no established order to preserve; and a zero interval is the host asking
         // for none of this.
-        if (_sortColumn is null || _sortColumn.Column.DefinesRowOrder || _view.Count == 0 ||
-            _sortInterval == TimeSpan.Zero)
+        if (
+            _sortColumn is null
+            || _sortColumn.Column.DefinesRowOrder
+            || _view.Count == 0
+            || _sortInterval == TimeSpan.Zero
+        )
         {
-            IReadOnlyList<object> order = SortedSnapshot(snapshot, _sortColumn, _sortDirection);
+            IReadOnlyList<object> order = SortedSnapshot(shown, _sortColumn, _sortDirection);
             _orderSettledAt = DateTimeOffset.UtcNow;
-            return order;
+            return Pin(order);
         }
 
         DateTimeOffset now = DateTimeOffset.UtcNow;
         if (now - _orderSettledAt >= _sortInterval)
         {
-            IReadOnlyList<object> order = SortedSnapshot(snapshot, _sortColumn, _sortDirection);
+            IReadOnlyList<object> order = SortedSnapshot(shown, _sortColumn, _sortDirection);
             _orderSettledAt = now;
-            return order;
+            return Pin(order);
         }
 
-        // The base sequence, not the sorted one: a held update keeps the order the view already
+        // The base sequence, not the sorted one: a kept update keeps the order the view already
         // has, so all it needs from the snapshot is which rows are in it, and sorting to answer a
         // question about membership is work thrown away. At the default interval against a host
         // that publishes about once a second, that is two publishes in three, and a name sort of
         // 2,002 rows is roughly 22,000 culture-aware string comparisons.
         //
-        // A membership change is never held back, so it is also never settled: HeldOrder returns
-        // null for one, and the sorted order is what the arriving row needs anyway.
-        if (HeldOrder(snapshot) is not List<object> held)
+        // A membership change the hold let through is never kept back, so it is also never
+        // settled: KeptOrder returns null for one, and the sorted order is what the arriving row
+        // needs anyway.
+        if (KeptOrder(shown) is not List<object> kept)
         {
-            IReadOnlyList<object> order = SortedSnapshot(snapshot, _sortColumn, _sortDirection);
+            IReadOnlyList<object> order = SortedSnapshot(shown, _sortColumn, _sortDirection);
             _orderSettledAt = now;
-            return order;
+            return Pin(order);
         }
 
         ScheduleSettle(_sortInterval - (now - _orderSettledAt));
-        return held;
+        return Pin(kept);
     }
 
     /// <summary>
@@ -288,7 +307,8 @@ public sealed partial class Table
     /// </summary>
     private void ScheduleSettle(TimeSpan due)
     {
-        if (_detached) return;
+        if (_detached)
+            return;
         if (_settleDue is null)
         {
             _settleDue = DispatcherQueue.CreateTimer();
@@ -302,6 +322,13 @@ public sealed partial class Table
             _settleDue.Tick += (_, _) =>
             {
                 if (_detached)
+                {
+                    return;
+                }
+
+                // Only a reordering sort schedules a settle. A tick left over from one after the
+                // sort changed has nothing to settle, and its rebuild would cancel a live row drag.
+                if (ShowsRowOrder)
                 {
                     return;
                 }
@@ -320,14 +347,15 @@ public sealed partial class Table
     }
 
     /// <summary>
-    /// The same rows the view already holds, in the order it already holds them, or null when the
-    /// snapshot is not the same set of rows.
+    /// The rows the view already shows, held rows aside, in the order it already shows them, or
+    /// null when <paramref name="shown"/> is not that same set of rows.
     /// </summary>
     /// <remarks>
-    /// Settling holds position and never membership, so a snapshot that adds or removes a row is
+    /// Settling keeps position and never membership, so a snapshot that adds or removes a row is
     /// not a settling case at all: the caller takes the sorted order for it, which puts the arrival
-    /// where it belongs straight away. Only a snapshot of exactly the same rows can be held, and
-    /// holding it is then a copy rather than a merge.
+    /// where it belongs straight away. Only a snapshot of exactly the same rows can be kept, and
+    /// keeping it is then a copy rather than a merge. While the rows are pointed at, the hold has
+    /// already removed every membership change, so the rows are always the same.
     /// <para>
     /// This is also what keeps the cost bounded. An earlier version placed each arrival into the
     /// held order by scanning it, which is fine for a row or two and is not fine for a filter
@@ -337,9 +365,9 @@ public sealed partial class Table
     /// nothing about membership removes the merge, the cost and the arbitrary placement together.
     /// </para>
     /// </remarks>
-    private List<object>? HeldOrder(IReadOnlyList<object> snapshot)
+    private List<object>? KeptOrder(IReadOnlyList<object> shown)
     {
-        if (snapshot.Count != _view.Count)
+        if (shown.Count + _held.Count != _view.Count)
         {
             return null;
         }
@@ -347,16 +375,21 @@ public sealed partial class Table
         // Always the snapshot's instances, never the view's: the host may have replaced a row with
         // an equal-identity instance, and keeping the old one would leave its container bound to an
         // object nothing updates any more.
-        Dictionary<object, object> live = new(snapshot.Count, _identity);
-        foreach (object row in snapshot)
+        Dictionary<object, object> live = new(shown.Count, _identity);
+        foreach (object row in shown)
         {
             live[row] = row;
         }
 
-        List<object> order = new(snapshot.Count);
-        foreach (object shown in _view)
+        List<object> order = new(shown.Count);
+        foreach (object row in _view)
         {
-            if (!live.TryGetValue(shown, out object? current))
+            if (_held.Contains(row))
+            {
+                continue;
+            }
+
+            if (!live.TryGetValue(row, out object? current))
             {
                 return null;
             }
@@ -372,8 +405,11 @@ public sealed partial class Table
     /// stable, so equal values keep the exact base-sequence order they arrived in — descending
     /// included, because only the comparison is reversed and never the tie-break.
     /// </summary>
-    private IReadOnlyList<object> SortedSnapshot(IReadOnlyList<object> snapshot,
-        ResolvedColumn? column, SortDirection direction)
+    private IReadOnlyList<object> SortedSnapshot(
+        IReadOnlyList<object> snapshot,
+        EffectiveColumn? column,
+        SortDirection direction
+    )
     {
         if (_hierarchy is not null && (_preparedHierarchy ?? _hierarchy.Captured) is { } hierarchy)
             return _hierarchy.Project(hierarchy, column?.Column.Comparer, direction);
@@ -398,25 +434,28 @@ public sealed partial class Table
     /// or is changed, so a sort by a hidden column is one the user could neither see nor undo.
     /// </summary>
     /// <returns>True when the effective sort is not the one that was already in force.</returns>
-    private bool RestoreSort(ColumnLayout state, Dictionary<string, ResolvedColumn> byId)
+    private bool RestoreSort(ColumnLayout state, Dictionary<string, EffectiveColumn> byId)
     {
-        ResolvedColumn? previousColumn = _sortColumn;
+        EffectiveColumn? previousColumn = _sortColumn;
         SortDirection previousDirection = _sortDirection;
 
         _sortColumn = null;
         _sortDirection = SortDirection.Ascending;
 
-        if (state.SortColumnId is string id
-            && byId.TryGetValue(id, out ResolvedColumn? column)
+        if (
+            state.SortColumnId is string id
+            && byId.TryGetValue(id, out EffectiveColumn? column)
             && column.Column.CanSort
             && column.IsVisible
-            && Enum.IsDefined(state.SortDirection))
+            && Enum.IsDefined(state.SortDirection)
+        )
         {
             _sortColumn = column;
             _sortDirection = state.SortDirection;
         }
 
-        bool moved = !ReferenceEquals(previousColumn, _sortColumn)
+        bool moved =
+            !ReferenceEquals(previousColumn, _sortColumn)
             || (_sortColumn is not null && previousDirection != _sortDirection);
 
         if (moved)
