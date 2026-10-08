@@ -401,7 +401,7 @@ public:
     bool SuspendsForConnectionTest() const;
     Json ConnectionTestSnapshot() const;
     bool StartConnectionTest(std::string const& connectionId);
-    void ReleaseConnectionTest(std::string const& connectionId, bool cancelled = false);
+    void ReleaseConnectionTest(std::string const& connectionId, ConnectionPhase outcome = ConnectionPhase::Completed);
     void MaintainConnectionTest();
     void ObserveConnectionTest(lt::session_stats_alert const& alert);
     void MeasureConnection(std::shared_ptr<ConnectionTest> const& test);

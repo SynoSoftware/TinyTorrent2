@@ -112,7 +112,7 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
             }
         }
         else if (action == "cancel" || action == "release")
-            ReleaseConnectionTest(connectionId, action == "cancel");
+            ReleaseConnectionTest(connectionId, action == "cancel" ? ConnectionPhase::Cancelled : ConnectionPhase::Completed);
         else
         {
             reply(Failure(ErrorCode::InvalidRequest));
@@ -494,6 +494,7 @@ void Engine::State::Verify(std::vector<std::string> const& ids, Reply reply)
         torrents.at(id).completedFiles.clear();
         torrents.at(id).handle.force_recheck();
     }
+    ApplyQueue();
     reply(Success());
 }
 

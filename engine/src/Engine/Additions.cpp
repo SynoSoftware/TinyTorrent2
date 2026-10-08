@@ -187,12 +187,18 @@ void Engine::State::AddSource(std::string source, std::function<void(Outcome, Ad
     std::string destination, std::string watchStamp)
 {
     auto connectionId = NewId();
-    auto finish = [this, connectionId, completion](Outcome outcome, Added added)
+    auto watchSource = watchStamp.empty() ? std::string() : source;
+    auto finish = [this, connectionId, watchSource, watchStamp, completion](Outcome outcome, Added added)
     {
         Disconnect(connectionId);
-        completion(std::move(outcome), std::move(added));
+        if (outcome.error || watchSource.empty() || added.kind == AdditionKind::New)
+            completion(std::move(outcome), std::move(added));
+        else
+            RecordWatch(watchSource, watchStamp, [completion, added](Outcome outcome)
+            {
+                completion(std::move(outcome), added);
+            });
     };
-    auto watchSource = watchStamp.empty() ? std::string() : source;
     Inspect(std::move(source), connectionId, [this, finish, destination, watchSource, watchStamp](Outcome outcome, Preview* preview)
     {
         if (outcome.error)
@@ -220,6 +226,32 @@ void Engine::State::AddSource(std::string source, std::function<void(Outcome, Ad
         choices.watchStamp = watchStamp;
         Add(*preview, std::move(choices), finish);
     });
+}
+
+void Engine::State::RecordWatch(std::string source, std::string stamp, std::function<void(Outcome)> completion)
+{
+    if (!changes.Queue([this, source, stamp, completion]
+    {
+        auto found = watchedSources.find(source);
+        if (found != watchedSources.end() && found->second == stamp)
+        {
+            completion({});
+            return;
+        }
+        auto document = Saved();
+        document.watchedSources[source] = stamp;
+        changes.Commit(document.ToJson(), [this, source, stamp, completion](StorageOutcome outcome)
+        {
+            if (!outcome.succeeded)
+            {
+                completion({ErrorCode::StorageFailed, outcome.detail});
+                return;
+            }
+            watchedSources[source] = stamp;
+            completion({});
+        });
+    }))
+        completion({ErrorCode::Overloaded});
 }
 
 // Writes the resume file before membership lists the torrent, because

@@ -31,7 +31,7 @@ void Engine::State::Shutdown(std::function<void(std::optional<std::string> failu
         }
     }
     if (connectionTest)
-        ReleaseConnectionTest(connectionTest->connectionId, true);
+        ReleaseConnectionTest(connectionTest->connectionId, ConnectionPhase::Cancelled);
     shuttingDown = true;
     phaseStarted.reset();
     Discard([](Preview const&) { return true; });

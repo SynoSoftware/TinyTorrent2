@@ -33,10 +33,10 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
     public bool CanEdit => _settings.CanEdit && !IsPending && !IsTesting && _phase != ConnectionPhase.Restoring;
     public bool CanApply => CanEdit && !_settings.IsPending && Changes() is { Count: > 0 };
     public bool IsTesting => _phase is ConnectionPhase.Stopping or ConnectionPhase.Downloading or ConnectionPhase.Uploading;
-    private bool IsActive => IsTesting || _phase is ConnectionPhase.Holding or ConnectionPhase.Restoring;
+    private bool CanRelease => _main.IsConnected && (IsTesting || _phase == ConnectionPhase.Holding);
     private bool HasCustomRoute => _settings.Proxy.IsInUse || _settings.Adapter.ConfirmedText.Length > 0;
     public bool CanTest => CanEdit && !_settings.IsPending && !HasCustomRoute;
-    public bool CanCancelTest => IsTesting && !IsPending;
+    public bool CanCancelTest => _main.IsConnected && IsTesting && !IsPending;
     public string TestLabel => Text.Get("connection_setup", _phase == ConnectionPhase.Holding ? "retest"
         : _phase == ConnectionPhase.Failed ? "retry" : "test");
     public string TestStatus => _testFailure.Length > 0 ? Text.Get("connection_setup", _testFailure)
@@ -168,7 +168,7 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
             "failed" => ConnectionPhase.Failed,
             _ => ConnectionPhase.Idle,
         };
-        _client.SetConnectionTestActive(IsActive);
+        _client.SetConnectionTestActive(IsTesting || _phase is ConnectionPhase.Holding or ConnectionPhase.Restoring);
         if (value.TryGetProperty("id", out var id))
         {
             var testId = id.GetString() ?? string.Empty;
@@ -199,46 +199,47 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
             return;
         _testFailure = string.Empty;
         _client.SetConnectionTestActive(true);
-        await SendTest("start");
+        await Execute(() => SendTest("start"));
     }
 
     public async Task CancelTest()
     {
         if (CanCancelTest)
-            await SendTest("cancel");
+            await Execute(() => SendTest("cancel"));
     }
 
     internal async Task<bool> Depart()
     {
         if (IsPending)
             return false;
-        if (IsActive && !await SendTest("release"))
+        if (CanRelease && !await Execute(() => SendTest("release")))
             return false;
         return true;
     }
 
-    private async Task<bool> SendTest(string action)
+    private async Task SendTest(string action) =>
+        Observe(await _client.Send("connection_test", new { action }));
+
+    private async Task<bool> Execute(Func<Task> operation)
     {
         IsPending = true;
         _failure = null;
         _settings.Changed(nameof(Settings.IsPending));
         try
         {
-            Observe(await _client.Send("connection_test", new { action }));
-            _main.RequestSnapshot();
+            await operation();
             return true;
         }
         catch (Exception failure)
         {
             _failure = failure;
-            _main.RequestSnapshot();
             return false;
         }
         finally
         {
+            _main.RequestSnapshot();
             IsPending = false;
             _settings.Changed(nameof(Settings.IsPending));
-            Refresh();
         }
     }
 
@@ -249,31 +250,18 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
         var changes = Changes();
         if (changes is null || changes.Count == 0)
             return false;
-        IsPending = true;
-        _failure = null;
-        _settings.Changed(nameof(Settings.IsPending));
-        var saved = false;
-        try
+        return await Execute(async () =>
         {
-            await _settings.Save(changes);
-            saved = true;
-        }
-        catch (Exception failure)
-        {
-            _failure = failure;
-            _main.RequestSnapshot();
-        }
-        finally
-        {
-            IsPending = false;
-            _settings.Changed(nameof(Settings.IsPending));
-            Refresh();
-        }
-        var failureToSave = _failure;
-        var departed = await Depart();
-        _failure ??= failureToSave;
-        Refresh();
-        return saved && departed;
+            try
+            {
+                await _settings.Save(changes);
+            }
+            finally
+            {
+                if (CanRelease)
+                    await SendTest("release");
+            }
+        });
     }
 
     internal void Refresh() => PropertyChanged?.Invoke(this, new(string.Empty));

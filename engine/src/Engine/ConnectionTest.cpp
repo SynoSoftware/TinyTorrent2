@@ -162,13 +162,13 @@ bool Engine::State::StartConnectionTest(std::string const& connectionId)
     return true;
 }
 
-void Engine::State::ReleaseConnectionTest(std::string const& connectionId, bool cancelled)
+void Engine::State::ReleaseConnectionTest(std::string const& connectionId, ConnectionPhase outcome)
 {
     if (!connectionTest || connectionTest->connectionId != connectionId || !SuspendsForConnectionTest())
         return;
     auto& test = *connectionTest;
     test.stop.request_stop();
-    test.outcome = cancelled ? ConnectionPhase::Cancelled : ConnectionPhase::Completed;
+    test.outcome = outcome;
     test.phase = ConnectionPhase::Restoring;
     test.deadline = Clock::now() + std::chrono::seconds(5);
     RefreshPolicy();
@@ -199,10 +199,8 @@ void Engine::State::MaintainConnectionTest()
             ReleaseConnectionTest(test.connectionId);
         else
         {
-            test.stop.request_stop();
             test.failure = "connection_test_timeout";
-            ReleaseConnectionTest(test.connectionId);
-            test.outcome = ConnectionPhase::Failed;
+            ReleaseConnectionTest(test.connectionId, ConnectionPhase::Failed);
         }
         return;
     }
@@ -270,8 +268,7 @@ void Engine::State::MeasureConnection(std::shared_ptr<ConnectionTest> const& tes
             log.Write("connection_test", "", outcome.detail);
             test->failure = outcome.detail == "connection_test_timeout"
                 ? "connection_test_timeout" : "connection_test_network";
-            ReleaseConnectionTest(test->connectionId);
-            test->outcome = ConnectionPhase::Failed;
+            ReleaseConnectionTest(test->connectionId, ConnectionPhase::Failed);
             return;
         }
         test->download = (*rates)[0];

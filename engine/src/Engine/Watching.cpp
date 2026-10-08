@@ -76,9 +76,9 @@ void Engine::State::WatchFolder()
             addingWatch = true;
             AddSource(source, [this, source, stamp](Outcome outcome, Added added)
             {
+                addingWatch = false;
                 if (outcome.error)
                 {
-                    addingWatch = false;
                     auto file = watchedFiles.find(source);
                     if (file != watchedFiles.end() && file->second.stamp == stamp)
                     {
@@ -89,44 +89,12 @@ void Engine::State::WatchFolder()
                     }
                     return;
                 }
-                RecordWatch(source, stamp, [this, source, added](Outcome outcome)
-                {
-                    addingWatch = false;
-                    if (outcome.error)
-                        log.Write("watch", "", "storage_failed");
-                    else if (auto found = torrents.find(added.torrentId);
-                        added.kind == AdditionKind::New && found != torrents.end() && !found->second.deleted)
-                        Notify(NoticeKind::Added, found->second);
-                });
+                if (auto found = torrents.find(added.torrentId);
+                    added.kind == AdditionKind::New && found != torrents.end() && !found->second.deleted)
+                    Notify(NoticeKind::Added, found->second);
             }, settings.watchDestination, stamp);
             break;
         }
     });
-}
-
-void Engine::State::RecordWatch(std::string source, std::string stamp, std::function<void(Outcome)> completion)
-{
-    if (!changes.Queue([this, source, stamp, completion]
-    {
-        auto found = watchedSources.find(source);
-        if (found != watchedSources.end() && found->second == stamp)
-        {
-            completion({});
-            return;
-        }
-        auto document = Saved();
-        document.watchedSources[source] = stamp;
-        changes.Commit(document.ToJson(), [this, source, stamp, completion](StorageOutcome outcome)
-        {
-            if (!outcome.succeeded)
-            {
-                completion({ErrorCode::StorageFailed, outcome.detail});
-                return;
-            }
-            watchedSources[source] = stamp;
-            completion({});
-        });
-    }))
-        completion({ErrorCode::Overloaded});
 }
 }

@@ -999,7 +999,7 @@ void Engine::State::Configure(Json const& choices, Reply reply)
             settings = next;
             RefreshPolicy(true);
             if (routeChanged && connectionTest)
-                ReleaseConnectionTest(connectionTest->connectionId, true);
+                ReleaseConnectionTest(connectionTest->connectionId, ConnectionPhase::Cancelled);
             return finish();
         });
     }))
@@ -1031,7 +1031,7 @@ std::string const& Engine::State::Settings::AdditionFolder() const
 
 bool Engine::State::IsAbsolute(std::string const& path)
 {
-    return std::filesystem::path(Wide(path)).is_absolute();
+    return path.find('\0') == std::string::npos && std::filesystem::path(Wide(path)).is_absolute();
 }
 
 void Engine::State::PauseSession(bool paused, std::function<void(Outcome)> completion)

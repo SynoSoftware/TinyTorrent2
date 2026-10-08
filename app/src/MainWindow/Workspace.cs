@@ -102,9 +102,8 @@ public sealed partial class MainWindow
     {
         if (HasDialog || Model.IsClosing || _allowClose)
             return false;
-        if (SettingsContent.Content is ConnectionPage && !Model.Settings.Connection.CanLeave)
-            return false;
-        if (SettingsContent.Content is ConnectionPage && !await Model.Settings.Connection.Depart())
+        if (Model.Page == WindowPage.Settings && page == WindowPage.Settings
+            && SettingsContent.Content is ConnectionPage && !await Model.Settings.Connection.Depart())
             return false;
         if (
             Model.Page == WindowPage.Torrents

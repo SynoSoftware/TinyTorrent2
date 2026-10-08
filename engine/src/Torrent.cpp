@@ -452,7 +452,7 @@ Status Torrent::Classify(bool sessionPaused) const
     {
         return Status::AllPaused;
     }
-    if (status.state == lt::torrent_status::checking_files ||
+    if (completionPhase == CompletionPhase::Checking || status.state == lt::torrent_status::checking_files ||
         status.state == lt::torrent_status::checking_resume_data)
     {
         return Status::Checking;
@@ -465,7 +465,7 @@ Status Torrent::Classify(bool sessionPaused) const
     {
         return Status::Queued;
     }
-    if (completionPhase == CompletionPhase::Flushing || completionPhase == CompletionPhase::Checking)
+    if (completionPhase == CompletionPhase::Flushing)
     {
         return Status::Downloading;
     }
