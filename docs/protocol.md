@@ -28,7 +28,7 @@ can be prompted before the window closes. A clean window closes without promptin
 the [interface](interface.md#committing-edits) owns that behavior. A window whose
 user keeps unfinished input replies that Exit is cancelled. The same close reply
 distinguishes waiting for the person from continuing closure, so an unanswered
-draft prompt cannot trigger an unresponsive-window warning. The engine's
+draft or Exit confirmation cannot trigger an unresponsive-window warning. The engine's
 [shutdown sequence](engine.md#closing-and-shutdown) owns the rest. Do not add
 another transport or event bus.
 

@@ -7,7 +7,7 @@ namespace tt
 void Engine::State::WatchFolder()
 {
     auto now = std::chrono::steady_clock::now();
-    if (!settings.watches || scanningWatch || addingWatch || watchedSources.size() >= torrentLimit ||
+    if (!settings.watches || scanningWatch || addingWatch ||
         now - watchAt < std::chrono::seconds(5))
         return;
     watchAt = now;
@@ -28,24 +28,22 @@ void Engine::State::WatchFolder()
                 std::to_string(entry.last_write_time().time_since_epoch().count());
             found->emplace(Utf8(path), std::move(stamp));
         };
-        auto options = std::filesystem::directory_options::skip_permission_denied;
-        std::size_t visited = 0;
         if (recursive)
         {
-            for (auto const& entry : std::filesystem::recursive_directory_iterator(Wide(folder), options))
+            for (auto const& entry : std::filesystem::recursive_directory_iterator(Wide(folder)))
             {
-                if (++visited > torrentLimit)
-                    break;
                 inspect(entry);
+                if (found->size() > torrentLimit)
+                    break;
             }
         }
         else
         {
-            for (auto const& entry : std::filesystem::directory_iterator(Wide(folder), options))
+            for (auto const& entry : std::filesystem::directory_iterator(Wide(folder)))
             {
-                if (++visited > torrentLimit)
-                    break;
                 inspect(entry);
+                if (found->size() > torrentLimit)
+                    break;
             }
         }
     }, [this, found, folder, recursive](StorageOutcome outcome)
@@ -53,14 +51,35 @@ void Engine::State::WatchFolder()
         scanningWatch = false;
         if (shuttingDown || !settings.watches || settings.watchPath != folder || settings.watchesRecursively != recursive)
             return;
-        if (!outcome.succeeded)
+        if (!outcome.succeeded || found->size() > torrentLimit)
         {
             if (!watchFailed)
-                Notify(NoticeKind::AddFailed, folder, outcome.detail);
+                Notify(NoticeKind::AddFailed, folder, outcome.detail, {},
+                    outcome.succeeded ? "watch_limit" : "");
             watchFailed = true;
             return;
         }
         watchFailed = false;
+        auto absent = [found](auto const& file) { return !found->contains(file.first); };
+        if (std::any_of(watchedSources.begin(), watchedSources.end(), absent))
+        {
+            scanningWatch = true;
+            if (!changes.Queue([this, absent, folder]
+            {
+                auto document = Saved();
+                std::erase_if(document.watchedSources, absent);
+                changes.Commit(document.ToJson(), [this, folder, retained = document.watchedSources](StorageOutcome outcome)
+                {
+                    scanningWatch = false;
+                    if (outcome.succeeded)
+                        watchedSources = retained;
+                    else
+                        Notify(NoticeKind::AddFailed, folder, outcome.detail);
+                });
+            }))
+                scanningWatch = false;
+            return;
+        }
         auto now = std::chrono::steady_clock::now();
         std::erase_if(watchedFiles, [&found](auto const& file) { return !found->contains(file.first); });
         for (auto const& [source, stamp] : *found)

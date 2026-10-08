@@ -810,7 +810,8 @@ void Torrent::ApplyIntent()
         priorities = DefaultPriorities(metadata->layout(), facts.skipPatterns);
     }
     handle.prioritize_files(priorities);
-    if (facts.intent == Intent::Paused || (metadata && std::none_of(priorities.begin(), priorities.end(),
+    if (facts.intent == Intent::Paused || (metadata && facts.priorities.empty() &&
+        std::none_of(priorities.begin(), priorities.end(),
         [](auto priority) { return priority != lt::dont_download; })))
     {
         handle.unset_flags(lt::torrent_flags::auto_managed);

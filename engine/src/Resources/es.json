@@ -43,6 +43,7 @@
     "transfers": "TinyTorrent está transfiriendo archivos."
   },
   "error": {
+    "watch_limit": "Esta carpeta vigilada contiene más de 10.000 archivos torrent. Retira archivos de origen antiguos o elige una carpeta más pequeña.",
     "start": "TinyTorrent no pudo iniciarse.",
     "version": "Ya se está ejecutando otra versión de TinyTorrent. Selecciona Salir en la bandeja y vuelve a iniciar TinyTorrent.",
     "source": "No se pudo añadir el torrent.",

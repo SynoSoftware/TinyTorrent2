@@ -211,6 +211,15 @@ the choices through the same operation owner. Recovery in that interval uses
 the committed choices, not an earlier resume checkpoint with preview priorities.
 Direct addition follows the same ordering.
 
+The watched folder remembers unchanged source files while they remain in its
+current scan scope, so removing a torrent does not immediately add it again.
+A successful complete scan forgets sources no longer in that scope; placing a
+source back or selecting a different folder permits admission again. Failed or
+incomplete scans retain the records. The 10,000-source bound applies to files
+currently in that scope, not lifetime imports; exceeding it reports a failure
+and resumes scanning when the folder is reduced. Unrelated files do not consume
+the source limit.
+
 Keep full v1/v2 info hashes and discovered hybrid aliases for content and
 duplicate detection. Metadata can reveal an alias conflict after initial
 addition. Resolve a preview conflict in favor of the accepted torrent. If two

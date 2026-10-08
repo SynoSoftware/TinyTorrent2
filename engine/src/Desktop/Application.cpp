@@ -461,7 +461,7 @@ void Application::OnTimer()
         waitingSince_ = 0;
         reopen_ = false;
         showsSettings_ = false;
-        if (!IsExiting())
+        if (!IsExiting() && exit_ != ExitPhase::WindowConfirming)
         {
             splash_.Close();
             ShowError("startup");
@@ -684,7 +684,8 @@ void Application::OnActivateReply(std::shared_ptr<Pipe::Connection> const& clien
 
 void Application::OnCloseReply(std::shared_ptr<Pipe::Connection> const& client, CloseState state, Reply const& reply)
 {
-    if (windowClient_ != client || !IsExiting())
+    if (windowClient_ != client || (!IsExiting() &&
+        !(exit_ == ExitPhase::WindowConfirming && state == CloseState::Waiting)))
     {
         reply(Failure(ErrorCode::InvalidRequest));
         return;
@@ -714,6 +715,7 @@ void Application::OnExitReply(std::shared_ptr<Pipe::Connection> const& client, E
     }
     reply(Success());
     exit_ = ExitPhase::Idle;
+    waitingSince_ = 0;
     if (engine_->IsShuttingDown())
     {
         return;
@@ -894,6 +896,7 @@ void Application::Exit()
             AllowSetForegroundWindow(windowClient_->processId);
         }
         exit_ = ExitPhase::WindowConfirming;
+        waitingSince_ = GetTickCount64();
         windowClient_->Send(Json{{"type", "confirm_exit"}});
         return;
     }
@@ -918,7 +921,7 @@ bool Application::ConfirmExit()
     dialog.pszContent = detail.c_str();
     dialog.cButtons = 1;
     dialog.pButtons = &button;
-    dialog.nDefaultButton = IDCANCEL;
+    dialog.nDefaultButton = IDOK;
     int chosen = IDCANCEL;
     exit_ = ExitPhase::Confirming;
     auto outcome = TaskDialogIndirect(&dialog, &chosen, nullptr, nullptr);
@@ -1280,6 +1283,8 @@ void Application::Notify(Notice notice)
             {"count", notice.count}});
         return;
     }
+    if (notice.code == "watch_limit")
+        notice.detail = Utf8(strings_.Text("error", notice.code));
     tray_->Queue(std::move(notice));
 }
 

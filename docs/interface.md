@@ -245,8 +245,8 @@ spacing and buttons already separate its parts. A confirmation with no fact
 beyond its title and buttons has no body.
 
 **Owner ruling: a confirmation's default button is the act the person chose.**
-Remove and Delete default to Remove and Delete, not Cancel, because the person
-already chose the act and the dialog only confirms it, as File Explorer's
+Remove, Delete and Exit default to the requested act, not Cancel, because the
+person already chose the act and the dialog only confirms it, as File Explorer's
 permanent-delete confirmation does. A Cancel default answers a request with its
 opposite. The one exception is the question that a pending Add or Move raises
 when the window closes: it asks about an act the person did not choose, so Keep

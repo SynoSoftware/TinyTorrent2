@@ -43,6 +43,7 @@
     "transfers": "TinyTorrent is transferring files."
   },
   "error": {
+    "watch_limit": "This watched folder contains more than 10,000 torrent files. Remove old source files or choose a smaller folder.",
     "start": "TinyTorrent could not start.",
     "version": "A different version of TinyTorrent is already running. Choose Exit in the tray, then start TinyTorrent again.",
     "source": "The torrent could not be added.",

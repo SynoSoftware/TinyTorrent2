@@ -71,6 +71,7 @@
     "unknown": "No se pudo completar la operación.", "detail": "{0}\n{1}", "torrent": "{0}: {1}",
     "torrent_error": "El torrent se detuvo debido a un error.",
     "add_failed": "No se pudo añadir el torrent.",
+    "watch_limit": "Esta carpeta vigilada contiene más de 10.000 archivos torrent. Retira archivos de origen antiguos o elige una carpeta más pequeña.",
     "delete_failed": "No se pudieron eliminar algunos archivos descargados.",
     "additional_problems": "Se produjeron {0:N0} problemas más.",
     "storage_failed": "No se pudo leer o guardar el estado de las descargas. Comprueba la carpeta de datos del motor y vuelve a intentarlo.",

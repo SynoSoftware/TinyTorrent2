@@ -676,10 +676,11 @@ public sealed partial class MainWindow : Window
             var dialog = new Dialog
             {
                 XamlRoot = Root.XamlRoot,
-                DefaultButton = ContentDialogButton.Close,
+                DefaultButton = ContentDialogButton.Primary,
                 Glyph = Syno.Lucide.Power,
                 PrimaryGlyph = Syno.Lucide.Power,
             };
+            await Model.DeferClose();
             var choice = await ShowDialog(
                 interaction,
                 dialog,
