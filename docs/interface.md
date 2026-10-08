@@ -535,8 +535,8 @@ open with its error. Each limit is one fixed cap. The lower of the torrent's
 limit and the current global limit applies, so the schedule, alternative limits
 and Pause all keep working through the global limits, and no torrent needs its
 own alternative limits or schedule. A limit above the global limit is accepted,
-and the dialog shows the current global limit so the person sees which one
-applies. The menu item is checked when every selected torrent has a limit and
+and the limit fields' tooltip shows the current global limit so the person sees
+which one applies. The menu item is checked when every selected torrent has a limit and
 mixed when only some do, as the piece-order choices are. The inspector's General
 view states the torrent's limits, because a person who wonders why one torrent
 is slow opens its properties. An optional Speed limit column, hidden by default
@@ -572,8 +572,10 @@ tooltip and accessible name give the full sentence. The left group describes
 transfers: total download and upload speed, each followed by its cap while one
 applies, such as "1.2 MB/s of 5 MB/s", so a download that a limit holds back
 explains itself; Alternative limits, only while the alternative pair applies,
-with the caps and what turned them on in its tooltip; and All paused while the
-session is paused. A rate's tooltip names its limit and the pair it comes from,
+with the caps and what turned them on in its tooltip; and the reason transfers
+are paused, including the end time for a scheduled pause when known, so a
+successful torrent resume that a global pause blocks explains itself.
+A rate's tooltip names its limit and the pair it comes from,
 or says that no limit applies. The right group describes the list and the
 connection: the number of torrents and, while some are selected, how many, as
 File Explorer counts items; the active filter and its count while one is
@@ -683,6 +685,7 @@ message cannot be the only explanation of unfinished or failed work.
 | Situation | Surface |
 | --- | --- |
 | Routine pause, resume, addition in the open window or applied setting | The changed state and one accessible outcome announcement; no visible success toast. |
+| Resume or Force start while a global pause prevents transfers | A dismissible warning gives the pause reason. Override lifts the global pause; its tooltip explains that a scheduled pause is bypassed only until the next schedule change and individually paused torrents stay paused. An unavailable interface offers Settings instead. The warning clears when the pause ends. |
 | Refused setting or failed editor action | Persistent feedback beside the field or inside that editor, following [Committing edits](#committing-edits). |
 | Failed command without an editor, such as Pause or Open folder | A dismissible app-level error message, separate from connection status; no timed disappearance. Retain the existing policy for clearing it after later command outcomes. |
 | Connection loss or unavailable storage affecting the application | A persistent InfoBar over the bottom of the workspace, above the status footer. It overlays every page without resizing its content; recovery clears the condition. |

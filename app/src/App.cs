@@ -1,6 +1,7 @@
 using Microsoft.UI.Xaml;
 using System.Runtime.InteropServices;
 using Syno.TinyTorrent.Services;
+using Syno.TinyTorrent.Controls;
 
 namespace Syno.TinyTorrent;
 
@@ -8,6 +9,8 @@ public partial class App : Application
 {
     private Mutex? _instance;
     private MainWindow? _window;
+    // Fatal CLR callbacks may run off the UI thread.
+    private IntPtr _windowHandle;
     private Strings? _strings;
     private int _reportingFailure;
     private static readonly string LogDirectory = Path.Combine(
@@ -50,8 +53,10 @@ public partial class App : Application
 
         _strings = await Task.Run(() => new Strings());
         _window = new MainWindow(_strings);
+        _windowHandle = WinRT.Interop.WindowNative.GetWindowHandle(_window);
         _window.Closed += (_, _) =>
         {
+            _windowHandle = IntPtr.Zero;
             _instance.ReleaseMutex();
             _instance.Dispose();
             Exit();
@@ -66,21 +71,15 @@ public partial class App : Application
     {
         // WinUI and the CLR can report the same fatal exception.
         if (Interlocked.Exchange(ref _reportingFailure, 1) != 0) return;
-        var path = ExceptionLog.Write(LogDirectory, error, source, message);
+        var report = ExceptionLog.Write(LogDirectory, error, source, message);
         try
         {
-            // Startup can fail before the language catalogue loads.
-            var explanation = _strings?.Get("crash", "message") ??
-                "The TinyTorrent window encountered an unexpected error and must close. Reopen TinyTorrent to restore the window. The download engine runs separately.";
-            var details = path is null
-                ? (_strings?.Get("crash", "unsaved") ?? "The error report could not be saved. Press Ctrl+C to copy this message when reporting the problem.") + "\n\n" + error
-                : _strings?.Format("crash", "saved", path) ?? $"Include this file when reporting the problem:\n{path}\n\nPress Ctrl+C to copy this message.";
-            // A native dialog also works when XAML initialization or rendering failed.
-            MessageBoxW(IntPtr.Zero, explanation + "\n\n" + details, "TinyTorrent", 0x2010);
+            CrashDialog.Show(report, _strings, _windowHandle);
         }
         catch (Exception failure)
         {
             System.Diagnostics.Debug.WriteLine($"Could not show the fatal error: {failure}");
+            MessageBoxW(IntPtr.Zero, report.Text, "TinyTorrent", 0x2010);
         }
     }
 

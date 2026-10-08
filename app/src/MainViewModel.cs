@@ -195,6 +195,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         Bottom = new Command(() => Queue("bottom"), () => CanMove);
         PauseAll = new Command(() => SessionPause(true), () => CanEdit);
         ResumeAll = new Command(() => SessionPause(false), () => CanEdit);
+        ResolvePause = new Command(() => _pause == PauseReason.Interface
+            ? ShowSetting(Preferences.Interface) : SessionPause(false), () => CanEdit);
         Limits = new Command(() => RequestPreferences(new(PreferenceSection.Limits, "limit_mode")), () => true);
         Open = new Command(() => OpenTorrent(false), () => CanEdit && _selected.Length == 1);
         OpenFolder = new Command(() => OpenTorrent(true), () => CanEdit && _selected.Length == 1);
@@ -218,6 +220,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         {
             if (_closed) return;
             _connected = false;
+            _resumeNotice = false;
             _connectionReason = reason;
             _ready = false;
             Draft.Invalidate();
@@ -367,6 +370,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             await _client.Send(command, new { torrent_ids = identities });
             Accepted("commands", command);
             _error = null;
+            _resumeNotice = command is "resume" or "force";
             RequestSnapshot();
         }
         catch (Exception error) { Report(error); }
@@ -536,9 +540,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     }
 
     // Shows a command's effect without waiting for the next periodic refresh.
-    // The command has already succeeded, so a failed refresh reports nothing;
-    // a lost connection reports itself.
-    internal void RequestSnapshot() => _ = _client.Read(Consumer.Summary, "snapshot");
+    internal void RequestSnapshot() => _ = _client.RefreshSnapshot();
 
     internal void ClearError() { _error = null; RefreshWindow(); }
 
@@ -560,7 +562,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         Changed(string.Empty);
         foreach (Command command in new[] { Add, AddMagnet, Pause, Resume, Force, SwitchSequential, SwitchFirstLast, LimitSpeed, SwitchFilters, SwitchToolbar,
             Verify, Remove, MoveFiles, DeleteFiles,
-            Up, Down, Top, Bottom, PauseAll, ResumeAll, Open, OpenFolder, CopyMagnet, CopyHash,
+            Up, Down, Top, Bottom, PauseAll, ResumeAll, ResolvePause, Open, OpenFolder, CopyMagnet, CopyHash,
             Properties, Limits, ClearFilters, ShowPreferences, ShowTorrents, ShowAbout, OpenUpdate, Exit, SwitchTheme, Restart, OpenCompletion }) command.Refresh();
     }
 

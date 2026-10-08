@@ -1,8 +1,13 @@
 {
   "crash": {
+    "title": "TinyTorrent debe cerrarse",
     "message": "La ventana de TinyTorrent encontró un error inesperado y debe cerrarse. Vuelve a abrir TinyTorrent para restaurar la ventana. El motor de descargas se ejecuta por separado.",
-    "saved": "Incluye este archivo al informar del problema:\n{0}\n\nPulsa Ctrl+C para copiar este mensaje.",
-    "unsaved": "No se pudo guardar el informe del error. Pulsa Ctrl+C para copiar este mensaje al informar del problema."
+    "saved": "Registro guardado en:\n{0}",
+    "unsaved": "No se pudo guardar el registro. Aún puedes copiarlo.",
+    "copy": "Copiar registro",
+    "copy_hint": "Copia el registro para incluirlo al informar del problema.",
+    "copied": "Registro copiado.",
+    "copy_failed": "No se pudo copiar el registro. Inténtalo de nuevo."
   },
   "window": {
     "title": "TinyTorrent", "torrents": "Torrents", "add": "Añadir", "pause": "Pausar", "resume": "Reanudar", "exit": "Salir",
@@ -35,7 +40,7 @@
     "destination_key": "C", "browse_key": "E", "paused_key": "I", "sequential_key": "S", "first_last_key": "U", "magnet_key": "M", "paste_key": "P", "review_key": "V",
     "sources": "{0} fuentes", "magnet": "Enlace magnet", "paste": "Pegar", "review": "Vista previa", "metadata": "Obteniendo metadatos…", "already_added": "Ya añadido", "merge": "Combinar", "shared": "Otros torrents usan archivos en esta carpeta: {0}", "never_show": "No volver a mostrar este diálogo", "close": "Cerrar", "options": "Opciones", "free": "{0} libres", "short": "No hay espacio suficiente: se necesitan {0}, {1} libres", "maximize": "Maximizar", "restore": "Restaurar", "resize": "Cambiar tamaño de los paneles", "hide_settings": "Ocultar configuración", "show_settings": "Mostrar configuración", "no_files": "Selecciona al menos un archivo para añadir este torrent.", "merge_trackers": "Combinar rastreadores", "merge_title": "¿Combinar rastreadores?", "merge_tip": "Añadir los rastreadores de esta fuente al torrent que ya está en tu lista", "submit_tip": "Añadir este torrent e iniciarlo", "submit_tip_paused": "Añadir este torrent sin iniciarlo", "submit_tip_all": "Añadir estos {0} torrents e iniciarlos", "submit_tip_all_paused": "Añadir estos {0} torrents sin iniciarlos", "browse_tip": "Elegir la carpeta de descarga", "paste_tip": "Pegar un enlace magnet desde el portapapeles", "review_tip": "Obtener la lista de archivos de los pares antes de añadir", "all_files_tip": "Seleccionar todos los archivos de este torrent", "already_listed": "Ya está en tu lista, sin algunos rastreadores de esta fuente"
   },
-  "status": { "unknown": "Desconocido", "downloading": "Descargando", "seeding": "Compartiendo", "paused": "En pausa", "all_paused": "Todos en pausa", "all_paused_tip": "Todas las transferencias están en pausa. Elige Reanudar todos para iniciarlas de nuevo.", "checking": "Comprobando", "queued": "En cola", "error": "Error", "completed": "Completado", "metadata": "Obteniendo metadatos", "moving": "Moviendo archivos" },
+  "status": { "unknown": "Desconocido", "downloading": "Descargando", "seeding": "Compartiendo", "paused": "En pausa", "all_paused": "Todas las transferencias en pausa", "scheduled": "En pausa por el horario", "scheduled_until": "En pausa por el horario hasta {0}", "checking": "Comprobando", "queued": "En cola", "error": "Error", "completed": "Completado", "metadata": "Obteniendo metadatos", "moving": "Moviendo archivos" },
   "changes": {
     "discard": "Descartar", "keep_editing": "Seguir editando",
     "add_title": "¿Terminar de añadir torrents?", "add_save_tip": "Terminar de añadirlos con las opciones elegidas", "add_discard_tip": "Descartar las adiciones pendientes",
@@ -295,6 +300,12 @@
     "spanish": "Español"
   },
   "notifications": {
+    "resume_blocked": "No se puede reanudar",
+    "override": "Omitir",
+    "override_tip": "Quitar la pausa global. Los torrents pausados individualmente siguen en pausa.",
+    "override_schedule_tip": "Omitir la pausa programada hasta el próximo cambio de horario. Los torrents pausados individualmente siguen en pausa.",
+    "settings": "Ajustes",
+    "settings_tip": "Abrir los ajustes de red para elegir una interfaz de red disponible.",
     "completed": "{0} ha terminado de descargarse.",
     "completed_more": "{0} y {1:N0} más han terminado de descargarse.",
     "open_folder": "Abrir",
@@ -330,7 +341,7 @@
     "spoken_download": "Límite de descarga {0}",
     "spoken_upload": "Límite de subida {0}",
     "spoken_both": "Límite de descarga {0}, límite de subida {1}",
-    "global": "Cada torrent usa el menor entre su propio límite y el límite global, ahora ↓ {0} · ↑ {1}.",
+    "global": "Límite global actual: ↓ {0} · ↑ {1}. Un torrent nunca va más rápido que este límite, aunque su propio límite sea mayor.",
     "save": "Guardar",
     "save_tip": "Aplicar estos límites a los torrents seleccionados"
   },

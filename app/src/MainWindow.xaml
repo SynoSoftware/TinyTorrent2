@@ -196,6 +196,13 @@
             </StackPanel>
         </ScrollViewer>
         <StackPanel Grid.Row="1" VerticalAlignment="Bottom" Margin="16,0,16,8" Spacing="8">
+            <InfoBar x:Name="ResumeNotice" Severity="Warning" IsClosable="True" CloseButtonClick="OnDismissResume"
+                Title="{x:Bind Model.Text.Get('notifications', 'resume_blocked'), Mode=OneWay}" Message="{x:Bind Model.PauseStatus, Mode=OneWay}"
+                IsOpen="{x:Bind Model.HasResumeNotice, Mode=OneWay}" Visibility="{x:Bind Model.HasResumeNotice, Mode=OneWay}">
+                <InfoBar.ActionButton><controls:ActionButton Text="{x:Bind Model.PauseAction, Mode=OneWay}" Glyph="{x:Bind Model.PauseActionGlyph, Mode=OneWay}"
+                    ToolTipService.ToolTip="{x:Bind Model.PauseActionTip, Mode=OneWay}" AutomationProperties.HelpText="{x:Bind Model.PauseActionTip, Mode=OneWay}"
+                    AutomationProperties.AutomationId="ResolvePause" Command="{x:Bind Model.ResolvePause}" /></InfoBar.ActionButton>
+            </InfoBar>
             <InfoBar x:Name="Feedback" IsClosable="False" Severity="{x:Bind Model.Severity, Mode=OneWay}" Message="{x:Bind Model.Message, Mode=OneWay}" IsOpen="{x:Bind Model.HasFeedback, Mode=OneWay}" Visibility="{x:Bind Model.HasFeedback, Mode=OneWay}">
                 <InfoBar.ActionButton><controls:ActionButton Glyph="{x:Bind icons:Lucide.RotateCcw}" ToolTipService.ToolTip="{x:Bind Model.Text.Get('connection', 'restart_tip'), Mode=OneWay}" AutomationProperties.AutomationId="Restart" Text="{x:Bind Model.RestartText, Mode=OneWay}" Command="{x:Bind Model.Restart}" Visibility="{x:Bind Model.CanRestart, Mode=OneWay}" /></InfoBar.ActionButton>
             </InfoBar>
@@ -228,9 +235,9 @@
                         AutomationProperties.LiveSetting="Polite" />
                 </StackPanel>
                 <StackPanel Orientation="Horizontal" Spacing="6" Background="Transparent" Visibility="{x:Bind Model.IsSessionPaused, Mode=OneWay}"
-                    ToolTipService.ToolTip="{x:Bind Model.Text.Get('status', 'all_paused_tip'), Mode=OneWay}">
+                    ToolTipService.ToolTip="{x:Bind Model.PauseStatus, Mode=OneWay}">
                     <FontIcon Style="{StaticResource TinyTorrentStatusIconStyle}" FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Pause}" />
-                    <TextBlock x:Name="PausedLabel" Text="{x:Bind Model.Text.Get('status', 'all_paused'), Mode=OneWay}" Style="{StaticResource TinyTorrentStatusTextStyle}" />
+                    <TextBlock x:Name="PausedLabel" Text="{x:Bind Model.PauseStatus, Mode=OneWay}" Style="{StaticResource TinyTorrentStatusTextStyle}" />
                 </StackPanel>
             </StackPanel>
             <StackPanel x:Name="ListStatus" Grid.Column="1" Orientation="Horizontal" Spacing="20" HorizontalAlignment="Right" VerticalAlignment="Center" SizeChanged="OnStatusSize">

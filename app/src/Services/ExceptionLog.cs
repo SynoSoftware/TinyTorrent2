@@ -9,12 +9,13 @@ internal static class ExceptionLog
 {
     private static readonly object Gate = new();
 
-    internal static string? Write(string directory, Exception error, string source, string? message = null)
+    internal static ExceptionReport Write(string directory, Exception error, string source, string? message = null)
     {
+        var report = message ?? error.Message;
         try
         {
             var version = Assembly.GetEntryAssembly()?.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
-            var report = $"""
+            report = $"""
                 TinyTorrent UI exception
                 Time (UTC): {DateTimeOffset.UtcNow:O}
                 Version: {version}
@@ -40,13 +41,15 @@ internal static class ExceptionLog
                 var previous = Path.Combine(directory, "ui-error.previous.log");
                 if (File.Exists(path)) File.Move(path, previous, overwrite: true);
                 File.WriteAllText(path, report, Encoding.UTF8);
-                return path;
+                return new(report, path);
             }
         }
         catch (Exception failure)
         {
             Debug.WriteLine($"Could not save the exception report: {failure}");
-            return null;
+            return new(report, null);
         }
     }
 }
+
+internal sealed record ExceptionReport(string Text, string? Path);

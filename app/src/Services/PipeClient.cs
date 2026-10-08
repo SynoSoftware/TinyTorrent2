@@ -259,13 +259,19 @@ internal sealed class PipeClient : IDisposable
     // again until it has answered.
     private async Task Refresh(PeriodicTimer timer, CancellationToken token)
     {
-        Task refresh = Task.CompletedTask;
         try
         {
             while (await timer.WaitForNextTickAsync(token))
-                if (refresh.IsCompleted) refresh = Read(Consumer.Summary, "snapshot");
+                await RefreshSnapshot();
         }
-        catch (OperationCanceledException) { }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+    }
+
+    internal async Task RefreshSnapshot()
+    {
+        // The connection loop reports failures from these optional refreshes.
+        try { await Read(Consumer.Summary, "snapshot"); }
+        catch (Exception) { }
     }
 
     private async Task Execute(NamedPipeClientStream pipe, Command command, CancellationToken token)
@@ -311,7 +317,7 @@ internal sealed class PipeClient : IDisposable
     {
         try
         {
-            while (!token.IsCancellationRequested)
+            while (true)
             {
                 var message = await Read(pipe, token);
                 if (message.TryGetProperty("type", out var type))
@@ -322,6 +328,11 @@ internal sealed class PipeClient : IDisposable
                 else if (message.TryGetProperty("request_id", out var id) && id.GetInt64() == _awaitingId)
                     _reply?.TrySetResult(message);
             }
+        }
+        catch (Exception error) when (token.IsCancellationRequested &&
+            error is OperationCanceledException or IOException or ObjectDisposedException)
+        {
+            _reply?.TrySetCanceled(token);
         }
         catch (Exception error)
         {

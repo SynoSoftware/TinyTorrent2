@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Windows.Input;
+using Syno.TinyTorrent.Models;
 using Syno.TinyTorrent.Services;
 
 namespace Syno.TinyTorrent;
@@ -7,6 +8,7 @@ namespace Syno.TinyTorrent;
 public sealed partial class MainViewModel
 {
     private Completion? _completion;
+    private bool _resumeNotice;
     private sealed record Completion(string TorrentId, string Name, int Count);
 
     public bool HasCompletion => _completion is not null;
@@ -17,6 +19,22 @@ public sealed partial class MainViewModel
         : Text.Format("notifications", "completed_more", CompletionName, completion.Count - 1);
     public string CompletionTip => Text.Format("notifications", "open_folder_tip", CompletionName);
     public ICommand OpenCompletion { get; }
+    public bool HasResumeNotice => _resumeNotice && IsSessionPaused;
+    public ICommand ResolvePause { get; }
+    public string PauseAction => Text.Get("notifications", _pause == PauseReason.Interface ? "settings" : "override");
+    public string PauseActionTip => Text.Get("notifications", _pause switch
+    {
+        PauseReason.Interface => "settings_tip",
+        PauseReason.Schedule => "override_schedule_tip",
+        _ => "override_tip"
+    });
+    public string PauseActionGlyph => _pause == PauseReason.Interface ? Syno.Lucide.Settings : Syno.Lucide.LockKeyholeOpen;
+
+    public void DismissResume()
+    {
+        _resumeNotice = false;
+        Changed(nameof(HasResumeNotice));
+    }
 
     private bool CanOpenCompletion => CanEdit && _completion is { } completion && _byId.ContainsKey(completion.TorrentId);
 

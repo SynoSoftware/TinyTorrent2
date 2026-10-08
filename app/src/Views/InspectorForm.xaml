@@ -40,7 +40,9 @@
                             <Grid Grid.Column="2" HorizontalAlignment="Left" ColumnSpacing="4">
                                 <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                                 <ContentPresenter Content="{TemplateBinding Content}" />
-                                <ContentPresenter Grid.Column="1" Content="{TemplateBinding Action}" />
+                                <!-- A second ContentPresenter here fails layout with E_INVALIDARG
+                                     when the General view opens; a ContentControl does not. -->
+                                <ContentControl Grid.Column="1" Content="{TemplateBinding Action}" IsTabStop="False" />
                             </Grid>
                         </Grid>
                     </ControlTemplate>

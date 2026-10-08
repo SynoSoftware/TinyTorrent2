@@ -834,9 +834,11 @@ The WinUI process records unexpected UI, managed-thread and unobserved task
 exceptions in `%LOCALAPPDATA%\TinyTorrent\ui-error.log`, retaining the previous
 report as `ui-error.previous.log`. Each report stays below 1 MiB and includes the
 build, runtime, exception and stack trace; it does not collect application state
-or upload anything. Fatal failures show a native Windows message with the report
-path and instructions to reopen the window, then retain the runtime's normal
-termination behavior. Unobserved task failures are logged without forcing a
+or upload anything. Fatal failures show a native Windows dialog with the report
+path, Copy log and instructions to reopen the window. Copy log copies the report
+itself, including when its file could not be saved, and confirms success without
+closing the dialog. Close retains the runtime's normal termination behavior.
+Unobserved task failures are logged without forcing a
 shutdown. A failed report write must not replace the original failure.
 
 ## Disk write caching

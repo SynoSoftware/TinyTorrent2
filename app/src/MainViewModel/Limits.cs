@@ -43,6 +43,14 @@ public sealed partial class MainViewModel
     public string UploadStatus => RateStatus(_uploadRate, _uploadCap);
     public string DownloadTip => RateTip("download_rate", _downloadRate, _downloadCap);
     public string UploadTip => RateTip("upload_rate", _uploadRate, _uploadCap);
+    public string PauseStatus => _pause switch
+    {
+        PauseReason.Schedule => Preferences.Schedule.NextChange(DateTime.Now) is { } change
+            ? Text.Format("status", "scheduled_until", change) : Text.Get("status", "scheduled"),
+        PauseReason.Interface => Text.Format("window", "no_interface", MissingInterface),
+        PauseReason.Manual => Text.Get("status", "all_paused"),
+        _ => string.Empty
+    };
     public string LimitsNow
     {
         get
@@ -109,6 +117,7 @@ public sealed partial class MainViewModel
             "schedule" => PauseReason.Schedule,
             _ => throw new InvalidDataException("Unknown pause reason.")
         };
+        if (_pause == PauseReason.None) _resumeNotice = false;
         // The periods hide under a fixed choice, so none stays open out of
         // sight, where its input could be neither seen nor corrected.
         if (FixedLimits is not null && Preferences.Schedule.IsOpen) _ = Preferences.Schedule.Close();

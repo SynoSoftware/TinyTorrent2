@@ -69,4 +69,5 @@ public sealed partial class MainWindow
     }
 
     private void OnDismissCompletion(InfoBar sender, object args) => Model.DismissCompletion();
+    private void OnDismissResume(InfoBar sender, object args) => Model.DismissResume();
 }
