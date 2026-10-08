@@ -8,6 +8,9 @@ preserves decisions, reasons, ownership boundaries, and limitations that are eas
 to miss in the HTML. Neither file proves production integration or performance.
 This handoff was checked against source; no application was run or compiled.
 
+For delivery order, existing owners, field coverage, and completion criteria,
+use the [implementation plan](../docs/settings-implementation.md).
+
 ## Start here
 
 1. Use **C: Search and index** as the selected direction: category cards and
