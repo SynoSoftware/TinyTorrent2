@@ -3,6 +3,7 @@ using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Automation.Provider;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
 using Syno.TinyTorrent.Helpers;
 using Syno.TinyTorrent.Models;
 using Syno.TinyTorrent.Views;
@@ -189,6 +190,40 @@ public sealed partial class MainWindow
 
         try
         {
+            await Edit(rate, "96");
+            BackButton.Focus(FocusState.Programmatic);
+            await GoBack();
+            if (Model.Page != WindowPage.Settings || _settingsPage?.Category is not null
+                || rate.HasDraft || rate.ConfirmedNumber != 98304)
+                throw new InvalidOperationException("Returning to the settings index lost the pending rate edit.");
+            completed.Add("edits-index-departure");
+
+            await Edit(rate, "112");
+            Search.Focus(FocusState.Programmatic);
+            await ShowSettings(new(SettingsCategory.Network, port.Name));
+            if (_settingsPage?.Category != SettingsCategory.Network
+                || rate.HasDraft || rate.ConfirmedNumber != 114688)
+                throw new InvalidOperationException("Navigating to a named setting lost the pending rate edit.");
+            Search.IsSuggestionListOpen = false;
+            completed.Add("edits-search-departure");
+
+            var refusedEditor = await Edit(rate, "128");
+            var refusal = new Services.CommandException("storage_failed", null, Model.Text);
+            rate.Reject(refusal);
+            var refusedPage = _settingsPage!;
+            var categories = (SelectorBar)refusedPage.FindName("Categories");
+            var nextCategory = (SelectorBarItem)refusedPage.FindName("NetworkCategory");
+            nextCategory.Focus(FocusState.Programmatic);
+            categories.SelectedItem = nextCategory;
+            await CaptureLayout();
+            if (refusedPage.Category != SettingsCategory.Limits || !rate.HasDraft
+                || !ReferenceEquals(rate.Failure, refusal)
+                || !ReferenceEquals(FocusManager.GetFocusedElement(Root.XamlRoot), refusedEditor))
+                throw new InvalidOperationException("Selecting a category hid an already refused rate edit.");
+            await CaptureUi("edits-refused-category");
+            rate.Cancel();
+            completed.Add("edits-refused-category");
+
             var valid = originalRate == "64" ? "65" : "64";
             await Edit(rate, valid);
             await CapturePage("edits-valid-rate-before-leaving");

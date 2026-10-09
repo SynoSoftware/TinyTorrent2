@@ -140,19 +140,14 @@ void Engine::State::CommitEdit(std::string const& id,
         torrent.unsaved = true;
         if (hasTrackers)
         {
-            auto const& trackers = *facts.trackers;
-            auto current = torrent.handle.trackers();
-            if (current.size() != trackers.size() || !std::equal(current.begin(), current.end(),
-                trackers.begin(), [](auto const& left, auto const& right)
-                { return left.url == right.url && left.tier == right.tier; }))
-            {
-                torrent.handle.replace_trackers(trackers);
-            }
+            torrent.handle.replace_trackers(*facts.trackers);
         }
-        if (hasPriorities && torrent.handle.get_file_priorities() != facts.priorities)
+        if (hasPriorities)
         {
             torrent.priorityReply = reply;
             torrent.handle.prioritize_files(facts.priorities);
+            Invalidate(id);
+            QueryPriorities(torrent);
         }
         else
         {
@@ -179,17 +174,11 @@ void Engine::State::CommitEdit(std::string const& id,
     });
 }
 
-void Engine::State::CompletePriorities(Torrent& torrent)
+void Engine::State::QueryPriorities(Torrent& torrent)
 {
-    if (!torrent.priorityReply)
+    if (!torrent.restore && (torrent.priorityReply || torrent.piecesPending) && torrent.handle.torrent_file())
     {
-        return;
+        Query(torrent, DetailKind::Priorities);
     }
-    if (torrent.handle.get_file_priorities() != torrent.facts.priorities)
-    {
-        return;
-    }
-    torrent.unsaved = true;
-    std::exchange(torrent.priorityReply, nullptr)(Success());
 }
 }

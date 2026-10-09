@@ -21,8 +21,10 @@ public sealed partial class SettingsPage : UserControl
     private bool _refreshing;
     private readonly Scheduler _scheduler;
     private readonly UISettings _display = new();
+    private readonly Motion _motion = new();
     private readonly Dictionary<SelectorBarItem, double> _positions = [];
     private SelectorBarItem? _category;
+    private bool _restoringCategory;
     private double _indexPosition;
     public Settings Model { get; }
     public MainViewModel Main { get; }
@@ -57,6 +59,7 @@ public sealed partial class SettingsPage : UserControl
 
     private void OnUnloaded(object sender, RoutedEventArgs args)
     {
+        _motion.Stop();
         Model.TextChanged -= OnText;
         Model.PropertyChanged -= OnModel;
         _display.TextScaleFactorChanged -= OnTextScale;
@@ -111,11 +114,8 @@ public sealed partial class SettingsPage : UserControl
         Label(AppearanceCategory, "appearance");
         Label(AdvancedCategory, "advanced");
         Label(ScheduleCategory, "schedule");
-        SettingsSearch.PlaceholderText = Model.Text.Get("settings", "search");
-        AutomationProperties.SetName(SettingsSearch, SettingsSearch.PlaceholderText);
         AdvancedLabel.Text = Model.Text.Get("settings", "show_advanced");
         AutomationProperties.SetName(AdvancedSwitch, AdvancedLabel.Text);
-        IndexIntro.Text = Model.Text.Get("settings", "index_intro");
         AutomationProperties.SetName(Categories, Model.Text.Get("settings", "categories"));
         Label(DownloadsSection, "files", "downloads_hint");
         Label(AddingSection, "adding", "show_add_hint");
@@ -190,9 +190,6 @@ public sealed partial class SettingsPage : UserControl
         _refreshing = false;
         RefreshIndex();
         AlignCategory();
-        var searchOpen = SettingsSearch.IsSuggestionListOpen;
-        RefreshSearch();
-        SettingsSearch.IsSuggestionListOpen = searchOpen;
     }
 
     private void Label(ContentControl control, string key, string group = "settings")
@@ -232,13 +229,41 @@ public sealed partial class SettingsPage : UserControl
     public static AccessibilityView Exposed(bool visible) =>
         visible ? AccessibilityView.Content : AccessibilityView.Raw;
 
-    private void OnCategory(SelectorBar sender, SelectorBarSelectionChangedEventArgs args)
+    private async void OnCategory(SelectorBar sender, SelectorBarSelectionChangedEventArgs args)
     {
+        if (_restoringCategory)
+            return;
+        var requested = sender.SelectedItem;
+        var canLeave = await Model.PrepareLeave();
+        if (sender.SelectedItem != requested)
+            return;
+        if (canLeave)
+        {
+            ShowCategory();
+            return;
+        }
+        _restoringCategory = true;
+        try
+        {
+            sender.SelectedItem = _category;
+            var field = Recover(null);
+            ShowCategory();
+            field?.Focus(FocusState.Programmatic);
+        }
+        finally
+        {
+            _restoringCategory = false;
+        }
+    }
+
+    private void ShowCategory()
+    {
+        var changed = _category != Categories.SelectedItem;
         if (_category is { } previous)
             _positions[previous] = Body.VerticalOffset;
         else
             _indexPosition = Body.VerticalOffset;
-        _category = sender.SelectedItem;
+        _category = Categories.SelectedItem;
         IndexContent.Visibility = _category is null ? Visibility.Visible : Visibility.Collapsed;
         CategoryTabs.Visibility = _category is null ? Visibility.Collapsed : Visibility.Visible;
         foreach (var panel in CategoryPanels)
@@ -248,6 +273,8 @@ public sealed partial class SettingsPage : UserControl
         AlignCategory();
         var position = _category is { } item ? _positions.GetValueOrDefault(item) : _indexPosition;
         Body.ChangeView(null, position, null, true);
+        if (changed)
+            _motion.Play(BodyContent, 12);
     }
 
     private IEnumerable<FrameworkElement> CategoryPanels =>
@@ -311,7 +338,17 @@ public sealed partial class SettingsPage : UserControl
         }
     }
 
-    private void OnAdvanced(object sender, RoutedEventArgs args) => UpdateDisclosure();
+    private async void OnAdvanced(object sender, RoutedEventArgs args)
+    {
+        if (!AdvancedSwitch.IsOn && !await Model.PrepareLeave())
+        {
+            AdvancedSwitch.IsOn = true;
+            Recover(null)?.Focus(FocusState.Programmatic);
+            return;
+        }
+        UpdateDisclosure();
+        _motion.Play(BodyContent, 12);
+    }
 
     private void UpdateDisclosure()
     {
@@ -368,34 +405,6 @@ public sealed partial class SettingsPage : UserControl
         foreach (var child in children)
             foreach (var descendant in Elements(child, visible))
                 yield return descendant;
-    }
-
-    private void OnSearchText(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args)
-    {
-        if (args.Reason == AutoSuggestionBoxTextChangeReason.UserInput)
-            RefreshSearch();
-    }
-
-    private void RefreshSearch()
-    {
-        var results = Main.FindSettings(SettingsSearch.Text);
-        SettingsSearch.ItemsSource = results;
-        SearchMessage.Text = results.Count == 0 && SettingsSearch.Text.Trim().Length > 0
-            ? Model.Text.Get("settings", "no_results")
-            : string.Empty;
-    }
-
-    private void OnSearchChosen(AutoSuggestBox sender, AutoSuggestBoxSuggestionChosenEventArgs args)
-    {
-        if (args.SelectedItem is Suggestion suggestion)
-            sender.Text = suggestion.Label;
-    }
-
-    private void OnSearchQuery(AutoSuggestBox sender, AutoSuggestBoxQuerySubmittedEventArgs args)
-    {
-        var suggestion = args.ChosenSuggestion as Suggestion ?? Main.FindSettings(sender.Text).FirstOrDefault();
-        suggestion?.Command.Execute(null);
-        sender.IsSuggestionListOpen = false;
     }
 
     private void OnEditLimits(object sender, RoutedEventArgs args) => Navigate(new(SettingsCategory.Limits, "download_limit"));
@@ -457,7 +466,7 @@ public sealed partial class SettingsPage : UserControl
             Categories.SelectedItem = null;
             DispatcherQueue.TryEnqueue(
                 Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,
-                () => SettingsSearch.Focus(FocusState.Programmatic)
+                () => CategoryIndex.Children.OfType<Button>().FirstOrDefault()?.Focus(FocusState.Programmatic)
             );
             return;
         }
@@ -721,7 +730,8 @@ public sealed partial class SettingsPage : UserControl
             if (current == this)
             {
                 setting.Input = editor.Text;
-                await Model.Depart(setting);
+                if (!await Model.Depart(setting))
+                    Recover(null)?.Focus(FocusState.Programmatic);
                 return;
             }
         }

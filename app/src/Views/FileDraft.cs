@@ -249,8 +249,8 @@ public sealed class FileDraft : INotifyPropertyChanged
             _owner.AnnounceAccepted("commands", IsMove ? "move" : "delete_files");
             if (!IsMove)
             {
-                var kept = outcome.GetProperty("kept_files").GetInt32();
-                if (kept > 0)
+                var count = outcome.GetProperty("kept_files");
+                if (count.ValueKind == JsonValueKind.Number && count.TryGetInt32(out var kept) && kept > 0)
                     _owner.Announce(_owner.Text.FormatCount("file_action", "kept", kept));
             }
             _failure = null;

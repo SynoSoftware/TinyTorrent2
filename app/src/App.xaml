@@ -734,6 +734,7 @@
       >
         <Setter Property="TextWrapping" Value="NoWrap" />
         <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+        <Setter Property="VerticalAlignment" Value="Center" />
       </Style>
       <Style
         x:Key="TinyTorrentStatusTextStyle"

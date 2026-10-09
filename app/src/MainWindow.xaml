@@ -624,6 +624,7 @@
             Visibility="{x:Bind Model.HasInspector, Mode=OneWay}"
           />
           <Grid
+            x:Name="InspectorSurface"
             Grid.Row="2"
             Visibility="{x:Bind Model.HasInspector, Mode=OneWay}"
             Margin="8,0"

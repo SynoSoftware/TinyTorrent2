@@ -9,6 +9,9 @@ TestResults/
 *.log
 *.dmp
 
+# Local credentials for development, such as supplier API keys
+/secrets/
+
 # Local editor state
 .vs/
 .idea/

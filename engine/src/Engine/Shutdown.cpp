@@ -1,5 +1,4 @@
 #include "Engine/State.h"
-#include <algorithm>
 
 namespace tt
 {
@@ -34,6 +33,7 @@ void Engine::State::Shutdown(std::function<void(std::optional<std::string> failu
         ReleaseConnectionTest(connectionTest->connectionId, ConnectionPhase::Cancelled);
     shuttingDown = true;
     phaseStarted.reset();
+    FailReading(Failure(ErrorCode::ShuttingDown));
     Discard([](Preview const&) { return true; });
     log.Write("shutdown", "", "requested");
     shutdown = std::move(completion);
@@ -76,15 +76,6 @@ void Engine::State::ContinueShutdown()
                 return;
             }
         }
-        bool unknown = (move && move->phase == MovePhase::Unknown) ||
-            std::any_of(deletions.begin(), deletions.end(),
-                [](auto const& deletion) { return deletion.phase == DeletionPhase::Unknown; });
-        if (!unknown)
-        {
-            return;
-        }
-        saveFailure.emplace();
-        Finish();
         return;
     }
     if (shutdownPhase == ShutdownPhase::Draining)
@@ -96,7 +87,7 @@ void Engine::State::ContinueShutdown()
         bool pending = false;
         for (auto& [id, torrent] : torrents)
         {
-            CompletePriorities(torrent);
+            QueryPriorities(torrent);
             if (!torrent.priorityReply)
             {
                 continue;
@@ -173,7 +164,8 @@ void Engine::State::ContinueShutdown()
         bool checkpointing = torrent.checkpointPhase != CheckpointPhase::Idle;
         pending |= checkpointing || (torrent.unsaved && !saveFailure);
     }
-    if (pending || !store.IsIdle() || !log.IsFlushed())
+    // A payload job may still use the session, so it ends before the session.
+    if (pending || !store.IsIdle() || !payload.IsIdle() || !log.IsFlushed())
     {
         return;
     }

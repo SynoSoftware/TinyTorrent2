@@ -78,13 +78,13 @@ public sealed partial class MainWindow
 
             await ShowSettings(new());
             advanced.IsOn = false;
-            var search = (AutoSuggestBox)page.FindName("SettingsSearch");
+            var search = Search;
             await CaptureLayout();
             var editor = TextEditor.Find(search)
                 ?? throw new InvalidOperationException("Settings search has no native editor.");
             editor.Focus(FocusState.Keyboard);
             editor.Text = Model.Settings.RefreshInterval.Label;
-            var matches = Model.FindSettings(editor.Text);
+            var matches = Model.FindSuggestions(editor.Text);
             if (matches.Count == 0)
                 throw new InvalidOperationException("Settings search did not find an advanced setting.");
             search.ItemsSource = matches;

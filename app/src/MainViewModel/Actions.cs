@@ -476,7 +476,7 @@ public sealed partial class MainViewModel
     {
         if (_selected.Length != 1)
             return;
-        if (Inspector.Show(_selected[0]))
+        if (Inspector.Show(_selected[0], section))
             await Inspector.Navigate(section);
         Refresh();
     }

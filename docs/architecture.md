@@ -42,9 +42,20 @@ useful errors and on-demand files, peers, trackers, pieces, and speed
 information, including tracker editing and reannounce. Keyboard use,
 accessibility, shell activation, and recovery after restart are part of the product.
 
+The [Library master plan](library.md) adds local search of finished files with
+movie, TV and music information. Data sources own file membership, beginning
+with managed torrents. Library, TMDB enrichment and subtitle downloading run
+entirely in C# while the product window is open. They share one C# SQLite owner
+for saved facts and decisions; current file membership is derived from engine
+facts and reconciled when the window connects. The resident engine keeps no
+Library projection, provider work or SQLite dependency. C# creates, populates
+and queries the database and owns subtitle-file handling. These features use
+existing torrent facts and commands without adding native feature code or APIs.
+The plan owns the feature's detailed behavior and future data-source seam.
+
 Design the interface around these tasks and libtorrent's capabilities. Remote
-servers, browser access, interchangeable engines, other platforms, a search
-panel, and torrent creation are outside scope. History, blocklists, and
+servers, browser access, interchangeable engines, other platforms, online torrent
+discovery, and torrent creation are outside scope. History, blocklists, and
 automation, such as a watched folder or running a program when a download
 finishes, need an identified user requirement before they become implementation
 work. The initial release includes automatic port mapping (UPnP/NAT-PMP), an
@@ -132,14 +143,15 @@ each process starts the other by name and two copies of a name drift apart.
 | --- | --- |
 | Swarm and transfer execution, torrent metadata | libtorrent inside the engine |
 | Application commands, torrent membership, queue and transfer policy | Engine |
-| Durable identities, saved settings, resume checkpoints | Engine persistence |
-| File operations and their recovery | Engine |
+| Durable torrent identities, engine settings, resume checkpoints | Engine persistence |
+| Torrent payload operations and their recovery | Engine |
 | Tray, splash, activation routing, window launch, application lifetime | Engine |
 | File/link handler and start-at-sign-in registration | Engine registration owner |
 | Installation files, prerequisites, shortcuts, and uninstall entry | Installer |
 | Background settings and selected application language | Engine |
 | Framing, decoding, request correlation, connection failures | Pipe adapter at each endpoint |
 | Display copies, filters, drafts, dialogs, window placement, window-only settings | WinUI |
+| Library search, TMDB, subtitle acquisition/file handling and their settings/facts | C# product-window lifetime; one SQLite owner |
 | Table geometry, sorting, selection, and gestures | TableView |
 | Resource lookup and live text refresh | One localisation component per process, following the [localisation contract](localisation.md#ownership-and-live-behavior) |
 

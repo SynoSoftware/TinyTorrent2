@@ -113,6 +113,12 @@ void Pipe::Connection::Send(Json message)
     {
         return;
     }
+    if (message.value("type", std::string()) == "detail")
+    {
+        detail = std::move(message);
+        changed.notify_one();
+        return;
+    }
     if (message.contains("type"))
     {
         for (auto const& queued : output)
@@ -285,19 +291,33 @@ void Pipe::Deliver(std::shared_ptr<Connection> client, HANDLE handle)
     std::unique_lock lock(client->mutex);
     while (!client->closed)
     {
-        client->changed.wait(lock, [&] { return client->closed || !client->output.empty(); });
+        client->changed.wait(lock, [&] { return client->closed || !client->output.empty() || client->detail; });
         if (client->closed)
         {
             break;
         }
-        auto message = std::move(client->output.front());
-        client->output.pop_front();
+        Json message;
+        if (!client->output.empty())
+        {
+            message = std::move(client->output.front());
+            client->output.pop_front();
+        }
+        else
+        {
+            message = std::move(*client->detail);
+            client->detail.reset();
+        }
         lock.unlock();
         auto bytes = message.dump(-1, ' ', false, Json::error_handler_t::replace);
         if (bytes.size() > messageLimit)
         {
             auto refusal = Failure(ErrorCode::ResponseTooLarge);
             refusal["request_id"] = message.value("request_id", Json());
+            if (message.value("type", std::string()) == "detail")
+            {
+                for (auto key : {"type", "session_id", "torrent_id", "context"})
+                    refusal[key] = message.at(key);
+            }
             bytes = refusal.dump();
         }
         bool success = Write(Io{handle, stop_, client->cancel}, bytes);

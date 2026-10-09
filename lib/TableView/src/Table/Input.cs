@@ -1415,10 +1415,14 @@ public sealed partial class Table
     }
 
     /// <summary>
-    /// Reveal an item in the current view without changing selection or keyboard focus.
+    /// Reveal an item without changing selection or keyboard focus. A source arrival waiting
+    /// under the pointer is released before scrolling.
     /// </summary>
     public void ScrollIntoView(object item)
     {
+        if (IndexInView(item) < 0 && _source.Snapshot.Contains(item, _identity))
+            Release([item]);
+
         // ItemsStackPanel's first request can land one row short while estimating its extent.
         _surface?.ScrollIntoView(item);
         _surface?.ScrollIntoView(item);

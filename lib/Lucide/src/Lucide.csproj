@@ -11,6 +11,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
+    <!-- One output per configuration, for the reason given in TableView.csproj. -->
+    <ArtifactsPivots>$(Configuration.ToLowerInvariant())</ArtifactsPivots>
   </PropertyGroup>
 
   <ItemGroup>

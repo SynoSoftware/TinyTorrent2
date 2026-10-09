@@ -11,6 +11,10 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
+    <!-- One output per configuration. The SDK otherwise names the artifacts folder after the
+         caller's runtime identifier, so builds with and without one keep separate copies and
+         Visual Studio's XAML editor can read the stale one. -->
+    <ArtifactsPivots>$(Configuration.ToLowerInvariant())</ArtifactsPivots>
   </PropertyGroup>
 
   <ItemGroup>

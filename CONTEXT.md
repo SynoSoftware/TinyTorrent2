@@ -124,8 +124,8 @@ _Avoid_: relocation.
 
 ### Library
 
-**Library**: the searchable collection of files reported by its current data
-sources, together with associated video information.
+**Library**: the searchable collection of finished files reported by its
+current data sources, together with their video or music information.
 
 **Library data source**: an origin of Library file entries and their current
 membership, such as managed torrents.
@@ -134,12 +134,39 @@ _Avoid_: source alone, which means a torrent file or magnet supplied for additio
 **Library entry**: a known file location represented by one or more current
 data-source contributions.
 
+**Contribution**: the files one data source reports for one origin, such as
+one torrent. Library removes its stored facts when it observes that contribution's
+withdrawal or reconciles after reconnecting.
+
+**Library configuration**: one way of showing Library's table: Videos, Music or
+Files, each with its own rows, columns, sort and filters.
+_Avoid_: mode and tab; the person chooses a configuration in the View menu.
+
 **Video information**: descriptive facts about a movie, series or episode,
-independent of whether a corresponding file belongs to Library.
+from the provider.
 _Avoid_: metadata, which describes torrent content.
+
+**Music information**: the artist, album, track and other tags inside an audio
+file.
 
 **Identification**: the association of a Library file with the movie or TV
 content it represents.
+
+### Subtitles
+
+**Automatic subtitles**: finding and saving subtitles beside managed movies
+without interaction, once the person turns it on.
+
+**Subtitle supplier**: the online service that subtitle searches and downloads
+use, such as OpenSubtitles or SubDL.
+_Avoid_: provider, which means a source of video information in Library.
+
+**Subtitle record**: one subtitle output's path, language and created/found
+origin, associated with the source files it serves. Shared torrents use the same
+output record. C# manages created subtitle files under the
+[subtitle-file rules](docs/subtitles.md#saving-and-following-the-movie).
+_Avoid_: added subtitle, which means any subtitle file a person put beside a
+movie.
 
 ### Engine work and presentation
 
@@ -171,6 +198,10 @@ _Avoid_: result, when naming an operation's outcome.
 
 **Snapshot**: a coherent, completed copy of engine state for presentation.
 _Avoid_: observation, when it means the same copy.
+
+**Detail**: what one inspector section shows about one torrent, such as its
+peers or pieces. The window reads it while the section is visible; snapshots
+do not include it.
 
 **Refresh interval**: how often the product window requests current engine data.
 It does not determine how often the engine records speed history.

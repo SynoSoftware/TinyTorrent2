@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory)]
-    [ValidateSet('Frames', 'Targets', 'Facts', 'Restore', 'Exit', 'FailedCommit', 'CheckpointRetry', 'Restart', 'DiskError', 'PreviewGuard', 'RemoveKeepFiles', 'QueueOrder', 'SelectedTransfer', 'MagnetDownload', 'SettingsPolicy', 'CommittedFiles', 'FilesSafety', 'FileNames', 'Pause')]
+    [ValidateSet('Frames', 'Targets', 'Facts', 'Restore', 'Exit', 'FailedCommit', 'CheckpointRetry', 'Restart', 'DiskError', 'PreviewGuard', 'RemoveKeepFiles', 'QueueOrder', 'SelectedTransfer', 'MagnetDownload', 'SettingsPolicy', 'CommittedFiles', 'FilesSafety', 'FileNames', 'Pause', 'History')]
     [string] $Check,
     [Parameter(Mandatory)]
     [string] $TorrentFile,
@@ -198,6 +198,47 @@ try {
             Stop-Engine
             $snapshot = Start-Engine
             Assert ($snapshot.torrents[0].download_limit -eq 1024) 'The committed limit did not survive restart'
+        }
+        'History' {
+            $reply = Send-Command @{ command = 'history'; torrent_id = 'missing'; range = 'day' }
+            Assert (-not $reply.ok -and $reply.error.code -eq 'torrent_removed') 'An unknown torrent received global speed history'
+            $null = Send-Command @{ command = 'session_pause'; paused = $true }
+            function Add-HistoryTorrent([string] $hash) {
+                $preview = Send-Command @{ command = 'preview'; source = ('magnet:?xt=urn:btih:' + $hash); destination = $payload }
+                Assert $preview.ok 'The history fixture did not preview'
+                $added = Send-Command @{ command = 'add'; preview_id = $preview.data.preview_id; destination = $payload; paused = $true }
+                Assert $added.ok 'The history fixture was not added'
+                return $added.data.torrent_id
+            }
+            function Read-History([string] $torrentId, [string] $range) {
+                $reply = Send-Command @{ command = 'history'; torrent_id = $torrentId; range = $range }
+                Assert ($reply.ok -and $reply.data.torrent_id -eq $torrentId) 'Speed history belongs to another torrent'
+                return $reply.data
+            }
+            $first = Add-HistoryTorrent '0123456789012345678901234567890123456789'
+            $until = [DateTime]::UtcNow.AddSeconds(10)
+            do {
+                $older = Read-History $first 'five_minutes'
+                if ($older.samples.Count -ge 2) { break }
+                Start-Sleep -Milliseconds 100
+            } while ([DateTime]::UtcNow -lt $until)
+            Assert ($older.samples.Count -ge 2) 'Torrent speed sampling did not start'
+            $second = Add-HistoryTorrent '1123456789012345678901234567890123456789'
+            $until = [DateTime]::UtcNow.AddSeconds(10)
+            do {
+                $newer = Read-History $second 'five_minutes'
+                if ($newer.samples.Count) { break }
+                Start-Sleep -Milliseconds 100
+            } while ([DateTime]::UtcNow -lt $until)
+            Assert ($newer.samples.Count -gt 0 -and $newer.samples[0].time -gt $older.samples[0].time) 'A new torrent inherited another torrent''s speed history'
+            $null = Read-History $first 'day'
+            $null = Read-History $second 'day'
+            $reply = Send-Command @{ command = 'history'; range = 'five_minutes' }
+            Assert ($reply.ok -and $reply.data.samples.Count -gt 0) 'Session speed history stopped recording'
+            $reply = Send-Command @{ command = 'remove'; torrent_ids = @($first) }
+            Assert $reply.ok 'The history fixture could not be removed'
+            $reply = Send-Command @{ command = 'history'; torrent_id = $first; range = 'five_minutes' }
+            Assert (-not $reply.ok -and $reply.error.code -eq 'torrent_removed') 'A removed torrent received global speed history'
         }
         'Pause' {
             $reply = Send-Command @{ command = 'session_pause'; paused = $true }

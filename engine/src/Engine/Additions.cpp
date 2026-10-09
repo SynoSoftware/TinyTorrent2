@@ -1,7 +1,9 @@
 #include "Engine/State.h"
 #include <libtorrent/torrent_info.hpp>
+#include <boost/asio/post.hpp>
 #include <algorithm>
 #include <chrono>
+#include <future>
 
 namespace tt
 {
@@ -159,9 +161,14 @@ void Engine::State::PrepareAddition(std::string const& id, lt::torrent_handle ha
         SaveAddition(id, handle);
         return;
     }
-    prepared->renamed_files = handle.get_renamed_files().export_filenames(prepared->ti->layout());
-    payload.Run([prepared, appendsSuffix = addition.facts.appendsSuffix, layout = addition.facts.layout]
-        { PrepareNames(*prepared, appendsSuffix, layout); }, [this, id, prepared](StorageOutcome outcome)
+    auto current = std::make_shared<lt::renamed_files>();
+    payload.Run([this, prepared, current, handle, appendsSuffix = addition.facts.appendsSuffix, layout = addition.facts.layout]
+    {
+        ReleaseFiles({handle});
+        *current = handle.get_renamed_files();
+        prepared->renamed_files = current->export_filenames(prepared->ti->layout());
+        PrepareNames(*prepared, appendsSuffix, layout);
+    }, [this, id, prepared, current](StorageOutcome outcome)
     {
         auto found = additions.find(id);
         if (found == additions.end() || found->second.phase != AdditionPhase::Naming)
@@ -174,7 +181,7 @@ void Engine::State::PrepareAddition(std::string const& id, lt::torrent_handle ha
         auto& addition = found->second;
         addition.params.ti = prepared->ti;
         addition.params.renamed_files = prepared->renamed_files;
-        ApplyNames(addition.handle, *prepared, addition.renaming);
+        ApplyNames(addition.handle, *prepared, *current, addition.renaming);
         if (addition.renaming.empty())
             SaveAddition(id, addition.handle);
     });
@@ -360,52 +367,101 @@ std::string Engine::State::MovingAddition(lt::torrent_handle const& handle) cons
 // added or moved, and abandons the others.
 void Engine::State::RecoverAdditions()
 {
-    auto live = session->get_torrents();
+    struct Observation
+    {
+        std::string id;
+        AdditionPhase phase;
+        Addition const* identity;
+        lt::torrent_handle handle;
+        std::string savePath;
+        bool moving = false;
+    };
+    auto observations = std::make_shared<std::vector<Observation>>();
     std::vector<std::string> lost;
-    for (auto& [id, addition] : additions)
+    for (auto const& [id, addition] : additions)
     {
         if (addition.phase == AdditionPhase::Naming)
         {
             if (!addition.renaming.empty())
                 lost.push_back(id);
-            continue;
         }
-        if (addition.phase == AdditionPhase::Saving)
+        else if (addition.phase != AdditionPhase::Saving)
         {
-            continue;
-        }
-        if (addition.phase == AdditionPhase::Moving)
-        {
-            // The move finished when the torrent already saves to its destination.
-            if (addition.handle.is_valid() &&
-                SameFolder(addition.handle.status().save_path, addition.params.save_path))
-            {
-                PrepareAddition(id, addition.handle);
-            }
-            else
-            {
-                lost.push_back(id);
-            }
-            continue;
-        }
-        // An accepted torrent keeps the address of the addition that created
-        // it, and a later addition can reuse that address.
-        auto found = std::find_if(live.begin(), live.end(),
-            [this, &addition](lt::torrent_handle const& handle)
-            { return handle.userdata().get<Addition>() == &addition && !Find(handle); });
-        if (found != live.end())
-        {
-            PrepareAddition(id, *found);
-        }
-        else
-        {
-            lost.push_back(id);
+            observations->push_back({id, addition.phase, &addition, addition.handle});
         }
     }
     for (auto const& id : lost)
-    {
         Abandon(id, {ErrorCode::RecoveryRequired});
-    }
+    if (observations->empty())
+        return;
+
+    std::set<lt::torrent_handle> accepted;
+    for (auto const& [handle, torrent] : handles)
+        accepted.insert(handle);
+    payload.Run([session = session.get(), observations, accepted = std::move(accepted)]
+    {
+        auto collected = std::make_shared<std::promise<void>>();
+        auto ready = collected->get_future();
+        boost::asio::post(session->get_context(), [session, observations, accepted, collected]
+        {
+            try
+            {
+                // Accepted torrents can retain an address reused by a later addition.
+                std::map<Addition const*, lt::torrent_handle> added;
+                for (auto const& handle : session->get_torrents())
+                {
+                    if (accepted.contains(handle))
+                        continue;
+                    if (auto identity = handle.userdata().get<Addition>())
+                        added.emplace(identity, handle);
+                }
+                for (auto& observation : *observations)
+                {
+                    if (observation.phase == AdditionPhase::Adding)
+                    {
+                        if (auto found = added.find(observation.identity); found != added.end())
+                            observation.handle = found->second;
+                    }
+                    else if (observation.handle.is_valid())
+                    {
+                        auto status = observation.handle.status(lt::torrent_handle::query_save_path);
+                        observation.savePath = std::move(status.save_path);
+                        observation.moving = status.moving_storage;
+                    }
+                }
+                collected->set_value();
+            }
+            catch (...)
+            {
+                collected->set_exception(std::current_exception());
+            }
+        });
+        ready.get();
+    }, [this, observations](StorageOutcome outcome)
+    {
+        for (auto const& observation : *observations)
+        {
+            auto found = additions.find(observation.id);
+            if (found == additions.end() || found->second.phase != observation.phase ||
+                (observation.phase == AdditionPhase::Moving && found->second.handle != observation.handle))
+                continue;
+            auto& addition = found->second;
+            if (observation.phase == AdditionPhase::Adding)
+                addition.handle = observation.handle;
+            if (!outcome.succeeded || !observation.handle.is_valid())
+            {
+                Abandon(observation.id, {ErrorCode::RecoveryRequired, outcome.detail});
+                continue;
+            }
+            if (observation.moving)
+                continue;
+            if (observation.phase == AdditionPhase::Moving &&
+                !SameFolder(observation.savePath, addition.params.save_path))
+                Abandon(observation.id, {ErrorCode::RecoveryRequired});
+            else
+                PrepareAddition(observation.id, observation.handle);
+        }
+    });
 }
 
 void Engine::State::On(lt::add_torrent_alert const& alert)
@@ -439,35 +495,25 @@ void Engine::State::On(lt::add_torrent_alert const& alert)
 
 void Engine::State::On(lt::storage_moved_alert const& alert)
 {
-    if (move)
-    {
-        FinishMove(alert.handle, std::nullopt);
-        return;
-    }
     auto id = MovingAddition(alert.handle);
     if (!id.empty())
     {
         PrepareAddition(id, alert.handle);
+        return;
     }
+    FinishMove(alert.handle, std::nullopt);
 }
 
 void Engine::State::On(lt::storage_moved_failed_alert const& alert)
 {
-    if (move)
-    {
-        if (move->phase != MovePhase::Moving && move->phase != MovePhase::Unknown)
-        {
-            return;
-        }
-        auto kind = alert.error == boost::system::errc::file_exists ?
-            ProblemKind::DestinationExists : ProblemKind::MoveFailed;
-        FinishMove(alert.handle, Problem{kind, alert.error.message()});
-        return;
-    }
     auto id = MovingAddition(alert.handle);
     if (!id.empty())
     {
         Abandon(id, {ErrorCode::AddFailed, alert.error.message()});
+        return;
     }
+    auto kind = alert.error == boost::system::errc::file_exists ?
+        ProblemKind::DestinationExists : ProblemKind::MoveFailed;
+    FinishMove(alert.handle, Problem{kind, alert.error.message()});
 }
 }

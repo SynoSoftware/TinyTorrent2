@@ -43,6 +43,7 @@ public sealed partial class MainWindow : Window
         Model = new MainViewModel(strings, DispatcherQueue);
         Back = new RelayCommand(GoBack, () => true);
         InitializeComponent();
+        Root.Unloaded += (_, _) => _motion.Stop();
         ConfigureCapture();
         ConfigureNotifications();
         Filters.ItemsSource = Model.Filters;
@@ -111,6 +112,8 @@ public sealed partial class MainWindow : Window
                 await interaction.Completion.Task;
             if (!await ShowTorrents())
                 return;
+            foreach (var torrent in torrents)
+                Torrents.ScrollIntoView(torrent);
             if (await SelectTorrent(new Syno.TableView.Selection(torrents, torrents[^1])))
                 Torrents.ScrollIntoView(torrents[^1]);
         };
@@ -713,10 +716,11 @@ public sealed partial class MainWindow : Window
         DialogInteraction? suspended = null;
         try
         {
-            // An open schedule period may keep the window open with its error,
-            // so the window stays visible instead of vanishing and returning.
+            // Unfinished input can keep the window open. Exit stays visible until
+            // the engine accepts it, so a pending decision cannot look complete.
             if (
-                !HasDialog
+                !_exiting
+                && !HasDialog
                 && !Model.HasDraft
                 && !Model.Settings.Schedule.HasDraft
                 && !Model.IsPicking
@@ -770,7 +774,8 @@ public sealed partial class MainWindow : Window
                 if (!await ResolveRemainingDraft())
                     return;
             }
-            AppWindow.Hide();
+            if (!_exiting)
+                AppWindow.Hide();
             await SavePlacement();
             await Model.Close(_exiting);
             _allowClose = true;

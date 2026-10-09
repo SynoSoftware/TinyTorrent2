@@ -4,6 +4,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Syno.TinyTorrent.Controls;
+using Syno.TinyTorrent.Helpers;
 using Syno.TinyTorrent.Models;
 
 namespace Syno.TinyTorrent.Views;
@@ -11,6 +12,7 @@ namespace Syno.TinyTorrent.Views;
 public sealed partial class InspectorPane : UserControl
 {
     private readonly FileBrowser _files;
+    private readonly Motion _motion = new();
     private bool _refreshing;
     private bool _composing;
     public Inspector Model { get; }
@@ -112,6 +114,7 @@ public sealed partial class InspectorPane : UserControl
         };
         Unloaded += (_, _) =>
         {
+            _motion.Stop();
             Model.TextChanged -= OnText;
             Model.PropertyChanged -= OnModel;
             Model.RowsUpdated -= OnRows;
@@ -164,12 +167,15 @@ public sealed partial class InspectorPane : UserControl
     {
         var inspecting = Model.Target is not null;
         FrameworkElement[] views = [General, Files, Peers, Trackers, Speed, Map];
+        var changed = inspecting && views[(int)Model.Section].Visibility != Visibility.Visible;
         for (var index = 0; index < views.Length; index++)
             views[index].Visibility =
                 inspecting && index == (int)Model.Section
                     ? Visibility.Visible
                     : Visibility.Collapsed;
         EmptyState.Visibility = inspecting ? Visibility.Collapsed : Visibility.Visible;
+        if (changed)
+            _motion.Play(SectionContent, 12);
         _refreshing = true;
         Sections.IsEnabled = inspecting;
         Sections.SelectedItem = Sections.Items.First(item => Equals(item.Tag, Model.Section));

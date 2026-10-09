@@ -1,5 +1,11 @@
 # Settings implementation plan
 
+**Owner ruling: Settings has no separate search box.** Use the existing
+title-bar search, as specified in [Settings](interface.md#settings). Its scope
+remains torrents, commands and settings. References below to C's search/index
+mean the category index with that shared search; the prototype's in-page search
+is superseded because it duplicates the same task and consumes a settings row.
+
 ## First directive: use common sense
 
 **Serve the user's task, not the plan.** Apply

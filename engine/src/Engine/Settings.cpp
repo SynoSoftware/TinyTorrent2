@@ -1044,6 +1044,11 @@ void Engine::State::PauseSession(bool paused, std::function<void(Outcome)> compl
             launchPaused = false;
             bypassesScheduledPause = !paused && ScheduledMode() == ScheduleMode::Paused;
             RefreshPolicy();
+            // Pausing the session disconnects every torrent's peers.
+            for (auto const& [id, torrent] : torrents)
+            {
+                Invalidate(id);
+            }
             completion({});
         };
         if (settings.allPaused == paused)

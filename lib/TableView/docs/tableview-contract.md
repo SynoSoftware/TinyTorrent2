@@ -589,9 +589,11 @@ sort, and does not re-enumerate or fetch a non-notifying source. When rows are
 then allowed to trade places is section 9's settling question, not this one.
 Display-only updates need no call.
 
-`ScrollIntoView(item)` reveals an item in the current private view without
-changing selection or keyboard focus. Hosts use it after a confirmed operation
-whose result should be visible, without accessing the control's template parts.
+`ScrollIntoView(item)` reveals an item without changing selection or keyboard
+focus. If the source has the item but the pointer hold delays its arrival, the
+held update applies before scrolling: explicit navigation must show its target.
+Hosts use it after a confirmed operation whose result should be visible, before
+selecting a waiting arrival and without accessing the control's template parts.
 
 `VerticalOffset` reports how far the rows are scrolled, in DIPs. `ScrollTo`
 moves the rows, clamped to the scrollable range, without changing selection or

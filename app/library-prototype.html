@@ -1,0 +1,1288 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Library layout prototype</title>
+<!-- PROTOTYPE, throw away. The Library page inside the real product window (title bar, menus, global search,
+     status bar and InfoBars from app/src/MainWindow.xaml). Open this file directly; every file, title and outcome is
+     sample data in memory, and nothing reaches a network or the disk. -->
+<style>
+* { box-sizing:border-box; }
+:root { color-scheme:light; --page:#f3f3f3; --card:#fbfbfb; --ctl:#fdfdfd; --ctlBorder:#e5e5e5; --ctlLine:#868686; --text:#1a1a1a; --muted:#5f5f5f;
+  --accent:#005fb8; --accentText:#003e92; --onAccent:#fff; --hover:rgb(0 0 0 / .037); --pressed:rgb(0 0 0 / .024); --sel:rgb(0 0 0 / .055);
+  --head:#ebebeb; --headCard:#f1f1f1; --line:rgb(0 0 0 / .08); --stroke:rgb(117 117 117 / .35); --critical:#c42b1c; --caution:#9d5d00; --success:#0f7b0f;
+  --infoBg:#f6f6f6; --critBg:#fde7e9; --cautBg:#fff4ce; --flyout:#f9f9f9; --scrim:rgb(0 0 0 / .3); }
+body.dark { color-scheme:dark; --page:#273035; --card:#323b40; --ctl:#3c4448; --ctlBorder:rgb(255 255 255 / .07); --ctlLine:#a1a3a5; --text:#fff; --muted:#c8c8c8;
+  --accent:#60cdff; --accentText:#99ebff; --onAccent:#000; --hover:rgb(255 255 255 / .045); --pressed:rgb(255 255 255 / .03); --sel:rgb(255 255 255 / .08);
+  --head:#2f383d; --headCard:#394247; --line:rgb(255 255 255 / .082); --stroke:rgb(117 117 117 / .4); --critical:#ff99a4; --caution:#fce100; --success:#6ccb5f;
+  --infoBg:#2e353a; --critBg:#442726; --cautBg:#433519; --flyout:#2c2c2c; --scrim:rgb(0 0 0 / .45); }
+body { margin:0; background:#161616; color:var(--text); font:14px/20px 'Segoe UI Variable Text','Segoe UI',sans-serif; }
+body:not(.dark) { background:#d9d9d9; }
+button, input, select { font:inherit; color:inherit; }
+svg.i { width:16px; height:16px; flex:none; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+.muted { color:var(--muted); } .crit { color:var(--critical); } .caut { color:var(--caution); } .ok { color:var(--success); }
+.trim { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
+.sr { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+:focus-visible { outline:2px solid var(--text); outline-offset:1px; border-radius:4px; }
+
+/* prototype marker and controls: deliberately not Fluent, so they never read as part of the design */
+.proto-top { max-width:1600px; margin:0 auto 4px; padding:6px 12px; background:#0b0b0b; border-radius:0 0 8px 8px; font:12px/16px Consolas,monospace; color:#ffd479; text-align:center; }
+.proto { position:fixed; left:50%; bottom:10px; transform:translateX(-50%); z-index:50; display:flex; gap:8px; align-items:center; padding:6px 10px;
+  border-radius:999px; background:#0b0b0b; color:#fff; border:1px solid #ffd479; box-shadow:0 8px 24px rgb(0 0 0 / .5); font:12px/16px Consolas,monospace; white-space:nowrap; width:max-content; max-width:calc(100vw - 16px); flex-wrap:wrap; justify-content:center; border-radius:16px; }
+.proto button, .proto select { background:#262626; color:#fff; border:1px solid #555; border-radius:999px; padding:3px 10px; font:inherit; }
+.proto .sep { width:1px; height:18px; background:#555; flex:none; }
+.proto input[type=range] { width:90px; vertical-align:middle; }
+#menus { position:fixed; left:12px; right:12px; top:40px; z-index:48; max-height:calc(100vh - 110px); overflow:auto; padding:12px 16px; background:var(--page); color:var(--text);
+  border:1px solid #ffd479; border-radius:8px; box-shadow:0 8px 24px rgb(0 0 0 / .4); }
+#menus h3 { margin:8px 0; font:600 14px/20px 'Segoe UI',sans-serif; }
+#menus .set { display:flex; flex-wrap:wrap; gap:12px; align-items:flex-start; margin-bottom:12px; }
+#menus .fly { position:static; }
+#menus .fly .cap2 { padding:4px 12px; font-weight:600; }
+#readout { position:fixed; right:12px; bottom:56px; z-index:49; width:380px; max-height:60vh; overflow:auto; margin:0; padding:12px; background:#0b0b0b; color:#d8f0c8;
+  border:1px solid #ffd479; border-radius:8px; font:11px/15px Consolas,monospace; white-space:pre-wrap; }
+
+/* window and title bar, after MainWindow.xaml */
+.window { position:relative; margin:0 auto; background:var(--page); border:1px solid #555; border-radius:8px; overflow:hidden; display:flex; flex-direction:column; }
+.tbar { height:48px; flex:none; display:flex; align-items:center; }
+.cap { width:46px; height:48px; flex:none; display:grid; place-items:center; border:0; background:transparent; border-radius:0; }
+.cap:hover { background:var(--hover); } .cap.close:hover { background:#c42b1c; color:#fff; }
+.cap svg { width:16px; height:16px; } .cap.win svg { width:12px; height:12px; stroke-width:1.4; }
+.appicon { width:24px; height:24px; margin:0 8px 0 16px; flex:none; border-radius:5px; background:linear-gradient(160deg,#00e5ff,#0075ff 55%,#0000b4); }
+.menubar { display:flex; gap:0; flex:none; }
+.menubar button { height:32px; padding:0 10px; border:0; border-radius:4px; background:transparent; }
+.menubar button:hover:not(:disabled), .menubar button.on { background:var(--hover); }
+.menubar button:disabled { color:var(--muted); opacity:.55; }
+/* The real box keeps 200px; here it may shrink so an overflowing title bar stays visible at 800px in Spanish. */
+.gsearch { flex:1; min-width:48px; margin:0 24px; display:flex; }
+.gbox { position:relative; width:100%; max-width:320px; min-width:0; display:flex; align-items:center; height:32px; border-radius:4px; background:var(--ctl);
+  border:1px solid var(--ctlBorder); border-bottom-color:var(--ctlLine); }
+.gbox:focus-within { background:var(--card); border-bottom:2px solid var(--accent); }
+.gbox input { flex:1; min-width:0; height:30px; border:0; outline:0; background:transparent; padding:0 6px 0 10px; }
+.gbox input::placeholder { color:var(--muted); }
+.gbox .qi { width:32px; display:grid; place-items:center; color:var(--muted); flex:none; }
+.gbox .clear { width:28px; height:24px; border:0; padding:0; display:grid; place-items:center; background:transparent; border-radius:4px; flex:none; }
+.gbox .clear:hover { background:var(--hover); } .gbox .clear svg { width:12px; height:12px; }
+.vdiv { width:1px; height:16px; background:var(--line); margin:0 8px; flex:none; }
+.tb-end { display:flex; align-items:center; margin-left:auto; flex:none; }
+
+/* controls */
+.btn { display:inline-flex; align-items:center; gap:8px; height:32px; padding:0 11px; border-radius:4px; background:var(--ctl); border:1px solid var(--ctlBorder);
+  white-space:nowrap; cursor:default; flex:none; }
+.btn:hover:not(:disabled) { background:var(--card); } .btn:disabled { opacity:.45; }
+.btn.accent { background:var(--accent); border-color:var(--accent); color:var(--onAccent); } .btn.accent:hover:not(:disabled) { filter:brightness(1.08); background:var(--accent); }
+.btn.subtle { background:transparent; border-color:transparent; } .btn.subtle:hover:not(:disabled) { background:var(--hover); }
+.btn.icon { width:32px; padding:0; justify-content:center; }
+.btn.on { background:var(--sel); }
+.btn .chev { width:12px; height:12px; color:var(--muted); }
+select.combo, input.tx { height:32px; border-radius:4px; background:var(--ctl); border:1px solid var(--ctlBorder); border-bottom-color:var(--ctlLine); padding:0 8px; min-width:0; }
+input.tx:focus { outline:0; border-bottom:2px solid var(--accent); background:var(--card); }
+.seg { display:inline-flex; gap:2px; padding:2px; border-radius:6px; background:var(--sel); }
+.seg button { height:28px; padding:0 12px; border:0; border-radius:4px; background:transparent; white-space:nowrap; }
+.seg button[aria-checked=true] { background:var(--card); box-shadow:0 1px 2px rgb(0 0 0 / .15); font-weight:600; }
+.selbar { display:flex; gap:4px; flex:none; }
+.selbar button { position:relative; height:36px; padding:0 12px; border:0; border-radius:4px; background:transparent; white-space:nowrap; color:var(--text); display:inline-flex; align-items:center; gap:6px; }
+.selbar button:hover:not(:disabled) { background:var(--hover); }
+.selbar button[aria-selected=true]::after { content:''; position:absolute; left:calc(50% - 8px); bottom:1px; width:16px; height:3px; border-radius:2px; background:var(--accent); }
+.selbar.pages button { height:32px; }
+.selbar.pages svg { width:16px; height:16px; }
+.selbar.pages.narrow button { padding:0 10px; }
+.selbar.pages.narrow .lbl { display:none; }
+.selbar .n { color:var(--muted); font-weight:400; font-variant-numeric:tabular-nums; }
+.link { color:var(--accentText); cursor:default; border:0; background:transparent; padding:0; text-decoration:none; }
+.link:hover { text-decoration:underline; }
+.ring { width:16px; height:16px; border-radius:50%; border:2px solid var(--line); border-top-color:var(--accent); animation:spin .8s linear infinite; flex:none; display:inline-block; }
+@keyframes spin { to { transform:rotate(360deg); } }
+@media (prefers-reduced-motion:reduce) { .ring { animation-duration:2.4s; } }
+
+/* page bodies */
+.main { flex:1; min-height:0; position:relative; display:flex; flex-direction:column; }
+.row-h { display:flex; align-items:center; gap:8px; flex:none; min-width:0; }
+.card { background:var(--card); border:1px solid var(--stroke); border-radius:8px; }
+.split { flex:none; display:flex; align-items:center; justify-content:center; border:0; background:transparent; padding:0; border-radius:0; }
+.split.h { height:8px; cursor:ns-resize; } .split.h::after { content:''; width:24px; height:3px; border-radius:2px; background:var(--ctlLine); opacity:.6; }
+.split.v { width:8px; cursor:ew-resize; } .split.v::after { content:''; width:3px; height:24px; border-radius:2px; background:var(--ctlLine); opacity:.6; }
+
+/* TableView: header band, one vertical scroll owner, never scrolls sideways (columns past the edge are cut off) */
+.tv { flex:1; min-height:110px; min-width:0; overflow-y:auto; overflow-x:hidden; position:relative; scrollbar-width:thin; }
+.tv table { border-collapse:separate; border-spacing:0; table-layout:fixed; }
+.tv th { position:sticky; top:0; z-index:1; height:32px; padding:0; background:var(--head); text-align:left; font-weight:400; color:var(--muted); border-bottom:1px solid var(--line); }
+.tv th button { width:100%; height:32px; border:0; background:transparent; text-align:inherit; padding:0 12px; display:flex; align-items:center; gap:4px; color:inherit; justify-content:inherit; border-radius:0; }
+.tv th button:hover { background:var(--hover); color:var(--text); }
+.tv th.r { text-align:right; } .tv th.r button { justify-content:flex-end; }
+.tv th svg { width:12px; height:12px; }
+.tv td { height:36px; padding:0 12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.tv td.r { text-align:right; font-variant-numeric:tabular-nums; }
+.tv tr.row { cursor:default; }
+.tv tr.row:hover td { background:var(--hover); }
+.tv tr.row.sel td { background:var(--sel); }
+.tv tr.row.sel td:first-child { box-shadow:inset 3px 0 0 -0px transparent; position:relative; }
+.tv tr.row.sel td:first-child::before { content:''; position:absolute; left:2px; top:10px; bottom:10px; width:3px; border-radius:2px; background:var(--accent); }
+.tv tr.row:focus-visible { outline:2px solid var(--text); outline-offset:-2px; border-radius:0; }
+.tv.stale td { color:var(--muted); }
+.fn { display:flex; align-items:center; gap:8px; min-width:0; } .fn svg { color:var(--muted); }
+.fn span { overflow:hidden; text-overflow:ellipsis; }
+.two { display:flex; flex-direction:column; justify-content:center; line-height:18px; min-width:0; }
+.two small { color:var(--muted); font-size:12px; line-height:16px; overflow:hidden; text-overflow:ellipsis; }
+.two b { font-weight:400; overflow:hidden; text-overflow:ellipsis; }
+.stw { display:inline-flex; align-items:center; gap:6px; } .stw svg { width:14px; height:14px; }
+.ph { position:absolute; inset:40px 0 0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; padding:24px; text-align:center; }
+.ph h3 { margin:0; font:600 20px/28px 'Segoe UI Variable Display','Segoe UI',sans-serif; }
+
+.note { display:flex; align-items:flex-start; gap:12px; padding:12px 16px; border-radius:4px; border:1px solid var(--line); background:var(--infoBg); }
+.note.warn { background:var(--cautBg); }
+.note > svg { margin-top:2px; } .note.warn > svg { color:var(--caution); }
+.note .msg { flex:1; min-width:0; } .note .msg b { font-weight:600; margin-right:6px; }
+.note .act { display:flex; gap:8px; flex:none; align-self:center; }
+.cands { display:flex; flex-direction:column; gap:2px; margin:0; padding:0; list-style:none; }
+.cand { display:flex; gap:12px; align-items:flex-start; padding:8px 12px; border-radius:4px; cursor:default; }
+.cand:hover { background:var(--hover); } .cand[aria-checked=true] { background:var(--sel); }
+.cand .dot { width:20px; height:20px; border-radius:10px; border:1px solid var(--muted); flex:none; margin-top:1px; }
+.cand[aria-checked=true] .dot { border:6px solid var(--accent); background:var(--onAccent); }
+.cand .two small { white-space:normal; }
+.idform { display:flex; flex-direction:column; gap:12px; }
+.idform .fields { display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap; }
+.idform label.f { display:flex; flex-direction:column; gap:4px; min-width:0; }
+.idform .eps { display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap; }
+.result-status { display:flex; align-items:center; gap:8px; color:var(--muted); min-height:32px; }
+
+/* the details card: the torrent Inspector's card, title row and Field rows */
+.work { flex:1; min-height:0; min-width:0; display:flex; flex-direction:column; }
+.insp { margin:0 8px; display:flex; flex-direction:column; min-height:155px; overflow:hidden; flex:none; }
+.ih { display:grid; grid-template-columns:minmax(0,1fr) auto minmax(0,1fr) auto; column-gap:12px; align-items:center; padding:0 16px; min-height:48px; border-bottom:1px solid var(--line); flex:none; }
+.ih .hn { display:flex; align-items:center; gap:12px; min-width:0; }
+.ih .gi { width:20px; height:20px; color:var(--accentText); flex:none; }
+.ih .gi.crit, .fn .crit { color:var(--critical); }
+.ih .name { font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
+.ih .det { color:var(--muted); white-space:nowrap; }
+.ih .hacts { justify-self:end; display:flex; gap:4px; }
+.dtabs button { height:44px; } .dtabs button:disabled { opacity:.45; }
+.ib { flex:1; min-height:0; position:relative; padding:8px 16px 12px; display:flex; }
+.ibs { flex:1; min-height:0; overflow:auto; container-type:inline-size; scrollbar-width:thin; }
+.ib > .infobar { position:absolute; left:16px; right:16px; bottom:12px; }
+.iempty { height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; color:var(--muted); text-align:center; }
+.iempty svg { width:32px; height:32px; opacity:.6; }
+.gen { display:flex; flex-direction:column; gap:16px; margin-top:4px; }
+.grph { display:flex; align-items:center; gap:8px; }
+.grph svg { width:20px; height:20px; color:var(--accentText); flex:none; }
+.grph .gt { font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.strip { display:grid; row-gap:12px; justify-content:space-between; }
+.stat { display:flex; gap:12px; align-items:flex-start; }
+.stat > svg { width:20px; height:20px; color:var(--muted); margin-top:10px; flex:none; }
+.stat .scap { font-size:12px; line-height:16px; color:var(--muted); white-space:nowrap; }
+.stat .sv { font-size:18px; line-height:24px; white-space:nowrap; min-width:112px; user-select:text; }
+.hr { height:1px; background:var(--line); flex:none; }
+.details { display:grid; grid-template-columns:3fr 2fr; column-gap:48px; }
+@container (max-width:760px) { .details { grid-template-columns:minmax(0,1fr); column-gap:0; } }
+.fld { display:grid; grid-template-columns:16px 120px minmax(0,1fr); column-gap:8px; align-items:center; min-height:32px; }
+.fld > svg { color:var(--muted); }
+.fld .fl { color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.fld .fv { display:grid; grid-template-columns:minmax(0,auto) auto; column-gap:4px; justify-content:start; align-items:center; min-width:0; }
+.fld .v { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; user-select:text; }
+.fld .v .appic { width:16px; height:16px; vertical-align:-3px; margin-right:8px; }
+.fld .v.id { font:13px/20px 'Cascadia Mono',Consolas,monospace; color:var(--muted); }
+.fld.wrap { align-items:start; } .fld.wrap > svg, .fld.wrap .fl { margin-top:8px; } .fld.wrap .v { white-space:normal; padding:6px 0; }
+.infobar.err { background:var(--critBg); box-shadow:none; } .infobar.err > svg { color:var(--critical); }
+
+/* InfoBar over the bottom of the workspace, above the status bar, overlaying every page */
+.infobars { position:absolute; left:16px; right:16px; bottom:8px; display:flex; flex-direction:column; gap:8px; z-index:5; pointer-events:none; }
+.infobar { pointer-events:auto; display:flex; align-items:center; gap:12px; padding:10px 12px 10px 16px; border-radius:4px; border:1px solid var(--line); background:var(--cautBg); box-shadow:0 4px 12px rgb(0 0 0 / .14); }
+.infobar > svg { color:var(--caution); }
+.infobar .msg { flex:1; min-width:0; } .infobar .msg b { font-weight:600; margin-right:8px; }
+
+/* status bar, after MainWindow.xaml: one line, status only, labels shorten to icons when narrow */
+.sb { flex:none; display:flex; align-items:center; min-height:20px; margin:8px 16px 12px; white-space:nowrap; overflow:hidden; font-size:12px; line-height:16px; }
+.sb .grp { display:flex; align-items:center; gap:20px; min-width:0; } .sb .grp + .grp { margin-left:auto; padding-left:24px; }
+.si { display:inline-flex; align-items:center; gap:6px; flex:none; } .si svg { width:14px; height:14px; }
+.si.icon .t { display:none; }
+
+/* flyouts, menus and dialogs */
+.fly { position:absolute; z-index:20; min-width:200px; max-width:360px; padding:4px; border-radius:8px; background:var(--flyout); border:1px solid var(--stroke); box-shadow:0 8px 16px rgb(0 0 0 / .2); }
+.fly .mi { display:flex; align-items:center; gap:12px; width:100%; height:32px; padding:0 12px; border:0; border-radius:4px; background:transparent; text-align:left; white-space:nowrap; }
+.fly .mi:hover:not(:disabled), .fly .mi:focus-visible { background:var(--hover); outline-offset:-2px; }
+.fly .mi:disabled { opacity:.45; }
+.fly .mi .k { margin-left:auto; padding-left:24px; color:var(--muted); font-size:12px; }
+.fly .mi .n { margin-left:auto; padding-left:16px; color:var(--muted); font-variant-numeric:tabular-nums; }
+.fly .mi .mark { width:16px; display:grid; place-items:center; }
+.fly hr { border:0; border-top:1px solid var(--line); margin:4px 0; }
+.fly .fh { padding:8px 12px 4px; color:var(--muted); font-size:12px; }
+.fly .pad { padding:8px 12px; display:flex; flex-direction:column; gap:8px; }
+.fly.search { padding:4px; min-width:320px; max-width:440px; }
+.fly.search .mi { height:auto; min-height:36px; padding:6px 12px; }
+.scrim { position:absolute; inset:0; z-index:30; background:var(--scrim); display:grid; place-items:center; padding:16px; }
+.dlg { width:560px; max-width:100%; max-height:calc(100% - 32px); display:flex; flex-direction:column; background:var(--card); border:1px solid var(--stroke); border-radius:8px; box-shadow:0 16px 48px rgb(0 0 0 / .35); overflow:hidden; }
+.dlg .body { padding:24px; overflow:auto; display:flex; flex-direction:column; gap:12px; min-height:0; }
+.dlg h2 { margin:0; display:flex; gap:12px; align-items:center; font:600 20px/28px 'Segoe UI Variable Display','Segoe UI',sans-serif; }
+.dlg h2 svg { width:20px; height:20px; color:var(--accentText); }
+.dlg p { margin:0; }
+.dlg .foot { display:flex; justify-content:flex-end; gap:8px; padding:24px; background:var(--page); border-top:1px solid var(--line); flex:none; }
+.dlg .foot .btn { min-width:120px; justify-content:center; }
+.tip { position:fixed; z-index:60; max-width:340px; padding:6px 8px 8px; border-radius:4px; background:var(--flyout); color:var(--text); border:1px solid var(--stroke);
+  box-shadow:0 4px 8px rgb(0 0 0 / .2); font-size:12px; line-height:16px; pointer-events:none; white-space:pre-line; }
+
+/* Library page: filters drawer */
+.a-head { display:flex; align-items:center; gap:16px; padding:4px 16px 12px; flex:none; flex-wrap:nowrap; min-width:0; }
+.a-head h1 { margin:0; font:600 28px/36px 'Segoe UI Variable Display','Segoe UI',sans-serif; flex:none; }
+.a-body { flex:1; min-height:0; display:flex; }
+.a-pane { width:220px; flex:none; overflow-y:auto; padding:0 8px 8px; display:flex; flex-direction:column; gap:4px; scrollbar-width:thin; }
+.a-pane .ph2 { display:flex; align-items:center; justify-content:space-between; height:36px; padding-left:8px; font-weight:600; }
+.a-pane .gh { padding:12px 8px 4px; color:var(--muted); font-size:12px; display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.a-pane .opt { position:relative; display:flex; align-items:center; gap:8px; width:100%; height:32px; padding:0 8px 0 12px; border:0; border-radius:4px; background:transparent; text-align:left; }
+.a-pane .opt:hover { background:var(--hover); }
+.a-pane .opt[aria-checked=true] { background:var(--sel); }
+.a-pane .opt[aria-checked=true]::before { content:''; position:absolute; left:0; top:8px; bottom:8px; width:3px; border-radius:2px; background:var(--accent); }
+.a-pane .opt .n { margin-left:auto; color:var(--muted); font-variant-numeric:tabular-nums; }
+.a-pane select { margin:0 8px 4px; }
+.stub { margin:0 16px 8px; }
+
+
+</style>
+</head>
+<body>
+<div class="proto-top" id="proto-top">THROWAWAY PROTOTYPE · Library page · sample data in memory · not the product · Ctrl+1 Torrents, Ctrl+2 Library · View menu: Videos / Music / Files, Filters · right-click a column header for columns · Menus shows every menu open</div>
+<div class="window" id="win"></div>
+<div class="tip" id="tip" hidden></div>
+<div class="sr" id="live" role="status" aria-live="polite"></div>
+<pre id="readout" hidden></pre>
+<div id="menus" hidden></div>
+<nav class="proto" aria-label="Prototype controls">
+  <select id="scenario" aria-label="Scenario"></select>
+  <select id="outcome" aria-label="What the next Open does"></select>
+  <button id="withdraw" title="Remove the selected file's torrent, as Torrents would, to see focus recovery">Remove torrent</button>
+  <span class="sep"></span>
+  <select id="lang" aria-label="Label language"><option value="en">English</option><option value="es">Español (labels)</option></select>
+  <label>W <input id="width" type="range" min="720" max="1600" aria-label="Window width"></label><span id="wval"></span>
+  <button id="theme">Theme</button><button id="menusBtn" aria-pressed="false" title="Show every menu open, for both pages">Menus</button><button id="state" aria-pressed="false">State</button><button id="reset">Reset</button>
+</nav>
+<script>
+const P = {
+  search:'<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>', x:'<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  back:'<path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>', chev:'<path d="m6 9 6 6 6-6"/>', check:'<path d="M20 6 9 17l-5-5"/>',
+  film:'<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 3v18M3 7.5h4M3 12h18M3 16.5h4M17 3v18M17 7.5h4M17 16.5h4"/>',
+  tv:'<rect width="20" height="15" x="2" y="7" rx="2"/><path d="m17 2-5 5-5-5"/>',
+  video:'<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="m10 11 5 3-5 3v-6Z"/>',
+  file:'<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/>',
+  text:'<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8M16 13H8M16 17H8"/>',
+  music:'<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>',
+  image:'<rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/>',
+  disc:'<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="2"/>',
+  open:'<path d="M21 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h6"/><path d="m21 3-9 9"/><path d="M15 3h6v6"/>',
+  identify:'<path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="12" r="3"/><path d="m16 16-1.9-1.9"/>',
+  pencil:'<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/>',
+  eraser:'<path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/>',
+  funnel:'<path d="M10 20a1 1 0 0 0 .553.895l2 1A1 1 0 0 0 14 21v-7a2 2 0 0 1 .517-1.341L21.74 4.67A1 1 0 0 0 21 3H3a1 1 0 0 0-.742 1.67l7.225 7.989A2 2 0 0 1 10 14z"/>',
+  funnelX:'<path d="M12.531 3H3a1 1 0 0 0-.742 1.67l7.225 7.989A2 2 0 0 1 10 14v6a1 1 0 0 0 .553.895l2 1A1 1 0 0 0 14 21v-7a2 2 0 0 1 .517-1.341l.427-.473"/><path d="m16.5 3.5 5 5"/><path d="m21.5 3.5-5 5"/>',
+  done:'<circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>', down:'<path d="M12 5v14"/><path d="m19 12-7 7-7-7"/>', up:'<path d="m5 12 7-7 7 7"/><path d="M12 19V5"/>',
+  pause:'<rect x="14" y="4" width="4" height="16" rx="1"/><rect x="6" y="4" width="4" height="16" rx="1"/>',
+  missing:'<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="m14.5 12.5-5 5"/><path d="m9.5 12.5 5 5"/>',
+  unplug:'<path d="m19 5 3-3"/><path d="m2 22 3-3"/><path d="M6.3 20.3a2.4 2.4 0 0 0 3.4 0L12 18l-6-6-2.3 2.3a2.4 2.4 0 0 0 0 3.4Z"/><path d="M7.5 13.5 10 11"/><path d="M10.5 16.5 13 14"/><path d="m12 6 6 6 2.3-2.3a2.4 2.4 0 0 0 0-3.4l-2.6-2.6a2.4 2.4 0 0 0-3.4 0Z"/>',
+  alert:'<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+  info:'<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>',
+  retry:'<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>',
+  library:'<path d="m16 6 4 14"/><path d="M12 6v14"/><path d="M8 8v12"/><path d="M4 4v16"/>',
+  torrents:'<path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/>',
+  fileplus:'<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M9 15h6M12 18v-6"/>',
+  link:'<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
+  moon:'<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>', sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2m-7.07-14.93 1.41 1.41m11.32 11.32 1.41 1.41M2 12h2m16 0h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>',
+  more:'<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>',
+  copy:'<rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
+  folder:'<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
+  hdd:'<path d="M22 12H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/><path d="M6 16h.01M10 16h.01"/>',
+  files:'<path d="M20 7h-3a2 2 0 0 1-2-2V2"/><path d="M9 18a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h7l4 4v10a2 2 0 0 1-2 2Z"/><path d="M3 7.6v12.8A1.6 1.6 0 0 0 4.6 22h9.8"/>',
+  network:'<rect x="16" y="16" width="6" height="6" rx="1"/><rect x="2" y="16" width="6" height="6" rx="1"/><rect x="9" y="2" width="6" height="6" rx="1"/><path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3"/><path d="M12 12V8"/>',
+  cloudoff:'<path d="m2 2 20 20"/><path d="M5.782 5.782A7 7 0 0 0 9 19h8.5a4.5 4.5 0 0 0 1.307-.193"/><path d="M21.532 16.5A4.5 4.5 0 0 0 17.5 10h-1.79A7.008 7.008 0 0 0 10 5.07"/>',
+  users:'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>',
+  tag:'<path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5"/>',
+  cal:'<rect width="18" height="18" x="3" y="4" rx="2"/><path d="M8 2v4M16 2v4M3 10h18"/>',
+  play:'<path d="m7 4 14 8-14 8V4Z"/>', settings:'<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/>',
+  verify:'<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>', listx:'<path d="M11 12H3"/><path d="M16 6H3"/><path d="M16 18H3"/><path d="m19 10-4 4"/><path d="m15 10 4 4"/>',
+  trash:'<path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
+  clock:'<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
+  folderOpen:'<path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/>',
+  alignLeft:'<path d="M15 12H3"/><path d="M17 18H3"/><path d="M21 6H3"/>',
+  languages:'<path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/>',
+  dot:'<circle cx="12" cy="12" r="4" fill="currentColor"/>',
+  list:'<path d="M3 12h.01M3 18h.01M3 6h.01M8 12h13M8 18h13M8 6h13"/>',
+  pointer:'<path d="M5 3a2 2 0 0 0-2 2M19 3a2 2 0 0 1 2 2M5 21a2 2 0 0 1-2-2M9 3h1M9 21h2M14 3h1M3 9v1M21 9v2M3 14v1"/><path d="m12 12 4 10 1.7-5.3L23 15z"/>',
+  min:'<path d="M4 12h16"/>', max:'<rect x="5" y="5" width="14" height="14" rx="1"/>'
+};
+const ic = (n, cls='') => `<svg class="i ${cls}" viewBox="0 0 24 24" aria-hidden="true">${P[n] || P.file}</svg>`;
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const norm = s => String(s ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+
+/* Labels only; sentences stay English. Spanish shows how much longer the controls get. */
+const STR = {
+  en:{ file:'File', torrent:'Torrent', view:'View', help:'Help', searchApp:'Search TinyTorrent', library:'Library', torrents:'Torrents',
+    searchLibPh:'Search Library', filters:'Filters', clearFilters:'Clear', clearFiltersTip:'Show all files', type:'Type', genre:'Genre', year:'Year', state:'Status',
+    any:'Any', all:'All', movies:'Movies', episodes:'TV episodes', unid:'Unidentified video',
+    cName:'Name', cTitle:'Title', cType:'Type', cYear:'Released', cSize:'Size', cLoc:'Folder', cArtist:'Artist', cAlbum:'Album',
+    cfgVideos:'Videos', cfgMusic:'Music', cfgFiles:'Files', notId:'Not identified', cTrack:'Track', cDuration:'Duration', gMusic:'Music information', nVideos:'videos', nMusic:'audio files', nFiles:'files',
+    open:'Open', openFolder:'Open folder', properties:'Properties', close:'Close', edit:'Edit', save:'Save', identify:'Identify…', clearId:'Clear identification', showT:'Show in Torrents', more:'More',
+    complete:'Complete', downloading:'Downloading', paused:'Paused', missing:'Missing', unavailable:'Unavailable', noapp:"Couldn't open",
+    movie:'Movie', episode:'TV episode', video:'Video', audio:'Audio',
+    gFile:'File', propertiesH:'Properties', folderL:'Folder', kind:'Kind', date:'Date modified', size:'Size', createdL:'Created', modifiedL:'Modified', typeOfFile:'Type of file', opensWith:'Opens with', noApp:'None',
+    picture:'Picture', document:'Document', archive:'Archive', otherK:'Other',
+    today:'Today', yesterday:'Yesterday', thisWeek:'This week', lastWeek:'Last week', thisMonth:'This month', lastMonth:'Last month', thisYear:'This year', older:'Older',
+    sEmpty:'Empty (0 KB)', sTiny:'Tiny (0 – 16 KB)', sSmall:'Small (16 KB – 1 MB)', sMedium:'Medium (1 – 128 MB)', sLarge:'Large (128 MB – 1 GB)', sHuge:'Huge (1 – 4 GB)', sGigantic:'Gigantic (> 4 GB)',
+    gVideo:'Video information', synopsis:'Synopsis', released:'Released', aired:'Aired', premiered:'Series premiered', episodeL:'Episode', episodesL:'Episodes', original:'Original title', identification:'Identification', tagsL:'Tags', genres:'Genres', cast:'Cast',
+    turnOn:'Turn on…', cancel:'Cancel', identifyBtn:'Identify', searchBtn:'Search', kindMovie:'Movie', kindSeries:'TV series', titleF:'Title', yearF:'Year',
+    season:'Season', epFrom:'Episode', epTo:'to episode', retry:'Retry', details:'Details', files:'files', none:'None', clearSearch:'Clear search' },
+  es:{ file:'Archivo', torrent:'Torrent', view:'Ver', help:'Ayuda', searchApp:'Buscar en TinyTorrent', library:'Biblioteca', torrents:'Torrents',
+    searchLibPh:'Buscar en Biblioteca', filters:'Filtros', clearFilters:'Borrar', clearFiltersTip:'Mostrar todos los archivos', type:'Tipo', genre:'Género', year:'Año', state:'Estado',
+    any:'Cualquiera', all:'Todo', movies:'Películas', episodes:'Episodios de TV', unid:'Vídeo sin identificar',
+    cName:'Nombre', cTitle:'Título', cType:'Tipo', cYear:'Estreno', cSize:'Tamaño', cLoc:'Carpeta', cArtist:'Artista', cAlbum:'Álbum',
+    cfgVideos:'Vídeos', cfgMusic:'Música', cfgFiles:'Archivos', notId:'Sin identificar', cTrack:'Pista', cDuration:'Duración', gMusic:'Información musical', nVideos:'vídeos', nMusic:'archivos de audio', nFiles:'archivos',
+    open:'Abrir', openFolder:'Abrir carpeta', properties:'Propiedades', close:'Cerrar', edit:'Editar', save:'Guardar', identify:'Identificar…', clearId:'Borrar identificación', showT:'Mostrar en Torrents', more:'Más',
+    complete:'Completo', downloading:'Descargando', paused:'En pausa', missing:'No encontrado', unavailable:'No disponible', noapp:'No se pudo abrir',
+    movie:'Película', episode:'Episodio de TV', video:'Vídeo', audio:'Audio',
+    gFile:'Archivo', propertiesH:'Propiedades', folderL:'Carpeta', kind:'Clase', date:'Fecha de modificación', size:'Tamaño', createdL:'Creado', modifiedL:'Modificado', typeOfFile:'Tipo de archivo', opensWith:'Se abre con', noApp:'Ninguna',
+    picture:'Imagen', document:'Documento', archive:'Archivo comprimido', otherK:'Otro',
+    today:'Hoy', yesterday:'Ayer', thisWeek:'Esta semana', lastWeek:'La semana pasada', thisMonth:'Este mes', lastMonth:'El mes pasado', thisYear:'Este año', older:'Más antiguo',
+    sEmpty:'Vacío (0 KB)', sTiny:'Diminuto (0 – 16 KB)', sSmall:'Pequeño (16 KB – 1 MB)', sMedium:'Mediano (1 – 128 MB)', sLarge:'Grande (128 MB – 1 GB)', sHuge:'Enorme (1 – 4 GB)', sGigantic:'Gigantesco (> 4 GB)',
+    gVideo:'Información del vídeo', synopsis:'Sinopsis', released:'Estreno', aired:'Emisión', premiered:'Estreno de la serie', episodeL:'Episodio', episodesL:'Episodios', original:'Título original', identification:'Identificación', tagsL:'Etiquetas', genres:'Géneros', cast:'Reparto',
+    turnOn:'Activar…', cancel:'Cancelar', identifyBtn:'Identificar', searchBtn:'Buscar', kindMovie:'Película', kindSeries:'Serie de TV', titleF:'Título', yearF:'Año',
+    season:'Temporada', epFrom:'Episodio', epTo:'hasta el episodio', retry:'Reintentar', details:'Detalles', files:'archivos', none:'Ninguno', clearSearch:'Borrar búsqueda' }
+};
+const T = k => STR[S.lang][k] ?? STR.en[k] ?? k;
+
+/* Video information the sample provider knows. Synopses are short sample text written for this prototype. */
+const CATALOG = {
+  arrival:{kind:'movie', title:'Arrival', year:2016, genres:['Drama','Science Fiction','Mystery'], cast:['Amy Adams','Jeremy Renner','Forest Whitaker','Michael Stuhlbarg'], synopsis:'A linguist is asked to talk to the visitors in one of twelve alien craft. She has to understand their language before fear drives the nations of the world to war.', keywords:['aliens','language','first contact']},
+  thearrival:{kind:'movie', title:'The Arrival', year:1996, genres:['Science Fiction','Thriller'], cast:['Charlie Sheen','Lindsay Crouse'], synopsis:'A radio astronomer finds a signal from space and then finds that someone does not want it known.'},
+  spirited:{kind:'movie', title:'Spirited Away', original:'千と千尋の神隠し', year:2001, genres:['Animation','Fantasy','Family'], cast:['Rumi Hiiragi','Miyu Irino','Mari Natsuki'], synopsis:'A ten-year-old girl enters a world of spirits and must work in a bathhouse to save her parents.', keywords:['spirits','bathhouse']},
+  amelie:{kind:'movie', title:'Amélie', original:'Le Fabuleux Destin d’Amélie Poulain', year:2001, genres:['Comedy','Romance'], cast:['Audrey Tautou','Mathieu Kassovitz','Rufus'], synopsis:'A shy waitress in Montmartre quietly changes the lives of the people around her, and then has to find the courage to change her own.', keywords:['paris','montmartre']},
+  heat:{kind:'movie', title:'Heat', year:1995, genres:['Crime','Drama','Thriller'], cast:['Al Pacino','Robert De Niro','Val Kilmer','Jon Voight'], synopsis:'A Los Angeles detective closes in on a disciplined crew of thieves whose leader plans one last job.', keywords:['heist','los angeles']},
+  crash2004:{kind:'movie', title:'Crash', year:2004, genres:['Drama','Crime'], cast:['Sandra Bullock','Don Cheadle','Matt Dillon','Terrence Howard'], synopsis:'Over two days in Los Angeles, the lives of strangers collide.', keywords:['los angeles']},
+  crash1996:{kind:'movie', title:'Crash', year:1996, genres:['Drama','Thriller'], cast:['James Spader','Holly Hunter'], synopsis:'After a car accident, a film producer is drawn into a group of people fascinated by car crashes.'},
+  dune2021:{kind:'movie', title:'Dune', year:2021, genres:['Science Fiction','Adventure'], cast:['Timothée Chalamet','Rebecca Ferguson','Oscar Isaac'], synopsis:'The heir of a noble family is sent to the most dangerous planet in the universe.', keywords:['desert','spice']},
+  dune1984:{kind:'movie', title:'Dune', year:1984, genres:['Science Fiction','Adventure'], cast:['Kyle MacLachlan','Francesca Annis'], synopsis:'Rival houses fight for control of a desert planet and the spice it produces.', keywords:['desert','spice']},
+  dune2000:{kind:'series', title:'Frank Herbert’s Dune', year:2000, genres:['Science Fiction','Drama'], cast:['Alec Newman','William Hurt'], synopsis:'A three-part miniseries of the novel.', keywords:['desert','spice']},
+  vacation:{kind:'movie', title:'National Lampoon’s Christmas Vacation', year:1989, genres:['Comedy'], cast:['Chevy Chase','Beverly D’Angelo'], synopsis:'A father plans a perfect family Christmas, and nearly everything goes wrong.'},
+  severance:{kind:'series', title:'Severance', year:2022, genres:['Drama','Mystery','Science Fiction'], cast:['Adam Scott','Britt Lower','Zach Cherry','John Turturro','Patricia Arquette','Christopher Walken'], synopsis:'Employees of a company have their memories surgically divided between work and home.', keywords:['office','memory']},
+  doctorwho:{kind:'series', title:'Doctor Who', year:2005, genres:['Science Fiction','Adventure','Drama'], cast:['David Tennant','Catherine Tate','Freema Agyeman','Billie Piper'], synopsis:'A time-travelling alien and companions travel through time and space in a ship that looks like a police box.', keywords:['time travel','tardis']},
+  planetearth:{kind:'series', title:'Planet Earth II', year:2016, genres:['Documentary'], cast:['David Attenborough'], synopsis:'Wildlife on islands, in mountains, jungles, deserts, grasslands and cities.', keywords:['nature','wildlife','animals']}
+};
+const EPISODES = {
+  severance:{1:[['Good News About Hell','2022-02-18'],['Half Loop','2022-02-18'],['In Perpetuity','2022-02-25'],['The You You Are','2022-03-04'],['The Grim Barbarity of Optics and Design','2022-03-11'],['Hide and Seek','2022-03-18'],['Defiant Jazz','2022-03-25'],['What’s for Dinner?','2022-04-01'],['The We We Are','2022-04-08']]},
+  doctorwho:{4:[['Partners in Crime','2008-04-05'],['The Fires of Pompeii','2008-04-12'],['Planet of the Ood','2008-04-19'],['The Sontaran Stratagem','2008-04-26'],['The Poison Sky','2008-05-03'],['The Doctor’s Daughter','2008-05-10'],['The Unicorn and the Wasp','2008-05-17'],['Silence in the Library','2008-05-31'],['Forest of the Dead','2008-06-07'],['Midnight','2008-06-14'],['Turn Left','2008-06-21'],['The Stolen Earth','2008-06-28'],['Journey’s End','2008-07-05']]},
+  planetearth:{1:[['Islands','2016-11-06'],['Mountains','2016-11-13'],['Jungles','2016-11-20'],['Deserts','2016-11-27'],['Grasslands','2016-12-04'],['Cities','2016-12-11']]},
+  dune2000:{1:[['Part One','2000-12-03'],['Part Two','2000-12-04'],['Part Three','2000-12-05']]}
+};
+const SEV = 'D:\\Media\\TV\\Severance.S01.1080p.ATVP.WEB-DL.DDP5.1.H.264';
+const PE2 = 'D:\\Torrents\\Complete\\Documentaries\\Planet Earth II (2016) Complete Series 2160p UHD BluRay HDR10 DTS-HD MA 5.1';
+const ENTRIES = [
+  {id:1, file:'Arrival.2016.1080p.BluRay.x264-SPARKS.mkv', dir:'D:\\Media\\Movies\\Arrival (2016)', size:9.8e9, dl:'complete', torrent:'Arrival (2016) 1080p BluRay', ident:{s:'auto', v:'arrival'}},
+  {id:2, file:'Arrival.2016.1080p.BluRay.x264-SPARKS.mkv', dir:'E:\\Backup\\Films\\Arrival.2016.1080p.BluRay.x264-SPARKS', size:9.8e9, dl:'complete', torrent:'Arrival.2016.1080p.BluRay.x264-SPARKS', ident:{s:'auto', v:'arrival'}},
+  {id:3, file:'Spirited.Away.2001.JAPANESE.1080p.BluRay.mkv', dir:'D:\\Media\\Movies\\Spirited Away (2001)', size:7.4e9, dl:'downloading', torrent:'Spirited Away (2001) 1080p JAPANESE', ident:{s:'auto', v:'spirited'}},
+  {id:4, file:'cover.jpg', dir:'D:\\Media\\Movies\\Spirited Away (2001)', size:412e3, dl:'downloading', torrent:'Spirited Away (2001) 1080p JAPANESE', ident:{s:'other'}},
+  {id:5, file:'Amélie.2001.FRENCH.720p.BluRay.mkv', dir:'D:\\Media\\Movies\\Amélie (2001)', size:4.3e9, dl:'complete', torrent:'Amélie 2001 720p FRENCH', ident:{s:'auto', v:'amelie'}},
+  {id:6, file:'Heat.1995.2160p.UHD.BluRay.REMUX.HDR.mkv', dir:'\\\\NAS\\media\\Movies\\Heat (1995)', size:58.2e9, dl:'complete', torrent:'Heat 1995 2160p UHD REMUX', ident:{s:'auto', v:'heat'}},
+  {id:7, file:'Crash.2004.DVDRip.XviD.avi', dir:'D:\\Downloads', size:702e6, dl:'complete', torrent:'Crash.2004.DVDRip.XviD', ident:{s:'manual', v:'crash2004'}},
+  {id:8, file:'Dune.mkv', dir:'D:\\Downloads', size:3.9e9, dl:'complete', torrent:'Dune', ident:{s:'ambiguous', c:['dune2021','dune1984','dune2000']}},
+  {id:9, file:'home_video_2019_christmas.mp4', dir:'D:\\Downloads\\Family', size:1.2e9, dl:'complete', torrent:'Family videos 2019', ident:{s:'cleared'}},
+  ...EPISODES.severance[1].map(([t], i) => ({id:10 + i, file:`Severance.S01E0${i + 1}.${t.replace(/[’?]/g, '').replace(/ /g, '.')}.1080p.ATVP.WEB-DL.mkv`, dir:SEV, size:(1.9 + (i % 4) * .17) * 1e9,
+    dl:i === 8 ? 'downloading' : 'complete', torrent:'Severance S01 1080p ATVP WEB-DL', ident:{s:'auto', v:'severance', season:1, eps:[i + 1]}})),
+  {id:19, file:'Severance.S01E01.en.srt', dir:SEV, size:61e3, dl:'complete', torrent:'Severance S01 1080p ATVP WEB-DL', ident:{s:'other'}},
+  {id:20, file:'Doctor.Who.2005.S04E12-E13.The.Stolen.Earth.Journeys.End.720p.mkv', dir:'D:\\Media\\TV\\Doctor Who', size:2.6e9, dl:'complete', torrent:'Doctor Who S04E12-13 720p', ident:{s:'auto', v:'doctorwho', season:4, eps:[12, 13]}},
+  {id:21, file:'Planet.Earth.II.S01E01.Islands.2160p.UHD.BluRay.HDR10.mkv', dir:PE2, size:14.6e9, dl:'complete', torrent:'Planet Earth II (2016) Complete Series 2160p UHD', ident:{s:'auto', v:'planetearth', season:1, eps:[1]}},
+  {id:22, file:'Planet.Earth.II.S01E02.Mountains.2160p.UHD.BluRay.HDR10.mkv', dir:PE2, size:15.1e9, dl:'paused', torrent:'Planet Earth II (2016) Complete Series 2160p UHD', ident:{s:'auto', v:'planetearth', season:1, eps:[2]}},
+  {id:23, file:'VTS_01_1.VOB', dir:'D:\\Downloads\\OLD_DVD_RIP\\VIDEO_TS', size:1.07e9, dl:'complete', torrent:'OLD_DVD_RIP', ident:{s:'none'}},
+  {id:24, file:'GOPR0042.MP4', dir:'D:\\Downloads\\Cycling trip', size:3.4e9, dl:'complete', torrent:'Cycling trip footage', ident:{s:'none'}},
+  {id:25, file:'ubuntu-24.04.3-desktop-amd64.iso', dir:'D:\\Downloads', size:6.2e9, dl:'downloading', torrent:'Ubuntu 24.04.3 Desktop amd64', ident:{s:'other'}},
+  ...[['01 - Bessie Smith - St. Louis Blues (1925).flac', 38e6, ['St. Louis Blues', 'Bessie Smith', 1925, 'Blues', 191]],
+    ['02 - Jelly Roll Morton - Black Bottom Stomp (1926).flac', 31e6, ['Black Bottom Stomp', 'Jelly Roll Morton’s Red Hot Peppers', 1926, 'Jazz', 193]],
+    ['03 - Bix Beiderbecke - Singin’ the Blues (1927).flac', 33e6, ['Singin’ the Blues', 'Frankie Trumbauer and His Orchestra', 1927, 'Jazz', 180]],
+    ['04 - Louis Armstrong - West End Blues (1928).flac', 36e6, ['West End Blues', 'Louis Armstrong and His Hot Five', 1928, 'Jazz', 199]]].map(([file, size, [title, artist, year, genre, secs]], i) =>
+    ({id:26 + i * 10, file, dir:'D:\\Music\\Public domain jazz (1925–1928)', size, dl:i === 3 ? 'downloading' : 'complete', torrent:'Internet Archive · Public domain jazz', ident:{s:'other'},
+      tags:{title, artist, album:'Public Domain Jazz 1925–1928', track:i + 1, year, genre, secs}})),
+  {id:28, file:'03_morning_light.mp3', dir:'D:\\Music\\Free Music Archive\\Instrumentals 2019', size:7.1e6, dl:'complete', torrent:'Free Music Archive · Instrumentals', ident:{s:'other'},
+    tags:{title:'Morning Light', artist:'Aurora Field', album:'Instrumentals 2019', track:3, year:2019, genre:'Ambient', secs:252}},
+  {id:29, file:'07_night_drive_(extended).mp3', dir:'D:\\Music\\Free Music Archive\\Instrumentals 2019', size:11.4e6, dl:'complete', torrent:'Free Music Archive · Instrumentals', ident:{s:'other'}},
+  {id:30, file:'playlist.m3u', dir:'D:\\Music\\Free Music Archive\\Instrumentals 2019', size:1e3, dl:'complete', torrent:'Free Music Archive · Instrumentals', ident:{s:'other'}},
+  {id:27, file:'README.nfo', dir:'D:\\Downloads\\OLD_DVD_RIP', size:2e3, dl:'complete', torrent:'OLD_DVD_RIP', ident:{s:'other'}},
+  {id:31, file:'NOTICE.txt', dir:'D:\\Downloads\\OLD_DVD_RIP', size:0, dl:'complete', torrent:'OLD_DVD_RIP', ident:{s:'other'}},
+  {id:32, file:'poster.jpg', dir:'D:\\Media\\Movies\\Arrival (2016)', size:240e3, dl:'complete', torrent:'Arrival (2016) 1080p BluRay', ident:{s:'other'}},
+  {id:33, file:'Severance.S01.Subs.zip', dir:SEV, size:1.4e6, dl:'complete', torrent:'Severance S01 1080p ATVP WEB-DL', ident:{s:'other'}}
+];
+/* Days before today that each sample file was last modified on disk, chosen so every Date modified choice has files. */
+const MODIFIED_DAYS = {1:40, 2:400, 5:60, 6:20, 7:900, 8:0, 9:300, 10:2, 11:2, 12:3, 13:3, 14:5, 15:5, 16:6, 17:6, 19:2, 20:15, 21:12, 23:700, 24:1, 26:9, 36:9, 46:9,
+  28:150, 29:150, 30:150, 27:700, 31:700, 32:40, 33:3};
+const SCENARIOS = {normal:'Normal', identifying:'Identifying in background', empty:'Empty collection',
+  nomatch:'No matches', disconnected:'Engine disconnected', off:'Movie info off (first use)', provider:'Provider failing'};
+const OUTCOMES = {success:'Open → opens', missing:'Open → Missing', unavailable:'Open → Unavailable', noapp:'Open → no app'};
+
+const S = {lang:'en', dark:matchMedia('(prefers-color-scheme: dark)').matches, width:0, showState:false, showMenus:false};
+/* entries: the Library, finished files only. unfinished: files still downloading, which only the Torrents page sees. */
+let entries, unfinished;
+const torrentFiles = () => [...entries, ...unfinished];
+function reset(scenario = 'normal') {
+  Object.assign(S, {scenario, outcome:S.outcome || 'success', page:'library', prev:'torrents', q:'', g:'',
+    filtersOpen:false, cfg:'videos', layout:Object.fromEntries(Object.entries(CONFIGS).map(([k, c]) => [k, {shown:[...c.shown], sort:{...c.sort}, f:{...FILTERS0}}])), sel:1, tsel:null,
+    enrichment:true, provider:'ok', disconnected:false, dialog:null, idf:null, fly:null, tinsp:false, tsection:'general', backTo:null,
+    split:230, detailsOpen:true, dtab:'video', last:'Opened Library', announce:''});
+  entries = structuredClone(ENTRIES.filter(e => e.dl === 'complete'));
+  unfinished = structuredClone(ENTRIES.filter(e => e.dl !== 'complete'));
+  const now = new Date();
+  for (const e of entries) {
+    e.mod = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (MODIFIED_DAYS[e.id] ?? 30), 8 + e.id % 12, e.id * 7 % 60);
+    e.created = new Date(e.mod.getTime() - (1 + e.id % 5) * 3.6e6);
+  }
+  if (scenario === 'empty') { entries = []; unfinished = []; S.sel = null; }
+  if (scenario === 'nomatch') S.q = 'kubrick';
+  if (scenario === 'disconnected') S.disconnected = true;
+  if (scenario === 'provider') { S.provider = 'fail'; for (const e of entries) if ([3, 23, 24].includes(e.id)) e.ident = {s:'pending'}; }
+  if (scenario === 'identifying') for (const e of entries) if ([3, 21, 22, 23, 24].includes(e.id)) e.ident = {s:'pending'};
+  S.f = S.layout.videos.f;
+  if (scenario === 'off') { S.enrichment = false; for (const e of entries) if (e.ident.s !== 'other') e.ident = {s:'none'}; }
+  S.last = SCENARIOS[scenario];
+}
+
+/* derived facts */
+const ext = e => e.file.split('.').pop().toLowerCase();
+const isVideo = e => ['mkv','mp4','avi','vob','m4v','mov','wmv','ts'].includes(ext(e));
+function info(e) {
+  const id = e.ident;
+  if (!['auto','manual'].includes(id.s)) return null;
+  const v = CATALOG[id.v];
+  if (v.kind === 'movie') return {v, kind:'movie'};
+  const list = (EPISODES[id.v] || {})[id.season] || [];
+  return {v, kind:'episode', season:id.season, eps:id.eps.map(n => ({n, t:list[n - 1]?.[0] || `Episode ${n}`, air:list[n - 1]?.[1] || ''}))};
+}
+function typeKey(e) {
+  const i = info(e);
+  if (i) return i.kind;
+  if (isVideo(e)) return 'video';
+  return ({srt:'subtitle', flac:'audio', mp3:'audio', jpg:'image', png:'image', iso:'discimg', nfo:'textT', txt:'textT'})[ext(e)] || 'other';
+}
+const isAudio = e => ['flac','mp3','m4a','ogg','wav','opus'].includes(ext(e));
+/* The type name Windows registers for an extension, as Explorer's Properties shows it; the product asks the shell. */
+const TYPE_NAMES = {mkv:'MKV Video File', mp4:'MP4 Video File', avi:'AVI File', vob:'VOB File', flac:'FLAC File', mp3:'MP3 File', srt:'SRT File', nfo:'System Information File',
+  txt:'Text Document', jpg:'JPG File', zip:'Compressed (zipped) Folder', m3u:'M3U File'};
+/* The default app for an extension, with its own icon, as Explorer's Properties shows it; the product asks the shell. */
+const APPS = {
+  vlc:['VLC media player', '<path d="M6.2 1.5h3.6l3.1 10.5H3.1z" fill="#f80"/><path d="M5.3 4.6h5.4l.6 2H4.7zM4.4 7.7h7.2l.6 2H3.8z" fill="#fff"/><rect x="1.5" y="12" width="13" height="2.5" rx="1" fill="#f80"/>'],
+  player:['Media Player', '<rect width="16" height="16" rx="4" fill="#e8590c"/><path d="M6 4.5v7l5.5-3.5z" fill="#fff"/>'],
+  notepad:['Notepad', '<rect x="2.5" y="1.5" width="11" height="13" rx="1.5" fill="#2b88d8"/><path d="M5 5h6M5 8h6M5 11h4" stroke="#fff" stroke-width="1.2"/>'],
+  photos:['Photos', '<rect width="16" height="16" rx="3" fill="#0078d4"/><path d="M2 13l4-5 3 3.5 2-2 3 3.5z" fill="#fff"/><circle cx="11" cy="5" r="1.6" fill="#fff"/>'],
+  explorer:['File Explorer', '<path d="M1 3h5l1.5 1.5H15V13H1z" fill="#ffb900"/>'],
+  msinfo:['System Information', '<rect x="1.5" y="2" width="13" height="10" rx="1" fill="#0063b1"/><rect x="5" y="13" width="6" height="1.5" fill="#888"/><path d="M8 4.2v1.2M8 6.8V10" stroke="#fff" stroke-width="1.4"/>']};
+const OPENS = {mkv:'vlc', mp4:'vlc', avi:'vlc', vob:'vlc', flac:'player', mp3:'player', m3u:'player', srt:'notepad', txt:'notepad', nfo:'msinfo', jpg:'photos', zip:'explorer'};
+/* A failed Open with no app means Windows has no default app for the extension. */
+const openApp = e => e.fail?.kind === 'noapp' ? null : APPS[OPENS[ext(e)]] || null;
+const appIcon = app => `<svg class="appic" viewBox="0 0 16 16" aria-hidden="true">${app[1]}</svg>`;
+const typeName = e => `${TYPE_NAMES[ext(e)] || `${ext(e).toUpperCase()} File`} (.${ext(e)})`;
+/* File Explorer's kinds, from the extension. */
+const fileKind = e => isVideo(e) ? 'video' : isAudio(e) ? 'audio' : ({jpg:'picture', png:'picture', nfo:'document', txt:'document', pdf:'document', zip:'archive', rar:'archive', '7z':'archive'})[ext(e)] || 'otherK';
+const KINDS = ['video', 'audio', 'picture', 'document', 'archive', 'otherK'];
+/* Calendar ranges overlap; a week can begin in the previous month or year. */
+const DATES = ['today', 'yesterday', 'thisWeek', 'lastWeek', 'thisMonth', 'lastMonth', 'thisYear', 'older'];
+function inDateRange(d, range) {
+  const now = new Date(), day = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const at = (y, m, n) => new Date(y, m, n), y = now.getFullYear(), m = now.getMonth(), today = at(y, m, now.getDate());
+  const week = at(y, m, now.getDate() - (today.getDay() + 6) % 7), month = at(y, m, 1), year = at(y, 0, 1);
+  return {today:+day === +today, yesterday:+day === +at(y, m, now.getDate() - 1),
+    thisWeek:day >= week && day < at(week.getFullYear(), week.getMonth(), week.getDate() + 7),
+    lastWeek:day >= at(week.getFullYear(), week.getMonth(), week.getDate() - 7) && day < week,
+    thisMonth:day >= month && day < at(y, m + 1, 1), lastMonth:day >= at(y, m - 1, 1) && day < month,
+    thisYear:day >= year && day < at(y + 1, 0, 1), older:day < year}[range];
+}
+/* File Explorer's Size groups, with their upper limits in bytes. */
+const SIZES = [['sTiny', 16 * 1024], ['sSmall', 1024 ** 2], ['sMedium', 128 * 1024 ** 2], ['sLarge', 1024 ** 3], ['sHuge', 4 * 1024 ** 3], ['sGigantic', Infinity]];
+const sizeGroup = e => e.size === 0 ? 'sEmpty' : SIZES.find(([, max]) => e.size < max)[0];
+/* Videos, Music and Files are configurations of the one Library table: a row set chosen by file category, with its own
+   saved column layout, sort and filters. Nothing else on the page changes. */
+const CONFIGS = {
+  videos:{label:'cfgVideos', noun:'nVideos', has:e => isVideo(e), cols:['title', 'type', 'year', 'genres', 'cast', 'size', 'file', 'loc', 'modified'], shown:['title', 'type', 'year', 'genres'], sort:{key:'title', desc:false}},
+  music:{label:'cfgMusic', noun:'nMusic', has:e => isAudio(e), cols:['title', 'artist', 'album', 'track', 'duration', 'year', 'genres', 'file', 'loc', 'size', 'modified'], shown:['title', 'artist', 'album', 'track', 'duration', 'year'], sort:{key:'artist', desc:false}},
+  files:{label:'cfgFiles', noun:'nFiles', has:() => true, cols:['file', 'loc', 'size', 'modified', 'type', 'title'], shown:['file', 'loc', 'size', 'modified'], sort:{key:'file', desc:false}}
+};
+const cfg = () => CONFIGS[S.cfg];
+const lay = () => S.layout[S.cfg];
+const typeGroup = e => ({movie:'movies', episode:'episodes'})[info(e)?.kind] || 'unid';
+/* Each configuration shows only the filter sections that apply to its files. Files follows File Explorer's search filters;
+   the search box already covers the file name. */
+const SECTIONS = {videos:['type', 'genre', 'year'], music:['genre', 'year'], files:['kind', 'date', 'size']};
+const FILTERS0 = {type:'all', genre:'any', year:'any', kind:'any', date:'any', size:'any'};
+/* Audio tags are read once, through the Windows property system, when the download finishes. */
+const tags = e => isAudio(e) ? e.tags || null : null;
+const genresOf = e => info(e)?.v.genres || (tags(e)?.genre ? [tags(e).genre] : []);
+const fmtDur = secs => `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
+/* Videos say what the file is, or why it is not identified yet; the other configurations name the file kind. */
+function typeLabel(e) {
+  if (S.cfg !== 'videos') return T(fileKind(e));
+  const i = info(e);
+  if (i) return T(i.kind);
+  if (!S.enrichment) return T('video');
+  if (e.ident.s === 'pending') return S.provider === 'fail' ? 'Video · waiting for TMDB' : 'Video · identifying…';
+  if (e.ident.s === 'ambiguous') return `Video · ${e.ident.c.length} possible titles`;
+  return T('unid');
+}
+/* A file without video information still gets a readable title: its name without extension, release tags or separators. */
+function cleanName(e) {
+  let b = e.file.replace(/\.[^.]+$/, '');
+  if (isVideo(e)) b = b.split(/[._ ](?:\d{3,4}p|BluRay|WEB|DVDRip|HDTV|x26[45]|REMUX|UHD)/i)[0].replace(/[._]+/g, ' ');
+  else b = b.replace(/_+/g, ' ');
+  return b.replace(/^\d{1,3}\s*-\s*/, '').replace(/^\d{1,3} /, '').replace(/\s+/g, ' ').trim();
+}
+const shownTitle = e => titleOf(e) || tags(e)?.title || cleanName(e);
+const typeIcon = e => ({movie:'film', episode:'tv', video:'video', subtitle:'text', textT:'text', audio:'music', image:'image', discimg:'disc'})[typeKey(e)] || 'file';
+const code = i => `S${String(i.season).padStart(2, '0')}E${String(i.eps[0].n).padStart(2, '0')}${i.eps.length > 1 ? '–E' + String(i.eps.at(-1).n).padStart(2, '0') : ''}`;
+function titleOf(e) {
+  const i = info(e);
+  if (!i) return '';
+  return i.kind === 'movie' ? i.v.title : `${i.v.title} · ${code(i)}${i.eps.length === 1 ? ' ' + i.eps[0].t : ''}`;
+}
+/* Year: release year for a movie, air year for an episode, the tag year for audio. A series premiere year is in the details only. */
+function yearOf(e) {
+  const i = info(e);
+  if (!i) return tags(e)?.year ?? null;
+  if (i.kind === 'movie') return i.v.year;
+  return i.eps[0].air ? +i.eps[0].air.slice(0, 4) : null;
+}
+/* A failed Open is the only state a Library entry has; it shows on the entry's icon until Open succeeds. */
+const FAIL_ICON = {missing:'missing', unavailable:'unplug', noapp:'alert'};
+const entryIcon = (e, cls = '') => e.fail ? ic(FAIL_ICON[e.fail.kind], cls + ' crit') : ic(typeIcon(e), cls);
+function fmtSize(b) { const u = ['B','KB','MB','GB','TB']; let i = 0; while (b >= 1000 && i < 4) { b /= 1000; i++; } return `${i ? b.toFixed(b < 10 ? 1 : 0) : b} ${u[i]}`; }
+const fmtStamp = d => d.toLocaleString(S.lang === 'es' ? 'es-ES' : 'en-GB', {day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit'});
+const fmtDate = d => new Date(d + 'T12:00').toLocaleDateString(S.lang === 'es' ? 'es-ES' : 'en-GB', {day:'numeric', month:'short', year:'numeric'});
+const path = e => `${e.dir}\\${e.file}`;
+function searchText(e) {
+  const i = info(e), parts = [e.file, e.dir];
+  if (i) {
+    parts.push(i.v.title, i.v.original, i.v.genres.join(' '), i.v.cast.join(' '), i.v.synopsis, (i.v.keywords || []).join(' '), i.v.year);
+    if (i.eps) for (const ep of i.eps) parts.push(ep.t, ep.air.slice(0, 4));
+  }
+  const t = tags(e);
+  if (t) parts.push(t.title, t.artist, t.album, t.genre, t.year);
+  return norm(parts.join(' '));
+}
+/* Every term must match somewhere; facets are evaluated with the other facets, so a count says what choosing it would show. */
+const queryMatch = e => { const hay = searchText(e); return norm(S.q).split(/\s+/).filter(Boolean).every(t => hay.includes(t)); };
+function matches(e, f = S.f) {
+  if (!queryMatch(e)) return false;
+  if (f.type !== 'all' && typeGroup(e) !== f.type) return false;
+  if (f.genre !== 'any' && !genresOf(e).includes(f.genre)) return false;
+  if (f.year !== 'any' && yearOf(e) !== +f.year) return false;
+  if (f.kind !== 'any' && fileKind(e) !== f.kind) return false;
+  if (f.date !== 'any' && !inDateRange(e.mod, f.date)) return false;
+  if (f.size !== 'any' && sizeGroup(e) !== f.size) return false;
+  return true;
+}
+const anyFilter = () => Object.keys(FILTERS0).some(k => S.f[k] !== FILTERS0[k]);
+function rows() {
+  const list = entries.filter(e => cfg().has(e) && matches(e)), {key:k, desc} = lay().sort;
+  if (!k) return list;
+  const val = (e, key) => ({file:e.file, title:shownTitle(e), type:typeLabel(e), year:yearOf(e) ?? 9999, genres:genresOf(e).join(', ') || '\uffff', cast:info(e)?.v.cast.join(', ') || '\uffff', size:e.size, loc:e.dir, modified:e.mod.getTime(),
+    artist:tags(e)?.artist || '\uffff', album:tags(e)?.album || '\uffff', track:tags(e)?.track ?? 9999, duration:tags(e)?.secs ?? 1e9})[key];
+  /* Music sorts by artist, then album, then track, so an album plays in order; a header click changes only the first key. */
+  const keys = [k, ...(S.cfg === 'music' ? ['artist', 'album', 'track', 'title'] : ['title'])];
+  const cmp = (a, b) => { for (const key of keys) { const x = val(a, key), y = val(b, key); const c = typeof x === 'number' ? x - y : String(x).localeCompare(String(y)); if (c) return key === k && desc ? -c : c; } return 0; };
+  return list.sort(cmp);
+}
+const sel = () => entries.find(e => e.id === S.sel) || null;
+/* Keep selected choices visible so an empty result can still be cleared. */
+const sectionOptions = sec => {
+  const mine = entries.filter(e => cfg().has(e));
+  const selected = S.f[sec];
+  const present = (order, inGroup) => order.filter(k => k === selected || mine.some(e => inGroup(e, k))).map(k => [k, T(k)]);
+  if (sec === 'type') return [['all', T('all')], ['movies', T('movies')], ['episodes', T('episodes')], ['unid', T('notId')]];
+  if (sec === 'genre') return [['any', T('all')], ...[...new Set([...mine.flatMap(genresOf), ...(selected === 'any' ? [] : [selected])])].sort().map(g => [g, g])];
+  if (sec === 'year') return [['any', T('all')], ...[...new Set([...mine.map(e => yearOf(e)).filter(Boolean), ...(selected === 'any' ? [] : [+selected])])].sort((a, b) => b - a).map(y => [String(y), String(y)])];
+  if (sec === 'kind') return [['any', T('all')], ...present(KINDS, (e, k) => fileKind(e) === k)];
+  if (sec === 'date') return [['any', T('all')], ...present(DATES, (e, k) => inDateRange(e.mod, k))];
+  return [['any', T('all')], ...present(['sEmpty', ...SIZES.map(([k]) => k)], (e, k) => sizeGroup(e) === k)];
+};
+/* A count says what choosing that value would show with the other sections as they are. */
+const count = (key, value) => {
+  const filters = {...S.f, [key]:value};
+  return entries.filter(e => cfg().has(e) && matches(e, filters)).length;
+};
+const canWrite = () => !S.disconnected;
+const libPage = () => S.page === 'library';
+
+/* filename clues for Identify: title, year, season and episode numbers, without reading the file */
+function clues(e) {
+  const base = e.file.replace(/\.[^.]+$/, '');
+  const se = base.match(/S(\d{1,2})E(\d{1,3})(?:-?E(\d{1,3}))?/i);
+  const yr = base.match(/(?:^|[.\s_(])((?:19|20)\d\d)(?:[.\s_)]|$)/);
+  let title = base.split(/[.\s_](?:S\d{1,2}E\d|(?:19|20)\d\d[.\s_)]|\d{3,4}p)/i)[0].replace(/[._]/g, ' ').trim();
+  if (/^(VTS|GOPR|IMG|DSC)/i.test(title)) title = '';
+  return {title, year:se ? '' : (yr?.[1] || ''), kind:se ? 'series' : 'movie', season:se ? +se[1] : 1, from:se ? +se[2] : 1, to:se ? +(se[3] || se[2]) : 1};
+}
+
+/* The details card is the torrent Inspector (app/src/Views/InspectorPane.xaml) with Library's two sections. Same card and
+   splitter, same title row (group icon, name, size detail, centred SelectorBar, Close), same Field rows (icon, 120px label,
+   value, optional action), same error InfoBar over the bottom of the body, same empty state. */
+const FAIL = {missing:['Missing', () => 'Windows found no file at the recorded location. It may have been moved or deleted outside TinyTorrent.'],
+  unavailable:['Unavailable', () => 'The location could not be reached. The drive or network share may be disconnected; this does not mean the file was deleted.'],
+  noapp:["Couldn't open", e => `Windows has no app that opens .${ext(e).toUpperCase()} files. The file itself is still there.`]};
+/* One row of the Inspector's Field template: 16px icon, 120px label with tooltip, then the value and its icon action. */
+const field = (icon, label, text, action = '', cls = '', tip = text, lead = '') => `<div class="fld ${cls === 'wrap' ? 'wrap' : ''}">${ic(icon)}<span class="fl" title="${esc(label)}">${esc(label)}</span><span class="fv"><span class="v ${cls}" title="${esc(tip)}">${lead}${esc(text)}</span>${action}</span></div>`;
+const fieldAct = (act, label, icon, dis = false) => `<button class="btn icon subtle" data-act="${act}" aria-label="${esc(label)}" title="${esc(label)}" ${dis ? 'disabled' : ''}>${ic(icon)}</button>`;
+/* InspectorStatisticStyle: a 20px icon beside the caption, the value below it. */
+const stat = (icon, label, value, tip = '') => `<div class="stat">${ic(icon)}<div><div class="scap">${esc(label)}</div><div class="sv" ${tip ? `title="${esc(tip)}"` : ''}>${esc(value)}</div></div></div>`;
+const strip = items => `<div class="strip">${items.join('')}</div>`;
+const groupHead = (icon, text, gap) => `<div class="grph" style="margin-bottom:${gap}px">${ic(icon)}<span class="gt" role="heading" aria-level="2" title="${esc(text)}">${esc(text)}</span></div>`;
+const details = (left, right) => `<div class="details"><div>${left}</div><div>${right}</div></div>`;
+/* A short label for the card, and the explanation for its tooltip. */
+function idStatus(e) {
+  const s = e.ident.s;
+  if (!S.enrichment) return ['Off', 'Movie and TV information is off. File names are still searchable.'];
+  if (s === 'ambiguous') return [`${e.ident.c.length} possible titles`, `Several titles match the file name: ${e.ident.c.map(c => `${CATALOG[c].title} (${CATALOG[c].year})`).join(', ')}.`];
+  if (s === 'pending') return S.provider === 'fail' ? ['Waiting for TMDB', 'TMDB cannot be reached. TinyTorrent tries again later; searching by file name still works.'] : ['Identifying…', 'Looking up the file name on TMDB.'];
+  return {auto:['Identified', 'Identified automatically from the file name.'], manual:['Identified', 'Identified by you.'],
+    cleared:['Cleared', 'You cleared the identification, so TinyTorrent does not identify this file automatically again.'], none:['Not identified', 'No title matched the file name.']}[s];
+}
+const moreBtn = e => `<button class="btn icon subtle" data-act="fly" data-fly="more" id="more-btn" aria-label="${T('more')}" title="${T('more')}" aria-haspopup="menu">${ic('more')}</button>`;
+const epCode = (season, n) => `S${String(season).padStart(2, '0')}E${String(n).padStart(2, '0')}`;
+/* Video information in the General tab's structure: statistics, divider, heading, two-column Field grid. */
+function videoPage(e) {
+  const i = info(e);
+  if (!i) {
+    const [label, tip] = idStatus(e), dis = !canWrite();
+    const act = !S.enrichment ? fieldAct('enable', T('turnOn'), 'identify', dis) : e.ident.s === 'pending' ? '' : fieldAct('identify', T('identify'), 'identify', dis);
+    return `<div class="gen"><div>${groupHead('video', shownTitle(e), 6)}${details(field(e.ident.s === 'pending' && S.provider === 'fail' ? 'cloudoff' : 'identify', T('identification'), label, act, '', tip), '')}</div></div>`;
+  }
+  const stats = i.kind === 'movie' ? [stat('film', T('cType'), T('movie')), stat('cal', T('released'), String(i.v.year))]
+    : [stat('tv', T('cType'), T('episode')), stat('list', i.eps.length > 1 ? T('episodesL') : T('episodeL'), code(i)), stat('cal', T('aired'), fmtDate(i.eps[0].air)), stat('cal', T('premiered'), String(i.v.year))];
+  const left = (i.eps ? field('list', i.eps.length > 1 ? T('episodesL') : T('episodeL'), i.eps.map(x => `${epCode(i.season, x.n)} · ${x.t}`).join(', ')) : '')
+    + field('tag', T('genres'), i.v.genres.join(', ')) + field('users', T('cast'), i.v.cast.join(', ')) + field('alignLeft', T('synopsis'), i.v.synopsis, '', 'wrap');
+  const right = i.v.original ? field('languages', T('original'), i.v.original) : '';
+  return `<div class="gen"><div>${strip(stats)}</div><div class="hr"></div><div>${groupHead(i.kind === 'movie' ? 'film' : 'tv', i.v.title, 6)}${details(left, right)}</div></div>`;
+}
+/* Music information from the tags read when the download finished, in the same structure. */
+function musicPage(e) {
+  const t = tags(e);
+  if (!t) return `<div class="gen"><div>${groupHead('music', shownTitle(e), 6)}${details(field('music', T('tagsL'), 'None', '', '', 'This file has no tags'), '')}</div></div>`;
+  return `<div class="gen"><div>${strip([stat('list', T('cTrack'), String(t.track)), stat('clock', T('cDuration'), fmtDur(t.secs)), stat('cal', T('year'), String(t.year))])}</div><div class="hr"></div>
+    <div>${groupHead('music', t.title, 6)}${details(field('users', T('cArtist'), t.artist) + field('disc', T('cAlbum'), t.album), field('tag', T('genre'), t.genre))}</div></div>`;
+}
+/* The File page: facts about this one finished file, in the General tab's Field rows and Details grid. */
+function filePage(e) {
+  const left = field('file', T('cName'), e.file) + field('folder', T('folderL'), e.dir, fieldAct('open-folder', T('openFolder'), 'folderOpen'))
+    + field('torrents', T('torrent'), e.torrent, fieldAct('show-torrent', T('showT'), 'torrents'));
+  const right = field('hdd', T('cSize'), fmtSize(e.size), '', '', `${e.size.toLocaleString()} bytes`) + field(typeIcon(e), T('typeOfFile'), typeName(e))
+    + (app => field('open', T('opensWith'), app ? app[0] : T('noApp'), '', '', app ? app[0] : T('noApp'), app ? appIcon(app) : ''))(openApp(e))
+    + field('cal', T('createdL'), fmtStamp(e.created)) + field('clock', T('modifiedL'), fmtStamp(e.mod));
+  return `<div class="gen"><div>${groupHead('info', T('propertiesH'), 6)}${details(left, right)}</div></div>`;
+}
+/* Video or Music information first. Another file shows File without changing the chosen section. */
+const hasInfoPage = e => isAudio(e) || e.ident.s !== 'other';
+const detPage = e => hasInfoPage(e) ? S.dtab : 'file';
+function detailsCard() {
+  if (!S.detailsOpen) return '';
+  const e = sel(), page = e ? detPage(e) : S.dtab;
+  const audio = e ? isAudio(e) : S.cfg === 'music';
+  const tabs = `<div class="selbar dtabs" role="tablist" aria-label="${T('details')}">${[['video', audio ? T('gMusic') : T('gVideo')], ['file', T('gFile')]].map(([k, l]) => {
+    const off = !e || (k === 'video' && !hasInfoPage(e));
+    const tip = off ? (e ? 'Not a video or audio file' : '') : k !== 'video' ? '' : audio ? 'From the tags in the file' : `${info(e) ? 'From TMDB. ' : ''}${idStatus(e)[1]}`;
+    return `<button role="tab" aria-selected="${!!e && page === k}" data-act="dtab" data-k="${k}" data-fid="dtab-${k}" tabindex="${page === k ? 0 : -1}" ${off ? 'disabled' : ''} ${tip ? `title="${esc(tip)}"` : ''}>${l}</button>`; }).join('')}</div>`;
+  /* As in the Inspector title row: a glyph, the name and its size. The file name appears only here. */
+  const name = e ? `<span class="hn">${entryIcon(e, 'gi')}<span class="name" title="${esc(e.file)}" role="heading" aria-level="1">${esc(e.file)}</span><span class="det">${fmtSize(e.size)}</span></span>` : '<span class="hn"></span>';
+  /* Icon buttons with tooltips, like the Inspector's Close, so the row still fits beside the centred sections at 800px. */
+  const dis = canWrite() ? '' : 'disabled';
+  const acts = e ? `<span class="hacts"><button class="btn icon subtle" data-act="open" data-fid="open" ${dis} aria-label="${T('open')}" title="${openApp(e) ? `${T('open')} with ${openApp(e)[0]} (Enter)` : `${T('open')} (Enter)`}">${ic('open')}</button>
+    ${info(e) ? `<button class="btn icon subtle" data-act="correct" ${dis} aria-label="${T('edit')}" title="${T('edit')} · Change which movie or episode this file is">${ic('pencil')}</button>` : ''}${moreBtn(e)}</span>` : '<span></span>';
+  const body = e ? (page === 'file' ? filePage(e) : audio ? musicPage(e) : videoPage(e))
+    : `<div class="iempty">${ic('pointer')}<span>No file selected</span></div>`;
+  const fail = e && e.fail ? `<div class="infobar err" role="status">${ic('alert')}<div class="msg" title="${esc(FAIL[e.fail.kind][1](e))}"><b>${FAIL[e.fail.kind][0]}</b><span class="muted">${e.fail.at}</span></div>
+    <button class="btn" data-act="open" ${canWrite() ? '' : 'disabled'}>${ic('retry')}${T('retry')}</button></div>` : '';
+  return `<button class="split h" data-split="card" role="separator" aria-orientation="horizontal" aria-label="Resize details" aria-valuenow="${S.split}" tabindex="0"></button>
+    <section class="card insp" style="height:${S.split}px" aria-label="${T('details')}"><div class="ih">${name}${tabs}${acts}
+      <button class="btn icon subtle" data-act="close-details" aria-label="${T('close')}" title="${T('close')}">${ic('x')}</button></div>
+    <div class="ib"><div class="ibs" data-region="details">${body}</div>${fail}</div></section>`;
+}
+
+/* Identify: search the provider, choose a title, then the season and episodes for a series */
+function identifyForm() {
+  const d = S.idf, e = entries.find(x => x.id === d.id);
+  if (!e) return '';
+  let list;
+  if (d.results === 'busy') list = `<div class="result-status"><span class="ring"></span>Searching TMDB…</div>`;
+  else if (d.results === 'error') list = `<div class="note warn" role="status">${ic('cloudoff')}<div class="msg" title="Nothing was changed"><b>TMDB did not respond</b></div><div class="act"><button class="btn" data-act="id-search">${ic('retry')}${T('retry')}</button></div></div>`;
+  else if (d.results === 'empty') list = `<div class="result-status">No title in the file name</div>`;
+  else if (!d.results.length) list = `<div class="result-status" title="Check the spelling or leave the year empty">No titles found</div>`;
+  else list = `<ul class="cands" role="radiogroup" aria-label="Titles found">${d.results.map((k, n) => { const c = CATALOG[k];
+    return `<li class="cand" role="radio" tabindex="${d.pick === k || (!d.pick && n === 0) ? 0 : -1}" aria-checked="${d.pick === k}" data-act="id-pick" data-k="${k}" data-fid="cand-${k}"><span class="dot"></span>
+      <span class="two"><b>${esc(c.title)} <span class="muted">(${c.year})</span></b><small>${c.kind === 'movie' ? T('movie') : T('kindSeries') + ', premiered'} ${c.year} · ${c.genres.join(', ')} · ${esc(c.synopsis)}</small></span></li>`; }).join('')}</ul>`;
+  const pick = d.pick && CATALOG[d.pick];
+  let eps = '';
+  if (pick && pick.kind === 'series') {
+    const seasons = Object.keys(EPISODES[d.pick] || {1:[]});
+    const n = ((EPISODES[d.pick] || {})[d.season] || []).length || 24;
+    const opts = v => [...Array(n)].map((_, i) => `<option ${i + 1 === v ? 'selected' : ''}>${i + 1}</option>`).join('');
+    const epT = ((EPISODES[d.pick] || {})[d.season] || [])[d.from - 1]?.[0] || '';
+    eps = `<div class="eps"><label class="f">${T('season')}<select class="combo" data-in="season">${seasons.map(s => `<option ${+s === d.season ? 'selected' : ''}>${s}</option>`).join('')}</select></label>
+      <label class="f">${T('epFrom')}<select class="combo" data-in="from">${opts(d.from)}</select></label><label class="f">${T('epTo')}<select class="combo" data-in="to">${opts(d.to)}</select></label>
+      <span class="muted" style="align-self:center">${esc(epT)}${d.to > d.from ? ' and following' : ''}</span></div>`;
+  }
+  return `<div class="idform">
+    <div class="seg" role="radiogroup" aria-label="What the file contains">${[['movie', T('kindMovie')], ['series', T('kindSeries')]].map(([k, l]) => `<button role="radio" aria-checked="${d.kind === k}" data-act="id-kind" data-k="${k}">${l}</button>`).join('')}</div>
+    <div class="fields"><label class="f" style="flex:1 1 200px">${T('titleF')}<input class="tx" data-in="title" data-fid="id-title" value="${esc(d.title)}" placeholder="Title as TMDB lists it"></label>
+      <label class="f" style="width:88px">${T('yearF')}<input class="tx" data-in="year" data-fid="id-year" value="${esc(d.year)}" inputmode="numeric"></label>
+      <button class="btn" data-act="id-search">${ic('search')}${T('searchBtn')}</button></div>
+    ${list}${eps}</div>`;
+}
+const idButtons = () => `<button class="btn accent" data-act="id-confirm" ${S.idf?.pick && canWrite() ? '' : 'disabled'}>${ic('check')}${S.idf?.mode === 'correct' ? T('save') : T('identifyBtn')}</button><button class="btn" data-act="id-cancel">${T('cancel')}</button>`;
+
+/* the table: one TableView; each configuration declares its columns */
+const COLS = {file:[T => T('cName'), 320], title:[T => T('cTitle'), 340], type:[T => T(S.cfg === 'files' ? 'kind' : 'cType'), 150], year:[T => T(S.cfg === 'music' ? 'year' : 'cYear'), 84, 'r'],
+  genres:[T => T(S.cfg === 'music' ? 'genre' : 'genres'), 200], cast:[T => T('cast'), 240], size:[T => T('cSize'), 92, 'r'], loc:[T => T('cLoc'), 320], modified:[T => T('date'), 170],
+  artist:[T => T('cArtist'), 240], album:[T => T('cAlbum'), 240], track:[T => T('cTrack'), 64, 'r'], duration:[T => T('cDuration'), 84, 'r']};
+function cell(e, k) {
+  if (k === 'file') return `<div class="fn">${ic(typeIcon(e))}<span>${esc(e.file)}</span></div>`;
+  if (k === 'title') return `<div class="fn" ${e.fail ? `title="${esc(FAIL[e.fail.kind][0])}"` : ''}>${entryIcon(e)}<span>${esc(shownTitle(e))}</span></div>`;
+  if (k === 'type') return typeLabel(e);
+  if (k === 'genres') return esc(genresOf(e).join(', '));
+  if (k === 'artist' || k === 'album') return esc(tags(e)?.[k] || '');
+  if (k === 'track') return tags(e)?.track ?? '';
+  if (k === 'duration') return tags(e) ? fmtDur(tags(e).secs) : '';
+  if (k === 'cast') return esc(info(e)?.v.cast.slice(0, 3).join(', ') || '');
+  if (k === 'year') return yearOf(e) ?? '';
+  if (k === 'size') return fmtSize(e.size);
+  if (k === 'modified') return fmtStamp(e.mod);
+  return esc(e.dir);
+}
+/* Empty and no-match states name the current configuration, and offer the others that hold matches, with their counts. */
+function placeholder(list) {
+  if (!entries.length) return `<div class="ph"><h3>No files yet</h3>
+    <button class="btn" data-act="page" data-k="torrents">${ic('torrents')}${T('torrents')}</button></div>`;
+  if (list.length) return '';
+  const noun = T(cfg().noun), others = Object.keys(CONFIGS).filter(k => k !== S.cfg).map(k => [k, entries.filter(e => CONFIGS[k].has(e) && matches(e, S.layout[k].f)).length]).filter(([, n]) => n);
+  const go = others.map(([k, n]) => `<button class="btn" data-act="cfg" data-k="${k}">${T(CONFIGS[k].label)} · ${n}</button>`).join('');
+  if (!entries.some(e => cfg().has(e))) return `<div class="ph"><h3>No ${noun} yet</h3><span class="row-h">${go}</span></div>`;
+  return `<div class="ph"><h3>No ${noun} match${S.q ? ` “${esc(S.q)}”` : ''}</h3>
+    <span class="row-h">${go}${S.q ? `<button class="btn" data-act="clear-q">${ic('x')}${T('clearSearch')}</button>` : ''}${anyFilter() ? `<button class="btn" data-act="clear-filters" title="${T('clearFiltersTip')}">${ic('funnelX')}${T('clearFilters')}</button>` : ''}</span></div>`;
+}
+function table() {
+  const keys = cfg().cols.filter(k => lay().shown.includes(k)), list = rows(), width = keys.reduce((w, k) => w + COLS[k][1], 0), sort = lay().sort;
+  const head = keys.map(k => { const [label, w, al] = COLS[k], on = sort.key === k;
+    return `<th class="${al || ''}" data-col="${k}" style="width:${w}px" aria-sort="${on ? (sort.desc ? 'descending' : 'ascending') : 'none'}"${k === 'year' && S.cfg !== 'music' ? ' title="Release year for a movie, air year for an episode. A series premiere year is in the details."' : ''}><button data-act="sort" data-k="${k}" tabindex="-1">${label(T)}${on ? ic(sort.desc ? 'down' : 'up') : ''}</button></th>`; }).join('');
+  const focusId = list.some(e => e.id === S.sel) ? S.sel : list[0]?.id;
+  const body = list.map(e => `<tr class="row ${e.id === S.sel ? 'sel' : ''}" data-row="${e.id}" data-fid="row-${e.id}" tabindex="${e.id === focusId ? 0 : -1}" aria-selected="${e.id === S.sel}" aria-label="${esc(e.file)}">
+    ${keys.map(k => `<td class="${COLS[k][2] || ''}" ${['file', 'loc', 'title', 'genres', 'cast', 'type'].includes(k) ? `title="${esc(k === 'loc' ? e.dir : k === 'file' || k === 'title' ? e.file : k === 'type' ? typeLabel(e) : cell(e, k))}"` : ''}>${cell(e, k)}</td>`).join('')}</tr>`).join('');
+  return `<div class="tv ${S.disconnected ? 'stale' : ''}" id="tv" data-region="table"><table role="grid" aria-label="${T('library')}" aria-rowcount="${list.length}" style="width:max(100%, ${width}px)"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>${placeholder(list)}</div>`;
+}
+
+/* title bar from MainWindow.xaml: [Back] icon · MenuBar · bounded search · Add file, Add magnet · theme · caption buttons */
+function titleBar() {
+  const secondary = !['torrents', 'library'].includes(S.page), owner = secondary ? S.prev : S.page;
+  /* The second menu is the current page's object menu, in one slot; on Settings and About it and View are disabled. */
+  const menus = [['file', T('file'), false], [owner === 'library' ? 'library' : 'torrent', owner === 'library' ? T('library') : T('torrent'), secondary], ['view', T('view'), secondary], ['help', T('help'), false]];
+  const pages = `<span class="vdiv"></span><div class="selbar pages" role="tablist" aria-label="Pages">${[['torrents', T('torrents'), 'Ctrl+1'], ['library', T('library'), 'Ctrl+2']].map(([k, l, key]) =>
+    `<button role="tab" aria-selected="${S.page === k}" data-act="page" data-k="${k}" data-fid="tab-${k}" tabindex="${S.page === k || (secondary && k === S.prev) ? 0 : -1}" aria-label="${l}" title="${l} (${key})">${ic(k)}<span class="lbl">${l}</span></button>`).join('')}</div>`;
+  /* One search box. On Library it filters the rows as the person types, as File Explorer's box searches the current folder,
+     and shows no suggestion list: a list would cover the rows being filtered, and Enter keeps one meaning (go to the results). */
+  const box = libPage()
+    ? `<div class="gbox" title="${S.disconnected ? 'Search resumes when TinyTorrent reconnects to the engine' : 'Search file names, folders, titles, genres, cast and synopses · Ctrl+K, Ctrl+F, Ctrl+E'}"><input id="gq" data-fid="gq" aria-label="${T('searchLibPh')}" placeholder="${T('searchLibPh')}" value="${esc(S.q)}" autocomplete="off" spellcheck="false" ${S.disconnected ? 'disabled' : ''}>
+        ${S.q ? `<button class="clear" data-act="clear-q" tabindex="-1" aria-label="${T('clearSearch')}">${ic('x')}</button>` : ''}<span class="qi">${ic('search')}</span></div>`
+    : `<div class="gbox" title="Ctrl+K, Ctrl+F, Ctrl+E"><input id="gq" data-fid="gq" role="combobox" aria-expanded="${!!S.fly && S.fly.kind === 'gsearch'}" aria-label="Search torrents, commands and settings" placeholder="${T('searchApp')}" value="${esc(S.g)}" autocomplete="off" spellcheck="false"><span class="qi">${ic('search')}</span></div>`;
+  return `<header class="tbar">${secondary || S.backTo ? `<button class="cap" data-act="back" id="back-btn" aria-label="Back · Alt+Left" title="Back · Alt+Left">${ic('back')}</button>` : ''}<span class="appicon" aria-hidden="true"></span>
+    <nav class="menubar" aria-label="Menus">${menus.map(([k, l, d]) => `<button data-act="fly" data-fly="menu-${k}" id="menu-${k}" class="${S.fly?.kind === 'menu-' + k ? 'on' : ''}" ${d ? 'disabled' : ''}>${l}</button>`).join('')}</nav>${pages}
+    <div class="gsearch">${box}</div>
+    <div class="tb-end"><button class="cap" data-act="cmd" data-k="Add torrent file" aria-label="Add torrent file · Ctrl+O" title="Add torrent file · Ctrl+O">${ic('fileplus')}</button>
+      <button class="cap" data-act="cmd" data-k="Add magnet link" aria-label="Add magnet link · Ctrl+Shift+O" title="Add magnet link · Ctrl+Shift+O">${ic('link')}</button><span class="vdiv"></span>
+      <button class="cap" data-act="theme" aria-label="Switch theme" title="Switch to ${S.dark ? 'light' : 'dark'} theme">${ic(S.dark ? 'sun' : 'moon')}</button>
+      <span class="cap win" aria-hidden="true">${ic('min')}</span><span class="cap win" aria-hidden="true">${ic('max')}</span><span class="cap win close" aria-hidden="true">${ic('x')}</span></div></header>`;
+}
+
+/* status bar: rates at the left; the list, Library's movie-information state and the connection at the right */
+function statusBar() {
+  const item = (icon, text, tip, extra = '', pri = 5) => `<span class="si ${extra}" data-pri="${pri}" data-tip="${esc(tip)}">${icon === 'ring' ? '<span class="ring" style="width:12px;height:12px"></span>' : ic(icon)}<span class="t">${esc(text)}</span></span>`;
+  const rates = S.disconnected ? ['—', '—'] : ['8.4 MB/s', '312 KB/s'];
+  const left = item('down', rates[0], 'Download speed, no limit applies', '', 9) + item('up', rates[1], 'Upload speed, no limit applies', '', 9);
+  const right = [];
+  if (S.page === 'library') {
+    const pending = entries.filter(e => e.ident.s === 'pending').length;
+    if (!S.enrichment) right.push(item('info', 'Movie information off', 'Movie and TV information is off. Titles, genres and cast are not looked up. Double-click to open Settings > Library.', '', 2));
+    else if (S.provider === 'fail') right.push(item('cloudoff', 'TMDB unreachable', 'TMDB did not respond at 14:02. TinyTorrent will try again later. Searching by file name and opening files still work.', 'caut', 2));
+    else if (pending) right.push(item('ring', `Identifying ${pending} files`, `Looking up ${pending} file names on TMDB. Their titles appear when found.`, '', 2));
+    const shown = rows().length, total = entries.filter(e => cfg().has(e)).length, noun = T(cfg().noun);
+    right.push(item('files', `${T(cfg().label)} · ${shown < total ? `${shown} of ${total}` : total}`, `${total} ${noun} in the Library. View > ${T('cfgVideos')}, ${T('cfgMusic')} or ${T('cfgFiles')} changes which files the table lists.`, '', 6));
+    if (anyFilter()) right.push(item('funnel', `${filterSummary()} · ${rows().length}`, `Filter: ${filterSummary()}. Double-click to show the filters.`, 'filter-status', 3));
+  } else right.push(item('files', `${torrentList().length} torrents`, 'Torrents in the list', '', 6));
+  right.push(S.disconnected ? item('unplug', 'Disconnected', 'TinyTorrent is not connected to its engine.', 'crit', 4) : item('network', 'Port open', 'Peers can connect to TinyTorrent through its listening port.', '', 4));
+  return `<footer class="sb" id="sb"><span class="grp">${left}</span><span class="grp">${right.join('')}</span></footer>`;
+}
+function filterSummary() {
+  return SECTIONS[S.cfg].filter(k => S.f[k] !== FILTERS0[k]).map(k => sectionOptions(k).find(o => o[0] === S.f[k])[1]).join(', ');
+}
+function infoBars() {
+  const bars = [];
+  if (S.disconnected) bars.push(`<div class="infobar" role="status">${ic('unplug')}<div class="msg" title="Showing the last known files. Opening and identifying are unavailable until TinyTorrent reconnects."><b>Connection lost</b></div><button class="btn" data-act="reconnect">${ic('retry')}Restart</button></div>`);
+  return `<div class="infobars">${bars.join('')}</div>`;
+}
+
+/* torrents page: just enough of the real one to judge navigation between the pages */
+function torrentList() {
+  const m = new Map();
+  for (const e of torrentFiles()) { const t = m.get(e.torrent) || {name:e.torrent, size:0, dl:'complete'}; t.size += e.size; if (e.dl !== 'complete') t.dl = e.dl; m.set(e.torrent, t); }
+  return [...m.values()];
+}
+const torrentToolbar = () => [['play','Resume · Ctrl+S'],['pause','Pause · Ctrl+P'],0,['folder','Open folder'],['info','Properties'],0,['verify','Verify · Ctrl+R'],0,['listx','Remove · Delete'],['trash','Delete files · Shift+Delete'],0,['settings','Settings · Ctrl+,']]
+  .map(b => b ? `<button class="btn icon subtle" data-act="cmd" data-k="${b[1]}" aria-label="${b[1]}" title="${b[1]}" tabindex="-1">${ic(b[0])}</button>` : '<span class="vdiv" style="margin:0 4px"></span>').join('');
+function torrentsTable() {
+  const list = torrentList();
+  return `<div class="tv" id="tv"><table role="grid" aria-label="Torrents" style="width:max(100%, 900px)"><thead><tr>${[['Name', 340], ['Size', 100, 'r'], ['Status', 160], ['Down speed', 120, 'r'], ['Up speed', 120, 'r']].map(([l, w, a]) => `<th class="${a || ''}" style="width:${w}px"><button tabindex="-1">${l}</button></th>`).join('')}</tr></thead>
+    <tbody>${list.map((t, n) => `<tr class="row ${S.tsel === t.name ? 'sel' : ''}" data-trow="${esc(t.name)}" data-fid="trow-${n}" tabindex="${(S.tsel ? S.tsel === t.name : n === 0) ? 0 : -1}" aria-selected="${S.tsel === t.name}"><td title="${esc(t.name)}">${esc(t.name)}</td><td class="r">${fmtSize(t.size)}</td>
+      <td><span class="stw ${t.dl === 'complete' ? 'ok' : ''}">${ic(t.dl === 'complete' ? 'up' : t.dl === 'paused' ? 'pause' : 'down')}${t.dl === 'complete' ? 'Seeding' : T(t.dl)}</span></td><td class="r">${t.dl === 'downloading' && !S.disconnected ? '4.2 MB/s' : '—'}</td><td class="r">${S.disconnected ? '—' : '48 KB/s'}</td></tr>`).join('')}</tbody></table></div>`;
+}
+function torrentsPage() {
+  return `<div class="row-h" style="padding:4px">${torrentToolbar()}</div><div class="work">${torrentsTable()}${torrentCard()}</div>`;
+}
+const SECTIONS_T = [['general', 'General'], ['files', 'Files'], ['peers', 'Peers'], ['trackers', 'Trackers'], ['speed', 'Speed'], ['pieces', 'Pieces']];
+/* The torrent Inspector, drawn only as its title row: its sections are the existing app's and are not prototyped here. */
+function torrentCard() {
+  const t = S.tinsp && torrentList().find(x => x.name === S.tsel);
+  if (!t) return '';
+  return `<section class="card insp" style="height:${S.split}px" aria-label="Torrent properties"><div class="ih"><span class="hn">${ic(t.dl === 'complete' ? 'up' : t.dl === 'paused' ? 'pause' : 'down', 'gi')}<span class="name" title="${esc(t.name)}" role="heading" aria-level="1">${esc(t.name)}</span><span class="det">${fmtSize(t.size)}</span></span>
+    <div class="selbar dtabs" role="tablist" aria-label="Torrent properties">${SECTIONS_T.map(([k, l]) => `<button role="tab" aria-selected="${S.tsection === k}" data-act="tsec" data-k="${k}" data-fid="tsec-${k}" tabindex="${S.tsection === k ? 0 : -1}">${l}</button>`).join('')}</div><span></span>
+    <button class="btn icon subtle" data-act="close-tinsp" aria-label="Close inspector" title="Close inspector">${ic('x')}</button></div>
+    <div class="ib"><div class="ibs"><div class="iempty"><span>${SECTIONS_T.find(x => x[0] === S.tsection)[1]} · the existing Inspector section</span></div></div></div></section>`;
+}
+
+/* The Library page. View > Filters opens the torrent Filters drawer, with one single-choice group per section; sections combine. */
+function libraryPage() {
+  const opt = (group, value, label, n) => `<button class="opt" role="radio" aria-checked="${S.f[group] === value}" data-act="filter" data-g="${group}" data-v="${esc(value)}"><span class="trim">${esc(label)}</span><span class="n">${n}</span></button>`;
+  const pane = S.filtersOpen ? `<nav class="a-pane" id="a-filters" aria-label="${T('filters')}" data-region="filters"><div class="ph2">${T('filters')}<button class="btn icon subtle" data-act="toggle-filters" aria-label="Close filters" title="Close filters">${ic('x')}</button></div>
+    ${SECTIONS[S.cfg].map(sec => `<div class="gh" id="fg-${sec}">${T(sec)}</div><div role="radiogroup" aria-labelledby="fg-${sec}">${sectionOptions(sec).map(([v, l]) => opt(sec, v, l, count(sec, v))).join('')}</div>`).join('')}
+    <button class="btn" style="margin:12px 8px 0" data-act="clear-filters" title="${T('clearFiltersTip')}" ${anyFilter() ? '' : 'disabled'}>${ic('funnelX')}${T('clearFilters')}</button></nav>` : '';
+  return `<div class="a-body">${pane}<div class="work">${table()}${detailsCard()}</div></div>`;
+}
+
+/* flyouts: menus, the More menu, the column menu and global search results */
+function flyout() {
+  const fl = S.fly;
+  if (!fl) return '';
+  const mi = menuMi;
+  let html = fl.kind.startsWith('menu-') ? menuItems(fl.kind, mi) : flyoutBody(fl, mi);
+  if (fl.kind === 'gsearch') html = globalResults();
+  return `<div class="fly ${fl.kind === 'gsearch' ? 'search' : ''}" id="fly" role="${fl.kind === 'gsearch' ? 'listbox' : 'menu'}">${html}</div>`;
+}
+const menuMi = (act, label, icon, key = '', dis = false, k = '') => `<button class="mi" role="menuitem" data-act="${act}" data-k="${esc(k || label)}" ${dis ? 'disabled' : ''}><span class="mark">${icon ? ic(icon) : ''}</span>${esc(label)}${key ? `<span class="k">${key}</span>` : ''}</button>`;
+/* The Library menu and the row context menu are one list, as the Torrent menu and the torrent context menu are. */
+function entryCommands(mi) {
+  const e = sel(), video = e && e.ident.s !== 'other', none = !e;
+  return mi('open', T('open'), 'open', 'Enter', none || !canWrite()) + mi('open-folder', T('openFolder'), 'folder', '', none) + mi('properties', T('properties'), 'info', 'Alt+Enter', none) + '<hr>'
+    + (video ? (info(e) ? mi('correct', T('edit'), 'pencil', '', !canWrite()) + mi('clear-id', T('clearId'), 'eraser', '', !canWrite())
+      : mi(S.enrichment ? 'identify' : 'enable', S.enrichment ? T('identify') : T('turnOn'), 'identify', '', !canWrite())) + '<hr>'
+      : mi('identify', T('identify'), 'identify', '', true) + '<hr>') + mi('show-torrent', T('showT'), 'torrents', '', none);
+}
+function menuItems(kind, mi = menuMi) {
+  let html = '';
+  if (kind === 'menu-file') html = mi('cmd', 'Add torrent file…', 'fileplus', 'Ctrl+O') + mi('cmd', 'Add magnet link…', 'link', 'Ctrl+Shift+O') + '<hr>' + mi('page', 'Settings', 'settings', 'Ctrl+,', false, 'settings') + '<hr>' + mi('cmd', 'Close', 'x', 'Alt+F4') + mi('cmd', 'Exit', 'listx', 'Ctrl+Q');
+  if (kind === 'menu-torrent') html = mi('cmd', 'Pause', 'pause', 'Ctrl+P') + mi('cmd', 'Resume', 'play', 'Ctrl+S') + '<hr>' + mi('cmd', 'Pause all', 'pause', 'Ctrl+Shift+P') + mi('cmd', 'Resume all', 'play', 'Ctrl+Shift+S');
+  if (kind === 'menu-library') html = entryCommands(mi);
+  const cfgItems = libPage() ? Object.entries(CONFIGS).map(([k, c]) => `<button class="mi" role="menuitemradio" aria-checked="${S.cfg === k}" data-act="cfg" data-k="${k}"><span class="mark">${S.cfg === k ? ic('dot') : ''}</span>${T(c.label)}</button>`).join('') + '<hr>' : '';
+  /* View holds the current page's presentation only; Library has no toolbar, so no Toolbar item. */
+  if (kind === 'menu-view') html = libPage() ? cfgItems + mi('toggle-filters', T('filters'), S.filtersOpen ? 'check' : '', '') : mi('cmd', T('filters'), '', '') + mi('cmd', 'Toolbar', 'check', '');
+  if (kind === 'menu-help') html = mi('page', 'About', 'info', '', false, 'about');
+  return html;
+}
+function flyoutBody(fl, mi) {
+  let html = '';
+  if (fl.kind === 'headmenu') {
+    const shown = lay().shown, first = cfg().cols[0], c = fl.col, name = k => COLS[k][0](T);
+    html = (c ? `<button class="mi" data-act="col-toggle" data-k="${c}" ${c === first ? 'disabled' : ''}><span class="mark">${ic(shown.includes(c) ? 'x' : 'check')}</span>${shown.includes(c) ? 'Hide' : 'Show'} column “${esc(name(c))}”</button><hr>` : '')
+      + cfg().cols.map(k => `<button class="mi" data-act="col-toggle" data-k="${k}" aria-label="${esc(name(k))}, ${shown.includes(k) ? 'shown' : 'hidden'}" ${k === first ? 'disabled' : ''}><span class="mark">${shown.includes(k) ? ic('check') : ''}</span>${esc(name(k))}</button>`).join('');
+  }
+  if (fl.kind === 'more') { const e = sel(); html = mi('clear-id', T('clearId'), 'eraser', '', !e || !info(e) || !canWrite()) + mi('show-torrent', T('showT'), 'torrents'); }
+  if (fl.kind === 'rowmenu') html = entryCommands(mi);
+  return html;
+}
+const COMMANDS = ['Add torrent file…', 'Add magnet link…', 'Pause all', 'Resume all', 'Speed limits'];
+function globalResults() {
+  const q = norm(S.g).trim(), out = [];
+  /* The Torrents page search lists torrents, never Library files; Library has its own search scope. */
+  const hits = q ? torrentList().filter(t => norm(t.name).includes(q)).slice(0, 5) : [];
+  if (hits.length) out.push('<div class="fh">Torrents</div>', ...hits.map(t => `<button class="mi" data-act="g-torrent" data-k="${esc(t.name)}"><span class="mark">${ic('torrents')}</span>${esc(t.name)}</button>`));
+  const pages = [[T('torrents'), 'torrents', 'Ctrl+1'], [T('library'), 'library', 'Ctrl+2'], ['Settings', 'settings', 'Ctrl+,'], ['About', 'about', '']];
+  const cmds = [...pages.filter(([l]) => !q || norm(l).includes(q)).map(([l, k, key]) => `<button class="mi" data-act="page" data-k="${k}"><span class="mark">${ic(k === 'about' ? 'info' : k)}</span>${l}<span class="k">${key || 'Command'}</span></button>`),
+    ...COMMANDS.filter(c => !q || norm(c).includes(q)).slice(0, 4).map(c => `<button class="mi" data-act="cmd" data-k="${esc(c)}"><span class="mark">${ic('play')}</span>${esc(c)}<span class="k">Command</span></button>`)];
+  if (cmds.length) out.push('<div class="fh">Commands and pages</div>', ...cmds);
+  if (!out.length) out.push('<div class="fh">No results</div>');
+  return out.join('');
+}
+
+/* dialogs: consent for movie information and Identify */
+function dialog() {
+  const d = S.dialog;
+  if (!d) return '';
+  if (d.kind === 'consent') return `<div class="scrim"><div class="dlg" role="dialog" aria-modal="true" aria-labelledby="dlg-t"><div class="body"><h2 id="dlg-t">${ic('film')}Turn on movie and TV information?</h2>
+    <p>TinyTorrent looks up titles, genres, years, cast and synopses on The Movie Database (TMDB) so you can search by them.</p>
+    <p>It sends only the title, year, and season and episode numbers it reads from file names. It never sends file paths, your list of files, torrent hashes, trackers or peers.</p>
+    <p>Requests go directly from this computer over HTTPS. They do not use the torrent proxy or the torrent network adapter.</p>
+    <p class="muted">You can turn this off in Settings &gt; Library.</p></div>
+    <div class="foot"><button class="btn accent" data-act="consent-yes" data-fid="consent-yes">${ic('check')}Turn on</button><button class="btn" data-act="dlg-close">${T('cancel')}</button></div></div></div>`;
+  if (d.kind === 'identify' && S.idf) { const e = entries.find(x => x.id === S.idf.id);
+    return `<div class="scrim"><div class="dlg" role="dialog" aria-modal="true" aria-labelledby="dlg-t" style="width:600px"><div class="body"><h2 id="dlg-t">${ic('identify')}${S.idf.mode === 'correct' ? 'Edit identification' : 'Identify file'}</h2>
+      <p class="muted" style="overflow-wrap:anywhere">${esc(e?.file)}</p>${identifyForm()}</div><div class="foot">${idButtons()}</div></div></div>`; }
+  return '';
+}
+
+/* render, keeping focus, caret and scroll where they were */
+const win = document.getElementById('win');
+function render() {
+  hideTip();
+  const a = document.activeElement, fid = a?.dataset?.fid || (a?.id && win.contains(a) ? a.id : null);
+  const caret = a?.selectionStart, scroll = document.getElementById('tv')?.scrollTop, dscroll = win.querySelector('[data-region=details]')?.scrollTop;
+  document.body.classList.toggle('dark', S.dark);
+  const avail = innerWidth - 24;
+  win.style.width = Math.min(S.width || Math.min(1280, avail), avail) + 'px';
+  win.style.height = Math.max(560, innerHeight - document.querySelector('.proto').offsetHeight - 52) + 'px';
+  const body = S.page === 'torrents' ? torrentsPage() : libPage() ? libraryPage()
+    : `<div class="a-head"><h1>${S.page === 'settings' ? 'Settings' : 'About'}</h1></div>${S.page === 'about' ? '<h3 class="stub">Credits</h3><p class="stub">This product uses the TMDB API but is not endorsed or certified by TMDB.</p>' : ''}`;
+  win.innerHTML = `${titleBar()}<main class="main" aria-label="${S.page === 'library' ? T('library') : S.page === 'torrents' ? T('torrents') : S.page}">${body}${infoBars()}</main>${statusBar()}${flyout()}${dialog()}`;
+  placeFlyout();
+  fitStatus();
+  fitPages();
+  fitStrips();
+  const tv = document.getElementById('tv');
+  if (tv && scroll != null) tv.scrollTop = scroll;
+  const dr = win.querySelector('[data-region=details]');
+  if (dr && dscroll != null) dr.scrollTop = dscroll;
+  const target = (S.focus && win.querySelector(S.focus)) || (fid && (win.querySelector(`[data-fid="${fid}"]`) || document.getElementById(fid)));
+  S.focus = null;
+  if (target && !target.disabled) { target.focus({preventScroll:!S.reveal}); if (caret != null && target.setSelectionRange && target.type !== 'number') try { target.setSelectionRange(caret, caret); } catch {} }
+  if (S.reveal) { win.querySelector('tr.row.sel')?.scrollIntoView({block:'nearest'}); S.reveal = false; }
+  if (S.dialog && !win.querySelector('.dlg')?.contains(document.activeElement)) (win.querySelector('.dlg [data-fid=consent-yes], .dlg input, .dlg button'))?.focus();
+  if (S.announce) { document.getElementById('live').textContent = S.announce; S.announce = ''; }
+  document.getElementById('scenario').value = S.scenario;
+  document.getElementById('outcome').value = S.outcome;
+  document.getElementById('wval').textContent = parseInt(win.style.width) + 'px';
+  showReadout();
+  showMenus();
+}
+function placeFlyout() {
+  const fl = document.getElementById('fly');
+  if (!fl) return;
+  if (S.fly.x != null) { const w = win.getBoundingClientRect(); fl.style.left = Math.min(S.fly.x, w.width - fl.offsetWidth - 8) + 'px'; fl.style.top = Math.min(S.fly.y, w.height - fl.offsetHeight - 8) + 'px'; return; }
+  const anchor = S.fly.kind === 'gsearch' ? document.getElementById('gq')?.closest('.gbox') : document.getElementById(S.fly.anchor);
+  if (!anchor) { S.fly = null; fl.remove(); return; }
+  const w = win.getBoundingClientRect(), r = anchor.getBoundingClientRect();
+  fl.style.top = (r.bottom - w.top + 4) + 'px';
+  fl.style.left = Math.max(8, Math.min(r.left - w.left, w.width - fl.offsetWidth - 8)) + 'px';
+  if (S.fly.kind === 'gsearch') fl.style.minWidth = r.width + 'px';
+}
+/* one line: shorten the least important labels to their icons until the bar fits */
+/* The page items drop their labels when the search box would fall below its 200px minimum. */
+/* controls:Strip: one row when the items fit, else two rows, else one column; free width is shared between columns. */
+function fitStrips() {
+  for (const el of win.querySelectorAll('.strip')) {
+    el.style.gridTemplateColumns = `repeat(${el.children.length}, max-content)`;
+    const items = [...el.children], widths = items.map(x => x.getBoundingClientRect().width), need = n => [...Array(n).keys()].reduce((w, c) => w + Math.max(...widths.filter((_, i) => i % n === c)), 0) + 32 * (n - 1);
+    const n = need(items.length) <= el.clientWidth ? items.length : need(Math.ceil(items.length / 2)) <= el.clientWidth ? Math.ceil(items.length / 2) : 1;
+    el.style.gridTemplateColumns = `repeat(${n}, auto)`;
+  }
+}
+function fitPages() {
+  const bar = win.querySelector('.pages'), box = win.querySelector('.gsearch');
+  if (!bar || !box) return;
+  bar.classList.remove('narrow');
+  if (box.offsetWidth < 200) bar.classList.add('narrow');
+}
+function fitStatus() {
+  const sb = document.getElementById('sb');
+  const items = [...sb.querySelectorAll('.si')].filter(x => +x.dataset.pri < 9).sort((a, b) => a.dataset.pri - b.dataset.pri);
+  while (sb.scrollWidth > sb.clientWidth && items.length) items.shift().classList.add('icon');
+}
+function showMenus() {
+  const box = document.getElementById('menus');
+  box.hidden = !S.showMenus;
+  if (!S.showMenus) return;
+  const page = S.page, sheet = ['torrents', 'library'].map(pg => {
+    S.page = pg;
+    const object = pg === 'library' ? ['menu-library', T('library')] : ['menu-torrent', T('torrent')];
+    const html = [['menu-file', T('file')], object, ['menu-view', T('view')], ['menu-help', T('help')]].map(([k, l]) => `<div class="fly" inert><div class="cap2">${l}</div>${menuItems(k)}</div>`).join('');
+    return `<h3>${T(pg)} page</h3><div class="set">${html}</div>`;
+  }).join('');
+  S.page = page;
+  box.innerHTML = `${sheet}<p class="muted">Library menu items act on the selected entry and match the row context menu. On Settings and About, the second menu and View are disabled.</p>`;
+}
+function showReadout() {
+  const box = document.getElementById('readout');
+  box.hidden = !S.showState;
+  if (!S.showState) return;
+  const e = sel();
+  box.textContent = JSON.stringify({page:S.page, scenario:S.scenario, lastAction:S.last, query:S.q, titleBarSearch:libPage() ? '(searches Library)' : S.g, filtersShown:S.filtersOpen,
+    unfinishedFilesNotInLibrary:unfinished.length, torrentInspector:S.tinsp ? S.tsection : 'closed', backReturnsTo:S.backTo, configuration:S.cfg, columns:lay().shown, sort:lay().sort, filters:S.f, shown:rows().length, total:entries.length, enrichment:S.enrichment ? (S.provider === 'fail' ? 'on, provider failing' : 'on') : 'off',
+    selected:e ? {id:e.id, file:e.file, type:typeKey(e), identification:e.ident, openFailure:e.fail || null} : null,
+    identifyDraft:S.idf ? {...S.idf, results:Array.isArray(S.idf.results) ? S.idf.results : S.idf.results} : null, dialog:S.dialog?.kind || null,
+    decisions:entries.filter(x => ['manual', 'cleared'].includes(x.ident.s)).map(x => `${x.id} ${x.ident.s}${x.ident.v ? ' → ' + x.ident.v : ''}`)}, null, 2);
+}
+
+/* actions */
+const now = () => new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+function say(text) { S.last = text; S.announce = text; }
+function go(page) {
+  if (page === S.page) return;
+  S.backTo = null;
+  const peer = ['torrents', 'library'].includes(page);
+  if (!peer && ['torrents', 'library'].includes(S.page)) S.prev = S.page;
+  S.page = page; S.fly = null; S.g = '';
+  S.focus = page === 'library' ? (S.sel ? `[data-fid="row-${S.sel}"]` : '#gq') : page === 'torrents' ? '[data-fid=trow-0]' : '#back-btn';
+  say(page === 'library' ? 'Showed Library; query, filters, configuration and selection kept' : page === 'torrents' ? 'Showed Torrents' : `Showed ${page}; Back returns to ${S.prev}`);
+}
+function openEntry(e) {
+  if (!e || !canWrite()) return;
+  if (S.outcome === 'success') { e.fail = null; say(`Opened ${e.file} in its Windows app`); }
+  else { e.fail = {kind:S.outcome, at:`checked at ${now()}`}; say(`Could not open ${e.file}: ${T(S.outcome)}`); }
+}
+function startIdentify(e, mode) {
+  if (!e || !canWrite()) return;
+  if (!S.enrichment) { S.dialog = {kind:'consent', then:{id:e.id, mode}}; return; }
+  const c = clues(e), cur = info(e);
+  S.idf = {id:e.id, mode, kind:cur ? (cur.kind === 'movie' ? 'movie' : 'series') : c.kind, title:cur ? cur.v.title : c.title, year:cur || c.kind === 'series' ? '' : c.year,
+    results:'busy', pick:cur ? e.ident.v : null, season:cur?.season || c.season, from:cur?.eps?.[0].n || c.from, to:cur?.eps?.at(-1).n || c.to};
+  S.dialog = {kind:'identify'};
+  S.focus = '.dlg [data-fid=id-title]';
+  say(`${mode === 'correct' ? 'Editing the identification of' : 'Identifying'} ${e.file}: searching TMDB`);
+  search();
+}
+function search() {
+  const d = S.idf;
+  clearTimeout(search.t);
+  if (!d.title.trim()) { d.results = 'empty'; return; }
+  d.results = 'busy';
+  search.t = setTimeout(() => {
+    if (S.idf !== d) return;
+    if (S.provider === 'fail') d.results = 'error';
+    else {
+      const terms = norm(d.title).split(/\s+/).filter(Boolean);
+      d.results = Object.keys(CATALOG).filter(k => { const c = CATALOG[k]; return c.kind === d.kind && terms.length && terms.every(t => norm(c.title + ' ' + (c.original || '')).includes(t)); })
+        .sort((a, b) => (CATALOG[b].year === +d.year) - (CATALOG[a].year === +d.year));
+      if (d.pick && !d.results.includes(d.pick)) d.pick = null;
+      if (!d.pick && d.results.length === 1) d.pick = d.results[0];
+    }
+    render();
+  }, 650);
+}
+function confirmIdentify() {
+  const d = S.idf, e = entries.find(x => x.id === d.id);
+  if (!d.pick || !e) return;
+  const c = CATALOG[d.pick];
+  e.ident = c.kind === 'movie' ? {s:'manual', v:d.pick} : {s:'manual', v:d.pick, season:d.season, eps:[...Array(Math.max(1, d.to - d.from + 1))].map((_, i) => d.from + i)};
+  S.idf = null; S.dialog = null;
+  S.focus = '[data-fid=open]';
+  say(`Identified ${e.file} as ${titleOf(e)}. Your choice is kept over automatic identification.`);
+}
+function setCfg(k) {
+  if (S.cfg === k) return;
+  S.cfg = k;
+  S.f = lay().f;
+  const list = rows();
+  if (!list.some(e => e.id === S.sel)) S.sel = list[0]?.id ?? null;
+  S.focus = S.sel ? `[data-fid="row-${S.sel}"]` : '#gq';
+  say(`Showing ${T(CONFIGS[k].label)}: the same search, its own columns, sort and filters`);
+}
+function setSel(id, focus = true) {
+  if (S.idf && S.idf.id !== id) S.idf = null;
+  S.sel = id;
+  if (focus) S.focus = `[data-fid="row-${id}"]`;
+  S.reveal = true;
+}
+function withdraw() {
+  const e = sel();
+  if (!e) return;
+  const list = rows(), at = list.findIndex(x => x.id === e.id), gone = entries.filter(x => x.torrent === e.torrent).map(x => x.id);
+  entries = entries.filter(x => !gone.includes(x.id));
+  unfinished = unfinished.filter(x => x.torrent !== e.torrent);
+  const left = list.filter(x => !gone.includes(x.id));
+  const next = left.find((x, n) => list.indexOf(x) > at) || left.at(-1);
+  if (S.idf && gone.includes(S.idf.id)) { S.idf = null; S.dialog = null; }
+  S.sel = next?.id ?? null;
+  if (win.contains(document.activeElement) && next) S.focus = `[data-fid="row-${next.id}"]`;
+  say(`Removed torrent “${e.torrent}”: ${gone.length} file${gone.length > 1 ? 's' : ''} left the Library; selection moved to the next file`);
+}
+
+win.addEventListener('click', ev => {
+  const t = ev.target.closest('[data-act]');
+  const inFly = ev.target.closest('#fly');
+  if (S.fly && !inFly && !(t && t.dataset.act === 'fly' && t.dataset.fly === S.fly.kind) && !ev.target.closest('.gbox')) { S.fly = null; if (!t) return render(); }
+  const row = ev.target.closest('[data-row]');
+  if (row && !t) { setSel(+row.dataset.row); return render(); }
+  const trow = ev.target.closest('[data-trow]');
+  if (trow) { S.tsel = trow.dataset.trow; S.focus = `[data-fid="${trow.dataset.fid}"]`; return render(); }
+  if (!t || t.disabled) return;
+  const a = t.dataset.act, k = t.dataset.k, e = sel();
+  if (inFly && !['filter', 'col-toggle'].includes(a)) S.fly = null;
+  switch (a) {
+    case 'fly': S.fly = S.fly?.kind === t.dataset.fly ? null : {kind:t.dataset.fly, anchor:t.id}; if (S.fly) S.focus = '#fly button:not(:disabled)'; break;
+    case 'back': go(S.backTo || S.prev); break;
+    case 'page': S.fly = null; go(k); if (t.closest('.pages')) S.focus = `[data-fid=tab-${k}]`; break;
+    case 'theme': S.dark = !S.dark; break;
+    case 'cmd': S.fly = null; say(`Ran “${k}” (sample, nothing happens)`); break;
+    case 'sort': lay().sort = lay().sort.key === k ? {key:k, desc:!lay().sort.desc} : {key:k, desc:false}; say(`Sorted ${S.cfg} by ${k}`); break;
+    case 'cfg': setCfg(k); break;
+    case 'col-toggle': { const sh = lay().shown; lay().shown = sh.includes(k) ? sh.filter(x => x !== k) : [...sh, k]; say(`${sh.includes(k) ? 'Hid' : 'Showed'} column ${k} in ${S.cfg}`); break; }
+    case 'toggle-filters': S.fly = null; S.filtersOpen = !S.filtersOpen; S.focus = S.filtersOpen ? '#a-filters .opt[aria-checked=true]' : '#gq'; say(`View > Filters ${S.filtersOpen ? 'on' : 'off'}`); break;
+    case 'filter': S.f[t.dataset.g] = t.dataset.v; S.focus = `[data-act=filter][data-g="${t.dataset.g}"][data-v="${CSS.escape(t.dataset.v)}"]`;
+      say(`Filter ${t.dataset.g}: ${t.dataset.v}`); break;
+    case 'clear-filters': Object.assign(S.f, FILTERS0); say('Cleared filters'); break;
+    case 'clear-q': S.q = ''; S.focus = '#gq'; say('Cleared search'); break;
+    case 'open': openEntry(e); break;
+    case 'identify': startIdentify(e, 'identify'); break;
+    case 'correct': startIdentify(e, 'correct'); break;
+    case 'g-torrent': S.fly = null; go('torrents'); S.g = ''; S.tsel = k; S.focus = '[data-trow].sel'; say(`Selected torrent “${k}”`); break;
+    case 'clear-id': S.fly = null; if (e && info(e)) { e.ident = {s:'cleared'}; S.idf = null; say(`Cleared the identification of ${e.file}. It will not be identified automatically again.`); } break;
+    case 'show-torrent': S.fly = null; if (e) { S.tsel = e.torrent; go('torrents'); S.backTo = 'library'; S.tinsp = true; S.focus = `[data-fid=tsec-${S.tsection}]`;
+      say(`Showed torrent “${e.torrent}” with its properties; Back returns to Library`); } break;
+    case 'tsec': S.tsection = k; S.focus = `[data-fid=tsec-${k}]`; break;
+    case 'close-tinsp': S.tinsp = false; S.focus = '[data-trow].sel'; break;
+    case 'enable': S.dialog = {kind:'consent', then:e && e.ident.s !== 'other' ? {id:e.id, mode:'identify', only:true} : null}; break;
+    case 'consent-yes': enable(); break;
+    case 'dlg-close': S.dialog = null; S.focus = '[data-act=enable]'; say('Movie information stays off'); break;
+    case 'reconnect': S.disconnected = false; say('Reconnected; showing the confirmed file list'); break;
+    case 'id-kind': S.idf.kind = k; S.idf.pick = null; search(); break;
+    case 'id-search': search(); break;
+    case 'id-pick': S.idf.pick = k; S.focus = `[data-fid="cand-${k}"]`; if (CATALOG[k].kind === 'series' && !(EPISODES[k] || {})[S.idf.season]) S.idf.season = +Object.keys(EPISODES[k] || {1:0})[0]; break;
+    case 'close-details': S.detailsOpen = false; S.focus = `[data-fid="row-${S.sel}"]`; say('Closed the details; Properties (Alt+Enter or the row menu) shows them again'); break;
+    case 'properties': S.detailsOpen = true; S.focus = '[data-fid=dtab-video]:not(:disabled), [data-fid=dtab-file]'; say('Showed properties'); break;
+    case 'open-folder': say(`Opened the folder of ${e ? e.file : ''} in File Explorer (sample)`); break;
+    case 'dtab': S.dtab = k; S.focus = `[data-fid=dtab-${k}]`; break;
+    case 'id-confirm': confirmIdentify(); break;
+    case 'id-cancel': S.idf = null; S.dialog = null; S.focus = '[data-fid=open]'; say('Identification unchanged'); break;
+  }
+  render();
+});
+function enable() {
+  const then = S.dialog?.then;
+  S.dialog = null; S.enrichment = true;
+  const restore = entries.filter(e => e.ident.s === 'none' && ENTRIES.find(o => o.id === e.id)?.ident.s !== 'none');
+  for (const e of restore) e.ident = {s:'pending'};
+  say(`Turned on movie information; identifying ${restore.length} files`);
+  setTimeout(() => { for (const e of restore) { const o = ENTRIES.find(x => x.id === e.id).ident; if (e.ident.s === 'pending') e.ident = structuredClone(o.s === 'manual' || o.s === 'cleared' ? (o.s === 'manual' ? {...o, s:'auto'} : {s:'none'}) : o); } say('Identified the files that matched'); render(); }, 1800);
+  if (then && !then.only) startIdentify(entries.find(x => x.id === then.id), then.mode);
+}
+win.addEventListener('contextmenu', ev => {
+  const th = ev.target.closest('th[data-col]');
+  if (th) { ev.preventDefault(); const w = win.getBoundingClientRect(); S.fly = {kind:'headmenu', col:th.dataset.col, x:ev.clientX - w.left, y:ev.clientY - w.top}; return render(); }
+  const row = ev.target.closest('[data-row]');
+  if (!row) return;
+  ev.preventDefault();
+  setSel(+row.dataset.row);
+  const w = win.getBoundingClientRect();
+  S.fly = {kind:'rowmenu', x:ev.clientX - w.left, y:ev.clientY - w.top};
+  S.focus = '#fly button:not(:disabled)';
+  render();
+});
+win.addEventListener('dblclick', ev => { if (ev.target.closest('.filter-status')) { S.filtersOpen = true; say('Showed the filters'); return render(); } const row = ev.target.closest('[data-row]'); if (row) { setSel(+row.dataset.row); openEntry(sel()); render(); } });
+win.addEventListener('input', ev => {
+  const t = ev.target;
+  if (t.id === 'gq' && libPage()) { S.q = t.value; S.last = `Searching Library for “${S.q}”`; return render(); }
+  if (t.id === 'gq') { S.g = t.value; S.fly = t.value ? {kind:'gsearch'} : null; return render(); }
+  if (t.dataset.in && S.idf && ['title', 'year'].includes(t.dataset.in)) { S.idf[t.dataset.in] = t.value; return; }
+});
+win.addEventListener('change', ev => {
+  const t = ev.target, k = t.dataset.in;
+  if (!k) return;
+  if (['season', 'from', 'to'].includes(k)) { S.idf[k] = +t.value; if (k === 'from' && S.idf.to < S.idf.from) S.idf.to = S.idf.from; if (k === 'to' && S.idf.to < S.idf.from) S.idf.from = S.idf.to; }
+  render();
+});
+win.addEventListener('focusin', ev => {
+  if (ev.target.id === 'gq' && !libPage() && S.g) { S.fly = {kind:'gsearch'}; render(); }
+});
+
+/* keyboard */
+const regions = () => S.page === 'torrents' ? ['#gq', '#tv [tabindex="0"]'] : ['#gq', '#tv [tabindex="0"]', '[data-fid=open]'];
+document.addEventListener('keydown', ev => {
+  const t = ev.target, inField = t.closest?.('input, textarea, select, [contenteditable]');
+  const ctrl = ev.ctrlKey && !ev.altKey && !ev.shiftKey;
+  if (S.dialog) {
+    if (ev.key === 'Escape') { ev.preventDefault(); S.idf = S.dialog.kind === 'identify' ? null : S.idf; S.dialog = null; S.focus = '[data-fid=open], [data-act=enable]'; return render(); }
+    if (ev.key === 'Tab') { const f = [...win.querySelectorAll('.dlg button:not(:disabled), .dlg input, .dlg select, .dlg [tabindex="0"]')]; const i = f.indexOf(document.activeElement);
+      if (ev.shiftKey && i <= 0) { ev.preventDefault(); f.at(-1).focus(); } else if (!ev.shiftKey && i === f.length - 1) { ev.preventDefault(); f[0].focus(); } }
+  }
+  if (ev.key === 'Enter' && ['title', 'year'].includes(t.dataset?.in) && S.idf) { ev.preventDefault(); search(); return render(); }
+  if (S.dialog) return;
+  if (ev.key === 'Escape' && t.closest?.('#a-filters')) { S.filtersOpen = false; S.focus = '#gq'; ev.preventDefault(); say('Closed filters'); return render(); }
+  if (S.fly && ev.key === 'Escape') { const {kind, anchor} = S.fly; S.fly = null; S.focus = kind === 'gsearch' ? '#gq' : kind === 'rowmenu' ? `[data-fid="row-${S.sel}"]` : '#' + anchor; ev.preventDefault(); return render(); }
+  if (S.fly && ['ArrowDown', 'ArrowUp'].includes(ev.key) && (t.closest('#fly') || (t.id === 'gq' && S.fly.kind === 'gsearch'))) {
+    const items = [...document.querySelectorAll('#fly .mi:not(:disabled)')], i = items.indexOf(t);
+    items[(i + (ev.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length]?.focus(); ev.preventDefault(); return;
+  }
+  if (t.id === 'gq' && S.fly?.kind === 'gsearch' && ev.key === 'Enter') { document.querySelector('#fly .mi:not(:disabled)')?.click(); ev.preventDefault(); return; }
+  if (['k', 'e', 'f'].includes(ev.key.toLowerCase()) && ctrl) {
+    ev.preventDefault();
+    S.focus = '#gq';
+    return render();
+  }
+  if (ctrl && ['1', '2'].includes(ev.key)) { ev.preventDefault(); go(ev.key === '1' ? 'torrents' : 'library'); return render(); }
+  if (ctrl && ev.key === ',') { ev.preventDefault(); go('settings'); return render(); }
+  if (ev.altKey && ev.key === 'Enter' && libPage()) { ev.preventDefault(); S.detailsOpen = true; S.focus = '[data-fid=dtab-video]:not(:disabled), [data-fid=dtab-file]'; say('Showed properties'); return render(); }
+  if (ev.altKey && ev.key === 'ArrowLeft' && (S.backTo || !['torrents', 'library'].includes(S.page))) { ev.preventDefault(); go(S.backTo || S.prev); return render(); }
+  if (ev.key === 'F6') { ev.preventDefault(); const r = regions(), cur = r.findIndex(s => document.activeElement?.matches(s) || document.activeElement?.closest(s.split(' ')[0]));
+    const nx = r[(cur + (ev.shiftKey ? -1 : 1) + r.length) % r.length]; (win.querySelector(nx))?.focus(); return; }
+  if (t.id === 'gq' && libPage()) {
+    if (ev.key === 'Escape' && S.q) { S.q = ''; ev.preventDefault(); say('Cleared search'); return render(); }
+    if (ev.key === 'ArrowDown' || ev.key === 'Enter') { const first = rows()[0]; if (first) { ev.preventDefault(); if (!rows().some(x => x.id === S.sel)) S.sel = first.id; win.querySelector(`#tv tr[data-row="${S.sel}"]`)?.focus(); } return; }
+  }
+  if (t.id === 'gq' && ev.key === 'Escape') { S.g = ''; S.fly = null; ev.preventDefault(); return render(); }
+  const row = t.closest?.('[data-row]');
+  if (row) {
+    const list = rows(), i = list.findIndex(x => x.id === +row.dataset.row);
+    const step = {ArrowDown:1, ArrowUp:-1, PageDown:10, PageUp:-10}[ev.key];
+    if (step || ev.key === 'Home' || ev.key === 'End') { ev.preventDefault(); const n = ev.key === 'Home' ? 0 : ev.key === 'End' ? list.length - 1 : Math.max(0, Math.min(list.length - 1, i + step)); setSel(list[n].id); return render(); }
+    if (ev.key === 'Enter' && !ev.altKey) { ev.preventDefault(); setSel(+row.dataset.row); openEntry(sel()); return render(); }
+    if (ev.key === 'ContextMenu' || (ev.shiftKey && ev.key === 'F10')) { ev.preventDefault(); setSel(+row.dataset.row); const w = win.getBoundingClientRect(), r = row.getBoundingClientRect();
+      S.fly = {kind:'rowmenu', x:r.left - w.left + 48, y:r.bottom - w.top}; S.focus = '#fly button:not(:disabled)'; return render(); }
+  }
+  const tr = t.closest?.('[data-trow]');
+  if (tr && ['ArrowDown', 'ArrowUp'].includes(ev.key)) { ev.preventDefault(); const all = [...win.querySelectorAll('[data-trow]')], i = all.indexOf(tr), n = all[Math.max(0, Math.min(all.length - 1, i + (ev.key === 'ArrowDown' ? 1 : -1)))];
+    S.tsel = n.dataset.trow; S.focus = `[data-fid="${n.dataset.fid}"]`; return render(); }
+  const tab = t.closest?.('[role=tab], [role=radio]');
+  if (tab && ['ArrowLeft', 'ArrowRight'].includes(ev.key)) { ev.preventDefault(); const sib = [...tab.parentElement.children].filter(x => x.matches('[role=tab], [role=radio]') && !x.disabled), i = sib.indexOf(tab);
+    const n = sib[(i + (ev.key === 'ArrowRight' ? 1 : -1) + sib.length) % sib.length]; n.focus(); if (n.getAttribute('role') === 'tab') n.click(); return; }
+  if (t.matches?.('.cand') && (ev.key === ' ' || ev.key === 'Enter')) { ev.preventDefault(); t.click(); return; }
+  if (t.matches?.('.cand') && ['ArrowDown', 'ArrowUp'].includes(ev.key)) { ev.preventDefault(); const c = [...win.querySelectorAll('.cand')], i = c.indexOf(t); c[(i + (ev.key === 'ArrowDown' ? 1 : -1) + c.length) % c.length].click(); return; }
+  const split = t.closest?.('.split');
+  if (split && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(ev.key)) { ev.preventDefault(); const d = ['ArrowUp', 'ArrowLeft'].includes(ev.key) ? 16 : -16;
+    S.split = Math.max(155, Math.min(520, S.split + d));
+    S.focus = `[data-split=${split.dataset.split}]`; return render(); }
+});
+
+/* splitters: drag to resize */
+win.addEventListener('pointerdown', ev => {
+  const sp = ev.target.closest('.split');
+  if (!sp) return;
+  ev.preventDefault();
+  const start = {y:ev.clientY, h:S.split};
+  const move = m => { S.split = Math.max(155, Math.min(win.clientHeight - 260, start.h - (m.clientY - start.y))); render(); };
+  const up = () => { removeEventListener('pointermove', move); removeEventListener('pointerup', up); };
+  addEventListener('pointermove', move); addEventListener('pointerup', up);
+});
+
+/* tooltips for status items */
+const tipEl = document.getElementById('tip');
+let tipFor = null, tipTimer;
+function hideTip() { clearTimeout(tipTimer); tipEl.hidden = true; tipFor = null; }
+document.addEventListener('mouseover', ev => {
+  const t = ev.target.closest('[data-tip]');
+  if (t === tipFor) return;
+  hideTip();
+  if (!t) return;
+  tipFor = t;
+  tipTimer = setTimeout(() => { tipEl.textContent = t.dataset.tip; tipEl.hidden = false; const r = t.getBoundingClientRect();
+    tipEl.style.left = Math.max(8, Math.min(r.left, innerWidth - tipEl.offsetWidth - 8)) + 'px'; tipEl.style.top = (r.top - tipEl.offsetHeight - 8) + 'px'; }, 400);
+});
+
+/* prototype bar */
+const $ = id => document.getElementById(id);
+$('scenario').innerHTML = Object.entries(SCENARIOS).map(([k, l]) => `<option value="${k}">${l}</option>`).join('');
+$('outcome').innerHTML = Object.entries(OUTCOMES).map(([k, l]) => `<option value="${k}">${l}</option>`).join('');
+$('scenario').onchange = ev => { const keep = {page:S.page}; reset(ev.target.value); render(); };
+$('outcome').onchange = ev => { S.outcome = ev.target.value; S.last = OUTCOMES[S.outcome]; render(); };
+$('lang').onchange = ev => { S.lang = ev.target.value; document.documentElement.lang = S.lang; render(); };
+$('width').oninput = ev => { S.width = +ev.target.value; render(); };
+$('theme').onclick = () => { S.dark = !S.dark; render(); };
+$('menusBtn').onclick = ev => { S.showMenus = !S.showMenus; ev.target.setAttribute('aria-pressed', S.showMenus); render(); };
+$('state').onclick = ev => { S.showState = !S.showState; ev.target.setAttribute('aria-pressed', S.showState); render(); };
+$('reset').onclick = () => { reset(S.scenario); render(); };
+$('withdraw').onclick = () => { withdraw(); render(); };
+addEventListener('resize', render);
+reset();
+$('width').value = Math.min(1280, innerWidth - 24);
+render();
+</script>
+</body>
+</html>

@@ -320,14 +320,6 @@ public sealed partial class MainViewModel
             );
     }
 
-    internal IReadOnlyList<Suggestion> FindSettings(string query)
-    {
-        var words = query.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
-        return SettingSuggestions()
-            .Where(suggestion => MatchesQuery(suggestion, words))
-            .ToArray();
-    }
-
     private static bool MatchesQuery(string text, string[] words) =>
         words.All(word => text.Contains(word, StringComparison.CurrentCultureIgnoreCase));
 

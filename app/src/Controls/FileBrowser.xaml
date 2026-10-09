@@ -137,7 +137,8 @@
                 <ProgressBar
                   Minimum="0"
                   Maximum="1"
-                  Value="{x:Bind Progress, Mode=OneWay}"
+                  Value="{x:Bind ProgressValue, Mode=OneWay}"
+                  IsIndeterminate="{x:Bind IsIndeterminate, Mode=OneWay}"
                   Height="4"
                   AutomationProperties.AccessibilityView="Raw"
                 />

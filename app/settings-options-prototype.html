@@ -63,7 +63,7 @@ body .row.has-validation{padding-bottom:28px}.row .row-error{position:absolute;b
 .settings-category:has(.control>.unit,.control>select[data-duration-unit]) .toggle>.track{justify-self:end}
 .settings-category:has(.control>.unit,.control>select[data-duration-unit]) .toggle>.state{justify-self:start}
 .limit-input{position:relative;width:120px;flex:none}.limit-input input{display:block;padding-right:32px}body .limit-input .clear-limit{position:absolute;right:2px;top:50%;transform:translateY(-50%);width:28px;height:28px;min-height:28px;padding:0;visibility:hidden}.limit-input:focus-within .clear-limit{visibility:visible}.limit-input input:placeholder-shown+.clear-limit,.limit-input input:disabled+.clear-limit{visibility:hidden}input[data-unlimited]::placeholder{color:var(--text);opacity:1}
-.connection-address{display:grid;grid-template-columns:minmax(0,1fr) 100px;gap:16px}.connection-password{position:relative}.connection-password input{padding-right:40px}.connection-password .icon-button{position:absolute;right:2px;top:2px;width:30px;height:30px;min-height:30px;padding:0}.connection-form label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#connection-result{font-size:14px;line-height:20px}.language-picker{width:320px;max-width:100%;min-width:0}.language-entry{display:flex;gap:8px}.language-entry input{flex:1;min-width:0}.selected-languages{list-style:none;padding:0;margin:8px 0}.selected-languages li{display:flex;align-items:center;gap:8px;min-height:36px}.selected-languages li>span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.selected-languages small{color:var(--muted);font-size:inherit}.selected-languages .icon-button{flex:none}.subtitle-status{width:240px;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--muted)}.subtitle-status[data-error=true]{color:var(--critical,#c42b1c)}
+.connection-address{display:grid;grid-template-columns:minmax(0,1fr) 100px;gap:16px}.connection-password{position:relative}.connection-password input{padding-right:40px}.connection-password .icon-button{position:absolute;right:2px;top:2px;width:30px;height:30px;min-height:30px;padding:0}.connection-form label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#connection-result{font-size:14px;line-height:20px}.language-picker{width:320px;max-width:100%;min-width:0}.language-entry{display:flex;gap:8px}.language-entry input{flex:1;min-width:0}.selected-languages{list-style:none;padding:0;margin:8px 0}.selected-languages li{display:flex;align-items:center;gap:8px;min-height:36px}.selected-languages li>span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.selected-languages small{color:var(--muted);font-size:inherit}.selected-languages .icon-button{flex:none}.subtitle-status{width:240px;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--muted)}.subtitle-status[data-error=true],.index-card small[data-error=true]{color:var(--critical,#c42b1c)}.control:has(>.subtitle-progress){width:320px;max-width:100%;gap:8px;justify-self:end}.subtitle-progress{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)}
 .index-card{min-width:0}.index-card :is(strong,small){white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.index-card small{font-size:14px;line-height:20px}.index-entry{position:relative;min-width:0;margin-bottom:20px}.index-entry .index-card{display:grid;grid-template-columns:20px minmax(0,1fr);gap:6px 14px;width:100%;min-height:130px;padding:20px 48px 20px 22px;border:1px solid var(--line)}.index-entry .index-card>.lucide{margin:0}.index-entry .index-card small{grid-column:2;margin:0}.index-entry .index-card .index-action{grid-column:2;justify-self:end;margin-top:8px}.index-entry>.icon-button{position:absolute;top:8px;right:8px}.index-card .index-action{display:flex;align-items:center;gap:8px;margin-top:12px;color:var(--accent);font-size:14px;line-height:20px;white-space:nowrap}.index-action .lucide{margin:0;width:20px;height:20px;font-size:20px}#supplier-info{position:fixed;inset:auto;margin:0;width:min(440px,calc(100vw - 24px));max-height:calc(100dvh - 24px);overflow:auto;padding:16px;border:1px solid var(--line);border-radius:8px;background:var(--page);color:var(--text);box-shadow:0 8px 24px var(--shadow);font-size:14px;line-height:20px}#supplier-info h2{font-size:16px;line-height:24px;margin:0}#supplier-info p{margin:8px 0 12px}.supplier-link,#supplier-info a{color:var(--accent)}.supplier-link{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.subtitle-links{display:flex;gap:8px 16px;flex-wrap:wrap}.subtitle-links a{white-space:nowrap}.connection-heading{display:flex;align-items:center;gap:8px;margin:14px 0 6px}.connection-heading label{margin:0}.connection-heading .icon-button{width:24px;height:24px;min-height:24px;padding:2px;flex:none}.supplier-link:focus-visible,#supplier-info a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .supplier-feedback{display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:48px;padding-top:8px;margin-top:4px}.supplier-feedback .subtitle-status{width:auto;flex:1;min-width:0}.supplier-feedback button{flex:none}
 .settings-category:has(#subtitles) .action,dialog .action-buttons .action{width:96px;height:32px;flex:none}.language-picker>[data-language-reset]{display:flex;margin-left:auto}.language-entry{align-items:center}
@@ -144,7 +144,7 @@ body.aligned :is(.toast,#connection-result,dialog>p:not(.hint)){white-space:nowr
 </div>
 <aside class="prototype" aria-label="Prototype controls"><small>Prototype</small><select id="surface-picker" aria-label="Preview surface"><option value="settings">Settings</option><option value="torrents">Torrents</option><option value="tray">Notification area</option></select><button id="previous" aria-label="Previous layout">←</button><select id="variant-picker" aria-label="Prototype layout"></select><button id="next" aria-label="Next layout">→</button><span class="divider"></span><button id="preview-theme">Use dark theme</button><button id="state" class="state-button">View sample data</button><button id="reset">Reset sample</button><select id="test-outcome" aria-label="Simulated test outcome" data-tip="No network test or torrent suspension occurs. Speeds and preset policies are illustrative."><option value="complete">Simulated test: success</option><option value="failed">Simulated test: failure</option><option value="timeout">Simulated test: timeout</option></select></aside>
 <div id="toast" class="toast" role="status" aria-live="polite" tabindex="0"></div>
-<select id="subtitle-outcome" aria-label="Simulated subtitle outcome" hidden><option value="unchecked">Subtitles: not checked</option><option value="ready">Subtitles: check succeeded</option><option value="unconfigured">Subtitles: not configured</option><option value="account">Subtitles: access error</option><option value="quota">Subtitles: download limit</option><option value="disk">Subtitles: save error</option></select>
+<select id="subtitle-outcome" aria-label="Simulated subtitle outcome" hidden><option value="unchecked">Subtitles: not checked</option><option value="ready">Subtitles: check succeeded</option><option value="unconfigured">Subtitles: not configured</option><option value="account">Subtitles: access error</option><option value="route">Subtitles: proxy refuses host names</option><option value="quota">Subtitles: download limit</option><option value="disk">Subtitles: save error</option></select>
 <dialog id="dialog" aria-labelledby="dialog-title"></dialog>
 <div id="tooltip" role="tooltip" popover="manual"></div>
 <div id="supplier-info" popover="auto" role="dialog" aria-labelledby="supplier-info-title"></div>
@@ -269,7 +269,9 @@ const sections=[
     field('watch_destination','Download folder','New torrents use your start and queue settings.','path','D:\\Downloads',true,{depends:'watch'})
   ]},
   {category:'Subtitles',title:'Automatic subtitles',description:'Subtitles appear beside your movies, preferably while they are still downloading.',icon:'captions',rows:[
-    field('subtitles','Automatic subtitles','Find subtitles for new and unfinished movie downloads. Configure the supplier before turning on. Existing subtitle files are kept.','toggle',false)
+    field('subtitles','Automatic subtitles','Find subtitles for new and unfinished movie downloads while the window is open. Accepted work resumes on reopening. Movies added and finished while closed need Find. Existing subtitle files are kept.','toggle',false),
+    field('subtitle_existing','Finished downloads','Find subtitles for movies that finished downloading. Runs in the background.','action','Find subtitles',false,{depends:'subtitles'}),
+    field('subtitle_recheck','Subtitle files','Look on the drive for subtitles added or deleted outside TinyTorrent. Checks one file per movie and language, which can take minutes on a large or slow drive.','action','Recheck')
   ]},
   {category:'Subtitles',title:'Supplier',description:'Edit the supplier and account together. Leave the optional account blank to use TinyTorrent access.',icon:'network',rows:[
     field('subtitle_supplier','Subtitle supplier','Choose a supplier, edit account details, and check access before saving.','action','Edit'),
@@ -356,7 +358,7 @@ const sections=[
 ];
 const fields=sections.flatMap(section=>section.rows);
 const aliases={refresh_interval:'polling engine refresh update interval milliseconds',default_app:'file association magnet default program',startup:'windows startup login',tray:'startup background tray',show_add:'magnet torrent dialog background',destination:'save location save path download folder',disk_buffer:'cache ram memory limit',download_limit:'bandwidth speed',upload_limit:'bandwidth speed',alt_download:'bandwidth speed alternative',alt_upload:'bandwidth speed alternative',prevent_sleep:'sleep power awake',title_speeds:'titlebar bandwidth speed',recent_interval:'sampling granularity resolution frequency',history_interval:'sampling granularity resolution frequency'};
-Object.assign(aliases,{subtitles:'captions movie film srt automatic download',subtitle_supplier:'opensubtitles provider supplier account user name username password credentials login sign in check',subtitle_languages:'captions language english spanish french german portuguese italian',subtitle_status:'subtitles account error quota allowance limit retry save folder'});
+Object.assign(aliases,{subtitles:'captions movie film srt automatic download',subtitle_existing:'finished downloads existing movies library find all missing',subtitle_recheck:'recheck rescan refresh drive disk files deleted added',subtitle_supplier:'opensubtitles subdl subsource api key provider supplier account user name username password credentials login sign in check',subtitle_languages:'captions language english spanish french german portuguese italian',subtitle_status:'subtitles account error quota allowance limit retry save folder'});
 const categoryIcons={'General':'settings','Transfers':'arrow-down-up','Subtitles':'captions','Network':'network','Speed limits':'gauge','Schedule':'calendar-clock','Appearance':'palette','Advanced':'wrench'};
 const categories=Object.keys(categoryIcons);
 const variants={A:'Category tabs',B:'All settings',C:'Search and index',D:'Compact rows',E:'Aligned rows'};
@@ -365,6 +367,8 @@ const initialVariant=new URLSearchParams(location.search).get('variant');
 const state={variant:variants[initialVariant]?initialVariant:'C',surface:'settings',inspector:'General',category:'Speed limits',advanced:false,query:'',index:false,units:{seed_time:'minutes',inactive_time:'minutes'},values:{...defaults},bandwidth:{download:'',upload:''},supplier:{name:'OpenSubtitles.com',username:'',password:''},proxy:{type:'None',host:'',port:1080,username:'',password:''}};
 const sample={name:'Ubuntu 24.04.1 desktop',path:'C:\\Downloads\\ubuntu-24.04.1-desktop-amd64.iso',hash:'0123456789abcdef0123456789abcdef01234567',tracker:'https://tracker.example.org/announce',peer:'203.0.113.18:51413',download:'12.4 MB/s',upload:'820 KB/s',lastFolder:'D:\\Downloads',defaultApps:{torrent:'TinyTorrent',magnet:'Another app'},canRecycle:true};
 state.subtitleHelp='new';
+state.subtitleDownloads={};
+state.subtitleExisting={};
 const days=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 const samplePeriods=[{id:1,days:[0,1,2,3,4],from:540,until:1020,mode:'Alternative limits'},{id:2,days:[0,1,2,3,4,5,6],from:1380,until:420,mode:'Paused'}];
 const schedule={periods:structuredClone(samplePeriods),open:null,draft:null,nextId:3,removed:null};
@@ -418,19 +422,82 @@ document.addEventListener('scroll',hideTooltip,true);
 window.addEventListener('resize',hideTooltip);
 function notify(message){document.querySelector('#toast').textContent=message;document.querySelector('#toast').dataset.tip=message;clearTimeout(toastTimer);toastTimer=setTimeout(()=>document.querySelector('#toast').textContent='',5000)}
 function available(){return categories.filter(category=>category!=='Advanced'||state.advanced)}
-function subtitleAccount(name=state.supplier.name){return name==='Account supplier (sample)'}
+const suppliers={
+  'OpenSubtitles.com':{key:false,sends:'movie names, languages, file fingerprints',privacy:'https://opensubtitles.tawk.help/article/privacy-policy',terms:'https://opensubtitles.tawk.help/article/terms-of-service'},
+  'SubDL':{key:true,sends:'movie file names, languages, your API key',privacy:'https://subdl.com/privacy',terms:'https://subdl.com/terms'},
+  'SubSource':{key:true,sends:'movie titles and years, languages, your API key',privacy:'https://subsource.net/policy',terms:'https://subsource.net/terms'}
+};
+function subtitleAccount(name=state.supplier.name){return suppliers[name].key}
+let findTimer,recheckTimer;
+function rerender(){const id=document.activeElement?.id;render();if(id)document.getElementById(id)?.focus({preventScroll:true})}
+function subtitleMissing(){
+  return subtitleSelection().map(id=>{
+    const count=({en:37,es:25,fr:18}[id]??12)-(state.subtitleDownloads[id]??0)-(state.subtitleExisting[id]??0);
+    return {id,name:subtitleLanguages.find(language=>language.id===id).name,count:Math.max(0,count)};
+  }).filter(language=>language.count);
+}
+function missingTotal(){return subtitleMissing().reduce((sum,language)=>sum+language.count,0)}
+function findTip(){const total=missingTotal();return total?`Find ${total} missing subtitle${total===1?'':'s'}: ${subtitleMissing().map(language=>`${language.name} ${language.count}`).join(', ')}. Estimated downloads: ${total}. Retries may use more.`:'No subtitles missing'}
+function subtitleProgress(){
+  if(state.subtitleBacklog)return `${state.subtitleBacklog} subtitle${state.subtitleBacklog===1?'':'s'} left`;
+  if(state.subtitleFound)return `Found ${state.subtitleFound} of ${state.subtitleBatch}`;
+  const missing=subtitleMissing();
+  const total=missingTotal();
+  return total?`${total} subtitle${total===1?'':'s'} missing`:'No subtitles missing';
+}
+function routeChanged(){const outcome=document.querySelector('#subtitle-outcome');if(['ready','route'].includes(outcome.value))outcome.value='unchecked'}
+function stopFind(){clearInterval(findTimer);state.subtitleBacklog=0;state.subtitleFound=0}
+function refreshFind(){
+  if(!state.subtitleBacklog)return;
+  stopFind();findExisting();
+}
+function findExisting(){
+  if(state.subtitleBacklog||!missingTotal())return;
+  const batch=subtitleMissing();
+  stopFind();state.subtitleBatch=state.subtitleBacklog=batch.reduce((sum,language)=>sum+language.count,0);
+  findTimer=setInterval(()=>{
+    if(!--state.subtitleBacklog){
+      clearInterval(findTimer);
+      for(const {id,count} of batch){
+        const found=Math.max(1,Math.round(count*0.84));
+        state.subtitleDownloads[id]=(state.subtitleDownloads[id]??0)+found;
+        state.subtitleFound+=found;
+      }
+      rerender();return;
+    }
+    const status=document.getElementById('status-subtitle_existing');
+    if(status)status.textContent=status.dataset.tip=subtitleProgress();
+  },150);
+}
+function recheckProgress(){return state.recheckLeft?`Checking ${state.recheckTotal-state.recheckLeft} of ${state.recheckTotal}`:state.recheckTime?`Last checked ${state.recheckTime}`:'Not checked yet'}
+function recheck(){
+  if(state.recheckLeft||state.subtitleBacklog)return;
+  const languages=subtitleSelection();
+  state.recheckTotal=state.recheckLeft=120*languages.length;
+  recheckTimer=setInterval(()=>{
+    state.recheckLeft=Math.max(0,state.recheckLeft-12);
+    if(!state.recheckLeft){clearInterval(recheckTimer);if(languages.includes('en'))state.subtitleExisting.en=2;state.recheckTime=new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});rerender();return}
+    const status=document.getElementById('status-subtitle_recheck');
+    if(status)status.textContent=status.dataset.tip=recheckProgress();
+  },100);
+}
 function subtitleSelection(){return state.values.subtitle_languages??[state.values.language==='Español'?'es':'en']}
+function setSubtitleLanguages(languages){
+  const previous=subtitleSelection().join();
+  state.values.subtitle_languages=languages.length?languages:null;
+  if(subtitleSelection().join()!==previous)refreshFind();
+}
 function addLanguage(){
   const input=document.getElementById('subtitle_query'),query=input.value.trim().toLocaleLowerCase();
   const language=subtitleLanguages.find(language=>[language.id,language.name,language.native].some(name=>name.toLocaleLowerCase()===query));
   if(!language){const error='Choose a language from the suggestions.';drafts.subtitle_query={value:input.value,error};input.setAttribute('aria-invalid','true');document.getElementById('error-subtitle_languages').textContent=error;input.focus();return}
-  state.values.subtitle_languages=[...new Set([...subtitleSelection(),language.id])];
+  setSubtitleLanguages([...new Set([...subtitleSelection(),language.id])]);
   delete drafts.subtitle_query;render();document.getElementById('subtitle_query').focus({preventScroll:true});
 }
-function subtitleReady(){return ((!subtitleAccount()&&!state.supplier.username&&!state.supplier.password)||!!(state.supplier.username.trim()&&state.supplier.password))&&!['unconfigured','account'].includes(document.querySelector('#subtitle-outcome').value)}
+function subtitleReady(){return (subtitleAccount()?!!state.supplier.password:!state.supplier.username&&!state.supplier.password||!!(state.supplier.username.trim()&&state.supplier.password))&&!['unconfigured','account'].includes(document.querySelector('#subtitle-outcome').value)}
 function supplierDisclosure(name){
-  const disclosure=`Subtitle matching sends movie names, languages, file fingerprints, and your IP address to ${name}.`;
-  return `<p>${escape(disclosure)}</p><div class="subtitle-links"><a href="../docs/subtitle-privacy.md" target="_blank" rel="noopener noreferrer" data-tip="TinyTorrent privacy policy draft">Privacy policy draft</a>${subtitleAccount(name)?'':`<a href="https://opensubtitles.tawk.help/article/privacy-policy" target="_blank" rel="noopener noreferrer" data-tip="OpenSubtitles privacy policy">Supplier privacy</a><a href="https://opensubtitles.tawk.help/article/terms-of-service" target="_blank" rel="noopener noreferrer" data-tip="OpenSubtitles terms of service">Supplier terms</a>`}</div>`;
+  const supplier=suppliers[name],disclosure=`Subtitle matching sends ${supplier.sends}, and your IP address to ${name}.`;
+  return `<p>${escape(disclosure)}</p><div class="subtitle-links"><a href="../docs/subtitle-privacy.md" target="_blank" rel="noopener noreferrer" data-tip="TinyTorrent privacy policy draft">Privacy policy draft</a><a href="${supplier.privacy}" target="_blank" rel="noopener noreferrer" data-tip="${escape(name)} privacy policy">Supplier privacy</a><a href="${supplier.terms}" target="_blank" rel="noopener noreferrer" data-tip="${escape(name)} terms of service">Supplier terms</a></div>`;
 }
 function showSupplierInfo(button){
   hideTooltip();
@@ -446,11 +513,12 @@ function showSupplierInfo(button){
   flyout.ontoggle=()=>{if(!flyout.matches(':popover-open')){if(button.isConnected)button.focus({preventScroll:true});document.body.append(flyout)}};
 }
 function subtitleStatus(outcome=document.querySelector('#subtitle-outcome').value,supplier=state.supplier){
-  return {unchecked:'Not checked',ready:'Check succeeded (sample)',unconfigured:'Supplier not configured.',account:subtitleAccount(supplier.name)||supplier.username||supplier.password?'Sign-in failed. Check your account.':'Supplier access unavailable. Retrying later.',quota:'Download limit reached. Retrying tomorrow.',disk:'Could not save Movie.en.srt. Check folder access.'}[outcome];
+  return {unchecked:'Not checked',ready:'Check succeeded (sample)',unconfigured:'Supplier not configured.',account:subtitleAccount(supplier.name)?`API key rejected. Check your ${supplier.name} key.`:supplier.username||supplier.password?'Sign-in failed. Check your account.':'Supplier access unavailable. Retrying later.',route:'Proxy cannot reach the supplier. Use SOCKS5 or HTTP.',quota:'Download limit reached. Retrying tomorrow.',disk:'Could not save Movie.en.srt. Check folder access.'}[outcome];
 }
 function checkSupplier(supplier){
-  if((subtitleAccount(supplier.name)||supplier.username||supplier.password)&&(!supplier.username.trim()||!supplier.password))return 'account';
+  if(subtitleAccount(supplier.name)?!supplier.password:(supplier.username||supplier.password)&&(!supplier.username.trim()||!supplier.password))return 'account';
   const outcome=document.querySelector('#subtitle-outcome').value;
+  if(outcome==='unchecked'&&state.proxy.type==='SOCKS4')return 'route';
   return outcome==='unchecked'?'ready':outcome;
 }
 function enabled(field){return (field.id!=='subtitles'||state.values.subtitles||subtitleReady())&&(field.id!=='seed_rule'||['ratio','seed_time','inactive_time'].filter(id=>state.values[id]>0).length>1)&&(field.id!=='destination'||!state.values.last_folder)&&(!field.depends||state.values[field.depends])&&(!field.proxyDisabled||state.proxy.type==='None')}
@@ -606,6 +674,8 @@ function control(field){
   if(field.type==='languages')return `<div id="${field.id}" class="language-picker" role="group" aria-labelledby="label-${field.id}"><form class="language-entry" data-language-form><input id="subtitle_query" type="text" list="subtitle-suggestions" aria-label="Add subtitle language" aria-describedby="help-${field.id} error-${field.id}" placeholder="Find a language" autocomplete="off" aria-invalid="${!!drafts.subtitle_query?.error}" value="${escape(drafts.subtitle_query?.value||'')}">${action('Add','plus','Add subtitle language','type="submit"')}</form><datalist id="subtitle-suggestions">${subtitleLanguages.map(language=>`<option value="${escape(language.name)}">${escape(language.native)} · ${language.id}</option>`).join('')}</datalist><ul class="selected-languages" aria-label="Selected subtitle languages">${subtitleSelection().map(id=>{const language=subtitleLanguages.find(language=>language.id===id);return `<li><span tabindex="0" data-tip="${escape(language.name+' · '+language.native+' · '+id)}">${escape(language.name)}${value===null?' <small>· interface language</small>':''}</span>${value===null?'':`<button class="icon-button" data-language-remove="${id}" aria-label="Remove ${escape(language.name)}" data-tip="Remove ${escape(language.name)}">${icon('close')}</button>`}</li>`}).join('')}</ul>${action('Reset','reset','Use the interface language for subtitles',`data-language-reset ${value===null?'disabled':''}`)}</div>`;
   if(field.type==='choice')return `<select ${attrs}>${field.options.map((option,index)=>`<option value="${index}" ${Boolean(index)===value?'selected':''}>${escape(option)}</option>`).join('')}</select>`;
   if(field.type==='select')return `<select ${attrs}>${field.options.map(option=>`<option ${option===value?'selected':''}>${escape(option)}</option>`).join('')}</select>`;
+  if(field.id==='subtitle_existing')return `<span class="subtitle-progress" id="status-${field.id}" role="status" data-tip="${escape(state.subtitleBacklog||state.subtitleFound?subtitleProgress():findTip())}">${escape(subtitleProgress())}</span>`+action('Find','search',findTip(),`id="${field.id}" data-action="${field.id}" aria-describedby="help-${field.id} status-${field.id}" ${disabled||((missingTotal()||state.subtitleBacklog)&&!state.recheckLeft?'':'disabled')}`);
+  if(field.id==='subtitle_recheck')return `<span class="subtitle-progress" id="status-${field.id}" role="status" data-tip="${escape(recheckProgress())}">${escape(recheckProgress())}</span>`+action('Recheck','refresh-cw','Check the drive for subtitles added or deleted outside TinyTorrent',`id="${field.id}" data-action="${field.id}" aria-describedby="help-${field.id} status-${field.id}" ${state.subtitleBacklog?'disabled':''}`);
   if(field.type==='action')return (field.id==='subtitle_supplier'?`<a class="supplier-link" href="#supplier-info" data-action="supplier_info" data-supplier-info="${escape(state.supplier.name)}" aria-haspopup="dialog" data-tip="About ${escape(state.supplier.name)}">${escape(state.supplier.name)}</a>`:'')+action(['proxy','subtitle_supplier'].includes(field.id)?'Edit':'Open',['proxy','subtitle_supplier'].includes(field.id)?'edit':'settings',value+' · '+field.label,`id="${field.id}" data-action="${field.id}" aria-describedby="help-${field.id}"`);
   if(field.type==='textarea')return `<textarea ${attrs} rows="3">${escape(value)}</textarea>`;
   if(field.type==='path')return `<input type="text" ${attrs} required value="${escape(value)}">${action('Browse','folder','Browse for '+field.label.toLowerCase(),`id="browse-${field.id}" data-browse="${field.id}" ${disabled}`)}`;
@@ -633,8 +703,7 @@ function renderSection(section){
     if(field.id==='seed_rule'&&!enabled(field))help='Set at least two seeding limits to choose how they work together.';
     if(section.category==='Advanced'&&field.type==='number')help=`Range: ${field.min.toLocaleString()}–${field.max.toLocaleString()}${field.unit?' '+field.unit:''}. ${help}`;
     if(field.id==='proxy')help=state.proxy.type==='None'?'Off':`${state.proxy.type} · ${state.proxy.host}:${state.proxy.port}`;
-    if(field.id==='subtitle_supplier')help=state.supplier.name;
-    if(field.proxyDisabled&&state.proxy.type!=='None')help='Unavailable when you use a proxy.';
+    if(field.id==='subtitle_supplier')help=state.supplier.name;    if(field.proxyDisabled&&state.proxy.type!=='None')help='Unavailable when you use a proxy.';
     if(field.depends&&!state.values[field.depends])help=field.depends==='show_add'?'Choose Show the torrent dialog to change this.':`Turn on “${fields.find(parent=>parent.id===field.depends).label}” to change this.`;
     const status=field.id==='default_app'?`Torrent files: ${sample.defaultApps.torrent} · Magnet links: ${sample.defaultApps.magnet}`:field.id==='last_folder'?(state.values.last_folder?sample.lastFolder:state.values.destination):field.id==='title_speeds'?(state.values.title_speeds?(innerWidth<1200?'Hidden at this window size':'Shown in the title bar'):'Not shown'):'';
     return `<div class="row ${['path','textarea'].includes(field.type)?'path-row':''} ${enabled(field)?'':'inactive'} ${['number','path','languages'].includes(field.type)?'has-validation':''}" id="row-${field.id}" data-tip="${escape(help||label)}" ${enabled(field)?'':'tabindex="0"'}><div class="row-copy"><label class="row-title" id="label-${field.id}" for="${field.id}">${escape(label)}</label><span class="description ${field.id==='proxy'?'setting-value':''}" id="help-${field.id}">${escape(help)}</span>${status?`<span class="setting-status" id="status-${field.id}" tabindex="0" data-tip="${escape(status)}">${escape(status)}</span>`:''}<div class="row-error" id="error-${field.id}" role="alert" tabindex="0">${escape((field.type==='languages'?drafts.subtitle_query:drafts[field.id])?.error||'')}</div></div><div class="control">${control(field)}</div></div>`;
@@ -696,8 +765,9 @@ function renderContent(){
     if(help)state.subtitleHelp='visible';
     content.innerHTML=(help?`<div class="index-entry"><button class="index-card" data-category="Subtitles" data-tip="Automatic subtitles. Find subtitles automatically, even before downloads finish. Set up subtitles.">${icon('captions')}<strong>Automatic subtitles</strong><small>Find subtitles automatically, even before downloads finish.</small><span class="index-action">${icon('arrow')}Set up subtitles</span></button><button class="icon-button" data-dismiss-subtitles aria-label="Dismiss subtitle help" data-tip="Dismiss subtitle help">${icon('close')}</button></div>`:'')+`<div class="index">${available().map(category=>{
       const groups=sections.filter(section=>section.category===category&&(!section.advanced||state.advanced));
-      const summary=groups.map(group=>group.title).slice(0,4).join(' · ');
-      return `<button class="index-card" id="index-${category.replaceAll(' ','-')}" data-category="${category}" data-tip="${escape(category+'. '+summary)}">${icon(categoryIcons[category])}<strong>${category}</strong><small>${escape(summary)}</small></button>`;
+      const problem=category==='Subtitles'&&state.values.subtitles&&!['unchecked','ready'].includes(document.querySelector('#subtitle-outcome').value);
+      const summary=problem?subtitleStatus():groups.map(group=>group.title).slice(0,4).join(' · ');
+      return `<button class="index-card" id="index-${category.replaceAll(' ','-')}" data-category="${category}" data-tip="${escape(category+'. '+summary)}">${icon(categoryIcons[category])}<strong>${category}</strong><small data-error="${problem}">${escape(summary)}</small></button>`;
     }).join('')}</div>`;
     return;
   }
@@ -898,21 +968,25 @@ function updateSetup(){
 function showConnection(kind){
   const supplier=kind==='supplier',saved=supplier?state.supplier:state.proxy;
   const title=supplier?'Subtitle supplier':'Proxy server';
-  const choices=supplier?['OpenSubtitles.com','Account supplier (sample)']:['None','SOCKS5','SOCKS4','HTTP'];
-  dialog.innerHTML=`<h2 id="dialog-title">${title}</h2><form id="connection-form" class="connection-form" novalidate><div class="connection-heading"><label for="connection-kind">${supplier?'Supplier':'Type'}</label>${supplier?`<button type="button" class="icon-button" id="connection-info" data-supplier-info="${escape(saved.name)}" aria-haspopup="dialog" aria-label="About ${escape(saved.name)}" data-tip="About ${escape(saved.name)}">${icon('info')}</button>`:''}</div><select id="connection-kind" name="kind">${choices.map(value=>`<option ${value===(supplier?saved.name:saved.type)?'selected':''}>${value}</option>`).join('')}</select>${supplier?'':`<div class="connection-address"><div><label for="connection-host">Host name or IP address</label><input id="connection-host" name="host" value="${escape(saved.host)}"></div><div><label for="connection-port">Port</label><input id="connection-port" name="port" type="number" min="1" max="65535" value="${saved.port}"></div></div>`}<p id="connection-help" class="sr-only"></p><label for="connection-user" id="connection-user-label">User name (optional)</label><input id="connection-user" name="username" value="${escape(saved.username)}" autocomplete="off" aria-describedby="connection-help"><label for="connection-password" id="connection-password-label">Password (optional)</label><div class="connection-password"><input id="connection-password" name="password" type="password" value="${escape(saved.password)}" autocomplete="off" aria-describedby="connection-help"><button type="button" class="icon-button" data-reveal="connection-password" aria-label="Show password" data-tip="Show password" aria-pressed="false">${icon('eye')}</button></div><div class="actions has-status"><p id="connection-result" class="hint" role="status" tabindex="0"></p><div class="action-buttons">${action('Check','circle-check','Check the typed settings without saving','type="button" id="connection-check"')}${action('Save','save','Save '+title.toLowerCase(),'type="submit" data-primary')}${action('Cancel','close','Discard changes','type="button" data-close')}</div></div></form>`;
+  const choices=supplier?Object.keys(suppliers):['None','SOCKS5','SOCKS4','HTTP'];
+  dialog.innerHTML=`<h2 id="dialog-title">${title}</h2><form id="connection-form" class="connection-form" novalidate><div class="connection-heading"><label for="connection-kind">${supplier?'Supplier':'Type'}</label>${supplier?`<button type="button" class="icon-button" id="connection-info" data-supplier-info="${escape(saved.name)}" aria-haspopup="dialog" aria-label="About ${escape(saved.name)}" data-tip="About ${escape(saved.name)}">${icon('info')}</button>`:''}</div><select id="connection-kind" name="kind">${choices.map(value=>`<option ${value===(supplier?saved.name:saved.type)?'selected':''}>${value}</option>`).join('')}</select>${supplier?'':`<div class="connection-address"><div><label for="connection-host">Host name or IP address</label><input id="connection-host" name="host" value="${escape(saved.host)}"></div><div><label for="connection-port">Port</label><input id="connection-port" name="port" type="number" min="1" max="65535" value="${saved.port}"></div></div>`}<p id="connection-help" class="sr-only"></p><label for="connection-user" id="connection-user-label">User name (optional)</label><input id="connection-user" name="username" value="${escape(saved.username)}" autocomplete="off" aria-describedby="connection-help"><label for="connection-password" id="connection-password-label">Password (optional)</label><div class="connection-password"><input id="connection-password" name="password" type="password" value="${supplier?'':escape(saved.password)}" autocomplete="off" aria-describedby="connection-help"><button type="button" class="icon-button" data-reveal="connection-password" aria-label="Show password" data-tip="Show password" aria-pressed="false">${icon('eye')}</button></div><div class="actions has-status"><p id="connection-result" class="hint" role="status" tabindex="0"></p><div class="action-buttons">${action('Check','circle-check','Check the typed settings without saving','type="button" id="connection-check"')}${action('Save','save','Save '+title.toLowerCase(),'type="submit" data-primary')}${action('Cancel','close','Discard changes','type="button" data-close')}</div></div></form>`;
   const form=dialog.querySelector('form'),result=form.querySelector('#connection-result');
   let checked;
+  const keepsSecret=()=>supplier&&!!saved.password&&form.elements.kind.value===saved.name&&(subtitleAccount(saved.name)||!!form.elements.username.value.trim());
   const feedback=text=>{result.textContent=text;result.dataset.tip=text};
-  const read=()=>{const username=form.elements.username.value,password=form.elements.password.value;return supplier?{name:form.elements.kind.value,username,password}:{type:form.elements.kind.value,host:form.elements.host.value.trim(),port:Number(form.elements.port.value),username,password}};
+  const read=()=>{const username=form.elements.username.value,password=form.elements.password.value;return supplier?{name:form.elements.kind.value,username,password:password||(keepsSecret()?saved.password:'')}:{type:form.elements.kind.value,host:form.elements.host.value.trim(),port:Number(form.elements.port.value),username,password}};
   const update=()=>{
     checked=undefined;
     const value=form.elements.kind.value,off=!supplier&&value==='None',required=supplier&&subtitleAccount(value);
     if(!supplier){form.elements.host.disabled=form.elements.port.disabled=off}
     form.elements.username.disabled=off;form.elements.password.disabled=off||!supplier&&value==='SOCKS4';
     form.querySelector('[data-reveal]').disabled=form.elements.password.disabled;
-    form.querySelector('#connection-user-label').textContent='User name'+(required?'':' (optional)');
-    form.querySelector('#connection-password-label').textContent='Password'+(required?'':' (optional)');
-    const help=supplier?(required?'This sample supplier requires an account.':'Leave both account fields blank to use access provided by TinyTorrent.'):'Use a proxy for torrent connections.';
+    form.querySelector('#connection-user-label').hidden=form.elements.username.hidden=required;
+    form.querySelector('#connection-password-label').textContent=required?'API key':'Password (optional)';
+    const reveal=form.querySelector('[data-reveal]'),secret=required?'API key':'password';
+    form.elements.password.placeholder=keepsSecret()?'Saved '+secret:'';
+    reveal.dataset.secret=secret;reveal.setAttribute('aria-label',(reveal.getAttribute('aria-pressed')==='true'?'Hide ':'Show ')+secret);reveal.dataset.tip=reveal.getAttribute('aria-label');
+    const help=supplier?(required?`Paste the API key from your ${value} account.`:'Leave both account fields blank to use access provided by TinyTorrent.'):'Use a proxy for torrent connections.';
     form.querySelector('#connection-help').textContent=help;
     form.elements.username.dataset.tip=help;
     form.elements.password.dataset.tip=help;
@@ -925,8 +999,9 @@ function showConnection(kind){
     const value=read();
     let input,message;
     if(supplier){
-      const account=subtitleAccount(value.name)||value.username||value.password;
-      if(account&&!value.username.trim()){input=form.elements.username;message='Enter a user name.'}
+      const account=value.username||value.password;
+      if(subtitleAccount(value.name)){if(!value.password){input=form.elements.password;message=`Enter your ${value.name} API key.`}}
+      else if(account&&!value.username.trim()){input=form.elements.username;message='Enter a user name.'}
       else if(account&&!value.password){input=form.elements.password;message='Enter a password.'}
     }else if(value.type!=='None'){
       if(!value.host){input=form.elements.host;message='Enter a host name or IP address.'}
@@ -935,7 +1010,7 @@ function showConnection(kind){
     if(!input)return true;
     input.setAttribute('aria-invalid','true');feedback(message);input.focus();return false;
   };
-  form.elements.kind.onchange=()=>{if(supplier){form.elements.username.value='';form.elements.password.value='';form.elements.password.type='password';const reveal=form.querySelector('[data-reveal]');reveal.setAttribute('aria-pressed','false');reveal.setAttribute('aria-label','Show password');reveal.dataset.tip='Show password'}update()};
+  form.elements.kind.onchange=()=>{if(supplier){form.elements.username.value='';form.elements.password.value='';form.elements.password.type='password';form.querySelector('[data-reveal]').setAttribute('aria-pressed','false')}update()};
   form.addEventListener('input',update);
   form.querySelector('#connection-check').onclick=()=>{
     if(!valid())return;
@@ -945,21 +1020,21 @@ function showConnection(kind){
   form.onsubmit=event=>{
     event.preventDefault();if(!valid())return;
     const value=read();
-    if(supplier){if(value.name!==state.supplier.name)state.values.subtitles=false;if(checked!==undefined||['name','username','password'].some(key=>value[key]!==state.supplier[key]))document.querySelector('#subtitle-outcome').value=checked??'unchecked';state.supplier=value}
-    else state.proxy=value;
+    if(supplier){if(value.name!==state.supplier.name){state.values.subtitles=false;stopFind()}if(checked!==undefined||['name','username','password'].some(key=>value[key]!==state.supplier[key]))document.querySelector('#subtitle-outcome').value=checked??'unchecked';state.supplier=value}
+    else{if(['type','host','port','username','password'].some(key=>value[key]!==state.proxy[key]))routeChanged();state.proxy=value}
     dialog.close();render();
   };
   update();openDialog();
 }
 document.addEventListener('click',event=>{
   const button=event.target.closest('button,a[data-action]');if(!button||button.disabled)return;
-  if(button.dataset.languageRemove||button.hasAttribute('data-language-reset')){const selected=button.dataset.languageRemove?subtitleSelection().filter(id=>id!==button.dataset.languageRemove):[];state.values.subtitle_languages=selected.length?selected:null;render();document.getElementById('subtitle_query').focus({preventScroll:true});return}
+  if(button.dataset.languageRemove||button.hasAttribute('data-language-reset')){const selected=button.dataset.languageRemove?subtitleSelection().filter(id=>id!==button.dataset.languageRemove):[];setSubtitleLanguages(selected);render();document.getElementById('subtitle_query').focus({preventScroll:true});return}
   if(button.hasAttribute('data-dismiss-subtitles')){state.subtitleHelp='seen';render();document.getElementById('index-Subtitles').focus({preventScroll:true});return}
   if(button.matches('a[data-action]'))event.preventDefault();
   if(button.dataset.supplierInfo)return showSupplierInfo(button);
   if(testActive()&&button.dataset.result){stopTest('settings');return}
   if(button.dataset.clearLimit){const input=document.getElementById(button.dataset.clearLimit);input.value='';input.dispatchEvent(new Event('change',{bubbles:true}));input.focus();return}
-  if(button.dataset.reveal){const input=document.getElementById(button.dataset.reveal),reveal=input.type==='password';input.type=reveal?'text':'password';button.setAttribute('aria-pressed',reveal);button.setAttribute('aria-label',reveal?'Hide password':'Show password');button.dataset.tip=reveal?'Hide password':'Show password';return}
+  if(button.dataset.reveal){const input=document.getElementById(button.dataset.reveal),reveal=input.type==='password',label=(reveal?'Hide ':'Show ')+(button.dataset.secret||'password');input.type=reveal?'text':'password';button.setAttribute('aria-pressed',reveal);button.setAttribute('aria-label',label);button.dataset.tip=label;return}
   if(button.dataset.menu)return showMenu(button.dataset.menu,button);
   if(button.hasAttribute('data-submenu'))return openSubmenu(button);
   if(menu.contains(button)){closeMenu();menuAnchor?.focus({preventScroll:true})}
@@ -985,7 +1060,9 @@ document.addEventListener('click',event=>{
   if(button.dataset.periodOpen){openPeriod(Number(button.dataset.periodOpen));document.getElementById(`period-${schedule.open}`).focus({preventScroll:true});return}
   if(button.dataset.periodRemove){const index=schedule.periods.findIndex(period=>period.id===Number(button.dataset.periodRemove));schedule.removed={index,period:schedule.periods[index]};schedule.periods.splice(index,1);openPeriod(null);document.querySelector('#add-period').focus();return}
   if(button.dataset.category)return setCategory(button.dataset.category);
-  if(button.dataset.toggle){const id=button.dataset.toggle;state.values[id]=!state.values[id];render();return}
+  if(button.dataset.toggle){const id=button.dataset.toggle;state.values[id]=!state.values[id];if(id==='subtitles'&&!state.values[id])stopFind();if(id==='subtitles'&&state.values[id]&&state.proxy.type==='SOCKS4'&&document.querySelector('#subtitle-outcome').value==='unchecked')document.querySelector('#subtitle-outcome').value='route';render();return}
+  if(button.dataset.action==='subtitle_existing'){findExisting();rerender();return}
+  if(button.dataset.action==='subtitle_recheck'){recheck();rerender();return}
   if(button.dataset.result){const field=fields.find(field=>field.id===button.dataset.result),section=sections.find(section=>section.rows.includes(field));if(field.advanced)state.advanced=true;setCategory(section.category);const row=document.getElementById(`row-${field.id}`);row.scrollIntoView({block:'center'});row.classList.add('spotlight');row.tabIndex=-1;row.focus({preventScroll:true});return}
   if(button.hasAttribute('data-close'))return dialog.close();
   if(button.hasAttribute('data-setup-cancel'))return goBack();
@@ -1049,7 +1126,8 @@ content.addEventListener('change',event=>{
   state.values[id]=field.duration?Math.round(value):value;
   delete drafts[id];
   if(id==='theme')applyTheme(state.values.theme);
-  if(id==='language'){notify('This prototype displays text in English. Your sample language choice is saved until you reload the page.');requestRender()}
+  if(id==='adapter')routeChanged();
+  if(id==='language'){if(state.values.subtitle_languages===null)refreshFind();notify('This prototype displays text in English. Your sample language choice is saved until you reload the page.');requestRender()}
   if(id==='limit_mode')setLimitMode(state.values[id]);
   else if(field.unlimited||field.type==='choice'||field.type==='path'||id==='encryption')requestRender();
 });
@@ -1060,7 +1138,7 @@ document.querySelector('#previous').onclick=()=>cycle(-1);
 document.querySelector('#next').onclick=()=>cycle(1);
 document.querySelector('#variant-picker').onchange=event=>setVariant(event.target.value);
 document.querySelector('#preview-theme').onclick=()=>{state.values.theme=document.body.classList.contains('dark')?'Light':'Dark';applyTheme(state.values.theme);render()};
-document.querySelector('#reset').onclick=()=>{dialog.innerHTML=`<h2 id="dialog-title">Reset sample settings?</h2><p>Your prototype edits will be lost.</p><div class="actions">${action('Reset','reset','Reset the sample settings. Actual TinyTorrent settings are unchanged.','id="confirm-reset"')}${action('Cancel','close','Cancel reset and keep your prototype edits','data-close data-primary autofocus')}</div>`;document.querySelector('#confirm-reset').onclick=()=>{clearTimeout(testTimer);setup=null;document.getElementById('test-outcome').disabled=false;document.getElementById('test-outcome').value='complete';document.querySelector('#subtitle-outcome').value='unchecked';state.subtitleHelp='new';state.values={...defaults};state.bandwidth={download:'',upload:''};for(const id of Object.keys(drafts))delete drafts[id];Object.assign(schedule,{periods:structuredClone(samplePeriods),open:null,draft:null,nextId:3,removed:null});state.units={seed_time:'minutes',inactive_time:'minutes'};sample.defaultApps={torrent:'TinyTorrent',magnet:'Another app'};state.advanced=false;state.surface='settings';state.inspector='General';state.category='Speed limits';state.query='';state.index=state.variant==='C';state.supplier={name:'OpenSubtitles.com',username:'',password:''};state.proxy={type:'None',host:'',port:1080,username:'',password:''};document.querySelector('#search').value='';document.querySelector('#torrent-search').value='';clearTimeout(toastTimer);document.querySelector('#toast').textContent='';dialog.close();applyTheme(state.values.theme);render();scroll.scrollTop=0};openDialog()};
+document.querySelector('#reset').onclick=()=>{dialog.innerHTML=`<h2 id="dialog-title">Reset sample settings?</h2><p>Your prototype edits will be lost.</p><div class="actions">${action('Reset','reset','Reset the sample settings. Actual TinyTorrent settings are unchanged.','id="confirm-reset"')}${action('Cancel','close','Cancel reset and keep your prototype edits','data-close data-primary autofocus')}</div>`;document.querySelector('#confirm-reset').onclick=()=>{clearTimeout(testTimer);setup=null;document.getElementById('test-outcome').disabled=false;document.getElementById('test-outcome').value='complete';document.querySelector('#subtitle-outcome').value='unchecked';state.subtitleHelp='new';stopFind();state.subtitleDownloads={};state.subtitleExisting={};clearInterval(recheckTimer);state.recheckLeft=0;state.recheckTime='';state.values={...defaults};state.bandwidth={download:'',upload:''};for(const id of Object.keys(drafts))delete drafts[id];Object.assign(schedule,{periods:structuredClone(samplePeriods),open:null,draft:null,nextId:3,removed:null});state.units={seed_time:'minutes',inactive_time:'minutes'};sample.defaultApps={torrent:'TinyTorrent',magnet:'Another app'};state.advanced=false;state.surface='settings';state.inspector='General';state.category='Speed limits';state.query='';state.index=state.variant==='C';state.supplier={name:'OpenSubtitles.com',username:'',password:''};state.proxy={type:'None',host:'',port:1080,username:'',password:''};document.querySelector('#search').value='';document.querySelector('#torrent-search').value='';clearTimeout(toastTimer);document.querySelector('#toast').textContent='';dialog.close();applyTheme(state.values.theme);render();scroll.scrollTop=0};openDialog()};
 document.querySelector('#state').onclick=()=>{dialog.innerHTML=`<h2 id="dialog-title">Sample data</h2><p class="hint">Your sample settings last until you reload the page. Your TinyTorrent settings are unchanged. Use the period controls to edit the schedule. Dragging to create, move, or resize periods is available in the app and is not simulated here.</p><pre>${escape(JSON.stringify({...state,supplier:{...state.supplier,password:state.supplier.password?'(set)':''},setup,sample,drafts,schedule,proxy:{...state.proxy,password:state.proxy.password?'(set)':''}},null,2))}</pre><div class="actions">${action('Close','close','Close sample data','data-close')}</div>`;openDialog()};
 document.querySelector('.prototype').append(document.querySelector('#subtitle-outcome'));
 document.querySelector('#subtitle-outcome').onchange=()=>render();

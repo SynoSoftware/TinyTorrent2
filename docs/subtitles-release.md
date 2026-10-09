@@ -5,7 +5,7 @@ facts; [Automatic subtitles](subtitles.md) owns the experience. It does not
 certify legality or Store acceptance. The prototype may proceed while these
 release items are resolved.
 
-## Provider authorization
+## Supplier authorization
 
 OpenSubtitles' [API overview](https://opensubtitles.tawk.help/article/about-the-api)
 explicitly offers professional packages for commercial applications. Its
@@ -33,6 +33,24 @@ explicit applicable published grant suffices; request written clarification only
 where those terms leave a material gap. Obtain account-free access for the default.
 Apply the same check to each supplier before it is offered as working.
 
+SubDL's [terms](https://subdl.com/terms) permit an application, including a
+commercial one, that lets each user bring their own API key; they forbid
+pooling keys and asking for SubDL passwords. No attribution requirement was
+found. Its [API documentation](https://subdl.com/developers) states that search
+and download work on a free key, limited to 50 downloads a day. One user report
+from June 2026 ([Bazarr issue 3393](https://github.com/morpheus65535/bazarr/issues/3393))
+describes free keys receiving HTTP 402 on downloads. A test with a real free key
+settles this before SubDL is offered as working.
+
+SubSource's [API documentation](https://subsource.net/api-docs) issues each
+account its own key and sets rate limits per key. Its
+[terms](https://subsource.net/terms) say nothing about API use by applications
+and require that subtitles are not altered; no attribution requirement was
+found. Its [privacy policy](https://subsource.net/policy) covers the website.
+Ask SubSource in writing whether a distributed desktop application may let
+each user bring their own key, because the published terms leave that gap.
+Development testing with a developer key does not depend on the answer.
+
 ## Permission and privacy
 
 On the review date, [Store policy 7.19](https://learn.microsoft.com/en-us/windows/apps/publish/store-policy-archive/store-policy-7-19)
@@ -44,7 +62,7 @@ checkbox or a modal consent screen.
 
 **Design interpretation:** the disclosed Off-to-On action in the feature design
 provides the affirmative choice, and Off withdraws it. Setup navigation alone
-does not. No movie information is necessary to check provider access. This is
+does not. No movie information is necessary to check supplier access. This is
 an implementation approach to validate against the final agreement and data
 flow, not a guarantee of certification.
 
@@ -82,7 +100,7 @@ Community-contributed subtitles make those content provisions relevant to
 assess; saving to disk does not establish an exemption. Determine applicability
 with the actual supplier and submission. If required, place source attribution
 and an accessible Report a subtitle problem link in supplier information,
-connected to the publisher/provider's real handling process. That can preserve
+connected to the publisher/supplier's real handling process. That can preserve
 the silent workflow without an in-torrent reporting panel. Additional account
 or content-filter requirements depend on the actual rating/content rule, not a
 universal subtitle-login assumption.
@@ -97,10 +115,10 @@ torrent clients; renaming functionality is not a rights or privacy remedy.
 
 | Scope | Missing evidence or work | Completion evidence |
 | --- | --- | --- |
-| Provider release | TinyTorrent's applicable API/content permission and access arrangement are unverified. Provider guides establish the available route; Store 11.2 establishes the content-rights obligation. | Record the applicable grant/agreement and plan, resolve material scope/key-distribution/attribution questions, and verify authorized search/download access. |
+| Supplier release | OpenSubtitles: TinyTorrent's applicable API/content permission and access arrangement are unverified; supplier guides establish the available route. SubDL: its terms permit each user's own key, but free-key downloads are unverified. SubSource: its terms do not address application use. Store 11.2 establishes the content-rights obligation. | Record the applicable grant/agreement and plan, resolve material scope/key-distribution/attribution questions, and verify authorized search/download access. |
 | Feature release and Store | The actual privacy policy, publisher contact, API data handling, and network routing have not been established. Store 10.5 and applicable privacy law govern this. | Publish the accurate policy, link it in-app and in Partner Center, and verify disclosed payloads, credential handling, enable/disable behavior, recipients, retention and any applicable transfers. |
-| Store only | The treatment of provider-contributed subtitles under UGC and age-rating provisions is unresolved. Sections 11.11/11.12 supply a concrete question, not proof of rejection. | Document applicable treatment for the submission date; implement any required unobtrusive reporting/source information and content access control, or retain authoritative evidence that a provision does not apply. |
+| Store only | The treatment of supplier-contributed subtitles under UGC and age-rating provisions is unresolved. Sections 11.11/11.12 supply a concrete question, not proof of rejection. | Document applicable treatment for the submission date; implement any required unobtrusive reporting/source information and content access control, or retain authoritative evidence that a provision does not apply. |
 
 These are release checks, not reasons to remove early matching, background work,
-languages, or quiet recovery. No provider was contacted, account created,
+languages, or quiet recovery. No supplier was contacted, account created,
 subscription purchased, or terms accepted during this review.

@@ -454,6 +454,40 @@ public class SelectionTests
             );
         });
 
+    [TestMethod]
+    public Task RevealingAWaitingArrivalMakesItSelectableUnderThePointer() =>
+        TestHost.RunAsync(async () =>
+        {
+            SelectionHarness h = await SelectionHarness.LoadAsync(6);
+            h.Click(h[1]);
+            Proof.Call(h.Table, "PointAt", h[1]);
+            Row arrival = new("k9");
+            h.Rows.Add(arrival);
+
+            h.Table.ScrollIntoView(new Row("absent"));
+            CollectionAssert.AreEqual(
+                new[] { "k0", "k1", "k2", "k3", "k4", "k5" },
+                ViewKeys(h),
+                "an absent target does not release unrelated arrivals"
+            );
+
+            h.Table.ScrollIntoView(arrival);
+            CollectionAssert.AreEqual(
+                new[] { "k0", "k1", "k2", "k3", "k4", "k5", "k9" },
+                ViewKeys(h)
+            );
+            CollectionAssert.AreEqual(new[] { "k1" }, h.SelectedKeys());
+            h.Table.Selection = new(new object[] { arrival }, arrival);
+            CollectionAssert.AreEqual(new[] { "k9" }, h.SelectedKeys());
+
+            h.Table.ScrollIntoView(arrival);
+            h.Rows.Remove(arrival);
+            Assert.IsTrue(
+                IsHeld(h, arrival),
+                "revealing a visible row does not release a later removal"
+            );
+        });
+
     /// <summary>
     /// A drop beside a held row names the next row the host still has. The host removed the held
     /// row, so it could not place anything before it.

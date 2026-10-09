@@ -95,6 +95,18 @@ a generic message for unknown codes and optional raw diagnostic detail.
 
 ## Snapshots and detail
 
+Library and subtitle acquisition run in C# and use the existing pipe only for
+torrent/file facts and ordinary torrent operations. Search, filters, details,
+TMDB and supplier requests, credentials, SQLite edits and job progress stay in
+C#; they have no dedicated engine command or snapshot family. Shared source
+reads belong to the C# torrent adapter, which seeds and synchronizes SQLite.
+Both features consume that committed state through the
+[SQLite-only data flow](library.md#sqlite-and-video-information), without direct
+torrent reads of their own.
+There is no new feature endpoint, subtitle byte demand, publication hold or
+companion-file list in the protocol; C# uses the existing torrent contract.
+The same coherence, cancellation and payload bounds below apply to those reads.
+
 Start with complete summary snapshots while WinUI is open, and request only the
 visible detail section. Fetching files must not also fetch all peers and pieces.
 Publish a snapshot only when it is coherent and complete; no caller observes a
@@ -118,6 +130,21 @@ and context remain current. If selection, section, or consumer lifetime changed,
 consume and discard the obsolete reply, then request current visible detail.
 Correct transport correlation alone does not make a reply current for the view.
 
+Inspector reads return immediately with available facts and a readiness flag;
+they never hold the request slot for libtorrent. Missing values remain unknown,
+not zero or empty sets. The existing detail collector sends a complete fresh
+result on the same connection when its queries finish. Both messages carry the
+inspector context, and the pushed result also identifies its session and torrent.
+The window invalidates that context on command replies before applying later
+pushed data, so a queued pre-command result cannot overwrite a confirmed edit.
+Reads used by actions such as Open retain their complete-data replies because
+they need confirmed disk paths. They use the same collector.
+
+Each endpoint retains at most one undelivered detail update per connection or
+window, replacing it with the latest. Replies and control messages take priority
+over that optional update. Closing or changing the inspector releases its old
+demand; no refresh timer runs in the engine for a hidden inspector.
+
 Bound payload size and retained snapshots. Never silently truncate a set or
 publish a partial copy as complete. A summary row is a few hundred bytes of JSON,
 so the 16 MiB limit holds well over ten thousand torrents; add paging only when a
@@ -125,7 +152,11 @@ real set exceeds it. Paging must then still deliver one coherent snapshot, let
 commands run between pages, and complete while transfers continue.
 
 Stop refresh work when its window consumer exits. Details and old snapshots do not
-accumulate behind a disconnected client. Speed history is engine state with its
+accumulate behind a disconnected client. The `history` request accepts
+`torrent_id` to read that torrent's samples; an unknown or removed torrent is
+refused with `torrent_removed`. Without `torrent_id` it reads session totals for
+diagnostics. Both accept `range` as `five_minutes` or `day`; torrent replies
+include `torrent_id`. Speed history is engine state with its
 own [bound](engine.md#state-and-work), not data kept for a client, so it continues. Do not add field-level
 patches, replay logs, or another cache authority to avoid modest summary copies.
 Measure a real payload problem before replacing this design.
@@ -153,6 +184,8 @@ test, because testing consumes network traffic. Results do not commit settings.
 without reading the disk and accepts torrents whose files are busy, so the
 Delete files dialog opens at once. This is a review aid; Move and Delete
 recheck their scope when they execute.
+If physical names are still being observed, the reply describes the known
+scope and `kept_files` is null. Unknown names cannot authorize payload deletion.
 
 `move` reads `torrent_ids`, the destination parent folder, and the optional
 explicit `use_existing` choice. It replies after the recovery marker commits,
@@ -160,14 +193,14 @@ without occupying the pipe while files move. Rows carry `moving` and
 `move_destination`; completion clears the group markers and failures remain
 visible on the torrents. Source sharing and destination use by an outside
 torrent have distinct refusals, so each offers an action that can resolve it.
-An interrupted saved move refuses an ordinary move with `move_interrupted`. An active move whose disk outcome cannot be established
-shows `move_uncertain`; its path holds remain, so recovery first requires a
-normal Exit or explicit Exit anyway and reopening. `recovery_required` remains
-the general unconfirmed-operation code for other commands, so file-specific
-instructions cannot misdirect an Add or priority edit.
+An interrupted saved move refuses an ordinary move with `move_interrupted`.
+`recovery_required` remains the general unconfirmed-operation code for other
+commands, so file-specific instructions cannot misdirect an Add or priority
+edit.
 
 `delete_files` reads `torrent_ids`, commits removal, and replies with
-`kept_files`. Payload deletion then continues without the removed rows; failures
+`kept_files`, or null while physical names are still being observed. Payload
+deletion then continues without the removed rows; failures
 are notified and logged. It never refuses because files are busy, following
 [the deletion ruling](engine.md#removal-and-moves): a torrent whose own
 files are moving or being renamed, or that is deleted while an addition runs,

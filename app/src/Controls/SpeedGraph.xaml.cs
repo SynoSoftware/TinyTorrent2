@@ -83,7 +83,7 @@ public sealed partial class SpeedGraph : UserControl
     {
         _text = text;
         AutomationProperties.SetName(this, text.Get("speed", "chart"));
-        Title.Text = text.Get("speed", "all");
+        Title.Text = text.Get("speed", "history");
         Live.Content = text.Get("speed", "now");
         AutomationProperties.SetName(Ranges, text.Get("speed", "range"));
         FiveMinutes.Text = text.Get("speed", "five_minutes");
@@ -138,6 +138,14 @@ public sealed partial class SpeedGraph : UserControl
 
     private void OnSamples()
     {
+        if (Samples is null)
+        {
+            _end = null;
+            _marker = null;
+            _drag = null;
+            _wheel = 0;
+            Plot.ReleasePointerCaptures();
+        }
         // An engine restart or the passing day can take a past view's samples.
         if (_end is { } end)
         {

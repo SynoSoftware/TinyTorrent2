@@ -1,16 +1,19 @@
 # Automatic subtitles: privacy policy draft
 
 Draft for the planned feature, 2026-10-08. Merge this into TinyTorrent's single
-public privacy policy before release. The HTML prototype performs no provider
+public privacy policy before release. The HTML prototype performs no supplier
 requests and keeps sample entries only in memory. This text is not a claim that
-the production feature or a provider agreement already exists.
+the production feature or a supplier agreement already exists.
 
 ## What the feature does
 
 When you enable Automatic subtitles, TinyTorrent searches your selected supplier
 for subtitles in your chosen languages and saves matches beside your movies.
-Searching can begin before the movie finishes and continues with the product
-window closed. Opening setup does not enable automatic searching.
+Searching can begin before the movie finishes while the product window is open.
+Closing the window pauses subtitle work; reopening resumes accepted work from
+saved records. Movies added and finished entirely while the window was closed
+need Find for finished downloads, as do movies that finished before you enabled
+the feature. Opening setup does not enable automatic searching.
 
 ## Information used
 
@@ -23,8 +26,9 @@ request and the required application/version identification.
 
 The default OpenSubtitles integration uses TinyTorrent's application package,
 without requiring an end-user account. If you enter an optional OpenSubtitles
-account, its credentials are sent to OpenSubtitles for authentication. Another
-supplier's account requirements depend on that supplier. TinyTorrent protects saved
+account, its credentials are sent to OpenSubtitles for authentication. SubDL and
+SubSource each require your own API key for that supplier, which is sent with
+each request to it; neither receives movie fingerprints. TinyTorrent protects saved
 credentials using Windows user protection
 and uses encrypted HTTPS connections. It does not send movie contents, torrent
 info hashes, magnet links, trackers, peers, absolute folder paths, unrelated
@@ -34,28 +38,36 @@ filenames, or a library inventory to the subtitle supplier.
 
 Settings, pending requests, and associations between movies and downloaded
 subtitles are kept locally to apply your choices, avoid duplicate work, recover
-after interruption, and move subtitles with movies. Downloaded subtitles are
+after interruption, and follow known movie moves while the window is open or
+when it next reconciles still-managed torrents. C# manages these records and
+files; no subtitle work runs while the window is closed. Removing a torrent deletes
+its subtitle records when the window observes removal or next reconciles with
+the engine. Remove leaves subtitle files on disk. Delete files from the window
+also tries to delete subtitles TinyTorrent created when no other managed file
+uses them; subtitles found on disk remain untouched. Downloaded subtitles are
 ordinary local files. TinyTorrent does not operate a subtitle mirror or upload
 those subtitle files through this feature. Routine diagnostics exclude secrets
 and matching queries.
 
 The selected supplier processes requests under its applicable terms and privacy
 policy. Supplier information identifies the service and links to its policy.
-The final policy must distinguish provider processing from anything the
+The final policy must distinguish supplier processing from anything the
 TinyTorrent publisher itself receives; it must not promise that third parties
 keep no records.
 
 ## Your choices
 
 Automatic subtitles starts Off until setup is ready and you enable it. Turning
-it Off stops new lookups and retries and leaves existing files in place. Clear
-both account fields in Settings' supplier dialog and Save to remove credentials held by TinyTorrent;
-this does not delete an account or records held by the supplier. Changing
+it Off stops new lookups and retries and leaves existing files in place. To
+remove credentials held by TinyTorrent, open the supplier dialog in Settings,
+clear both OpenSubtitles account fields or, for SubDL or SubSource, choose
+another supplier,
+and Save. This does not delete an account or records held by the supplier. Changing
 supplier requires enabling for the new supplier. You can change languages
 without repeating setup. When you have not chosen subtitle languages, the current
 interface language is used. Explicit subtitle choices remain independent.
-Privacy requests concerning provider-held information
-follow the identified provider's privacy contact.
+Privacy requests concerning supplier-held information
+follow the identified supplier's privacy contact.
 
 ## Facts required before publication
 

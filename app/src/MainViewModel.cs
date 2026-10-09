@@ -18,6 +18,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     private readonly object _snapshotGate = new();
     private JsonElement? _latest;
     private bool _applyQueued;
+    private JsonElement? _detail;
+    private bool _detailQueued;
+    private bool _refreshDetail;
     private Torrent[] _selected = [];
     private Torrent? _current;
     private Exception? _error;
@@ -400,6 +403,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             ((RelayCommand)OpenUpdate).Refresh();
         };
         _client.Snapshot += QueueSnapshot;
+        _client.Detail += detail => QueueDetail(detail);
+        _client.CommandCompleted += () => QueueDetail(null);
         _client.Notice += notice => _dispatcher.TryEnqueue(() => ReceiveNotice(notice));
         _client.Disconnected += reason =>
             _dispatcher.TryEnqueue(() =>
@@ -606,6 +611,43 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             }
             if (!_closed && latest is not null)
                 Apply(latest.Value);
+        });
+    }
+
+    private void QueueDetail(JsonElement? detail)
+    {
+        lock (_snapshotGate)
+        {
+            if (detail is null)
+            {
+                // Replies invalidate the context before any buffered detail can apply.
+                _refreshDetail = true;
+                _detail = null;
+            }
+            else if (!_refreshDetail)
+                _detail = detail;
+            if (_detailQueued)
+                return;
+            _detailQueued = true;
+        }
+        _dispatcher.TryEnqueue(() =>
+        {
+            JsonElement? latest;
+            bool refresh;
+            lock (_snapshotGate)
+            {
+                latest = _detail;
+                refresh = _refreshDetail;
+                _detail = null;
+                _refreshDetail = false;
+                _detailQueued = false;
+            }
+            if (_closed)
+                return;
+            if (refresh)
+                Inspector.RefreshDetail();
+            else if (latest is { } message)
+                Inspector.Receive(message);
         });
     }
 

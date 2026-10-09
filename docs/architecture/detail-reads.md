@@ -1,8 +1,12 @@
 # Inspector detail reads
 
-Working design document. Three reviewers contribute: Claude (editor), Fable and
-Astra. The owner decides. Status: **design agreed by all three reviewers;
-ready to implement. Release measurement after implementation** (Q1, Q2).
+Working design document. The owner requires inspector and command requests to
+answer without waiting for libtorrent, including cold and invalidated reads.
+Status: **sampled Release pipe latency passes Q1's references; completion,
+startup-query and queue-replay fixes pass source review, Debug compilation and
+focused engine checks**. The measurement below states its scope; WinUI rendering
+and Q2 remain unmeasured. The earlier review notes below describe the held-reply
+design before this requirement.
 
 ## How to use this document
 
@@ -27,6 +31,8 @@ list stops refreshing and commands such as Pause wait.
 
 ## Evidence
 
+### Original measurements
+
 All loaded numbers come from the Debug engine, linked to the Debug libtorrent
 in `3rdParty/Debug` (`TORRENT_USE_ASSERTS`, not optimised). A read-only pipe
 client timed 5 reads of each request on one torrent.
@@ -47,7 +53,7 @@ client timed 5 reads of each request on one torrent.
 - Small replies take seconds while history stays fast, so the pipe and JSON
   are not the cause.
 
-### Cause
+### Original cause
 
 1. `Torrent::Describe` (engine/src/Torrent.cpp) runs on the engine's only
    message-loop thread and makes synchronous `torrent_handle` calls. Each one
@@ -68,6 +74,71 @@ client timed 5 reads of each request on one torrent.
    thread, but how the time splits between collecting, building, encoding and
    transfer is not measured (Q2).
 
+### Release verification (2026-10-09)
+
+Debug engine and WinUI, and Release engine and Transfer builds passed with no
+warnings or errors. The existing FilesSafety and FileNames checks passed.
+The colleague directly reviewed the final code and contract changes; the
+independent adversarial follow-up closed the last late-rename-acknowledgement
+finding. Subsequent reviews identified the completion, startup and queue issues
+listed in the current status; that earlier verification does not cover them.
+
+The follow-up moves physical completion and checkpoint observations, move
+outcomes and addition recovery off the engine owner. Startup uses grouped
+status updates; completion recovery and physical discovery are bounded, and
+background queue replay runs once per batch. Adversarial tracing also found and
+closed stale-name recovery and deferred-deletion stalls, including shutdown.
+The final source passed independent correctness and standards reviews, followed
+by the colleague's direct review. That review found a checkpoint-successor race;
+the revised ownership and forced-fresh-successor path passed another adversarial
+trace before the source was frozen.
+
+Follow-up Debug engine compilation passed with zero warnings and errors in
+33.62 seconds (`artifacts/evidence/engine-followup-debug.log`). The current
+binary passed FilesSafety, FileNames and CheckpointRetry. Their evidence is:
+
+- `artifacts/evidence/FilesSafety-397dc285-2563-4cad-a1bf-dec8b53b2aac`
+- `artifacts/evidence/FileNames-c5c8002a-5ffd-407f-a611-9cba72f290bc`
+- `artifacts/evidence/CheckpointRetry-74d1d4b4-d321-4b40-96b4-bed672f37e2d`
+
+WinUI and TableViewTests also compiled in Debug with zero warnings and errors.
+The Add-row reveal change passed source review; no desktop rendering scenario
+or UI test host was run. These follow-up checks are correctness evidence, not
+a new Release latency measurement. The Release figures below remain the earlier
+measurement of the stated cases.
+
+The first valid `engine/tests/Latency.ps1` run collected 3,600 pipe samples with
+120 torrents, one finished seed, and 116–120 live peer connections at 48 load
+observations. Received payload increased from 7,600 to 714,452 bytes. Seeding-time
+and inactivity limits were enabled. Each refresh setting (1,000 and 10,000 ms)
+has 120 immediate and complete samples per inspector section, and 100 samples
+per command: piece order, speed limit, reannounce, file scope, priority edit and
+queue movement. Every inspector read follows a command.
+
+| Reply | Worst per-path p95 | Worst per-path p99 |
+|---|---:|---:|
+| Immediate inspector | 4.23 ms | 8.14 ms |
+| Sampled command | 12.35 ms | 20.95 ms |
+| Complete pushed result | 6.46 ms | 10.80 ms |
+
+The raw evidence is
+`artifacts/lanes/2/evidence/Latency-abaf3a54-5e84-4ef2-9c58-f2c1517ea57a/measurement.json`.
+An independent recomputation matched every percentile. The passing samples
+include PowerShell serialization and parsing, including avoidable diagnostic
+serialization subsequently removed from the driver's success path. No second
+measurement was needed. An earlier setup attempt collected no timing samples:
+an invalid settings key prevented the intended listener and peer load; the
+driver now rejects unsuccessful settings replies.
+
+This proves the sampled engine pipe paths under aggregate peer load. The
+inspected torrent has one peer and 16 pieces; this is not a large peer-list or
+Pieces rendering measurement. The driver changes the refresh setting but sends
+reads consecutively, so it does not measure actual WinUI poll spacing, visual
+feedback or rapid context replacement. Complete-result times include collection
+and receipt; a separate network-thread round trip was not timed. Long-operation
+completion and other commands were source-traced, not covered by these latency
+percentiles. Q2 remains open.
+
 ## Design
 
 - **D1. No blocking libtorrent call on the read path.** Section data comes from
@@ -82,7 +153,7 @@ client timed 5 reads of each request on one torrent.
   | Peers | `post_peer_info` | `peer_info_alert` |
   | File progress | `post_file_progress` | `file_progress_alert` |
   | File priorities | `post_file_priorities` | `file_priorities_alert` |
-  | Detail status | `post_status(query_name \| query_save_path \| query_renamed_files \| query_pieces)` | `state_update_alert` marked by `save_path` (D6) |
+  | Detail status | `post_status(query_name \| query_save_path \| query_renamed_files \| query_pieces \| query_torrent_file)` | `state_update_alert` marked by `save_path` (D6) |
   | Availability | `post_piece_availability` | `piece_availability_alert` |
   | Download queue | `post_download_queue` | `piece_info_alert` |
 
@@ -95,15 +166,20 @@ client timed 5 reads of each request on one torrent.
   | Pieces | Detail status (pieces), availability, download queue |
   | No view (D10) | The General and Files kinds |
 
-  Files and Pieces share one detail-status query with all four flags. The extra
+  Files and Pieces share one detail-status query. The extra
   data is small: a Files read also copies the piece bitfield, and a Pieces read
   copies the renamed-names map, which is usually empty. One status kind avoids
   two status queries that would be impossible to tell apart.
 
   The alert mask does not change. libtorrent posts the answer to an explicit
   query with `emplace_alert`, which does not check the mask
-  (alert_manager.hpp). Only this design sends these queries; other engine code
-  must not, or it would break D5.
+  (alert_manager.hpp). Inspector reads, file-name bootstrap, completion status and
+  priority confirmation all use `Query()` for these kinds. An independent post
+  would make its answer indistinguishable from the recorded query's answer,
+  breaking D5.
+  Physical completed-file discovery uses the bounded worker observation defined
+  in [the engine contract](../engine.md), because unverified display progress
+  and untagged alert recovery cannot prove a file safe to rename.
 - **D3. Stored copies for the viewed torrent, refreshed by reads.** The engine
   keeps libtorrent's raw data, per data kind, for one torrent: the one the last
   section read named. It builds the JSON at reply time from that data, the
@@ -112,33 +188,34 @@ client timed 5 reads of each request on one torrent.
   "Bound payload size and retained snapshots"). Switching between sections
   that share a kind, such as General and Trackers, reuses its copy and its query
   in flight.
-  - A read is answered at once when every kind its section needs has a valid
-    copy younger than about 3 s. Each read also sends one query for each needed
-    kind that has none in flight. Refresh therefore follows the window's reads,
-    with no timer. When the reads stop, no new query starts; queries already
-    sent still finish.
-  - Without valid copies, the read sends the missing queries and holds the reply
-    until each needed kind has an answer. The window's one request slot is then
-    held for one round trip. Sending a section's queries together removes the
-    waits one after another, but does not promise that all of them finish
-    within one round trip.
-  - The age limit prevents a stale list. Example: the person hides the pane and
-    shows it again minutes later; without the limit, the read would get a
-    minutes-old peer list with speeds, and fresh data would come only one
-    refresh interval later. The window's refresh interval becomes a setting of
-    1,000–10,000 ms ([settings plan](../settings-implementation.md)). At
-    intervals above the age limit, every read is held for one round trip. Q1
-    must show that a command sent then is not noticeably delayed. The 3 s limit
-    is a proposed freshness policy, not a measured threshold.
+  - Every inspector read replies immediately with engine facts and each data
+    kind whose copy is younger than 3 s. Missing values are unknown, not zero
+    or empty sets. File names and sizes can therefore appear before progress;
+    the Pieces map waits for its complete input rather than inventing missing
+    pieces. Readiness distinguishes a complete view from an initial partial one.
+  - The read also sends each needed query that has none in flight. The same
+    collector retains the demand and pushes one complete result as soon as
+    all needed answers have arrived since collection began. Warm reads receive
+    that update too, so fresh data never waits for the next poll to be displayed.
+    A section change replaces the connection's old display demand. Closing or
+    hiding the pane releases it. Queries already posted finish, but no timer
+    generates more engine detail work after demand ends.
+  - Reads used by actions retain complete-data replies and can use copies
+    younger than 3 s. Their age cutoff is fixed at collection start, so one
+    answer cannot expire while the others arrive. The age limit prevents
+    showing an old peer list after a long hidden interval; it never holds an
+    inspector request slot, even at the longest window refresh interval.
 - **D4. A copy must not show data the person already changed.** Each torrent
   has a generation number. The engine increments it, and drops the torrent's
   copy, when it:
   - sends the reply to any command naming the torrent: the reply passed into
-    `Act()`, the reply of `Edit`, and the reply of `MergeTrackers`, which calls
-    `add_tracker` outside both
+    `Act()`, which `Edit` and `MergeTrackers` also use
   - sends the reply to Pause all or Resume all, because a session pause
     disconnects peers
   - receives `metadata_received_alert`
+  - receives `file_renamed_alert`, because Open torrent and Open folder would
+    otherwise pass a stored name that no longer exists, such as one with the
+    incomplete-file suffix, to Windows
 
   Each query records the generation when it is sent (D5). When its answer
   arrives, it is stored only if that generation is still current; otherwise it
@@ -153,9 +230,10 @@ client timed 5 reads of each request on one torrent.
   before that reply is served, except in D8's dropped-alert case. While an edit is still pending, the pre-edit
   data may still show; the window shows the person's draft in that time. The
   reply, not the command, is the boundary because file priorities change only
-  after disk work, and the engine replies to a priority edit only from
-  `CompletePriorities`, after the effective priorities match the choice. Any
-  other `file_prio_alert` confirms nothing.
+  after disk work. `file_prio_alert` starts a fresh observation through
+  `QueryPriorities()`; it does not confirm the edit. The engine replies only
+  when `On(file_priorities_alert)` accepts a current-generation observation
+  whose effective priorities match the choice.
 - **D5. One outstanding query per torrent and data kind.** Alerts carry the
   torrent's handle, so answers for different torrents never mix. Within one
   torrent, an answer of a kind belongs to the one query of that kind that is
@@ -166,17 +244,23 @@ client timed 5 reads of each request on one torrent.
   later query take that answer as its own. The rule has a second purpose:
   without it, each read would send another query while the previous one waits
   on a slow network thread, adding load to the thread that is already late.
-- **D6. Every `post_status` includes `query_name | query_save_path`.** The
-  detail-status query (D2) has both.
-  - `query_name`: `On(state_update_alert)` passes every status to
-    `Torrent::Update`, which replaces the whole stored status. Without the name,
-    the torrent's name would blank in the list.
+- **D6. The explicit status query includes `query_save_path`.**
   - `query_save_path` marks a status as a detail reply. The routine
     `post_torrent_updates(query_name)` never fills `save_path`, and a detail
-    reply always does, so the engine tells them apart by content. Nothing in
-    the engine reads `status.save_path`, `renamed_files` or `pieces`, so a
-    detail reply can pass through `Update` safely. A comment at the routine post
-    names this dependency.
+    reply always does, so the engine tells them apart by content. A comment at
+    the routine post names this dependency.
+  - The query also requests `query_torrent_file`, pairing its renamed paths
+    with the metadata that gave those indexes meaning. Current-generation
+    answers initialize an unknown file-name observation before serving readers.
+    Confirmed renames and physical worker observations own later changes; display queries cannot
+    replace those names after a dropped alert. File operations and inspector
+    serialization use that one observation.
+  - Display detail does not pass through `Torrent::Update`. Its piece bitfield
+    belongs to the inspected copy, which is released when another torrent is
+    read or the client disconnects. The renamed map is retained only by the
+    file-name owner. Completion also consumes this query; it strips the detail
+    fields before updating summary status. `query_name` preserves the row name
+    through that update.
 - **D7. Without metadata, Files and Pieces answer at once** with
   `metadata_ready: false` and send no queries. `post_download_queue` sends no
   alert without metadata, so a held reply would never be answered.
@@ -202,59 +286,78 @@ client timed 5 reads of each request on one torrent.
     section without data forever when the answer really was lost. **Owner
     ruling** (2026-10-08): accept this rare error; add no mechanism for it.
   - At shutdown it fails, where `priorityReply` is handled today.
-  - Otherwise the window waits 15 s and treats the connection as lost.
+  - A complete-data action read retains its 15 s request deadline. A display
+    read has already replied; its terminal result is delivered as a correlated
+    update, and closing or replacing that context withdraws the demand.
   - A read for another torrent, from a second client, waits until the held reply
     is answered, and then replaces the copies. Otherwise the held reply's
     answers would be discarded as belonging to a replaced torrent.
-- **D9. Nothing changes in the protocol or the window.** No field changes. The
-  window keeps its one request slot, command priority, and one unsent read per
-  view.
+- **D9. Immediate display replies and correlated updates.** Protocol version 11
+  adds a display context, readiness and a pushed detail result, as recorded in
+  [the wire representation](../implementation.md#inspector-engine-integration).
+  Each endpoint coalesces undelivered detail into one latest slot, separate
+  from reliable replies and controls. The window discards obsolete session,
+  torrent and context results, including results queued before a command reply.
+  It keeps its one request slot, command priority, and one unsent read per view.
 - **D10. Open torrent and Open folder** send a `torrent` request with no view
   (`Detail()` in app/src/MainViewModel/Actions.cs). The engine answers it with
-  the General and Files query sets and holds the reply for one round trip,
-  because Explorer needs the renamed file names. It uses the same stored copies
-  as a section read, not a second store.
+  the General and Files query sets, using copies younger than 3 s or waiting
+  for the missing inputs. Explorer needs complete data and the observed physical
+  file names. This uses the same collector and file-name owner as a section
+  read; it makes no synchronous libtorrent call on the engine owner. The wait
+  belongs to the action's completion time, not an inspector display reply.
 
 ## Rejected alternatives
 
 | Alternative | Reason |
 |---|---|
-| A worker thread that makes the blocking calls | The calls still run one after another and wait as long. A second thread then reads `Torrent` state, against engine.md "State and work". |
+| Move inspector collection to a worker but keep its reply held | The request slot still waits for collection, so commands and selection remain queued. Operation workers may wait for completion using captured inputs and return their output to the engine owner; they do not read or mutate its `Torrent` state. |
 | Detail in the once-a-second snapshot | protocol.md: request only the visible section. It costs work for data nobody views. |
 | Detail kept for every torrent | The same cost, more invalidation work, and memory while the window is closed, the state the product measures first. |
-| The engine keeps the renamed file names itself, updated on `file_renamed_alert` | Wrong: `torrent::set_metadata` renames duplicate file names when metadata arrives and posts no `file_renamed_alert`. |
+| Reconstruct physical file names solely from `file_renamed_alert` | `torrent::set_metadata` resolves duplicate file names without that alert. D6 initializes the file-name owner from an observation paired with metadata before confirmed renames update it. |
 | Add `query_renamed_files` to the routine status post | Copies a map for every active torrent every second on the network thread, which is the bottleneck under load. |
 | Match status alerts to posts by their order | Breaks when alerts are dropped. The `save_path` marker (D6) needs no order. |
 | One status-producing call outstanding across the session, so a dropped status alert identifies its query (Astra's option) | Delays routine updates behind detail and detail behind routine updates, for a drop that needs a stalled engine. D8 accepts that rare case instead. |
 | One query set in flight per section | General and Trackers share `tracker_list_alert`, and Files and Pieces share the status alert, so a section switch could take the previous section's answer as its own. D5 keys the record by data kind. |
 | A watch timer: a read marks the section as watched for about 3 s, and `Maintain()` refreshes it | More state than refresh driven by reads (D3), and it ends between reads when the refresh interval is longer than the watch. |
-| A "loading" reply plus a pushed "detail ready" message | A protocol version change, a new message type, a loading state in all five sections, and more pushed messages on a connection that closes after 4 unsent ones. Reconsider only if Q1 fails. |
+| Hold cold inspector replies to avoid changing the protocol | Still blocks commands and selection behind libtorrent. The owner requires immediate replies; D9 bounds the added updates separately from the reliable output queue. |
 | Each read sends queries and replies on the alert, with no stored copy | The window's one request slot is held for a network-thread round trip on every read, so the list and commands still wait. |
 | A second pipe connection for reads | Command and read order is no longer guaranteed; two connection lifetimes. |
 | Several open requests per connection | Not needed once reads answer from a copy. |
-| An engine-held metadata pointer | `torrent_file()` does not block, so it solves nothing. |
+| A separate metadata cache for inspector reads | `torrent_file()` does not block. The file-name owner's paired metadata serves a different purpose: keeping renamed indexes tied to the layout they describe. |
 | Build the Pieces JSON on another thread | It moves the cost instead of removing it. If Release shows the cost, send `verified` as a bit string (about 1/40 of the size). |
 | Reconstruct peers, pieces and progress from low-level alerts | Duplicates libtorrent's model; fragile when alerts are dropped. |
-| Remove all other blocking calls and limit batch sizes in this change | Separate problem; record in the issue tracker. Batches are already limited: alert queue 1,000, requests 128. |
 
 ## Open questions
 
-D1–D10 have the agreement of all three reviewers. What remains needs a Release
-measurement of the finished design (see Delivery).
+D1–D10 describe the inspector implementation. The owner's acceptance target also
+covers commands: complete-data action reads and priority-edit confirmation still
+hold replies, and synchronous observations elsewhere on the engine thread can
+delay incoming requests. Measure those paths under Q1; the design alone is not
+evidence of their latency. Adding content, moving files and confirming file
+priorities retain their meaningful completion semantics. Report their completion
+time separately from acceptance and do not weaken that guarantee to meet a
+latency reference.
 
-- **Q1. Is a held reply fast enough in Release?** A held reply occupies the
-  window's request slot, so a command, a Close acknowledgement or a newly
-  selected section waits behind it. Measure under representative active Release
-  load (100+ peers). Proposed acceptance targets (Astra), not project
-  requirements:
-  - The whole held reply completes within about 50 ms at p95 and 100 ms at p99.
-  - Commands sent while a set is collected show no recurring noticeable delay.
+- **Q1. Are immediate replies and interaction fast enough in Release?** The
+  inspector no longer waits for libtorrent in its request slot. Measure the
+  reply, command response, selection feedback and eventual complete-data update
+  separately under representative active Release load (100+ peers). Compare
+  the measured paths with these reference figures:
+  - Immediate inspector replies and command replies: 50 ms at p95 and 100 ms
+    at p99. No request dispatch or reply callback makes a synchronous libtorrent
+    call on the engine owner. Workers may wait while completing an operation;
+    their waiting time belongs in that operation's measurement.
+  - Push fresh data as soon as the engine has it; do not hold it for the next
+    poll. Report collection time separately from the immediate reply.
   - Rapid section changes do not build up waits.
-  - The same holds at the longest refresh interval, where every read is held
-    (D3).
+  - The same holds at the longest refresh interval and after invalidation (D3).
+  - The same holds with seeding-time and inactivity limits on and finished
+    torrents seeding. Their status reads must remain asynchronous even while
+    the inspector is closed; a policy query cannot block the engine owner.
 
-  If these pass, keep D3 as written. If not, reconsider the "detail ready"
-  message from the rejected list. This needs the owner's permission, because
+  This measurement does not decide whether cold reads may hold the request;
+  D3 forbids that wait. Running the measurement needs the owner's permission, because
   the running engine must be stopped and the Release engine started.
 - **Q2. Does the Pieces reply need work?** Measure, in Release, how long each
   step takes: the libtorrent queries, copying their results, building the JSON
@@ -280,9 +383,19 @@ code first, and build once.
    with the owner's permission, stop the running engine and start the Release
    one. There is no separate measurement before implementation, because a
    stand-in measurement would cost a second Release build.
-5. If Q1 fails its targets, the "detail ready" message is a separate change.
+5. If a measured path misses Q1, name the cause, make one change, measure again
+   and bring the result to the owner. Do not iterate beyond that second
+   measurement.
+6. Close every finding from one path-tracing review and one adversarial review
+   of the engine and window diffs. The contracts record the save-path marker,
+   generation boundary, move-outcome rule and explicit inspector demand that
+   the final code relies on. Repository coding rules remain at their existing
+   authorities.
 
 ## Review notes
+
+These notes review the earlier held-reply design. They are historical evidence;
+the current design above incorporates the accepted findings.
 
 ### Fable
 

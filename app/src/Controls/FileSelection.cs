@@ -55,6 +55,8 @@ public sealed class FileSelection(Strings strings) : INotifyPropertyChanged
         get
         {
             var matching = _files.Where(file => !file.IsPadding && Matches(file)).ToArray();
+            if (matching.Any(file => file.Priority < 0))
+                return null;
             var wanted = matching.Count(file => file.Priority > 0);
             return wanted == 0 ? false
                 : wanted == matching.Length ? true
@@ -63,7 +65,7 @@ public sealed class FileSelection(Strings strings) : INotifyPropertyChanged
     }
     public long WantedBytes => _files.Where(file => file.Priority > 0).Sum(file => file.Size);
     public string Summary =>
-        strings.Format(
+        _files.Any(file => !file.IsPadding && file.Priority < 0) ? "—" : strings.Format(
             "files",
             "summary",
             _files.Count(file => file.Priority > 0),
@@ -116,7 +118,8 @@ public sealed class FileSelection(Strings strings) : INotifyPropertyChanged
                                 ? 0
                                 : choices.GetValueOrDefault(
                                     index,
-                                    item.GetProperty("priority").GetInt32()
+                                    item.GetProperty("priority").ValueKind == JsonValueKind.Null
+                                        ? -1 : item.GetProperty("priority").GetInt32()
                                 )
                         );
                         _files.Add(node);
@@ -148,9 +151,13 @@ public sealed class FileSelection(Strings strings) : INotifyPropertyChanged
         {
             if (!known.TryGetValue(item.GetProperty("index").GetInt32(), out var file))
                 continue;
-            file.Downloaded = item.GetProperty("downloaded").GetInt64();
+            var downloaded = item.GetProperty("downloaded");
+            file.Downloaded = downloaded.ValueKind == JsonValueKind.Null ? null : downloaded.GetInt64();
             if (!preserveChoices)
-                file.SetPriority(item.GetProperty("priority").GetInt32());
+            {
+                var priority = item.GetProperty("priority");
+                file.SetPriority(priority.ValueKind == JsonValueKind.Null ? -1 : priority.GetInt32());
+            }
         }
         Refresh();
     }
@@ -243,7 +250,7 @@ public sealed class FileNode : INotifyPropertyChanged
     public bool IsPadding { get; internal set; }
     public bool IsExpanded { get; set; } = true;
     public long Size { get; internal set; }
-    public long Downloaded { get; internal set; }
+    public long? Downloaded { get; internal set; }
     public string Glyph =>
         IsFolder
             ? Lucide.Folder
@@ -276,18 +283,22 @@ public sealed class FileNode : INotifyPropertyChanged
             };
     public long TotalSize => Files().Sum(file => file.Size);
     public string SizeText => _owner.Text.Bytes(TotalSize);
-    public double Progress
+    public double? Progress
     {
         get
         {
             var files = Files().ToArray();
+            if (files.Any(file => file.Downloaded is null))
+                return null;
             var size = files.Sum(file => file.Size);
             return size == 0
                 ? 1
-                : Math.Clamp((double)files.Sum(file => file.Downloaded) / size, 0, 1);
+                : Math.Clamp((double)files.Sum(file => file.Downloaded!.Value) / size, 0, 1);
         }
     }
-    public string ProgressText => Progress.ToString("P1", CultureInfo.CurrentCulture);
+    public string ProgressText => Progress?.ToString("P1", CultureInfo.CurrentCulture) ?? "—";
+    public double ProgressValue => Progress ?? 0;
+    public bool IsIndeterminate => Progress is null;
     public bool IsEnabled => _owner.IsEnabled;
     public bool? Wanted
     {

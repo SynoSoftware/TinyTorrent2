@@ -102,68 +102,95 @@ void Engine::State::SaveCheckpoint(Torrent& torrent, lt::add_torrent_params para
             return;
         }
         auto& torrent = found->second;
-        torrent.checkpointPhase = CheckpointPhase::Idle;
-        if (auto next = std::exchange(torrent.pendingCheckpoint, std::nullopt))
-        {
-            SaveCheckpoint(torrent, std::move(*next));
-        }
         if (!outcome.succeeded)
         {
             FailCheckpoint(torrent, {ProblemKind::StorageFailed, outcome.detail});
+            FinishCheckpoint(torrent);
             return;
         }
         torrent.savedUploaded = uploaded;
         torrent.checkpointError.reset();
-        if (!torrent.facts.verifyFiles || seeded)
+        if (!torrent.facts.verifyFiles || seeded || torrent.pendingCheckpoint)
         {
+            FinishCheckpoint(torrent);
             return;
         }
-        if (!changes.Queue([this, id, path, pieces]
+        auto handle = torrent.handle;
+        auto verified = std::make_shared<bool>(false);
+        payload.Run([handle, pieces, verified]
         {
-            auto found = torrents.find(id);
-            if (found == torrents.end())
-            {
-                return;
-            }
-            auto& torrent = found->second;
-            if (torrent.deleted || !torrent.facts.verifyFiles || torrent.namePhase != NamePhase::Ready || torrent.moving ||
-                !torrent.facts.moveDestination.empty() || !SameFolder(path, torrent.facts.savePath))
-            {
-                return;
-            }
-            auto current = torrent.handle.status(lt::torrent_handle::query_pieces);
+            auto current = handle.status(lt::torrent_handle::query_pieces);
             if (current.state == lt::torrent_status::checking_files ||
                 current.state == lt::torrent_status::checking_resume_data)
-            {
                 return;
-            }
             for (int index = 0; index < pieces.size(); ++index)
             {
                 auto piece = lt::piece_index_t(index);
                 if (pieces[piece] && (index >= current.pieces.size() || !current.pieces[piece]))
+                    return;
+            }
+            *verified = true;
+        }, [this, id, path, handle, generation = torrent.generation, verified](StorageOutcome observed)
+        {
+            auto found = torrents.find(id);
+            if (found == torrents.end())
+                return;
+            if (!observed.succeeded || !*verified || found->second.pendingCheckpoint)
+            {
+                FinishCheckpoint(found->second);
+                return;
+            }
+            if (!changes.Queue([this, id, path, handle, generation]
+            {
+                auto found = torrents.find(id);
+                if (found == torrents.end())
                 {
                     return;
                 }
-            }
-            auto document = Saved();
-            document.torrents.at(id).verifyFiles = false;
-            changes.Commit(document.ToJson(), [this, id](StorageOutcome saved)
+                auto& torrent = found->second;
+                if (torrent.handle != handle || torrent.generation != generation || torrent.pendingCheckpoint ||
+                    torrent.deleted || !torrent.facts.verifyFiles || torrent.namePhase != NamePhase::Ready || torrent.moving ||
+                    !torrent.facts.moveDestination.empty() || !SameFolder(path, torrent.facts.savePath))
+                {
+                    FinishCheckpoint(torrent);
+                    return;
+                }
+                auto document = Saved();
+                document.torrents.at(id).verifyFiles = false;
+                changes.Commit(document.ToJson(), [this, id](StorageOutcome saved)
+                {
+                    auto& torrent = torrents.at(id);
+                    bool refresh = saved.succeeded && torrent.pendingCheckpoint.has_value();
+                    if (saved.succeeded)
+                    {
+                        torrent.facts.verifyFiles = false;
+                        // A coalesced snapshot can predate the proof. Keep the proved
+                        // file on disk and force a fresh successor instead.
+                        torrent.pendingCheckpoint.reset();
+                    }
+                    else
+                    {
+                        log.Write("move", id, "verification_checkpoint_failed");
+                    }
+                    FinishCheckpoint(torrent);
+                    if (refresh)
+                        torrent.Checkpoint(true);
+                });
+            }))
             {
-                if (saved.succeeded)
-                {
-                    torrents.at(id).facts.verifyFiles = false;
-                }
-                else
-                {
-                    log.Write("move", id, "verification_checkpoint_failed");
-                }
-            });
-        }))
-        {
-            log.Write("move", id, "verification_checkpoint_overloaded");
-        }
+                log.Write("move", id, "verification_checkpoint_overloaded");
+                FinishCheckpoint(found->second);
+            }
+        });
     };
     WriteResume(id, std::move(params), std::move(completion));
+}
+
+void Engine::State::FinishCheckpoint(Torrent& torrent)
+{
+    torrent.checkpointPhase = CheckpointPhase::Idle;
+    if (auto next = std::exchange(torrent.pendingCheckpoint, std::nullopt))
+        SaveCheckpoint(torrent, std::move(*next));
 }
 
 void Engine::State::On(lt::save_resume_data_failed_alert const& alert)

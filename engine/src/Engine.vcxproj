@@ -118,6 +118,7 @@
     <ClCompile Include="Engine\Edits.cpp" />
     <ClCompile Include="SpeedHistory.cpp" />
     <ClCompile Include="Engine\Files.cpp" />
+    <ClCompile Include="Engine\Move.cpp" />
     <ClCompile Include="Engine\Previews.cpp" />
     <ClCompile Include="Engine\Additions.cpp" />
     <ClCompile Include="Engine\Watching.cpp" />
@@ -126,6 +127,7 @@
     <ClCompile Include="Engine\Checkpoints.cpp" />
     <ClCompile Include="Engine\Shutdown.cpp" />
     <ClCompile Include="Engine\Alerts.cpp" />
+    <ClCompile Include="Engine\Detail.cpp" />
     <ClCompile Include="Changes.cpp" />
     <ClCompile Include="Log.cpp" />
     <ClCompile Include="Torrent.cpp" />

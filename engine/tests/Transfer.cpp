@@ -1,5 +1,6 @@
 #include <libtorrent/add_torrent_params.hpp>
 #include <libtorrent/address.hpp>
+#include <libtorrent/bencode.hpp>
 #include <libtorrent/create_torrent.hpp>
 #include <libtorrent/ip_filter.hpp>
 #include <libtorrent/load_torrent.hpp>
@@ -7,6 +8,7 @@
 #include <libtorrent/session_params.hpp>
 #include <libtorrent/settings_pack.hpp>
 #include <libtorrent/torrent_status.hpp>
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
@@ -54,10 +56,11 @@ int main(int argc, char** argv)
             throw std::runtime_error("The parent process has exited");
         }
         auto mode = argc == 4 ? std::string(argv[3]) : "seed";
-        if (argc < 2 || argc > 4 || (mode != "seed" && mode != "download" && mode != "seed-files"))
-            throw std::runtime_error("Usage: Transfer evidence-directory [product-port] [seed|download|seed-files]");
+        if (argc < 2 || argc > 4 || (mode != "seed" && mode != "download" && mode != "seed-files" && mode != "load"))
+            throw std::runtime_error("Usage: Transfer evidence-directory [product-port] [seed|download|seed-files|load]");
         bool isLeecher = mode == "download";
         bool multiple = mode == "seed-files";
+        bool load = mode == "load";
         auto directory = std::filesystem::absolute(argv[1]);
         auto seed = directory / "seed";
         auto destination = directory / (isLeecher ? "leecher" : "download");
@@ -104,19 +107,41 @@ int main(int argc, char** argv)
         settings.set_bool(lt::settings_pack::enable_upnp, false);
         settings.set_bool(lt::settings_pack::enable_natpmp, false);
         settings.set_int(isLeecher ? lt::settings_pack::download_rate_limit
-            : lt::settings_pack::upload_rate_limit, 1024 * 1024);
+            : lt::settings_pack::upload_rate_limit, load ? 64 * 1024 : 1024 * 1024);
+        if (load)
+            settings.set_int(lt::settings_pack::unchoke_slots_limit, 120);
         lt::session session{lt::session_params(settings)};
         auto filter = session.get_peer_class_filter();
         auto loopback = lt::make_address("127.0.0.1");
         filter.add_rule(loopback, loopback,
             1U << static_cast<std::uint32_t>(lt::session::global_peer_class_id));
         session.set_peer_class_filter(filter);
-        auto addition = lt::load_torrent_file(torrent.string());
-        addition.save_path = (isLeecher ? destination : seed).string();
-        addition.flags &= ~(lt::torrent_flags::paused | lt::torrent_flags::auto_managed);
-        auto handle = session.add_torrent(addition);
+        std::vector<lt::torrent_handle> handles;
+        for (int index = 0; index < (load ? 120 : 1); ++index)
+        {
+            auto file = torrent;
+            if (load)
+            {
+                auto entry = creator.generate();
+                entry["info"]["name"] = "load-" + std::to_string(index) + ".bin";
+                std::vector<char> encoded;
+                lt::bencode(std::back_inserter(encoded), entry);
+                file = directory / ("load-" + std::to_string(index) + ".torrent");
+                std::ofstream output(file, std::ios::binary | std::ios::trunc);
+                output.exceptions(std::ios::badbit | std::ios::failbit);
+                output.write(encoded.data(), encoded.size());
+            }
+            auto addition = lt::load_torrent_file(file.string());
+            addition.save_path = (isLeecher ? destination : seed).string();
+            addition.flags &= ~(lt::torrent_flags::paused | lt::torrent_flags::auto_managed);
+            // Distinct torrents share one verified seed file; the product downloads real bytes.
+            if (load)
+                addition.renamed_files[lt::file_index_t(0)] = "transfer.bin";
+            handles.push_back(session.add_torrent(addition));
+        }
         auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
-        while (!isLeecher && !handle.status().is_seeding)
+        while (!isLeecher && std::any_of(handles.begin(), handles.end(),
+            [](auto const& handle) { return !handle.status().is_seeding; }))
         {
             if (std::chrono::steady_clock::now() >= deadline)
                 throw std::runtime_error("Seed verification did not complete");
@@ -130,12 +155,20 @@ int main(int argc, char** argv)
             << "\nbytes=" << total << "\nproduct_port=" << port << std::endl;
         while (!std::filesystem::exists(directory / "stop") && WaitForSingleObject(parent, 0) == WAIT_TIMEOUT)
         {
-            auto status = handle.status();
-            if (status.num_connections == 0) handle.clear_peers();
-            handle.connect_peer(peer);
-            std::cout << "uploaded=" << status.total_payload_upload
-                << " downloaded=" << status.total_payload_download
-                << " peers=" << status.num_peers << std::endl;
+            std::int64_t uploaded = 0;
+            std::int64_t downloaded = 0;
+            int peers = 0;
+            for (auto& handle : handles)
+            {
+                auto status = handle.status();
+                if (status.num_connections == 0) handle.clear_peers();
+                handle.connect_peer(peer);
+                uploaded += status.total_payload_upload;
+                downloaded += status.total_payload_download;
+                peers += status.num_peers;
+            }
+            std::cout << "uploaded=" << uploaded << " downloaded=" << downloaded
+                << " peers=" << peers << std::endl;
             std::this_thread::sleep_for(std::chrono::seconds(1));
         }
         return 0;

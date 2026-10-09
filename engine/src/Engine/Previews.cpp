@@ -103,7 +103,8 @@ void Engine::State::Merge(Preview& existing, Preview const& source)
         existing.params.creation_date = source.params.creation_date;
         if (existing.handle.is_valid())
         {
-            existing.handle.set_metadata(source.params.ti->info_section());
+            session->remove_torrent(existing.handle);
+            existing.handle = {};
         }
     }
     UpdatePreview(existing);
@@ -116,7 +117,7 @@ bool Engine::State::CanMerge(Preview const& preview) const
     auto duplicate = FindDuplicate(preview.InfoHashes());
     return !duplicate.empty() &&
         !torrents.at(duplicate).restore &&
-        !Missing(preview.params.trackers, Urls(torrents.at(duplicate).handle.trackers())).empty();
+        !Missing(preview.params.trackers, Urls(torrents.at(duplicate).Trackers())).empty();
 }
 
 Json Engine::State::Describe(Preview const& preview, std::string const& destination) const
@@ -191,29 +192,56 @@ void Engine::State::Inspect(std::string source, std::string connectionId,
         }
         preview->params.info_hashes = preview->InfoHashes();
         preview->params.storage_mode = settings.preallocates ? lt::storage_mode_allocate : lt::storage_mode_sparse;
-        auto hashes = Hashes(preview->params.info_hashes);
-        for (auto& [id, existing] : previews)
+        auto merge = [this, preview, completion]
         {
-            if (existing.connectionId == preview->connectionId && Overlaps(Hashes(existing.InfoHashes()), hashes))
+            auto hashes = Hashes(preview->InfoHashes());
+            for (auto& [id, existing] : previews)
             {
-                Merge(existing, *preview);
-                completion({}, &existing);
-                return;
+                if (existing.connectionId == preview->connectionId && Overlaps(Hashes(existing.InfoHashes()), hashes))
+                {
+                    if (preview->handle.is_valid())
+                        session->remove_torrent(preview->handle);
+                    Merge(existing, *preview);
+                    completion({}, &existing);
+                    return true;
+                }
             }
-        }
+            return false;
+        };
+        if (merge())
+            return;
         if (!preview->params.ti && FindDuplicate(preview->params.info_hashes).empty())
         {
             Guard(preview->params);
             preview->params.flags &= ~lt::torrent_flags::paused;
             preview->params.save_path = Utf8((directory / L"previews").wstring());
-            lt::error_code error;
-            preview->handle = session->add_torrent(preview->params, error);
-            if (error)
+            parsing.push_back(preview);
+            payload.Run([preview, session = session.get()]
             {
-                completion({ErrorCode::PreviewFailed, error.message()}, nullptr);
-                return;
-            }
-            ApplyPolicy(preview->handle);
+                preview->handle = session->add_torrent(preview->params);
+            }, [this, preview, completion, merge](StorageOutcome outcome)
+            {
+                std::erase(parsing, preview);
+                if (preview->cancelled || shuttingDown)
+                {
+                    if (preview->handle.is_valid())
+                        session->remove_torrent(preview->handle);
+                    if (!preview->cancelled)
+                        completion({ErrorCode::ShuttingDown}, nullptr);
+                    return;
+                }
+                UpdatePreview(*preview);
+                if (merge())
+                    return;
+                if (!outcome.succeeded)
+                {
+                    completion({ErrorCode::PreviewFailed, outcome.detail}, nullptr);
+                    return;
+                }
+                ApplyPolicy(preview->handle);
+                completion({}, &previews.emplace(preview->previewId, *preview).first->second);
+            });
+            return;
         }
         completion({}, &previews.emplace(preview->previewId, *preview).first->second);
     });
@@ -251,6 +279,7 @@ void Engine::State::Discard(std::function<bool(Preview const&)> const& matches)
 void Engine::State::Disconnect(std::string const& connectionId)
 {
     ReleaseConnectionTest(connectionId, ConnectionPhase::Cancelled);
+    ReleaseReading(connectionId);
     for (auto const& preview : parsing)
     {
         if (preview->connectionId == connectionId)

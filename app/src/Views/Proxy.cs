@@ -322,9 +322,7 @@ public sealed class Proxy : INotifyPropertyChanged
         {
             ProxyOutcome.Connected => Text.Format(
                 "settings",
-                server.Type != ProxyType.Socks4 && server.Username.Length > 0
-                    ? "proxy_signed_in_tip"
-                    : "proxy_connected_tip",
+                "proxy_connected_tip",
                 elapsed ?? 0
             ),
             ProxyOutcome.SignInFailed => Text.Get("settings", "proxy_sign_in_failed_tip"),

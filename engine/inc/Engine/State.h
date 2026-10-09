@@ -17,6 +17,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <set>
 #include <stop_token>
 #include <string>
 #include <vector>
@@ -247,6 +248,8 @@ public:
     static Settings Defaults();
 
     std::filesystem::path directory;
+    // Workers may query libtorrent, so the session outlives their jobs.
+    std::unique_ptr<lt::session> session;
     Store store;
     Store payload;
     // Reads preview sources, which can block on a slow share.
@@ -274,7 +277,6 @@ public:
     Log log{store, directory};
     Changes changes{store, directory / L"settings.json", log};
     std::function<void()> wake;
-    std::unique_ptr<lt::session> session;
     std::string sessionId = NewId();
     std::string externalIpv4;
     std::string externalIpv6;
@@ -293,6 +295,7 @@ public:
     bool addingWatch = false;
     bool watchFailed = false;
     std::vector<std::string> queueOrder;
+    bool queuePending = false;
     std::string language;
     std::map<std::string, Torrent> torrents;
     std::map<lt::torrent_handle, Torrent*> handles;
@@ -315,6 +318,7 @@ public:
     // The torrent CheckpointUnsaved chose last; the next choice starts after it.
     std::string checkpointCursor;
     std::chrono::steady_clock::time_point statusAt{};
+    bool statusPending = false;
     std::optional<ScheduleMode> scheduledMode;
     bool bypassesScheduledPause = false;
     std::optional<LimitMode> limitOverride;
@@ -325,6 +329,7 @@ public:
     std::optional<Transport> appliedTransport;
     std::optional<IpFamily> appliedFamily;
     std::optional<bool> appliedLan;
+    lt::peer_class_type_filter peerClasses;
     // The check of the proxy in use; nothing until it ends.
     std::optional<ProxyOutcome> proxyOutcome;
     // The check that check_proxy started last. The snapshot reports it,
@@ -333,6 +338,8 @@ public:
     std::optional<bool> appliedPause;
     std::optional<LimitMode> appliedLimits;
     std::vector<std::string> limitingSeeds;
+    std::vector<lt::torrent_handle> seedQueue;
+    std::set<lt::torrent_handle> seedQueries;
 
     // What a file operation on the selected torrents reaches. Both path lists
     // are sorted by PathBefore.
@@ -352,10 +359,9 @@ public:
         std::string destination;
         bool usesExisting = false;
         std::size_t current = 0;
-        std::vector<lt::torrent_handle> waiting;
         std::vector<std::filesystem::path> holds;
         std::vector<std::filesystem::path> moved;
-        MovePhase phase = MovePhase::Preparing;
+        MovePhase phase = MovePhase::Staging;
     };
     struct Deletion
     {
@@ -378,13 +384,43 @@ public:
             std::string name;
         };
         std::vector<Owner> owners;
-        std::vector<lt::torrent_handle> waiting;
         std::size_t current = 0;
         std::filesystem::path source;
         std::filesystem::path target;
-        RenamePhase phase = RenamePhase::Waiting;
+        RenamePhase phase = RenamePhase::Ready;
     };
     std::optional<Rename> rename;
+    bool queryingFiles = false;
+    // The detail of the torrent that torrent requests are reading. It is the
+    // only detail the engine keeps, so nothing accumulates for other torrents.
+    struct Reading
+    {
+        // A torrent request, with no view when it asks for the torrent itself.
+        struct Read
+        {
+            std::string connectionId;
+            std::string torrentId;
+            std::optional<TorrentView> view;
+            bool includeFiles = false;
+            Reply reply;
+            std::chrono::steady_clock::time_point started{};
+            std::optional<std::int64_t> context;
+        };
+        // A read shows an answer at most this much older than itself, so a
+        // section shown again after a while does not open on old peers and
+        // speeds. Answers that arrive while it is held count until it is
+        // answered, however long its other queries take.
+        static constexpr auto answerAge = std::chrono::seconds(3);
+
+        std::string torrentId;
+        Detail detail;
+        // Reads that wait for answers to the torrent's detail queries.
+        std::vector<Read> held;
+        // Reads of another torrent, which start once no read is held, because
+        // replacing the detail would discard the answers the held reads need.
+        std::vector<Read> waiting;
+    };
+    std::optional<Reading> reading;
 
     using Resumes = std::map<std::string, lt::add_torrent_params>;
 
@@ -427,6 +463,7 @@ public:
     bool IsPausedByChoice() const;
     LimitMode CurrentLimits() const;
     void LimitSeeds();
+    void QuerySeeds();
     bool ReachedSeedLimit(Torrent const& torrent) const;
     void Configure(Json const& choices, Reply reply);
     // Connects to the proxy and signs in, without changing the session.
@@ -495,25 +532,30 @@ public:
         std::string const& destination = {}, bool logical = true) const;
     Scope FileScope(std::vector<std::string> const& ids) const;
     Json Describe(std::vector<std::string> const& ids, Scope const& scope) const;
-    Outcome FilesReady(std::vector<std::string> const& ids) const;
+    bool NamesReady();
+    Outcome FilesReady(std::vector<std::string> const& ids);
     void StartMove(std::vector<std::string> const& ids, std::string const& destination,
-        bool useExisting, std::function<void(Outcome)> completion);
+        bool useExisting, std::function<void(Outcome)> accepted);
     void ContinueMove();
     void FinishMove(lt::torrent_handle const& handle, std::optional<Problem> problem);
+    void RecoverMove();
     void ContinueDeletion();
     void Delete(std::list<Deletion>::iterator deletion);
     void On(lt::torrent_deleted_alert const& alert);
     void On(lt::torrent_delete_failed_alert const& alert);
     void RecoverFiles();
     void PrepareFiles(Torrent& torrent);
+    void ReleaseFiles(std::vector<lt::torrent_handle> const& handles);
     static void PrepareNames(lt::add_torrent_params& params, bool appendsSuffix, Layout layout);
     // Returns whether any rename was requested.
     static bool ApplyNames(lt::torrent_handle const& handle, lt::add_torrent_params const& prepared,
-        std::set<lt::file_index_t>& pending);
+        lt::renamed_files const& current, std::set<lt::file_index_t>& pending);
     void ContinueNames();
     void FinishNames(Torrent& torrent);
-    void CompleteFiles(Torrent& torrent);
-    void FinishFiles(Torrent& torrent);
+    void RecoverNames(Torrent& torrent);
+    void QueryFiles();
+    void CompleteFiles(Torrent& torrent, lt::span<std::int64_t const> progress);
+    void FinishFiles(Torrent& torrent, std::optional<lt::file_index_t> after = {});
     void FinishDownload(Torrent& torrent);
     void ContinueRename();
     void EndRename();
@@ -527,8 +569,7 @@ public:
     void ChangeFacts(std::vector<std::string> const& ids, std::function<void(Facts&)> const& change,
         Reply reply);
     void Edit(std::string const& id, Json const& choices, Reply reply);
-    void CompletePriorities(Torrent& torrent);
-    Json History(bool day) const;
+    void QueryPriorities(Torrent& torrent);
 
     static bool IsQueued(lt::queue_position_t position);
     std::vector<std::string> CurrentQueue() const;
@@ -541,18 +582,57 @@ public:
         std::function<void(StorageOutcome)> completion);
     void CheckpointUnsaved();
     void SaveCheckpoint(Torrent& torrent, lt::add_torrent_params params);
-    void AwaitCompletion(Torrent& torrent);
+    void FinishCheckpoint(Torrent& torrent);
+    void QueryCompletion(Torrent& torrent);
+    void QueryCompletions();
+    void ObserveCompletion(Torrent& torrent, lt::torrent_status latest);
     void FailCheckpoint(Torrent& torrent, Problem problem);
     void On(lt::save_resume_data_alert const& alert);
     void On(lt::save_resume_data_failed_alert const& alert);
+
+    // Display reads answer immediately and receive their missing detail later;
+    // action reads wait for the complete detail they need.
+    void ReadDetail(Reading::Read read);
+    void CollectDetail(Reading::Read read);
+    // Asks libtorrent for that part of the torrent's detail, unless a query of
+    // that kind is outstanding.
+    void Query(Torrent& torrent, DetailKind kind);
+    void ContinueReading();
+    // Makes the torrent's detail queried until now obsolete, so the window,
+    // which reads again after a command's reply, never sees the torrent as it
+    // was before the change.
+    void Invalidate(std::string const& torrentId);
+    // Consumes the outstanding query and reports whether its answer is current.
+    // Only the inspected torrent keeps a copy.
+    bool Receive(lt::torrent_handle const& handle, DetailKind kind,
+        std::function<void(Detail&)> const& store, std::function<void(Torrent&)> const& observe = {});
+    // Answers each held read with the failure, then ends the reading.
+    void FailReading(Json const& failure);
+    // Drops the client's reads, and ends the reading once no read is held, so
+    // the detail never outlasts the clients that read it.
+    void ReleaseReading(std::string const& connectionId);
+    // Forgets the detail, which holds no read, and starts the waiting reads.
+    void EndReading();
+    void RecoverDetail(lt::alerts_dropped_alert const& alert);
+    void On(lt::tracker_list_alert const& alert);
+    void On(lt::peer_info_alert const& alert);
+    void On(lt::file_progress_alert const& alert);
+    void On(lt::file_priorities_alert const& alert);
+    void On(lt::piece_availability_alert const& alert);
+    void On(lt::piece_info_alert const& alert);
 
     void Shutdown(std::function<void(std::optional<std::string> failure)> completion);
     void ContinueShutdown();
     void Finish();
 
     void Handle(lt::alert* alert);
+    void On(lt::session_stats_alert const& alert);
+    void On(lt::external_ip_alert const& alert);
+    void On(lt::state_changed_alert const& alert);
+    void On(lt::file_prio_alert const& alert);
+    void On(lt::torrent_checked_alert const& alert);
+    void On(lt::torrent_paused_alert const& alert);
     void On(lt::state_update_alert const& alert);
-    void On(lt::torrent_finished_alert const& alert);
     void On(lt::cache_flushed_alert const& alert);
     void On(lt::torrent_conflict_alert const& alert);
     void On(lt::metadata_received_alert const& alert);
@@ -561,6 +641,11 @@ public:
     void On(lt::alerts_dropped_alert const&);
 
 private:
+    void PrepareMove();
+    void SaveMove();
+    void FailMove(Problem problem);
+    void EndMove(std::optional<Problem> problem);
+
     SpeedHistory history;
 
     void CommitEdit(std::string const& id,

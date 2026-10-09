@@ -300,20 +300,19 @@ void Engine::State::RefreshPolicy(bool configure)
         pack.set_bool(lt::settings_pack::apply_ip_filter_to_trackers, true);
         if (appliedLan != settings.limitsLan)
         {
-            auto classes = session->get_peer_class_type_filter();
             for (int type = 0; type < lt::peer_class_type_filter::num_socket_types; ++type)
             {
                 auto socket = static_cast<lt::peer_class_type_filter::socket_type_t>(type);
                 if (settings.limitsLan)
                 {
-                    classes.add(socket, lt::session::global_peer_class_id);
+                    peerClasses.add(socket, lt::session::global_peer_class_id);
                 }
                 else
                 {
-                    classes.remove(socket, lt::session::global_peer_class_id);
+                    peerClasses.remove(socket, lt::session::global_peer_class_id);
                 }
             }
-            session->set_peer_class_type_filter(classes);
+            session->set_peer_class_type_filter(peerClasses);
         }
         auto encryption = settings.encryption;
         auto policy = encryption == Encryption::Required ? lt::settings_pack::pe_forced :
@@ -361,10 +360,11 @@ void Engine::State::RefreshPolicy(bool configure)
         pack.set_int(lt::settings_pack::active_tracker_limit, -1);
         pack.set_int(lt::settings_pack::connections_limit, settings.connections ? settings.connections : INT_MAX);
         history.Configure(settings.recentInterval, settings.historyInterval);
-        for (auto const& [id, torrent] : torrents)
+        for (auto& [id, torrent] : torrents)
         {
             if (!torrent.deleted)
             {
+                torrent.history.Configure(settings.recentInterval, settings.historyInterval);
                 ApplyPolicy(torrent.handle);
             }
         }
@@ -434,22 +434,20 @@ void Engine::State::LimitSeeds()
     {
         return;
     }
-    if (settings.seedingMinutes > 0 || settings.inactiveMinutes > 0)
+    if ((settings.seedingMinutes > 0 || settings.inactiveMinutes > 0) &&
+        seedQueue.empty() && seedQueries.empty())
     {
         // Idle torrents do not emit state updates as their elapsed durations increase.
-        std::vector<lt::torrent_status> seeds;
         for (auto const& [id, torrent] : torrents)
+        {
             if (!torrent.deleted && !torrent.restore && torrent.status.is_finished &&
                 torrent.facts.intent != Intent::Paused && !torrent.facts.ignoresSeedLimits)
-                seeds.push_back(torrent.status);
-        if (!seeds.empty())
-        {
-            session->refresh_torrent_status(&seeds, lt::torrent_handle::query_name);
-            for (auto& status : seeds)
-                if (auto torrent = Find(status.handle))
-                    torrent->Update(std::move(status));
+            {
+                seedQueue.push_back(torrent.handle);
+            }
         }
     }
+    QuerySeeds();
     std::vector<std::string> ids;
     for (auto const& [id, torrent] : torrents)
     {
@@ -494,10 +492,40 @@ void Engine::State::LimitSeeds()
     });
 }
 
+void Engine::State::QuerySeeds()
+{
+    if (shuttingDown || (settings.seedingMinutes == 0 && settings.inactiveMinutes == 0))
+    {
+        seedQueue.clear();
+        return;
+    }
+    // Each query produces a separate alert; a large library must not fill
+    // libtorrent's alert queue before the engine can drain it.
+    constexpr std::size_t pendingLimit = 64;
+    while (!seedQueue.empty() && seedQueries.size() < pendingLimit)
+    {
+        auto handle = seedQueue.back();
+        seedQueue.pop_back();
+        auto torrent = Find(handle);
+        if (!torrent || torrent->deleted || !torrent->status.is_finished ||
+            torrent->facts.intent == Intent::Paused || torrent->facts.ignoresSeedLimits)
+        {
+            continue;
+        }
+        seedQueries.insert(handle);
+        // The metadata weak pointer distinguishes this answer from routine
+        // updates, which must not release an outstanding seed query.
+        handle.post_status(lt::torrent_handle::query_name | lt::torrent_handle::query_torrent_file);
+    }
+}
+
 bool Engine::State::ReachedSeedLimit(Torrent const& torrent) const
 {
+    bool blockedMove = torrent.completionPhase == CompletionPhase::Settling &&
+        !torrent.facts.finalFolder.empty() && torrent.facts.moveDestination.empty() &&
+        !torrent.FilesBusy() && torrent.MoveBlocked();
     if ((settings.ratio == 0 && settings.seedingMinutes == 0 && settings.inactiveMinutes == 0) ||
-        !torrent.status.is_finished || torrent.completionPhase == CompletionPhase::Checking ||
+        !torrent.status.is_finished || (torrent.completionPhase != CompletionPhase::Idle && !blockedMove) ||
         torrent.facts.intent == Intent::Paused ||
         torrent.facts.ignoresSeedLimits)
     {

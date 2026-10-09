@@ -155,7 +155,7 @@ integration. The prototype's sample dialogs and messages do not implement them.
 ## Subtitles
 
 Subtitles has its own tab and category card in C's search and index layout.
-Search includes provider/account terms, captions, SRT, and language names; each
+Search includes supplier/account terms, captions, SRT, and language names; each
 result opens the existing setting rather than a second editor. The shared field
 inventory also makes these controls available in the comparison layouts.
 
@@ -175,7 +175,7 @@ An unset language choice follows the current interface language; choosing
 languages makes that selection independent, and Reset restores the default.
 Its tooltip says "Use the interface language for subtitles"; it keeps its Lucide
 icon and remains visible, disabled, when the default is already active.
-Edit, Check, Add, and Reset share one action size on the Subtitles page and
+Edit, Check, Find, Recheck, Add, and Reset share one action size on the Subtitles page and
 align to the right edge. Reset stays below the language list, right-aligned.
 The HTML uses 96 by 32 pixels; native implementation sizes the shared action
 column for the widest localized label at the current text scale, so equal sizes
@@ -203,6 +203,49 @@ Secondary facts use Body text and the secondary color, not smaller type. Account
 instructions are field tooltips and accessible descriptions. Keep visible error
 feedback in its existing reserved space. No additional consent step is added.
 
+The Automatic subtitles card has a second row, Finished downloads, with a Find
+action. It follows the existing dependent-row pattern: while Automatic subtitles
+is Off, the row is inactive and its tooltip asks the person to turn the switch
+on. The value column beside Find, in the secondary color, tells the person what
+Find will look for before they press it: "62 subtitles missing". A total stays
+short however many languages are chosen. Find's tooltip, which also appears on
+keyboard focus, and the count's tooltip give the breakdown: "Find 62 missing
+subtitles: English 37, Spanish 25. Estimated downloads: 62. Retries may use
+more." This is an estimate, not a billing cap. While lookups remain the column shows "40 subtitles left";
+afterwards it shows "Found 52 of 62". All three states count subtitles, the
+unit the allowance is spent in. With nothing missing it reads "No subtitles
+missing" and Find is disabled. The column is always present, so the text never
+moves other controls. The prototype uses sample counts per chosen language and
+a quick countdown. Automatic subtitles help explains that work runs while the
+window is open: accepted work resumes on reopening, and movies added and
+finished entirely while closed need Find.
+
+A third row, Subtitle files, has a Recheck action with the same layout. Its
+value column reads "Not checked yet", then "Checking 96 of 240" while it runs,
+then "Last checked 14:32". Recheck stays available while Automatic subtitles is
+Off, because it reads only the drive. Find and Recheck each disable the other
+while running; pressing a running action again does nothing, so focus never
+lands on a disabled button. In the prototype, Recheck finds two English
+subtitles the person added, so the English missing count drops by two.
+
+Reopening the supplier dialog never shows a saved password or API key, because
+WinUI does not receive it. The empty field's placeholder reads "Saved password"
+or "Saved API key". Leaving it empty keeps the saved secret, typing replaces
+it, and clearing both OpenSubtitles fields removes the account.
+
+A chosen language that the saved supplier does not offer stays in the list
+with "not offered by" and the supplier name in secondary text after its name,
+like the existing "interface language" note. The prototype uses one sample
+catalog for the suppliers, so it does not show this case. Unsupported choices
+stay visible but are excluded from actionable Find counts and requests.
+
+A persistent problem appears in critical text, never as a red card or surface.
+This follows Fluent, which carries severity in the status text, and the existing
+critical color for field errors. The Supplier footer shows it, and while
+Automatic subtitles is On the Subtitles category card on the index shows it in
+place of its summary, so the problem is visible without opening the category.
+The text itself names the problem, so color is never the only signal.
+
 C opens on its Settings index. A full-width horizontal Automatic subtitles help
 card precedes the category grid, with its brief benefit and a right-aligned
 Set up subtitles cue. The whole main surface opens Subtitles, matching the
@@ -215,21 +258,26 @@ benefit stays on one line with the full text available on the card's keyboard
 focus. The requested Set up subtitles cue is part of the help card's navigation
 surface rather than a nested button. All category
 summaries share the same trimming rule. Icon-only actions have hover and focus
-tooltips; provider changes also reset the password reveal tooltip.
+tooltips; supplier changes also reset the password reveal tooltip.
 
-Proxy and supplier now use one dialog implementation for account entry, password
-reveal, reserved Check feedback, and Save/Cancel. The proxy purpose adds type,
-host, and port; the supplier purpose adds supplier selection. Each purpose
-validates and saves its own configuration. Proxy values and credentials never
-become subtitle values. The common editor preserves None and SOCKS4's disabled
-fields. Its address row and account fields share the existing Fluent spacing;
-footer buttons share an equal width beside reserved feedback.
+The prototype shares one dialog implementation for account entry, password reveal,
+reserved Check feedback, and Save/Cancel. Production shares the existing field
+presentation and dialog mechanics where behavior matches; proxy and supplier
+drafts, validation, secret handling and checks retain their own owners. No generic
+editor workflow with mode flags or callback lists is required. Proxy values and
+credentials never become subtitle values. Preserve None and SOCKS4's disabled
+fields, Fluent spacing and equal footer button widths beside reserved feedback.
 
-The supplier selector includes OpenSubtitles and a clearly marked sample supplier
-requiring an account. Selecting another supplier clears only draft credentials;
-Cancel preserves the saved configuration. The prototype toolbar supplies
-not-checked, successful-check, unconfigured, access-error, quota, and save-error
-outcomes. Status starts Not checked, and successful-check feedback is marked as a
+The supplier selector includes OpenSubtitles, SubDL, and SubSource. SubDL and
+SubSource need the person's own API key, so for them the dialog hides User name
+and labels the secret field API key; its reveal button reads Show API key. Each
+supplier's flyout links that supplier's own privacy policy and terms. Selecting another supplier clears only draft
+credentials; Cancel preserves the saved configuration. The prototype toolbar
+supplies not-checked, successful-check, unconfigured, access-error,
+proxy-refusal, quota, and save-error outcomes. The prototype has no real proxy,
+so with a SOCKS4 proxy saved, Check and turning Automatic subtitles On simulate a
+proxy that refuses host names; the toolbar can still select a successful check.
+Saving a changed proxy returns the supplier status to Not checked. Status starts Not checked, and successful-check feedback is marked as a
 sample. Check simulates the selected outcome; Not checked becomes a sample success
 only when Check is invoked. Saved supplier/account changes invalidate the previous
 result unless the unchanged draft has just been checked. Editing that draft clears
@@ -237,11 +285,12 @@ its result, and Cancel never changes the saved status. Blank
 credentials or a complete form never imply successful access. Production Check and
 saved-access validation call the same supplier operation. Setup remains editable
 while Off; enabling requires readiness, and a later failure preserves On for quiet
-recovery. Saving a changed supplier resets Off. These simulations do not establish
-provider authorization or real account validation. No supplier requests or file
+recovery. Saving a changed supplier resets Off and cancels pending work; finished
+targets need Find after re-enabling. These simulations do not establish
+supplier authorization or real account validation. No supplier requests or file
 downloads occur. Use sample credentials;
 all edits last until reload, and the sample data view masks the subtitle password.
-Production reads confirmed access and retry state from the engine under the
+Production reads confirmed access and retry state from the C# subtitle owner under the
 subtitle design, including actual quota reset times.
 
 Production uses WinUI AutoSuggestBox with the supplier's full language catalog,

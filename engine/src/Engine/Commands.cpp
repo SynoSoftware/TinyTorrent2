@@ -162,8 +162,12 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
         Inspect(request.at("source").get<std::string>(), connectionId,
             [this, destination = request.value("destination", ""), reply](Outcome outcome, Preview* preview)
         {
-            reply(outcome.error ? Failure(*outcome.error, outcome.detail) :
-                Success(Describe(*preview, destination)));
+            if (outcome.error)
+                reply(Failure(*outcome.error, outcome.detail));
+            else if (preview->params.ti && !NamesReady())
+                reply(Failure(ErrorCode::FilesBusy));
+            else
+                reply(Success(Describe(*preview, destination)));
         });
         break;
     case Command::PreviewDetail:
@@ -175,6 +179,11 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
             return;
         }
         UpdatePreview(*preview);
+        if (preview->params.ti && !NamesReady())
+        {
+            reply(Failure(ErrorCode::FilesBusy));
+            break;
+        }
         reply(Success(Describe(*preview, request.value("destination", ""))));
         break;
     }
@@ -223,31 +232,34 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
     }
     case Command::Torrent:
     {
-        auto found = torrents.find(request.at("torrent_id").get<std::string>());
-        if (found == torrents.end() || found->second.deleted)
+        if (request.value("release", false))
         {
-            reply(Failure(ErrorCode::TorrentRemoved));
-            return;
-        }
-        if (found->second.restore)
-        {
-            reply(Failure(ProblemKind::AliasConflict, found->second.conflict));
-            return;
-        }
-        if (!request.contains("view"))
-        {
-            reply(Success(found->second.Describe()));
+            ReleaseReading(connectionId);
+            reply(Success());
             break;
         }
-        auto view = Parse(views, request.at("view").get<std::string>());
-        if (!view)
+        std::optional<TorrentView> view;
+        if (request.contains("view"))
         {
-            reply(Failure(ErrorCode::InvalidRequest));
-            return;
+            view = Parse(views, request.at("view").get<std::string>());
+            if (!view)
+            {
+                reply(Failure(ErrorCode::InvalidRequest));
+                return;
+            }
         }
-        auto data = found->second.Describe(*view, request.value("include_files", false));
-        data["session_id"] = sessionId;
-        reply(Success(std::move(data)));
+        Reading::Read read{connectionId, request.at("torrent_id").get<std::string>(), view,
+            request.value("include_files", false), reply};
+        if (request.contains("context"))
+        {
+            if (!view || !request.at("context").is_number_integer())
+            {
+                reply(Failure(ErrorCode::InvalidRequest));
+                return;
+            }
+            read.context = request.at("context").get<std::int64_t>();
+        }
+        ReadDetail(std::move(read));
         break;
     }
     case Command::Edit:
@@ -267,13 +279,30 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
         break;
     case Command::History:
     {
+        if (request.value("release_detail", false))
+            ReleaseReading(connectionId);
         auto range = request.at("range").get<std::string>();
         if (range != "five_minutes" && range != "day")
         {
             reply(Failure(ErrorCode::InvalidRequest));
             return;
         }
-        reply(Success(History(range == "day")));
+        auto const* history = &this->history;
+        Json data{{"session_id", sessionId}};
+        if (request.contains("torrent_id"))
+        {
+            auto id = request.at("torrent_id").get<std::string>();
+            auto found = torrents.find(id);
+            if (found == torrents.end() || found->second.deleted)
+            {
+                reply(Failure(ErrorCode::TorrentRemoved));
+                return;
+            }
+            history = &found->second.history;
+            data["torrent_id"] = id;
+        }
+        data["samples"] = history->Read(range == "day");
+        reply(Success(std::move(data)));
         break;
     }
     case Command::Pause:
@@ -309,7 +338,11 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
     case Command::FileScope:
         Act(TorrentIds(request), reply, [this](auto const& ids, Reply reply)
         {
-            reply(Success(Describe(ids, FileScope(ids))));
+            auto namesReady = NamesReady();
+            auto scope = Describe(ids, FileScope(ids));
+            if (!namesReady)
+                scope["kept_files"] = nullptr;
+            reply(Success(std::move(scope)));
         }, BusyFiles::Accepted);
         break;
     case Command::Move:
@@ -421,34 +454,35 @@ void Engine::State::MergeTrackers(Preview& preview, std::string const& torrentId
         reply(Failure(ErrorCode::TorrentRemoved));
         return;
     }
-    if (!changes.Queue([this, torrentId, urls = preview.params.trackers, reply]
+    Act({torrentId}, reply, [this, urls = preview.params.trackers](auto const& ids, Reply reply)
     {
-        if (!torrents.contains(torrentId) || torrents.at(torrentId).deleted)
-        {
-            reply(Failure(ErrorCode::TorrentRemoved));
-            return;
-        }
-        if (torrents.at(torrentId).restore)
+        auto& torrent = torrents.at(ids.front());
+        if (torrent.restore)
         {
             reply(Failure(ProblemKind::AliasConflict));
             return;
         }
-        auto trackers = torrents.at(torrentId).handle.trackers();
+        auto trackers = torrent.Trackers();
         for (auto const& url : Missing(urls, Urls(trackers)))
         {
             trackers.emplace_back(url);
         }
-        CommitEdit(torrentId, {}, trackers, reply);
-    }))
-    {
-        reply(Failure(ErrorCode::Overloaded));
-    }
+        CommitEdit(ids.front(), {}, trackers, reply);
+    }, BusyFiles::Accepted);
 }
 
 // Runs the action after the changes queued before it, once every listed
-// torrent still exists.
+// torrent still exists. Its reply first invalidates their detail.
 void Engine::State::Act(std::vector<std::string> ids, Reply reply, Action action, BusyFiles busy)
 {
+    reply = [this, ids, send = std::move(reply)](Json response)
+    {
+        for (auto const& id : ids)
+        {
+            Invalidate(id);
+        }
+        send(std::move(response));
+    };
     if (ids.empty() || ids.size() > torrentLimit ||
         std::set<std::string>(ids.begin(), ids.end()).size() != ids.size())
     {
@@ -493,6 +527,7 @@ void Engine::State::Verify(std::vector<std::string> const& ids, Reply reply)
         torrents.at(id).receivedPayload = false;
         torrents.at(id).completedFiles.clear();
         torrents.at(id).handle.force_recheck();
+        Invalidate(id);
     }
     ApplyQueue();
     reply(Success());
@@ -503,17 +538,18 @@ void Engine::State::Verify(std::vector<std::string> const& ids, Reply reply)
 // removed when CanRemove allows it.
 void Engine::State::Remove(std::vector<std::string> const& ids, Reply reply, bool deleteData, DeletionMode mode)
 {
+    auto namesReady = !deleteData || NamesReady();
     std::vector<std::string> ready;
     std::vector<std::string> later;
     for (auto const& id : ids)
     {
-        (!deleteData || CanRemove(torrents.at(id)) ? ready : later).push_back(id);
+        (!deleteData || (namesReady && CanRemove(torrents.at(id))) ? ready : later).push_back(id);
     }
-    std::size_t kept = 0;
+    Json kept = 0;
     auto deletion = deleteData ? PrepareDeletion(ready, mode) : deletions.end();
     if (deleteData)
     {
-        kept = FileScope(ids).kept.size();
+        kept = namesReady ? Json(FileScope(ids).kept.size()) : Json();
     }
     auto removed = [&ids](std::string const& id) { return Contains(ids, id); };
     auto document = Saved();
@@ -541,28 +577,7 @@ void Engine::State::Remove(std::vector<std::string> const& ids, Reply reply, boo
             torrent.deletionMode = mode;
             torrent.ApplyIntent();
         }
-        // A move takes its torrents one at a time, so a deleted one still
-        // waiting its turn leaves the move and its files are deleted where they
-        // are. A move that is saving its end, success or failure, has no
-        // torrent waiting.
-        if (!later.empty() && move && move->phase != MovePhase::Saving)
-        {
-            for (auto const& id : later)
-            {
-                auto& members = move->ids;
-                auto member = std::find(members.begin() + move->current + 1, members.end(), id);
-                if (member == members.end())
-                {
-                    continue;
-                }
-                members.erase(member);
-                auto& torrent = torrents.at(id);
-                std::erase(move->waiting, torrent.handle);
-                torrent.moving = false;
-                torrent.facts.moveDestination.clear();
-            }
-            ContinueMove();
-        }
+        ContinueMove();
         reply(Success({{"kept_files", kept}}));
     });
 }
@@ -613,6 +628,10 @@ void Engine::State::RemoveHandles(std::vector<std::string> const& ids, std::list
         {
             std::exchange(found->second.priorityReply, nullptr)(Failure(ErrorCode::TorrentRemoved));
         }
+        if (reading && reading->torrentId == id)
+        {
+            FailReading(Failure(ErrorCode::TorrentRemoved));
+        }
         if (!found->second.restore)
         {
             if (deletion != deletions.end())
@@ -625,6 +644,7 @@ void Engine::State::RemoveHandles(std::vector<std::string> const& ids, std::list
                 session->remove_torrent(found->second.handle);
             }
             handles.erase(found->second.handle);
+            seedQueries.erase(found->second.handle);
         }
         torrents.erase(found);
         files.push_back(ResumeFile(id));
@@ -664,6 +684,8 @@ void Engine::State::RemoveDeferred()
     {
         return;
     }
+    if (!NamesReady())
+        return;
     for (auto mode : {DeletionMode::Recycle, DeletionMode::Permanent})
     {
         std::vector<std::string> ready;
@@ -678,11 +700,10 @@ void Engine::State::SetIntent(std::vector<std::string> const& ids, Intent intent
 {
     if (intent != Intent::Paused)
     {
-        RestorePending();
         for (auto const& id : ids)
         {
-            if (torrents.at(id).restore || (!torrents.at(id).conflict.empty() &&
-                !FindDuplicate(torrents.at(id).status.info_hashes, id).empty()))
+            if ((torrents.at(id).restore || !torrents.at(id).conflict.empty()) &&
+                !FindDuplicate(torrents.at(id).status.info_hashes, id).empty())
             {
                 reply(Failure(ProblemKind::AliasConflict));
                 return;
@@ -714,8 +735,11 @@ void Engine::State::SetIntent(std::vector<std::string> const& ids, Intent intent
                     torrent.moveError.reset();
                 }
                 torrent.conflict.clear();
-                torrent.handle.clear_error();
-                torrent.handle.unset_flags(lt::torrent_flags::upload_mode);
+                if (!torrent.restore)
+                {
+                    torrent.handle.clear_error();
+                    torrent.handle.unset_flags(lt::torrent_flags::upload_mode);
+                }
                 torrent.diskError.clear();
             }
             torrent.ApplyIntent();
@@ -755,7 +779,9 @@ void Engine::State::ChangeFacts(std::vector<std::string> const& ids,
             // while firstLast is on, so turning it off lowers them here.
             if (firstLast && !torrent.facts.firstLast)
             {
-                torrent.PrioritizePieces();
+                torrent.piecesPending = true;
+                Invalidate(id);
+                QueryPriorities(torrent);
             }
         }
         return Success();

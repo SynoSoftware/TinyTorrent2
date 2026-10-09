@@ -13,148 +13,227 @@ std::string Code(lt::error_code const& error)
 
 void Engine::State::Handle(lt::alert* alert)
 {
-    if (auto statistics = lt::alert_cast<lt::session_stats_alert>(alert))
+    switch (alert->type())
     {
-        ObserveConnectionTest(*statistics);
+    case lt::session_stats_alert::alert_type:
+        On(static_cast<lt::session_stats_alert const&>(*alert));
+        break;
+    case lt::external_ip_alert::alert_type:
+        On(static_cast<lt::external_ip_alert const&>(*alert));
+        break;
+    case lt::state_update_alert::alert_type:
+        On(static_cast<lt::state_update_alert const&>(*alert));
+        break;
+    case lt::state_changed_alert::alert_type:
+        On(static_cast<lt::state_changed_alert const&>(*alert));
+        break;
+    case lt::file_completed_alert::alert_type:
+        On(static_cast<lt::file_completed_alert const&>(*alert));
+        break;
+    case lt::file_renamed_alert::alert_type:
+        On(static_cast<lt::file_renamed_alert const&>(*alert));
+        break;
+    case lt::file_rename_failed_alert::alert_type:
+        On(static_cast<lt::file_rename_failed_alert const&>(*alert));
+        break;
+    case lt::cache_flushed_alert::alert_type:
+        On(static_cast<lt::cache_flushed_alert const&>(*alert));
+        break;
+    case lt::add_torrent_alert::alert_type:
+        On(static_cast<lt::add_torrent_alert const&>(*alert));
+        break;
+    case lt::storage_moved_alert::alert_type:
+        On(static_cast<lt::storage_moved_alert const&>(*alert));
+        break;
+    case lt::storage_moved_failed_alert::alert_type:
+        On(static_cast<lt::storage_moved_failed_alert const&>(*alert));
+        break;
+    case lt::torrent_conflict_alert::alert_type:
+        On(static_cast<lt::torrent_conflict_alert const&>(*alert));
+        break;
+    case lt::metadata_received_alert::alert_type:
+        On(static_cast<lt::metadata_received_alert const&>(*alert));
+        break;
+    case lt::metadata_failed_alert::alert_type:
+        On(static_cast<lt::metadata_failed_alert const&>(*alert));
+        break;
+    case lt::save_resume_data_alert::alert_type:
+        On(static_cast<lt::save_resume_data_alert const&>(*alert));
+        break;
+    case lt::save_resume_data_failed_alert::alert_type:
+        On(static_cast<lt::save_resume_data_failed_alert const&>(*alert));
+        break;
+    case lt::torrent_error_alert::alert_type:
+        On(static_cast<lt::torrent_error_alert const&>(*alert));
+        break;
+    case lt::file_error_alert::alert_type:
+        On(static_cast<lt::file_error_alert const&>(*alert));
+        break;
+    case lt::file_prio_alert::alert_type:
+        On(static_cast<lt::file_prio_alert const&>(*alert));
+        break;
+    case lt::torrent_checked_alert::alert_type:
+        On(static_cast<lt::torrent_checked_alert const&>(*alert));
+        break;
+    case lt::torrent_paused_alert::alert_type:
+        On(static_cast<lt::torrent_paused_alert const&>(*alert));
+        break;
+    case lt::torrent_deleted_alert::alert_type:
+        On(static_cast<lt::torrent_deleted_alert const&>(*alert));
+        break;
+    case lt::torrent_delete_failed_alert::alert_type:
+        On(static_cast<lt::torrent_delete_failed_alert const&>(*alert));
+        break;
+    case lt::tracker_list_alert::alert_type:
+        On(static_cast<lt::tracker_list_alert const&>(*alert));
+        break;
+    case lt::peer_info_alert::alert_type:
+        On(static_cast<lt::peer_info_alert const&>(*alert));
+        break;
+    case lt::file_progress_alert::alert_type:
+        On(static_cast<lt::file_progress_alert const&>(*alert));
+        break;
+    case lt::file_priorities_alert::alert_type:
+        On(static_cast<lt::file_priorities_alert const&>(*alert));
+        break;
+    case lt::piece_availability_alert::alert_type:
+        On(static_cast<lt::piece_availability_alert const&>(*alert));
+        break;
+    case lt::piece_info_alert::alert_type:
+        On(static_cast<lt::piece_info_alert const&>(*alert));
+        break;
+    case lt::alerts_dropped_alert::alert_type:
+        On(static_cast<lt::alerts_dropped_alert const&>(*alert));
+        break;
+    default:
+        break;
     }
-    else if (auto external = lt::alert_cast<lt::external_ip_alert>(alert))
+}
+
+void Engine::State::On(lt::session_stats_alert const& alert)
+{
+    ObserveConnectionTest(alert);
+}
+
+void Engine::State::On(lt::external_ip_alert const& alert)
+{
+    auto& address = alert.external_address.is_v4() ? externalIpv4 : externalIpv6;
+    address = alert.external_address.to_string();
+}
+
+void Engine::State::On(lt::state_changed_alert const& alert)
+{
+    auto torrent = Find(alert.handle);
+    if (!torrent)
     {
-        auto& address = external->external_address.is_v4() ? externalIpv4 : externalIpv6;
-        address = external->external_address.to_string();
+        return;
     }
-    else if (auto updated = lt::alert_cast<lt::state_update_alert>(alert))
+    if (alert.state == lt::torrent_status::downloading)
     {
-        On(*updated);
+        if (torrent->completionPhase != CompletionPhase::Checking)
+            torrent->completionPhase = CompletionPhase::Downloading;
+        torrent->receivedPayload = false;
     }
-    else if (auto state = lt::alert_cast<lt::state_changed_alert>(alert))
+    if (alert.state == lt::torrent_status::checking_files ||
+        alert.state == lt::torrent_status::checking_resume_data)
     {
-        if (auto torrent = Find(state->handle))
-        {
-            torrent->transferState = state->state;
-            if (state->state == lt::torrent_status::downloading)
-                ApplyQueue();
-        }
+        torrent->receivedPayload = false;
+        if (torrent->completionPhase == CompletionPhase::Downloading)
+            torrent->completionPhase = CompletionPhase::Idle;
     }
-    else if (auto file = lt::alert_cast<lt::file_completed_alert>(alert))
+    if (alert.state == lt::torrent_status::finished &&
+        alert.prev_state == lt::torrent_status::downloading &&
+        (torrent->completionPhase == CompletionPhase::Downloading ||
+            torrent->completionPhase == CompletionPhase::Idle || torrent->receivedPayload))
     {
-        On(*file);
+        torrent->completionPhase = CompletionPhase::Downloading;
+        QueryCompletion(*torrent);
     }
-    else if (auto renamed = lt::alert_cast<lt::file_renamed_alert>(alert))
+    torrent->transferState = alert.state;
+    if (alert.state == lt::torrent_status::downloading)
+        queuePending = true;
+}
+
+void Engine::State::On(lt::file_prio_alert const& alert)
+{
+    auto torrent = Find(alert.handle);
+    if (!torrent)
     {
-        On(*renamed);
+        return;
     }
-    else if (auto failed = lt::alert_cast<lt::file_rename_failed_alert>(alert))
+    torrent->piecesPending |= torrent->facts.firstLast;
+    if (torrent->priorityReply || torrent->piecesPending)
     {
-        On(*failed);
+        Invalidate(torrent->torrentId);
+        QueryPriorities(*torrent);
     }
-    else if (auto finished = lt::alert_cast<lt::torrent_finished_alert>(alert))
+}
+
+void Engine::State::On(lt::torrent_checked_alert const& alert)
+{
+    auto torrent = Find(alert.handle);
+    if (!torrent)
     {
-        On(*finished);
+        return;
     }
-    else if (auto flushed = lt::alert_cast<lt::cache_flushed_alert>(alert))
+    if (torrent->completionPhase == CompletionPhase::Checking)
     {
-        On(*flushed);
+        QueryCompletion(*torrent);
     }
-    else if (auto added = lt::alert_cast<lt::add_torrent_alert>(alert))
+    else
     {
-        On(*added);
+        Invalidate(torrent->torrentId);
     }
-    else if (auto moved = lt::alert_cast<lt::storage_moved_alert>(alert))
+    torrent->filesPending = true;
+    if (torrent->facts.firstLast)
     {
-        On(*moved);
+        torrent->piecesPending = true;
+        QueryPriorities(*torrent);
     }
-    else if (auto moveFailed = lt::alert_cast<lt::storage_moved_failed_alert>(alert))
-    {
-        On(*moveFailed);
-    }
-    else if (auto conflict = lt::alert_cast<lt::torrent_conflict_alert>(alert))
-    {
-        On(*conflict);
-    }
-    else if (auto received = lt::alert_cast<lt::metadata_received_alert>(alert))
-    {
-        On(*received);
-    }
-    else if (auto metadataFailed = lt::alert_cast<lt::metadata_failed_alert>(alert))
-    {
-        On(*metadataFailed);
-    }
-    else if (auto saved = lt::alert_cast<lt::save_resume_data_alert>(alert))
-    {
-        On(*saved);
-    }
-    else if (auto saveFailed = lt::alert_cast<lt::save_resume_data_failed_alert>(alert))
-    {
-        On(*saveFailed);
-    }
-    else if (auto torrentError = lt::alert_cast<lt::torrent_error_alert>(alert))
-    {
-        On(*torrentError);
-    }
-    else if (auto fileError = lt::alert_cast<lt::file_error_alert>(alert))
-    {
-        On(*fileError);
-    }
-    else if (auto priorities = lt::alert_cast<lt::file_prio_alert>(alert))
-    {
-        if (auto torrent = Find(priorities->handle))
-        {
-            if (torrent->facts.firstLast)
-            {
-                torrent->PrioritizePieces();
-            }
-            CompletePriorities(*torrent);
-        }
-    }
-    else if (auto checked = lt::alert_cast<lt::torrent_checked_alert>(alert))
-    {
-        if (auto torrent = Find(checked->handle))
-        {
-            if (torrent->completionPhase == CompletionPhase::Checking)
-            {
-                torrent->Update(torrent->handle.status(lt::torrent_handle::query_name));
-                torrent->completionPhase = torrent->status.is_finished ? CompletionPhase::Checked : CompletionPhase::Idle;
-            }
-            CompleteFiles(*torrent);
-            FinishFiles(*torrent);
-            if (torrent->facts.firstLast)
-                torrent->PrioritizePieces();
-        }
-    }
-    else if (auto paused = lt::alert_cast<lt::torrent_paused_alert>(alert))
-    {
-        std::erase(pausing, paused->handle);
-        if (move)
-        {
-            std::erase(move->waiting, paused->handle);
-            ContinueMove();
-        }
-        if (rename && rename->phase == RenamePhase::Waiting &&
-            std::erase(rename->waiting, paused->handle))
-        {
-            ContinueRename();
-        }
-    }
-    else if (auto deleted = lt::alert_cast<lt::torrent_deleted_alert>(alert))
-    {
-        On(*deleted);
-    }
-    else if (auto deleteFailed = lt::alert_cast<lt::torrent_delete_failed_alert>(alert))
-    {
-        On(*deleteFailed);
-    }
-    else if (auto dropped = lt::alert_cast<lt::alerts_dropped_alert>(alert))
-    {
-        On(*dropped);
-    }
+}
+
+void Engine::State::On(lt::torrent_paused_alert const& alert)
+{
+    std::erase(pausing, alert.handle);
 }
 
 void Engine::State::On(lt::state_update_alert const& alert)
 {
+    bool changed = false;
     for (auto const& status : alert.status)
     {
+        if (status.save_path.empty() && !status.torrent_file.expired())
+        {
+            seedQueries.erase(status.handle);
+            QuerySeeds();
+        }
+        // The save path marks an explicit query; routine status updates never request it.
+        if (!status.save_path.empty())
+        {
+            Receive(status.handle, DetailKind::Status, [&status](Detail& detail)
+            {
+                detail.status = status;
+                detail.status.renamed_files = {};
+            }, [this, &status, &changed](Torrent& torrent)
+            {
+                if (!torrent.names)
+                {
+                    if (auto metadata = status.torrent_file.lock())
+                        torrent.names = FileNames{std::move(metadata), status.renamed_files};
+                }
+                if (torrent.completionPending)
+                {
+                    changed |= !torrent.deleted &&
+                        IsQueued(torrent.status.queue_position) != IsQueued(status.queue_position);
+                    ObserveCompletion(torrent, status);
+                }
+            });
+            continue;
+        }
         if (auto torrent = Find(status.handle))
         {
+            changed |= !torrent->deleted &&
+                IsQueued(torrent->status.queue_position) != IsQueued(status.queue_position);
             torrent->Update(status);
             auto problem = torrent->Error();
             auto error = problem ? problem->detail : std::string();
@@ -165,28 +244,72 @@ void Engine::State::On(lt::state_update_alert const& alert)
             torrent->notifiedError = std::move(error);
         }
     }
+    if (changed)
+        queuePending = true;
 }
 
-// libtorrent also reports a torrent as finished after a recheck, so only
-// a torrent that received payload is notified as completed.
-void Engine::State::On(lt::torrent_finished_alert const& alert)
+void Engine::State::QueryCompletion(Torrent& torrent)
 {
-    auto torrent = Find(alert.handle);
-    if (!torrent)
-    {
+    torrent.completionPending = true;
+    Invalidate(torrent.torrentId);
+}
+
+void Engine::State::QueryCompletions()
+{
+    if (shuttingDown)
         return;
+    auto pending = std::count_if(torrents.begin(), torrents.end(), [](auto const& entry)
+    {
+        return entry.second.queries.contains(DetailKind::Status);
+    });
+    // A dropped batch can affect every torrent; recovery must not fill
+    // the alert queue again.
+    for (auto& [id, torrent] : torrents)
+    {
+        if (pending >= 64)
+            break;
+        if (!torrent.completionPending || torrent.deleted || torrent.restore ||
+            torrent.queries.contains(DetailKind::Status))
+            continue;
+        Query(torrent, DetailKind::Status);
+        ++pending;
     }
-    AwaitCompletion(*torrent);
 }
 
-void Engine::State::AwaitCompletion(Torrent& torrent)
+void Engine::State::ObserveCompletion(Torrent& torrent, lt::torrent_status latest)
 {
-    torrent.Update(torrent.handle.status(lt::torrent_handle::query_name));
-    if (torrent.status.is_finished && torrent.receivedPayload)
+    torrent.completionPending = false;
+    bool checking = latest.state == lt::torrent_status::checking_files ||
+        latest.state == lt::torrent_status::checking_resume_data;
+    if (torrent.completionPhase == CompletionPhase::Checking && !checking)
+        torrent.completionPhase = latest.is_finished ? CompletionPhase::Checked : CompletionPhase::Idle;
+    if (latest.state == lt::torrent_status::downloading)
+        torrent.completionPhase = CompletionPhase::Downloading;
+    // Restarting resets the counter. This fresh read can recognize a download
+    // that finishes between samples; a routine status cannot establish a reset.
+    torrent.receivedPayload |= torrent.completionPhase == CompletionPhase::Downloading &&
+        latest.total_payload_download > 0 && latest.total_payload_download != torrent.status.total_payload_download;
+    latest.pieces = {};
+    latest.verified_pieces = {};
+    latest.renamed_files = {};
+    latest.torrent_file.reset();
+    latest.save_path.clear();
+    torrent.Update(std::move(latest));
+    if (checking)
     {
         torrent.receivedPayload = false;
-        torrent.completionPhase = CompletionPhase::Flushing;
+        if (torrent.completionPhase == CompletionPhase::Downloading)
+            torrent.completionPhase = CompletionPhase::Idle;
+        return;
     }
+    if (torrent.status.is_finished && torrent.completionPhase == CompletionPhase::Downloading)
+    {
+        torrent.completionPhase = std::exchange(torrent.receivedPayload, false) ?
+            CompletionPhase::Flushing : CompletionPhase::Idle;
+    }
+    // The natural flush may precede this observation, or its alert may be lost.
+    if (torrent.completionPhase == CompletionPhase::Flushing)
+        torrent.handle.flush_cache();
 }
 
 // libtorrent finishes a torrent when its pieces pass the hash check in memory,
@@ -194,11 +317,7 @@ void Engine::State::AwaitCompletion(Torrent& torrent)
 // so a person who opens a completed file never finds it incomplete.
 void Engine::State::On(lt::cache_flushed_alert const& alert)
 {
-    if (rename && (rename->phase == RenamePhase::Flushing || rename->phase == RenamePhase::Recovering) &&
-        std::erase(rename->waiting, alert.handle))
-    {
-        ContinueRename();
-    }
+    FinishMove(alert.handle, std::nullopt);
     auto torrent = Find(alert.handle);
     if (!torrent || torrent->completionPhase != CompletionPhase::Flushing)
     {
@@ -258,6 +377,7 @@ void Engine::State::On(lt::metadata_received_alert const& alert)
         PrepareFiles(*torrent);
         torrent->ApplyIntent();
         RecordHashes(*torrent, alert.handle.info_hashes());
+        Invalidate(torrent->torrentId);
     }
 }
 
@@ -286,8 +406,13 @@ void Engine::State::On(lt::file_error_alert const& alert)
 // torrent saves again, a resume request whose answer was lost is given up, and
 // each addition that waited for a lost alert continues or fails. A resume file
 // write already belongs to Store, which still completes it.
-void Engine::State::On(lt::alerts_dropped_alert const&)
+void Engine::State::On(lt::alerts_dropped_alert const& alert)
 {
+    if (alert.dropped_alerts[lt::state_update_alert::alert_type])
+    {
+        seedQueries.clear();
+    }
+    RecoverDetail(alert);
     RecoverFiles();
     if (shuttingDown && !pausing.empty())
     {
@@ -301,29 +426,19 @@ void Engine::State::On(lt::alerts_dropped_alert const&)
         {
             continue;
         }
-        CompletePriorities(torrent);
         if (torrent.priorityReply)
         {
             std::exchange(torrent.priorityReply, nullptr)(Failure(ErrorCode::RecoveryRequired));
         }
+        QueryPriorities(torrent);
         if (torrent.checkpointPhase == CheckpointPhase::Requested)
         {
             torrent.checkpointPhase = CheckpointPhase::Idle;
         }
         torrent.unsaved = true;
-        if (torrent.completionPhase == CompletionPhase::Checking)
-        {
-            torrent.Update(torrent.handle.status(lt::torrent_handle::query_name));
-            if (torrent.status.state != lt::torrent_status::checking_files &&
-                torrent.status.state != lt::torrent_status::checking_resume_data)
-                torrent.completionPhase = torrent.status.is_finished ? CompletionPhase::Checked : CompletionPhase::Idle;
-        }
-        AwaitCompletion(torrent);
-        // flush_cache posts a new cache_flushed_alert in place of a lost one.
-        if (torrent.completionPhase == CompletionPhase::Flushing)
-        {
-            torrent.handle.flush_cache();
-        }
+        QueryCompletion(torrent);
+        // The latest status cannot establish the origin of queued file alerts.
+        torrent.transferState.reset();
         if (!shuttingDown)
         {
             torrent.ApplyIntent();
@@ -331,7 +446,7 @@ void Engine::State::On(lt::alerts_dropped_alert const&)
         RecordHashes(torrent, torrent.handle.info_hashes());
     }
     RecoverAdditions();
-    ApplyQueue();
+    queuePending = true;
     log.Write("alerts", "", "dropped");
 }
 }

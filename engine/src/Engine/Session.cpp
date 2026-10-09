@@ -132,6 +132,9 @@ void Engine::State::Start(Document const& saved, Resumes& resumes)
         lt::alert_category::error | lt::alert_category::storage | lt::alert_category::status |
         lt::alert_category::file_progress);
     session = std::make_unique<lt::session>(lt::session_params(pack));
+    // ABI 100 leaves filter changes to us; retain libtorrent's initial class
+    // assignments without reading them back during policy changes.
+    peerClasses = session->get_peer_class_type_filter();
     if (wake)
     {
         session->set_alert_notify(wake);
@@ -246,7 +249,7 @@ void Engine::State::RestorePending()
         }
         Restore(id, torrent.facts, std::move(*torrent.restore));
         torrent.ApplyIntent();
-        ApplyQueue();
+        queuePending = true;
     }
 }
 
@@ -446,11 +449,6 @@ Json Engine::State::Snapshot() const
         {"startup_error", startupError}};
 }
 
-Json Engine::State::History(bool day) const
-{
-    return {{"session_id", sessionId}, {"samples", history.Read(day)}};
-}
-
 Torrent* Engine::State::Find(lt::torrent_handle const& handle)
 {
     auto found = handles.find(handle);
@@ -462,14 +460,43 @@ Torrent& Engine::State::Install(std::string const& id, lt::torrent_handle handle
 {
     ApplyPolicy(handle);
     auto& torrent = torrents.insert_or_assign(id, Torrent{id, handle, std::move(facts)}).first->second;
+    torrent.history.Configure(settings.recentInterval, settings.historyInterval);
     torrent.comment = params.comment;
     torrent.creator = params.created_by;
     torrent.created = params.creation_date;
-    torrent.status = handle.status(lt::torrent_handle::query_name);
+    if (params.ti)
+    {
+        torrent.names = FileNames{params.ti, {}};
+        torrent.names->mappings.import_filenames(params.ti->layout(), params.renamed_files);
+    }
+    std::uint8_t tier = 0;
+    auto nextTier = params.tracker_tiers.begin();
+    for (auto const& url : params.trackers)
+    {
+        if (url.empty())
+            continue;
+        if (nextTier != params.tracker_tiers.end())
+            tier = static_cast<std::uint8_t>(*nextTier++);
+        if (std::any_of(torrent.sourceTrackers.begin(), torrent.sourceTrackers.end(),
+            [&url](auto const& tracker) { return tracker.url == url; }))
+            continue;
+        torrent.sourceTrackers.emplace_back(url);
+        torrent.sourceTrackers.back().tier = tier;
+    }
+    torrent.status.handle = handle;
+    torrent.status.name = params.ti ? params.ti->name() : params.name;
+    torrent.status.info_hashes = params.ti ? params.ti->info_hashes() : params.info_hashes;
+    torrent.status.has_metadata = bool(params.ti);
+    torrent.status.state = params.ti ? lt::torrent_status::checking_resume_data : lt::torrent_status::downloading_metadata;
+    torrent.status.flags = params.flags;
+    torrent.status.queue_position = lt::queue_position_t{-1};
+    torrent.status.all_time_download = params.total_downloaded;
+    torrent.status.all_time_upload = params.total_uploaded;
     torrent.namePhase = params.ti ? NamePhase::Ready : NamePhase::Pending;
-    CompleteFiles(torrent);
-    torrent.savedUploaded = torrent.status.all_time_upload;
+    torrent.savedUploaded = params.total_uploaded;
+    torrent.filesPending = true;
     handles.emplace(handle, &torrent);
+    statusPending = true;
     return torrent;
 }
 
@@ -571,10 +598,21 @@ void Engine::State::Tick()
             Handle(alert);
         }
         ContinueRename();
+        ContinueDeletion();
         RemoveDeferred();
         if (!shuttingDown)
         {
             Maintain();
+        }
+        QueryCompletions();
+        QueryFiles();
+        if (queuePending)
+            ApplyQueue();
+        if (statusPending)
+        {
+            statusPending = false;
+            // Without the save path, which marks the detail status; see Query.
+            session->post_torrent_updates(lt::torrent_handle::query_name);
         }
     }
     if (shuttingDown)
@@ -600,12 +638,15 @@ void Engine::State::Maintain()
         history.Sample(time, double(activity.downloadRate), double(activity.uploadRate));
         for (auto& [id, torrent] : torrents)
         {
-            CompletePriorities(torrent);
+            if (!torrent.deleted)
+                torrent.history.Sample(time, double(torrent.status.download_payload_rate),
+                    double(torrent.status.upload_payload_rate));
+            QueryPriorities(torrent);
             PrepareFiles(torrent);
             FinishFiles(torrent);
             FinishDownload(torrent);
         }
-        session->post_torrent_updates(lt::torrent_handle::query_name);
+        statusPending = true;
     }
     if (now - checkpointAt >= checkpointInterval)
     {

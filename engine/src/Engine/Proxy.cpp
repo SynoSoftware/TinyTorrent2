@@ -265,9 +265,14 @@ ProxyOutcome Http(Connection& connection, std::string const& username, std::stri
     {
         return ProxyOutcome::WrongType;
     }
-    // Any other answer means the proxy accepted the request, even when it
-    // cannot reach the target.
-    return status.substr(9, 3) == "407" ? ProxyOutcome::SignInFailed : ProxyOutcome::Connected;
+    auto code = status.substr(9, 3);
+    if (code == "407")
+        return ProxyOutcome::SignInFailed;
+    if (code == "405" || code == "501")
+        return ProxyOutcome::WrongType;
+    // The loopback target need not accept connections; a response establishes
+    // reachability, not forwarding or acceptance of supplied credentials.
+    return ProxyOutcome::Connected;
 }
 }
 

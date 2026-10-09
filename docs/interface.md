@@ -72,7 +72,7 @@ that is empty beside the others. A menu of only on/off choices, such as View,
 uses native check-mark items with Lucide icons, because no column stands empty.
 
 The custom title bar contains one row: app icon, File/Torrent/View/Help MenuBar,
-bounded Search, Add torrent file and Add magnet link, a small separator, the
+the page switcher, bounded Search, Add torrent file and Add magnet link, a small separator, the
 light/dark switch, and native caption buttons. Resume, Pause, Verify and Remove
 stay in the Torrent menu, not the header. Each button runs the same command as
 its menu item. Keep the existing
@@ -88,8 +88,8 @@ Windows still owns minimize, maximize and close; never simulate those controls.
 
 Inset the icon, separate logical groups, and reserve Windows' caption insets plus
 a command buffer. Search is at most 320 effective pixels wide. The minimum window
-width accommodates the measured menus, a 200-pixel search and the caption buttons,
-including translated labels. Unused title-bar space retains native dragging,
+width accommodates the measured menus, the page switcher as icons, a 200-pixel
+search and the caption buttons, including translated labels. Unused title-bar space retains native dragging,
 double-click maximize/restore and the system menu; controls receive client input.
 The app icon is a native system-menu region: left-click or right-click opens
 Windows' Restore/Move/Size/Minimize/Maximize/Close menu, double-click closes the
@@ -99,9 +99,20 @@ the icon does not open an application command menu.
 There is no application navigation pane, identity text, command overflow,
 language switch or permanent Exit button. Language and theme
 are chosen in Settings; the title-bar light/dark shortcut uses the same theme
-owner. Torrents is the normal workspace; on Settings and About, a Back arrow at
-the left of the title bar, before the app icon, and Alt+Left route to it, with
-the existing draft guards. The arrow sits in the title bar, as in Windows
+owner.
+
+**Owner ruling: Torrents and [Library](library.md#presentation-and-interaction)
+are peer pages.** A SelectorBar, the page switcher, follows the MenuBar and
+offers Torrents (Ctrl+1) and Library (Ctrl+2); when the search box would drop
+below 200 pixels, its items show only their icons, with the names and shortcuts
+in tooltips. Search also offers both pages. The second menu belongs to the
+current page: Torrent on Torrents, Library on Library. View shows the current
+page's presentation. File and Help do not change.
+
+On Settings and About, a Back arrow at the left of the title bar, before the
+app icon, and Alt+Left return to the page they were opened from, with the
+existing draft guards. Show in Torrents on Library also shows Back on Torrents,
+returning to Library. The arrow sits in the title bar, as in Windows
 Settings, so the page keeps its full height. Keep continuous acrylic.
 
 A second window launch forwards Open to the existing application. Check its outcome
@@ -688,9 +699,8 @@ or Delete files, and a safe Cancel action. Remove confirms because a removed
 torrent cannot be restored without its torrent file or magnet link. Delete files
 also states the file scope, that deletion is permanent, and that files other
 torrents use are kept. Deletion bypasses the Recycle Bin,
-because people delete a torrent's files to free disk space. The dialog
-opens with focus on Cancel, so Enter cannot delete data by accident. Its
-buttons follow the dialog button ruling in [Buttons](#buttons).
+because people delete a torrent's files to free disk space. The dialog's default,
+focus and buttons follow the ruling in [Buttons](#buttons).
 Routine pause, resume, and applied settings need no confirmation.
 
 Retain recognizable identity and last-known read-only values on disconnect, mark
@@ -884,6 +894,10 @@ with no page-wide Save step or confirmation on close. Keep dependent fields
 visible and disable them while inapplicable, so changing a switch does not move
 later rows. One Show advanced settings switch reveals advanced rows and cards
 across categories. Search includes those settings and reveals the chosen row.
+**Owner ruling: Settings uses the title-bar search and has no search box of its
+own.** The title-bar search already finds settings, including advanced settings;
+a second box duplicates the task and takes a row away from the settings. Keep
+the title-bar search's existing scope of torrents, commands and settings.
 The category index provides the overview, and title-bar Back returns from a
 category to that index without an extra navigation row. Keep an explicit
 editor's actions reachable. Native navigation
@@ -1168,8 +1182,8 @@ folder with each torrent's size, shows the torrent count and total size beside
 its buttons, warns that deletion is permanent, and lists outside torrents whose
 shared files will be kept. It opens at once with nothing to wait for, and
 Delete is always available, following
-[the deletion ruling](engine.md#removal-and-moves). Cancel remains its
-default button.
+[the deletion ruling](engine.md#removal-and-moves). Its default follows
+[Buttons](#buttons).
 
 Move files shows the current source folders, the chosen destination parent and
 the resulting content folders. Include shared torrents is an explicit choice;
@@ -1179,9 +1193,8 @@ pieces over those files. A refusal keeps the destination and choices. Accepted
 work appears as Moving files without a file-copy percentage; row errors direct
 the person to reopen Move files and choose the folder holding the files.
 
-The Speed view shows the [engine's session-wide speed history](engine.md#state-and-work),
-whichever torrent is selected, and its heading says All torrents, so nobody
-reads it as the selected torrent's speed. It continues while WinUI
+The Speed view shows the [selected torrent's speed history](engine.md#state-and-work)
+and replaces its graph when the selected torrent changes. It continues while WinUI
 is closed, so reopening shows what happened meanwhile. Unknown gaps, such as the
 time before an engine restart, are not interpolated into invented history.
 

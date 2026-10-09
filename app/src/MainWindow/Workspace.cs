@@ -3,6 +3,7 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Syno.TinyTorrent.Controls;
+using Syno.TinyTorrent.Helpers;
 using Syno.TinyTorrent.Models;
 using Syno.TinyTorrent.Views;
 using Windows.System;
@@ -13,6 +14,7 @@ public sealed partial class MainWindow
 {
     private SettingsPage? _settingsPage;
     private ConnectionPage? _connectionPage;
+    private readonly Motion _motion = new();
     private bool _refreshingFilters;
     private bool _selecting;
     private double _splitHeight = 360;
@@ -54,8 +56,12 @@ public sealed partial class MainWindow
             await ReturnToSettings();
             return;
         }
-        if (Model.Page == WindowPage.Settings && _settingsPage?.BackToIndex() == true)
+        if (Model.Page == WindowPage.Settings && _settingsPage?.Category is not null)
+        {
+            if (await Navigate(WindowPage.Settings))
+                _settingsPage.BackToIndex();
             return;
+        }
         await ShowTorrents();
     }
 
@@ -69,6 +75,7 @@ public sealed partial class MainWindow
             || SettingsContent.Content is not ConnectionPage)
             return;
         SettingsContent.Content = _settingsPage;
+        _motion.Play(SettingsContent);
         DispatcherQueue.TryEnqueue(
             Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,
             () =>
@@ -96,14 +103,12 @@ public sealed partial class MainWindow
             _connectionPage.ReturnRequested += async (_, _) => await ReturnToSettings();
         }
         SettingsContent.Content = _connectionPage;
+        _motion.Play(SettingsContent);
     }
 
     private async Task<bool> Navigate(WindowPage page)
     {
         if (HasDialog || Model.IsClosing || _allowClose)
-            return false;
-        if (Model.Page == WindowPage.Settings && page == WindowPage.Settings
-            && SettingsContent.Content is ConnectionPage && !await Model.Settings.Connection.Depart())
             return false;
         if (
             Model.Page == WindowPage.Torrents
@@ -111,7 +116,7 @@ public sealed partial class MainWindow
             && !await LeaveInspector()
         )
             return false;
-        if (Model.Page == WindowPage.Settings && page != WindowPage.Settings)
+        if (Model.Page == WindowPage.Settings)
         {
             if (!await Model.Settings.PrepareLeave())
             {
@@ -145,12 +150,22 @@ public sealed partial class MainWindow
             _settingsPage.ProxyRequested += async (_, _) => await ShowProxy();
             _settingsPage.ConnectionRequested += async (_, _) => await ShowConnection();
         }
+        var changed = !ReferenceEquals(SettingsContent.Content, _settingsPage);
         SettingsContent.Content = _settingsPage;
         _settingsPage.Navigate(target);
+        if (changed)
+            _motion.Play(SettingsContent);
     }
 
     private void UpdatePage()
     {
+        FrameworkElement content = Model.Page switch
+        {
+            WindowPage.Settings => SettingsContent,
+            WindowPage.About => AboutContent,
+            _ => Workspace,
+        };
+        var changed = content.Visibility != Visibility.Visible;
         Workspace.Visibility =
             Model.Page == WindowPage.Torrents ? Visibility.Visible : Visibility.Collapsed;
         SettingsContent.Visibility =
@@ -161,6 +176,8 @@ public sealed partial class MainWindow
             Model.Page == WindowPage.Torrents ? Visibility.Collapsed : Visibility.Visible;
         TorrentMenu.IsEnabled = Model.Page == WindowPage.Torrents;
         ViewMenu.IsEnabled = Model.Page == WindowPage.Torrents;
+        if (changed)
+            _motion.Play(content);
     }
 
     private async Task<bool> SelectTorrent(Syno.TableView.Selection? selection = null)
@@ -343,8 +360,11 @@ public sealed partial class MainWindow
             : 0;
         var maximum = Math.Max(0, Workspace.ActualHeight - toolbar - 126);
         var minimum = Math.Min(300, maximum);
+        var opening = InspectorRow.Height.Value == 0;
         Split.SetBounds(minimum, maximum, _splitHeight);
         InspectorRow.Height = new GridLength(Math.Clamp(_splitHeight, minimum, maximum));
+        if (opening && Model.Page == WindowPage.Torrents)
+            _motion.Play(InspectorSurface, 12);
     }
 
     private async Task PickSettingsFolder(Setting setting)

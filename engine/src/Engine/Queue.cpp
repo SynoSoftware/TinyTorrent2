@@ -19,7 +19,7 @@ std::vector<std::string> Engine::State::CurrentQueue() const
         {
             continue;
         }
-        auto position = torrent.handle.queue_position();
+        auto position = torrent.status.queue_position;
         if (!torrent.deleted && IsQueued(position))
         {
             positions.emplace_back(static_cast<int>(position), id);
@@ -27,17 +27,31 @@ std::vector<std::string> Engine::State::CurrentQueue() const
     }
     std::stable_sort(positions.begin(), positions.end());
     std::vector<std::string> order;
+    // Status positions can still precede the last accepted queue move.
+    for (auto const& id : queueOrder)
+    {
+        if (std::any_of(positions.begin(), positions.end(),
+            [&id](auto const& entry) { return entry.second == id; }))
+        {
+            order.push_back(id);
+        }
+    }
     for (auto const& [position, id] : positions)
     {
-        order.push_back(id);
+        if (!Contains(order, id))
+        {
+            order.push_back(id);
+        }
     }
     return order;
 }
 
 void Engine::State::ApplyQueue()
 {
+    queuePending = false;
     std::erase_if(queueOrder, [this](auto const& id) { return !torrents.contains(id) || torrents.at(id).deleted; });
-    for (auto const& id : CurrentQueue())
+    auto order = CurrentQueue();
+    for (auto const& id : order)
     {
         if (!Contains(queueOrder, id))
         {
@@ -45,21 +59,19 @@ void Engine::State::ApplyQueue()
         }
     }
     int position = 0;
-    for (auto const& id : queueOrder)
+    for (auto const& id : order)
     {
-        if (!torrents.at(id).restore && IsQueued(torrents.at(id).handle.queue_position()))
-        {
-            torrents.at(id).handle.queue_position_set(lt::queue_position_t(position++));
-        }
+        torrents.at(id).handle.queue_position_set(lt::queue_position_t(position++));
     }
 }
 
 void Engine::State::Queue(std::vector<std::string> const& ids, QueueMove move, std::string const& before,
     Reply reply)
 {
+    auto order = CurrentQueue();
     for (auto const& id : ids)
     {
-        if (torrents.at(id).restore || !IsQueued(torrents.at(id).handle.queue_position()))
+        if (!Contains(order, id))
         {
             reply(Failure(ErrorCode::InvalidTorrents));
             return;
@@ -71,7 +83,7 @@ void Engine::State::Queue(std::vector<std::string> const& ids, QueueMove move, s
         reply(Failure(ErrorCode::InvalidTorrents));
         return;
     }
-    auto order = Reorder(CurrentQueue(), ids, move, before);
+    order = Reorder(std::move(order), ids, move, before);
     auto document = Saved();
     document.queueOrder = order;
     changes.Commit(document.ToJson(), reply, [this, order]

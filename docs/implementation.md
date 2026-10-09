@@ -1257,9 +1257,9 @@ records the ruling and the arrangement that replaced vcpkg.
 
 ## Wire representation
 
-Protocol version 8 uses a four-byte little-endian UTF-8 JSON frame length,
+Protocol version 11 uses a four-byte little-endian UTF-8 JSON frame length,
 bounded to 16 MiB. The endpoint is `TinyTorrent.<logon SID>`; each connecting
-client first receives `{type:"hello",version:10,session_id:"...",data_directory:"..."}`. The absolute data directory
+client first receives `{type:"hello",version:11,session_id:"...",data_directory:"..."}`. The absolute data directory
 keeps the same store for explicit Restart, which starts the engine beside the
 window rather than a path a pipe peer reports. Requests are
 `{request_id:integer,command:string,...}`. Replies repeat `request_id` and have
@@ -1629,6 +1629,21 @@ also still needs its rendered review. No milestone completion is claimed by
 these source and compilation checks, and Move and delete files remains next.
 
 ## Inspector engine integration
+
+Protocol version 11 adds an optional integer `context` to a `torrent` request
+with `view`. This display request replies immediately with `context` and `ready`
+in its data, then sends one fresh result as
+`{type:"detail",session_id,torrent_id,context,ok,data}` (or `error` on failure).
+The usual reply wrapper also supplies the originating `request_id`; the window
+routes `type` first, so this update cannot complete another request. A warm
+reply can be ready while its refresh is still being collected. The pushed
+result arrives as soon as the needed answers arrive, without another poll.
+Missing peers, trackers, magnet, file priorities, progress and disk paths are
+null; Pieces omits its map until the complete set exists. A `torrent` request
+with `release:true` withdraws that connection's display demand. Requests without
+`context` retain complete-data semantics, including action callers with a view.
+Speed's first `history` request sets `release_detail:true`, so switching away
+from torrent detail releases it even if an unsent standalone release is replaced.
 
 `torrent` accepts `view`: `general`, `files`, `peers`, `trackers`, or `pieces`.
 Each reply identifies `session_id` and `torrent_id` and collects only that view.

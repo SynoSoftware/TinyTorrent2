@@ -53,6 +53,18 @@ enum class TorrentView
     Pieces
 };
 
+// A part of a torrent's detail that one libtorrent query answers.
+enum class DetailKind
+{
+    Trackers,
+    Peers,
+    Progress,
+    Priorities,
+    Status,
+    Availability,
+    Downloading
+};
+
 enum class QueueMove
 {
     Up,
@@ -91,27 +103,28 @@ enum class AdditionPhase
 
 enum class MovePhase
 {
-    Preparing,
-    Waiting,
-    Checking,
+    Staging,
+    Preflight,
+    Ready,
     Moving,
-    Saving,
-    Unknown
+    Observing,
+    Saving
 };
 
 enum class RenamePhase
 {
-    Waiting,
-    Flushing,
+    Ready,
     Moving,
     Naming,
-    Recovering
+    Recovering,
+    Observing
 };
 
 enum class NamePhase
 {
     Pending,
     Preparing,
+    Recovering,
     Ready
 };
 
@@ -121,6 +134,7 @@ enum class NamePhase
 enum class CompletionPhase
 {
     Idle,
+    Downloading,
     Flushing,
     Settling,
     Checking,
@@ -285,7 +299,6 @@ enum class ProblemKind
     MoveInterrupted,
     MoveFailed,
     DestinationExists,
-    MoveUncertain,
     AliasConflict,
     TorrentError,
     StorageFailed,

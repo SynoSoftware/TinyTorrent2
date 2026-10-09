@@ -37,6 +37,7 @@ internal sealed class PipeClient : IDisposable
     private TaskCompletionSource<JsonElement>? _reply;
     private long _requestId;
     private long _awaitingId;
+    private bool _awaitingCommand;
     private bool _connected;
     private bool _disposed;
     private bool _hasConnected;
@@ -96,6 +97,8 @@ internal sealed class PipeClient : IDisposable
     internal event Action<string>? Disconnected;
     internal event Action<string>? Control;
     internal event Action<JsonElement>? Notice;
+    internal event Action<JsonElement>? Detail;
+    internal event Action? CommandCompleted;
 
     internal PipeClient(Strings strings) => _strings = strings;
 
@@ -387,6 +390,7 @@ internal sealed class PipeClient : IDisposable
                 TaskCreationOptions.RunContinuationsAsynchronously
             );
             _awaitingId = requestId;
+            _awaitingCommand = command.Consumer is null && command.Name != "snapshot";
             await Write(pipe, fields, deadline.Token);
             var reply = await _reply.Task.WaitAsync(deadline.Token);
             var data = ReadOutcome(reply, _strings, command.Name);
@@ -438,12 +442,18 @@ internal sealed class PipeClient : IDisposable
                         Control?.Invoke(type.GetString()!);
                     else if (type.GetString() == "notice")
                         Notice?.Invoke(message);
+                    else if (type.GetString() == "detail")
+                        Detail?.Invoke(message);
                 }
                 else if (
                     message.TryGetProperty("request_id", out var id)
                     && id.GetInt64() == _awaitingId
                 )
+                {
+                    if (_awaitingCommand)
+                        CommandCompleted?.Invoke();
                     _reply?.TrySetResult(message);
+                }
             }
         }
         catch (Exception error)
@@ -469,7 +479,7 @@ internal sealed class PipeClient : IDisposable
             TokenImpersonationLevel.Identification
         );
 
-    private static JsonElement ReadOutcome(JsonElement reply, Strings strings, string command)
+    internal static JsonElement ReadOutcome(JsonElement reply, Strings strings, string command)
     {
         if (!reply.GetProperty("ok").GetBoolean())
         {
@@ -497,7 +507,7 @@ internal sealed class PipeClient : IDisposable
             var hello = await Read(pipe, deadline.Token);
             if (
                 hello.GetProperty("type").GetString() != "hello"
-                || hello.GetProperty("version").GetInt32() != 10
+                || hello.GetProperty("version").GetInt32() != 11
             )
                 throw new InvalidDataException(strings.Get("connection", "version"));
             return hello;

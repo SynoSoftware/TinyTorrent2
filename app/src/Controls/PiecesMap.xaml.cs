@@ -126,10 +126,8 @@ public sealed partial class PiecesMap : UserControl
             foreach (var kind in Enum.GetValues<PieceKind>())
             {
                 labels[(int)kind].Text = Pieces.Name(text, kind);
-                totals[(int)kind].Text = (counts?[(int)kind] ?? 0).ToString(
-                    "N0",
-                    CultureInfo.CurrentCulture
-                );
+                totals[(int)kind].Text = counts is null ? "—" :
+                    counts[(int)kind].ToString("N0", CultureInfo.CurrentCulture);
             }
             AutomationProperties.SetName(this, text.Get("inspector", "pieces"));
             Refresh();
@@ -556,7 +554,9 @@ public sealed partial class PiecesMap : UserControl
             ? -1
             : Array.FindIndex(layout.Blocks, block => block.End > _selectedPiece);
 
-    private Conclusion Conclude(Strings text) => _data?.Conclude(text) ?? Pieces.Waiting(text);
+    private Conclusion Conclude(Strings text) => _data?.Conclude(text) ?? new(
+        text.Get("pieces", "loading"), text.Get("pieces", "loading_reason"),
+        InfoBarSeverity.Informational);
 
     // Clear drops the layout whenever Show drops the data.
     private PieceDetail Describe(Block block, Strings text) =>

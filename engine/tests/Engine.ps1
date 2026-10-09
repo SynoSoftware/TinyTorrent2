@@ -65,7 +65,7 @@ function Connect-Pipe {
         throw 'TinyTorrent is already running. The check refuses to command an engine it did not start.'
     }
     $hello = Read-Frame $stream
-    Assert ($hello.type -eq 'hello' -and $hello.version -eq 10) 'Invalid version handshake'
+    Assert ($hello.type -eq 'hello' -and $hello.version -eq 11) 'Invalid version handshake'
     return $stream
 }
 
@@ -75,7 +75,7 @@ function Send-Command([hashtable] $fields) {
     $header = [BitConverter]::GetBytes([int]$bytes.Length)
     $script:pipe.Write($header, 0, 4)
     $script:pipe.Write($bytes, 0, $bytes.Length)
-    $reply = Read-Frame $script:pipe
+    do { $reply = Read-Frame $script:pipe } while ($reply.type -eq 'detail')
     Assert ($reply.request_id -eq $fields.request_id) 'Reply belongs to another request'
     return $reply
 }

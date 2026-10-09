@@ -54,7 +54,6 @@ char const* ToString(ProblemKind kind)
     case ProblemKind::MoveInterrupted: return "move_interrupted";
     case ProblemKind::MoveFailed: return "move_failed";
     case ProblemKind::DestinationExists: return "destination_exists";
-    case ProblemKind::MoveUncertain: return "move_uncertain";
     case ProblemKind::AliasConflict: return "alias_conflict";
     case ProblemKind::TorrentError: return "torrent_error";
     case ProblemKind::StorageFailed: return "storage_failed";
@@ -171,23 +170,11 @@ Json Files(std::shared_ptr<lt::torrent_info const> const& metadata)
     return files;
 }
 
-std::vector<std::filesystem::path> Paths(lt::torrent_info const& metadata)
-{
-    std::vector<std::filesystem::path> paths;
-    auto const& files = metadata.layout();
-    for (auto index : files.file_range())
-    {
-        if (!files.pad_file_at(index))
-        {
-            paths.push_back(Wide(files.file_path(index)));
-        }
-    }
-    return paths;
-}
-
 std::vector<std::filesystem::path> Torrent::Paths(bool logical) const
 {
-    auto metadata = restore ? restore->ti : handle.torrent_file();
+    auto metadata = restore ? restore->ti : names ? names->metadata : nullptr;
+    if (logical && !restore)
+        metadata = handle.torrent_file();
     if (!metadata)
     {
         return {};
@@ -200,18 +187,16 @@ std::vector<std::filesystem::path> Torrent::Paths(bool logical) const
                 paths.push_back(Wide(ContentPath(metadata->layout(), index, facts.layout)));
         return paths;
     }
-    lt::renamed_files renames;
+    lt::renamed_files restored;
     if (restore)
-        renames.import_filenames(metadata->layout(), restore->renamed_files);
-    else
-        renames = handle.get_renamed_files();
-    lt::filenames names(metadata->layout(), renames);
+        restored.import_filenames(metadata->layout(), restore->renamed_files);
+    lt::filenames files(metadata->layout(), restore ? restored : names->mappings);
     std::vector<std::filesystem::path> paths;
-    for (auto index : names.file_range())
+    for (auto index : files.file_range())
     {
         if (!metadata->layout().pad_file_at(index))
         {
-            paths.push_back(Wide(names.file_path(index)));
+            paths.push_back(Wide(files.file_path(index)));
         }
     }
     return paths;
@@ -369,8 +354,7 @@ std::vector<std::string> Torrent::Hashes() const
 std::string Torrent::Folder() const
 {
     std::filesystem::path folder = Wide(facts.savePath);
-    auto metadata = restore ? restore->ti : handle.torrent_file();
-    auto paths = metadata ? tt::Paths(*metadata) : std::vector<std::filesystem::path>{};
+    auto paths = Paths(true);
     if (paths.size() == 1)
     {
         return Utf8((folder / paths.front()).parent_path().wstring());
@@ -431,7 +415,12 @@ std::optional<Problem> Torrent::Diagnose() const
 
 bool Torrent::FilesBusy() const
 {
-    return moving || namePhase == NamePhase::Preparing || !renaming.empty();
+    return moving || namePhase == NamePhase::Preparing || namePhase == NamePhase::Recovering || !renaming.empty();
+}
+
+bool Torrent::MoveBlocked() const
+{
+    return moveError && moveError->refusal != ErrorCode::MetadataUnavailable;
 }
 
 Status Torrent::Classify(bool sessionPaused) const
@@ -465,7 +454,7 @@ Status Torrent::Classify(bool sessionPaused) const
     {
         return Status::Queued;
     }
-    if (completionPhase == CompletionPhase::Flushing)
+    if (completionPhase == CompletionPhase::Downloading || completionPhase == CompletionPhase::Flushing)
     {
         return Status::Downloading;
     }
@@ -487,15 +476,21 @@ bool Torrent::IsChanged() const
 
 void Torrent::Update(lt::torrent_status latest)
 {
-    receivedPayload |= latest.total_payload_download > status.total_payload_download;
+    receivedPayload |= completionPhase == CompletionPhase::Downloading &&
+        latest.total_payload_download > status.total_payload_download;
     status = std::move(latest);
 }
 
-Json Torrent::Describe() const
+std::vector<lt::announce_entry> const& Torrent::Trackers() const
+{
+    return facts.trackers ? *facts.trackers : sourceTrackers;
+}
+
+Json Torrent::Describe(Detail const& detail, std::shared_ptr<lt::torrent_info const> const& metadata) const
 {
     auto data = facts.ToJson();
-    data.update(Describe(TorrentView::General, false));
-    data.update(Describe(TorrentView::Files, false));
+    data.update(Describe(TorrentView::General, false, detail, metadata));
+    data.update(Describe(TorrentView::Files, false, detail, metadata));
     if (facts.trackers)
     {
         data["trackers"] = Urls(*facts.trackers);
@@ -505,13 +500,11 @@ Json Torrent::Describe() const
 
 namespace
 {
-Json DescribePeers(lt::torrent_handle const& handle)
+Json DescribePeers(std::vector<lt::peer_info> const& peers)
 {
-    std::vector<lt::peer_info> infos;
-    handle.get_peer_info(infos);
     Json data;
     data["peers"] = Json::array();
-    for (auto const& peer : infos)
+    for (auto const& peer : peers)
     {
         std::string address;
         auto transport = bool(peer.flags & lt::peer_info::utp_socket) ? "utp" : "tcp";
@@ -607,21 +600,21 @@ Json DescribeTracker(lt::announce_entry const& tracker, lt::info_hash_t const& h
         {"message", message}};
 }
 
-Json DescribeTrackers(lt::torrent_handle const& handle)
+Json DescribeTrackers(std::vector<lt::announce_entry> const& trackers, lt::info_hash_t const& hashes)
 {
     Json data;
     data["trackers"] = Json::array();
     auto now = lt::clock_type::now();
     auto wall = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-    auto hashes = handle.info_hashes();
-    for (auto const& tracker : handle.trackers())
+    for (auto const& tracker : trackers)
     {
         data["trackers"].push_back(DescribeTracker(tracker, hashes, now, wall));
     }
     return data;
 }
 
-Json DescribeGeneral(Torrent const& torrent, std::shared_ptr<lt::torrent_info const> const& metadata)
+Json DescribeGeneral(Torrent const& torrent, std::shared_ptr<lt::torrent_info const> const& metadata,
+    std::vector<lt::announce_entry> const& trackers)
 {
     auto name = torrent.Name();
     Json data;
@@ -638,13 +631,13 @@ Json DescribeGeneral(Torrent const& torrent, std::shared_ptr<lt::torrent_info co
     magnet.ti = metadata;
     magnet.info_hashes = metadata ? metadata->info_hashes() : torrent.handle.info_hashes();
     magnet.name = name;
-    magnet.trackers = Urls(torrent.handle.trackers());
+    magnet.trackers = Urls(trackers);
     data["magnet"] = lt::make_magnet_uri(magnet);
     return data;
 }
 
-Json DescribeFiles(lt::torrent_handle const& handle,
-    std::shared_ptr<lt::torrent_info const> const& metadata)
+Json DescribeFiles(Torrent const& torrent, std::shared_ptr<lt::torrent_info const> const& metadata, Detail const& detail,
+    std::chrono::steady_clock::time_point since)
 {
     Json data;
     data["files"] = Files(metadata);
@@ -652,59 +645,44 @@ Json DescribeFiles(lt::torrent_handle const& handle,
     {
         return data;
     }
-    auto priorities = handle.get_file_priorities();
-    auto progress = handle.file_progress();
-    auto renames = handle.get_renamed_files();
-    lt::filenames names(metadata->layout(), renames);
     for (auto& file : data["files"])
     {
         auto index = file.at("index").get<size_t>();
-        file["disk_path"] = names.file_path(lt::file_index_t(static_cast<int>(index)));
-        file["downloaded"] = index < progress.size() ? progress[index] : 0;
-        if (index < priorities.size())
-        {
-            file["priority"] = static_cast<std::uint8_t>(priorities[index]);
-        }
+        file["disk_path"] = detail.Has(DetailKind::Status, since) && torrent.names ?
+            Json(torrent.names->mappings.file_path(metadata->layout(),
+                lt::file_index_t(static_cast<int>(index)))) : Json();
+        file["downloaded"] = detail.Has(DetailKind::Progress, since) && index < detail.progress.size() ?
+            Json(detail.progress[index]) : Json();
+        file["priority"] = detail.Has(DetailKind::Priorities, since) && index < detail.priorities.size() ?
+            Json(static_cast<std::uint8_t>(detail.priorities[index])) : Json();
     }
     return data;
 }
 
-Json DescribePieces(lt::torrent_handle const& handle,
-    std::shared_ptr<lt::torrent_info const> const& metadata, bool includeFiles)
+Json DescribePieces(Torrent const& torrent, std::shared_ptr<lt::torrent_info const> const& metadata,
+    Detail const& detail, bool includeFiles)
 {
-    auto current = handle.status(lt::torrent_handle::query_pieces);
+    auto const& current = detail.status;
     auto count = metadata ? metadata->num_pieces() : 0;
     Json data;
     data["piece_size"] = metadata ? metadata->piece_length() : 0;
-    data["peer_count"] = current.num_peers;
+    data["peer_count"] = torrent.status.num_peers;
     data["verified"] = Json::array();
     for (int index = 0; index < count; ++index)
     {
         data["verified"].push_back(current.is_seeding ||
             (index < current.pieces.size() && current.pieces[lt::piece_index_t(index)]));
     }
-    std::vector<int> availability;
-    if (metadata)
-    {
-        handle.piece_availability(availability);
-    }
+    auto availability = detail.availability;
     availability.resize(count, 0);
     data["availability"] = std::move(availability);
     data["downloading"] = Json::array();
     if (metadata)
     {
-        // The borrowed block arrays stay valid until the next queue query.
-        for (auto const& piece : handle.get_download_queue())
+        for (auto const& [index, bytes] : detail.downloading)
         {
-            std::int64_t bytes = 0;
-            for (int index = 0; index < piece.blocks_in_piece; ++index)
-            {
-                auto const& block = piece.blocks[index];
-                bytes += block.state == lt::block_info::writing || block.state == lt::block_info::finished ?
-                    block.block_size : block.bytes_progress;
-            }
-            data["downloading"].push_back({{"index", static_cast<int>(piece.piece_index)},
-                {"progress", std::clamp(double(bytes) / metadata->piece_size(piece.piece_index), 0.0, 1.0)}});
+            data["downloading"].push_back({{"index", static_cast<int>(index)},
+                {"progress", std::clamp(double(bytes) / metadata->piece_size(index), 0.0, 1.0)}});
         }
     }
     if (includeFiles)
@@ -732,26 +710,38 @@ Json DescribePieces(lt::torrent_handle const& handle,
 }
 }
 
-Json Torrent::Describe(TorrentView view, bool includeFiles) const
+Json Torrent::Describe(TorrentView view, bool includeFiles, Detail const& detail,
+    std::shared_ptr<lt::torrent_info const> const& metadata,
+    std::chrono::steady_clock::time_point since) const
 {
-    auto metadata = handle.torrent_file();
     Json data = {{"torrent_id", torrentId}, {"metadata_ready", bool(metadata)}};
     switch (view)
     {
     case TorrentView::Peers:
-        data.update(DescribePeers(handle));
+        if (detail.Has(DetailKind::Peers, since))
+            data.update(DescribePeers(detail.peers));
+        else
+            data["peers"] = nullptr;
         break;
     case TorrentView::Trackers:
-        data.update(DescribeTrackers(handle));
+        if (detail.Has(DetailKind::Trackers, since))
+            data.update(DescribeTrackers(detail.trackers, handle.info_hashes()));
+        else
+            data["trackers"] = nullptr;
         break;
     case TorrentView::General:
-        data.update(DescribeGeneral(*this, metadata));
+        data.update(DescribeGeneral(*this, metadata, detail.trackers));
+        if (!detail.Has(DetailKind::Trackers, since))
+            data["magnet"] = nullptr;
         break;
     case TorrentView::Files:
-        data.update(DescribeFiles(handle, metadata));
+        data.update(DescribeFiles(*this, metadata, detail, since));
         break;
     case TorrentView::Pieces:
-        data.update(DescribePieces(handle, metadata, includeFiles));
+        if (!metadata || (detail.Has(DetailKind::Status, since) &&
+            detail.Has(DetailKind::Availability, since) &&
+            detail.Has(DetailKind::Downloading, since)))
+            data.update(DescribePieces(*this, metadata, detail, includeFiles));
         break;
     }
     return data;
@@ -778,9 +768,21 @@ Json Torrent::Row(bool sessionPaused) const
         {"swarm_leecher_count", status.num_incomplete >= 0 ? status.num_incomplete : status.list_peers - status.list_seeds},
         {"downloaded", status.all_time_download}, {"uploaded", status.all_time_upload},
         {"queue", static_cast<int>(status.queue_position)},
-        {"complete", status.has_metadata && status.is_finished && completionPhase != CompletionPhase::Flushing &&
+        {"complete", status.has_metadata && status.is_finished && completionPhase != CompletionPhase::Downloading &&
+            completionPhase != CompletionPhase::Flushing &&
             completionPhase != CompletionPhase::Checking},
         {"incoming", status.has_incoming}, {"hashes", Hashes()}};
+}
+
+std::vector<lt::download_priority_t> Torrent::ChosenPriorities(
+    std::shared_ptr<lt::torrent_info const> const& metadata) const
+{
+    auto priorities = facts.priorities;
+    if (!metadata)
+        std::fill(priorities.begin(), priorities.end(), lt::dont_download);
+    if (priorities.empty() && metadata)
+        priorities = DefaultPriorities(metadata->layout(), facts.skipPatterns);
+    return priorities;
 }
 
 void Torrent::ApplyIntent()
@@ -794,21 +796,15 @@ void Torrent::ApplyIntent()
     // The saved limits also replace those a resume file restored.
     handle.set_download_limit(facts.downloadLimit);
     handle.set_upload_limit(facts.uploadLimit);
+    auto metadata = handle.torrent_file();
     if (deleted || !conflict.empty() || moving || !facts.moveDestination.empty() ||
-        (handle.torrent_file() && namePhase != NamePhase::Ready))
+        (metadata && namePhase != NamePhase::Ready))
     {
         handle.unset_flags(lt::torrent_flags::auto_managed);
         handle.pause();
         return;
     }
-    auto metadata = handle.torrent_file();
-    auto priorities = facts.priorities;
-    if (!metadata)
-        std::fill(priorities.begin(), priorities.end(), lt::dont_download);
-    if (priorities.empty() && metadata)
-    {
-        priorities = DefaultPriorities(metadata->layout(), facts.skipPatterns);
-    }
+    auto priorities = ChosenPriorities(metadata);
     handle.prioritize_files(priorities);
     if (facts.intent == Intent::Paused || (metadata && facts.priorities.empty() &&
         std::none_of(priorities.begin(), priorities.end(),
@@ -836,7 +832,7 @@ void Torrent::ApplyIntent()
 // libtorrent gives it. With firstLast the end pieces of each wanted file get
 // the top priority: qBittorrent's 1 % of the file at each end, at least one
 // piece, which covers a media header and an AVI index.
-void Torrent::PrioritizePieces() const
+void Torrent::PrioritizePieces(std::vector<lt::download_priority_t> const& priorities) const
 {
     if (restore)
     {
@@ -848,7 +844,6 @@ void Torrent::PrioritizePieces() const
         return;
     }
     auto const& files = metadata->layout();
-    auto priorities = handle.get_file_priorities();
     std::int64_t length = files.piece_length();
     std::vector<lt::download_priority_t> pieces(metadata->num_pieces(), lt::dont_download);
     for (auto index : files.file_range())
@@ -879,7 +874,7 @@ void Torrent::PrioritizePieces() const
     handle.prioritize_pieces(pieces);
 }
 
-void Torrent::Checkpoint(bool exiting)
+void Torrent::Checkpoint(bool force)
 {
     if (restore)
     {
@@ -888,9 +883,9 @@ void Torrent::Checkpoint(bool exiting)
     }
     checkpointPhase = CheckpointPhase::Requested;
     auto flags = lt::torrent_handle::save_info_dict;
-    // After a failed save libtorrent has already cleared its change flags,
-    // and Exit saves everything, so both save without checking for change.
-    if (!exiting && !checkpointError)
+    // Failed saves and discarded snapshots have already cleared the change
+    // flags; a forced checkpoint must still produce fresh resume data.
+    if (!force && !checkpointError)
     {
         flags |= dirty;
         if (status.all_time_upload != savedUploaded)

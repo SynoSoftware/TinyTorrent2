@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using Microsoft.UI.Xaml.Controls;
 using Syno.TinyTorrent.Models;
 using Syno.TinyTorrent.Services;
 
@@ -162,4 +163,17 @@ public sealed class SpeedLimit : INotifyPropertyChanged
     }
 
     private sealed record Field(string Input, bool IsMixed);
+}
+
+public sealed partial class SpeedLimitDialog : UserControl
+{
+    public MainViewModel Model { get; }
+
+    public SpeedLimitDialog(MainViewModel model)
+    {
+        Model = model;
+        InitializeComponent();
+    }
+
+    internal void RefreshText() => Bindings.Update();
 }

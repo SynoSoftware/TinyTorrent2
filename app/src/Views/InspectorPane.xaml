@@ -232,7 +232,7 @@
         />
       </Button>
     </Grid>
-    <Grid Grid.Row="1" Padding="16,8,16,12">
+    <Grid x:Name="SectionContent" Grid.Row="1" Padding="16,8,16,12">
       <Grid>
         <ScrollViewer
           x:Name="General"
