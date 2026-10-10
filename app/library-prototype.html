@@ -3,10 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Library layout prototype</title>
+<title>Library details — design prototype</title>
 <!-- PROTOTYPE, throw away. The Library page inside the real product window (title bar, menus, global search,
      status bar and InfoBars from app/src/MainWindow.xaml). Open this file directly; every file, title and outcome is
-     sample data in memory, and nothing reaches a network or the disk. -->
+     sample data in memory, and nothing reaches a network or the disk.
+     Three Info compositions in the same Library shell, switchable with ?variant=A, B or C. -->
 <style>
 * { box-sizing:border-box; }
 :root { color-scheme:light; --page:#f3f3f3; --card:#fbfbfb; --ctl:#fdfdfd; --ctlBorder:#e5e5e5; --ctlLine:#868686; --text:#1a1a1a; --muted:#5f5f5f;
@@ -28,7 +29,7 @@ svg.i { width:16px; height:16px; flex:none; fill:none; stroke:currentColor; stro
 
 /* prototype marker and controls: deliberately not Fluent, so they never read as part of the design */
 .proto-top { max-width:1600px; margin:0 auto 4px; padding:6px 12px; background:#0b0b0b; border-radius:0 0 8px 8px; font:12px/16px Consolas,monospace; color:#ffd479; text-align:center; }
-.proto { position:fixed; left:50%; bottom:10px; transform:translateX(-50%); z-index:50; display:flex; gap:8px; align-items:center; padding:6px 10px;
+.proto { position:relative; margin:8px auto; z-index:50; display:flex; gap:8px; align-items:center; padding:6px 10px;
   border-radius:999px; background:#0b0b0b; color:#fff; border:1px solid #ffd479; box-shadow:0 8px 24px rgb(0 0 0 / .5); font:12px/16px Consolas,monospace; white-space:nowrap; width:max-content; max-width:calc(100vw - 16px); flex-wrap:wrap; justify-content:center; border-radius:16px; }
 .proto button, .proto select { background:#262626; color:#fff; border:1px solid #555; border-radius:999px; padding:3px 10px; font:inherit; }
 .proto .sep { width:1px; height:18px; background:#555; flex:none; }
@@ -48,7 +49,21 @@ svg.i { width:16px; height:16px; flex:none; fill:none; stroke:currentColor; stro
 .cap { width:46px; height:48px; flex:none; display:grid; place-items:center; border:0; background:transparent; border-radius:0; }
 .cap:hover { background:var(--hover); } .cap.close:hover { background:#c42b1c; color:#fff; }
 .cap svg { width:16px; height:16px; } .cap.win svg { width:12px; height:12px; stroke-width:1.4; }
-.appicon { width:24px; height:24px; margin:0 8px 0 16px; flex:none; border-radius:5px; background:linear-gradient(160deg,#00e5ff,#0075ff 55%,#0000b4); }
+.appicon { margin-left:8px; color:var(--accentText); perspective:48rem; }
+.appicon:hover, .appicon:focus-visible { background:transparent; }
+.appicon .icon-scene { position:relative; width:24px; height:24px; transform:rotateY(0deg); transform-style:preserve-3d; transition:transform 220ms cubic-bezier(.4,0,.2,1); }
+.appicon .icon-face { position:absolute; inset:0; display:grid; place-items:center; backface-visibility:hidden; }
+.appicon .icon-face.back { transform:rotateY(180deg); }
+.appicon img, .appicon svg { display:block; width:24px; height:24px; object-fit:contain; }
+.appicon.library .icon-scene { transform:rotateY(180deg); }
+.appicon:not(.held):focus-visible .icon-scene { transform:rotateY(180deg); }
+.appicon.library:not(.held):focus-visible .icon-scene { transform:rotateY(0deg); }
+@media (hover:hover) {
+  .appicon:not(.held):hover .icon-scene { transform:rotateY(180deg); }
+  .appicon.library:not(.held):hover .icon-scene { transform:rotateY(0deg); }
+}
+.appicon.held .icon-scene { transition:none; }
+@media (prefers-reduced-motion:reduce) { .appicon .icon-scene { transition:none; } }
 .menubar { display:flex; gap:0; flex:none; }
 .menubar button { height:32px; padding:0 10px; border:0; border-radius:4px; background:transparent; }
 .menubar button:hover:not(:disabled), .menubar button.on { background:var(--hover); }
@@ -71,7 +86,8 @@ svg.i { width:16px; height:16px; flex:none; fill:none; stroke:currentColor; stro
   white-space:nowrap; cursor:default; flex:none; }
 .btn:hover:not(:disabled) { background:var(--card); } .btn:disabled { opacity:.45; }
 .btn.accent { background:var(--accent); border-color:var(--accent); color:var(--onAccent); } .btn.accent:hover:not(:disabled) { filter:brightness(1.08); background:var(--accent); }
-.btn.subtle { background:transparent; border-color:transparent; } .btn.subtle:hover:not(:disabled) { background:var(--hover); }
+.btn.subtle { background:transparent; border:0; } .btn.subtle:hover:not(:disabled) { background:var(--hover); }
+.btn[data-fly=more] svg.i { width:20px; height:20px; }
 .btn.icon { width:32px; padding:0; justify-content:center; }
 .btn.on { background:var(--sel); }
 .btn .chev { width:12px; height:12px; color:var(--muted); }
@@ -84,10 +100,6 @@ input.tx:focus { outline:0; border-bottom:2px solid var(--accent); background:va
 .selbar button { position:relative; height:36px; padding:0 12px; border:0; border-radius:4px; background:transparent; white-space:nowrap; color:var(--text); display:inline-flex; align-items:center; gap:6px; }
 .selbar button:hover:not(:disabled) { background:var(--hover); }
 .selbar button[aria-selected=true]::after { content:''; position:absolute; left:calc(50% - 8px); bottom:1px; width:16px; height:3px; border-radius:2px; background:var(--accent); }
-.selbar.pages button { height:32px; }
-.selbar.pages svg { width:16px; height:16px; }
-.selbar.pages.narrow button { padding:0 10px; }
-.selbar.pages.narrow .lbl { display:none; }
 .selbar .n { color:var(--muted); font-weight:400; font-variant-numeric:tabular-nums; }
 .link { color:var(--accentText); cursor:default; border:0; background:transparent; padding:0; text-decoration:none; }
 .link:hover { text-decoration:underline; }
@@ -157,23 +169,13 @@ input.tx:focus { outline:0; border-bottom:2px solid var(--accent); background:va
 .ih .det { color:var(--muted); white-space:nowrap; }
 .ih .hacts { justify-self:end; display:flex; gap:4px; }
 .dtabs button { height:44px; } .dtabs button:disabled { opacity:.45; }
-.ib { flex:1; min-height:0; position:relative; padding:8px 16px 12px; display:flex; }
+.ib { flex:1; min-height:0; position:relative; padding:12px 16px; display:flex; }
 .ibs { flex:1; min-height:0; overflow:auto; container-type:inline-size; scrollbar-width:thin; }
 .ib > .infobar { position:absolute; left:16px; right:16px; bottom:12px; }
 .iempty { height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; color:var(--muted); text-align:center; }
 .iempty svg { width:32px; height:32px; opacity:.6; }
-.gen { display:flex; flex-direction:column; gap:16px; margin-top:4px; }
-.grph { display:flex; align-items:center; gap:8px; }
-.grph svg { width:20px; height:20px; color:var(--accentText); flex:none; }
-.grph .gt { font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.strip { display:grid; row-gap:12px; justify-content:space-between; }
-.stat { display:flex; gap:12px; align-items:flex-start; }
-.stat > svg { width:20px; height:20px; color:var(--muted); margin-top:10px; flex:none; }
-.stat .scap { font-size:12px; line-height:16px; color:var(--muted); white-space:nowrap; }
-.stat .sv { font-size:18px; line-height:24px; white-space:nowrap; min-width:112px; user-select:text; }
-.hr { height:1px; background:var(--line); flex:none; }
-.details { display:grid; grid-template-columns:3fr 2fr; column-gap:48px; }
-@container (max-width:760px) { .details { grid-template-columns:minmax(0,1fr); column-gap:0; } }
+.details { display:grid; grid-template-columns:minmax(0,3fr) minmax(0,2fr); column-gap:48px; }
+@container (width < 760px) { .details { grid-template-columns:minmax(0,1fr); column-gap:0; } }
 .fld { display:grid; grid-template-columns:16px 120px minmax(0,1fr); column-gap:8px; align-items:center; min-height:32px; }
 .fld > svg { color:var(--muted); }
 .fld .fl { color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -181,7 +183,8 @@ input.tx:focus { outline:0; border-bottom:2px solid var(--accent); background:va
 .fld .v { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; user-select:text; }
 .fld .v .appic { width:16px; height:16px; vertical-align:-3px; margin-right:8px; }
 .fld .v.id { font:13px/20px 'Cascadia Mono',Consolas,monospace; color:var(--muted); }
-.fld.wrap { align-items:start; } .fld.wrap > svg, .fld.wrap .fl { margin-top:8px; } .fld.wrap .v { white-space:normal; padding:6px 0; }
+.fld .fl, .fld .v { padding-block:6px; }
+.fld.wrap { align-items:start; } .fld.wrap > svg { margin-top:8px; } .fld.wrap .v { white-space:normal; }
 .infobar.err { background:var(--critBg); box-shadow:none; } .infobar.err > svg { color:var(--critical); }
 
 /* InfoBar over the bottom of the workspace, above the status bar, overlaying every page */
@@ -236,16 +239,83 @@ input.tx:focus { outline:0; border-bottom:2px solid var(--accent); background:va
 .stub { margin:0 16px 8px; }
 
 
+  .preview { display:flex; flex-direction:column; gap:12px; padding-bottom:8px }
+  .preview h2 { font-size:20px; line-height:28px; font-weight:600; margin:0; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+  .preview .headline { display:flex; gap:16px; align-items:center; min-width:0 }
+  .preview .identity { flex:1; min-width:0 }
+  .preview.inspector { gap:12px; padding-bottom:0 }
+  .preview.inspector .headline { gap:8px; align-items:start }
+  .preview .inline-identity { display:flex; align-items:baseline; gap:12px; width:fit-content; max-width:100% }
+  .preview .inline-identity h2 { flex:0 1 auto }
+  .preview .inline-identity .meta { flex:none; margin:0 }
+  .preview .filter-link { color:var(--accent); text-decoration:underline; cursor:pointer }
+  .preview .genre-links { display:flex; flex-wrap:wrap; gap:4px 12px }
+  .preview .genre-links .filter-link { white-space:nowrap }
+  .preview .meta { margin-top:4px; color:var(--muted); min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+  .preview .meta span { white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+  .preview .meta svg { width:20px; height:20px }
+  .rating-cell { font-variant-numeric:tabular-nums }
+  .preview .rating-strip { display:flex; gap:32px; align-items:start; margin-bottom:12px }
+  .preview .rating-stat { min-width:80px; font-variant-numeric:tabular-nums }
+  .preview .rating-label { color:var(--muted); margin-bottom:4px; white-space:nowrap }
+  .preview .rating-value { font-size:18px; line-height:24px }
+  .preview .rating-scale { font-size:14px; color:var(--muted) }
+  .preview .refresh { align-self:start; flex:none; margin-top:0 }
+  .preview .story { margin:0; line-height:20px; user-select:text }
+  .preview .caption { display:flex; gap:8px; align-items:center; font-size:14px; line-height:20px; font-weight:600; margin:0 0 12px }
+  .preview .caption svg { width:20px; height:20px }
+  .preview .fact { min-width:0 }
+  .preview .fact .value { white-space:nowrap; text-overflow:ellipsis; overflow:hidden; user-select:text }
+  .preview .status { display:flex; gap:12px; align-items:center; min-width:0 }
+  .preview .status > svg { width:24px; height:24px; color:var(--muted); flex:none }
+  .preview .status .btn { margin-left:12px; flex:none }
+  .preview .status span { white-space:nowrap; text-overflow:ellipsis; overflow:hidden }
+  .preview .reading { display:flex; flex-direction:column; gap:16px; min-width:0 }
+  .preview .metadata { min-width:0 }
+  .preview.sections { display:grid; grid-template-columns:minmax(0,1fr) 384px; gap:12px 32px }
+  .preview.sections > .headline { grid-column:1/-1 }
+  .preview.sections .metadata:not(:empty) { border-left:1px solid var(--line); padding-left:24px }
+  .preview .section-body { display:flex; flex-direction:column; gap:20px; min-width:0 }
+  .preview .section-columns { display:grid; grid-template-columns:minmax(0,3fr) minmax(0,2fr); gap:32px }
+  .preview .cast-list { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:4px }
+  .preview .cast-list li { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; user-select:text }
+  .preview .folder { font-family:'Segoe UI',sans-serif }
+  .preview .state-note { color:var(--muted) }
+  .preview .section-title { font-size:14px; line-height:20px }
+  .preview .headline > svg { width:20px; height:20px; color:var(--accent) }
+  @container (width < 1040px) {
+    .preview .section-columns { grid-template-columns:minmax(0,1fr); gap:20px }
+    .preview .cast-list { flex-direction:row; gap:12px; flex-wrap:wrap }
+  }
+  @container (width < 760px) {
+    .preview.sections { grid-template-columns:minmax(0,1fr); gap:20px }
+    .preview.sections .metadata:not(:empty) { border-left:0; padding-left:0 }
+    .preview.summary .details { row-gap:20px }
+  }
+
+.variant-switcher { position:fixed; bottom:8px; left:50%; transform:translateX(-50%); z-index:50; display:flex; align-items:center; gap:12px;
+  padding:4px; background:#0b0b0b; color:#fff; border:1px solid #ffd479; border-radius:999px; box-shadow:0 4px 12px rgb(0 0 0 / .3); font:12px/16px Consolas,monospace; }
+.variant-switcher button { width:32px; height:32px; display:grid; place-items:center; border:0; border-radius:50%; background:#262626; color:#fff; }
+.variant-switcher button:hover { background:#444; }
+.variant-switcher output { min-width:180px; text-align:center; white-space:nowrap; }
+.variant-switcher .next svg { transform:rotate(180deg); }
+
+.insp.narrow .hacts .primary { display:none }
+.hacts .primary { display:flex; gap:4px }
 </style>
 </head>
 <body>
 <div class="proto-top" id="proto-top">THROWAWAY PROTOTYPE · Library page · sample data in memory · not the product · Ctrl+1 Torrents, Ctrl+2 Library · View menu: Videos / Music / Files, Filters · right-click a column header for columns · Menus shows every menu open</div>
-<div class="window" id="win"></div>
-<div class="tip" id="tip" hidden></div>
-<div class="sr" id="live" role="status" aria-live="polite"></div>
-<pre id="readout" hidden></pre>
-<div id="menus" hidden></div>
 <nav class="proto" aria-label="Prototype controls">
+  <label>Details state <select id="detailScene">
+    <option value="movie">Movie</option><option value="episode">Episode</option>
+    <option value="one-rating">One rating available</option><option value="no-rating">Ratings unavailable</option>
+    <option value="unidentified">Not identified</option><option value="off">Info off</option>
+    <option value="provider">Provider unavailable</option><option value="music">Music</option>
+    <option value="untagged">Music without tags</option><option value="file">File</option>
+    <option value="missing">Missing file</option><option value="empty">No selection</option>
+  </select></label>
+  <label>Details height <select id="detailHeight"><option>360</option><option>230</option><option>520</option></select></label>
   <select id="scenario" aria-label="Scenario"></select>
   <select id="outcome" aria-label="What the next Open does"></select>
   <button id="withdraw" title="Remove the selected file's torrent, as Torrents would, to see focus recovery">Remove torrent</button>
@@ -254,9 +324,28 @@ input.tx:focus { outline:0; border-bottom:2px solid var(--accent); background:va
   <label>W <input id="width" type="range" min="720" max="1600" aria-label="Window width"></label><span id="wval"></span>
   <button id="theme">Theme</button><button id="menusBtn" aria-pressed="false" title="Show every menu open, for both pages">Menus</button><button id="state" aria-pressed="false">State</button><button id="reset">Reset</button>
 </nav>
+<div class="window" id="win"></div>
+<nav class="variant-switcher" aria-label="Info layout variations">
+  <button id="variantPrev" aria-label="Previous layout" title="Previous layout (Left arrow)"></button>
+  <output id="variantLabel" aria-live="polite"></output>
+  <button id="variantNext" class="next" aria-label="Next layout" title="Next layout (Right arrow)"></button>
+</nav>
+<div class="tip" id="tip" hidden></div>
+<div class="sr" id="live" role="status" aria-live="polite"></div>
+<pre id="readout" hidden></pre>
+<div id="menus" hidden></div>
+
 <script>
+const detailLayouts = {A:'Reading',B:'Inspector',C:'Sections'};
+const params = new URLSearchParams(location.search);
+let detailLayout = Object.hasOwn(detailLayouts,params.get('variant')) ? params.get('variant') : 'B';
+let flipHeld = false;
+const ratingSources = {imdb:'IMDb',tmdb:'TMDB'};
+// Play, Pencil, Ellipsis and X outlines come from lib/Lucide/src/Fonts/lucide.ttf.
+// Their 24-unit em uses a baseline at 24; the app maps these glyphs in Lucide.cs.
 const P = {
-  search:'<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>', x:'<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  star:'<path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9z"/>',
+  search:'<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>', x:'<path fill="currentColor" stroke="none" transform="translate(0 24)" d="M5.736,-18.96C5.448,-18.864 5.232,-18.688 5.088,-18.432 5.04,-18.336 5.016,-18.192 5.016,-18 5.016,-17.808 5.04,-17.664 5.088,-17.568 5.136,-17.472 6.064,-16.52 7.872,-14.712L10.584,-12 7.872,-9.288C6.064,-7.48 5.136,-6.528 5.088,-6.432 5.04,-6.336 5.016,-6.2 5.016,-6.024 5.016,-5.848 5.036,-5.712 5.076,-5.616 5.116,-5.52 5.192,-5.416 5.304,-5.304 5.416,-5.192 5.52,-5.116 5.616,-5.076 5.712,-5.036 5.848,-5.016 6.024,-5.016 6.2,-5.016 6.336,-5.04 6.432,-5.088 6.528,-5.136 7.48,-6.064 9.288,-7.872L12,-10.584 14.712,-7.872C16.52,-6.064 17.472,-5.136 17.568,-5.088 17.664,-5.04 17.8,-5.016 17.976,-5.016 18.152,-5.016 18.288,-5.036 18.384,-5.076 18.48,-5.116 18.584,-5.192 18.696,-5.304 18.808,-5.416 18.884,-5.52 18.924,-5.616 18.964,-5.712 18.984,-5.848 18.984,-6.024 18.984,-6.2 18.96,-6.336 18.912,-6.432 18.864,-6.528 17.936,-7.48 16.128,-9.288L13.416,-12 16.128,-14.712C17.936,-16.52 18.864,-17.472 18.912,-17.568 18.96,-17.664 18.984,-17.808 18.984,-18 18.984,-18.192 18.96,-18.336 18.912,-18.432 18.8,-18.624 18.64,-18.776 18.432,-18.888 18.368,-18.92 18.312,-18.944 18.264,-18.96 18.216,-18.976 18.128,-18.984 18,-18.984 17.872,-18.984 17.784,-18.976 17.736,-18.96 17.688,-18.944 17.624,-18.92 17.544,-18.888 17.432,-18.824 16.48,-17.896 14.688,-16.104L12,-13.416 7.152,-18.24C6.8,-18.576 6.56,-18.792 6.432,-18.888 6.336,-18.952 6.224,-18.984 6.096,-18.984L6.048,-18.984C5.888,-18.984,5.784,-18.976,5.736,-18.96z"/>',
   back:'<path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>', chev:'<path d="m6 9 6 6 6-6"/>', check:'<path d="M20 6 9 17l-5-5"/>',
   film:'<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 3v18M3 7.5h4M3 12h18M3 16.5h4M17 3v18M17 7.5h4M17 16.5h4"/>',
   tv:'<rect width="20" height="15" x="2" y="7" rx="2"/><path d="m17 2-5 5-5-5"/>',
@@ -268,7 +357,7 @@ const P = {
   disc:'<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="2"/>',
   open:'<path d="M21 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h6"/><path d="m21 3-9 9"/><path d="M15 3h6v6"/>',
   identify:'<path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="12" r="3"/><path d="m16 16-1.9-1.9"/>',
-  pencil:'<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/>',
+  pencil:'<path fill="currentColor" stroke="none" transform="translate(0 24)" d="M18.864,-22.968C18.16,-22.92 17.504,-22.672 16.896,-22.224 16.72,-22.112 14.36,-19.776 9.816,-15.216 5.272,-10.656 2.936,-8.296 2.808,-8.136 2.648,-7.912 2.516,-7.652 2.412,-7.356 2.308,-7.06 2.052,-6.224 1.644,-4.848 1.236,-3.472 1.024,-2.736 1.008,-2.64 0.992,-2.496 1.004,-2.34 1.044,-2.172 1.084,-2.004 1.136,-1.864 1.2,-1.752 1.264,-1.64 1.36,-1.524 1.488,-1.404 1.616,-1.284 1.736,-1.2 1.848,-1.152 1.96,-1.104 2.088,-1.064 2.232,-1.032 2.376,-1 2.508,-0.992 2.628,-1.008 2.748,-1.024 3.536,-1.248 4.992,-1.68L7.128,-2.352C7.432,-2.448,7.64,-2.52,7.752,-2.568L7.776,-2.592C7.936,-2.672 8.12,-2.8 8.328,-2.976 8.616,-3.248 9.232,-3.848 10.176,-4.776L15.192,-9.792C19.752,-14.352 22.096,-16.72 22.224,-16.896 22.432,-17.184 22.6,-17.48 22.728,-17.784 23,-18.472 23.068,-19.176 22.932,-19.896 22.796,-20.616 22.472,-21.248 21.96,-21.792 21.56,-22.208 21.096,-22.52 20.568,-22.728 20.04,-22.936 19.472,-23.016 18.864,-22.968z M19.584,-20.952C19.904,-20.888 20.196,-20.724 20.46,-20.46 20.724,-20.196 20.888,-19.904 20.952,-19.584 21.048,-19.152 21,-18.744 20.808,-18.36 20.76,-18.264 20.684,-18.16 20.58,-18.048 20.476,-17.936 20.232,-17.68 19.848,-17.28L18.984,-16.416 16.416,-18.984 17.28,-19.848C17.68,-20.232 17.936,-20.476 18.048,-20.58 18.16,-20.684 18.264,-20.76 18.36,-20.808 18.744,-21 19.152,-21.048 19.584,-20.952z M12.312,-9.744C8.792,-6.224 6.996,-4.444 6.924,-4.404 6.852,-4.364 6.232,-4.164 5.064,-3.804 3.896,-3.444 3.304,-3.268 3.288,-3.276 3.272,-3.284 3.44,-3.872 3.792,-5.04 4.144,-6.208 4.336,-6.82 4.368,-6.876 4.4,-6.932 6.184,-8.736 9.72,-12.288L15.024,-17.592 17.568,-15.024z"/>',
   eraser:'<path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/>',
   funnel:'<path d="M10 20a1 1 0 0 0 .553.895l2 1A1 1 0 0 0 14 21v-7a2 2 0 0 1 .517-1.341L21.74 4.67A1 1 0 0 0 21 3H3a1 1 0 0 0-.742 1.67l7.225 7.989A2 2 0 0 1 10 14z"/>',
   funnelX:'<path d="M12.531 3H3a1 1 0 0 0-.742 1.67l7.225 7.989A2 2 0 0 1 10 14v6a1 1 0 0 0 .553.895l2 1A1 1 0 0 0 14 21v-7a2 2 0 0 1 .517-1.341l.427-.473"/><path d="m16.5 3.5 5 5"/><path d="m21.5 3.5-5 5"/>',
@@ -284,7 +373,7 @@ const P = {
   fileplus:'<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M9 15h6M12 18v-6"/>',
   link:'<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
   moon:'<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>', sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2m-7.07-14.93 1.41 1.41m11.32 11.32 1.41 1.41M2 12h2m16 0h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>',
-  more:'<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>',
+  more:'<path fill="currentColor" stroke="none" transform="translate(0 24)" d="M4.752,-13.968C4.448,-13.952 4.16,-13.848 3.888,-13.656 3.504,-13.4 3.244,-13.06 3.108,-12.636 2.972,-12.212 2.976,-11.788 3.12,-11.364 3.264,-10.94 3.528,-10.592 3.912,-10.32 4.216,-10.112 4.576,-10.008 4.992,-10.008 5.28,-10.008 5.532,-10.052 5.748,-10.14 5.964,-10.228 6.18,-10.38 6.396,-10.596 6.612,-10.812 6.764,-11.028 6.852,-11.244 6.94,-11.46 6.984,-11.712 6.984,-12 6.984,-12.288 6.94,-12.54 6.852,-12.756 6.764,-12.972 6.616,-13.184 6.408,-13.392 6.232,-13.568 6.064,-13.696 5.904,-13.776 5.552,-13.952 5.168,-14.016 4.752,-13.968z M11.784,-13.968C11.544,-13.952 11.328,-13.896 11.136,-13.8 10.864,-13.672 10.636,-13.492 10.452,-13.26 10.268,-13.028 10.136,-12.776 10.056,-12.504 10.024,-12.376 10.008,-12.208 10.008,-12 10.008,-11.792 10.024,-11.624 10.056,-11.496 10.152,-11.144 10.328,-10.84 10.584,-10.584 10.84,-10.328 11.144,-10.152 11.496,-10.056 11.624,-10.024 11.792,-10.008 12,-10.008 12.208,-10.008 12.376,-10.024 12.504,-10.056 12.856,-10.152 13.16,-10.328 13.416,-10.584 13.672,-10.84 13.848,-11.144 13.944,-11.496 13.976,-11.624 13.992,-11.792 13.992,-12 13.992,-12.208 13.976,-12.376 13.944,-12.504 13.864,-12.776 13.732,-13.028 13.548,-13.26 13.364,-13.492 13.136,-13.672 12.864,-13.8 12.56,-13.96 12.2,-14.016 11.784,-13.968z M18.768,-13.968C18.32,-13.936 17.92,-13.744 17.568,-13.392 17.376,-13.184 17.236,-12.972 17.148,-12.756 17.06,-12.54 17.016,-12.288 17.016,-12 17.016,-11.712 17.06,-11.456 17.148,-11.232 17.236,-11.008 17.388,-10.792 17.604,-10.584 17.82,-10.376 18.036,-10.228 18.252,-10.14 18.468,-10.052 18.72,-10.008 19.008,-10.008 19.424,-10.008 19.784,-10.112 20.088,-10.32 20.472,-10.592 20.736,-10.94 20.88,-11.364 21.024,-11.788 21.028,-12.212 20.892,-12.636 20.756,-13.06 20.492,-13.404 20.1,-13.668 19.708,-13.932 19.264,-14.032 18.768,-13.968z"/>',
   copy:'<rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
   folder:'<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
   hdd:'<path d="M22 12H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/><path d="M6 16h.01M10 16h.01"/>',
@@ -294,7 +383,7 @@ const P = {
   users:'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>',
   tag:'<path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5"/>',
   cal:'<rect width="18" height="18" x="3" y="4" rx="2"/><path d="M8 2v4M16 2v4M3 10h18"/>',
-  play:'<path d="m7 4 14 8-14 8V4Z"/>', settings:'<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/>',
+  play:'<path fill="currentColor" stroke="none" transform="translate(0 24)" d="M6.432,-21.936C5.824,-21.824 5.3,-21.544 4.86,-21.096 4.42,-20.648 4.152,-20.128 4.056,-19.536 4.024,-19.36 4.008,-16.848 4.008,-12 4.008,-7.152 4.024,-4.64 4.056,-4.464 4.152,-3.872 4.424,-3.352 4.872,-2.904 5.48,-2.28 6.232,-1.984 7.128,-2.016 7.352,-2.032 7.548,-2.06 7.716,-2.1 7.884,-2.14 8.064,-2.2 8.256,-2.28 8.4,-2.344 10.452,-3.532 14.412,-5.844 18.372,-8.156 20.448,-9.376 20.64,-9.504 20.912,-9.68 21.152,-9.9 21.36,-10.164 21.568,-10.428 21.724,-10.716 21.828,-11.028 21.932,-11.34 21.984,-11.664 21.984,-12 21.984,-12.336 21.936,-12.664 21.84,-12.984 21.616,-13.592 21.24,-14.08 20.712,-14.448 20.584,-14.544 18.528,-15.752 14.544,-18.072 10.56,-20.392 8.496,-21.592 8.352,-21.672 8.064,-21.816 7.748,-21.912 7.404,-21.96 7.06,-22.008 6.736,-22 6.432,-21.936z M7.392,-19.896C7.536,-19.848 9.612,-18.652 13.62,-16.308 17.628,-13.964 19.66,-12.764 19.716,-12.708 19.772,-12.652 19.832,-12.56 19.896,-12.432 19.928,-12.352 19.952,-12.284 19.968,-12.228 19.984,-12.172 19.992,-12.096 19.992,-12 19.992,-11.904 19.984,-11.828 19.968,-11.772 19.952,-11.716 19.928,-11.648 19.896,-11.568 19.832,-11.44 19.768,-11.344 19.704,-11.28 19.64,-11.216 17.572,-10 13.5,-7.632 9.428,-5.264 7.332,-4.064 7.212,-4.032 7.092,-4 6.976,-3.992 6.864,-4.008 6.496,-4.088 6.24,-4.28 6.096,-4.584L6.024,-4.752 6.024,-19.248 6.096,-19.416C6.208,-19.656 6.392,-19.824 6.648,-19.92 6.904,-20.016 7.152,-20.008 7.392,-19.896z"/>', settings:'<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/>',
   verify:'<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>', listx:'<path d="M11 12H3"/><path d="M16 6H3"/><path d="M16 18H3"/><path d="m19 10-4 4"/><path d="m15 10 4 4"/>',
   trash:'<path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
   clock:'<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
@@ -312,8 +401,8 @@ const norm = s => String(s ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '
 
 /* Labels only; sentences stay English. Spanish shows how much longer the controls get. */
 const STR = {
-  en:{ file:'File', torrent:'Torrent', view:'View', help:'Help', searchApp:'Search TinyTorrent', library:'Library', torrents:'Torrents',
-    searchLibPh:'Search Library', filters:'Filters', clearFilters:'Clear', clearFiltersTip:'Show all files', type:'Type', genre:'Genre', year:'Year', state:'Status',
+  en:{ file:'File', torrent:'Torrent', view:'View', help:'Help', searchApp:'Search TinyTorrent', library:'Library', torrents:'Torrents', switchPage:'Switch to',
+    searchLibPh:'Search Library', filters:'Filters', clearFilters:'Clear', clearFiltersTip:'Show all files', type:'Type', series:'Series', artist:'Artist', album:'Album', genre:'Genre', year:'Year', state:'Status',
     any:'Any', all:'All', movies:'Movies', episodes:'TV episodes', unid:'Unidentified video',
     cName:'Name', cTitle:'Title', cType:'Type', cYear:'Released', cSize:'Size', cLoc:'Folder', cArtist:'Artist', cAlbum:'Album',
     cfgVideos:'Videos', cfgMusic:'Music', cfgFiles:'Files', notId:'Not identified', cTrack:'Track', cDuration:'Duration', gMusic:'Music information', nVideos:'videos', nMusic:'audio files', nFiles:'files',
@@ -327,8 +416,8 @@ const STR = {
     gVideo:'Video information', synopsis:'Synopsis', released:'Released', aired:'Aired', premiered:'Series premiered', episodeL:'Episode', episodesL:'Episodes', original:'Original title', identification:'Identification', tagsL:'Tags', genres:'Genres', cast:'Cast',
     turnOn:'Turn on…', cancel:'Cancel', identifyBtn:'Identify', searchBtn:'Search', kindMovie:'Movie', kindSeries:'TV series', titleF:'Title', yearF:'Year',
     season:'Season', epFrom:'Episode', epTo:'to episode', retry:'Retry', details:'Details', files:'files', none:'None', clearSearch:'Clear search' },
-  es:{ file:'Archivo', torrent:'Torrent', view:'Ver', help:'Ayuda', searchApp:'Buscar en TinyTorrent', library:'Biblioteca', torrents:'Torrents',
-    searchLibPh:'Buscar en Biblioteca', filters:'Filtros', clearFilters:'Borrar', clearFiltersTip:'Mostrar todos los archivos', type:'Tipo', genre:'Género', year:'Año', state:'Estado',
+  es:{ file:'Archivo', torrent:'Torrent', view:'Ver', help:'Ayuda', searchApp:'Buscar en TinyTorrent', library:'Biblioteca', torrents:'Torrents', switchPage:'Cambiar a',
+    searchLibPh:'Buscar en Biblioteca', filters:'Filtros', clearFilters:'Borrar', clearFiltersTip:'Mostrar todos los archivos', type:'Tipo', series:'Serie', artist:'Artista', album:'Álbum', genre:'Género', year:'Año', state:'Estado',
     any:'Cualquiera', all:'Todo', movies:'Películas', episodes:'Episodios de TV', unid:'Vídeo sin identificar',
     cName:'Nombre', cTitle:'Título', cType:'Tipo', cYear:'Estreno', cSize:'Tamaño', cLoc:'Carpeta', cArtist:'Artista', cAlbum:'Álbum',
     cfgVideos:'Vídeos', cfgMusic:'Música', cfgFiles:'Archivos', notId:'Sin identificar', cTrack:'Pista', cDuration:'Duración', gMusic:'Información musical', nVideos:'vídeos', nMusic:'archivos de audio', nFiles:'archivos',
@@ -433,7 +522,7 @@ function reset(scenario = 'normal') {
   if (scenario === 'provider') { S.provider = 'fail'; for (const e of entries) if ([3, 23, 24].includes(e.id)) e.ident = {s:'pending'}; }
   if (scenario === 'identifying') for (const e of entries) if ([3, 21, 22, 23, 24].includes(e.id)) e.ident = {s:'pending'};
   S.f = S.layout.videos.f;
-  if (scenario === 'off') { S.enrichment = false; for (const e of entries) if (e.ident.s !== 'other') e.ident = {s:'none'}; }
+  if (scenario === 'off') S.enrichment = false;
   S.last = SCENARIOS[scenario];
 }
 
@@ -492,7 +581,7 @@ const sizeGroup = e => e.size === 0 ? 'sEmpty' : SIZES.find(([, max]) => e.size 
 /* Videos, Music and Files are configurations of the one Library table: a row set chosen by file category, with its own
    saved column layout, sort and filters. Nothing else on the page changes. */
 const CONFIGS = {
-  videos:{label:'cfgVideos', noun:'nVideos', has:e => isVideo(e), cols:['title', 'type', 'year', 'genres', 'cast', 'size', 'file', 'loc', 'modified'], shown:['title', 'type', 'year', 'genres'], sort:{key:'title', desc:false}},
+  videos:{label:'cfgVideos', noun:'nVideos', has:e => isVideo(e), cols:['title', 'type', 'year', 'imdb', 'tmdb', 'genres', 'cast', 'size', 'file', 'loc', 'modified'], shown:['title', 'type', 'year', 'imdb', 'tmdb', 'genres'], sort:{key:'title', desc:false}},
   music:{label:'cfgMusic', noun:'nMusic', has:e => isAudio(e), cols:['title', 'artist', 'album', 'track', 'duration', 'year', 'genres', 'file', 'loc', 'size', 'modified'], shown:['title', 'artist', 'album', 'track', 'duration', 'year'], sort:{key:'artist', desc:false}},
   files:{label:'cfgFiles', noun:'nFiles', has:() => true, cols:['file', 'loc', 'size', 'modified', 'type', 'title'], shown:['file', 'loc', 'size', 'modified'], sort:{key:'file', desc:false}}
 };
@@ -501,8 +590,16 @@ const lay = () => S.layout[S.cfg];
 const typeGroup = e => ({movie:'movies', episode:'episodes'})[info(e)?.kind] || 'unid';
 /* Each configuration shows only the filter sections that apply to its files. Files follows File Explorer's search filters;
    the search box already covers the file name. */
-const SECTIONS = {videos:['type', 'genre', 'year'], music:['genre', 'year'], files:['kind', 'date', 'size']};
-const FILTERS0 = {type:'all', genre:'any', year:'any', kind:'any', date:'any', size:'any'};
+const SECTIONS = {videos:['type', 'series', 'genre', 'year'], music:['artist', 'album', 'genre', 'year'], files:['kind', 'date', 'size']};
+const FILTERS0 = {type:'all', series:'any', season:'any', artist:'any', album:'any', genre:'any', year:'any', kind:'any', date:'any', size:'any'};
+const filterSections = () => {
+  const sections = [...SECTIONS[S.cfg]];
+  if (S.f.series !== 'any') {
+    if (!sections.includes('series')) sections.push('series');
+    sections.splice(sections.indexOf('series') + 1, 0, 'season');
+  }
+  return [...sections, ...Object.keys(S.f).filter(key => !sections.includes(key) && S.f[key] !== FILTERS0[key])];
+};
 /* Audio tags are read once, through the Windows property system, when the download finishes. */
 const tags = e => isAudio(e) ? e.tags || null : null;
 const genresOf = e => info(e)?.v.genres || (tags(e)?.genre ? [tags(e).genre] : []);
@@ -561,6 +658,10 @@ const queryMatch = e => { const hay = searchText(e); return norm(S.q).split(/\s+
 function matches(e, f = S.f) {
   if (!queryMatch(e)) return false;
   if (f.type !== 'all' && typeGroup(e) !== f.type) return false;
+  if (f.series !== 'any' && (info(e)?.kind !== 'episode' || e.ident.v !== f.series)) return false;
+  if (f.season !== 'any' && info(e)?.season !== +f.season) return false;
+  if (f.artist !== 'any' && tags(e)?.artist !== f.artist) return false;
+  if (f.album !== 'any' && tags(e)?.album !== f.album) return false;
   if (f.genre !== 'any' && !genresOf(e).includes(f.genre)) return false;
   if (f.year !== 'any' && yearOf(e) !== +f.year) return false;
   if (f.kind !== 'any' && fileKind(e) !== f.kind) return false;
@@ -572,6 +673,11 @@ const anyFilter = () => Object.keys(FILTERS0).some(k => S.f[k] !== FILTERS0[k]);
 function rows() {
   const list = entries.filter(e => cfg().has(e) && matches(e)), {key:k, desc} = lay().sort;
   if (!k) return list;
+  if (Object.hasOwn(ratingSources,k)) return list.sort((a,b) => {
+    const x=rating(a,k), y=rating(b,k);
+    if (!x || !y) return x ? -1 : y ? 1 : 0;
+    return (x.value-y.value)*(desc ? -1 : 1) || shownTitle(a).localeCompare(shownTitle(b));
+  });
   const val = (e, key) => ({file:e.file, title:shownTitle(e), type:typeLabel(e), year:yearOf(e) ?? 9999, genres:genresOf(e).join(', ') || '\uffff', cast:info(e)?.v.cast.join(', ') || '\uffff', size:e.size, loc:e.dir, modified:e.mod.getTime(),
     artist:tags(e)?.artist || '\uffff', album:tags(e)?.album || '\uffff', track:tags(e)?.track ?? 9999, duration:tags(e)?.secs ?? 1e9})[key];
   /* Music sorts by artist, then album, then track, so an album plays in order; a header click changes only the first key. */
@@ -586,18 +692,27 @@ const sectionOptions = sec => {
   const selected = S.f[sec];
   const present = (order, inGroup) => order.filter(k => k === selected || mine.some(e => inGroup(e, k))).map(k => [k, T(k)]);
   if (sec === 'type') return [['all', T('all')], ['movies', T('movies')], ['episodes', T('episodes')], ['unid', T('notId')]];
+  if (sec === 'series') return [['any', T('all')], ...[...new Set([...mine.filter(e => info(e)?.kind === 'episode').map(e => e.ident.v), ...(selected === 'any' ? [] : [selected])])].sort((a,b) => CATALOG[a].title.localeCompare(CATALOG[b].title)).map(key => [key, CATALOG[key].title])];
+  if (sec === 'season') return [['any', T('all')], ...[...new Set([...mine.filter(e => e.ident.v === S.f.series).map(e => info(e)?.season).filter(value => value != null), ...(selected === 'any' ? [] : [+selected])])].sort((a,b) => a-b).map(value => [String(value), `${T('season')} ${value}`])];
+  if (sec === 'artist' || sec === 'album') return [['any', T('all')], ...[...new Set([...mine.map(e => tags(e)?.[sec]).filter(Boolean), ...(selected === 'any' ? [] : [selected])])].sort().map(value => [value, value])];
   if (sec === 'genre') return [['any', T('all')], ...[...new Set([...mine.flatMap(genresOf), ...(selected === 'any' ? [] : [selected])])].sort().map(g => [g, g])];
   if (sec === 'year') return [['any', T('all')], ...[...new Set([...mine.map(e => yearOf(e)).filter(Boolean), ...(selected === 'any' ? [] : [+selected])])].sort((a, b) => b - a).map(y => [String(y), String(y)])];
   if (sec === 'kind') return [['any', T('all')], ...present(KINDS, (e, k) => fileKind(e) === k)];
   if (sec === 'date') return [['any', T('all')], ...present(DATES, (e, k) => inDateRange(e.mod, k))];
   return [['any', T('all')], ...present(['sEmpty', ...SIZES.map(([k]) => k)], (e, k) => sizeGroup(e) === k)];
 };
-/* A count says what choosing that value would show with the other sections as they are. */
-const count = (key, value) => {
+function filterChoice(key,value,series=S.f.series) {
   const filters = {...S.f, [key]:value};
+  if (key === 'series') filters.season = 'any';
+  if (key === 'season') filters.series = series;
+  return filters;
+}
+const count = (key, value) => {
+  const filters = filterChoice(key,value);
   return entries.filter(e => cfg().has(e) && matches(e, filters)).length;
 };
 const canWrite = () => !S.disconnected;
+const hasOrigin = e => !!e?.torrent;
 const libPage = () => S.page === 'library';
 
 /* filename clues for Identify: title, year, season and episode numbers, without reading the file */
@@ -618,12 +733,6 @@ const FAIL = {missing:['Missing', () => 'Windows found no file at the recorded l
   noapp:["Couldn't open", e => `Windows has no app that opens .${ext(e).toUpperCase()} files. The file itself is still there.`]};
 /* One row of the Inspector's Field template: 16px icon, 120px label with tooltip, then the value and its icon action. */
 const field = (icon, label, text, action = '', cls = '', tip = text, lead = '') => `<div class="fld ${cls === 'wrap' ? 'wrap' : ''}">${ic(icon)}<span class="fl" title="${esc(label)}">${esc(label)}</span><span class="fv"><span class="v ${cls}" title="${esc(tip)}">${lead}${esc(text)}</span>${action}</span></div>`;
-const fieldAct = (act, label, icon, dis = false) => `<button class="btn icon subtle" data-act="${act}" aria-label="${esc(label)}" title="${esc(label)}" ${dis ? 'disabled' : ''}>${ic(icon)}</button>`;
-/* InspectorStatisticStyle: a 20px icon beside the caption, the value below it. */
-const stat = (icon, label, value, tip = '') => `<div class="stat">${ic(icon)}<div><div class="scap">${esc(label)}</div><div class="sv" ${tip ? `title="${esc(tip)}"` : ''}>${esc(value)}</div></div></div>`;
-const strip = items => `<div class="strip">${items.join('')}</div>`;
-const groupHead = (icon, text, gap) => `<div class="grph" style="margin-bottom:${gap}px">${ic(icon)}<span class="gt" role="heading" aria-level="2" title="${esc(text)}">${esc(text)}</span></div>`;
-const details = (left, right) => `<div class="details"><div>${left}</div><div>${right}</div></div>`;
 /* A short label for the card, and the explanation for its tooltip. */
 function idStatus(e) {
   const s = e.ident.s;
@@ -634,38 +743,124 @@ function idStatus(e) {
     cleared:['Cleared', 'You cleared the identification, so TinyTorrent does not identify this file automatically again.'], none:['Not identified', 'No title matched the file name.']}[s];
 }
 const moreBtn = e => `<button class="btn icon subtle" data-act="fly" data-fly="more" id="more-btn" aria-label="${T('more')}" title="${T('more')}" aria-haspopup="menu">${ic('more')}</button>`;
-const epCode = (season, n) => `S${String(season).padStart(2, '0')}E${String(n).padStart(2, '0')}`;
-/* Video information in the General tab's structure: statistics, divider, heading, two-column Field grid. */
-function videoPage(e) {
-  const i = info(e);
-  if (!i) {
-    const [label, tip] = idStatus(e), dis = !canWrite();
-    const act = !S.enrichment ? fieldAct('enable', T('turnOn'), 'identify', dis) : e.ident.s === 'pending' ? '' : fieldAct('identify', T('identify'), 'identify', dis);
-    return `<div class="gen"><div>${groupHead('video', shownTitle(e), 6)}${details(field(e.ident.s === 'pending' && S.provider === 'fail' ? 'cloudoff' : 'identify', T('identification'), label, act, '', tip), '')}</div></div>`;
-  }
-  const stats = i.kind === 'movie' ? [stat('film', T('cType'), T('movie')), stat('cal', T('released'), String(i.v.year))]
-    : [stat('tv', T('cType'), T('episode')), stat('list', i.eps.length > 1 ? T('episodesL') : T('episodeL'), code(i)), stat('cal', T('aired'), fmtDate(i.eps[0].air)), stat('cal', T('premiered'), String(i.v.year))];
-  const left = (i.eps ? field('list', i.eps.length > 1 ? T('episodesL') : T('episodeL'), i.eps.map(x => `${epCode(i.season, x.n)} · ${x.t}`).join(', ')) : '')
-    + field('tag', T('genres'), i.v.genres.join(', ')) + field('users', T('cast'), i.v.cast.join(', ')) + field('alignLeft', T('synopsis'), i.v.synopsis, '', 'wrap');
-  const right = i.v.original ? field('languages', T('original'), i.v.original) : '';
-  return `<div class="gen"><div>${strip(stats)}</div><div class="hr"></div><div>${groupHead(i.kind === 'movie' ? 'film' : 'tv', i.v.title, 6)}${details(left, right)}</div></div>`;
+const words = {
+  en:{ refresh:'Refresh', refresh_tip:'Refresh video information', fetch:'Fetch', fetch_tip:'Fetch video information', filter:'Filter by', identification:'Identification', enable:'Enable…', identify:'Identify…', off:'Video information off', provider:'Provider unavailable',
+    unidentified:'Not identified', noTags:'No tags', tags:'Tags', year:'Year', duration:'Duration', track:'Track',
+    movie:'Movie', episode:'TV episode', series:'Series', season:'Season', music:'Audio', artist:'Artist', album:'Album', genres:'Genres', cast:'Cast',
+    synopsis:'Synopsis', properties:'Properties', name:'Name', folder:'Folder', torrent:'Torrent',
+    size:'Size', type:'Type of file', opens:'Opens with', created:'Created', modified:'Date modified',
+    route:'Requests follow your saved network settings.', settings:'You can turn this off in Settings.' },
+  es:{ refresh:'Actualizar', refresh_tip:'Actualizar la información de vídeo', fetch:'Obtener', fetch_tip:'Obtener información de vídeo', filter:'Filtrar por', identification:'Identificación', enable:'Activar…', identify:'Identificar…', off:'Información de vídeo desactivada', provider:'Proveedor no disponible',
+    unidentified:'Sin identificar', noTags:'Sin etiquetas', tags:'Etiquetas', year:'Año', duration:'Duración', track:'Pista',
+    movie:'Película', episode:'Episodio de TV', series:'Serie', season:'Temporada', music:'Audio', artist:'Artista', album:'Álbum', genres:'Géneros', cast:'Reparto',
+    synopsis:'Sinopsis', properties:'Propiedades', name:'Nombre', folder:'Carpeta', torrent:'Torrent',
+    size:'Tamaño', type:'Tipo de archivo', opens:'Se abre con', created:'Creado', modified:'Fecha de modificación',
+    route:'Las solicitudes siguen los ajustes de red guardados.', settings:'Puedes desactivarlo en Ajustes.' }
+};
+const label = key => words[S.lang][key];
+const detailText = value => esc(String(value ?? ''));
+const detailValue = (key,value) => key === 'artist' || key === 'album' ? filterLink(key,value) : detailText(value);
+const detailField = (glyph,key,value,action='') => value ? field(glyph,label(key),'',action,'',String(value),detailValue(key,value)) : '';
+const fact = (glyph,key,value) => value ? `<div class="fact"><div class="caption">${ic(glyph)}${label(key)}</div><div class="value" title="${detailText(value)}">${detailValue(key,value)}</div></div>` : '';
+const action = (key,glyph,act) => `<button class="btn${act ? ' icon subtle' : ''}" ${act ? `data-act="${act}"` : 'data-preview="refresh"'} title="${label(key === 'refresh' || key === 'fetch' ? key+'_tip' : key)}" aria-label="${label(key === 'refresh' || key === 'fetch' ? key+'_tip' : key)}">${ic(glyph)}${act ? '' : label(key)}</button>`;
+const filterLink = (section,value,text=value,series=null) => `<a class="filter-link" href="#a-filters" data-act="filter" data-g="${section}" data-v="${detailText(value)}" ${series ? `data-series="${detailText(series)}"` : ''} data-reveal-filters title="${label('filter')} ${label(section === 'genre' ? 'genres' : section)}: ${detailText(text)}">${detailText(text)}</a>`;
+// Synthetic scores exercise source and series labels; these are not fetched or asserted as current catalogue values.
+const sampleRatings = {arrival:[8.0,7.6],thearrival:[6.1,6.0],spirited:[8.6,8.5],amelie:[8.3,7.9],heat:[8.3,7.9],
+  crash2004:[7.7,7.2],crash1996:[6.4,6.4],dune2021:[8.0,7.8],dune1984:[6.3,6.2],dune2000:[7.0,6.9],
+  vacation:[7.5,7.2],severance:[8.7,8.5],doctorwho:[8.5,7.6],planetearth:[9.4,8.7]};
+function rating(e,key) {
+  const metadata=info(e), values=metadata && sampleRatings[e.ident.v];
+  const value=values?.[key === 'imdb' ? 0 : 1];
+  if (value == null || e.missingRatings?.includes(key)) return null;
+  return {value,source:ratingSources[key],series:metadata.kind === 'episode'};
 }
-/* Music information from the tags read when the download finished, in the same structure. */
-function musicPage(e) {
-  const t = tags(e);
-  if (!t) return `<div class="gen"><div>${groupHead('music', shownTitle(e), 6)}${details(field('music', T('tagsL'), 'None', '', '', 'This file has no tags'), '')}</div></div>`;
-  return `<div class="gen"><div>${strip([stat('list', T('cTrack'), String(t.track)), stat('clock', T('cDuration'), fmtDur(t.secs)), stat('cal', T('year'), String(t.year))])}</div><div class="hr"></div>
-    <div>${groupHead('music', t.title, 6)}${details(field('users', T('cArtist'), t.artist) + field('disc', T('cAlbum'), t.album), field('tag', T('genre'), t.genre))}</div></div>`;
+function ratingText(value) {
+  const score=new Intl.NumberFormat(S.lang,{minimumFractionDigits:1,maximumFractionDigits:1}).format(value.value);
+  return score;
 }
-/* The File page: facts about this one finished file, in the General tab's Field rows and Details grid. */
+function ratingCell(e,key) {
+  const value=rating(e,key);
+  return value ? `<span class="rating-cell" title="${value.series ? (S.lang === 'es' ? 'Valoración de la serie' : 'Series rating')+' · ' : ''}${ratingText(value)} / 10 · sample">${ratingText(value)}</span>` : '';
+}
+function ratingStats(m) {
+  return m.ratings.map(value => `<div class="rating-stat" title="${value.series ? (S.lang === 'es' ? 'Valoración de la serie' : 'Series rating')+' · ' : ''}${value.source} · sample score"><div class="rating-label">${value.source}${value.series ? (S.lang === 'es' ? ' · Serie' : ' · Series') : ''}</div><div class="rating-value">${ratingText(value)} <span class="rating-scale">/ 10</span></div></div>`).join('');
+}
+function ratingFields(m) {
+  return m.ratings.map(value => field('star',value.source,`${ratingText(value)} / 10${value.series ? (S.lang === 'es' ? ' · Serie' : ' · Series') : ''}`)).join('');
+}
+
+function media(e) {
+  const audio = isAudio(e), video = info(e), musicTags = tags(e);
+  return { audio, video, tags:musicTags, title:audio ? musicTags?.title || shownTitle(e)
+      : video?.eps ? video.eps.map(episode => episode.t).join(' · ') : video?.v.title || shownTitle(e),
+    series:video?.eps ? video.v.title : '', seriesId:video?.eps ? e.ident.v : '', season:video?.season,
+    kind:audio ? label('music') : video ? label(video.kind === 'movie' ? 'movie' : 'episode') : T('video'),
+    year:audio ? musicTags?.year : video?.eps ? video.eps[0]?.air?.slice(0,4) : video?.v.year,
+    genres:audio ? musicTags?.genre : video?.v.genres.join(', '),
+    cast:video?.v.cast.join(', '), synopsis:video?.v.synopsis,
+    artist:musicTags?.artist, album:musicTags?.album, track:musicTags?.track, duration:musicTags ? fmtDur(musicTags.secs) : '',
+    ratings:Object.keys(ratingSources).map(key => rating(e,key)).filter(Boolean) };
+}
+
+function header(m) {
+  const episodes = m.video?.eps || [];
+  const season = `${label('season')} ${m.season}`;
+  const numbers = `${T(episodes.length > 1 ? 'episodesL' : 'episodeL')} ${episodes.map(episode => episode.n).join(', ')}`;
+  const line = episodes.length ? `${filterLink('series',m.seriesId,m.series)} · ${filterLink('season',String(m.season),season,m.seriesId)} · ${detailText(numbers)}` : '';
+  const title = `<h2 title="${detailText(m.title)}">${detailText(m.title)}</h2>`;
+  const detail = line ? `<div class="meta" title="${detailText([m.series,season,numbers].join(' · '))}">${line}</div>` : '';
+  const identity = `<div class="inline-identity">${title}<div class="meta">${detailText(m.kind)}</div></div>${detail}`;
+  return `<div class="headline"><div class="identity">${identity}</div>
+    ${!m.audio && S.enrichment ? `<span class="refresh">${action(m.video ? 'refresh' : 'fetch','retry')}</span>` : ''}</div>`;
+}
+
+function status(m,property=false) {
+  if (m.audio) return m.tags ? '' : property ? detailField('music','tags',label('noTags')) : `<div class="status">${ic('music')}<span>${label('noTags')}</span></div>`;
+  if (m.video && S.enrichment) return '';
+  const key = S.provider === 'fail' ? 'provider' : !S.enrichment ? 'off' : 'unidentified';
+  const glyph = key === 'provider' ? 'cloudoff' : 'identify';
+  const button = key === 'provider' ? '' : action(key === 'off' ? 'enable' : 'identify','identify',key === 'off' ? 'enable' : 'identify');
+  return property ? detailField(glyph,'identification',label(key),button) : `<div class="status">${ic(glyph)}<span>${label(key)}</span>${button}</div>`;
+}
+
+function metadata(m,scores=false) {
+  const year = m.year ? field('cal',label('year'),'','','',m.year,filterLink('year',m.year)) : '';
+  const genres = m.genres ? field('tag',label('genres'),'','','wrap',m.genres,`<span class="genre-links">${m.genres.split(', ').map(value => filterLink('genre',value)).join('')}</span>`) : '';
+  const ratings = scores && m.ratings.length ? `<div class="rating-strip" role="group" aria-label="${S.lang === 'es' ? 'Valoraciones' : 'Ratings'}">${ratingStats(m)}</div>` : ratingFields(m);
+  return (m.audio ? detailField('list','track',m.track)+detailField('clock','duration',m.duration) : ratings) + year + genres;
+}
+
+function summary(m) {
+  return `<div class="preview summary"><div class="details"><div class="reading">${header(m)}${status(m)}
+    ${m.synopsis ? `<p class="story">${detailText(m.synopsis)}</p>` : ''}
+    ${m.audio ? fact('users','artist',m.artist)+fact('disc','album',m.album) : fact('users','cast',m.cast)}
+    </div><aside class="metadata">${metadata(m,true)}</aside></div></div>`;
+}
+
+function inspector(m) {
+  const left = m.audio ? detailField('users','artist',m.artist)+detailField('disc','album',m.album)
+    : detailField('users','cast',m.cast) + (m.synopsis ? field('alignLeft',label('synopsis'),m.synopsis,'','wrap') : '');
+  return `<div class="preview inspector">${header(m)}
+    <div class="details"><div>${status(m,true)}${left}</div><aside class="metadata">${metadata(m)}</aside></div></div>`;
+}
+
+function sections(m) {
+  const story = m.synopsis ? `<section><h3 class="caption">${ic('alignLeft')}${label('synopsis')}</h3><p class="story">${detailText(m.synopsis)}</p></section>` : '';
+  const cast = m.cast ? `<section><h3 class="caption">${ic('users')}${label('cast')}</h3><ul class="cast-list">${m.cast.split(', ').map(name => `<li title="${detailText(name)}">${detailText(name)}</li>`).join('')}</ul></section>` : '';
+  return `<div class="preview sections">${header(m)}<div class="section-body">${status(m)}
+    <div class="section-columns">${m.audio ? fact('users','artist',m.artist)+fact('disc','album',m.album) : story+cast}</div>
+    </div><aside class="metadata">${metadata(m)}</aside></div>`;
+}
+
 function filePage(e) {
-  const left = field('file', T('cName'), e.file) + field('folder', T('folderL'), e.dir, fieldAct('open-folder', T('openFolder'), 'folderOpen'))
-    + field('torrents', T('torrent'), e.torrent, fieldAct('show-torrent', T('showT'), 'torrents'));
-  const right = field('hdd', T('cSize'), fmtSize(e.size), '', '', `${e.size.toLocaleString()} bytes`) + field(typeIcon(e), T('typeOfFile'), typeName(e))
-    + (app => field('open', T('opensWith'), app ? app[0] : T('noApp'), '', '', app ? app[0] : T('noApp'), app ? appIcon(app) : ''))(openApp(e))
-    + field('cal', T('createdL'), fmtStamp(e.created)) + field('clock', T('modifiedL'), fmtStamp(e.mod));
-  return `<div class="gen"><div>${groupHead('info', T('propertiesH'), 6)}${details(left, right)}</div></div>`;
+  const app = openApp(e);
+  const folder = `<button class="btn icon subtle" data-act="open-folder" title="${T('openFolder')}" aria-label="${T('openFolder')}">${ic('folderOpen')}</button>`;
+  const torrent = `<button class="btn icon subtle" data-act="show-torrent" ${hasOrigin(e) ? '' : 'disabled'} title="${T('showT')}" aria-label="${T('showT')}">${ic('torrents')}</button>`;
+  return `<div class="preview inspector"><div class="headline">${ic('info')}<h2 class="section-title">${label('properties')}</h2></div><div class="details">
+    <div>${detailField('file','name',e.file)}${detailField('folder','folder',e.dir,folder)}${detailField('torrents','torrent',e.torrent,torrent)}</div>
+    <div>${detailField('hdd','size',fmtSize(e.size))}${detailField(typeIcon(e),'type',typeName(e))}${field('open',label('opens'),app ? app[0] : T('noApp'),'','',app ? app[0] : T('noApp'),app ? appIcon(app) : '')}${detailField('cal','created',fmtStamp(e.created))}${detailField('clock','modified',fmtStamp(e.mod))}</div></div></div>`;
 }
+
 /* Video or Music information first. Another file shows File without changing the chosen section. */
 const hasInfoPage = e => isAudio(e) || e.ident.s !== 'other';
 const detPage = e => hasInfoPage(e) ? S.dtab : 'file';
@@ -673,7 +868,7 @@ function detailsCard() {
   if (!S.detailsOpen) return '';
   const e = sel(), page = e ? detPage(e) : S.dtab;
   const audio = e ? isAudio(e) : S.cfg === 'music';
-  const tabs = `<div class="selbar dtabs" role="tablist" aria-label="${T('details')}">${[['video', audio ? T('gMusic') : T('gVideo')], ['file', T('gFile')]].map(([k, l]) => {
+  const tabs = `<div class="selbar dtabs" role="tablist" aria-label="${T('details')}">${[['video', 'Info'], ['file', T('gFile')]].map(([k, l]) => {
     const off = !e || (k === 'video' && !hasInfoPage(e));
     const tip = off ? (e ? 'Not a video or audio file' : '') : k !== 'video' ? '' : audio ? 'From the tags in the file' : `${info(e) ? 'From TMDB. ' : ''}${idStatus(e)[1]}`;
     return `<button role="tab" aria-selected="${!!e && page === k}" data-act="dtab" data-k="${k}" data-fid="dtab-${k}" tabindex="${page === k ? 0 : -1}" ${off ? 'disabled' : ''} ${tip ? `title="${esc(tip)}"` : ''}>${l}</button>`; }).join('')}</div>`;
@@ -681,9 +876,10 @@ function detailsCard() {
   const name = e ? `<span class="hn">${entryIcon(e, 'gi')}<span class="name" title="${esc(e.file)}" role="heading" aria-level="1">${esc(e.file)}</span><span class="det">${fmtSize(e.size)}</span></span>` : '<span class="hn"></span>';
   /* Icon buttons with tooltips, like the Inspector's Close, so the row still fits beside the centred sections at 800px. */
   const dis = canWrite() ? '' : 'disabled';
-  const acts = e ? `<span class="hacts"><button class="btn icon subtle" data-act="open" data-fid="open" ${dis} aria-label="${T('open')}" title="${openApp(e) ? `${T('open')} with ${openApp(e)[0]} (Enter)` : `${T('open')} (Enter)`}">${ic('open')}</button>
-    ${info(e) ? `<button class="btn icon subtle" data-act="correct" ${dis} aria-label="${T('edit')}" title="${T('edit')} · Change which movie or episode this file is">${ic('pencil')}</button>` : ''}${moreBtn(e)}</span>` : '<span></span>';
-  const body = e ? (page === 'file' ? filePage(e) : audio ? musicPage(e) : videoPage(e))
+  const acts = e ? `<span class="hacts"><span class="primary"><button class="btn icon subtle" data-act="open" data-fid="open" ${dis} aria-label="${T('open')}" title="${openApp(e) ? `${T('open')} with ${openApp(e)[0]}` : T('open')}">${ic('play')}</button>
+    ${info(e) ? `<button class="btn icon subtle" data-act="correct" ${dis} aria-label="${T('edit')}" title="${T('edit')} · Change which movie or episode this file is">${ic('pencil')}</button>` : ''}
+    <button class="btn icon subtle" data-act="show-torrent" ${hasOrigin(e) ? '' : 'disabled'} aria-label="${T('showT')}" title="${T('showT')}">${ic('torrents')}</button></span>${moreBtn(e)}</span>` : '<span></span>';
+  const body = e ? (page === 'file' ? filePage(e) : ({A:summary,B:inspector,C:sections})[detailLayout](media(e)))
     : `<div class="iempty">${ic('pointer')}<span>No file selected</span></div>`;
   const fail = e && e.fail ? `<div class="infobar err" role="status">${ic('alert')}<div class="msg" title="${esc(FAIL[e.fail.kind][1](e))}"><b>${FAIL[e.fail.kind][0]}</b><span class="muted">${e.fail.at}</span></div>
     <button class="btn" data-act="open" ${canWrite() ? '' : 'disabled'}>${ic('retry')}${T('retry')}</button></div>` : '';
@@ -726,10 +922,11 @@ function identifyForm() {
 const idButtons = () => `<button class="btn accent" data-act="id-confirm" ${S.idf?.pick && canWrite() ? '' : 'disabled'}>${ic('check')}${S.idf?.mode === 'correct' ? T('save') : T('identifyBtn')}</button><button class="btn" data-act="id-cancel">${T('cancel')}</button>`;
 
 /* the table: one TableView; each configuration declares its columns */
-const COLS = {file:[T => T('cName'), 320], title:[T => T('cTitle'), 340], type:[T => T(S.cfg === 'files' ? 'kind' : 'cType'), 150], year:[T => T(S.cfg === 'music' ? 'year' : 'cYear'), 84, 'r'],
+const COLS = {imdb:[() => 'IMDb',80,'r'], tmdb:[() => 'TMDB',80,'r'], file:[T => T('cName'), 320], title:[T => T('cTitle'), 340], type:[T => T(S.cfg === 'files' ? 'kind' : 'cType'), 150], year:[T => T(S.cfg === 'music' ? 'year' : 'cYear'), 84, 'r'],
   genres:[T => T(S.cfg === 'music' ? 'genre' : 'genres'), 200], cast:[T => T('cast'), 240], size:[T => T('cSize'), 92, 'r'], loc:[T => T('cLoc'), 320], modified:[T => T('date'), 170],
   artist:[T => T('cArtist'), 240], album:[T => T('cAlbum'), 240], track:[T => T('cTrack'), 64, 'r'], duration:[T => T('cDuration'), 84, 'r']};
 function cell(e, k) {
+  if (Object.hasOwn(ratingSources,k)) return ratingCell(e,k);
   if (k === 'file') return `<div class="fn">${ic(typeIcon(e))}<span>${esc(e.file)}</span></div>`;
   if (k === 'title') return `<div class="fn" ${e.fail ? `title="${esc(FAIL[e.fail.kind][0])}"` : ''}>${entryIcon(e)}<span>${esc(shownTitle(e))}</span></div>`;
   if (k === 'type') return typeLabel(e);
@@ -764,21 +961,21 @@ function table() {
   return `<div class="tv ${S.disconnected ? 'stale' : ''}" id="tv" data-region="table"><table role="grid" aria-label="${T('library')}" aria-rowcount="${list.length}" style="width:max(100%, ${width}px)"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>${placeholder(list)}</div>`;
 }
 
-/* title bar from MainWindow.xaml: [Back] icon · MenuBar · bounded search · Add file, Add magnet · theme · caption buttons */
+/* This experiment uses the icon slot for page navigation; the native window keeps its system menu. */
 function titleBar() {
   const secondary = !['torrents', 'library'].includes(S.page), owner = secondary ? S.prev : S.page;
   /* The second menu is the current page's object menu, in one slot; on Settings and About it and View are disabled. */
   const menus = [['file', T('file'), false], [owner === 'library' ? 'library' : 'torrent', owner === 'library' ? T('library') : T('torrent'), secondary], ['view', T('view'), secondary], ['help', T('help'), false]];
-  const pages = `<span class="vdiv"></span><div class="selbar pages" role="tablist" aria-label="Pages">${[['torrents', T('torrents'), 'Ctrl+1'], ['library', T('library'), 'Ctrl+2']].map(([k, l, key]) =>
-    `<button role="tab" aria-selected="${S.page === k}" data-act="page" data-k="${k}" data-fid="tab-${k}" tabindex="${S.page === k || (secondary && k === S.prev) ? 0 : -1}" aria-label="${l}" title="${l} (${key})">${ic(k)}<span class="lbl">${l}</span></button>`).join('')}</div>`;
+  const destination = owner === 'library' ? 'torrents' : 'library';
+  const tip = `${T('switchPage')} ${T(destination)} (${destination === 'torrents' ? 'Ctrl+1' : 'Ctrl+2'})`;
   /* One search box. On Library it filters the rows as the person types, as File Explorer's box searches the current folder,
      and shows no suggestion list: a list would cover the rows being filtered, and Enter keeps one meaning (go to the results). */
   const box = libPage()
     ? `<div class="gbox" title="${S.disconnected ? 'Search resumes when TinyTorrent reconnects to the engine' : 'Search file names, folders, titles, genres, cast and synopses · Ctrl+K, Ctrl+F, Ctrl+E'}"><input id="gq" data-fid="gq" aria-label="${T('searchLibPh')}" placeholder="${T('searchLibPh')}" value="${esc(S.q)}" autocomplete="off" spellcheck="false" ${S.disconnected ? 'disabled' : ''}>
         ${S.q ? `<button class="clear" data-act="clear-q" tabindex="-1" aria-label="${T('clearSearch')}">${ic('x')}</button>` : ''}<span class="qi">${ic('search')}</span></div>`
     : `<div class="gbox" title="Ctrl+K, Ctrl+F, Ctrl+E"><input id="gq" data-fid="gq" role="combobox" aria-expanded="${!!S.fly && S.fly.kind === 'gsearch'}" aria-label="Search torrents, commands and settings" placeholder="${T('searchApp')}" value="${esc(S.g)}" autocomplete="off" spellcheck="false"><span class="qi">${ic('search')}</span></div>`;
-  return `<header class="tbar">${secondary || S.backTo ? `<button class="cap" data-act="back" id="back-btn" aria-label="Back · Alt+Left" title="Back · Alt+Left">${ic('back')}</button>` : ''}<span class="appicon" aria-hidden="true"></span>
-    <nav class="menubar" aria-label="Menus">${menus.map(([k, l, d]) => `<button data-act="fly" data-fly="menu-${k}" id="menu-${k}" class="${S.fly?.kind === 'menu-' + k ? 'on' : ''}" ${d ? 'disabled' : ''}>${l}</button>`).join('')}</nav>${pages}
+  return `<header class="tbar">${secondary || S.backTo ? `<button class="cap" data-act="back" id="back-btn" aria-label="Back · Alt+Left" title="Back · Alt+Left">${ic('back')}</button>` : ''}<button class="cap appicon ${owner === 'library' ? 'library' : ''} ${flipHeld ? 'held' : ''}" data-act="page" data-k="${destination}" data-fid="page-switch" aria-label="${tip}" title="${tip}"><span class="icon-scene" aria-hidden="true"><span class="icon-face"><img src="../resources/tinyTorrent.svg" alt=""></span><span class="icon-face back">${ic('library')}</span></span></button>
+    <nav class="menubar" aria-label="Menus">${menus.map(([k, l, d]) => `<button data-act="fly" data-fly="menu-${k}" id="menu-${k}" class="${S.fly?.kind === 'menu-' + k ? 'on' : ''}" ${d ? 'disabled' : ''}>${l}</button>`).join('')}</nav>
     <div class="gsearch">${box}</div>
     <div class="tb-end"><button class="cap" data-act="cmd" data-k="Add torrent file" aria-label="Add torrent file · Ctrl+O" title="Add torrent file · Ctrl+O">${ic('fileplus')}</button>
       <button class="cap" data-act="cmd" data-k="Add magnet link" aria-label="Add magnet link · Ctrl+Shift+O" title="Add magnet link · Ctrl+Shift+O">${ic('link')}</button><span class="vdiv"></span>
@@ -805,7 +1002,7 @@ function statusBar() {
   return `<footer class="sb" id="sb"><span class="grp">${left}</span><span class="grp">${right.join('')}</span></footer>`;
 }
 function filterSummary() {
-  return SECTIONS[S.cfg].filter(k => S.f[k] !== FILTERS0[k]).map(k => sectionOptions(k).find(o => o[0] === S.f[k])[1]).join(', ');
+  return filterSections().filter(k => S.f[k] !== FILTERS0[k]).map(k => sectionOptions(k).find(o => o[0] === S.f[k])[1]).join(', ');
 }
 function infoBars() {
   const bars = [];
@@ -845,7 +1042,7 @@ function torrentCard() {
 function libraryPage() {
   const opt = (group, value, label, n) => `<button class="opt" role="radio" aria-checked="${S.f[group] === value}" data-act="filter" data-g="${group}" data-v="${esc(value)}"><span class="trim">${esc(label)}</span><span class="n">${n}</span></button>`;
   const pane = S.filtersOpen ? `<nav class="a-pane" id="a-filters" aria-label="${T('filters')}" data-region="filters"><div class="ph2">${T('filters')}<button class="btn icon subtle" data-act="toggle-filters" aria-label="Close filters" title="Close filters">${ic('x')}</button></div>
-    ${SECTIONS[S.cfg].map(sec => `<div class="gh" id="fg-${sec}">${T(sec)}</div><div role="radiogroup" aria-labelledby="fg-${sec}">${sectionOptions(sec).map(([v, l]) => opt(sec, v, l, count(sec, v))).join('')}</div>`).join('')}
+    ${filterSections().map(sec => `<div class="gh" id="fg-${sec}">${T(sec)}</div><div role="radiogroup" aria-labelledby="fg-${sec}">${sectionOptions(sec).map(([v, l]) => opt(sec, v, l, count(sec, v))).join('')}</div>`).join('')}
     <button class="btn" style="margin:12px 8px 0" data-act="clear-filters" title="${T('clearFiltersTip')}" ${anyFilter() ? '' : 'disabled'}>${ic('funnelX')}${T('clearFilters')}</button></nav>` : '';
   return `<div class="a-body">${pane}<div class="work">${table()}${detailsCard()}</div></div>`;
 }
@@ -863,10 +1060,10 @@ const menuMi = (act, label, icon, key = '', dis = false, k = '') => `<button cla
 /* The Library menu and the row context menu are one list, as the Torrent menu and the torrent context menu are. */
 function entryCommands(mi) {
   const e = sel(), video = e && e.ident.s !== 'other', none = !e;
-  return mi('open', T('open'), 'open', 'Enter', none || !canWrite()) + mi('open-folder', T('openFolder'), 'folder', '', none) + mi('properties', T('properties'), 'info', 'Alt+Enter', none) + '<hr>'
+  return mi('open', T('open'), 'open', '', none || !canWrite()) + mi('open-folder', T('openFolder'), 'folder', '', none) + mi('properties', T('properties'), 'info', 'Enter / Alt+Enter', none) + '<hr>'
     + (video ? (info(e) ? mi('correct', T('edit'), 'pencil', '', !canWrite()) + mi('clear-id', T('clearId'), 'eraser', '', !canWrite())
       : mi(S.enrichment ? 'identify' : 'enable', S.enrichment ? T('identify') : T('turnOn'), 'identify', '', !canWrite())) + '<hr>'
-      : mi('identify', T('identify'), 'identify', '', true) + '<hr>') + mi('show-torrent', T('showT'), 'torrents', '', none);
+      : mi('identify', T('identify'), 'identify', '', true) + '<hr>') + mi('show-torrent', T('showT'), 'torrents', '', !hasOrigin(e));
 }
 function menuItems(kind, mi = menuMi) {
   let html = '';
@@ -886,7 +1083,11 @@ function flyoutBody(fl, mi) {
     html = (c ? `<button class="mi" data-act="col-toggle" data-k="${c}" ${c === first ? 'disabled' : ''}><span class="mark">${ic(shown.includes(c) ? 'x' : 'check')}</span>${shown.includes(c) ? 'Hide' : 'Show'} column “${esc(name(c))}”</button><hr>` : '')
       + cfg().cols.map(k => `<button class="mi" data-act="col-toggle" data-k="${k}" aria-label="${esc(name(k))}, ${shown.includes(k) ? 'shown' : 'hidden'}" ${k === first ? 'disabled' : ''}><span class="mark">${shown.includes(k) ? ic('check') : ''}</span>${esc(name(k))}</button>`).join('');
   }
-  if (fl.kind === 'more') { const e = sel(); html = mi('clear-id', T('clearId'), 'eraser', '', !e || !info(e) || !canWrite()) + mi('show-torrent', T('showT'), 'torrents'); }
+  if (fl.kind === 'more') { const e = sel(), narrow = win.querySelector('.ibs')?.clientWidth < 760;
+    html = (narrow ? mi('open',T('open'),'play','',!canWrite()) : '')
+      + (e && isVideo(e) && (narrow || !info(e)) ? mi(info(e) ? 'correct' : 'identify',T(info(e) ? 'edit' : 'identify'),'pencil','',!canWrite()) : '')
+      + (narrow ? mi('show-torrent',T('showT'),'torrents','',!hasOrigin(e)) : '')
+      + mi('open-folder',T('openFolder'),'folderOpen') + mi('clear-id', T('clearId'), 'eraser', '', !e || !info(e) || !canWrite()); }
   if (fl.kind === 'rowmenu') html = entryCommands(mi);
   return html;
 }
@@ -911,8 +1112,8 @@ function dialog() {
   if (d.kind === 'consent') return `<div class="scrim"><div class="dlg" role="dialog" aria-modal="true" aria-labelledby="dlg-t"><div class="body"><h2 id="dlg-t">${ic('film')}Turn on movie and TV information?</h2>
     <p>TinyTorrent looks up titles, genres, years, cast and synopses on The Movie Database (TMDB) so you can search by them.</p>
     <p>It sends only the title, year, and season and episode numbers it reads from file names. It never sends file paths, your list of files, torrent hashes, trackers or peers.</p>
-    <p>Requests go directly from this computer over HTTPS. They do not use the torrent proxy or the torrent network adapter.</p>
-    <p class="muted">You can turn this off in Settings &gt; Library.</p></div>
+    <p>${label('route')}</p>
+    <p class="muted">${label('settings')}</p></div>
     <div class="foot"><button class="btn accent" data-act="consent-yes" data-fid="consent-yes">${ic('check')}Turn on</button><button class="btn" data-act="dlg-close">${T('cancel')}</button></div></div></div>`;
   if (d.kind === 'identify' && S.idf) { const e = entries.find(x => x.id === S.idf.id);
     return `<div class="scrim"><div class="dlg" role="dialog" aria-modal="true" aria-labelledby="dlg-t" style="width:600px"><div class="body"><h2 id="dlg-t">${ic('identify')}${S.idf.mode === 'correct' ? 'Edit identification' : 'Identify file'}</h2>
@@ -929,14 +1130,14 @@ function render() {
   document.body.classList.toggle('dark', S.dark);
   const avail = innerWidth - 24;
   win.style.width = Math.min(S.width || Math.min(1280, avail), avail) + 'px';
-  win.style.height = Math.max(560, innerHeight - document.querySelector('.proto').offsetHeight - 52) + 'px';
+  win.style.height = Math.max(400, innerHeight - document.querySelector('.proto').offsetHeight - document.querySelector('.proto-top').offsetHeight - 84) + 'px';
   const body = S.page === 'torrents' ? torrentsPage() : libPage() ? libraryPage()
     : `<div class="a-head"><h1>${S.page === 'settings' ? 'Settings' : 'About'}</h1></div>${S.page === 'about' ? '<h3 class="stub">Credits</h3><p class="stub">This product uses the TMDB API but is not endorsed or certified by TMDB.</p>' : ''}`;
   win.innerHTML = `${titleBar()}<main class="main" aria-label="${S.page === 'library' ? T('library') : S.page === 'torrents' ? T('torrents') : S.page}">${body}${infoBars()}</main>${statusBar()}${flyout()}${dialog()}`;
   placeFlyout();
+  const inspector = win.querySelector('.insp');
+  if (inspector) inspector.classList.toggle('narrow',inspector.querySelector('.ibs').clientWidth < 760);
   fitStatus();
-  fitPages();
-  fitStrips();
   const tv = document.getElementById('tv');
   if (tv && scroll != null) tv.scrollTop = scroll;
   const dr = win.querySelector('[data-region=details]');
@@ -944,12 +1145,14 @@ function render() {
   const target = (S.focus && win.querySelector(S.focus)) || (fid && (win.querySelector(`[data-fid="${fid}"]`) || document.getElementById(fid)));
   S.focus = null;
   if (target && !target.disabled) { target.focus({preventScroll:!S.reveal}); if (caret != null && target.setSelectionRange && target.type !== 'number') try { target.setSelectionRange(caret, caret); } catch {} }
+  if (flipHeld && !matchMedia('(hover:hover)').matches) releaseFlip();
   if (S.reveal) { win.querySelector('tr.row.sel')?.scrollIntoView({block:'nearest'}); S.reveal = false; }
   if (S.dialog && !win.querySelector('.dlg')?.contains(document.activeElement)) (win.querySelector('.dlg [data-fid=consent-yes], .dlg input, .dlg button'))?.focus();
   if (S.announce) { document.getElementById('live').textContent = S.announce; S.announce = ''; }
   document.getElementById('scenario').value = S.scenario;
   document.getElementById('outcome').value = S.outcome;
   document.getElementById('wval').textContent = parseInt(win.style.width) + 'px';
+  document.getElementById('variantLabel').textContent = `${detailLayout} · ${detailLayouts[detailLayout]}`;
   showReadout();
   showMenus();
 }
@@ -965,22 +1168,6 @@ function placeFlyout() {
   if (S.fly.kind === 'gsearch') fl.style.minWidth = r.width + 'px';
 }
 /* one line: shorten the least important labels to their icons until the bar fits */
-/* The page items drop their labels when the search box would fall below its 200px minimum. */
-/* controls:Strip: one row when the items fit, else two rows, else one column; free width is shared between columns. */
-function fitStrips() {
-  for (const el of win.querySelectorAll('.strip')) {
-    el.style.gridTemplateColumns = `repeat(${el.children.length}, max-content)`;
-    const items = [...el.children], widths = items.map(x => x.getBoundingClientRect().width), need = n => [...Array(n).keys()].reduce((w, c) => w + Math.max(...widths.filter((_, i) => i % n === c)), 0) + 32 * (n - 1);
-    const n = need(items.length) <= el.clientWidth ? items.length : need(Math.ceil(items.length / 2)) <= el.clientWidth ? Math.ceil(items.length / 2) : 1;
-    el.style.gridTemplateColumns = `repeat(${n}, auto)`;
-  }
-}
-function fitPages() {
-  const bar = win.querySelector('.pages'), box = win.querySelector('.gsearch');
-  if (!bar || !box) return;
-  bar.classList.remove('narrow');
-  if (box.offsetWidth < 200) bar.classList.add('narrow');
-}
 function fitStatus() {
   const sb = document.getElementById('sb');
   const items = [...sb.querySelectorAll('.si')].filter(x => +x.dataset.pri < 9).sort((a, b) => a.dataset.pri - b.dataset.pri);
@@ -1004,7 +1191,7 @@ function showReadout() {
   box.hidden = !S.showState;
   if (!S.showState) return;
   const e = sel();
-  box.textContent = JSON.stringify({page:S.page, scenario:S.scenario, lastAction:S.last, query:S.q, titleBarSearch:libPage() ? '(searches Library)' : S.g, filtersShown:S.filtersOpen,
+  box.textContent = JSON.stringify({variant:detailLayout, composition:detailLayouts[detailLayout], page:S.page, scenario:S.scenario, lastAction:S.last, query:S.q, titleBarSearch:libPage() ? '(searches Library)' : S.g, filtersShown:S.filtersOpen,
     unfinishedFilesNotInLibrary:unfinished.length, torrentInspector:S.tinsp ? S.tsection : 'closed', backReturnsTo:S.backTo, configuration:S.cfg, columns:lay().shown, sort:lay().sort, filters:S.f, shown:rows().length, total:entries.length, enrichment:S.enrichment ? (S.provider === 'fail' ? 'on, provider failing' : 'on') : 'off',
     selected:e ? {id:e.id, file:e.file, type:typeKey(e), identification:e.ident, openFailure:e.fail || null} : null,
     identifyDraft:S.idf ? {...S.idf, results:Array.isArray(S.idf.results) ? S.idf.results : S.idf.results} : null, dialog:S.dialog?.kind || null,
@@ -1022,6 +1209,11 @@ function go(page) {
   S.page = page; S.fly = null; S.g = '';
   S.focus = page === 'library' ? (S.sel ? `[data-fid="row-${S.sel}"]` : '#gq') : page === 'torrents' ? '[data-fid=trow-0]' : '#back-btn';
   say(page === 'library' ? 'Showed Library; query, filters, configuration and selection kept' : page === 'torrents' ? 'Showed Torrents' : `Showed ${page}; Back returns to ${S.prev}`);
+}
+function showProperties() {
+  S.detailsOpen = true;
+  S.focus = '[data-fid=dtab-video]:not(:disabled), [data-fid=dtab-file]';
+  say('Showed properties');
 }
 function openEntry(e) {
   if (!e || !canWrite()) return;
@@ -1109,14 +1301,20 @@ win.addEventListener('click', ev => {
   switch (a) {
     case 'fly': S.fly = S.fly?.kind === t.dataset.fly ? null : {kind:t.dataset.fly, anchor:t.id}; if (S.fly) S.focus = '#fly button:not(:disabled)'; break;
     case 'back': go(S.backTo || S.prev); break;
-    case 'page': S.fly = null; go(k); if (t.closest('.pages')) S.focus = `[data-fid=tab-${k}]`; break;
+    case 'page': S.fly = null;
+      if (t.matches('.appicon')) flipHeld = true;
+      go(k);
+      if (t.matches('.appicon')) S.focus = '[data-fid=page-switch]';
+      break;
     case 'theme': S.dark = !S.dark; break;
     case 'cmd': S.fly = null; say(`Ran “${k}” (sample, nothing happens)`); break;
     case 'sort': lay().sort = lay().sort.key === k ? {key:k, desc:!lay().sort.desc} : {key:k, desc:false}; say(`Sorted ${S.cfg} by ${k}`); break;
     case 'cfg': setCfg(k); break;
     case 'col-toggle': { const sh = lay().shown; lay().shown = sh.includes(k) ? sh.filter(x => x !== k) : [...sh, k]; say(`${sh.includes(k) ? 'Hid' : 'Showed'} column ${k} in ${S.cfg}`); break; }
     case 'toggle-filters': S.fly = null; S.filtersOpen = !S.filtersOpen; S.focus = S.filtersOpen ? '#a-filters .opt[aria-checked=true]' : '#gq'; say(`View > Filters ${S.filtersOpen ? 'on' : 'off'}`); break;
-    case 'filter': S.f[t.dataset.g] = t.dataset.v; S.focus = `[data-act=filter][data-g="${t.dataset.g}"][data-v="${CSS.escape(t.dataset.v)}"]`;
+    case 'filter': ev.preventDefault(); Object.assign(S.f,filterChoice(t.dataset.g,t.dataset.v,t.dataset.series || S.f.series));
+      if (t.hasAttribute('data-reveal-filters')) S.filtersOpen = true;
+      S.focus = `[data-act=filter][data-g="${t.dataset.g}"][data-v="${CSS.escape(t.dataset.v)}"]`;
       say(`Filter ${t.dataset.g}: ${t.dataset.v}`); break;
     case 'clear-filters': Object.assign(S.f, FILTERS0); say('Cleared filters'); break;
     case 'clear-q': S.q = ''; S.focus = '#gq'; say('Cleared search'); break;
@@ -1125,7 +1323,7 @@ win.addEventListener('click', ev => {
     case 'correct': startIdentify(e, 'correct'); break;
     case 'g-torrent': S.fly = null; go('torrents'); S.g = ''; S.tsel = k; S.focus = '[data-trow].sel'; say(`Selected torrent “${k}”`); break;
     case 'clear-id': S.fly = null; if (e && info(e)) { e.ident = {s:'cleared'}; S.idf = null; say(`Cleared the identification of ${e.file}. It will not be identified automatically again.`); } break;
-    case 'show-torrent': S.fly = null; if (e) { S.tsel = e.torrent; go('torrents'); S.backTo = 'library'; S.tinsp = true; S.focus = `[data-fid=tsec-${S.tsection}]`;
+    case 'show-torrent': S.fly = null; if (hasOrigin(e)) { S.tsel = e.torrent; go('torrents'); S.backTo = 'library'; S.tinsp = true; S.focus = `[data-fid=tsec-${S.tsection}]`;
       say(`Showed torrent “${e.torrent}” with its properties; Back returns to Library`); } break;
     case 'tsec': S.tsection = k; S.focus = `[data-fid=tsec-${k}]`; break;
     case 'close-tinsp': S.tinsp = false; S.focus = '[data-trow].sel'; break;
@@ -1137,7 +1335,7 @@ win.addEventListener('click', ev => {
     case 'id-search': search(); break;
     case 'id-pick': S.idf.pick = k; S.focus = `[data-fid="cand-${k}"]`; if (CATALOG[k].kind === 'series' && !(EPISODES[k] || {})[S.idf.season]) S.idf.season = +Object.keys(EPISODES[k] || {1:0})[0]; break;
     case 'close-details': S.detailsOpen = false; S.focus = `[data-fid="row-${S.sel}"]`; say('Closed the details; Properties (Alt+Enter or the row menu) shows them again'); break;
-    case 'properties': S.detailsOpen = true; S.focus = '[data-fid=dtab-video]:not(:disabled), [data-fid=dtab-file]'; say('Showed properties'); break;
+    case 'properties': showProperties(); break;
     case 'open-folder': say(`Opened the folder of ${e ? e.file : ''} in File Explorer (sample)`); break;
     case 'dtab': S.dtab = k; S.focus = `[data-fid=dtab-${k}]`; break;
     case 'id-confirm': confirmIdentify(); break;
@@ -1145,6 +1343,16 @@ win.addEventListener('click', ev => {
   }
   render();
 });
+function releaseFlip(event) {
+  const button = win.querySelector('.appicon');
+  if (!button || (event && (event.target.closest('.appicon') !== button || button.contains(event.relatedTarget)))) return;
+  if ((matchMedia('(hover:hover)').matches && button.matches(':hover')) || button.matches(':focus-visible')) return;
+  flipHeld = false;
+  button.classList.remove('held');
+}
+win.addEventListener('pointerout',releaseFlip);
+win.addEventListener('focusout',releaseFlip);
+
 function enable() {
   const then = S.dialog?.then;
   S.dialog = null; S.enrichment = true;
@@ -1166,7 +1374,7 @@ win.addEventListener('contextmenu', ev => {
   S.focus = '#fly button:not(:disabled)';
   render();
 });
-win.addEventListener('dblclick', ev => { if (ev.target.closest('.filter-status')) { S.filtersOpen = true; say('Showed the filters'); return render(); } const row = ev.target.closest('[data-row]'); if (row) { setSel(+row.dataset.row); openEntry(sel()); render(); } });
+win.addEventListener('dblclick', ev => { if (ev.target.closest('.filter-status')) { S.filtersOpen = true; say('Showed the filters'); return render(); } const row = ev.target.closest('[data-row]'); if (row) { setSel(+row.dataset.row); showProperties(); render(); } });
 win.addEventListener('input', ev => {
   const t = ev.target;
   if (t.id === 'gq' && libPage()) { S.q = t.value; S.last = `Searching Library for “${S.q}”`; return render(); }
@@ -1209,7 +1417,7 @@ document.addEventListener('keydown', ev => {
   }
   if (ctrl && ['1', '2'].includes(ev.key)) { ev.preventDefault(); go(ev.key === '1' ? 'torrents' : 'library'); return render(); }
   if (ctrl && ev.key === ',') { ev.preventDefault(); go('settings'); return render(); }
-  if (ev.altKey && ev.key === 'Enter' && libPage()) { ev.preventDefault(); S.detailsOpen = true; S.focus = '[data-fid=dtab-video]:not(:disabled), [data-fid=dtab-file]'; say('Showed properties'); return render(); }
+  if (ev.altKey && ev.key === 'Enter' && libPage()) { ev.preventDefault(); showProperties(); return render(); }
   if (ev.altKey && ev.key === 'ArrowLeft' && (S.backTo || !['torrents', 'library'].includes(S.page))) { ev.preventDefault(); go(S.backTo || S.prev); return render(); }
   if (ev.key === 'F6') { ev.preventDefault(); const r = regions(), cur = r.findIndex(s => document.activeElement?.matches(s) || document.activeElement?.closest(s.split(' ')[0]));
     const nx = r[(cur + (ev.shiftKey ? -1 : 1) + r.length) % r.length]; (win.querySelector(nx))?.focus(); return; }
@@ -1223,7 +1431,7 @@ document.addEventListener('keydown', ev => {
     const list = rows(), i = list.findIndex(x => x.id === +row.dataset.row);
     const step = {ArrowDown:1, ArrowUp:-1, PageDown:10, PageUp:-10}[ev.key];
     if (step || ev.key === 'Home' || ev.key === 'End') { ev.preventDefault(); const n = ev.key === 'Home' ? 0 : ev.key === 'End' ? list.length - 1 : Math.max(0, Math.min(list.length - 1, i + step)); setSel(list[n].id); return render(); }
-    if (ev.key === 'Enter' && !ev.altKey) { ev.preventDefault(); setSel(+row.dataset.row); openEntry(sel()); return render(); }
+    if (ev.key === 'Enter' && !ev.altKey) { ev.preventDefault(); setSel(+row.dataset.row); showProperties(); return render(); }
     if (ev.key === 'ContextMenu' || (ev.shiftKey && ev.key === 'F10')) { ev.preventDefault(); setSel(+row.dataset.row); const w = win.getBoundingClientRect(), r = row.getBoundingClientRect();
       S.fly = {kind:'rowmenu', x:r.left - w.left + 48, y:r.bottom - w.top}; S.focus = '#fly button:not(:disabled)'; return render(); }
   }
@@ -1239,6 +1447,10 @@ document.addEventListener('keydown', ev => {
   if (split && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(ev.key)) { ev.preventDefault(); const d = ['ArrowUp', 'ArrowLeft'].includes(ev.key) ? 16 : -16;
     S.split = Math.max(155, Math.min(520, S.split + d));
     S.focus = `[data-split=${split.dataset.split}]`; return render(); }
+  if (['ArrowLeft','ArrowRight'].includes(ev.key) && !inField && !S.fly && !ev.altKey && !ev.ctrlKey && !ev.shiftKey
+      && !t.closest?.('button, a, table, [role=menu], [role=tablist], [role=separator]')) {
+    ev.preventDefault(); cycleVariant(ev.key === 'ArrowRight' ? 1 : -1);
+  }
 });
 
 /* splitters: drag to resize */
@@ -1279,10 +1491,51 @@ $('menusBtn').onclick = ev => { S.showMenus = !S.showMenus; ev.target.setAttribu
 $('state').onclick = ev => { S.showState = !S.showState; ev.target.setAttribute('aria-pressed', S.showState); render(); };
 $('reset').onclick = () => { reset(S.scenario); render(); };
 $('withdraw').onclick = () => { withdraw(); render(); };
+function applyScene() {
+  const scene = $('detailScene').value;
+  reset(scene === 'provider' ? 'provider' : 'normal');
+  const s = S;
+  if (scene === 'off') s.enrichment = false;
+  if (scene === 'episode') s.sel = entries.find(e => info(e)?.eps)?.id;
+  if (scene === 'no-rating') entries.find(e => e.id === s.sel).missingRatings=Object.keys(ratingSources);
+  if (scene === 'one-rating') entries.find(e => e.id === s.sel).missingRatings=['tmdb'];
+  if (scene === 'unidentified' || scene === 'provider') entries.find(e => e.id === s.sel).ident = {s:scene === 'provider' ? 'pending' : 'none'};
+  if (scene === 'music' || scene === 'untagged') {
+    s.cfg='music'; s.f=s.layout.music.f;
+    s.sel=entries.find(e => isAudio(e) && tags(e))?.id;
+    if (scene === 'untagged') delete entries.find(e => e.id === s.sel).tags;
+  }
+  if (scene === 'file') s.dtab='file';
+  if (scene === 'missing') entries.find(e => e.id === s.sel).fail={kind:'missing',at:'10:42'};
+  if (scene === 'empty') s.sel=null;
+  s.split=Number($('detailHeight').value);
+  render();
+}
+
+
+function cycleVariant(step) {
+  const variants=Object.keys(detailLayouts);
+  detailLayout=variants[(variants.indexOf(detailLayout)+step+variants.length)%variants.length];
+  const url=new URL(location.href); url.searchParams.set('variant',detailLayout); history.replaceState(null,'',url);
+  render();
+}
+$('variantPrev').innerHTML=ic('back');
+$('variantNext').innerHTML=ic('back');
+$('variantPrev').onclick=() => cycleVariant(-1);
+$('variantNext').onclick=() => cycleVariant(1);
+$('detailScene').onchange=applyScene;
+$('detailHeight').onchange=event => { S.split=Number(event.target.value); render(); };
+document.addEventListener('click',event => {
+  const button=event.target.closest('[data-preview]');
+  if (!button) return;
+  const content=button.innerHTML;
+  button.disabled=true; button.innerHTML=ic('retry')+(S.lang === 'es' ? 'Obteniendo…' : 'Fetching…');
+  setTimeout(() => { button.disabled=false; button.innerHTML=content; },450);
+});
+
 addEventListener('resize', render);
-reset();
+applyScene();
 $('width').value = Math.min(1280, innerWidth - 24);
-render();
 </script>
 </body>
 </html>
