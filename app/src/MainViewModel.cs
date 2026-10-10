@@ -195,6 +195,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
                 return Text.Error("storage_failed", _startupError);
             if (_loading)
                 return Text.Get("window", "connecting");
+            if (HasFeatureFailure)
+                return FeatureFailure;
             return !_languageSaved ? Text.Get("errors", "language_unsaved") : string.Empty;
         }
     }
@@ -203,7 +205,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     public bool HasCommandError => _error is not null;
     public bool HasTorrentError => TorrentError.Length > 0;
     public InfoBarSeverity Severity =>
-        _connected && _storageFailed ? InfoBarSeverity.Error : InfoBarSeverity.Warning;
+        _connected && (_storageFailed || HasFeatureFailure) ? InfoBarSeverity.Error : InfoBarSeverity.Warning;
 
     public event PropertyChangedEventHandler? PropertyChanged;
     public event EventHandler? TextChanged;
@@ -219,6 +221,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     public ICommand Restart { get; }
     public bool CanRestart => !_connected && _connectionReason is not null;
     public string RestartText => Text.Get("connection", "restart");
+    private ICommand RetryFeatures { get; }
+    public ICommand Recovery => CanRestart ? Restart : RetryFeatures;
+    public bool CanRecover => CanRestart || _connected && !_loading && !_storageFailed && HasFeatureFailure;
+    public string RecoveryText => CanRestart ? RestartText : Text.Get("inspector", "retry");
+    public string RecoveryTip => CanRestart ? Text.Get("connection", "restart_tip") : Text.Get("window", "retry_features_tip");
 
     internal MainViewModel(Strings strings, DispatcherQueue dispatcher)
     {
@@ -235,6 +242,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         Library.RetryRequested += (_, _) => RequestSnapshot();
         Library.PropertyChanged += (_, args) =>
         {
+            if (args.PropertyName is nameof(Library.Failure) or "")
+                RefreshFeedback();
             if (Page != WindowPage.Library)
                 return;
             if (args.PropertyName is nameof(Library.Query) or "")
@@ -273,6 +282,15 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             },
             () => CanRestart
         );
+        RetryFeatures = new RelayCommand(async () =>
+        {
+            if (Library.HasFailure && Library.Retry.CanExecute(null))
+                Library.Retry.Execute(null);
+            else
+                RequestSnapshot();
+            try { await RetrySubtitles(); }
+            catch (Exception error) { ReportFeature(error); }
+        }, () => _connected && HasFeatureFailure);
         Add = new RelayCommand(
             () =>
             {
@@ -1051,6 +1069,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
                 Exit,
                 SwitchTheme,
                 Restart,
+                RetryFeatures,
                 OpenCompletion,
             }
         )

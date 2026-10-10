@@ -4,7 +4,6 @@
     "zero_size": "Empty (0 bytes)", "this_year": "This year",
     "missing": "File missing.", "unavailable": "Location unavailable.", "opening_error": "Could not open the file.",
     "more": "More actions",
-    "not_ready": "Library is unavailable. Waiting for current file information.",
     "file_changed": "The file has changed or is no longer managed. Refresh the Library and try again.",
     "file_type": "Type of file", "opens_with": "Opens with", "open_with": "Open with {0}",
     "empty": "No files yet", "no_matches": "No files match", "unidentified": "Not identified",
@@ -24,7 +23,7 @@
     "identify": "Identify…", "edit": "Edit identification", "enable": "Enable…", "ok": "OK", "disable": "Disable",
     "enable_tip": "Allow the selected provider to look up video information", "disable_tip": "Stop looking up video information",
     "identify_tip": "Save the selected movie or series for this file", "search_title": "Search for a movie or series", "matches": "Matching movies and series",
-    "clear_search_tip": "Clear the Library search", "retry_tip": "Reload Library from current torrents",
+    "clear_search_tip": "Clear the Library search",
     "source": "Provider", "configure": "Configure", "configure_tip": "Configure the selected provider",
     "fetch": "Fetch", "refresh": "Refresh", "fetching": "Fetching…",
     "fetch_tip": "Fetch video details from the selected provider", "refresh_tip": "Refresh saved video details from the selected provider",
@@ -55,6 +54,7 @@
     "copy_failed": "The log could not be copied. Try again."
   },
   "window": {
+    "retry_features_tip": "Retry access to Library and subtitle records",
     "free_space": "{0} free",
     "external_ip": "External IP: {0}",
     "external_unknown": "External IP: Not available",

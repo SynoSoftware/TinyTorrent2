@@ -33,10 +33,14 @@ matching combination. Such evidence limitations remain honest limitations;
 they are not unfinished code or a new test matrix. Retain existing artifacts
 and do not repeat live probes or consume supplier allowance to fill coverage.
 
-The current shared-owner, supplier, routing, naming and Settings corrections
-have passed colleague source review. No build, test, app or network request ran
-for this batch yet. The owner has authorized a batched Debug x64 compilation
-and the relevant targeted offline checks.
+The settled shared-owner, supplier, routing, naming and Settings corrections
+passed colleague source review, Debug x64 compilation and the focused offline
+checks recorded in [delivery evidence](library-implementation.md#current-status).
+The existing SourceChecks reopening fixture now corrupts a protected secret,
+language JSON and a timestamp, then verifies persisted repairs without losing
+healthy subtitle records or ownership. This guards the feature-wide failure and
+repeat-download risk that the earlier healthy-value fixture did not exercise.
+No application, fresh capture or live supplier request ran for this batch.
 
 ## Ownership and lifetime
 

@@ -2,9 +2,7 @@
   x:Class="Syno.TinyTorrent.Library.LibraryTable"
   xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-  xmlns:local="using:Syno.TinyTorrent.Library"
-  xmlns:controls="using:Syno.TinyTorrent.Controls"
-  xmlns:icons="using:Syno">
+  xmlns:local="using:Syno.TinyTorrent.Library">
   <UserControl.Resources>
     <DataTemplate x:Key="Name" x:DataType="local:LibraryRow"><TextBlock Text="{x:Bind Name, Mode=OneWay}" Style="{StaticResource TinyTorrentBodyTextStyle}" FlowDirection="LeftToRight" /></DataTemplate>
     <DataTemplate x:Key="Folder" x:DataType="local:LibraryRow"><TextBlock Text="{x:Bind Folder, Mode=OneWay}" Style="{StaticResource TinyTorrentBodyTextStyle}" FlowDirection="LeftToRight" /></DataTemplate>
@@ -21,12 +19,5 @@
     <DataTemplate x:Key="Modified" x:DataType="local:LibraryRow"><TextBlock Text="{x:Bind Modified, Mode=OneWay}" Style="{StaticResource TinyTorrentBodyTextStyle}" /></DataTemplate>
     <DataTemplate x:Key="Kind" x:DataType="local:LibraryRow"><TextBlock Text="{x:Bind Kind, Mode=OneWay}" Style="{StaticResource TinyTorrentBodyTextStyle}" /></DataTemplate>
   </UserControl.Resources>
-  <Grid>
-    <Grid x:Name="Host" />
-    <InfoBar x:Name="Failure" VerticalAlignment="Bottom" Severity="Error" IsClosable="False">
-      <InfoBar.ActionButton>
-        <controls:ActionButton x:Name="Retry" Glyph="{x:Bind icons:Lucide.RotateCw}" AutomationProperties.AutomationId="LibraryRetry" />
-      </InfoBar.ActionButton>
-    </InfoBar>
-  </Grid>
+  <Grid x:Name="Host" />
 </UserControl>

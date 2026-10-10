@@ -196,6 +196,8 @@ internal sealed partial class Acquisition
                 return true;
             }, _lifetime.Token).ConfigureAwait(false);
             await RefreshCounts().ConfigureAwait(false);
+            if (Failure == SubtitleFailure.Database)
+                Failure = SubtitleFailure.None;
         }
         catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
         catch (Exception error) when (error is SqliteException or IOException or UnauthorizedAccessException)

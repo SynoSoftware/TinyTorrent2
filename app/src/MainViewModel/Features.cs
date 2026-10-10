@@ -18,7 +18,34 @@ public sealed partial class MainViewModel
     private bool _applyingSettings;
     private Task? _subtitlesStarting;
     private bool _featuresClosed;
+    private Exception? _featureFailure;
+    private bool HasFeatureFailure => _featureFailure is not null || Library.HasFailure ||
+        Subtitles?.Failure == SubtitleFailure.Database;
+    private string FeatureFailure => _featureFailure is { } error ? Text.Error(error) :
+        Library.HasFailure ? Library.Failure : Text.Get("subtitles", "failure_database");
     internal SubtitleAcquisition? Subtitles { get; private set; }
+
+    private void RefreshFeedback()
+    {
+        if (_closed || _featuresClosed)
+            return;
+        Changed(nameof(Message));
+        Changed(nameof(HasFeedback));
+        Changed(nameof(Severity));
+        Changed(nameof(Recovery));
+        Changed(nameof(CanRecover));
+        Changed(nameof(RecoveryText));
+        Changed(nameof(RecoveryTip));
+        ((RelayCommand)RetryFeatures).Refresh();
+    }
+
+    private void ReportFeature(Exception error)
+    {
+        if (_closed || _featuresClosed)
+            return;
+        _featureFailure = error;
+        RefreshFeedback();
+    }
 #if CAPTURE
     internal bool CanStartFeatures { get; set; } = true;
 #endif
@@ -44,6 +71,7 @@ public sealed partial class MainViewModel
             ]);
             Library.Attach(store, videos, new FileFacts(_database));
             Subtitles = new SubtitleAcquisition(_database, _providerHttp);
+            Subtitles.Changed += (_, _) => _dispatcher.TryEnqueue(RefreshFeedback);
             Changed(nameof(Subtitles));
             _subtitlesStarting = Subtitles.Initialize(Text.Language);
             var sources = new FileSources(_database, Store.Cleanup + SubtitleAcquisition.Cleanup,
@@ -56,7 +84,7 @@ public sealed partial class MainViewModel
                         DisconnectFeatures();
                 _dispatcher.TryEnqueue(() => _ = RefreshFeatures());
             };
-            _fileSource.Failed += (_, error) => _dispatcher.TryEnqueue(() => Report(error));
+            _fileSource.Failed += (_, error) => _dispatcher.TryEnqueue(() => ReportFeature(error));
             _client.Disconnected += _ => DisconnectFeatures();
             _fileSource.Observe(snapshot);
         }
@@ -100,12 +128,16 @@ public sealed partial class MainViewModel
             }
             await Subtitles.SetLanguage(Text.Language);
             await Subtitles.Reconcile();
+            lock (_featuresGate)
+                if (!_closed && !_featuresClosed && _fileSource is { IsReady: true } && IsConnected)
+                    _featureFailure = null;
+            RefreshFeedback();
         }
         catch (Exception error)
         {
             lock (_featuresGate)
                 Subtitles?.SetConnected(false);
-            Report(error);
+            ReportFeature(error);
         }
     }
 

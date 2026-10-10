@@ -29,9 +29,11 @@ not a prerequisite for searching or saving subtitles.
 
 Normal operation has no dialogs, notifications, torrent columns, inspector
 statuses, or manual selection workflow. Persistent problems and their remedies
-appear only in subtitle Settings, because background subtitle work must stay
+appear in subtitle Settings, because background subtitle work must stay
 out of the person's download workflow. A subtitle failure never changes torrent
 completion, seeding, or the availability of the movie.
+Shared source and database failures use the existing persistent workspace
+feedback and Retry instead, because they affect Library and subtitles together.
 
 **Owner ruling: every wanted video file in a managed torrent is treated alike.**
 A movie, one of several movies in a torrent, and an episode in a season pack
@@ -443,15 +445,15 @@ for a supplier, preserving accepted unfinished jobs for the next window.
 Persist the pending work and subtitle records in SQLite so work resumes after a
 restart. The records, and the check before each lookup, keep
 reconnecting or restarting from consuming the supplier's allowance again. If
-the database cannot be used, subtitle work pauses and the Supplier footer says
-so, because without records TinyTorrent cannot avoid repeat downloads.
+the database cannot be used, subtitle work pauses and the shared workspace
+feedback offers Retry, because without records TinyTorrent cannot avoid repeat downloads.
 
 Retry temporary network failures with bounded backoff and respect the supplier's
 retry or quota-reset time. Authentication failures wait for corrected credentials.
 Apply rate and quota limits across the supplier account's work, not independently
 per movie. A large movie collection must not multiply the permitted request rate.
 Settings shows a compact explanation of persistent problems, including account
-failure, exhausted allowance, an unusable proxy route, an unusable database, or
+failure, exhausted allowance, an unusable proxy route, or
 a subtitle that could not be saved, with the affected file when relevant and a remedy or known
 automatic retry time. The [handoff](../app/settings-options-prototype.md#subtitles)
 places it in critical text on the Supplier card and the Subtitles category card.

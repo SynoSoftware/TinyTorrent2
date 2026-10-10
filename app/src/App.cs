@@ -36,6 +36,7 @@ public partial class App : Application
         TaskScheduler.UnobservedTaskException += (_, args) =>
             ExceptionLog.Write(LogDirectory, args.Exception, "Unobserved task");
         InitializeComponent();
+        Resources["LucideFont"] = Syno.Lucide.Font;
     }
 
     protected override async void OnLaunched(LaunchActivatedEventArgs args)

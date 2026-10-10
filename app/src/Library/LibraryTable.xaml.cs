@@ -52,15 +52,12 @@ public sealed partial class LibraryTable : UserControl
 
     private void OnModel(object? sender, PropertyChangedEventArgs args)
     {
-        if (args.PropertyName is nameof(Browser.Failure) or nameof(Browser.IsAvailable) or "")
-            RefreshFailure();
         if (args.PropertyName is nameof(Browser.Rows) or nameof(Browser.Configuration) or "")
             Refresh();
     }
 
     private void Refresh()
     {
-        RefreshFailure();
         if (_table is null || _configuration != _model.Configuration)
             Create();
         if (_table is not { } table)
@@ -147,17 +144,6 @@ public sealed partial class LibraryTable : UserControl
         if (_table?.EmptyContent is StackPanel content)
             foreach (var action in content.Children.OfType<ActionButton>())
                 action.Command = null;
-    }
-
-    private void RefreshFailure()
-    {
-        var failed = _model.HasFailure;
-        Failure.Message = failed ? _model.Failure : _model.Text.Get("library", "not_ready");
-        Failure.Severity = failed ? InfoBarSeverity.Error : InfoBarSeverity.Informational;
-        Failure.IsOpen = failed || !_model.IsAvailable;
-        Retry.Text = _model.Text.Get("inspector", "retry");
-        Retry.Command = _model.Retry;
-        ToolTipService.SetToolTip(Retry, _model.Text.Get("library", "retry_tip"));
     }
 
     private void Create()

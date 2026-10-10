@@ -95,7 +95,7 @@ std::wstring Number(double value, unsigned digits = 0)
     wchar_t decimal[16] = L".";
     wchar_t thousand[16] = L",";
     wchar_t grouping[16] = L"3;0";
-    auto locale = LOCALE_NAME_USER_DEFAULT;
+    LPCWSTR locale = LOCALE_NAME_USER_DEFAULT;
     GetLocaleInfoEx(locale, LOCALE_SDECIMAL, decimal, static_cast<int>(std::size(decimal)));
     GetLocaleInfoEx(locale, LOCALE_STHOUSAND, thousand, static_cast<int>(std::size(thousand)));
     GetLocaleInfoEx(locale, LOCALE_SGROUPING, grouping, static_cast<int>(std::size(grouping)));
@@ -446,7 +446,7 @@ std::wstring Tray::Counts() const
     auto count = activity_.torrentCount;
     if (activity_.paused)
     {
-        return strings_.Format("tray", count == 1 ? "paused_one" : "paused", {Number(count)});
+        return strings_.Format("tray", count == 1 ? "paused_one" : "paused", {Number(static_cast<double>(count))});
     }
     auto active = Number(activity_.activeCount);
     auto queued = Number(activity_.queuedCount);

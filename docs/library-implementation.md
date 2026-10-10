@@ -34,10 +34,28 @@ valid for the code they exercised. The last verified capture app is
 `76F011E3`; the native review is
 `Capture-library-files-f8426b9a-a43c-4cd6-83a6-e8a261a46299`.
 These are existing results, not instructions to repeat them.
-The current ownership, routing, naming and presentation corrections have passed
-colleague source review. They are not yet compiled or visually captured; earlier
-build evidence describes the source at that time. The owner has authorized a
-batched Debug x64 compilation and the relevant targeted offline checks.
+The settled ownership, routing, naming and presentation corrections passed
+colleague source review with no open finding. Final Debug x64 engine and window
+builds passed with zero warnings and zero errors. The successful engine compile
+took 58.26 seconds and the window compile 180.27 seconds. Compiler failures were
+corrected before completion: the tray's locale pointer type, stale generated
+Proxy bindings, and application-template font lookup. Only affected compilation
+was repeated; dependencies and Release were not rebuilt.
+
+`app/tests/SourceChecks.ps1` passed against the final assembly in 3.23 seconds,
+covering source membership, identification, database recovery and subtitle file
+ownership. `app/tests/ProviderChecks.ps1` passed in 0.80 seconds: HTTP CONNECT,
+SOCKS4a and SOCKS5 reached local proxy listeners, and an unavailable adapter
+failed without direct fallback. The required generated-output checks were empty.
+Logs are `artifacts/library-subtitles-final-engine-debug-build.log`,
+`artifacts/library-subtitles-final-debug-build.log`,
+`artifacts/library-subtitles-final-source-checks.log` and
+`artifacts/library-subtitles-final-provider-checks.log`.
+
+No application, live supplier probe or fresh visual capture ran for this batch.
+The earlier capture remains evidence for its own source version, not a pixel
+verification of the current build. The approved prototype composition and
+interactions remain the authority; AI reports do not authorize redesign.
 
 The cancelled 10,000-file benchmark did not pass: worst warm p95 was 421.55 ms
 for Videos, 376.81 ms for Music and 612.87 ms for Files. First navigation was a
@@ -269,6 +287,11 @@ behavior.
 
 ## Finish the delivery
 
+- Resolve #265 at the existing workspace feedback owner: retain shared source
+  and database failures until recovery, offer Retry there, and remove the
+  Library table's duplicate failure/loading bar. Supplier-specific lasting
+  problems remain in Settings; the shared database condition appears once.
+
 - Keep native tray command names aligned with the interface's Pause all and
   Resume all. Format rates and counts using Windows regional settings, and
   render stable notice codes through the engine catalogue while preserving
@@ -309,8 +332,8 @@ Complete the confirmed shared-owner corrections in the same batch:
 - Keep keyboard focus on the active table when Filters closes, and update Library
   facet controls in place so count refreshes preserve focus and open choices.
   Preserve Library's separate facet dimensions. Match its empty-state typography
-  and spacing to the torrent table while retaining its recovery actions; place
-  its failure bar over the table without shrinking the rows.
+  and spacing to the torrent table while retaining its recovery actions. Shared
+  failures use the workspace feedback without shrinking the rows.
 - Keep website-delay drafts as typed text, including invalid input, using the
   existing NumberBox editor pattern. Give identification search the native query
   icon and initial text focus through the shared Dialog owner. Add stable
@@ -318,8 +341,8 @@ Complete the confirmed shared-owner corrections in the same batch:
 - Share General and Library's field-column geometry through `Controls.FieldColumns`:
   two content slots, fixed 3:2 columns with a 48-pixel gap, stacked below 760 pixels.
   Keep content, headings and actions with their current owners. Trace initial
-  narrow layout, resizing and Library section replacement in source; the existing
-  delivery hold on builds and interaction programmes remains in force.
+  narrow layout, resizing and Library section replacement in source. Batched
+  compilation is authorized; cancelled interaction programmes stay cancelled.
 - Keep TextBox lookup at the existing `TextEditor` helper. Add's editable
   destination uses its exact `EditableText` name; existing callers still match
   any TextBox, including the supplied root. Password reveal lookup stays separate.
@@ -383,9 +406,8 @@ Complete the confirmed shared-owner corrections in the same batch:
 
 Trace startup/recovery, retry, withdrawal, replacement/moves, cache invalidation,
 source failure and teardown in the final source diff. These traces establish
-source reasoning; the final affected Debug x64 compile remains with the delivery
-owner after the batch settles. Repeated builds, tests, benchmarks and interaction
-programmes remain cancelled.
+source reasoning; validation evidence is recorded in Current status. Repeated
+intermediate builds, benchmarks and interaction programmes remain cancelled.
 
 The current batch contains source changes for the accepted ownership and
 presentation findings: compact absent-information details, shared Inspector
@@ -395,15 +417,14 @@ Clear through the existing page command, shares its tooltips/count formatter,
 localizes the typed database downgrade failure and subtitle timestamps, handles
 malformed TMDB responses and route failures, exposes source-currency views and
 applies the accepted local naming corrections in Schedule, PeriodEditor and
-private TableView code. These are source changes, not compiled or pixel-reviewed
-results. Other proposed architectural changes are not accepted by inclusion in
-an AI report.
+private TableView code. Current status distinguishes compilation evidence from
+the earlier pixel review. Other proposed architectural changes are not accepted
+by inclusion in an AI report.
 
-The lifecycle and source-failure changes are implemented in source. Have the
-colleague review the settled batch for correctness and ownership. One affected Debug x64
-compile remains pending with the delivery owner. Reuse the valid earlier
-evidence; do not reinstate benchmarks, capture journeys, tests or a new
-validation framework for this delivery.
+The lifecycle and source-failure changes passed colleague review of the settled
+batch for correctness and ownership. Reuse valid earlier evidence; do not
+reinstate benchmarks, capture journeys, comprehensive tests or a new validation
+framework for this delivery.
 
 Final source review found and closed two readiness races:
 provider-change completion must read and resume its current connection state
@@ -416,7 +437,7 @@ notifications on the dispatcher and every await outside the app's lifetime gate.
 The shared-route source review also closed acknowledged-settings publication,
 update-cache continuation and shutdown gaps. The browser gate and update check
 now consume that same confirmed route. These are colleague-reviewed source
-results; the current owner hold on compilation and execution still applies.
+results; Current status records the relevant compilation and offline checks.
 
 Implementation is delivered when the required operations are implemented and
 no concrete correctness finding remains open. Benchmark closure, exhaustive

@@ -21,10 +21,10 @@
       ToolTipService.ToolTip="{x:Bind Model.SpeedLimit.Global, Mode=OneWay}"
       AutomationProperties.HelpText="{x:Bind Model.SpeedLimit.DownloadHelp, Mode=OneWay}"
       AutomationProperties.AutomationId="TorrentDownloadLimit"
-      AutomationProperties.Name="{x:Bind DownloadLabel, Mode=OneWay}"
+      AutomationProperties.Name="{x:Bind DownloadLabel}"
     >
       <TextBox.Header>
-        <controls:FieldHeader Label="{x:Bind DownloadLabel, Mode=OneWay}"
+        <controls:FieldHeader Label="{x:Bind DownloadLabel}"
           Error="{x:Bind Model.SpeedLimit.DownloadError, Mode=OneWay}" />
       </TextBox.Header>
     </TextBox>
@@ -37,10 +37,10 @@
       ToolTipService.ToolTip="{x:Bind Model.SpeedLimit.Global, Mode=OneWay}"
       AutomationProperties.HelpText="{x:Bind Model.SpeedLimit.UploadHelp, Mode=OneWay}"
       AutomationProperties.AutomationId="TorrentUploadLimit"
-      AutomationProperties.Name="{x:Bind UploadLabel, Mode=OneWay}"
+      AutomationProperties.Name="{x:Bind UploadLabel}"
     >
       <TextBox.Header>
-        <controls:FieldHeader Label="{x:Bind UploadLabel, Mode=OneWay}"
+        <controls:FieldHeader Label="{x:Bind UploadLabel}"
           Error="{x:Bind Model.SpeedLimit.UploadError, Mode=OneWay}" />
       </TextBox.Header>
     </TextBox>

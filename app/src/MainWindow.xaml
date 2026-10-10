@@ -649,11 +649,11 @@
         <InfoBar.ActionButton>
           <controls:ActionButton
             Glyph="{x:Bind icons:Lucide.RotateCcw}"
-            ToolTipService.ToolTip="{x:Bind Model.Text.Get('connection', 'restart_tip'), Mode=OneWay}"
+            ToolTipService.ToolTip="{x:Bind Model.RecoveryTip, Mode=OneWay}"
             AutomationProperties.AutomationId="Restart"
-            Text="{x:Bind Model.RestartText, Mode=OneWay}"
-            Command="{x:Bind Model.Restart}"
-            Visibility="{x:Bind Model.CanRestart, Mode=OneWay}"
+            Text="{x:Bind Model.RecoveryText, Mode=OneWay}"
+            Command="{x:Bind Model.Recovery, Mode=OneWay}"
+            Visibility="{x:Bind Model.CanRecover, Mode=OneWay}"
           />
         </InfoBar.ActionButton>
       </InfoBar>

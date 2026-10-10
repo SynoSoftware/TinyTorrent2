@@ -4,7 +4,6 @@
     "zero_size": "Vacío (0 bytes)", "this_year": "Este año",
     "missing": "No se encuentra el archivo.", "unavailable": "Ubicación no disponible.", "opening_error": "No se pudo abrir el archivo.",
     "more": "Más acciones",
-    "not_ready": "La biblioteca no está disponible. Esperando información actual de los archivos.",
     "file_changed": "El archivo ha cambiado o ya no se gestiona. Actualiza la biblioteca e inténtalo de nuevo.",
     "empty": "Todavía no hay archivos", "no_matches": "No hay archivos coincidentes", "unidentified": "Sin identificar",
     "no_videos": "No hay vídeos coincidentes", "no_music": "No hay música coincidente", "none": "Ningún archivo seleccionado",
@@ -23,7 +22,7 @@
     "identify": "Identificar…", "edit": "Editar identificación", "enable": "Activar…", "ok": "Aceptar", "disable": "Desactivar",
     "enable_tip": "Permitir que el proveedor seleccionado consulte información de vídeo", "disable_tip": "Dejar de consultar información de vídeo",
     "identify_tip": "Guardar la película o serie seleccionada para este archivo", "search_title": "Buscar una película o serie", "matches": "Películas y series coincidentes",
-    "clear_search_tip": "Borrar la búsqueda de la biblioteca", "retry_tip": "Volver a cargar la biblioteca desde los torrents actuales",
+    "clear_search_tip": "Borrar la búsqueda de la biblioteca",
     "file_type": "Tipo de archivo", "opens_with": "Se abre con", "open_with": "Abrir con {0}",
     "source": "Proveedor", "configure": "Configurar", "configure_tip": "Configurar el proveedor seleccionado",
     "fetch": "Obtener", "refresh": "Actualizar", "fetching": "Obteniendo…",
@@ -55,6 +54,7 @@
     "copy_failed": "No se pudo copiar el registro. Inténtalo de nuevo."
   },
   "window": {
+    "retry_features_tip": "Volver a intentar acceder a la biblioteca y a los registros de subtítulos",
     "free_space": "{0} libres",
     "external_ip": "IP externa: {0}",
     "external_unknown": "IP externa: No disponible",

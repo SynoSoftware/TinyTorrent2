@@ -589,7 +589,7 @@ The page has no loading state; see the owner ruling under
 | No files | "No files yet", with a button that opens Torrents. |
 | No matches | "No videos match" and the query (or music, or files), with one button for each other configuration that has matches, and its count, plus Clear search. |
 | Engine disconnected | The window's existing connection InfoBar. Open and Identify are disabled. |
-| Database unavailable | The existing error surface reports the storage failure and offers Retry. Any last view stays non-actionable; normal torrent work remains available. |
+| Database unavailable | The existing persistent workspace InfoBar reports the storage failure and offers Retry. Any last view stays non-actionable; normal torrent work remains available. |
 | Video information off | The status bar and the card's Video information page offer "Turn on…", which opens the consent dialog. There is no notice above the table. |
 | Provider failure | "Waiting for TMDB" in the Type cell, the card and the status bar. No dialog. |
 | Failed Open | The title-cell and card glyph show the failure, and the card shows an error InfoBar with Missing, Unavailable or Couldn't open, the time it was checked, and Retry. |

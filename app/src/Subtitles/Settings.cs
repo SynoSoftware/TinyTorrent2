@@ -43,7 +43,7 @@ internal sealed partial class Settings : UserControl
     internal event EventHandler? SupplierRequested;
     internal event EventHandler? ProblemChanged;
     private SubtitleFailure? PersistentFailure => _model is
-        { Failure: not SubtitleFailure.None and not SubtitleFailure.Quota and not SubtitleFailure.Network } failed
+        { Failure: not SubtitleFailure.None and not SubtitleFailure.Quota and not SubtitleFailure.Network and not SubtitleFailure.Database } failed
         ? failed.Failure : null;
     internal string Problem => _failures.Text.Length > 0 ? _failures.Text :
         _model?.RetryAt > DateTimeOffset.UtcNow || PersistentFailure is not null
