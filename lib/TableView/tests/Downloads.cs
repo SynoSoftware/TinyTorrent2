@@ -119,10 +119,10 @@ internal static class Downloads
     internal static async Task<Table> LoadAsync()
     {
         Table table = Build();
-        table.Layout = TestData.DeclaredWidths(table);
         table.ItemsSource = Rows();
 
         await TableHarness.LoadAsync(table);
+        TestData.ApplyDeclaredWidths(table);
         table.UpdateLayout();
 
         // A row container's cells panel fills itself on its own Loaded, which is one turn later.

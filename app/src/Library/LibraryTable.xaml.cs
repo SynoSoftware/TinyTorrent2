@@ -136,6 +136,7 @@ public sealed partial class LibraryTable : UserControl
             empty.Children.Add(clear);
         }
         ClearEmpty();
+        empty.Loaded += (_, _) => ActionButton.Align(empty.Children.OfType<ActionButton>());
         table.EmptyContent = empty;
     }
 
@@ -156,7 +157,7 @@ public sealed partial class LibraryTable : UserControl
         var schema = table.Schema<LibraryRow>().Key(row => row.Entry.EntryId);
         var visible = _configuration switch
         {
-            LibraryConfiguration.Videos => new[] { "Title", "Type", "Year", "Genres" },
+            LibraryConfiguration.Videos => new[] { "Title", "Type", "Year", "ImdbRating", "TmdbRating", "Genres" },
             LibraryConfiguration.Music => new[] { "Title", "Artist", "Album", "Track", "Duration", "Year" },
             _ => new[] { "Name", "Folder", "Size", "Modified" },
         };
@@ -170,13 +171,12 @@ public sealed partial class LibraryTable : UserControl
         {
             var column = new Column
             {
-                Id = name.ToLowerInvariant(),
-                DisplayName = _model.Text.Get("library", name == "Title" ? "content_title" : name.ToLowerInvariant()),
+                Id = name switch { "ImdbRating" => "imdb", "TmdbRating" => "tmdb", _ => name.ToLowerInvariant() },
                 CellTemplate = (DataTemplate)Resources[name],
-                Width = name is "Title" or "Name" or "Folder" ? 300 : name == "Size" ? 110 : 150,
+                Width = name is "Title" or "Name" or "Folder" ? 300 : name is "ImdbRating" or "TmdbRating" ? 80 : name == "Size" ? 110 : 150,
                 MinWidth = name == visible[0] ? 160 : 48,
                 CanHide = name != visible[0],
-                CellAlignment = name == "Size" ? HorizontalAlignment.Right : HorizontalAlignment.Left,
+                CellAlignment = name is "Size" or "ImdbRating" or "TmdbRating" ? HorizontalAlignment.Right : HorizontalAlignment.Left,
                 IsVisible = visible.Contains(name),
             };
             table.Columns.Add(column);
@@ -184,6 +184,8 @@ public sealed partial class LibraryTable : UserControl
             {
                 case "Size": schema.SortKey(column, row => row.Entry.Size); break;
                 case "Year": schema.SortKey(column, row => row.Entry.Year); break;
+                case "ImdbRating": schema.SortKey(column, row => row.Entry.ImdbRating?.Value); break;
+                case "TmdbRating": schema.SortKey(column, row => row.Entry.TmdbRating?.Value); break;
                 case "Track": schema.SortKey(column, row => row.Entry.Track); break;
                 case "Duration": schema.SortKey(column, row => row.Entry.Duration); break;
                 case "Modified": schema.SortKey(column, row => row.Entry.Modified); break;
@@ -197,7 +199,7 @@ public sealed partial class LibraryTable : UserControl
             }
         }
         table.SelectionChanged += (_, selection) => _model.Select(selection.Current as LibraryRow);
-        table.ItemInvoked += (_, _) => _model.Open.Execute(null);
+        table.ItemInvoked += (_, _) => _model.Properties.Execute(null);
         table.ItemContextRequested += (_, args) => ItemContextRequested?.Invoke(this, args);
         table.Sort = new Sort(table.Columns.First(column => column.Id ==
             (_configuration == LibraryConfiguration.Music ? "artist" : _configuration == LibraryConfiguration.Videos ? "title" : "name")));

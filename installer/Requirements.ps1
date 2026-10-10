@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory)]
-    [ValidateSet('DotNet', 'Windows', 'VisualCpp', 'Running')]
+    [ValidateSet('DotNet', 'Windows', 'Running')]
     [string] $Kind
 )
 
@@ -43,14 +43,6 @@ try {
                     $_.Status -eq 'Ok'
                 })
                 if ($found.Count -eq 0) { $ready = $false }
-            }
-        }
-        'VisualCpp' {
-            $key = 'Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64'
-            if (Test-Path $key) {
-                $runtime = Get-ItemProperty $key
-                $ready = $runtime.Installed -eq 1 -and
-                    [version] $runtime.Version.TrimStart('v') -ge [version] $requirements.VisualCpp
             }
         }
         'Running' {

@@ -8,7 +8,6 @@
          otherwise each repeats the file name. -->
     <AssemblyTitle>TinyTorrent</AssemblyTitle>
     <Product>TinyTorrent</Product>
-    <Company>TinyTorrent</Company>
     <RootNamespace>Syno.TinyTorrent</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>..\..\resources\TinyTorrent.ico</ApplicationIcon>
@@ -30,6 +29,18 @@
          process that the window only copies beside itself. -->
     <MSBuildWarningsAsMessages>$(MSBuildWarningsAsMessages);MSB3851</MSBuildWarningsAsMessages>
   </PropertyGroup>
+  <!-- A local build embeds the two application credentials from
+       secrets/keys.json, which git ignores, so a plain Visual Studio build
+       reaches TMDB and OpenSubtitles. A property given on the command line
+       wins. A missing file or key leaves that provider unavailable, which the
+       Library and subtitle Settings show. The patterns read
+       tmdb.readAccessToken and opensubtitles.apiKey; \x22 is a double quote,
+       which MSBuild would otherwise read as an argument delimiter. -->
+  <PropertyGroup Condition="Exists('$(MSBuildThisFileDirectory)..\..\secrets\keys.json')">
+    <SecretsJson>$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)..\..\secrets\keys.json'))</SecretsJson>
+    <TmdbToken Condition="'$(TmdbToken)' == ''">$([System.Text.RegularExpressions.Regex]::Replace('$(SecretsJson)', '(?s)^(?:.*\x22tmdb\x22\s*:\s*\{[^}]*\x22readAccessToken\x22\s*:\s*\x22([^\x22]*)\x22.*|.*)$', '$1'))</TmdbToken>
+    <OpenSubtitlesKey Condition="'$(OpenSubtitlesKey)' == ''">$([System.Text.RegularExpressions.Regex]::Replace('$(SecretsJson)', '(?s)^(?:.*\x22opensubtitles\x22\s*:\s*\{[^}]*\x22apiKey\x22\s*:\s*\x22([^\x22]*)\x22.*|.*)$', '$1'))</OpenSubtitlesKey>
+  </PropertyGroup>
   <PropertyGroup Condition="'$(EnableCapture)' == 'true'">
     <DefineConstants>$(DefineConstants);CAPTURE</DefineConstants>
     <ArtifactsPivots>$(Configuration.ToLowerInvariant())_$(RuntimeIdentifier.ToLowerInvariant())_capture</ArtifactsPivots>
@@ -41,7 +52,8 @@
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.12" />
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.5" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.2705" />
-    <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.4.0" />
+    <PackageReference Include="Microsoft.WindowsAppSDK.WinUI" Version="2.3.6" />
+    <PackageReference Include="Microsoft.WindowsAppSDK.Runtime" Version="2.4.0" />
     <ProjectReference Include="..\..\lib\TableView\src\TableView.csproj" />
     <EmbeddedResource Include="Resources\*.json" LogicalName="%(Filename)%(Extension)" />
     <Content

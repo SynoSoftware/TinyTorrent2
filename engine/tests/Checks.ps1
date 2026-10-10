@@ -560,9 +560,9 @@ try {
             $until = [DateTime]::UtcNow.AddSeconds(25)
             do {
                 Start-Sleep -Milliseconds 100
-                $check = (Send-Command @{ command = 'snapshot' }).data.proxy_check
-            } while ($check.check_id -eq $checkId -and -not $check.outcome -and [DateTime]::UtcNow -lt $until)
-            Assert ($check.check_id -eq $checkId -and $check.outcome -eq 'unreachable') 'Checking a proxy where nothing listens did not report it unreachable'
+                $proxyCheck = (Send-Command @{ command = 'snapshot' }).data.proxy_check
+            } while ($proxyCheck.check_id -eq $checkId -and -not $proxyCheck.outcome -and [DateTime]::UtcNow -lt $until)
+            Assert ($proxyCheck.check_id -eq $checkId -and $proxyCheck.outcome -eq 'unreachable') 'Checking a proxy where nothing listens did not report it unreachable'
             Stop-Engine
             $snapshot = Start-Engine
             Assert ($snapshot.settings.schedule.Count -eq 1 -and $snapshot.settings.schedule[0].mode -eq 'alternative') 'A committed weekly period was lost at restart'

@@ -24,19 +24,25 @@ public sealed partial class InspectorPane
         if (_library is not null)
         {
             _library.PropertyChanged -= OnLibrary;
+            ClearLibraryActions();
             ClearLibraryContent();
-            LibraryOpen.Command = LibraryEdit.Command = null;
+            LibraryOpen.Command = null;
             _library.WatchInformation(false);
         }
         _library = library;
         if (library is not null)
         {
+            Bindings.StopTracking();
             library.PropertyChanged += OnLibrary;
             if (_libraryContent is null)
             {
                 AutomationProperties.SetAutomationId(_informationSection, "LibraryInformation");
                 AutomationProperties.SetAutomationId(_fileSection, "LibraryFile");
-                _libraryContent = new ScrollViewer { HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
+                _libraryContent = new ScrollViewer
+                {
+                    HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                    Margin = new Thickness(16,12,16,12),
+                };
                 _libraryContent.SizeChanged += OnGeneralSize;
                 SectionViews.Children.Add(_libraryContent);
             }
@@ -68,8 +74,39 @@ public sealed partial class InspectorPane
 
     private void OnLibrary(object? sender, PropertyChangedEventArgs args)
     {
-        if (args.PropertyName is nameof(LibraryBrowser.Selected) or nameof(LibraryBrowser.IdentifyLabel) or nameof(LibraryBrowser.Synopsis) or nameof(LibraryBrowser.Message) or nameof(LibraryBrowser.IsEnrichmentEnabled) or nameof(LibraryBrowser.IsAvailable) or nameof(LibraryBrowser.FileType) or
-            nameof(LibraryBrowser.IsOnDemand) or nameof(LibraryBrowser.IsFetching) or nameof(LibraryBrowser.FetchLabel) or nameof(LibraryBrowser.FetchMessage) or "")
+        if (_library is not { } library)
+            return;
+        if (args.PropertyName == nameof(LibraryBrowser.IsAvailable))
+        {
+            (_libraryContent?.Content as Details)?.RefreshCommands();
+            RefreshLibraryActions();
+            return;
+        }
+        if (args.PropertyName == nameof(LibraryBrowser.Origins))
+        {
+            RefreshLibraryActions();
+            return;
+        }
+        if (args.PropertyName == nameof(LibraryBrowser.Message))
+        {
+            RefreshLibraryFailure();
+            return;
+        }
+        if (args.PropertyName is nameof(LibraryBrowser.IsFetching) or nameof(LibraryBrowser.FetchLabel) or
+            nameof(LibraryBrowser.FetchTip) or nameof(LibraryBrowser.FetchMessage))
+        {
+            (_libraryContent?.Content as Details)?.RefreshFetch(library);
+            return;
+        }
+        if (args.PropertyName == nameof(LibraryBrowser.FileType))
+        {
+            RefreshLibraryOpenTip();
+            if (ReferenceEquals(Sections.SelectedItem, _fileSection))
+                RefreshLibrary();
+            return;
+        }
+        if (args.PropertyName is nameof(LibraryBrowser.Selected) or nameof(LibraryBrowser.EditMetadataLabel) or nameof(LibraryBrowser.Synopsis) or nameof(LibraryBrowser.IsEnrichmentEnabled) or
+            nameof(LibraryBrowser.IsOnDemand) or "")
             RefreshLibrary();
     }
 
@@ -84,63 +121,107 @@ public sealed partial class InspectorPane
         HeadingName.Text = row?.Name ?? string.Empty;
         ToolTipService.SetToolTip(HeadingName, row?.Name ?? string.Empty);
         HeadingSize.Text = row?.Size ?? string.Empty;
-        HeadingGlyph.Glyph = row?.Glyph ?? Syno.Lucide.File;
         _refreshing = true;
         Sections.IsEnabled = row is not null;
-        _informationSection.Text = text.Get("library", row?.Entry.Kind == FileKind.Audio ? "music_information" : "video_information");
+        _informationSection.Text = text.Get("library", "info");
         _fileSection.Text = text.Get("library", "file");
         _informationSection.IsEnabled = row is null || row.Entry.Kind is FileKind.Video or FileKind.Audio;
         Sections.SelectedItem = _informationSection.IsEnabled ? _librarySection ?? _informationSection : _fileSection;
         _refreshing = false;
         library.WatchInformation(row is not null && ReferenceEquals(Sections.SelectedItem, _informationSection));
-        FailureBar.IsOpen = library.Message.Length > 0;
-        FailureBar.Message = library.Message;
+        RefreshLibraryFailure();
         Retry.Command = library.Retry;
+        ClearLibraryContent();
+        RefreshLibraryActions();
+        _libraryContent.Content = new Details(library, ReferenceEquals(Sections.SelectedItem, _fileSection), _libraryContent);
+        _motion.Show(row is null ? EmptyState : _libraryContent);
+    }
+
+    private void RefreshLibraryActions()
+    {
+        if (_library is not { } library || _libraryContent is null)
+            return;
+        var text = library.Text;
+        ClearLibraryActions();
         AutomationProperties.SetName(LibraryOpen, text.Get("commands", "open"));
         LibraryOpen.Command = library.Open;
+        RefreshLibraryOpenTip();
+        AutomationProperties.SetName(LibraryTorrents, text.Get("library", "show_torrents"));
+        ToolTipService.SetToolTip(LibraryTorrents, text.Get("library", "show_torrents"));
+        OriginActions.Bind(LibraryTorrents, library);
+        AutomationProperties.SetName(LibraryMore, text.Get("library", "more"));
+        ToolTipService.SetToolTip(LibraryMore, text.Get("library", "more"));
+        var more = new MenuFlyout();
+        var open = new MenuFlyoutItem { Text = text.Get("commands", "open"), Command = library.Open,
+            Icon = new FontIcon { FontFamily = Syno.Lucide.Font, Glyph = Syno.Lucide.Play } };
+        var edit = new MenuFlyoutItem { Text = library.EditMetadataLabel, Command = library.EditMetadata,
+            Icon = new FontIcon { FontFamily = Syno.Lucide.Font, Glyph = library.EditMetadataGlyph } };
+        var torrents = OriginActions.Create(library);
+        more.Items.Add(open);
+        more.Items.Add(torrents);
+        more.Opening += (_, _) =>
+        {
+            var narrow = _libraryContent.ActualWidth < FieldColumns.WideMinimum;
+            open.Visibility = narrow ? Visibility.Visible : Visibility.Collapsed;
+            torrents.Visibility = narrow ? Visibility.Visible : Visibility.Collapsed;
+            edit.Visibility = library.Selected?.Entry.Kind == FileKind.Video
+                ? Visibility.Visible : Visibility.Collapsed;
+        };
+        more.Items.Add(new MenuFlyoutItem { Text = text.Get("commands", "open_folder"), Command = library.OpenFolder,
+            Icon = new FontIcon { FontFamily = Syno.Lucide.Font, Glyph = Syno.Lucide.FolderOpen } });
+        more.Items.Add(edit);
+        more.Items.Add(new MenuFlyoutItem { Text = text.Get("library", "erase_metadata"), Command = library.EraseMetadata,
+            Icon = new FontIcon { FontFamily = Syno.Lucide.Font, Glyph = Syno.Lucide.Eraser } });
+        LibraryMore.Flyout = more;
+    }
+
+    private void RefreshLibraryFailure()
+    {
+        if (_library is not { } library)
+            return;
+        FailureBar.IsOpen = library.Message.Length > 0;
+        FailureBar.Message = library.Message;
+        HeadingGlyph.Glyph = library.Selected?.Glyph ?? Syno.Lucide.File;
+    }
+
+    private void RefreshLibraryOpenTip()
+    {
+        if (_library is not { } library)
+            return;
         var tooltip = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         if (library.ApplicationIcon is { } icon)
             tooltip.Children.Add(new Image { Source = icon, Width = 24, Height = 24 });
         tooltip.Children.Add(new TextBlock { Text = library.OpenTip });
         ToolTipService.SetToolTip(LibraryOpen, tooltip);
-        AutomationProperties.SetName(LibraryEdit, library.IdentifyLabel);
-        LibraryEditIcon.Glyph = library.IdentifyGlyph;
-        LibraryEdit.Command = library.Identify;
-        LibraryEdit.Visibility = row?.Entry.Kind == FileKind.Video && row.Entry.Type.Length > 0
-            ? Visibility.Visible : Visibility.Collapsed;
-        ToolTipService.SetToolTip(LibraryEdit, library.IdentifyLabel);
-        AutomationProperties.SetName(LibraryMore, text.Get("library", "more"));
-        ToolTipService.SetToolTip(LibraryMore, text.Get("library", "more"));
-        ClearLibraryContent();
-        var more = new MenuFlyout();
-        var open = new MenuFlyoutItem { Text = text.Get("commands", "open"), Command = library.Open,
-            Icon = new FontIcon { FontFamily = Syno.Lucide.Font, Glyph = Syno.Lucide.Play } };
-        var edit = new MenuFlyoutItem { Text = library.IdentifyLabel, Command = library.Identify,
-            Icon = new FontIcon { FontFamily = Syno.Lucide.Font, Glyph = library.IdentifyGlyph } };
-        more.Items.Add(open);
-        more.Items.Add(edit);
-        more.Opening += (_, _) =>
+    }
+
+    private void ClearLibraryActions()
+    {
+        LibraryMore.Flyout?.Hide();
+        if (LibraryMore.Flyout is MenuFlyout menu)
+            ClearLibraryMenu(menu.Items);
+        LibraryMore.Flyout = null;
+        LibraryTorrents.Command = null;
+        LibraryTorrents.Flyout?.Hide();
+        if (LibraryTorrents.Flyout is MenuFlyout origins)
+            ClearLibraryMenu(origins.Items);
+        LibraryTorrents.Flyout = null;
+    }
+
+    private static void ClearLibraryMenu(IList<MenuFlyoutItemBase> items)
+    {
+        foreach (var item in items)
         {
-            var narrow = _libraryContent.ActualWidth < FieldColumns.WideMinimum;
-            open.Visibility = narrow ? Visibility.Visible : Visibility.Collapsed;
-            edit.Visibility = row?.Entry.Kind == FileKind.Video && (narrow || row.Entry.Type.Length == 0)
-                ? Visibility.Visible : Visibility.Collapsed;
-        };
-        more.Items.Add(new MenuFlyoutItem { Text = text.Get("commands", "open_folder"), Command = library.OpenFolder,
-            Icon = new FontIcon { FontFamily = Syno.Lucide.Font, Glyph = Syno.Lucide.FolderOpen } });
-        more.Items.Add(new MenuFlyoutItem { Text = text.Get("library", "clear_identification"), Command = library.ClearIdentification,
-            Icon = new FontIcon { FontFamily = Syno.Lucide.Font, Glyph = Syno.Lucide.Eraser } });
-        LibraryMore.Flyout = more;
-        _libraryContent.Content = new Details(library, ReferenceEquals(Sections.SelectedItem, _fileSection));
-        _motion.Show(row is null ? EmptyState : _libraryContent);
+            if (item is MenuFlyoutItem command)
+                command.Command = null;
+            else if (item is MenuFlyoutSubItem submenu)
+                ClearLibraryMenu(submenu.Items);
+        }
+        items.Clear();
     }
 
     private void ClearLibraryContent()
     {
-        if (LibraryMore.Flyout is MenuFlyout menu)
-            foreach (var item in menu.Items.OfType<MenuFlyoutItem>())
-                item.Command = null;
-        LibraryMore.Flyout = null;
         if (_libraryContent?.Content is Details details)
         {
             details.Dispose();

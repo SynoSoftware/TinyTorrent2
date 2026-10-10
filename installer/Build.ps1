@@ -129,6 +129,18 @@ function Check-Output {
     }
 }
 
+function Check-Executable([string] $File, [version] $Version, [string] $Company, [string] $Description) {
+    if (-not (Test-Path -LiteralPath $File)) { throw "The release is missing $File." }
+    $actual = [Diagnostics.FileVersionInfo]::GetVersionInfo($File)
+    if ($actual.FileMajorPart -ne $Version.Major -or $actual.FileMinorPart -ne $Version.Minor -or
+        $actual.FileBuildPart -ne $Version.Build -or $actual.FilePrivatePart -ne [Math]::Max(0, $Version.Revision) -or
+        $actual.ProductVersion.TrimEnd() -ne $Version.ToString() -or $actual.ProductName.TrimEnd() -ne 'TinyTorrent' -or
+        $actual.CompanyName.TrimEnd() -ne $Company -or $actual.FileDescription.TrimEnd() -ne $Description) {
+        throw "$File does not have the expected release version and product properties."
+    }
+    [Syno.TinyTorrent.Installer.Icons]::Check($File, (Join-Path $repository 'resources/TinyTorrent.ico'))
+}
+
 try {
     $null = New-Item -ItemType Directory -Path $release, $cache, $publish -Force
     try {
@@ -137,6 +149,9 @@ try {
     catch { throw 'Another installer is being generated. Wait for it to finish, then try again.' }
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
     Write-Host 'Generating TinyTorrent installer' -ForegroundColor Cyan
+    $releaseVersion = Reserve-Version (Join-Path $repository 'Directory.Build.props') $Version
+    Write-Host "Version: $releaseVersion"
+    Add-Type -Path (Join-Path $PSScriptRoot 'Icons.cs')
 
     $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
     if (-not (Test-Path -LiteralPath $vswhere)) {
@@ -146,6 +161,10 @@ try {
     if (-not $msbuild) { throw 'Visual Studio MSBuild could not be found. Install the repository build prerequisites.' }
     if (-not (Test-Path -LiteralPath (Join-Path $repository '3rdParty/complete'))) {
         throw '3rdParty is incomplete. The repository owner must supply the compiled dependencies before generating an installer.'
+    }
+    $upx = Join-Path $env:ProgramFiles 'upx/upx.exe'
+    if (-not (Test-Path -LiteralPath $upx)) {
+        throw "UPX is missing. Install it at $upx before generating an installer."
     }
     $inno = Get-Download 'https://github.com/jrsoftware/issrc/releases/download/is-7_1_0/innosetup-7.1.0-x64.exe' 'innosetup-7.1.0-x64.exe' 'Pyrsys B.V.'
     $compilerDir = Join-Path $cache 'inno-7.1.0'
@@ -163,9 +182,8 @@ try {
 
     $lane = Get-Lane
     Write-Host "Build output: $lane"
-    $releaseVersion = Reserve-Version (Join-Path $repository 'Directory.Build.props') $Version
-    Write-Host "Version: $releaseVersion"
-    $properties = @('/p:Configuration=Release', '/p:Platform=x64', "/p:ArtifactsPath=$lane", "/p:Version=$releaseVersion")
+    $properties = @('/p:Configuration=Release', '/p:Platform=x64', '/p:EnableCapture=false',
+        "/p:ArtifactsPath=$lane", "/p:Version=$releaseVersion")
     $buildArgs = @('/nologo', '/nr:false', '/v:minimal') + $properties
     Write-Host 'Building the native engine...'
     try {
@@ -177,25 +195,40 @@ try {
     try {
         Invoke-Tool $msbuild (@((Join-Path $repository 'app/src/TinyTorrent.csproj')) + $buildArgs +
             @('/restore', '/t:Publish', '/p:RuntimeIdentifier=win-x64', '/p:SelfContained=false',
-              '/p:WindowsAppSDKSelfContained=false', "/p:PublishDir=$publish/", '/fl',
+              '/p:WindowsAppSDKSelfContained=false', '/p:DebugSymbols=false', '/p:DebugType=None',
+              "/p:PublishDir=$publish/", '/fl',
               "/flp:logfile=$session/app.log;verbosity=normal")) (Join-Path $session 'app-console.log')
     }
     finally { Check-Output }
 
-    $metadata = & $msbuild (Join-Path $repository 'app/src/TinyTorrent.csproj') @properties /nologo /nr:false '-getProperty:Version,EngineTargetName,WindowTargetName,ProjectAssetsFile,TargetPlatformMinVersion'
+    $metadata = & $msbuild (Join-Path $repository 'app/src/TinyTorrent.csproj') @properties /nologo /nr:false '-getProperty:Version,Company,EngineTargetName,WindowTargetName,ProjectAssetsFile,TargetPlatformMinVersion,DefineConstants,EnableCapture'
     if ($LASTEXITCODE -ne 0) { throw 'Release metadata could not be read from the application project.' }
     $metadata = ($metadata -join "`n" | ConvertFrom-Json).Properties
+    if ($metadata.EnableCapture -eq 'true' -or $metadata.DefineConstants -match '(^|;)(DEBUG|CAPTURE)(;|$)') {
+        throw 'Diagnostic compilation is enabled. The installer was not generated.'
+    }
     $releaseVersion = $metadata.Version
     $engine = $metadata.EngineTargetName
     $window = $metadata.WindowTargetName
+    if ($engine -ne 'TinyTorrent' -or $window -ne 'TinyTorrentUI' -or
+        (Test-Path -LiteralPath (Join-Path $publish 'Engine.exe'))) {
+        throw 'The release must contain TinyTorrent.exe and TinyTorrentUI.exe, without Engine.exe.'
+    }
     $expected = [version] $releaseVersion
+    $engineFile = Join-Path $publish "$engine.exe"
+    $engineSize = (Get-Item -LiteralPath $engineFile).Length
+    Write-Host 'Compressing the published engine...'
+    Invoke-Tool $upx @('--best', '--lzma', '--compress-resources=0', $engineFile) (Join-Path $session 'upx.log')
+    Invoke-Tool $upx @('--test', $engineFile) (Join-Path $session 'upx-test.log')
+    Write-Host "Engine size: $engineSize -> $((Get-Item -LiteralPath $engineFile).Length) bytes"
     foreach ($name in $engine, $window) {
         $file = Join-Path $publish "$name.exe"
-        if (-not (Test-Path -LiteralPath $file)) { throw "The release is missing $name.exe." }
-        $actual = [Diagnostics.FileVersionInfo]::GetVersionInfo($file)
-        if ($actual.FileMajorPart -ne $expected.Major -or $actual.FileMinorPart -ne $expected.Minor -or
-            $actual.FileBuildPart -ne $expected.Build -or $actual.FilePrivatePart -ne [Math]::Max(0, $expected.Revision)) {
-            throw "$name.exe does not match release $releaseVersion. The installer was not generated."
+        Check-Executable $file $expected $metadata.Company 'TinyTorrent'
+    }
+    $assembly = [Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes((Join-Path $publish "$window.dll")))
+    foreach ($symbol in 'CaptureMode', 'ConfigureCapture', 'get_IsCaptureReview', '_captureDirectory', 'PrepareTiming', 'get_CanStartFeatures') {
+        if ($assembly.Contains($symbol)) {
+            throw "The published application contains diagnostic code ($symbol). The installer was not generated."
         }
     }
 
@@ -224,8 +257,6 @@ try {
     if ((Get-FileHash -LiteralPath $dotnet.File -Algorithm SHA512).Hash -ne $netFile.hash) {
         throw 'The .NET runtime download does not match Microsoft release metadata.'
     }
-    $visualCpp = Get-Download 'https://aka.ms/vs/17/release/vc_redist.x64.exe' 'vc_redist.x64.exe' 'Microsoft Corporation'
-    $vcVersion = [Diagnostics.FileVersionInfo]::GetVersionInfo($visualCpp.File)
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $windowsPackages = @(Get-ChildItem -LiteralPath (Join-Path $runtimeDir 'tools/MSIX/win10-x64') -Filter '*.msix' | ForEach-Object {
         $archive = [IO.Compression.ZipFile]::OpenRead($_.FullName)
@@ -248,7 +279,6 @@ try {
     @{
         DotNet = $framework.version
         Windows = $windowsPackages
-        VisualCpp = "$($vcVersion.FileMajorPart).$($vcVersion.FileMinorPart).$($vcVersion.FileBuildPart).$($vcVersion.FilePrivatePart)"
         Engine = "$engine.exe"
     } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $session 'requirements.json') -Encoding UTF8
 
@@ -276,10 +306,10 @@ try {
     $installerName = "TinyTorrent-$releaseVersion-x64-Setup"
     $minimum = ([version] $metadata.TargetPlatformMinVersion).ToString(3)
     $compilerArgs = @('/Qp', "/DAppVersion=$releaseVersion", "/DMinWindows=$minimum",
+        "/DAppPublisher=$($metadata.Company)",
         "/DEngineName=$engine", "/DSourceDir=$publish", "/DRuntimeDir=$session", "/DOutputDir=$session",
         "/DDotNetUrl=$($dotnet.Url)", "/DDotNetHash=$($dotnet.Hash)",
-        "/DWindowsUrl=$($windows.Url)", "/DWindowsHash=$($windows.Hash)",
-        "/DVisualCppUrl=$($visualCpp.Url)", "/DVisualCppHash=$($visualCpp.Hash)")
+        "/DWindowsUrl=$($windows.Url)", "/DWindowsHash=$($windows.Hash)")
     if ($Certificate) {
         $sdkBin = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits/10/bin'
         $signTool = Get-ChildItem -LiteralPath $sdkBin -Directory | Sort-Object Name -Descending |
@@ -300,6 +330,7 @@ try {
     Write-Host 'Compiling the installer...'
     Invoke-Tool $compiler ($compilerArgs + "/DInstallerName=$installerName" + (Join-Path $PSScriptRoot 'Setup.iss')) (Join-Path $session 'installer.log')
     $installer = Join-Path $session "$installerName.exe"
+    Check-Executable $installer $expected $metadata.Company 'TinyTorrent Setup'
     if ($Certificate -and (Get-AuthenticodeSignature -LiteralPath $installer).Status -ne 'Valid') {
         throw 'The generated installer signature is invalid. Nothing was placed in the release folder.'
     }

@@ -56,7 +56,9 @@ public sealed partial class MainWindow
         if (!ready)
             return;
         // The window is on screen, so the engine closes its splash.
+#if CAPTURE
         if (!IsCaptureReview)
+#endif
             await Model.ReplyActivation(true);
         await Model.ReceiveActivations();
     }
@@ -85,7 +87,11 @@ public sealed partial class MainWindow
 
     private void StartPlacement()
     {
-        if (!IsCaptureReview && _placementPath is null && Model.DataDirectory is { } directory)
+#if CAPTURE
+        if (IsCaptureReview)
+            return;
+#endif
+        if (_placementPath is null && Model.DataDirectory is { } directory)
             _placementRead = RestorePlacement(directory);
     }
 
@@ -171,7 +177,7 @@ public sealed partial class MainWindow
                 && InspectorContent.Content is InspectorPane pane
             )
                 pane.Layout = inspector;
-            if (double.IsFinite(placement.SplitHeight) && placement.SplitHeight >= 300)
+            if (double.IsFinite(placement.SplitHeight) && placement.SplitHeight > 0)
                 _splitHeight = placement.SplitHeight;
             UpdateInspectorSize();
         }
@@ -259,7 +265,7 @@ public sealed partial class MainWindow
             Page = Model.Page,
             Category = _settingsPage?.Category,
             Filter = Model.Filter,
-            FiltersOpen = Model.TorrentFiltersOpen,
+            FiltersOpen = Model.IsFilterOpen,
             ToolbarOpen = Model.IsToolbarOpen,
             Selected = [.. Model.Selected.Select(torrent => torrent.TorrentId)],
             Current = Model.Current?.TorrentId,

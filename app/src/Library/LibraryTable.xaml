@@ -4,11 +4,35 @@
   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
   xmlns:local="using:Syno.TinyTorrent.Library">
   <UserControl.Resources>
-    <DataTemplate x:Key="Name" x:DataType="local:LibraryRow"><TextBlock Text="{x:Bind Name, Mode=OneWay}" Style="{StaticResource TinyTorrentBodyTextStyle}" FlowDirection="LeftToRight" /></DataTemplate>
+    <DataTemplate x:Key="Name" x:DataType="local:LibraryRow">
+      <Grid ColumnSpacing="8" ToolTipService.ToolTip="{x:Bind Failure, Mode=OneWay}">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+        <FontIcon FontFamily="{ThemeResource LucideFont}" Glyph="{x:Bind Glyph, Mode=OneWay}"
+          Style="{StaticResource TinyTorrentStatusIconStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+          AutomationProperties.AccessibilityView="Raw" />
+        <TextBlock Grid.Column="1" Text="{x:Bind Name, Mode=OneWay}" Style="{StaticResource TinyTorrentBodyTextStyle}" FlowDirection="LeftToRight" />
+      </Grid>
+    </DataTemplate>
     <DataTemplate x:Key="Folder" x:DataType="local:LibraryRow"><TextBlock Text="{x:Bind Folder, Mode=OneWay}" Style="{StaticResource TinyTorrentBodyTextStyle}" FlowDirection="LeftToRight" /></DataTemplate>
-    <DataTemplate x:Key="Title" x:DataType="local:LibraryRow"><TextBlock Text="{x:Bind Title, Mode=OneWay}" Style="{StaticResource TinyTorrentBodyTextStyle}" /></DataTemplate>
+    <DataTemplate x:Key="Title" x:DataType="local:LibraryRow">
+      <Grid ColumnSpacing="8" ToolTipService.ToolTip="{x:Bind Failure, Mode=OneWay}">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+        <FontIcon FontFamily="{ThemeResource LucideFont}" Glyph="{x:Bind Glyph, Mode=OneWay}"
+          Style="{StaticResource TinyTorrentStatusIconStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+          AutomationProperties.AccessibilityView="Raw" />
+        <TextBlock Grid.Column="1" Text="{x:Bind Title, Mode=OneWay}" Style="{StaticResource TinyTorrentBodyTextStyle}" />
+      </Grid>
+    </DataTemplate>
     <DataTemplate x:Key="Type" x:DataType="local:LibraryRow"><TextBlock Text="{x:Bind Type, Mode=OneWay}" Style="{StaticResource TinyTorrentBodyTextStyle}" /></DataTemplate>
     <DataTemplate x:Key="Year" x:DataType="local:LibraryRow"><TextBlock Text="{x:Bind Year, Mode=OneWay}" Style="{StaticResource TinyTorrentBodyTextStyle}" /></DataTemplate>
+    <DataTemplate x:Key="ImdbRating" x:DataType="local:LibraryRow"><TextBlock Text="{x:Bind ImdbRating, Mode=OneWay}" ToolTipService.ToolTip="{x:Bind ImdbTip, Mode=OneWay}" Style="{StaticResource TinyTorrentBodyTextStyle}" /></DataTemplate>
+    <DataTemplate x:Key="TmdbRating" x:DataType="local:LibraryRow"><TextBlock Text="{x:Bind TmdbRating, Mode=OneWay}" ToolTipService.ToolTip="{x:Bind TmdbTip, Mode=OneWay}" Style="{StaticResource TinyTorrentBodyTextStyle}" /></DataTemplate>
     <DataTemplate x:Key="Genres" x:DataType="local:LibraryRow"><TextBlock Text="{x:Bind Genres, Mode=OneWay}" Style="{StaticResource TinyTorrentBodyTextStyle}" /></DataTemplate>
     <DataTemplate x:Key="Cast" x:DataType="local:LibraryRow"><TextBlock Text="{x:Bind Cast, Mode=OneWay}" Style="{StaticResource TinyTorrentBodyTextStyle}" /></DataTemplate>
     <DataTemplate x:Key="Artist" x:DataType="local:LibraryRow"><TextBlock Text="{x:Bind Artist, Mode=OneWay}" Style="{StaticResource TinyTorrentBodyTextStyle}" /></DataTemplate>

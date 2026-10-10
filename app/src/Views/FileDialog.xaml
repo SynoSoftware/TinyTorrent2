@@ -129,7 +129,10 @@
               FlowDirection="LeftToRight"
             >
               <TextBox.Header>
-                <controls:FieldHeader Error="{x:Bind Model.FileDraft.DestinationError, Mode=OneWay}" />
+                <controls:FieldHeader
+                  Label="{x:Bind Model.Text.Get('file_action', 'destination'), Mode=OneWay}"
+                  Error="{x:Bind Model.FileDraft.DestinationError, Mode=OneWay}"
+                />
               </TextBox.Header>
             </TextBox>
             <controls:ActionButton

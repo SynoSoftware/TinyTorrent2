@@ -8,6 +8,8 @@ public sealed record Entry(long EntryId, string Path, string Name, long Size)
     public string Title { get; init; } = string.Empty;
     public string Type { get; init; } = string.Empty;
     public int? Year { get; init; }
+    public Rating? ImdbRating { get; init; }
+    public Rating? TmdbRating { get; init; }
     public string Genres { get; init; } = string.Empty;
     public string Cast { get; init; } = string.Empty;
     public string Artist { get; init; } = string.Empty;
@@ -30,8 +32,15 @@ internal sealed record Query(string Text, LibraryConfiguration Configuration)
 internal sealed record Matches(IReadOnlyList<Entry> Entries,
     IReadOnlyList<Facet> Facets, IReadOnlyDictionary<LibraryConfiguration, int> Counts);
 
-public sealed record Facet(string Section, string Value, int Count);
+public sealed record Facet(string Section, string Value, int Count)
+{
+    public string? Label { get; init; }
+}
 
-internal sealed record Detail(Entry Entry, string Cast, string Synopsis, IReadOnlyList<Origin> Origins);
+internal sealed record Detail(Entry Entry, string Cast, string Synopsis, IReadOnlyList<Origin> Origins)
+{
+    internal VideoChoice? Series { get; init; }
+    internal IReadOnlyList<Episode> Episodes { get; init; } = [];
+}
 
-public sealed record Origin(string OriginId, string Name);
+public sealed record Origin(string OriginId, string Name, int FileIndex);

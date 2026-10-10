@@ -25,13 +25,16 @@ Update it as choices are made; historical reviews do not supply active requireme
 For automatic subtitle downloading or its Settings prototype, read the
 [subtitle design](subtitles.md). It records the agreed invisible workflow,
 configuration, and required file-operation changes before implementation.
-The [subtitle implementation plan](subtitles-implementation.md) maps it entirely
-to C# owners, including database and subtitle-file handling.
+The completed [subtitle implementation plan](subtitles-implementation.md) maps
+it entirely to C# owners, including database and subtitle-file handling.
 
 For Library work, read the [Library master plan](library.md). It owns the
 agreed data-source membership, cached video information, search and interaction
 design before implementation.
-The [Library implementation plan](library-implementation.md) orders the C# work;
+Its [prototype implementation review](library.md#prototype-implementation-review)
+tracks the current Inspector and navigation decisions, pending choices, and
+evidence required before native adoption.
+The completed [Library implementation plan](library-implementation.md) records the C# work;
 Library and subtitles share one window-lifetime SQLite owner.
 
 For TableView work, continue with the [table glossary](../lib/TableView/CONTEXT.md),

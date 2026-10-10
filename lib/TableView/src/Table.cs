@@ -104,7 +104,6 @@ public sealed partial class Table : Control
             }
             List<string> order = new();
             Dictionary<string, bool> visibility = new(StringComparer.Ordinal);
-            Dictionary<string, double> widths = new(StringComparer.Ordinal);
 
             if (_schemaCaptured)
             {
@@ -124,11 +123,6 @@ public sealed partial class Table : Control
                     {
                         visibility[id] = visible;
                     }
-
-                    if (column.WidthOverride is double width && width != column.BaselineWidth)
-                    {
-                        widths[id] = width;
-                    }
                 }
             }
             else
@@ -146,7 +140,6 @@ public sealed partial class Table : Control
             return new ColumnLayout(
                 order,
                 visibility,
-                widths,
                 sort?.Column.Id,
                 sort?.Direction ?? SortDirection.Ascending
             );
@@ -178,9 +171,6 @@ public sealed partial class Table : Control
             value.VisibilityOverrides is null
                 ? new Dictionary<string, bool>()
                 : new Dictionary<string, bool>(value.VisibilityOverrides),
-            value.WidthOverrides is null
-                ? new Dictionary<string, double>()
-                : new Dictionary<string, double>(value.WidthOverrides),
             value.SortColumnId,
             value.SortDirection
         );
@@ -201,7 +191,7 @@ public sealed partial class Table : Control
             _headerStrip.Attach(this);
             if (!_filledOnce)
             {
-                _headerStrip.SizeChanged += OnHeaderSizeChanged;
+                LayoutUpdated += OnInitialLayout;
             }
         }
 
@@ -220,10 +210,7 @@ public sealed partial class Table : Control
     {
         DetachInput();
 
-        if (_headerStrip is not null)
-        {
-            _headerStrip.SizeChanged -= OnHeaderSizeChanged;
-        }
+        LayoutUpdated -= OnInitialLayout;
 
         // A settle waiting to fire would rebuild a view whose template parts have just been taken
         // away, and would hold this table alive to do it.
@@ -243,6 +230,7 @@ public sealed partial class Table : Control
         }
 
         _detached = true;
+        LayoutUpdated -= OnInitialLayout;
 
         // A table taken out of the tree sees no exit, and nothing points at rows it no longer shows.
         _pointerOver = false;
@@ -262,6 +250,11 @@ public sealed partial class Table : Control
 
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
+        if (!_filledOnce)
+        {
+            LayoutUpdated -= OnInitialLayout;
+            LayoutUpdated += OnInitialLayout;
+        }
         _source.Resume();
         _detached = false;
         if (_surface is not null)
@@ -365,8 +358,6 @@ public sealed partial class Table : Control
             _pendingLayout = null;
             ApplyLayoutCore(pending);
         }
-
-        FillOnce();
 
         if (_hasPendingSort)
         {
@@ -509,29 +500,10 @@ public sealed partial class Table : Control
             }
         }
 
-        // Both maps are complete override maps: an omitted ID clears any earlier override.
+        // An omitted visibility override restores the declared visibility, without changing live widths.
         foreach (EffectiveColumn column in ordered)
         {
-            column.WidthOverride = null;
             column.VisibilityOverride = null;
-        }
-
-        if (state.WidthOverrides is not null)
-        {
-            foreach (KeyValuePair<string, double> entry in state.WidthOverrides)
-            {
-                if (entry.Key is null || !byId.TryGetValue(entry.Key, out EffectiveColumn? column))
-                {
-                    continue;
-                }
-
-                if (!column.Column.CanResize || !double.IsFinite(entry.Value) || entry.Value <= 0)
-                {
-                    continue;
-                }
-
-                column.WidthOverride = column.Clamp(entry.Value);
-            }
         }
 
         if (state.VisibilityOverrides is not null)

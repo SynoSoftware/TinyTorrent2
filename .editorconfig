@@ -1,0 +1,3 @@
+# Editors write LF, the form .gitattributes stores, so working files match Git.
+[*]
+end_of_line = lf

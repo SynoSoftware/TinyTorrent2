@@ -240,6 +240,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         Settings = new Settings(this, _client);
         Library = new LibraryBrowser(strings, dispatcher);
         Library.RetryRequested += (_, _) => RequestSnapshot();
+        Library.FiltersRequested += (_, _) => IsFilterOpen = true;
+        Library.PropertiesRequested += (_, _) => IsInspectorCompact = false;
         Library.PropertyChanged += (_, args) =>
         {
             if (args.PropertyName is nameof(Library.Failure) or "")
@@ -353,7 +355,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         SwitchFilters = new RelayCommand(
             () =>
             {
-                IsFilterOpen = !IsFilterOpen;
+                ShowsFilters = !ShowsFilters;
                 return Task.CompletedTask;
             },
             () => true

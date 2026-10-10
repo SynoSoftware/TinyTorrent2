@@ -7,7 +7,7 @@ using Syno.TinyTorrent.Views;
 
 namespace Syno.TinyTorrent.Library;
 
-internal sealed class IdentificationDialog : UserControl, IDraft
+internal sealed class MetadataDialog : UserControl, IDraft
 {
     private readonly Browser _library;
     private readonly Entry _entry;
@@ -15,19 +15,19 @@ internal sealed class IdentificationDialog : UserControl, IDraft
     private readonly ListView _results = new() { DisplayMemberPath = "Label", MaxHeight = 300, SelectionMode = ListViewSelectionMode.Single };
     private readonly InfoBar _error = new() { Severity = InfoBarSeverity.Error, IsClosable = false };
     private CancellationTokenSource? _request;
+    private Exception? _failure;
     public bool IsPending { get; private set; }
     public bool CanSubmit => !IsPending && HasDraft;
     public bool HasDraft => _results.SelectedItem is VideoChoice;
-    internal bool IsCorrection => _entry.Type.Length > 0;
     public event PropertyChangedEventHandler? PropertyChanged;
 
-    internal IdentificationDialog(Browser library, Entry entry)
+    internal MetadataDialog(Browser library, Entry entry)
     {
         _library = library;
         _entry = entry;
         _input = new AutoSuggestBox { Text = FileName.Interpret(entry.Name).Title, QueryIcon = new SymbolIcon(Symbol.Find) };
-        AutomationProperties.SetAutomationId(_input, "IdentificationSearch");
-        AutomationProperties.SetAutomationId(_results, "IdentificationMatches");
+        AutomationProperties.SetAutomationId(_input, "MetadataSearch");
+        AutomationProperties.SetAutomationId(_results, "MetadataMatches");
         Content = new StackPanel { Spacing = 12, MinWidth = 380, Children = { _input, _results, _error } };
         _input.QuerySubmitted += async (_, _) => await Find();
         _input.TextChanged += (_, args) =>
@@ -45,6 +45,8 @@ internal sealed class IdentificationDialog : UserControl, IDraft
         _input.PlaceholderText = _library.Text.Get("library", "search_title");
         AutomationProperties.SetName(_input, _input.PlaceholderText);
         AutomationProperties.SetName(_results, _library.Text.Get("library", "matches"));
+        _error.Message = _failure is null ? string.Empty : _library.Error(_failure);
+        _error.IsOpen = _failure is not null;
     }
 
     internal async Task Find()
@@ -59,11 +61,15 @@ internal sealed class IdentificationDialog : UserControl, IDraft
             if (!request.IsCancellationRequested)
             {
                 _results.ItemsSource = choices;
-                _error.IsOpen = false;
+                Report(null);
             }
         }
         catch (OperationCanceledException) { }
-        catch (Exception error) { Report(error); }
+        catch (Exception error)
+        {
+            if (!request.IsCancellationRequested)
+                Report(error);
+        }
         finally
         {
             if (ReferenceEquals(_request, request))
@@ -83,13 +89,18 @@ internal sealed class IdentificationDialog : UserControl, IDraft
         PropertyChanged?.Invoke(this, new(nameof(CanSubmit)));
         try
         {
-            if (await _library.IdentifyVideo(_entry, choice, request.Token))
+            if (await _library.SaveMetadata(_entry, choice, request.Token))
                 return true;
             Report(new VideoException("library", "no_video_match"));
             return false;
         }
         catch (OperationCanceledException) { return false; }
-        catch (Exception error) { Report(error); return false; }
+        catch (Exception error)
+        {
+            if (!request.IsCancellationRequested)
+                Report(error);
+            return false;
+        }
         finally
         {
             IsPending = false;
@@ -100,10 +111,10 @@ internal sealed class IdentificationDialog : UserControl, IDraft
         }
     }
 
-    private void Report(Exception error)
+    private void Report(Exception? error)
     {
-        _error.Message = _library.Error(error);
-        _error.IsOpen = true;
+        _failure = error;
+        RefreshText();
     }
 
     internal void Cancel() => _request?.Cancel();

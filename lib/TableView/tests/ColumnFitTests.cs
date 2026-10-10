@@ -176,21 +176,30 @@ public class ColumnFitTests
         });
 
     [TestMethod]
-    public Task ASavedWidthKeepsTheTableFromFillingItsWidth() =>
+    public Task RestoringLayoutDoesNotMoveLiveWidths() =>
         TestHost.RunAsync(async () =>
         {
             Table table = Build(Column("a", 400), Column("b", 200));
-            table.Layout = TestData.Layout(widths: new Dictionary<string, double> { ["a"] = 250 });
             await TableHarness.LoadAsync(table);
             await SettleAsync(table);
+            TableHarness.SetWidth(table, "a", 250);
+            table.Layout = TestData.Layout();
+            await SettleAsync(table);
+            Assert.AreEqual(250d, TableHarness.EffectiveWidth(table, "a"), 0d);
+        });
 
-            Assert.AreEqual(250d, TableHarness.EffectiveWidth(table, "a"), 0d, "the saved width");
-            Assert.AreEqual(
-                200d,
-                TableHarness.EffectiveWidth(table, "b"),
-                0d,
-                "one chosen width means the person has sized the columns"
-            );
+    [TestMethod]
+    public Task LegacySavedWidthsDoNotOverrideTheInitialFill() =>
+        TestHost.RunAsync(async () =>
+        {
+            Table table = Build(Column("a", 200), Column("b", 150));
+            table.Layout = System.Text.Json.JsonSerializer.Deserialize<ColumnLayout>(
+                """{"Order":["a","b"],"VisibilityOverrides":{},"WidthOverrides":{"a":250},"HasManualWidths":true}""")!;
+            await TableHarness.LoadAsync(table);
+            await SettleAsync(table);
+            Assert.AreEqual(400d, TableHarness.EffectiveWidth(table, "a"), 0d);
+            Assert.AreEqual(300d, TableHarness.EffectiveWidth(table, "b"), 0d);
+            Assert.IsFalse(System.Text.Json.JsonSerializer.Serialize(table.Layout).Contains("WidthOverrides"));
         });
 
     // ------------------------------------------------------------------ what a fit refuses
@@ -368,9 +377,9 @@ public class ColumnFitTests
             Assert.AreEqual(LayoutChange.Fit, reported);
             Assert.AreEqual(
                 100 + Inset(table),
-                table.Layout.WidthOverrides["a"],
+                TableHarness.EffectiveWidth(table, "a"),
                 0d,
-                "the snapshot read after the report carries the new width override"
+                "the live column carries the fitted width"
             );
         });
 
@@ -432,14 +441,14 @@ public class ColumnFitTests
         return rows;
     }
 
-    /// <summary>A table restored with every declared width, so only a fit command fits it.</summary>
+    /// <summary>Start fit tests at declared widths after initialization has completed.</summary>
     private static async Task<Table> LoadAsync(List<FitRow> rows, params Column[] columns)
     {
         Table table = Build(columns);
-        table.Layout = TestData.DeclaredWidths(table);
         table.ItemsSource = rows;
 
         await TableHarness.LoadAsync(table);
+        TestData.ApplyDeclaredWidths(table);
         await SettleAsync(table);
         return table;
     }

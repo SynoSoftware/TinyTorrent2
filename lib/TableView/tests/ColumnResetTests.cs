@@ -25,7 +25,6 @@ public class ColumnResetTests
 
             Assert.AreEqual(200d, TableHarness.EffectiveWidth(h.Table, "a"));
             Assert.AreEqual(200d, TableHarness.EffectiveWidth(h.Table, "b"));
-            Assert.AreEqual(0, h.Table.Layout.WidthOverrides.Count, "no override is left");
         });
 
     [TestMethod]

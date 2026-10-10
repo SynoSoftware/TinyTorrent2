@@ -45,7 +45,6 @@ public class SortingTests
             table.Layout = new ColumnLayout(
                 new[] { "a", "b" },
                 new Dictionary<string, bool>(),
-                new Dictionary<string, double>(),
                 "b",
                 SortDirection.Ascending
             );

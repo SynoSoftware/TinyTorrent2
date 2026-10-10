@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
 using Windows.Foundation;
 
 namespace Syno.TableView;
@@ -164,12 +165,11 @@ public sealed partial class Table
         return changed;
     }
 
-    private void OnHeaderSizeChanged(object sender, SizeChangedEventArgs e) => FillOnce();
+    private void OnInitialLayout(object? sender, object args) => FillOnce();
 
     /// <summary>
-    /// Section 10's first fill: the first time the table has a width, scale the declared widths to
-    /// it, unless a column already has a width the person chose. That width came from a saved
-    /// layout, a resize or a fit, and the person's choice wins.
+    /// Section 10's first fill: after the table's first visible layout, scale the declared widths to
+    /// it. Later gestures change widths only for this table's lifetime.
     /// </summary>
     /// <remarks>
     /// The scale alone, without <see cref="FillWidth"/>'s fit: a fit would measure whatever rows
@@ -178,18 +178,23 @@ public sealed partial class Table
     /// </remarks>
     private void FillOnce()
     {
-        if (_filledOnce || !_schemaCaptured || _headerStrip is not { ActualWidth: > 0 } strip)
+        if (_filledOnce || !_schemaCaptured || !IsLoaded || ActualHeight <= 0
+            || _headerStrip is not { ActualWidth: > 0 })
         {
             return;
         }
 
-        _filledOnce = true;
-        strip.SizeChanged -= OnHeaderSizeChanged;
-
-        if (EffectiveLayout.Order.All(column => column.WidthOverride is null))
+        // A hidden tab can have measured widths before its first visible arrangement.
+        for (DependencyObject? ancestor = this; ancestor is not null; ancestor = VisualTreeHelper.GetParent(ancestor))
         {
-            ScaleToWidth();
+            if (ancestor is UIElement { Visibility: Visibility.Collapsed })
+                return;
         }
+
+        _filledOnce = true;
+        LayoutUpdated -= OnInitialLayout;
+
+        ScaleToWidth();
     }
 
     /// <summary>

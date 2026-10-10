@@ -1,5 +1,6 @@
 using Microsoft.UI.Input;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Automation.Provider;
 using Microsoft.UI.Xaml.Controls;
@@ -18,8 +19,11 @@ public sealed partial class Splitter : UserControl
     private double _maximum = 500;
     private Orientation _orientation;
     private bool _pointed;
+    private double _startValue;
     public double Value => _value;
     public event EventHandler<double>? ValueChanged;
+    // Carries the value before the gesture so the host can restore it after collapsing.
+    public event EventHandler<double>? ValueCommitted;
 
     // Horizontal is a bar between rows; Vertical is a bar between columns.
     public Orientation Orientation
@@ -45,7 +49,11 @@ public sealed partial class Splitter : UserControl
     {
         InitializeComponent();
         Orientation = Orientation.Horizontal;
-        Handle.DragStarted += (_, _) => Focus(FocusState.Pointer);
+        Handle.DragStarted += (_, _) =>
+        {
+            _startValue = _value;
+            Focus(FocusState.Pointer);
+        };
         Handle.DragDelta += (_, args) =>
             SetValue(
                 _value
@@ -53,13 +61,21 @@ public sealed partial class Splitter : UserControl
                         _orientation == Orientation.Horizontal
                             ? args.VerticalChange
                             : args.HorizontalChange
-                    )
+                    ),
+                commit: false
             );
         // The grip turns accent while pointed at, and stays so through a drag
         // that leaves the strip.
         PointerEntered += (_, _) => ShowActive(_pointed = true);
         PointerExited += (_, _) => ShowActive(_pointed = false);
-        Handle.DragCompleted += (_, _) => ShowActive(_pointed);
+        Handle.DragCompleted += (_, args) =>
+        {
+            ShowActive(_pointed);
+            if (args.Canceled)
+                SetValue(_startValue, commit: false);
+            else
+                ValueCommitted?.Invoke(this, _startValue);
+        };
         KeyDown += OnKey;
     }
 
@@ -72,18 +88,32 @@ public sealed partial class Splitter : UserControl
 
     internal void SetBounds(double minimum, double maximum, double value)
     {
+        var previous = (_minimum, _maximum, _value);
         _minimum = minimum;
         _maximum = Math.Max(minimum, maximum);
         _value = Math.Clamp(value, _minimum, _maximum);
+        Announce(RangeValuePatternIdentifiers.MinimumProperty, previous.Item1, _minimum);
+        Announce(RangeValuePatternIdentifiers.MaximumProperty, previous.Item2, _maximum);
+        Announce(RangeValuePatternIdentifiers.ValueProperty, previous.Item3, _value);
     }
 
-    internal void SetValue(double value)
+    internal void SetValue(double value, bool commit = true)
     {
         var clamped = Math.Clamp(value, _minimum, _maximum);
         if (_value == clamped)
             return;
+        var previous = _value;
         _value = clamped;
         ValueChanged?.Invoke(this, _value);
+        Announce(RangeValuePatternIdentifiers.ValueProperty, previous, _value);
+        if (commit)
+            ValueCommitted?.Invoke(this, previous);
+    }
+
+    private void Announce(AutomationProperty property, double previous, double current)
+    {
+        if (previous != current && FrameworkElementAutomationPeer.FromElement(this) is { } peer)
+            peer.RaisePropertyChangedEvent(property, previous, current);
     }
 
     private void OnKey(object sender, KeyRoutedEventArgs args)

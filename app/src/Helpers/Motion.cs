@@ -54,6 +54,26 @@ internal sealed class Motion
         _storyboard.Begin();
     }
 
+    internal void Fade(FrameworkElement content, double opacity)
+    {
+        var start = content.Opacity;
+        Stop();
+        content.Opacity = opacity;
+        if (!content.IsLoaded || !_settings.AnimationsEnabled || start == opacity)
+            return;
+        var animation = new DoubleAnimation
+        {
+            From = start,
+            To = opacity,
+            Duration = new Duration(TimeSpan.FromMilliseconds(180)),
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
+        };
+        Storyboard.SetTarget(animation, content);
+        Storyboard.SetTargetProperty(animation, nameof(UIElement.Opacity));
+        _storyboard.Children.Add(animation);
+        _storyboard.Begin();
+    }
+
     private void Slide(FrameworkElement content, double from, double to)
     {
         var transform = new TranslateTransform();

@@ -143,9 +143,12 @@ withdrawal or reconciles after reconnecting.
 Files, each with its own rows, columns, sort and filters.
 _Avoid_: mode and tab; the person chooses a configuration in the View menu.
 
-**Video information**: descriptive facts about a movie, series or episode,
+**Library metadata**: descriptive facts about a file's content, such as a
+movie's title, cast and synopsis or a song's artist and album. Within Library,
+the term is metadata; torrent metadata describes the download's contents.
+
+**Video information**: Library metadata about a movie, series or episode,
 from the provider.
-_Avoid_: metadata, which describes torrent content.
 
 **Provider**: the online service the person chose to supply video information,
 such as TMDB or Public websites.
@@ -161,7 +164,8 @@ _Avoid_: show, TV.
 file.
 
 **Identification**: the association of a Library file with the movie or TV
-content it represents.
+content it represents. It describes the matching operation; the user edits
+or erases metadata.
 
 ### Subtitles
 

@@ -63,17 +63,30 @@ function Sql([string] $Text, [hashtable] $Values = @{}, $Connection = $null) {
 }
 
 $schema = (Constant 'Library.Store' 'Schema') + (Constant 'Subtitles.Acquisition' 'Schema')
+$schemas = [string[]]@($schema, (Constant 'Library.Store' 'Information'))
 $projection = (Constant 'Services.FileSources' 'Schema') + (Constant 'Library.FileFacts' 'Schema') + (Constant 'Library.Store' 'Projection')
 $cleanup = (Constant 'Library.Store' 'Cleanup') + (Constant 'Subtitles.Acquisition' 'Cleanup')
 $reconcile = (Constant 'Library.Store' 'Reconcile') + (Constant 'Library.FileFacts' 'Reconcile')
 $invalidate = Constant 'Library.Store' 'Invalidate'
-$database = New-Value 'Services.Database' @($directory, $schema, $projection)
+$database = New-Value 'Services.Database' @($directory, ([string[]]@($schema)), 'SELECT 1;')
 $subtitles = $null
 $http = $null
 try {
-    $sources = New-Value 'Services.FileSources' @($database, $cleanup, $reconcile, $invalidate)
     $store = New-Value 'Library.Store' @($database)
     Invoke-Value $store 'Recover' @($cancel) | Out-Null
+    Sql @'
+INSERT INTO video_information(catalog_id,video_id,language,title,type,genres,cast,synopsis,keywords,search,retrieved)
+VALUES('tmdb','upgrade','','Preserved title','movie','','','','','',1700000000);
+INSERT INTO identifications VALUES('upgrade',0,'tmdb','upgrade',1,1700000000,'Preserved.mkv');
+'@ | Out-Null
+    $database.DisposeAsync().AsTask().GetAwaiter().GetResult() | Out-Null
+    $database = New-Value 'Services.Database' @($directory, $schemas, $projection)
+    $store = New-Value 'Library.Store' @($database)
+    Invoke-Value $store 'Recover' @($cancel) | Out-Null
+    Require ((Sql 'PRAGMA user_version;') -eq 2) 'The previous database did not upgrade to the ratings schema.'
+    Require ((Sql "SELECT COUNT(*) FROM identifications i JOIN video_information v USING(catalog_id,video_id) WHERE i.origin='upgrade' AND v.title='Preserved title' AND v.imdb_rating IS NULL AND v.tmdb_rating IS NULL;") -eq 1) 'The ratings upgrade changed a saved identification or invented a rating.'
+    Sql "DELETE FROM identifications WHERE origin='upgrade'; DELETE FROM video_information WHERE video_id='upgrade';" | Out-Null
+    $sources = New-Value 'Services.FileSources' @($database, $cleanup, $reconcile, $invalidate)
     $configuration = [Enum]::Parse($assembly.GetType('Syno.TinyTorrent.Models.LibraryConfiguration'), 'Videos')
     $query = New-Value 'Library.Query' @('', $configuration)
     $path = Join-Path $directory 'Example.2024.mkv'
@@ -89,12 +102,18 @@ try {
     $lateTarget = New-Value 'Library.VideoTarget' @($entry, 'tmdb', $false)
     $late = Invoke-Value $store 'Begin' @($lateTarget, $null, $cancel)
     Require ($null -ne $late) 'An unattempted movie could not start enrichment.'
-    $video = New-Value 'Library.VideoInformation' @('tmdb', 'movie/1', 'Chosen title', $movieKind)
+    $video = New-Value 'Library.VideoInformation' @('tmdb', 'movie/1', 'Chosen title', $movieKind) @{
+        TmdbRating = (New-Value 'Library.Rating' @([double]8.25, $movieKind))
+    }
     $chosen = Invoke-Value $store 'Begin' @((New-Value 'Library.VideoTarget' @($entry, 'tmdb', $true)), $null, $cancel)
     Require (Invoke-Value $store 'Complete' @($chosen, $video, 'success', $cancel)) 'An explicit identification was not saved.'
     $mixed = New-Value 'Library.Query' @('2024 chosen', $configuration)
     $matches = Invoke-Value $store 'Search' @($mixed, $cancel)
     Require ($matches.Entries.Count -eq 1 -and $matches.Counts[$configuration] -eq 1 -and $matches.Entries[0].Title -eq 'Chosen title') 'Search and its row summary did not reflect the saved identification.'
+    Require ($matches.Entries[0].TmdbRating.Value -eq 8.25 -and $matches.Entries[0].TmdbRating.Kind -eq $movieKind -and
+        $null -eq $matches.Entries[0].ImdbRating) 'An identified movie lost its rating scope or acquired another provider rating.'
+    $detail = Invoke-Value $store 'Detail' @($entry.EntryId, $cancel)
+    Require ($detail.Entry.TmdbRating.Value -eq 8.25) 'The Inspector read did not carry the saved rating.'
     $filters = $mixed.GetType().GetProperty('Configurations', $flags).GetValue($mixed)
     $videoFilters = [Collections.Generic.Dictionary[string,string]]::new()
     $videoFilters.Add('type', 'episode')
@@ -105,6 +124,13 @@ try {
     $filters.Add($fileConfiguration, $fileFilters)
     $matches = Invoke-Value $store 'Search' @($mixed, $cancel)
     Require ($matches.Entries.Count -eq 0 -and $matches.Counts[$configuration] -eq 0 -and $matches.Counts[$fileConfiguration] -eq 1) 'Rows and configuration counts did not use their own saved filters.'
+    $fileQuery = New-Value 'Library.Query' @('', $fileConfiguration)
+    $fileFilters.Add('year', '1999')
+    $fileFilters.Add('genres', 'Absent genre')
+    $fileQuery.GetType().GetProperty('Configurations', $flags).GetValue($fileQuery).Add($fileConfiguration, $fileFilters)
+    $matches = Invoke-Value $store 'Search' @($fileQuery, $cancel)
+    Require ($matches.Entries.Count -eq 0 -and @($matches.Facets | Where-Object { $_.Section -eq 'year' -and $_.Value -eq '1999' }).Count -eq 1 -and
+        @($matches.Facets | Where-Object { $_.Section -eq 'genres' -and $_.Value -eq 'Absent genre' }).Count -eq 1) 'Active Info filters disappeared from the Files filter pane when no rows matched.'
     $mixed = New-Value 'Library.Query' @('2024 nonexistentfilm', $configuration)
     $matches = Invoke-Value $store 'Search' @($mixed, $cancel)
     Require ($matches.Entries.Count -eq 0 -and $matches.Counts[$configuration] -eq 0) 'An unmatched term reused an earlier video match or behaved as OR across terms.'
@@ -131,7 +157,7 @@ try {
     Require ($matches.Entries[0].Created -eq 1700000000) 'Removing the original contributor lost shared file properties.'
 
     $database.DisposeAsync().AsTask().GetAwaiter().GetResult() | Out-Null
-    $database = New-Value 'Services.Database' @($directory, $schema, $projection)
+    $database = New-Value 'Services.Database' @($directory, $schemas, $projection)
     $sources = New-Value 'Services.FileSources' @($database, $cleanup, $reconcile, $invalidate)
     $store = New-Value 'Library.Store' @($database)
     Invoke-Value $store 'Recover' @($cancel) | Out-Null
@@ -139,6 +165,8 @@ try {
     Invoke-Value $sources 'Replace' @($second, $files, $cancel) | Out-Null
     $matches = Invoke-Value $store 'Search' @($query, $cancel)
     Require ($matches.Entries[0].Title -eq 'Chosen title' -and $matches.Entries[0].Created -eq 1700000000) 'Saved identification or properties did not survive reopening.'
+    Require ($matches.Entries[0].TmdbRating.Value -eq 8.25 -and $matches.Entries[0].TmdbRating.Kind -eq $movieKind -and
+        $null -eq $matches.Entries[0].ImdbRating) 'A saved rating or its scope did not survive move, withdrawal and reopening.'
 
     $pending = New-Value 'Services.Contribution' @('second', 'Second', $true, $false) @{ SavePath = $directory; Stamp = 'moving' }
     Invoke-Value $sources 'Reconcile' @((New-Values 'Services.Contribution' @($pending)), $cancel) | Out-Null
@@ -171,7 +199,7 @@ try {
     Invoke-Value $store 'SaveSettings' @('public', $settings, $cancel) | Out-Null
     Invoke-Value $store 'SetProvider' @('public', $cancel) | Out-Null
     $database.DisposeAsync().AsTask().GetAwaiter().GetResult() | Out-Null
-    $database = New-Value 'Services.Database' @($directory, $schema, $projection)
+    $database = New-Value 'Services.Database' @($directory, $schemas, $projection)
     $sources = New-Value 'Services.FileSources' @($database, $cleanup, $reconcile, $invalidate)
     $store = New-Value 'Library.Store' @($database)
     Invoke-Value $store 'Recover' @($cancel) | Out-Null
@@ -218,7 +246,7 @@ try {
     $matches = Invoke-Value $store 'Search' @($query, $cancel)
     Require ($matches.Entries[0].Title -eq 'Example') 'A failed refresh discarded the saved movie.'
     $request = Invoke-Value $store 'Begin' @($target, $null, $cancel)
-    Invoke-Value $store 'ClearIdentification' @($entry, $cancel) | Out-Null
+    Invoke-Value $store 'EraseMetadata' @($entry, $cancel) | Out-Null
     Require (!(Invoke-Value $store 'Complete' @($request, $savedVideo, 'complete', $cancel))) 'A late website reply overwrote a newer Clear identification.'
 
     Invoke-Value $sources 'Reconcile' @((New-Values 'Services.Contribution' @($first, $second)), $cancel) | Out-Null
@@ -319,6 +347,20 @@ try {
     Require (Invoke-Value $store 'Complete' @($attempt, $null, 'failed', $cancel)) 'A renamed file could not record its failed explicit refresh.'
     $detail = Invoke-Value $store 'Detail' @($deliberateEntry.EntryId, $cancel)
     Require ($detail.Entry.Title -eq 'Kept choice' -and $detail.Synopsis -eq 'Saved synopsis') 'A failed refresh discarded the explicit choice of a renamed file.'
+    $seriesKind = [Enum]::Parse($assembly.GetType('Syno.TinyTorrent.Models.VideoKind'), 'Series')
+    $episodeKind = [Enum]::Parse($assembly.GetType('Syno.TinyTorrent.Models.VideoKind'), 'Episode')
+    $episode = New-Value 'Library.Episode' @(1, 2, 'Second chapter', 'Episode synopsis')
+    $information = New-Value 'Library.VideoInformation' @($catalog, 'episode', 'Example series', $episodeKind) @{
+        Series = (New-Value 'Library.VideoChoice' @($catalog, 'series', $seriesKind, 'Example series'))
+        Episodes = (New-Values 'Library.Episode' @($episode))
+    }
+    $attempt = Invoke-Value $store 'Begin' @($renameTarget, $null, $cancel)
+    Require (Invoke-Value $store 'Complete' @($attempt, $information, 'success', $cancel)) 'An episode identification was not saved.'
+    $detail = Invoke-Value $store 'Detail' @($deliberateEntry.EntryId, $cancel)
+    $series = $detail.GetType().GetProperty('Series', $flags).GetValue($detail)
+    $episodes = $detail.GetType().GetProperty('Episodes', $flags).GetValue($detail)
+    Require ($series -eq 'Example series' -and $episodes.Count -eq 1 -and
+        $episodes[0].Season -eq 1 -and $episodes[0].Number -eq 2 -and $episodes[0].Name -eq 'Second chapter') 'The Inspector lost structured episode identity.'
     Invoke-Value $sources 'Reconcile' @((New-Values 'Services.Contribution' @($first)), $cancel) | Out-Null
 
     $subtitles = New-Value 'Subtitles.Acquisition' @($database, $http)
@@ -449,7 +491,7 @@ INSERT INTO subtitle_outputs VALUES($present,'en',1),($missing,'es',1);
     $subtitles.DisposeAsync().AsTask().GetAwaiter().GetResult() | Out-Null
     $subtitles = $null
     $database.DisposeAsync().AsTask().GetAwaiter().GetResult() | Out-Null
-    $database = New-Value 'Services.Database' @($directory, $schema, $projection)
+    $database = New-Value 'Services.Database' @($directory, $schemas, $projection)
     $subtitles = New-Value 'Subtitles.Acquisition' @($database, $http)
     Invoke-Value $subtitles 'Initialize' @('en') | Out-Null
     Require (!$subtitles.GetType().GetProperty('HasSecret', $flags).GetValue($subtitles)) 'An unreadable protected secret was retained.'

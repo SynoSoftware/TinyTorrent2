@@ -26,8 +26,6 @@ public sealed partial class MainWindow : Window
 {
     public MainViewModel Model { get; }
     public ICommand Back { get; }
-    internal static bool IsCaptureReview { get; }
-
     partial void ConfigureCapture();
 
     private AddDialog? _addDialog;
@@ -65,6 +63,8 @@ public sealed partial class MainWindow : Window
             _splitHeight = value;
             UpdateInspectorSize();
         };
+        Split.ValueCommitted += OnSplitCommitted;
+        InspectorSurface.SizeChanged += Motion.Clip;
         Workspace.SizeChanged += (_, _) => UpdateInspectorSize();
         Toolbar.SizeChanged += (_, _) => UpdateInspectorSize();
         StatusBar.SizeChanged += (_, _) => UpdateStatus();
@@ -172,11 +172,13 @@ public sealed partial class MainWindow : Window
             // A window still waiting to appear answers when it appears.
             if (_cloaked)
                 return;
+#if CAPTURE
             if (IsCaptureReview)
             {
                 await Model.ReplyActivation(false);
                 return;
             }
+#endif
             if (Model.IsClosing)
             {
                 await Model.ReplyActivation(false);
@@ -220,7 +222,9 @@ public sealed partial class MainWindow : Window
         UpdateMinimum(scale);
         AppWindow.Resize(new SizeInt32((int)(1040 * scale), (int)(680 * scale)));
         RememberBounds();
+#if CAPTURE
         if (!IsCaptureReview)
+#endif
             SetCloak(true);
         AppWindow.Closing += OnClosing;
         Closed += (_, _) =>
@@ -413,8 +417,14 @@ public sealed partial class MainWindow : Window
             UpdateChrome();
         if (args.PropertyName == nameof(MainViewModel.Page))
             UpdatePage();
-        if (args.PropertyName == nameof(MainViewModel.IsFilterOpen) && Model.IsFilterOpen && Model.Page == WindowPage.Library)
-            RefreshLibraryFilters();
+        if (string.IsNullOrEmpty(args.PropertyName) || args.PropertyName == nameof(MainViewModel.FilterPane))
+        {
+            Workspace.DisplayMode = Model.FilterPane == FilterPane.Compact
+                ? SplitViewDisplayMode.CompactInline : SplitViewDisplayMode.Inline;
+            FiltersToggle.Visibility = Model.FilterPane == FilterPane.Compact ? Visibility.Visible : Visibility.Collapsed;
+            if (Model.IsFilterOpen && Model.Page == WindowPage.Library)
+                RefreshLibraryFilters();
+        }
         if (Model.CanRestart)
             Reveal();
         if (
@@ -437,6 +447,7 @@ public sealed partial class MainWindow : Window
         if (
             string.IsNullOrEmpty(args.PropertyName)
             || args.PropertyName == nameof(MainViewModel.HasInspector)
+            || args.PropertyName == nameof(MainViewModel.IsInspectorCompact)
             || args.PropertyName == nameof(MainViewModel.IsToolbarOpen)
         )
             UpdateInspectorSize();
@@ -663,7 +674,11 @@ public sealed partial class MainWindow : Window
     // engine ask natively instead.
     private async Task ConfirmExit()
     {
-        if (_cloaked || IsCaptureReview || HasDialog || Model.IsPicking || Model.IsClosing)
+        if (_cloaked || HasDialog || Model.IsPicking || Model.IsClosing
+#if CAPTURE
+            || IsCaptureReview
+#endif
+        )
         {
             await Model.ReplyExit(ExitAnswer.Unavailable);
             return;

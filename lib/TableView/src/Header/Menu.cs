@@ -170,7 +170,7 @@ internal static class Menu
             menu.Items.Add(
                 Item(
                     () => target.Column.DisplayName,
-                    () => target.IsVisible ? Icons.Shown() : null,
+                    () => target.IsVisible ? Icons.Shown() : Icons.Hidden(),
                     () => !target.IsVisible || owner.CanHideColumn(target),
                     () => owner.SetColumnVisibility(target, !target.IsVisible),
                     () => target.IsVisible ? owner.Strings.ColumnShown : owner.Strings.ColumnHidden

@@ -324,11 +324,8 @@ public class ColumnMoveTests
     public Task TheRealizedHeaderAndRowsFollowTheNewOrder() =>
         TestHost.RunAsync(async () =>
         {
-            // Saved widths keep the first fill away, so every column stays 200 DIPs wide.
-            SortHarness h = await SortHarness.LoadAsync(
-                new[] { 1, 2, 3 },
-                configure: table => table.Layout = TestData.DeclaredWidths(table)
-            );
+            SortHarness h = await SortHarness.LoadAsync(new[] { 1, 2, 3 });
+            TestData.ApplyDeclaredWidths(h.Table);
             await Task.Delay(250);
             h.Table.UpdateLayout();
 
@@ -429,9 +426,9 @@ public class ColumnMoveTests
         Table table = TestData.Table(columns.Select(c => TestData.Column(c.Id, c.Width)).ToArray());
         table.Width = 700;
         table.Height = 200;
-        table.Layout = TestData.DeclaredWidths(table);
 
         await TableHarness.LoadAsync(table);
+        TestData.ApplyDeclaredWidths(table);
         table.UpdateLayout();
         return table;
     }

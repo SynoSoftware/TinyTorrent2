@@ -24,6 +24,8 @@ namespace Syno.TinyTorrent;
 
 public sealed partial class MainWindow
 {
+    internal static bool IsCaptureReview { get; }
+
     private string? _captureDirectory;
     private Task? _capture;
     private static readonly CaptureMode ReviewMode = Environment.GetEnvironmentVariable(
@@ -637,7 +639,6 @@ public sealed partial class MainWindow
         const uint WM_NCHITTEST = 0x0084;
         const int HTCLIENT = 1;
         const int HTCAPTION = 2;
-        const int HTSYSMENU = 3;
         var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
         var scale = Root.XamlRoot.RasterizationScale;
         var hits = new List<object>();
@@ -678,8 +679,6 @@ public sealed partial class MainWindow
                 TorrentMenu,
                 ViewMenu,
                 HelpMenu,
-                TorrentsPage,
-                LibraryPage,
                 Search,
                 SettingsButton,
                 ThemeButton,
@@ -691,27 +690,27 @@ public sealed partial class MainWindow
                 .TransformPoint(
                     new Windows.Foundation.Point(control.ActualWidth / 2, control.ActualHeight / 2)
                 );
-            Hit(control.Name, center, control == AppIcon ? HTSYSMENU : HTCLIENT);
+            Hit(control.Name, center, HTCLIENT);
         }
-        var pages = Pages
+        var menus = Menus
             .TransformToVisual(Root)
             .TransformBounds(
-                new Windows.Foundation.Rect(0, 0, Pages.ActualWidth, Pages.ActualHeight)
+                new Windows.Foundation.Rect(0, 0, Menus.ActualWidth, Menus.ActualHeight)
             );
         var search = Search
             .TransformToVisual(Root)
             .TransformBounds(
                 new Windows.Foundation.Rect(0, 0, Search.ActualWidth, Search.ActualHeight)
             );
-        if (search.Left <= pages.Right)
+        if (search.Left <= menus.Right)
             throw new InvalidOperationException(
-                "The review caption has no unused gap between its page switcher and search."
+                "The review caption has no unused gap between its menus and search."
             );
         Hit(
             "gap",
             new Windows.Foundation.Point(
-                (pages.Right + search.Left) / 2,
-                (pages.Top + pages.Bottom) / 2
+                (menus.Right + search.Left) / 2,
+                (menus.Top + menus.Bottom) / 2
             ),
             HTCAPTION
         );
@@ -1784,7 +1783,7 @@ public sealed partial class MainWindow
         Model.CloseInspector();
 
         var settings = Model.Settings;
-        await ShowSettings(new(SettingsCategory.General));
+        await ShowSettings(new(SettingsCategory.General, settings.ShowSplash.Name));
         await CaptureLayout();
         var page =
             _settingsPage

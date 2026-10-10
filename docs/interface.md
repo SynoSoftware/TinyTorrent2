@@ -64,16 +64,18 @@ code are not production architecture.
 
 **Owner's decision: keep the native WinUI MenuBar.** It is the discoverable home
 for commands and replaces the application navigation pane. Its dropdown commands
-use Lucide icons and separators between distinct action groups; menu headings
-retain native text presentation.
+use Lucide icons and separators between distinct action groups. Every expanded
+menu item, including choices and submenu parents, has an icon; menu headings
+retain native text presentation. Choice checkmarks do not replace their content
+icons in View.
 In a menu that mixes choices with commands, a choice shows its state as its
 icon: a checked, empty or mixed square. It is not a check-mark item there,
 because one check-mark item gives every item in its menu a second icon column
 that is empty beside the others. A menu of only on/off choices, such as View,
 uses native check-mark items with Lucide icons, because no column stands empty.
 
-The custom title bar contains one row: app icon, File/Torrent/View/Help MenuBar,
-the page switcher, bounded Search, Settings, the light/dark switch, and native caption
+The custom title bar contains one row: app-icon page switch, File/Torrent/View/Help
+MenuBar, bounded Search, Settings, the light/dark switch, and native caption
 buttons. Add and the selection commands are on the toolbar, not the title bar.
 Fit columns and Fill width are only in the table's column-header menu: in the
 title bar they read as window commands, and the column header holds no buttons
@@ -87,22 +89,22 @@ Title-bar actions are ordinary Buttons with the existing
 TinyTorrentCaptionButtonStyle, so they share its size, spacing and states with
 each other and with the native caption buttons beside them; CommandBar's
 separate button metrics would break that consistency. Settings sits immediately
-left of the theme button, using the Lucide gear icon. The theme button sits
+left of the theme button, using the Lucide Wrench icon. The theme button uses
+Lucide Sun for switching to light and Moon for switching to dark, so it
+remains distinct from Settings. Its tooltip names the destination theme. It sits
 immediately beside the native caption buttons, with no extra gap.
 Windows still owns minimize, maximize and close; never simulate those controls.
 
-Inset the icon and leave 24 effective pixels between the menu and page switcher,
-so page navigation reads as a separate group of controls. Search aligns to the
-right of its available space, before optional transfer speeds and caption actions;
-the spare space before it remains draggable. Reserve Windows' caption insets plus
+Inset the app-icon page switch. Search centres on the whole title bar where space
+permits, clamped between the menus and optional transfer speeds and caption actions
+at narrower widths. Spare space remains draggable. Reserve Windows' caption insets plus
 a command buffer. Search is at most 320 effective pixels wide. The minimum window
-width accommodates the measured menus, the page switcher as icons, a 200-pixel
+width accommodates the measured menus, the app-icon page switch, a 200-pixel
 search and the caption buttons, including translated labels. Unused title-bar space retains native dragging,
 double-click maximize/restore and the system menu; controls receive client input.
-The app icon is a native system-menu region: left-click or right-click opens
-Windows' Restore/Move/Size/Minimize/Maximize/Close menu, double-click closes the
-window, and Alt+Space opens the same menu. Windows owns these caption semantics;
-the icon does not open an application command menu.
+The app-icon page switch receives client input. It has no system-menu hit region
+or double-click-to-close behavior. Alt+Space and the unused caption area retain
+Windows' system-menu behavior.
 
 There is no application navigation pane, identity text, command overflow,
 language switch or permanent Exit button. Language and theme
@@ -110,12 +112,23 @@ are chosen in Settings; the title-bar light/dark shortcut uses the same theme
 owner.
 
 **Owner ruling: Torrents and [Library](library.md#presentation-and-interaction)
-are peer pages.** A SelectorBar, the page switcher, follows the MenuBar and
-offers Torrents (Ctrl+1) and Library (Ctrl+2); when the search box would drop
-below 200 pixels, its items show only their icons, with the names and shortcuts
-in tooltips. Global search also offers both pages. The second menu belongs to the
+are peer pages.** The app-icon position is their direct switch, with no separate
+selector or extra row. At rest it shows the current page: the canonical
+TinyTorrent logo for Torrents and the Library glyph for Library. Hover or keyboard
+focus flips to the destination; clicking commits that destination and holds its
+face for that interaction. Pointer exit ends a mouse interaction even if keyboard
+focus remains; a fresh pointer entry or keyboard focus previews the other page.
+Its background stays transparent during hover and press; the
+flip supplies the interaction feedback. Keyboard focus remains visible.
+Reduced motion skips the animation. Its tooltip and accessible
+name identify the destination and Ctrl+1 or Ctrl+2 shortcut. The logo represents
+the app's Torrents mode, never an individual torrent or Show in Torrents action.
+Global search also offers both pages. The second menu belongs to the
 current page: Torrent on Torrents, Library on Library. View shows the current
-page's presentation. File and Help do not change.
+page's presentation, with Filters first in both modes. Filters uses one command
+and one shared pane visibility state: changing pages changes its content, not
+whether it is open. Each page keeps its own filter criteria. File and Help do
+not change.
 
 On Settings and About, a Back arrow at the left of the title bar, before the
 app icon, and Alt+Left return to the page they were opened from, with the
@@ -184,6 +197,11 @@ wrap so consent and confirmation text remains readable. Lists of facts, labels,
 values and field errors keep one line per fact and expose their full text when
 trimmed. The shared Dialog template owns this distinction.
 
+The approved Library Sections composition also wraps synopsis prose and its
+filter content. Genre links flow as whole names onto further lines so every
+filter remains available; they do not turn ordinary metadata fields into wrapped
+rows. Artist and Album retain their whole filter value in their content section.
+
 Every button carries a Lucide icon, as [Buttons](#buttons) rules; elsewhere,
 add an icon when it helps recognition or scanning. Keep Lucide for
 application-authored icons and retain platform-owned control glyphs. Preserve
@@ -231,6 +249,11 @@ Shared controls and application resources own repeated parts: Dialog owns dialog
 chrome and buttons; SettingsRow and SettingsSection own settings rows and groups;
 Field and FieldColumns own property rows and their columns; FieldHeader owns
 editor labels with field errors; CheckStatus owns interactive check feedback.
+Section owns Inspector group headings, optional title details and actions, and
+the gap before their content. Library and Torrents consume that same template;
+the approved inline title/type composition shares a text baseline, an exception
+to the general vertical-centre rule for controls and icons. The shared template
+owns that alignment rather than per-screen offsets.
 ActionButton and the subtle/caption button styles own application buttons. The
 TinyTorrent text, icon and surface styles in App.xaml supply their shared looks.
 Strip, WrapPanel, Splitter and FileBrowser retain their existing layout and file
@@ -355,8 +378,10 @@ Use documented title-bar and backdrop APIs. The product window uses desktop
 acrylic as its base material, with the platform's fallback where acrylic is
 unavailable. Microsoft recommends Mica for a window's base, but the owner chose
 acrylic so that the window shows a blurred view of what is behind it.
-The caption and workspace share that same continuous acrylic surface and tint;
-neither has an independent opaque fill or a contrasting title-bar band. Native
+The caption and workspace share that same continuous acrylic surface and tint.
+The dark tint is neutral grey, with only a ten-percent overlay so the desktop
+acrylic remains visible. Neither has an independent
+opaque fill or a contrasting title-bar band. Native
 control states and transient surfaces keep their own necessary layering.
 Menus, flyouts, and other transient surfaces keep the platform's acrylic. A material
 is never a substitute for readable content or hierarchy.
@@ -525,22 +550,55 @@ menus, title-bar Settings button and their shortcuts. Ctrl+K, Ctrl+F and Ctrl+E
 focus the current page's search. Scope labels in global search distinguish a
 command for the selection from a command for all torrents.
 
+The shared `Pane` control owns the Filters and Inspector surfaces: its template
+uses the Settings cards' `LayerOnMicaBaseAltFillColorDefaultBrush` background and
+one-pixel `CardStrokeColorDefaultBrush` outline, with `OverlayCornerRadius`
+corners. Both end four pixels
+above the workspace's bottom edge. Filters
+retains its four-pixel side insets; the Inspector has a four-pixel right inset
+to match the table header's right edge. Rows retain the native selection inset.
+Filters adds no horizontal padding around its native list rows, so their text
+aligns with the header. The platform owns the
+fill and its theme and contrast fallbacks; the pane needs no separate
+palette or floating shadow. Both panes share this material so their surfaces stay
+consistent across Torrents and Library. The Filters title, scrollable choices and bottom Clear action
+retain their existing layout in both modes.
+The same template owns the header's minimum height of 40 pixels, padding and bottom
+divider. Pane also owns header composition: identity at the left, navigation
+centered in the remaining space, actions at the right. Identity yields space to
+navigation and actions and occupies at most half the header. Without navigation,
+the supplied header retains the full width, as Filters does.
+Each caller supplies its header, navigation, actions and body content, so changing the pane's
+chrome changes both surfaces together. Titles share `TinyTorrentGroupTitleTextStyle`.
+
 The Filters toggle opens a collapsible native pane with All, Downloading,
 Seeding, Paused, Queued and Errors choices and live counts. Closing the drawer
-keeps the chosen filter, identified in View > Filters and a status label.
+keeps the chosen criteria, identified by the status label.
 Escape closes the drawer when focus is inside it. Clear filters lives inside
 the drawer and calls the existing filter owner. Downloading includes metadata
 acquisition, Seeding includes completed torrents and Paused includes session
-pause. The drawer starts closed so the table keeps its full
-width until the person asks to filter. Status and progress remain visible and
+pause. One shared owner keeps pane visibility and its expanded or compact
+presentation in both modes. Hiding preserves that presentation for the next show.
+Close hides the pane completely and unchecks View > Filters. Minimize uses the
+Lucide Pin icon and collapses the pane to a ten-pixel bar with a vertically
+centred Lucide EllipsisVertical, keeping View > Filters checked. The ten-pixel
+strip contains an eight-pixel button and a two-pixel right gap, separating its
+highlight from the table. The icon clips within the button without widening it;
+clicking the button expands the pane. View > Filters
+restores a hidden pane's previous presentation and hides either visible state.
+Explicit filter links expand the pane to reveal the selected choice.
+Status and progress remain visible and
 sortable in the table. Tracker information
 belongs in the selected torrent's inspector. TableView owns generic interaction.
 Settings opens from File and About from Help. Close and Exit
 are File commands and keep their existing pending-work and draft guards.
 Help places subtitle setup before application updates and About. Subtitle setup
-restores the dismissible introduction on the Settings index, so closing that card
-does not make its guidance unreachable. Native add/remove transitions close the
-card and move the remaining categories into place without a layout jump.
+opens Settings directly at Subtitles through the existing category navigation,
+so the command never adds an introductory stop. The dismissible Settings index
+card includes one concise benefit subtitle beneath its heading, using the same
+secondary text style as the category cards. This requested introductory text is
+an exception to the work-surface help-text rule. Native add/remove transitions
+close the card and move the remaining categories into place without a layout jump.
 Keyboard and search paths invoke the same owners. About shows the product
 identity and running version on the same acrylic surface. The current page
 belongs to the main view model.
@@ -588,11 +646,10 @@ click makes a mixed selection consistent. The inspector does not repeat them:
 the item already shows the choice where it is changed. Open hands the file
 of a single-file torrent, or the folder of a multi-file torrent, to Windows as
 Explorer does, only on the person's request. Double-click and Enter on a row
-open the inspector; Properties in the torrent context menu does the same.
-On Library, Enter and double-click open the selected file through its Open command.
-The pane has a Close action rather than an ambiguous toolbar toggle, because its
-entry points already identify the torrent being inspected. Only Close closes
-the pane. When no torrent or several are selected, or the inspected torrent is
+invoke Properties in both Torrents and Library, showing and expanding the
+inspector even when it was hidden or compact. Properties in the context menu
+does the same. Close and View > Inspector hide the pane through the same draft
+guards. When no torrent or several are selected, or the inspected torrent is
 removed, the pane stays open and shows how many are selected, because a pane that
 closes and reopens as rows are selected moves the table under the person.
 Add torrent file opens
@@ -733,7 +790,7 @@ editor keeps its own keys.
 | Ctrl+V | Add the pasted magnet link or torrent file |
 | Ctrl+K, Ctrl+F, Ctrl+E | Focus global search outside Library, or the Library filter |
 | Ctrl+A | Select all torrents |
-| Enter | Open the torrent inspector, or the selected Library file, as double-click does |
+| Enter | Show and expand the inspector for the selected torrent or Library file, as double-click does |
 | Ctrl+S | Resume |
 | Ctrl+P | Pause |
 | Ctrl+M | Force start |
@@ -1032,19 +1089,27 @@ accounting. Schedule has its own category, with actual standard and alternative
 caps and Edit at the right of their card header, then the same limits chooser
 and current limits as Speed limits, above the existing weekly editor.
 Connection setup is a child Settings page because its capacity inputs and
-multi-field proposal form one explicit operation. Inputs and proposed changes
-sit side by side when they fit and stack otherwise; Apply and Cancel stay in
-the footer. Title-bar Back returns to the initiating setting. Ordinary settings
+multi-field proposal form one explicit operation. Its content and footer share
+Settings' `TinyTorrentSettingsWidth` resource (1000 DIPs), so a wide window does
+not spread the proposal across the workspace. Settings can grow beyond that
+baseline when its translated category labels need more room.
+The approved constrained layout places inputs and proposed changes side by side
+when they fit and stacks them otherwise; Apply and Cancel sit in the separated
+footer below the content. Title-bar Back returns to the initiating setting. Ordinary settings
 keep their individual commit behavior. The proposal shows current and proposed
 values, emphasizes changes, and enables Apply only for a valid change. Preset
 identity comes from confirmed settings, not a separate profile. Test measures
 real download and upload capacity through the engine's
 [temporary suspension](engine.md#connection-measurement). Test and Cancel use
-the same action slot, with inline phase feedback and a resumption countdown.
+the same fixed-width action slot beside the capacity heading. The status and
+progress bar share a reserved-height area, so testing never shifts the inputs.
+Both reservations scale with the system text size. Inline phase feedback includes
+the resumption countdown.
 Announce phase changes through the window's existing accessibility path, not
 each countdown tick. Measurements populate the proposal; only Apply changes
-settings. The provider and traffic cost are visible before testing; native
-tooltips supply route and privacy details without moving other controls.
+settings. An information button beside the capacity heading opens a native flyout
+with the provider, traffic cost, route details and privacy link, keeping these
+details available without permanent extra lines in the form.
 Files holds the default folder, the incomplete-filename suffix, and an optional
 separate incomplete folder. Folder and suffix defaults apply to new torrents;
 the help makes that scope explicit. Turning off Show dialog when adding torrents
@@ -1229,10 +1294,21 @@ for wanted, size, progress, and priority content, because folders require
 hierarchy. Torrent-specific file commands stay in the application.
 
 **Owner ruling:** the six inspector sections use a native SelectorBar, centred
-in one header row between the torrent name and an icon Close button. The owner
+in one header row between the torrent name and Pin and Close icon buttons. The owner
 could not get used to a left navigation pane, and one row keeps the sections
 visible while the working view gets the full inspector width. The person
 adjusts the inspector's height with the split.
+
+Pin collapses the shared inspector to a ten-pixel horizontal bar immediately
+above the status bar, within the workspace. The ten-pixel slot contains an
+eight-pixel button and a two-pixel top gap separating it from the content.
+A centred Lucide Ellipsis opens it
+again. The bar clips the icon without increasing its height. Collapsing preserves
+the target, section, requested height and unfinished edits; it does not close the
+inspector. Close hides it through the existing draft guards. View > Inspector is
+available in both modes and uses that same guarded hide action, then restores the
+previous compact or expanded presentation when shown. Explicit Properties and
+file-reveal commands expand it so the requested content is visible.
 
 General follows `app/general-prototype.html`, variant H, in two titled groups.
 Transfer holds the status and percentage, a native progress bar coloured as the
@@ -1262,14 +1338,20 @@ becomes one column, so values retain readable space.
 
 The inspector is a layer above the workspace, because it shows one torrent's
 properties rather than more of the table. It is a raised surface:
-`CardBackgroundFillColorDefaultBrush` fill, `SurfaceStrokeColorDefaultBrush`
-edge and `OverlayCornerRadius` corners, inset from the window edges so the base
-acrylic shows between it and the table. These two tokens are chosen because they
-stay visible on the dark acrylic base, where `LayerFillColorDefaultBrush` and
-`CardStrokeColorDefaultBrush` differ from it by too little to see. Its header sits on that layer with a
+the shared `Pane` template supplies its fill, thin outline, corners and header divider.
+Its right edge aligns with the table header; its bottom inset
+matches Filters. It shares the Filters pane's material,
+so these two supporting surfaces stay consistent. Its header sits on that layer with a
 `DividerStrokeColorDefaultBrush` bottom edge. Tables inside it follow the
 [TableView visual contract](../lib/TableView/docs/tableview-contract.md#8-rendering-layout-and-visual-language),
 so the inspector does not define a second table appearance.
+Files, Peers and Trackers have no extra horizontal table padding: TableView owns
+their row and header spacing. A table directly below the pane header has an
+eight-pixel top gap, so its header stays distinct from the pane divider.
+Toolbars and non-table content keep their content insets. Edit and Reannounce
+sit above the table at the right, with equal widths and twelve-pixel spacing
+between buttons and above and below the command row. They are immediate table
+commands, not dialog completion actions.
 
 Apply individual choices and explicit file commands through the same commit
 rules. When a coherent edit needs a draft, keep one active editor bound to the
@@ -1334,12 +1416,15 @@ use the same averages, so the text never disagrees with the line. Pointing at
 the chart, or moving through it with the arrow keys, shows that time's values in
 the legend instead; this is the equivalent textual fact of any point.
 
-One page owner allocates table and inspector space. Remember an explicit split
-adjustment within current usable bounds; the splitter is keyboard-adjustable and
-reports its range. The window's minimum size fits the table and the inspector at
-their minimum heights, so there is no second layout for small windows. Preserve
-selection and the requested split; do not hide an inspector while continuing its
-detail work.
+One page owner allocates table and inspector space. The inspector can shrink
+freely during a drag. On release below twice its header height, it becomes
+compact through the same operation as its pin; reopening restores the height
+from before the drag. Cancelling a drag restores that height without collapsing.
+Keyboard and automation adjustments commit immediately. Window resizing alone
+never collapses the inspector. Preserve selection and unfinished edits.
+The splitter is keyboard-adjustable and reports its range. Its grip is dim at
+rest and accent-coloured on hover or during a drag; High Contrast retains full
+opacity so the grip stays visible.
 
 ### Pieces map
 

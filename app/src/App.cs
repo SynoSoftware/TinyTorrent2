@@ -36,11 +36,11 @@ public partial class App : Application
         TaskScheduler.UnobservedTaskException += (_, args) =>
             ExceptionLog.Write(LogDirectory, args.Exception, "Unobserved task");
         InitializeComponent();
-        Resources["LucideFont"] = Syno.Lucide.Font;
     }
 
     protected override async void OnLaunched(LaunchActivatedEventArgs args)
     {
+        Resources["LucideFont"] = Syno.Lucide.Font;
         Marshal.ThrowExceptionForHR(SetCurrentProcessExplicitAppUserModelID("Syno.TinyTorrent"));
         _instance = new Mutex(false, "Local\\TinyTorrent.Window." + PipeClient.LogonSid);
         bool owned;
@@ -54,12 +54,14 @@ public partial class App : Application
         }
         if (!owned)
         {
+#if CAPTURE
             if (MainWindow.IsCaptureReview)
             {
                 _instance.Dispose();
                 Exit();
                 return;
             }
+#endif
             try
             {
                 var text = await Task.Run(() => new Strings());
@@ -107,6 +109,10 @@ public partial class App : Application
         if (Interlocked.Exchange(ref _reportingFailure, 1) != 0)
             return;
         var report = ExceptionLog.Write(LogDirectory, error, source, message);
+#if CAPTURE
+        if (MainWindow.IsCaptureReview)
+            return;
+#endif
         try
         {
             CrashDialog.Show(report, _strings, _windowHandle);

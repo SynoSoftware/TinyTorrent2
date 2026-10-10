@@ -1,5 +1,10 @@
 # Subtitles implementation plan
 
+**Complete.** Automatic subtitles are delivered; [Current status](#current-status)
+records the evidence. The sections below record the delivered design and its
+decisions, not open work. Release permissions and privacy publication remain in
+the [release assessment](subtitles-release.md).
+
 ## Delivery ruling — 2026-10-09
 
 The [Library delivery ruling](library-implementation.md#delivery-ruling--2026-10-09)
@@ -22,7 +27,7 @@ OpenSubtitles, SubDL and SubSource use the shared HTTP and routing owner.
 Existing integrated builds and focused storage/filesystem checks passed.
 Production SubDL acquisition and anonymous OpenSubtitles acquisition succeeded;
 the latter returned a valid 39,992-byte SRT. The current native review is
-`Capture-library-files-f8426b9a-a43c-4cd6-83a6-e8a261a46299`.
+`Capture-library-files-2ecd4e52-7d44-463d-aa22-986a41557e86`.
 Current routing evidence is
 `Source-884a5a6c9c8143c98d623eae375a1c81/provider-routes.json` under the Release
 capture output: proxy refusal and unavailable adapter had no direct fallback,
@@ -40,7 +45,10 @@ The existing SourceChecks reopening fixture now corrupts a protected secret,
 language JSON and a timestamp, then verifies persisted repairs without losing
 healthy subtitle records or ownership. This guards the feature-wide failure and
 repeat-download risk that the earlier healthy-value fixture did not exercise.
-No application, fresh capture or live supplier request ran for this batch.
+The fresh focused native review in [delivery evidence](library-implementation.md#current-status)
+confirms the supplier editor's English/Spanish fields and complete button labels.
+The selected-language column correction passed fresh pixel and colleague review.
+No live supplier request ran for this batch.
 
 ## Ownership and lifetime
 

@@ -72,12 +72,12 @@ internal sealed class SelectionHarness
         table.Width = 320;
         table.Height = height;
 
-        // Declared widths rather than the first fill, so the rows leave surface beside them.
-        table.Layout = TestData.DeclaredWidths(table);
         configure?.Invoke(table);
         table.ItemsSource = rows;
 
         await TableHarness.LoadAsync(table);
+        // These selection cases need empty surface beside the rows.
+        TestData.ApplyDeclaredWidths(table);
         table.UpdateLayout();
 
         return new SelectionHarness(table, rows);

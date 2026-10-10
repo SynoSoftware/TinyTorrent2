@@ -8,7 +8,7 @@
   xmlns:table="using:Syno.TableView"
   xmlns:icons="using:Syno"
 >
-  <Grid>
+  <controls:Pane x:Name="Surface">
     <VisualStateManager.VisualStateGroups>
       <VisualStateGroup x:Name="TransferStates">
         <VisualState x:Name="Transferring" />
@@ -38,109 +38,108 @@
         </VisualState>
       </VisualStateGroup>
     </VisualStateManager.VisualStateGroups>
-    <Grid.RowDefinitions>
-      <RowDefinition Height="Auto" />
-      <RowDefinition Height="*" />
-    </Grid.RowDefinitions>
-    <!-- The empty star column balances the name's, so the sections sit
-             centred while Close keeps its width when the inspector is narrow. -->
-    <Grid
-      ColumnSpacing="12"
-      Padding="16,0"
-      BorderThickness="0,0,0,1"
-      BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
-    >
-      <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="*" />
-        <ColumnDefinition Width="Auto" />
-        <ColumnDefinition Width="*" />
-        <ColumnDefinition Width="Auto" />
-      </Grid.ColumnDefinitions>
-      <!-- Left-aligned, so the size follows a short name and a long name trims before it. -->
-      <Grid HorizontalAlignment="Left" ColumnSpacing="12">
-        <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="Auto" />
-          <ColumnDefinition Width="*" />
-          <ColumnDefinition Width="Auto" />
-        </Grid.ColumnDefinitions>
-        <FontIcon
-          x:Name="HeadingGlyph"
-          Style="{StaticResource TinyTorrentGroupIconStyle}"
-          FontFamily="{x:Bind icons:Lucide.Font}"
-          Glyph="{x:Bind Model.Target.StatusGlyph, Mode=OneWay, FallbackValue=''}"
-        />
-        <TextBlock
-          x:Name="HeadingName"
-          Grid.Column="1"
-          Text="{x:Bind Model.Name, Mode=OneWay}"
-          Style="{StaticResource TinyTorrentGroupTitleTextStyle}"
-          ToolTipService.ToolTip="{x:Bind Model.Name, Mode=OneWay}"
-          AutomationProperties.HeadingLevel="Level1"
-        />
-        <TextBlock
-          x:Name="HeadingSize"
-          Grid.Column="2"
-          Text="{x:Bind Model.Target.SizeText, Mode=OneWay, FallbackValue=''}"
-          Style="{StaticResource TinyTorrentTitleDetailTextStyle}"
-        />
-      </Grid>
-      <SelectorBar
-        x:Name="Sections"
-        Grid.Column="1"
-        Padding="0"
-        SelectionChanged="OnSection"
-        AutomationProperties.AutomationId="InspectorSections"
-      >
-        <SelectorBarItem
-          x:Name="GeneralSection"
-          AutomationProperties.AutomationId="InspectorGeneral"
-        />
-        <SelectorBarItem x:Name="FilesSection" AutomationProperties.AutomationId="InspectorFiles" />
-        <SelectorBarItem x:Name="PeersSection" AutomationProperties.AutomationId="InspectorPeers" />
-        <SelectorBarItem
-          x:Name="TrackersSection"
-          AutomationProperties.AutomationId="InspectorTrackers"
-        />
-        <SelectorBarItem x:Name="SpeedSection" AutomationProperties.AutomationId="InspectorSpeed" />
-        <SelectorBarItem
-          x:Name="PiecesSection"
-          AutomationProperties.AutomationId="InspectorPieces"
-        />
-      </SelectorBar>
-      <StackPanel x:Name="LibraryActions" Grid.Column="2" Orientation="Horizontal"
-                  HorizontalAlignment="Right" VerticalAlignment="Center" Spacing="4" Visibility="Collapsed">
-        <StackPanel x:Name="LibraryPrimaryActions" Orientation="Horizontal" Spacing="4">
-          <Button x:Name="LibraryOpen" Style="{StaticResource TinyTorrentSubtleButtonStyle}" AutomationProperties.AutomationId="LibraryOpen">
-            <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Play}"
+    <controls:Pane.Header>
+        <!-- Left-aligned, so the size follows a short name and a long name trims before it. -->
+        <Grid HorizontalAlignment="Left" ColumnSpacing="12">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+          <FontIcon
+            x:Name="HeadingGlyph"
+            Style="{StaticResource TinyTorrentGroupIconStyle}"
+            FontFamily="{x:Bind icons:Lucide.Font}"
+            Glyph="{x:Bind Model.Target.StatusGlyph, Mode=OneWay, FallbackValue=''}"
+          />
+          <TextBlock
+            x:Name="HeadingName"
+            Grid.Column="1"
+            Text="{x:Bind Model.Name, Mode=OneWay}"
+            Style="{StaticResource TinyTorrentGroupTitleTextStyle}"
+            ToolTipService.ToolTip="{x:Bind Model.Name, Mode=OneWay}"
+            AutomationProperties.HeadingLevel="Level1"
+          />
+          <TextBlock
+            x:Name="HeadingSize"
+            Grid.Column="2"
+            Text="{x:Bind Model.Target.SizeText, Mode=OneWay, FallbackValue=''}"
+            Style="{StaticResource TinyTorrentTitleDetailTextStyle}"
+          />
+        </Grid>
+    </controls:Pane.Header>
+    <controls:Pane.Navigation>
+        <SelectorBar
+          x:Name="Sections"
+          Padding="0"
+          SelectionChanged="OnSection"
+          AutomationProperties.AutomationId="InspectorSections"
+        >
+          <SelectorBarItem
+            x:Name="GeneralSection"
+            AutomationProperties.AutomationId="InspectorGeneral"
+          />
+          <SelectorBarItem x:Name="FilesSection" AutomationProperties.AutomationId="InspectorFiles" />
+          <SelectorBarItem x:Name="PeersSection" AutomationProperties.AutomationId="InspectorPeers" />
+          <SelectorBarItem
+            x:Name="TrackersSection"
+            AutomationProperties.AutomationId="InspectorTrackers"
+          />
+          <SelectorBarItem x:Name="SpeedSection" AutomationProperties.AutomationId="InspectorSpeed" />
+          <SelectorBarItem
+            x:Name="PiecesSection"
+            AutomationProperties.AutomationId="InspectorPieces"
+          />
+        </SelectorBar>
+    </controls:Pane.Navigation>
+    <controls:Pane.Actions>
+      <StackPanel Orientation="Horizontal" Spacing="12">
+        <StackPanel x:Name="LibraryActions" Orientation="Horizontal"
+                    HorizontalAlignment="Right" VerticalAlignment="Center" Spacing="4" Visibility="Collapsed">
+          <StackPanel x:Name="LibraryPrimaryActions" Orientation="Horizontal" Spacing="4">
+            <Button x:Name="LibraryOpen" Style="{StaticResource TinyTorrentSubtleButtonStyle}" AutomationProperties.AutomationId="LibraryOpen">
+              <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Play}"
+                Style="{StaticResource TinyTorrentStatusIconStyle}" />
+            </Button>
+            <Button x:Name="LibraryTorrents" Style="{StaticResource TinyTorrentSubtleButtonStyle}" AutomationProperties.AutomationId="LibraryTorrents">
+              <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.LocateFixed}"
+                Style="{StaticResource TinyTorrentStatusIconStyle}" />
+            </Button>
+          </StackPanel>
+          <Button x:Name="LibraryMore" Style="{StaticResource TinyTorrentSubtleButtonStyle}" AutomationProperties.AutomationId="LibraryMore">
+            <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Ellipsis}" />
+          </Button>
+          <Border Width="1" Height="16" Margin="8,0,0,0" VerticalAlignment="Center"
+            Background="{ThemeResource DividerStrokeColorDefaultBrush}"
+            AutomationProperties.AccessibilityView="Raw" />
+        </StackPanel>
+        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Spacing="4">
+          <Button x:Name="Minimize" x:FieldModifier="internal"
+            Style="{StaticResource TinyTorrentSubtleButtonStyle}"
+            AutomationProperties.AutomationId="InspectorMinimize">
+            <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Pin}"
               Style="{StaticResource TinyTorrentStatusIconStyle}" />
           </Button>
-          <Button x:Name="LibraryEdit" Style="{StaticResource TinyTorrentSubtleButtonStyle}" AutomationProperties.AutomationId="LibraryEdit">
-            <FontIcon x:Name="LibraryEditIcon" FontFamily="{x:Bind icons:Lucide.Font}"
-              Style="{StaticResource TinyTorrentStatusIconStyle}" />
+          <Button
+            x:Name="Close"
+            x:FieldModifier="internal"
+            Style="{StaticResource TinyTorrentSubtleButtonStyle}"
+            VerticalAlignment="Center"
+          >
+            <FontIcon
+              Style="{StaticResource TinyTorrentStatusIconStyle}"
+              FontFamily="{x:Bind icons:Lucide.Font}"
+              Glyph="{x:Bind icons:Lucide.X}"
+            />
           </Button>
         </StackPanel>
-        <Button x:Name="LibraryMore" Style="{StaticResource TinyTorrentSubtleButtonStyle}" AutomationProperties.AutomationId="LibraryMore">
-          <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Ellipsis}" />
-        </Button>
       </StackPanel>
-      <Button
-        x:Name="Close"
-        x:FieldModifier="internal"
-        Grid.Column="3"
-        Style="{StaticResource TinyTorrentSubtleButtonStyle}"
-        VerticalAlignment="Center"
-      >
-        <FontIcon
-          Style="{StaticResource TinyTorrentStatusIconStyle}"
-          FontFamily="{x:Bind icons:Lucide.Font}"
-          Glyph="{x:Bind icons:Lucide.X}"
-        />
-      </Button>
-    </Grid>
-    <Grid x:Name="SectionContent" Grid.Row="1" Padding="16,8,16,12">
+    </controls:Pane.Actions>
+    <Grid x:Name="SectionContent">
       <Grid x:Name="SectionViews">
         <ScrollViewer
           x:Name="General"
+          Margin="16,12"
           Visibility="Collapsed"
           HorizontalScrollMode="Disabled"
           HorizontalScrollBarVisibility="Disabled"
@@ -148,22 +147,12 @@
           <StackPanel
             x:Name="GeneralContent"
             Spacing="16"
-            Margin="0,4,0,0"
             SizeChanged="OnGeneralSize"
           >
+            <controls:Section
+              Header="{x:Bind Model.Text.Get('inspector', 'transfer'), Mode=OneWay}"
+              Glyph="{x:Bind icons:Lucide.ArrowDownUp}">
             <StackPanel>
-              <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,12">
-                <FontIcon
-                  Style="{StaticResource TinyTorrentGroupIconStyle}"
-                  FontFamily="{x:Bind icons:Lucide.Font}"
-                  Glyph="{x:Bind icons:Lucide.ArrowDownUp}"
-                />
-                <TextBlock
-                  Text="{x:Bind Model.Text.Get('inspector', 'transfer'), Mode=OneWay}"
-                  Style="{StaticResource TinyTorrentGroupTitleTextStyle}"
-                  AutomationProperties.HeadingLevel="Level2"
-                />
-              </StackPanel>
               <Grid ColumnSpacing="16">
                 <Grid.ColumnDefinitions>
                   <ColumnDefinition Width="*" />
@@ -320,20 +309,11 @@
                 </controls:Field>
               </controls:Strip>
             </StackPanel>
+            </controls:Section>
             <Border Style="{StaticResource InspectorDividerStyle}" />
-            <StackPanel>
-              <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,6">
-                <FontIcon
-                  Style="{StaticResource TinyTorrentGroupIconStyle}"
-                  FontFamily="{x:Bind icons:Lucide.Font}"
-                  Glyph="{x:Bind icons:Lucide.Info}"
-                />
-                <TextBlock
-                  Text="{x:Bind Model.Text.Get('inspector', 'properties'), Mode=OneWay}"
-                  Style="{StaticResource TinyTorrentGroupTitleTextStyle}"
-                  AutomationProperties.HeadingLevel="Level2"
-                />
-              </StackPanel>
+            <controls:Section
+              Header="{x:Bind Model.Text.Get('inspector', 'properties'), Mode=OneWay}"
+              Glyph="{x:Bind icons:Lucide.Info}">
               <controls:FieldColumns>
                 <controls:FieldColumns.Primary>
                   <StackPanel>
@@ -504,7 +484,7 @@
                   </StackPanel>
                 </controls:FieldColumns.Secondary>
               </controls:FieldColumns>
-            </StackPanel>
+            </controls:Section>
           </StackPanel>
         </ScrollViewer>
         <Grid x:Name="Files" Visibility="Collapsed">
@@ -523,6 +503,7 @@
         </Grid>
         <table:Table
           x:Name="Peers"
+          Margin="0,8,0,0"
           Visibility="Collapsed"
           ItemsSource="{x:Bind Model.Peers, Mode=OneWay}"
         >
@@ -623,14 +604,16 @@
             </table:Column>
           </table:Table.Columns>
         </table:Table>
-        <Grid x:Name="Trackers" Visibility="Collapsed" RowSpacing="8">
+        <Grid x:Name="Trackers" Visibility="Collapsed" RowSpacing="12">
           <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
           </Grid.RowDefinitions>
           <StackPanel
             Orientation="Horizontal"
-            Spacing="8"
+            HorizontalAlignment="Right"
+            Spacing="12"
+            Margin="16,12,16,0"
             Visibility="{x:Bind local:InspectorPane.Hidden(Model.IsEditingTrackers), Mode=OneWay}"
           >
             <controls:ActionButton
@@ -744,6 +727,7 @@
           </table:Table>
           <Grid
             x:Name="TrackerEditor"
+            Margin="16,12"
             Grid.RowSpan="2"
             RowSpacing="8"
             Background="{ThemeResource LayerFillColorDefaultBrush}"
@@ -782,12 +766,14 @@
         </Grid>
         <controls:SpeedGraph
           x:Name="Speed"
+          Margin="16,12"
           Visibility="Collapsed"
           Samples="{x:Bind Model.History, Mode=OneWay}"
         />
-        <controls:PiecesMap x:Name="Map" Visibility="Collapsed" />
+        <controls:PiecesMap x:Name="Map" Margin="16,12" Visibility="Collapsed" />
         <StackPanel
           x:Name="EmptyState"
+          Margin="16,12"
           HorizontalAlignment="Center"
           VerticalAlignment="Center"
           Spacing="12"
@@ -810,6 +796,7 @@
       </Grid>
       <InfoBar
         x:Name="FailureBar"
+        Margin="16,12"
         VerticalAlignment="Bottom"
         IsClosable="False"
         Severity="Error"
@@ -827,5 +814,5 @@
         </InfoBar.ActionButton>
       </InfoBar>
     </Grid>
-  </Grid>
+  </controls:Pane>
 </UserControl>

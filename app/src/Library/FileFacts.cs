@@ -110,7 +110,7 @@ internal sealed class FileFacts(Database database) : IAsyncDisposable
                             Title = music.Title, Artist = music.Artist, Album = music.Album,
                             Track = music.TrackNumber == 0 ? null : (int)music.TrackNumber,
                             Year = music.Year == 0 ? null : (int)music.Year,
-                            Genre = string.Join(" · ", music.Genre), Duration = (long)music.Duration.TotalSeconds,
+                            Genre = string.Join(Store.Separator, music.Genre), Duration = (long)music.Duration.TotalSeconds,
                         };
                     }
                 }

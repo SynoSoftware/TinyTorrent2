@@ -9,31 +9,35 @@
     "empty": "No files yet", "no_matches": "No files match", "unidentified": "Not identified",
     "no_videos": "No videos match", "no_music": "No music matches", "none": "No file selected",
     "clear_search": "Clear", "show_matches_tip": "Show matching {0} ({1})",
+    "filter_tip": "Filter by {0}: {1}",
     "movie": "Movie", "episode": "TV episode", "video": "Video", "audio": "Audio", "picture": "Picture",
     "document": "Document", "archive": "Archive", "other": "Other", "file": "File",
-    "video_information": "Video information", "music_information": "Music information",
+    "video_information": "Video information", "info": "Info",
     "name": "Name", "folder": "Folder", "size": "Size", "modified": "Date modified", "created": "Created",
     "kind": "Kind", "type": "Type", "year": "Year", "genres": "Genres", "cast": "Cast",
+    "series": "Series", "season": "Season", "season_number": "Season {0}",
+    "episode_number": "Episode {0}", "episode_numbers": "Episodes {0}",
+    "imdb": "IMDb", "tmdb": "TMDB", "rating": "{0} / 10", "series_rating": "Series rating",
     "artist": "Artist", "album": "Album", "track": "Track", "duration": "Duration",
-    "clear_identification": "Clear identification", "show_torrents": "Show in Torrents",
+    "erase_metadata": "Erase metadata", "show_torrents": "Show in Torrents",
     "today": "Today", "yesterday": "Yesterday", "week": "This week", "last_week": "Last week",
     "month": "This month", "last_month": "Last month", "older": "Older",
     "tiny": "Tiny (up to 16 KiB)", "small": "Small (16 KiB–1 MiB)", "medium": "Medium (1–128 MiB)",
     "large": "Large (128 MiB–1 GiB)", "huge": "Huge (1–4 GiB)", "gigantic": "Gigantic (over 4 GiB)",
-    "identify": "Identify…", "edit": "Edit identification", "enable": "Enable…", "ok": "OK", "disable": "Disable",
+    "edit_metadata": "Edit metadata", "enable": "Enable…", "ok": "OK", "disable": "Disable",
     "enable_tip": "Allow the selected provider to look up video information", "disable_tip": "Stop looking up video information",
-    "identify_tip": "Save the selected movie or series for this file", "search_title": "Search for a movie or series", "matches": "Matching movies and series",
+    "save_metadata_tip": "Save the selected movie or series for this file", "search_title": "Search for a movie or series", "matches": "Matching movies and series",
     "clear_search_tip": "Clear the Library search",
     "source": "Provider", "configure": "Configure", "configure_tip": "Configure the selected provider",
     "fetch": "Fetch", "refresh": "Refresh", "fetching": "Fetching…",
     "fetch_tip": "Fetch video details from the selected provider", "refresh_tip": "Refresh saved video details from the selected provider",
-    "no_video_match": "No unique matching title was found. Use Identify to choose the right movie or series.",
+    "no_video_match": "No unique matching title was found. Use Edit metadata to choose the right movie or series.",
     "provider_unavailable": "The selected provider is unavailable. Choose another provider or retry when access is available.",
     "provider_retry_at": "{0} Requests can resume at {1}.",
-    "provider_changed": "The provider changed. Search again before identifying this file.",
+    "provider_changed": "The provider changed. Search again before saving metadata for this file.",
     "episode_required": "Select a file with a season and episode number.",
     "information_off": "Video information off",
-    "identification": "Identification", "synopsis": "Synopsis", "tags": "Tags", "no_tags": "None",
+    "metadata": "Metadata", "synopsis": "Synopsis", "tags": "Tags", "no_tags": "None",
     "source_unavailable": "Provider unavailable", "no_application": "No app"
   },
   "tmdb": {
@@ -66,12 +70,12 @@
     "no_matches": "No matching torrents", "no_matches_detail": "Clear the filter to see your other torrents.", "clear_filters": "Clear",
     "incoming": "Peers can connect to TinyTorrent through its listening port.", "no_incoming": "No peer has connected to TinyTorrent yet, so its listening port is not confirmed open. Downloads still work.", "no_adapter": "The selected network adapter {0} is not available, so transfers are blocked.", "incoming_status": "Port open", "no_incoming_status": "Port not confirmed", "no_adapter_status": "Adapter missing", "proxy": "TinyTorrent uses the {0} proxy at {1}:{2} for internet connections. Features that cannot use it are unavailable. Peers cannot connect to you.", "proxy_status": "Proxy in use", "selected": "{0} selected", "torrents_one": "{0:N0} torrent", "torrents_other": "{0:N0} torrents", "torrents_selected": "{0} · {1:N0} selected", "search": "Find a torrent", "alternative": "Alternative limits", "alternative_until": "Alternative limits until {0}", "resumed_status": "Transfers resumed", "alternative_off": "Alternative limits off", "add_tip": "Add a torrent file", "clear_filters_tip": "Clear the filters", "rate_cap": "{0} of {1}", "rate_limit": "Limit: {0}, from the {1}", "no_rate_limit": "No limit in the {0}", "speed_pair": "standard limits", "alternative_pair": "alternative limits"
   },
-  "chrome": { "dark": "Switch to dark theme", "light": "Switch to light theme" },
-  "menus": { "file": "File", "file_key": "F", "torrent": "Torrent", "torrent_key": "T", "view": "View", "view_key": "V", "help": "Help", "help_key": "H", "back": "Back", "queue": "Queue", "toolbar": "Toolbar", "on": "On", "off": "Off", "mixed": "Mixed", "add_file_key": "A", "add_magnet_key": "M", "settings_key": "S", "exit_key": "X", "close_key": "C", "pause_key": "P", "resume_key": "S", "force_key": "F", "open_key": "O", "open_folder_key": "N", "copy_magnet_key": "M", "copy_hash_key": "H", "properties_key": "I", "verify_key": "V", "move_key": "E", "queue_key": "Q", "sequential_key": "W", "first_last_key": "L", "speed_limit_key": "K", "remove_key": "R", "delete_files_key": "D", "pause_all_key": "A", "resume_all_key": "U", "limits_key": "T", "up_key": "U", "down_key": "D", "top_key": "T", "bottom_key": "B", "filters_key": "F", "toolbar_key": "T", "about_key": "A", "update_key": "U" },
+  "chrome": { "dark": "Switch to dark theme", "light": "Switch to light theme", "switch_page": "Switch to {0}" },
+  "menus": { "file": "File", "file_key": "F", "torrent": "Torrent", "torrent_key": "T", "view": "View", "view_key": "V", "help": "Help", "help_key": "H", "back": "Back", "queue": "Queue", "toolbar": "Toolbar", "on": "On", "off": "Off", "mixed": "Mixed", "add_file_key": "A", "add_magnet_key": "M", "settings_key": "S", "exit_key": "X", "close_key": "C", "pause_key": "P", "resume_key": "S", "force_key": "F", "open_key": "O", "open_folder_key": "N", "copy_magnet_key": "M", "copy_hash_key": "H", "properties_key": "I", "verify_key": "V", "move_key": "E", "queue_key": "Q", "sequential_key": "W", "first_last_key": "L", "speed_limit_key": "K", "remove_key": "R", "delete_files_key": "D", "pause_all_key": "A", "resume_all_key": "U", "limits_key": "T", "up_key": "U", "down_key": "D", "top_key": "T", "bottom_key": "B", "filters_key": "F", "inspector_key": "I", "toolbar_key": "T", "about_key": "A", "update_key": "U" },
   "shortcuts": { "control": "Ctrl", "alt": "Alt", "shift": "Shift", "delete": "Delete", "add": "+", "subtract": "-", "comma": ",", "left": "Left", "number_1": "1", "number_2": "2", "f4": "F4", "o": "O", "q": "Q", "p": "P", "s": "S", "m": "M", "r": "R", "v": "V", "f": "F", "e": "E", "k": "K", "tip": "{0} ({1})" },
   "filters": {
     "active": "Filters: {0} · {1:N0}",
-    "title": "Filters", "close": "Close filters", "all": "All", "downloading": "Downloading", "seeding": "Seeding", "paused": "Paused", "queued": "Queued", "errors": "Errors", "count": "{0} · {1:N0}"
+    "title": "Filters", "close": "Close filters", "minimize": "Minimize filters", "all": "All", "downloading": "Downloading", "seeding": "Seeding", "paused": "Paused", "queued": "Queued", "errors": "Errors", "count": "{0} · {1:N0}"
   },
   "finding": {
     "placeholder": "Search TinyTorrent", "search": "Search torrents, commands and settings", "torrent": "Torrents", "command": "Commands", "settings": "Settings", "empty": "No results",
@@ -133,7 +137,7 @@
   "files": { "name": "File", "priority": "Priority", "summary": "{0} of {1} files · {2}", "search": "Find a file", "all_matching": "Select or clear all matching files", "expand_all": "Expand all", "collapse_all": "Collapse all", "unchanged": "Leave unchanged", "skip": "Do not download", "low": "Low", "normal": "Normal", "high": "High", "skip_key": "D", "low_key": "L", "normal_key": "N", "high_key": "H" },
   "outcomes": { "accepted": "{0}: request accepted.", "queue": "Queue order" },
   "inspector": {
-    "close": "Close inspector", "resize": "Resize inspector", "downloaded": "Downloaded",
+    "close": "Close inspector", "minimize": "Minimize inspector", "expand": "Expand inspector", "title": "Inspector", "resize": "Resize inspector", "downloaded": "Downloaded",
     "general": "General", "files": "Files", "peers": "Peers", "trackers": "Trackers", "speed": "Speed", "pieces": "Pieces",
     "sections": "Torrent properties", "transfer": "Transfer", "properties": "Properties", "created": "Created", "creator": "Created by",
     "privacy": "Privacy", "private": "Private torrent", "public": "Public torrent", "comment": "Comment",
@@ -569,6 +573,8 @@
   "connection_setup": {
     "title": "Connection setup",
     "capacity": "Connection capacity",
+    "about_test": "About the speed test",
+    "setting": "Setting",
     "download_limit": "Download limit",
     "upload_limit": "Upload limit",
     "mode": "Limit mode",
@@ -637,7 +643,7 @@
   "subtitles": {
     "title": "Subtitles", "summary": "Automatic subtitles, supplier and languages", "existing": "Existing videos",
     "automatic": "Automatic subtitles", "automatic_hint": "Find subtitles for new and unfinished videos while the window is open. Accepted work resumes on reopening. Existing subtitle files are kept.",
-    "finished": "Finished downloads", "files": "Subtitle files", "supplier": "Subtitle supplier", "languages": "Wanted languages",
+    "finished": "Finished downloads", "files": "Subtitle files", "supplier": "Subtitle supplier", "languages": "Wanted languages", "language_selection": "Subtitle languages",
     "find": "Find", "recheck": "Recheck", "check": "Check", "edit": "Edit", "add": "Add", "reset": "Reset",
     "check_hint": "Check supplier access with these values, without saving them or sending movie information",
     "save_hint": "Save the supplier and account details. Changing supplier turns automatic subtitles off.",
@@ -664,7 +670,7 @@
     "file_failure": "{0}: {1}",
     "retry_at": "The supplier allowance is exhausted. Accepted work resumes at {0}.",
     "failure_format": "The supplier returned unsupported subtitle data. Try Find again or choose another supplier.",
-    "help": "Subtitles beside your movies, preferably before the download finishes.", "setup": "Set up subtitles", "dismiss": "Dismiss subtitle help"
+    "help": "Find subtitles in your preferred languages while videos download.", "setup": "Set up subtitles", "dismiss": "Dismiss subtitle help"
   },
   "websites": {
     "name": "Public websites",

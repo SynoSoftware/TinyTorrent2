@@ -9,16 +9,17 @@ namespace Syno.TinyTorrent.Controls;
 // same cell, which leaves uneven gaps after short children.
 public sealed partial class WrapPanel : Panel
 {
-    // Read during layout only; set them in markup.
+    // Read during layout only; invalidate measure after changing them.
     public double ColumnSpacing { get; set; }
     public double RowSpacing { get; set; }
+    public Orientation Orientation { get; set; }
 
     protected override Size MeasureOverride(Size availableSize)
     {
         var size = new Size();
         foreach (var child in Children)
         {
-            child.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            child.Measure(new Size(availableSize.Width, double.PositiveInfinity));
         }
         foreach (var place in Place(availableSize.Width))
         {
@@ -52,6 +53,12 @@ public sealed partial class WrapPanel : Panel
                 continue;
             }
             var size = child.DesiredSize;
+            if (Orientation == Orientation.Vertical)
+            {
+                places[index] = new Rect(0, y, size.Width, size.Height);
+                y += size.Height + RowSpacing;
+                continue;
+            }
             if (x > 0 && x + size.Width > width)
             {
                 x = 0;

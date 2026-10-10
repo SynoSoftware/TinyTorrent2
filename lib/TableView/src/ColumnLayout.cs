@@ -11,13 +11,12 @@ public readonly record struct Sort(
 
 /// <summary>
 /// Data-only layout snapshot. The table produces and validates it; the host stores it.
-/// <paramref name="VisibilityOverrides"/> and <paramref name="WidthOverrides"/> are sparse override maps: a missing
-/// column ID means that column uses its baseline.
+/// <paramref name="VisibilityOverrides"/> is a sparse override map: a missing column ID uses its baseline.
+/// Widths belong to the live table and are not part of its saved layout.
 /// </summary>
 public sealed record ColumnLayout(
     IReadOnlyList<string> Order,
     IReadOnlyDictionary<string, bool> VisibilityOverrides,
-    IReadOnlyDictionary<string, double> WidthOverrides,
     string? SortColumnId,
     SortDirection SortDirection
 );

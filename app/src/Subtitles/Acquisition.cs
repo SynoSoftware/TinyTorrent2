@@ -60,7 +60,17 @@ internal sealed partial class Acquisition(Database database, ProviderHttp http) 
     internal IReadOnlyList<string> EffectiveLanguages => Languages.Length == 0 ? [_language] : Languages;
     internal bool Ready => Supplier is { } supplier && supplier.Configured(_account) &&
         EffectiveLanguages.Any(supplier.Supports);
-    internal SubtitleFailure Failure { get; private set; }
+
+    // Failure derives from the last supplier answer, the allowance, and the
+    // database and file health, so each fact has one writer.
+    private SubtitleFailure _supplierFailure;
+    private bool _databaseFailed;
+    private bool _saveFailed;
+    internal SubtitleFailure Failure =>
+        _databaseFailed ? SubtitleFailure.Database :
+        _supplierFailure != SubtitleFailure.None ? _supplierFailure :
+        RetryAt > DateTimeOffset.UtcNow ? SubtitleFailure.Quota :
+        _saveFailed ? SubtitleFailure.Save : SubtitleFailure.None;
     internal IReadOnlyDictionary<string, SubtitleFailure> FileFailures { get; private set; } =
         new Dictionary<string, SubtitleFailure>();
     internal bool Checked { get; private set; }
@@ -86,14 +96,8 @@ internal sealed partial class Acquisition(Database database, ProviderHttp http) 
             _language = language;
             await Load().ConfigureAwait(false);
             await RefreshCounts().ConfigureAwait(false);
-            if (Failure == SubtitleFailure.Database)
-                Failure = SubtitleFailure.None;
+            _databaseFailed = false;
             _worker = Task.Run(Pump);
-        }
-        catch (Exception error) when (error is SqliteException or System.Security.Cryptography.CryptographicException)
-        {
-            Failure = SubtitleFailure.Database;
-            throw;
         }
         finally
         {
@@ -144,7 +148,7 @@ internal sealed partial class Acquisition(Database database, ProviderHttp http) 
         await _operation.WaitAsync(_lifetime.Token).ConfigureAwait(false);
         try
         {
-            await database.Run(connection =>
+            await Run(connection =>
             {
                 Execute(connection, "UPDATE subtitle_settings SET enabled=$value WHERE singleton=1;", ("$value", enabled));
                 if (!enabled)
@@ -171,7 +175,7 @@ internal sealed partial class Acquisition(Database database, ProviderHttp http) 
         await _operation.WaitAsync(_lifetime.Token).ConfigureAwait(false);
         try
         {
-            await database.Run(connection =>
+            await Run(connection =>
             {
                 Execute(connection, "UPDATE subtitle_settings SET languages=$value WHERE singleton=1;",
                     ("$value", System.Text.Json.JsonSerializer.Serialize(values)));
@@ -223,7 +227,7 @@ internal sealed partial class Acquisition(Database database, ProviderHttp http) 
         try
         {
             var allowance = changed ? RequireSupplier(account.SupplierId).Allowance(account) : _allowance;
-            await database.Run(connection =>
+            await Run(connection =>
             {
                 Execute(connection, """
                     UPDATE subtitle_settings SET supplier=$supplier, username=$username, secret=$secret,
@@ -250,7 +254,7 @@ internal sealed partial class Acquisition(Database database, ProviderHttp http) 
             if (changed)
             {
                 Checked = false;
-                Failure = allowance.RetryAt > DateTimeOffset.UtcNow ? SubtitleFailure.Quota : SubtitleFailure.None;
+                _supplierFailure = SubtitleFailure.None;
             }
             if (_checkedDraft == draft && _checkedAccount == account)
                 Checked = true;
@@ -275,7 +279,7 @@ internal sealed partial class Acquisition(Database database, ProviderHttp http) 
         {
             await RequireSupplier(account.SupplierId).Check(http, account, pending.Token).ConfigureAwait(false);
             if (draft is null && Failure == SubtitleFailure.Authentication)
-                await database.Run(connection =>
+                await Run(connection =>
                 {
                     Resume(connection);
                     return true;
@@ -291,15 +295,14 @@ internal sealed partial class Acquisition(Database database, ProviderHttp http) 
                 else if (_account == account)
                 {
                     Checked = true;
-                    if (Failure is not SubtitleFailure.Save and not SubtitleFailure.Database and not SubtitleFailure.Quota)
-                        Failure = SubtitleFailure.None;
+                    _supplierFailure = SubtitleFailure.None;
                 }
             }
         }
         catch (SubtitleException error)
         {
             if (!pending.IsCancellationRequested && draft is null && _account == account)
-                Failure = error.Reason;
+                _supplierFailure = error.Reason == SubtitleFailure.Quota ? SubtitleFailure.None : error.Reason;
             throw;
         }
         finally
@@ -330,6 +333,18 @@ internal sealed partial class Acquisition(Database database, ProviderHttp http) 
     }
 
     private void Notify() => Changed?.Invoke(this, EventArgs.Empty);
+
+    // Every database call passes here, so a SQLite failure is recorded once
+    // and stays until Initialize or Reconcile completes.
+    private async Task<T> Run<T>(Func<SqliteConnection, T> action, CancellationToken cancellation)
+    {
+        try { return await database.Run(action, cancellation).ConfigureAwait(false); }
+        catch (SqliteException)
+        {
+            _databaseFailed = true;
+            throw;
+        }
+    }
 
     public async ValueTask DisposeAsync()
     {

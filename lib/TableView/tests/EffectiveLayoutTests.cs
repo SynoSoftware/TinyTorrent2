@@ -40,21 +40,21 @@ public class EffectiveLayoutTests
         });
 
     [TestMethod]
-    public Task AHiddenColumnKeepsItsStoredWidthInTheSnapshot() =>
+    public Task AHiddenColumnKeepsItsLiveWidth() =>
         TestHost.RunAsync(async () =>
         {
             Table table = await ThreeColumnTableAsync();
 
             table.Layout = TestData.Layout(
-                visibility: new Dictionary<string, bool> { ["b"] = false },
-                widths: new Dictionary<string, double> { ["b"] = 260 }
+                visibility: new Dictionary<string, bool> { ["b"] = false }
             );
 
+            TableHarness.SetWidth(table, "b", 260);
             Assert.AreEqual(
                 260d,
-                table.Layout.WidthOverrides["b"],
+                TableHarness.EffectiveWidth(table, "b"),
                 0d,
-                "a hidden column keeps its most recent width in the snapshot"
+                "a hidden column keeps its width in the same table"
             );
             Assert.IsFalse(
                 table.Layout.VisibilityOverrides["b"],

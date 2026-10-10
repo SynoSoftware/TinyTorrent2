@@ -44,7 +44,7 @@ public sealed partial class MainViewModel
             }
         );
     public string PauseActionGlyph =>
-        _pause == PauseReason.Adapter ? Syno.Lucide.Settings : Syno.Lucide.Play;
+        _pause == PauseReason.Adapter ? Syno.Lucide.Wrench : Syno.Lucide.Play;
 
     public void DismissResume()
     {

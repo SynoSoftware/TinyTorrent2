@@ -139,6 +139,17 @@ public sealed class FileSelection(Strings strings) : INotifyPropertyChanged
 
     internal void SelectAll() => Want(_files, true);
 
+    internal FileNode? Reveal(int index)
+    {
+        var file = _files.FirstOrDefault(file => file.Index == index);
+        if (file is null)
+            return null;
+        for (var parent = file.Parent; parent is not null; parent = parent.Parent)
+            parent.IsExpanded = true;
+        Search = string.Empty;
+        return file;
+    }
+
     public void Expand(bool expanded)
     {
         foreach (var node in _roots.SelectMany(root => root.Nodes()).Where(node => node.IsFolder))

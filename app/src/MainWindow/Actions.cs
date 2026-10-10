@@ -76,10 +76,14 @@ public sealed partial class MainWindow
         FileMenu.Items.Add(Menu("add_file", Model.Add, Syno.Lucide.FilePlus));
         FileMenu.Items.Add(Menu("add_magnet", Model.AddMagnet, Syno.Lucide.Link));
         FileMenu.Items.Add(new MenuFlyoutSeparator());
-        FileMenu.Items.Add(Menu("settings", Model.ShowSettings, Syno.Lucide.Settings));
+        FileMenu.Items.Add(Menu("settings", Model.ShowSettings, Syno.Lucide.Wrench));
         FileMenu.Items.Add(new MenuFlyoutSeparator());
         FileMenu.Items.Add(Menu("close", Model.CloseWindow, Syno.Lucide.X));
         FileMenu.Items.Add(Menu("exit", Model.Exit, Syno.Lucide.Power));
+        ViewMenu.Items.Add(Toggle(() => Model.Text.Get("filters", "title"), "filters",
+            Model.SwitchFilters, () => Model.ShowsFilters, Syno.Lucide.Funnel));
+        ViewMenu.Items.Add(Toggle(() => Model.Text.Get("inspector", "title"), "inspector",
+            new RelayCommand(SwitchInspector, () => true), () => Model.HasInspector, Syno.Lucide.PanelBottom));
         if (Model.Page == WindowPage.Library)
         {
             RefreshLibraryMenu();
@@ -87,7 +91,7 @@ public sealed partial class MainWindow
         }
         else
         {
-            var selection = new MenuFlyoutItem { IsEnabled = false };
+            var selection = new MenuFlyoutItem { IsEnabled = false, Icon = Icon(Syno.Lucide.ListChecks) };
             selection.SetBinding(
                 MenuFlyoutItem.TextProperty,
                 new Binding
@@ -104,15 +108,6 @@ public sealed partial class MainWindow
             TorrentMenu.Items.Add(Menu("pause_all", Model.PauseAll, Syno.Lucide.Pause));
             TorrentMenu.Items.Add(Menu("resume_all", Model.ResumeAll, Syno.Lucide.Play));
             TorrentMenu.Items.Add(Menu("limits", Model.Limits, Syno.Lucide.Gauge));
-            ViewMenu.Items.Add(
-                Toggle(
-                    () => Model.FilterLabel,
-                    "filters",
-                    Model.SwitchFilters,
-                    () => Model.IsFilterOpen,
-                    Syno.Lucide.Funnel
-                )
-            );
             ViewMenu.Items.Add(
                 Toggle(
                     () => Model.Text.Get("menus", "toolbar"),
@@ -133,11 +128,7 @@ public sealed partial class MainWindow
             Text = Model.Text.Get("subtitles", "setup"),
             Icon = Icon(Syno.Lucide.Captions),
         };
-        subtitles.Click += async (_, _) =>
-        {
-            Model.SubtitleHelpSeen = false;
-            await ShowSettings(new());
-        };
+        subtitles.Click += async (_, _) => await ShowSettings(new(SettingsCategory.Subtitles));
         HelpMenu.Items.Add(subtitles);
         HelpMenu.Items.Add(new MenuFlyoutSeparator());
         HelpMenu.Items.Add(
@@ -208,6 +199,7 @@ public sealed partial class MainWindow
                     Torrents.Selection.Items.Count == 1
                         ? ((Torrent)Torrents.Selection.Items[0]).Name
                         : Model.SelectionText,
+                Icon = Icon(Syno.Lucide.ListChecks),
                 IsEnabled = false,
             }
         );
@@ -634,6 +626,24 @@ public sealed partial class MainWindow
     }
 
     private async void OnInspectorClose(object sender, RoutedEventArgs args)
+        => await HideInspector();
+
+    private async Task SwitchInspector()
+    {
+        if (Model.HasInspector)
+        {
+            await HideInspector();
+            return;
+        }
+        if (Model.IsClosing || HasDialog || Model.Inspector.IsPending)
+            return;
+        if (Model.Page == WindowPage.Library)
+            Model.Library.OpenProperties();
+        else
+            Model.OpenInspector(expand: false);
+    }
+
+    private async Task HideInspector()
     {
         if (Model.Page == WindowPage.Library)
         {

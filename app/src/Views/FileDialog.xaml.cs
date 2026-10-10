@@ -15,11 +15,7 @@ public sealed partial class FileDialog : UserControl
         RefreshText();
     }
 
-    internal void RefreshText()
-    {
-        Bindings.Update();
-        Destination.Header = Model.Text.Get("file_action", "destination");
-    }
+    internal void RefreshText() => Bindings.Update();
 
     private void OnDestination(object sender, RoutedEventArgs args) =>
         DestinationRequested?.Invoke(this, EventArgs.Empty);

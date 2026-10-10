@@ -236,7 +236,7 @@ public class ColumnMenuTests
         TestHost.RunAsync(async () =>
         {
             Table table = await LoadAsync("a", "b", "c");
-            table.Layout = TestData.Layout(widths: new Dictionary<string, double> { ["b"] = 220 });
+            TableHarness.SetWidth(table, "b", 220);
             Func<int> events = LayoutChanges(table, LayoutChange.Visibility);
 
             SetVisibility(table, "b", false);
@@ -332,9 +332,9 @@ public class ColumnMenuTests
         Table table = TestData.Table(columns);
         table.Width = 700;
         table.Height = 200;
-        table.Layout = TestData.DeclaredWidths(table);
 
         await TableHarness.LoadAsync(table);
+        TestData.ApplyDeclaredWidths(table);
         table.UpdateLayout();
         return table;
     }

@@ -1,5 +1,10 @@
 # Settings implementation plan
 
+**Complete.** All nine stages are implemented;
+[Implementation status](#implementation-status--2026-10-08) records the evidence
+and which runs predate later commits. The sections below record the delivered
+design and its decisions, not open work.
+
 **Owner ruling: Settings has no separate search box.** Use the existing
 title-bar search, as specified in [Settings](interface.md#settings). Its scope
 remains torrents, commands and settings. References below to C's search/index

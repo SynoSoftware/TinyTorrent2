@@ -78,6 +78,7 @@ internal sealed class Provider(ProviderHttp http) : IProvider
                 {
                     Year = VideoInformation.ParseYear(Text(data, "release_date")), Genres = genres, Cast = cast,
                     Synopsis = Text(data, "overview"), Keywords = keywords, Records = records,
+                    TmdbRating = ReadRating(data, VideoKind.Movie),
                 };
             var episodes = numbers.Select((number, index) => new Episode(number.Season, number.Number,
                 Text(records[index + 1].Content, "name"), Text(records[index + 1].Content, "overview"))).ToArray();
@@ -88,6 +89,7 @@ internal sealed class Provider(ProviderHttp http) : IProvider
                 Series = choice, Episodes = episodes,
                 Year = records.Skip(1).Select(record => VideoInformation.ParseYear(Text(record.Content, "air_date"))).FirstOrDefault(year => year is not null),
                 Genres = genres, Cast = cast, Keywords = keywords, Records = records,
+                TmdbRating = ReadRating(data, VideoKind.Series),
             };
         }
         catch (Exception error) when (error is InvalidOperationException or KeyNotFoundException or FormatException)
@@ -95,6 +97,13 @@ internal sealed class Provider(ProviderHttp http) : IProvider
             throw new VideoException("tmdb", "invalid_result", error);
         }
     }
+
+    private static Rating? ReadRating(JsonElement data, VideoKind kind) =>
+        data.TryGetProperty("vote_count", out var count) && count.ValueKind == JsonValueKind.Number &&
+        count.TryGetInt64(out var votes) && votes > 0 &&
+        data.TryGetProperty("vote_average", out var average) && average.ValueKind == JsonValueKind.Number &&
+        average.TryGetDouble(out var value) && double.IsFinite(value) && value is >= 0 and <= 10
+            ? new Rating(value, kind) : null;
 
     private async Task<JsonElement> Get(string path, CancellationToken cancellation)
     {

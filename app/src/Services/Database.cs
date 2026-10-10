@@ -6,15 +6,15 @@ internal sealed class Database : IAsyncDisposable
 {
     private readonly SemaphoreSlim _access = new(1);
     private readonly string _path;
-    private readonly string _schema;
+    private readonly IReadOnlyList<string> _schemas;
     private readonly string _projection;
     private SqliteConnection? _connection;
     private bool _disposed;
 
-    internal Database(string directory, string schema, string projection)
+    internal Database(string directory, IReadOnlyList<string> schemas, string projection)
     {
         _path = Path.Combine(directory, "library.db");
-        _schema = schema;
+        _schemas = schemas;
         _projection = projection;
     }
 
@@ -58,12 +58,13 @@ internal sealed class Database : IAsyncDisposable
             {
                 command.CommandText = "PRAGMA user_version;";
                 var version = Convert.ToInt32(command.ExecuteScalar());
-                if (version > 1)
+                if (version > _schemas.Count)
                     throw new DatabaseVersionException();
-                if (version == 0)
+                while (version < _schemas.Count)
                 {
-                    command.CommandText = _schema + "PRAGMA user_version=1;";
+                    command.CommandText = _schemas[version] + $"PRAGMA user_version={version + 1};";
                     command.ExecuteNonQuery();
+                    version++;
                 }
                 return true;
             }, CancellationToken.None);

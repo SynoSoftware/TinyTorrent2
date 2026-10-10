@@ -10,7 +10,7 @@ internal sealed partial class Acquisition
 
     private async Task ReconcileFiles(Target[] targets, CancellationToken cancellation)
     {
-        var associations = await database.Run(connection =>
+        var associations = await Run(connection =>
         {
             var rows = new List<Association>();
             using var command = connection.CreateCommand();
@@ -45,7 +45,7 @@ internal sealed partial class Acquisition
                 {
                     cancellation.ThrowIfCancellationRequested();
                     if (sourceAccess == SubtitlePathAccess.Allowed && destinationAccess == SubtitlePathAccess.Allowed &&
-                        await database.Run(connection => _connected && Current(connection, destination.Videos), cancellation).ConfigureAwait(false) &&
+                        await Run(connection => _connected && Current(connection, destination.Videos), cancellation).ConfigureAwait(false) &&
                         SubtitleFile.Exists(group.Key))
                     {
                         File.Move(group.Key, destination.Path, overwrite: false);
@@ -57,7 +57,7 @@ internal sealed partial class Acquisition
                     await ReportFile(group.Key, SubtitleFailure.Save).ConfigureAwait(false);
                 }
             }
-            var transferred = await database.Run(connection =>
+            var transferred = await Run(connection =>
             {
                 var paths = new List<string>();
                 foreach (var target in targets.Where(target => StringComparer.OrdinalIgnoreCase.Equals(target.Path, group.Key)))
@@ -110,7 +110,7 @@ internal sealed partial class Acquisition
     }
 
     private Task<SubtitlePathAccess> PathAccess(string path, CancellationToken cancellation) =>
-        database.Run(connection =>
+        Run(connection =>
         {
             using var command = connection.CreateCommand();
             command.CommandText = "SELECT COUNT(*) FROM pending_origins;";
@@ -131,7 +131,7 @@ internal sealed partial class Acquisition
     {
         try
         {
-            var paths = await database.Run(connection =>
+            var paths = await Run(connection =>
             {
                 var result = new List<(string Path, string Language)>();
                 using var command = connection.CreateCommand();
@@ -152,7 +152,6 @@ internal sealed partial class Acquisition
         }
         catch (Exception error) when (error is SqliteException or OperationCanceledException)
         {
-            Failure = SubtitleFailure.Database;
             Notify();
             return new Deletion(origins, []);
         }
@@ -170,8 +169,6 @@ internal sealed partial class Acquisition
         }
         catch (Exception error) when (error is SqliteException or OperationCanceledException)
         {
-            if (error is SqliteException)
-                Failure = SubtitleFailure.Database;
             Notify();
         }
         finally
@@ -196,7 +193,7 @@ internal sealed partial class Acquisition
                 var access = await PathAccess(path, cancellation).ConfigureAwait(false);
                 if (access == SubtitlePathAccess.Pending)
                     return;
-                var removing = await database.Run(connection =>
+                var removing = await Run(connection =>
                 {
                     using var command = connection.CreateCommand();
                     command.CommandText = "SELECT origin FROM contributions;";
@@ -222,7 +219,7 @@ internal sealed partial class Acquisition
                         await RecycleBin.Delete(path, cancellation).ConfigureAwait(false);
                 }
                 _deletions.Remove(deletion);
-                await database.Run(connection =>
+                await Run(connection =>
                 {
                     Execute(connection, "DELETE FROM subtitle_failures WHERE path=$path;", ("$path", path));
                     return true;

@@ -84,6 +84,18 @@ public sealed partial class MainViewModel
     public SpeedLimit SpeedLimit { get; }
     public Inspector Inspector { get; }
     public bool HasInspector => Page == WindowPage.Library ? Library.IsOpen : Inspector.IsOpen;
+    private bool _inspectorCompact;
+    public bool IsInspectorCompact
+    {
+        get => _inspectorCompact;
+        set
+        {
+            if (_inspectorCompact == value)
+                return;
+            _inspectorCompact = value;
+            Changed(nameof(IsInspectorCompact));
+        }
+    }
     public ICommand AddMagnet { get; }
     public ICommand Force { get; }
     public ICommand Verify { get; }
@@ -477,11 +489,18 @@ public sealed partial class MainViewModel
         if (_selected.Length != 1)
             return;
         if (Inspector.Show(_selected[0], section))
+        {
+            IsInspectorCompact = false;
             await Inspector.Navigate(section);
+        }
         Refresh();
     }
 
-    public void OpenInspector() => Inspector.Show(_selected.Length == 1 ? _selected[0] : null);
+    public void OpenInspector(bool expand = true)
+    {
+        if (Inspector.Show(_selected.Length == 1 ? _selected[0] : null) && expand)
+            IsInspectorCompact = false;
+    }
 
     public bool CloseInspector() => Inspector.Close();
 }

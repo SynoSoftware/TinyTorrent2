@@ -21,7 +21,7 @@ internal sealed partial class Settings : UserControl
     private readonly ActionButton _reset = new() { Glyph = Lucide.RotateCcw };
     private readonly ActionButton _supplier = new() { Glyph = Lucide.Info };
     private readonly AutoSuggestBox _language = new() { MinWidth = 180, MaxWidth = 320, HorizontalAlignment = HorizontalAlignment.Right };
-    private readonly StackPanel _languages = new() { Spacing = 8 };
+    private readonly StackPanel _languages = new() { Spacing = 8, MinWidth = 280 };
     private readonly TextBlock _missing = new() { TextTrimming = TextTrimming.CharacterEllipsis };
     private readonly TextBlock _checked = new() { TextTrimming = TextTrimming.CharacterEllipsis };
     private readonly TextBlock _status = new() { Style = (Style)Application.Current.Resources["TinyTorrentBodyTextStyle"], MaxLines = 1 };
@@ -34,6 +34,7 @@ internal sealed partial class Settings : UserControl
     private readonly SettingsRow _finishedRow;
     private readonly SettingsRow _filesRow;
     private readonly SettingsRow _supplierRow;
+    private readonly SettingsRow _languagesRow;
     private Task _saving = Task.CompletedTask;
     private bool _refreshing;
     private bool _busy;
@@ -79,7 +80,10 @@ internal sealed partial class Settings : UserControl
         _supplierRow = new SettingsRow { Content = Pair(_supplier, _edit) };
         _automatic = Section(Lucide.Captions, _automaticRow);
         _access = Section(Lucide.Network, _supplierRow, Pair(_status, _check), _failures);
-        _wanted = Section(Lucide.Languages, Pair(_language, _add), _languages, _reset);
+        var languageInput = Pair(_language, _add);
+        languageInput.SizeChanged += (_, args) => _languages.Width = args.NewSize.Width;
+        _languagesRow = new SettingsRow { Content = _languages };
+        _wanted = Section(Lucide.Languages, new SettingsRow { Content = languageInput }, _languagesRow, _reset);
         _existing = Section(Lucide.FolderSearch, _finishedRow, _filesRow);
         _reset.HorizontalAlignment = HorizontalAlignment.Right;
         Content = new StackPanel { Spacing = 16, Children = { _automatic, _access, _wanted, _existing } };
@@ -152,6 +156,7 @@ internal sealed partial class Settings : UserControl
         _filesRow.Header = T("files");
         _filesRow.Description = T("recheck_hint");
         _supplierRow.Header = T("supplier");
+        _languagesRow.Header = T("language_selection");
         Label(_find, "find"); Label(_recheck, "recheck"); Label(_check, "check");
         Label(_edit, "edit"); Label(_add, "add"); Label(_reset, "reset");
         AutomationProperties.SetName(_language, T("languages"));

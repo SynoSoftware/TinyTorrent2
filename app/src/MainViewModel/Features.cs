@@ -60,7 +60,7 @@ public sealed partial class MainViewModel
 #endif
         if (_database is null && DataDirectory is { } directory)
         {
-            _database = new Database(directory, Store.Schema + SubtitleAcquisition.Schema,
+            _database = new Database(directory, [Store.Schema + SubtitleAcquisition.Schema, Store.Information],
                 FileSources.Schema + FileFacts.Schema + Store.Projection);
             var store = new Store(_database);
             var http = _providerHttp;

@@ -6,7 +6,10 @@
 AppId=Syno.TinyTorrent
 AppName=TinyTorrent
 AppVersion={#AppVersion}
-AppPublisher=SynoSoftware
+AppPublisher={#AppPublisher}
+VersionInfoVersion={#AppVersion}
+VersionInfoProductVersion={#AppVersion}
+VersionInfoOriginalFileName={#InstallerName}.exe
 AppPublisherURL=https://github.com/SynoSoftware/TinyTorrent2
 AppUpdatesURL=https://github.com/SynoSoftware/TinyTorrent2/releases/latest
 DefaultDirName={localappdata}\Programs\TinyTorrent
@@ -23,7 +26,7 @@ SetupIconFile=..\resources\TinyTorrent.ico
 UninstallDisplayIcon={app}\{#EngineName}.exe
 OutputDir={#OutputDir}
 OutputBaseFilename={#InstallerName}
-Compression=lzma2
+Compression=lzma2/max
 SolidCompression=yes
 CloseApplications=no
 RestartApplications=no
@@ -54,8 +57,6 @@ english.DotNet=Microsoft .NET Runtime
 spanish.DotNet=Microsoft .NET Runtime
 english.Windows=Windows App Runtime
 spanish.Windows=Windows App Runtime
-english.VisualCpp=Microsoft Visual C++ Runtime
-spanish.VisualCpp=Microsoft Visual C++ Runtime
 english.RuntimeFailed=%1 could not be installed. Please try again. If Windows asks for administrator approval, allow the Microsoft installer. Error: %2
 spanish.RuntimeFailed=No se pudo instalar %1. Inténtalo de nuevo. Si Windows solicita permisos de administrador, permite el instalador de Microsoft. Error: %2
 english.CheckFailed=The required components could not be checked. Please try again or contact support.
@@ -161,22 +162,19 @@ end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
-  DotNet, Windows, VisualCpp: Boolean;
+  DotNet, Windows: Boolean;
   Engine: String;
 begin
   Result := '';
   try
     DotNet := not Requirement('DotNet');
     Windows := not Requirement('Windows');
-    VisualCpp := not Requirement('VisualCpp');
     Downloads.Clear;
     if DotNet then
       Downloads.Add('{#DotNetUrl}', 'DotNet.exe', '{#DotNetHash}');
     if Windows then
       Downloads.Add('{#WindowsUrl}', 'Windows.exe', '{#WindowsHash}');
-    if VisualCpp then
-      Downloads.Add('{#VisualCppUrl}', 'VisualCpp.exe', '{#VisualCppHash}');
-    if DotNet or Windows or VisualCpp then
+    if DotNet or Windows then
     begin
       Downloads.Show;
       try
@@ -184,11 +182,9 @@ begin
       finally
         Downloads.Hide;
       end;
-      if VisualCpp then InstallRuntime('VisualCpp', '/install /quiet /norestart', True);
       if DotNet then InstallRuntime('DotNet', '/install /quiet /norestart', True);
       if Windows then InstallRuntime('Windows', '--quiet', False);
-      if not Requirement('DotNet') or not Requirement('Windows') or
-        not Requirement('VisualCpp') then
+      if not Requirement('DotNet') or not Requirement('Windows') then
       begin
         NeedsRestart := RebootNeeded;
         RaiseException(CustomMessage('CheckFailed'));

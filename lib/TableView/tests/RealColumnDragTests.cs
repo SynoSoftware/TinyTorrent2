@@ -140,10 +140,10 @@ internal sealed class DragHarness
         );
         table.Width = 700;
         table.Height = 200;
-        table.Layout = TestData.DeclaredWidths(table);
         configure?.Invoke(table);
 
         await TableHarness.LoadAsync(table);
+        TestData.ApplyDeclaredWidths(table);
         table.UpdateLayout();
 
         IntPtr window = Win32Interop.GetWindowFromWindowId(

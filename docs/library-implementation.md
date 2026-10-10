@@ -1,5 +1,11 @@
 # Library implementation plan
 
+The earlier Library delivery is complete. The newly approved C — Sections and
+title-bar changes are being implemented; their build and runtime review remain
+pending owner authorization. [Current status](#current-status) distinguishes that
+work from earlier evidence. Release permissions remain in the
+[release assessment](subtitles-release.md).
+
 ## Delivery ruling — 2026-10-09
 
 **Owner ruling: finish the feature; cancel the validation programme.** The
@@ -18,31 +24,90 @@ implemented feature:
 Cancellation changes delivery scope, not the feature's data-safety rules.
 Follow [repository rules](../AGENTS.md), [testing](testing.md), the
 [Library spec](library.md), [interface](interface.md), and
-[approved prototype](../app/library-prototype.html). Those owners define the
+[Library prototype](../app/library-prototype.html). Those owners define the
 behavior; this plan does not repeat their requirements.
 
 ## Current status
+
+On 2026-10-10 the owner approved **C — Sections**, the single Library prototype
+and the app-icon page switch, and authorized native implementation. The
+[acceptance checklist](library.md#prototype-implementation-review) records the
+current target and outstanding evidence. The earlier B build and captures below
+do not validate these new changes. Builds, tests and native launches remain
+paused at the owner's instruction; the reported filter-opening jump still needs
+runtime diagnosis.
+
+The earlier delivery selected **B · Inspector** from the details prototype: one shared
+identity header, descriptive fields on the left and media facts on the right,
+with separate numeric IMDb and TMDB table columns. The throwaway comparison is
+saved on `codex/library-inspector-prototype` at
+`b7561bb2a90447eada3fe16d977febfdd200f4b5`; the native implementation follows the
+[selected composition](library.md#details-card). The new slice passed colleague
+source and adversarial review, the Debug diagnostic build (zero warnings or
+errors, 262.18 seconds), and production database checks (17.62 seconds), including
+version 1 data retention, rating persistence and structured episode identity.
+The first check attempt exposed a script reflection-access mistake; correcting
+that script required no product rebuild. The off-screen review completed its
+existing 23 scenes in 67.14 seconds, with no provider requests or desktop input.
+Evidence is `Capture-library-files-d780676d-fb65-4672-b9c3-7c507ff49de6` under
+`artifacts/evidence/`; populated video and music pixels passed independent
+colleague review. Their scores are explicitly labelled local fixtures, not live
+provider evidence. The ordinary Debug build also passed with zero warnings or
+errors in 182.56 seconds. Each app build used the expected two C# passes and
+four WinUI XAML calls; Lucide and TableView compilation stayed up to date, and
+neither the engine nor native dependencies were rebuilt. Generated-output
+checks were empty after the runs. Logs are
+`artifacts/library-inspector-capture-build.log`,
+`artifacts/library-inspector-source-checks.log` and
+`artifacts/library-inspector-capture.log`; the ordinary build log is
+`artifacts/library-inspector-debug-build.log`.
+
+The subsequent WinUI code review found that transient fetch, association and
+torrent notifications replaced Library's details controls, losing text selection
+even when their content had not changed. Fetch feedback and command availability
+now update in place; unchanged detail results do not announce new content, and
+the inactive torrent bindings stop tracking until the person returns to Torrents.
+Selection, changed metadata, provider configuration and language still refresh
+the card. Independent colleague source review closed the findings, including
+the retained per-torrent buttons' disconnect and reconnect states. Existing
+layout and storage evidence above remains applicable; these notification fixes
+have not had a new native interaction run. Their ordinary Debug x64 window
+build passed with zero warnings or errors in 152.75 seconds
+(`artifacts/library-inspector-review-debug-build.log`). The two app C# passes
+ran, Lucide and TableView compilation stayed up to date, and no engine or
+dependency build ran. The generated-output check was empty.
+
+Info's Year and individual Genres now apply the existing table filters and open
+the pane. Files exposes these additional facets while active, including with
+zero matching rows, so they can be changed or cleared. Colleague source review
+closed with no remaining finding. The Debug x64 window build passed with zero
+warnings or errors in 130.89 seconds; the existing storage checks, including
+the new Files facet regression case, passed in 18.32 seconds. Logs are
+`artifacts/library-info-filters-debug-build.log` and
+`artifacts/library-info-filters-source-checks.log`. Generated-output checks were
+empty. No native interaction or provider request ran for this change. The
+following evidence describes the earlier integrated delivery.
 
 Library is implemented in C#: source synchronization, shared SQLite, complete
 local search, filters, file details and opening, identification, optional video
 providers, and native page/dialog integration. Subtitles shares the source and
 database owners, not Library enablement.
 
-The integrated builds, focused production storage/file checks, supplier checks
-and 21-scene native review already recorded in `artifacts/evidence/` remain
-valid for the code they exercised. The last verified capture app is
-`76F011E3`; the native review is
-`Capture-library-files-f8426b9a-a43c-4cd6-83a6-e8a261a46299`.
-These are existing results, not instructions to repeat them.
+The earlier integrated builds, focused production storage/file checks, supplier
+checks and native reviews in `artifacts/evidence/` remain valid for the code
+they exercised. These are existing results, not instructions to repeat them.
 The settled ownership, routing, naming and presentation corrections passed
-colleague source review with no open finding. Final Debug x64 engine and window
-builds passed with zero warnings and zero errors. The successful engine compile
-took 58.26 seconds and the window compile 180.27 seconds. Compiler failures were
+colleague source review with no open finding. Debug x64 engine and window builds
+passed with zero warnings and zero errors. The successful engine compile took
+58.26 seconds; the latest ordinary window build took 255.02 seconds. Its two
+C# compiler passes and four WinUI XAML task calls account for the compilation
+work; Lucide and TableView compilation were skipped as up to date. No native
+dependency or engine was rebuilt for the visual corrections. Compiler failures were
 corrected before completion: the tray's locale pointer type, stale generated
 Proxy bindings, and application-template font lookup. Only affected compilation
 was repeated; dependencies and Release were not rebuilt.
 
-`app/tests/SourceChecks.ps1` passed against the final assembly in 3.23 seconds,
+`app/tests/SourceChecks.ps1` passed against the preceding settled assembly in 3.23 seconds,
 covering source membership, identification, database recovery and subtitle file
 ownership. `app/tests/ProviderChecks.ps1` passed in 0.80 seconds: HTTP CONNECT,
 SOCKS4a and SOCKS5 reached local proxy listeners, and an unavailable adapter
@@ -52,10 +117,29 @@ Logs are `artifacts/library-subtitles-final-engine-debug-build.log`,
 `artifacts/library-subtitles-final-source-checks.log` and
 `artifacts/library-subtitles-final-provider-checks.log`.
 
-No application, live supplier probe or fresh visual capture ran for this batch.
-The earlier capture remains evidence for its own source version, not a pixel
-verification of the current build. The approved prototype composition and
-interactions remain the authority; AI reports do not authorize redesign.
+A fresh focused off-screen review completed all 23 scenes in 41.37 seconds:
+`Capture-library-files-2ecd4e52-7d44-463d-aa22-986a41557e86` under
+`artifacts/evidence/`. No live provider requests or desktop input ran. The first
+attempt caught a startup failure missed by compilation: the canonical Lucide
+font registration accessed application resources inside the constructor. The
+registration now runs first in `OnLaunched`, before views are created;
+colleague review and the fresh runs confirm the correction. The final diagnostic
+rebuild passed without warnings or errors in 88.32 seconds, with no dependency
+or engine rebuild.
+
+Pixel comparison with the approved HTML references confirms readable sections,
+compact off/unidentified details, aligned File fields and unclipped English and
+Spanish supplier buttons. The fresh images verify Library's restored leading
+type/failure glyph and subtitle language values aligned beneath their input.
+The row also notifies these bindings after an Open failure or successful retry.
+Two added scenes use the existing local fixture helper to verify identified
+movie statistics, cast and synopsis, and tagged music statistics and fields.
+They establish populated layout, not supplier or Windows metadata acquisition.
+Independent colleague pixel review has no remaining actionable finding.
+Narrow stacked details, High Contrast, native window chrome and desktop acrylic
+are outside this evidence. No timing diagnostic ran.
+The approved prototype composition and interactions remain the authority;
+AI reports do not authorize redesign.
 
 The cancelled 10,000-file benchmark did not pass: worst warm p95 was 421.55 ms
 for Videos, 376.81 ms for Music and 612.87 ms for Files. First navigation was a
@@ -237,8 +321,8 @@ provider; silently falling back would change the person's disclosed network
 behavior.
 
 Migration replaces concrete provider enums/branches and the three shared-owner
-partials under Public. No release has written `library.db`, so it has one
-current schema and no SQL upgrade steps. Preserve current decisions, cached facts, failed-refresh retention,
+partials under Public. The rating addition upgrades existing local databases
+without replacing saved identifications or cached facts. Preserve current decisions, cached facts, failed-refresh retention,
 stale-result rejection and cancellation through this change. Runtime loaders,
 new projects, pluggable databases and provider-specific schedulers add no required
 behavior.
@@ -281,9 +365,11 @@ behavior.
   non-actionable. Retry uses the same open and source-reconciliation path;
   never substitute an empty collection, an alternate database or a destructive
   reset. Torrent operations remain independent of the database.
-- **One unshipped schema.** Create the current version 1 schema in one step;
-  refuse higher versions. There is no released feature database requiring
-  historical migrations or an import. C# is the sole database owner.
+- **Preserve existing local data.** The database applies ordered SQL versions
+  in one transaction and refuses a newer version. Version 2 adds nullable
+  ratings and structured episode facts to version 1; existing identifications
+  and metadata survive, with unknown ratings left empty and older episode
+  records retaining their combined-title fallback. C# is the sole database owner.
 
 ## Finish the delivery
 

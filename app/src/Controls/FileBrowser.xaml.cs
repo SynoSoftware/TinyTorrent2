@@ -24,6 +24,12 @@ public sealed partial class FileBrowser : UserControl
         set => SetValue(ModelProperty, value);
     }
 
+    internal Thickness ToolbarPadding
+    {
+        get => Toolbar.Padding;
+        set => Toolbar.Padding = value;
+    }
+
     public FileBrowser(FileSelection model)
     {
         Model = model;
@@ -102,6 +108,19 @@ public sealed partial class FileBrowser : UserControl
         Model.Refresh();
     }
 
+    internal bool Reveal(int index)
+    {
+        if (!Files.IsLoaded || Files.ActualHeight <= 0 || Files.ActualWidth <= 0)
+            return false;
+        if (Model.Reveal(index) is not { } file)
+            return true;
+        Files.RefreshView();
+        Files.Selection = new Selection([file], file);
+        Files.ScrollIntoView(file);
+        Files.Focus(FocusState.Keyboard);
+        return true;
+    }
+
     private void OnChanged(object? sender, EventArgs args)
     {
         RefreshActions();
@@ -150,6 +169,17 @@ public sealed partial class FileBrowser : UserControl
                 Text = Model.Text.Get("files", key),
                 AccessKey = Model.Text.Get("files", key + "_key"),
                 IsChecked = nodes.All(node => node.Priority == priority),
+                Icon = new FontIcon
+                {
+                    FontFamily = Lucide.Font,
+                    Glyph = priority switch
+                    {
+                        0 => Lucide.CircleSlash,
+                        1 => Lucide.ArrowDown,
+                        7 => Lucide.ArrowUp,
+                        _ => Lucide.Minus,
+                    },
+                },
             };
             item.Click += (_, _) => Model.Change(nodes, priority);
             menu.Items.Add(item);

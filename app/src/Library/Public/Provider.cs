@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -138,7 +139,31 @@ internal sealed class Provider(ProviderHttp http, Settings settings) : IConfigur
         {
             Year = year, Genres = Names(movie, "genre"), Cast = Names(movie, "actor"),
             Synopsis = synopsis, Keywords = Names(movie, "keywords"), Records = [record],
+            ImdbRating = Website.WebsiteId == "imdb" ? ReadRating(movie) : null,
         };
+    }
+
+    private static Rating? ReadRating(JsonElement movie)
+    {
+        if (!movie.TryGetProperty("aggregateRating", out var aggregate) || aggregate.ValueKind != JsonValueKind.Object)
+            return null;
+        double? Number(string name)
+        {
+            if (!aggregate.TryGetProperty(name, out var field))
+                return null;
+            return field.ValueKind == JsonValueKind.Number && field.TryGetDouble(out var number) ? number :
+                field.ValueKind == JsonValueKind.String && double.TryParse(field.GetString(),
+                    NumberStyles.Float, CultureInfo.InvariantCulture, out number) ? number : null;
+        }
+        var best = aggregate.TryGetProperty("bestRating", out _) ? Number("bestRating") : 10;
+        var worst = aggregate.TryGetProperty("worstRating", out _) ? Number("worstRating") : 1;
+        if (Number("ratingValue") is not { } value || !double.IsFinite(value) ||
+            Number("ratingCount") is not { } count || !double.IsFinite(count) || count <= 0 || count != Math.Truncate(count) ||
+            best is not { } maximum || !double.IsFinite(maximum) || maximum <= 0 ||
+            worst is not { } minimum || !double.IsFinite(minimum) || minimum < 0 || minimum >= maximum ||
+            value < minimum || value > maximum)
+            return null;
+        return new Rating(value / maximum * 10, VideoKind.Movie);
     }
 
     private bool Address(string value, out Uri address)

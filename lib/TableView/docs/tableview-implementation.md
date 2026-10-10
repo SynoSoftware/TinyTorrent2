@@ -79,6 +79,13 @@ one value. The contract's restriction on new named style resources does not
 prohibit a local spacing default inside the template. Theme-sensitive colors
 still use the platform resources required by the contract.
 
+`Table.FillOnce` scales widths after the first visible layout during initialization,
+then detaches its layout listener so window resizing cannot
+change widths. Collapsed ancestors defer the fill until the table is actually shown.
+Widths stay in the table's effective layout for its lifetime. `ColumnLayout`
+contains only order, visibility and sorting, so neither disk persistence nor a
+host's in-memory layout cache carries widths into another table instance.
+
 Keep virtualized work on realized rows. Explicit fit owns measurement; routine
 sorting, scrolling, and gesture feedback do not create a hidden measurement tree.
 Rich cell templates receive row items directly. Live values use live bindings;

@@ -48,7 +48,6 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
     public bool IsAvailable => !_disposed && _ready && _connected && _failure is null &&
         _starting is { IsCompletedSuccessfully: true };
     public bool IsOpen { get; private set; }
-    public bool IsFilterOpen { get; set; }
     public string Failure => _failure is null ? string.Empty : Text.Error(_failure);
     internal bool HasFailure => _failure is not null;
     public string Message => _selected?.OpeningFailure is not null ? _selected.Failure :
@@ -71,16 +70,19 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
         LibraryConfiguration.Music => "no_music",
         _ => "no_matches",
     });
-    public string Cast { get; private set; } = string.Empty;
-    public string Synopsis { get; private set; } = string.Empty;
-    public bool CanEnable => IsAvailable && _videos?.IsAvailable == true;
+    private Detail? _loadedDetail;
+    public string Cast => _loadedDetail?.Cast ?? string.Empty;
+    public string Synopsis => _loadedDetail?.Synopsis ?? string.Empty;
+    internal VideoChoice? Series => _loadedDetail?.Series;
+    internal IReadOnlyList<Episode> Episodes => _loadedDetail?.Episodes ?? [];
+    public bool IsProviderAvailable => _videos?.IsAvailable == true;
+    public bool CanEnable => IsAvailable && IsProviderAvailable;
     public bool IsEnrichmentEnabled => _videos?.Enabled == true;
     public string InformationLabel => Text.Get("library", "video_information");
-    public string InformationAction => Text.Get("library", IsEnrichmentEnabled ? "disable" : "enable");
     public string InformationTip => Text.Get("library", IsEnrichmentEnabled ? "disable_tip" : "enable_tip");
-    public string IdentifyLabel => Text.Get("library", _selected?.Entry.Type.Length > 0 ? "edit" : "identify");
-    public string IdentifyGlyph => Lucide.Pencil;
-    public IReadOnlyList<Origin> Origins { get; private set; } = [];
+    public string EditMetadataLabel => Text.Get("library", "edit_metadata");
+    public string EditMetadataGlyph => Lucide.Pencil;
+    public IReadOnlyList<Origin> Origins => _loadedDetail?.Origins ?? [];
     public string FileType { get; private set; } = string.Empty;
     public string Application { get; private set; } = string.Empty;
     public ImageSource? ApplicationIcon { get; private set; }
@@ -118,19 +120,21 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
     public ICommand Open { get; }
     public ICommand OpenFolder { get; }
     public ICommand Properties { get; }
-    public ICommand ClearIdentification { get; }
-    public ICommand Identify { get; }
+    public ICommand EraseMetadata { get; }
+    public ICommand EditMetadata { get; }
     public ICommand Enable { get; }
     public ICommand Retry { get; }
     public ICommand ClearFilters { get; }
     public ICommand ShowTorrents { get; }
     internal event EventHandler<LibraryRow>? OpenRequested;
     internal event EventHandler<string>? FolderRequested;
-    internal event EventHandler<string>? TorrentRequested;
-    internal event EventHandler? IdentifyRequested;
+    internal event EventHandler<Origin>? TorrentRequested;
+    internal event EventHandler? EditMetadataRequested;
     internal event EventHandler? EnableRequested;
     internal event EventHandler? TorrentsRequested;
     internal event EventHandler? RetryRequested;
+    internal event EventHandler? FiltersRequested;
+    internal event EventHandler? PropertiesRequested;
     internal event EventHandler<Exception>? CommandFailed;
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -157,14 +161,13 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
         }, () => IsAvailable && _selected is not null);
         Properties = new RelayCommand(() =>
         {
-            IsOpen = true;
-            _ = ReadDetail();
-            Changed(nameof(IsOpen));
+            PropertiesRequested?.Invoke(this, EventArgs.Empty);
+            OpenProperties();
             return Task.CompletedTask;
         }, () => _selected is not null);
-        Identify = new RelayCommand(() =>
+        EditMetadata = new RelayCommand(() =>
         {
-            IdentifyRequested?.Invoke(this, EventArgs.Empty);
+            EditMetadataRequested?.Invoke(this, EventArgs.Empty);
             return Task.CompletedTask;
         }, () => IsAvailable && IsEnrichmentEnabled && _selected?.Entry.Kind == FileKind.Video);
         Enable = new RelayCommand(() =>
@@ -172,13 +175,13 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
             EnableRequested?.Invoke(this, EventArgs.Empty);
             return Task.CompletedTask;
         }, () => CanEnable);
-        ClearIdentification = new RelayCommand(async () =>
+        EraseMetadata = new RelayCommand(async () =>
         {
             if (_store is null || _selected is not { } row)
                 return;
             try
             {
-                await _store.ClearIdentification(row.Entry, CancellationToken.None);
+                await _store.EraseMetadata(row.Entry, CancellationToken.None);
                 Refresh();
             }
             catch (OperationCanceledException) { }
@@ -237,15 +240,13 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
             return;
         Refresh();
         RefreshProviders();
-        Changed(nameof(IsEnrichmentEnabled));
         Changed(nameof(Status));
-        Changed(nameof(InformationAction));
         Changed(nameof(InformationTip));
         Changed(nameof(Message));
     }
     internal Task<IReadOnlyList<VideoChoice>> FindVideo(string query, CancellationToken cancellation) =>
         _videos is null ? Task.FromResult<IReadOnlyList<VideoChoice>>([]) : _videos.Search(query, cancellation);
-    internal Task<bool> IdentifyVideo(Entry entry, VideoChoice choice, CancellationToken cancellation) =>
+    internal Task<bool> SaveMetadata(Entry entry, VideoChoice choice, CancellationToken cancellation) =>
         _videos?.Identify(entry, choice, cancellation) ?? Task.FromResult(false);
 
     internal Task Observe(bool ready, bool connected)
@@ -333,7 +334,7 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
             Refresh();
     }
 
-    public void Filter(string section, string? value)
+    public void Filter(string section, string? value, int? season = null)
     {
         if (!_filters.TryGetValue(Configuration, out var filters))
             _filters[Configuration] = filters = [];
@@ -341,11 +342,23 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
             filters.Remove(section);
         else
             filters[section] = value;
+        if (section == "series")
+        {
+            if (value is not null && season is { } number)
+                filters["season"] = number.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            else
+                filters.Remove("season");
+        }
+        FiltersRequested?.Invoke(this, EventArgs.Empty);
         SearchChanged();
     }
 
+    internal void FilterSeries(VideoChoice series, int? season = null) => Filter("series", Store.SeriesKey(series), season);
+
     internal string FilterText(string section, string value) => section switch
     {
+        "series" => Facets.FirstOrDefault(facet => facet.Section == section && facet.Value == value)?.Label ?? Text.Get("library", "series"),
+        "season" => Text.Format("library", "season_number", value),
         "kind" when int.TryParse(value, out var kind) && Enum.IsDefined((FileKind)kind) =>
             Text.Get("library", ((FileKind)kind).ToString().ToLowerInvariant()),
         "type" => Text.Get("library", value.Length == 0 ? "unidentified" : value),
@@ -363,6 +376,7 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
         _refreshDetail = true;
         RefreshRows();
         Changed(nameof(IsAvailable));
+        RefreshCommands();
     }
 
     private void RefreshRows()
@@ -432,11 +446,12 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
                 if (_selected is not null && previousEntry?.Path != _selected.Entry.Path)
                     Changed(nameof(Selected));
                 if (previousEntry?.Type != _selected?.Entry.Type)
-                    Changed(nameof(IdentifyLabel));
+                    Changed(nameof(EditMetadataLabel));
                 Changed(nameof(Rows));
                 Changed(nameof(Facets));
                 Changed(nameof(Counts));
                 Changed(nameof(Status));
+                RefreshCommands();
             }
             catch (OperationCanceledException) { }
             catch (Exception error) { Report(error); }
@@ -457,12 +472,9 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
         _selected = row;
         _detail?.Cancel();
         CancelInformation();
-        _detailLoaded = false;
+        _loadedDetail = null;
         _noVideoMatch = false;
         _fetchFailure = null;
-        Cast = string.Empty;
-        Synopsis = string.Empty;
-        Origins = [];
         FileType = Application = string.Empty;
         ApplicationIcon = null;
         if (row is not null)
@@ -473,6 +485,7 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
         Changed(nameof(Selected));
         Changed(nameof(IsOpen));
         Changed(nameof(Message));
+        RefreshCommands();
     }
 
     private async Task ReadDetail()
@@ -490,13 +503,16 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
                 detail is not null && detail.Entry != entry ||
                 cancellation.IsCancellationRequested || !IsAvailable || !IsOpen)
                 return;
-            Cast = detail?.Cast ?? string.Empty;
-            Synopsis = detail?.Synopsis ?? string.Empty;
-            Origins = detail?.Origins ?? [];
-            _detailLoaded = detail is not null;
-            Changed(nameof(Cast));
-            Changed(nameof(Synopsis));
-            Changed(nameof(Origins));
+            var changed = _loadedDetail?.Entry != detail?.Entry || Cast != (detail?.Cast ?? string.Empty) ||
+                Synopsis != (detail?.Synopsis ?? string.Empty) || Series != detail?.Series ||
+                !Episodes.SequenceEqual(detail?.Episodes ?? []) || !Origins.SequenceEqual(detail?.Origins ?? []);
+            _loadedDetail = detail;
+            if (changed)
+            {
+                Changed(nameof(Cast));
+                Changed(nameof(Synopsis));
+                Changed(nameof(Origins));
+            }
             ScheduleInformation();
         }
         catch (OperationCanceledException) { }
@@ -510,8 +526,15 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
 
     internal void ShowTorrent(string origin)
     {
-        if (IsAvailable && Origins.Any(item => item.OriginId == origin))
-            TorrentRequested?.Invoke(this, origin);
+        if (IsAvailable && Origins.FirstOrDefault(item => item.OriginId == origin) is { } source)
+            TorrentRequested?.Invoke(this, source);
+    }
+
+    internal void OpenProperties()
+    {
+        IsOpen = true;
+        _ = ReadDetail();
+        Changed(nameof(IsOpen));
     }
 
     internal void Close()
@@ -553,6 +576,7 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
         if (row.Entry.Path != path)
             return;
         row.OpeningFailure = error;
+        row.Refresh();
         if (ReferenceEquals(row, _selected))
             Changed(nameof(Message));
     }
@@ -573,13 +597,12 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
         Changed(string.Empty);
     }
 
-    private void Changed(string property)
-    {
+    private void Changed(string property) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(property));
-        if (property is not (nameof(IsAvailable) or nameof(Selected) or nameof(Rows) or nameof(Facets) or
-            nameof(IsEnrichmentEnabled) or nameof(CanEnable) or nameof(CanConfigure) or nameof(IsOnDemand) or nameof(IsFetching) or ""))
-            return;
-        foreach (var command in new[] { Open, OpenFolder, Properties, Identify, Enable, ClearIdentification, Retry, ClearFilters, FetchDetails, ConfigureProvider })
+
+    private void RefreshCommands()
+    {
+        foreach (var command in new[] { Open, OpenFolder, Properties, EditMetadata, Enable, EraseMetadata, Retry, ClearFilters, FetchDetails, ConfigureProvider })
             ((RelayCommand)command).Refresh();
     }
 
@@ -652,6 +675,10 @@ public sealed class LibraryRow(Entry entry, Strings text) : INotifyPropertyChang
     public string Title => Entry.Title;
     public string Type => text.Get("library", Entry.Type.Length == 0 ? "unidentified" : Entry.Type);
     public string Year => Entry.Year?.ToString() ?? string.Empty;
+    public string ImdbRating => Score(Entry.ImdbRating);
+    public string TmdbRating => Score(Entry.TmdbRating);
+    public string ImdbTip => RatingTip(Entry.ImdbRating);
+    public string TmdbTip => RatingTip(Entry.TmdbRating);
     public string Genres => Entry.Genres;
     public string Cast => Entry.Cast;
     public string Artist => Entry.Artist;
@@ -662,11 +689,16 @@ public sealed class LibraryRow(Entry entry, Strings text) : INotifyPropertyChang
     public string Modified => Entry.Modified is { } time ? text.Time(DateTimeOffset.FromUnixTimeSeconds(time)) : string.Empty;
     public string Created => Entry.Created is { } time ? text.Time(DateTimeOffset.FromUnixTimeSeconds(time)) : string.Empty;
     public string Kind => text.Get("library", Entry.Kind.ToString().ToLowerInvariant());
+    private static string Score(Rating? rating) => rating?.Value.ToString("0.0") ?? string.Empty;
+    private string RatingTip(Rating? rating) => rating is null ? string.Empty :
+        text.Format("library", "rating", Score(rating)) + (rating.Kind == VideoKind.Series ? " · " + text.Get("library", "series_rating") : string.Empty);
     public event PropertyChangedEventHandler? PropertyChanged;
     internal void Update(Entry value)
     {
         if (Entry == value)
             return;
+        if (Entry.Path != value.Path)
+            OpeningFailure = null;
         Entry = value;
         Refresh();
     }

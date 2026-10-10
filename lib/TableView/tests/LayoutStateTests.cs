@@ -18,14 +18,11 @@ public class LayoutStateTests
             await TableHarness.LoadAsync(table);
 
             table.Layout = TestData.Layout(
-                widths: new Dictionary<string, double> { ["a"] = 200 },
                 visibility: new Dictionary<string, bool> { ["b"] = false }
             );
 
             ColumnLayout state = table.Layout;
 
-            CollectionAssert.AreEqual(new[] { "a" }, state.WidthOverrides.Keys.ToArray());
-            Assert.AreEqual(200d, state.WidthOverrides["a"], 0d);
             CollectionAssert.AreEqual(new[] { "b" }, state.VisibilityOverrides.Keys.ToArray());
             Assert.IsFalse(state.VisibilityOverrides["b"]);
         });
@@ -41,8 +38,7 @@ public class LayoutStateTests
 
             table.Layout = TestData.Layout(
                 order: new[] { "ghost", "b", "a" },
-                visibility: new Dictionary<string, bool> { ["ghost"] = false },
-                widths: new Dictionary<string, double> { ["ghost"] = 400 }
+                visibility: new Dictionary<string, bool> { ["ghost"] = false }
             );
 
             CollectionAssert.AreEqual(new[] { "b", "a" }, TableHarness.Order(table));
@@ -77,22 +73,6 @@ public class LayoutStateTests
             CollectionAssert.AreEqual(new[] { "c", "a", "b" }, TableHarness.Order(table));
         });
 
-    [TestMethod]
-    public Task Section18_AnOmittedWidthClearsAnEarlierOverride() =>
-        TestHost.RunAsync(async () =>
-        {
-            // "treat VisibilityOverrides and WidthOverrides as complete override maps: omitted values use
-            // their column baseline and clear any earlier override".
-            Table table = TestData.Table(TestData.Column("a", 150));
-            await TableHarness.LoadAsync(table);
-
-            table.Layout = TestData.Layout(widths: new Dictionary<string, double> { ["a"] = 300 });
-            Assert.AreEqual(300d, TableHarness.EffectiveWidth(table, "a"), 0d);
-
-            table.Layout = TestData.Layout();
-
-            Assert.AreEqual(150d, TableHarness.EffectiveWidth(table, "a"), 0d);
-        });
 
     [TestMethod]
     public Task Section18_AnOmittedVisibilityClearsAnEarlierOverride() =>
@@ -110,65 +90,6 @@ public class LayoutStateTests
 
             Assert.IsTrue(TableHarness.IsVisible(table, "b"));
         });
-
-    [TestMethod]
-    public Task Section18_NonFiniteWidthsAreIgnored() =>
-        TestHost.RunAsync(async () =>
-        {
-            Table table = TestData.Table(TestData.Column("a", 150), TestData.Column("b", 150));
-            await TableHarness.LoadAsync(table);
-
-            table.Layout = TestData.Layout(
-                widths: new Dictionary<string, double> { ["a"] = double.NaN }
-            );
-
-            Assert.AreEqual(150d, TableHarness.EffectiveWidth(table, "a"), 0d);
-        });
-
-    [TestMethod]
-    public Task Section18_NonPositiveWidthsAreIgnored() =>
-        TestHost.RunAsync(async () =>
-        {
-            Table table = TestData.Table(TestData.Column("a", 150), TestData.Column("b", 150));
-            await TableHarness.LoadAsync(table);
-
-            table.Layout = TestData.Layout(widths: new Dictionary<string, double> { ["a"] = 0 });
-
-            Assert.AreEqual(150d, TableHarness.EffectiveWidth(table, "a"), 0d);
-        });
-
-    [TestMethod]
-    public Task Section18_AWidthForANonResizableColumnIsIgnored() =>
-        TestHost.RunAsync(async () =>
-        {
-            Column fixedWidth = TestData.Column("a", 150);
-            fixedWidth.CanResize = false;
-            Table table = TestData.Table(fixedWidth);
-            await TableHarness.LoadAsync(table);
-
-            table.Layout = TestData.Layout(widths: new Dictionary<string, double> { ["a"] = 300 });
-
-            Assert.AreEqual(150d, TableHarness.EffectiveWidth(table, "a"), 0d);
-        });
-
-    [TestMethod]
-    public Task Section18_ValidWidthsAreRaisedToMinWidth() =>
-        TestHost.RunAsync(async () =>
-        {
-            Column bounded = TestData.Column("a", 150);
-            bounded.MinWidth = 100;
-            Table table = TestData.Table(bounded);
-            await TableHarness.LoadAsync(table);
-
-            table.Layout = TestData.Layout(widths: new Dictionary<string, double> { ["a"] = 10 });
-            Assert.AreEqual(
-                100d,
-                TableHarness.EffectiveWidth(table, "a"),
-                0d,
-                "clamped to MinWidth"
-            );
-        });
-
     [TestMethod]
     public Task Section18_ARequiredColumnSavedAsHiddenIsRestored() =>
         TestHost.RunAsync(async () =>
@@ -218,7 +139,6 @@ public class LayoutStateTests
             await TableHarness.LoadAsync(table);
             table.Layout = TestData.Layout(
                 order: new[] { "b", "a" },
-                widths: new Dictionary<string, double> { ["a"] = 200 },
                 visibility: new Dictionary<string, bool> { ["b"] = false }
             );
 
@@ -238,13 +158,11 @@ public class LayoutStateTests
             );
 
             table.Layout = TestData.Layout(
-                order: new[] { "c", "b", "a" },
-                widths: new Dictionary<string, double> { ["b"] = 260 }
+                order: new[] { "c", "b", "a" }
             );
 
             await TableHarness.LoadAsync(table);
 
             CollectionAssert.AreEqual(new[] { "c", "b", "a" }, TableHarness.Order(table));
-            Assert.AreEqual(260d, TableHarness.EffectiveWidth(table, "b"), 0d);
         });
 }

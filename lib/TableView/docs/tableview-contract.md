@@ -39,7 +39,7 @@ The component provides:
 - column drag reordering;
 - column resizing and explicit fit-to-current-content actions;
 - column hide/show from a header context menu;
-- persisted column order, visibility, widths, and sort;
+- persisted column order, visibility, and sort;
 - single, extended, range, keyboard, and optional marquee selection;
 - row activation and row context menus;
 - drag reordering of one or more selected rows when its host accepts reorder
@@ -719,7 +719,7 @@ Required invariants:
   and UI Automation; it need not match the visual header exactly. It may change
   after `Loaded` when presentation language changes.
 - `CellTemplate` receives the row item as its `DataContext`/content.
-- `Width`, `MinWidth`, and persisted widths are finite
+- `Width` and `MinWidth` are finite
   device-independent pixels (DIPs). `Width` is greater than zero;
   `MinWidth` is non-negative;
 - the effective width is never below `MinWidth`. There is no maximum, because
@@ -884,6 +884,17 @@ The column header uses a `ControlAltFillColorTertiaryBrush` band, the platform
 fill that differs from both the window and a card by a similar visible step in
 Light and Dark. A table hosted inside another surface retains this header,
 so its column headings have the same appearance wherever the table is used.
+The header band's outer corners use the platform `ListViewItemCornerRadius` to
+match native row selection, including
+its hover and pressed content, so the shared header has one rounded outline
+without rounding each column separately.
+The band is inset four pixels on both sides to align with the native row
+selection background. This affects the header chrome and its clipping only;
+column labels, resize boundaries and row cells retain their shared positions.
+The shared header template gives embedded checkboxes compact sizing around their
+native glyph and preserves their native states, focus and automation. A checkbox
+must not add its standalone control minimum height to the table's own padding,
+because that makes one table's header taller than the other tables' headers.
 
 The retained row appearance has specific exceptions awaiting the
 [hands-on Fluent review](../../../docs/architecture.md#decisions-still-open): no hover
@@ -1035,12 +1046,16 @@ used exactly after it is raised to its `MinWidth`. When a host
 does not declare one, the control's 150-DIP default is used. The baseline is
 the width a column has before the first fill.
 
-**Owner ruling: a table fills its width once, when it first has one.** When
-the table first has a usable width and no column has a width override, it
-scales the visible resizable columns from their baseline widths by the scaling
-step of `FillWidth()`, so they end at the table's right edge. A width override is a width the person chose: restored
-from a saved layout, set by a resize, or set by a fit. The person's choice
-wins, so a table restored with saved widths keeps them. The declared widths
+**Owner ruling: widths belong to the live table, never to saved settings.**
+At its first usable visible layout, a new table scales its declared widths by
+the scaling step of `FillWidth()`, so the visible resizable columns end at its
+right edge. Resizing, fitting and filling then change only that instance's widths.
+Destroying it discards those widths; another instance starts with a fresh fill.
+Hiding and showing the same instance preserves them, so switching tabs does not
+move columns under the person's pointer.
+The first fill waits for a completed visible layout, including visible ancestors;
+a hidden tab's preliminary header width does not complete initialization.
+Assigning `Layout` and ordinary window resizing never repeat the fill. The declared widths
 alone would cut off or waste space on first use. Filling depends only on the
 width, so it runs before or regardless of rows, and data that arrives later
 never resizes a column; a fit to the first rows resized the columns in front
@@ -1048,14 +1063,12 @@ of the person whenever data arrived after the table was on screen. The first
 fill does not run `FillWidth()`'s fit, because that fit would measure whichever
 rows happen to be realized at that moment and replace the host's declared
 proportions with them. It is part of the table's initial layout, so like the
-rest of that layout it raises no `LayoutChanged`; a host that saves the layout
-on `LayoutChanged` saves the filled widths with the person's first change.
+rest of that layout it raises no `LayoutChanged`.
 After that one fill, later data, property updates, sorting, filtering,
 scrolling, window resizing, and visibility changes MUST NOT silently widen or
 narrow a column.
 
-An applied valid `ColumnLayout.WidthOverrides` entry, a completed direct
-resize, or an explicit fit creates a width override.
+A completed direct resize or an explicit fit creates a live width override.
 It wins over the baseline until another override or `ResetLayout()`
 replaces it. A user may resize down to the declared `MinWidth` even when cell
 content clips or truncates; observed content never becomes a new hard minimum.
@@ -1213,9 +1226,10 @@ there, and hiding the column the menu was opened on turns that item into the one
 that shows it back. No item may be left saying something that has stopped being
 true.
 
-A column entry carries its state as an icon rather than as a toggle item's own
-check. A checkable menu item keeps its check in a column of its own that holds
-its width even while the check is invisible, so one standing beside items that
+A column entry carries its state as a checked or empty square icon rather than
+as a toggle item's own check, so hidden columns also retain an icon. A checkable
+menu item keeps its check in a column of its own that holds its width even while
+the check is invisible, so one standing beside items that
 carry icons gives the menu two glyph columns and indents every label past both.
 The cost is that the state is no longer reported through the toggle pattern, so
 it MUST be published another way; `AutomationProperties.ItemStatus` carries it.
@@ -1572,7 +1586,6 @@ The table exposes, but does not store, a data-only snapshot:
 public sealed record ColumnLayout(
     IReadOnlyList<string> Order,
     IReadOnlyDictionary<string, bool> VisibilityOverrides,
-    IReadOnlyDictionary<string, double> WidthOverrides,
     string? SortColumnId,
     SortDirection SortDirection);
 ```
@@ -1590,22 +1603,25 @@ to version its stored envelope, that envelope is the version boundary.
 The only valid persisted directions for an active sort are ascending and
 descending; `SortDirection` is ignored when `SortColumnId` is `null`.
 
-`VisibilityOverrides` and `WidthOverrides` are intentionally sparse: they contain
-only values that override declared visibility and width baselines. A missing
+`VisibilityOverrides` is intentionally sparse: it contains
+only values that override declared visibility. A missing
 column ID means “use that column's baseline.” Reading `Layout` follows the
 same rule, so untouched defaults do not become duplicate persisted
 configuration. A column with no `Id` is not persisted at all: it appears in
-neither `Order` nor either override map.
+neither `Order` nor the visibility map.
 
 Persist:
 
 - full column order, including hidden columns;
 - visibility overrides;
-- explicit width overrides in DIPs, including overrides for hidden columns;
 - active sort column and direction.
+
+Older stored width fields are ignored when reading the snapshot. They cannot
+override a new table's initial fill or a live table's current widths.
 
 Do not persist in the layout snapshot:
 
+- column widths or whether they were chosen manually;
 - selected/current items (a host stores their keys itself);
 - the scroll offset (a host stores `VerticalOffset` itself);
 - loading state;
@@ -1617,10 +1633,8 @@ Applying saved state MUST be defensive:
 - ignore unknown IDs;
 - ignore duplicate IDs after their first valid occurrence;
 - append newly introduced columns in definition order;
-- treat `VisibilityOverrides` and `WidthOverrides` as complete override maps:
-  omitted values use their column baseline and clear any earlier override;
-- ignore non-finite, non-positive, and non-resizable-column widths; raise valid
-  finite widths to the column's `MinWidth`;
+- treat `VisibilityOverrides` as a complete override map:
+  omitted values restore declared visibility without changing live widths;
 - restore required columns if saved as hidden;
 - restore the saved sort when its column is currently sortable, visible once the
   saved visibility has been applied, and its direction is valid; otherwise use
@@ -1811,7 +1825,7 @@ host integration, with validation scope set by [testing](../../../docs/testing.m
     equivalent keyboard/touch domain move command.
 11. Loading, empty, no-results, and refresh-with-existing-rows follow
     the stated precedence.
-12. Saved layout restores valid order, visibility, widths, and sort; obsolete
+12. Saved layout restores valid order, visibility, and sort; obsolete
     values recover defensively to a usable natural/sorted layout. Applying it
     before or after `Loaded` is silent and never mutates source or baseline
     definitions.

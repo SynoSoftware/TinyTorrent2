@@ -6,6 +6,21 @@
   IsTabStop="True"
   UseSystemFocusVisuals="True"
 >
+  <UserControl.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.ThemeDictionaries>
+        <ResourceDictionary x:Key="Light">
+          <x:Double x:Key="TinyTorrentSplitterOpacity">0.4</x:Double>
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="Dark">
+          <x:Double x:Key="TinyTorrentSplitterOpacity">0.4</x:Double>
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="HighContrast">
+          <x:Double x:Key="TinyTorrentSplitterOpacity">1</x:Double>
+        </ResourceDictionary>
+      </ResourceDictionary.ThemeDictionaries>
+    </ResourceDictionary>
+  </UserControl.Resources>
   <Grid>
     <VisualStateManager.VisualStateGroups>
       <VisualStateGroup x:Name="CommonStates">
@@ -13,6 +28,7 @@
         <VisualState x:Name="Active">
           <VisualState.Setters>
             <Setter Target="Grip.Background" Value="{ThemeResource AccentFillColorDefaultBrush}" />
+            <Setter Target="Grip.Opacity" Value="1" />
           </VisualState.Setters>
         </VisualState>
       </VisualStateGroup>
@@ -23,6 +39,7 @@
       HorizontalAlignment="Center"
       VerticalAlignment="Center"
       Background="{ThemeResource ControlStrongFillColorDefaultBrush}"
+      Opacity="{ThemeResource TinyTorrentSplitterOpacity}"
     />
     <primitives:Thumb
       x:Name="Handle"

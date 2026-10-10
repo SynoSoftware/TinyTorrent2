@@ -174,10 +174,6 @@ public class FeatureProofTests
                     + string.Join(", ", TableHarness.VisibleColumns(second).Select(v => v.Id))
             );
             Proof.Note(
-                "F06 restored widths:     "
-                    + string.Join(", ", restored.WidthOverrides.Select(w => $"{w.Key}={w.Value}"))
-            );
-            Proof.Note(
                 $"F06 restored sort:       {restored.SortColumnId} {restored.SortDirection}"
             );
 
@@ -185,10 +181,6 @@ public class FeatureProofTests
             CollectionAssert.AreEqual(
                 saved.VisibilityOverrides.OrderBy(v => v.Key).ToArray(),
                 restored.VisibilityOverrides.OrderBy(v => v.Key).ToArray()
-            );
-            CollectionAssert.AreEqual(
-                saved.WidthOverrides.OrderBy(v => v.Key).ToArray(),
-                restored.WidthOverrides.OrderBy(v => v.Key).ToArray()
             );
             Assert.AreEqual("queue", restored.SortColumnId);
             Assert.AreEqual(SortDirection.Descending, restored.SortDirection);

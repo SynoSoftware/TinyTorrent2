@@ -19,7 +19,7 @@ internal sealed partial class Acquisition
             WHERE s.path=subtitle_jobs.path AND s.language=subtitle_jobs.language);
         """;
 
-    private Task Load() => database.Run(connection =>
+    private Task Load() => Run(connection =>
     {
         using var command = connection.CreateCommand();
         command.CommandText = "SELECT enabled,supplier,username,secret,languages,checked_at,request_reset,download_reset FROM subtitle_settings WHERE singleton=1;";
@@ -78,8 +78,6 @@ internal sealed partial class Acquisition
                     ("$request", _allowance.RequestReset?.ToUnixTimeMilliseconds()),
                     ("$download", _allowance.DownloadReset?.ToUnixTimeMilliseconds()));
             Supplier?.Restore(_account, _allowance);
-            if (RetryAt > DateTimeOffset.UtcNow)
-                Failure = SubtitleFailure.Quota;
         }
         return true;
     }, _lifetime.Token);
@@ -98,7 +96,7 @@ internal sealed partial class Acquisition
     {
         if (_allowance == allowance)
             return;
-        await database.Run(connection =>
+        await Run(connection =>
         {
             Execute(connection, "UPDATE subtitle_settings SET request_reset=$request,download_reset=$download WHERE singleton=1;",
                 ("$request", allowance.RequestReset?.ToUnixTimeMilliseconds()), ("$download", allowance.DownloadReset?.ToUnixTimeMilliseconds()));
@@ -107,7 +105,7 @@ internal sealed partial class Acquisition
         _allowance = allowance;
     }
 
-    private Task<Target[]> Targets(CancellationToken cancellation) => database.Run(connection =>
+    private Task<Target[]> Targets(CancellationToken cancellation) => Run(connection =>
     {
         var languages = new HashSet<string>(EffectiveLanguages, StringComparer.OrdinalIgnoreCase);
         foreach (var deletion in _deletions)
@@ -156,7 +154,7 @@ internal sealed partial class Acquisition
             await DeleteAccepted().ConfigureAwait(false);
             var targets = await Targets(_lifetime.Token).ConfigureAwait(false);
             await ReconcileFiles(targets, _lifetime.Token).ConfigureAwait(false);
-            await database.Run(connection =>
+            await Run(connection =>
             {
                 if (revision != Interlocked.Read(ref _revision) || !_connected)
                     return false;
@@ -165,11 +163,7 @@ internal sealed partial class Acquisition
                 {
                     if (!Current(connection, target.Videos))
                         continue;
-                    using var saved = connection.CreateCommand();
-                    saved.CommandText = "SELECT 1 FROM subtitle_outputs WHERE path=$path AND language=$language;";
-                    saved.Parameters.AddWithValue("$path", target.Path);
-                    saved.Parameters.AddWithValue("$language", target.Language);
-                    var recorded = saved.ExecuteScalar() is not null;
+                    var recorded = Recorded(connection, target);
                     if (recorded)
                         Associate(connection, target);
                     if (!Enabled || !Eligible(target) || recorded)
@@ -196,13 +190,14 @@ internal sealed partial class Acquisition
                 return true;
             }, _lifetime.Token).ConfigureAwait(false);
             await RefreshCounts().ConfigureAwait(false);
-            if (Failure == SubtitleFailure.Database)
-                Failure = SubtitleFailure.None;
+            _databaseFailed = false;
+            _saveFailed = false;
         }
         catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
-        catch (Exception error) when (error is SqliteException or IOException or UnauthorizedAccessException)
+        catch (SqliteException) { }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
         {
-            Failure = error is SqliteException ? SubtitleFailure.Database : SubtitleFailure.Save;
+            _saveFailed = true;
         }
         finally
         {
@@ -279,7 +274,7 @@ internal sealed partial class Acquisition
         return Convert.ToInt64(command.ExecuteScalar()) != 0;
     }
 
-    private Task<bool> Record(Target target, bool created, CancellationToken cancellation) => database.Run(connection =>
+    private Task<bool> Record(Target target, bool created, CancellationToken cancellation) => Run(connection =>
     {
         if (!created && !Current(connection, target.Videos.Where(video => video.Eligible)))
             return false;
@@ -292,6 +287,15 @@ internal sealed partial class Acquisition
             """, ("$path", target.Path), ("$language", target.Language), ("$created", created));
         return true;
     }, cancellation);
+
+    private static bool Recorded(SqliteConnection connection, Target target)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT 1 FROM subtitle_outputs WHERE path=$path AND language=$language;";
+        command.Parameters.AddWithValue("$path", target.Path);
+        command.Parameters.AddWithValue("$language", target.Language);
+        return command.ExecuteScalar() is not null;
+    }
 
     private static bool Current(SqliteConnection connection, IEnumerable<Video> videos)
     {
@@ -317,18 +321,11 @@ internal sealed partial class Acquisition
     private async Task RefreshCounts()
     {
         var targets = (await Targets(_lifetime.Token).ConfigureAwait(false)).Where(Eligible).ToArray();
-        var counts = await database.Run(connection =>
+        var counts = await Run(connection =>
         {
             var missing = new Dictionary<string, int>();
-            foreach (var target in targets.Where(target => target.Complete))
-            {
-                using var command = connection.CreateCommand();
-                command.CommandText = "SELECT 1 FROM subtitle_outputs WHERE path=$path AND language=$language;";
-                command.Parameters.AddWithValue("$path", target.Path);
-                command.Parameters.AddWithValue("$language", target.Language);
-                if (command.ExecuteScalar() is null)
-                    missing[target.Language] = missing.GetValueOrDefault(target.Language) + 1;
-            }
+            foreach (var target in targets.Where(target => target.Complete && !Recorded(connection, target)))
+                missing[target.Language] = missing.GetValueOrDefault(target.Language) + 1;
             using var pending = connection.CreateCommand();
             pending.CommandText = "SELECT path FROM subtitle_jobs WHERE outcome IN ($pending,$unavailable);";
             pending.Parameters.AddWithValue("$pending", (int)SubtitleOutcome.Pending);
@@ -372,7 +369,7 @@ internal sealed partial class Acquisition
         command.ExecuteNonQuery();
     }
 
-    private Task ReportFile(string path, SubtitleFailure reason) => database.Run(connection =>
+    private Task ReportFile(string path, SubtitleFailure reason) => Run(connection =>
     {
         Execute(connection, """
             INSERT INTO subtitle_failures(path,reason) VALUES($path,$reason)

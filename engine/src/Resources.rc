@@ -4,6 +4,7 @@
 // The resource compiler drops TT_VERSION's escaped quotes, so the text is
 // built from the numeric parts.
 #define TEXT_OF(value) #value
+#define STRING_VALUE(value) TEXT_OF(value)
 #define VERSION_TEXT(major, minor, build, revision) TEXT_OF(major.minor.build.revision)
 IDR_ENGLISH_TEXT RCDATA "Resources/en.json"
 IDI_TINYTORRENT ICON "../../resources/TinyTorrent.ico"
@@ -24,7 +25,10 @@ BEGIN
     BEGIN
         BLOCK "040904B0"
         BEGIN
+            VALUE "CompanyName", STRING_VALUE(TT_COMPANY)
             VALUE "FileDescription", PRODUCT_NAME
+            VALUE "InternalName", STRING_VALUE(TT_NAME)
+            VALUE "OriginalFilename", STRING_VALUE(TT_FILENAME)
             VALUE "ProductName", PRODUCT_NAME
             VALUE "FileVersion", VERSION_TEXT(TT_VERSION_MAJOR, TT_VERSION_MINOR, TT_VERSION_BUILD, TT_VERSION_REVISION)
             VALUE "ProductVersion", VERSION_TEXT(TT_VERSION_MAJOR, TT_VERSION_MINOR, TT_VERSION_BUILD, TT_VERSION_REVISION)

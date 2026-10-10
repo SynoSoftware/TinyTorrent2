@@ -48,7 +48,9 @@ internal static class Icons
     /// two glyph columns and indents every row past both. A <c>MenuFlyoutItem</c> has the icon
     /// column only.
     /// </summary>
-    internal static IconElement Shown() => Glyph(Lucide.Check);
+    internal static IconElement Shown() => Glyph(Lucide.SquareCheck);
+
+    internal static IconElement Hidden() => Glyph(Lucide.Square);
 
     internal static IconElement MoveLeft() => Glyph(Lucide.ArrowLeft);
 

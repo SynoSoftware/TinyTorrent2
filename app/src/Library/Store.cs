@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using Syno.TinyTorrent.Models;
 using Syno.TinyTorrent.Services;
@@ -9,6 +10,13 @@ namespace Syno.TinyTorrent.Library;
 internal sealed partial class Store(Database database)
 {
     internal const string Invalidate = "DROP TABLE IF EXISTS library_rows;";
+
+    // Stored lists such as genres keep this separator, which the Genres filter
+    // splits on.
+    internal const string Separator = " · ";
+
+    // The entries of the library_rows snapshot. Invalidate drops that table,
+    // and the next Search rebuilds both.
     private readonly Dictionary<long, Entry> _cache = [];
 
 #if CAPTURE
@@ -20,13 +28,22 @@ internal sealed partial class Store(Database database)
             SELECT * FROM current_files WHERE kind=0 ORDER BY entry_id LIMIT 1000;
             INSERT INTO video_information(catalog_id,video_id,language,title,type,year,genres,cast,synopsis,keywords,search,retrieved)
             SELECT 'timing',CAST(entry_id AS TEXT),'en','Coastal mystery ' || entry_id,'movie',2024,
-                'Drama · Mystery','Example Actor','An investigator solves a coastal mystery.',
+                'Drama · Mystery','Example Actor',
+                'An investigator returns to a coastal town after a fishing boat disappears. As a storm approaches, conflicting accounts draw old friends into a search that reveals a secret the community has kept for years.',
                 'investigator coastal mystery','investigator coastal mystery example actor',1700000000
             FROM timing_videos;
+            WITH samples AS (
+                SELECT CAST(entry_id AS TEXT) AS video_id,row_number() OVER (ORDER BY entry_id) AS position
+                FROM timing_videos ORDER BY entry_id LIMIT 2
+            )
+            UPDATE video_information SET title=title || ' (sample ratings)',
+                imdb_rating=CASE samples.position WHEN 1 THEN 7.8 ELSE 6.9 END,imdb_kind='movie',
+                tmdb_rating=CASE samples.position WHEN 1 THEN 8.1 ELSE 7.2 END,tmdb_kind='movie'
+            FROM samples WHERE catalog_id='timing' AND video_information.video_id=samples.video_id;
             INSERT INTO identifications(origin,file_index,catalog_id,video_id,explicit,decided,evidence)
             SELECT f.origin,f.file_index,'timing',CAST(f.entry_id AS TEXT),1,1700000000,f.name
             FROM source_files f JOIN timing_videos v USING(entry_id);
-            INSERT OR IGNORE INTO file_facts(origin,file_index,created,modified,title,artist,album,track,year,genre,duration,search)
+            INSERT OR REPLACE INTO file_facts(origin,file_index,created,modified,title,artist,album,track,year,genre,duration,search)
             SELECT origin,file_index,1700000000,1700000100,
                 CASE WHEN kind=1 THEN 'Track ' || file_index ELSE '' END,
                 CASE WHEN kind=1 THEN 'Example Artist' ELSE '' END,
@@ -90,6 +107,14 @@ internal sealed partial class Store(Database database)
         );
         """;
 
+    internal const string Information = """
+        ALTER TABLE video_information ADD COLUMN imdb_rating REAL CHECK(imdb_rating BETWEEN 0 AND 10);
+        ALTER TABLE video_information ADD COLUMN imdb_kind TEXT CHECK(imdb_kind IN ('movie','tv'));
+        ALTER TABLE video_information ADD COLUMN tmdb_rating REAL CHECK(tmdb_rating BETWEEN 0 AND 10);
+        ALTER TABLE video_information ADD COLUMN tmdb_kind TEXT CHECK(tmdb_kind IN ('movie','tv'));
+        ALTER TABLE video_information ADD COLUMN episodes TEXT;
+        """;
+
     internal const string Projection = """
         CREATE TEMP VIEW library_entries AS
         SELECT f.entry_id, f.path, f.name, f.size, f.kind,
@@ -100,7 +125,9 @@ internal sealed partial class Store(Database database)
             COALESCE(p.artist,'') AS artist, COALESCE(p.album,'') AS album,
             p.track, p.duration, p.created, p.modified,
             f.search AS file_search,
-            v.video_id, COALESCE(p.search,'') AS music_search, v.catalog_id
+            v.video_id, COALESCE(p.search,'') AS music_search, v.catalog_id,
+            v.imdb_rating, v.imdb_kind, v.tmdb_rating, v.tmdb_kind,
+            v.series_catalog, v.series_id, v.series_type, v.series_title, v.episodes
         FROM current_files f
         LEFT JOIN identifications i ON (i.origin,i.file_index) = (
             SELECT d.origin,d.file_index FROM identifications d
@@ -199,10 +226,16 @@ internal sealed partial class Store(Database database)
             var facets = new List<Facet>();
             var sections = query.Configuration switch
             {
-                LibraryConfiguration.Videos => new[] { "type", "genres", "year" },
-                LibraryConfiguration.Music => new[] { "genres", "year" },
-                _ => new[] { "kind", "modified", "size" },
+                LibraryConfiguration.Videos => new[] { "type", "genres", "year" }
+                    .Concat(query.Filters.Keys.Where(section => section is "series" or "season")).ToArray(),
+                LibraryConfiguration.Music => new[] { "genres", "year" }
+                    .Concat(query.Filters.Keys.Where(section => section is "artist" or "album")).ToArray(),
+                _ => new[] { "kind", "modified", "size" }
+                    .Concat(query.Filters.Keys.Where(section => section is "year" or "genres" or "artist" or "album" or "series" or "season")).ToArray(),
             };
+            if (query.Filters.ContainsKey("series"))
+                sections = sections.Where(section => section != "season")
+                    .SelectMany(section => section == "series" ? new[] { "series", "season" } : new[] { section }).ToArray();
             foreach (var section in sections)
             {
                 cancellation.ThrowIfCancellationRequested();
@@ -224,11 +257,36 @@ internal sealed partial class Store(Database database)
                             facets.Add(new(section, value, count));
                     }
                 }
+                else if (section == "series")
+                {
+                    command.CommandText = $"""
+                        SELECT r.series_catalog,r.series_id,r.series_type,r.series_title,COUNT(*)
+                        FROM {Matches} WHERE {predicate} AND r.series_id IS NOT NULL
+                        GROUP BY r.series_catalog,r.series_id,r.series_type;
+                        """;
+                    using var reader = command.ExecuteReader();
+                    while (reader.Read())
+                    {
+                        var series = new VideoChoice(reader.GetString(0), reader.GetString(1), Kind(reader.GetString(2)), reader.GetString(3));
+                        facets.Add(new(section, SeriesKey(series), reader.GetInt32(4)) { Label = series.Title });
+                    }
+                }
+                else if (section == "season")
+                {
+                    command.CommandText = $"""
+                        SELECT json_extract(e.value,'$.Season'),COUNT(DISTINCT r.entry_id)
+                        FROM {Matches},json_each(r.episodes) e WHERE {predicate}
+                        GROUP BY json_extract(e.value,'$.Season');
+                        """;
+                    using var reader = command.ExecuteReader();
+                    while (reader.Read())
+                        facets.Add(new(section, reader.GetInt32(0).ToString(CultureInfo.InvariantCulture), reader.GetInt32(1)));
+                }
                 else if (section == "genres")
                 {
                     command.CommandText = $"""
                         SELECT j.value, COUNT(*) FROM {Matches},
-                            json_each('[' || replace(json_quote(genres),' · ','","') || ']') j
+                            json_each('[' || replace(json_quote(genres),'{Separator}','","') || ']') j
                         WHERE {predicate} AND j.value<>'' GROUP BY j.value;
                         """;
                     using var reader = command.ExecuteReader();
@@ -237,14 +295,24 @@ internal sealed partial class Store(Database database)
                 }
                 else
                 {
-                    command.CommandText = $"SELECT {section}, COUNT(*) FROM {Matches} WHERE {predicate} AND {section} IS NOT NULL GROUP BY {section};";
+                    var populated = section is "artist" or "album" ? $" AND {section}<>''" : string.Empty;
+                    command.CommandText = $"SELECT {section}, COUNT(*) FROM {Matches} WHERE {predicate} AND {section} IS NOT NULL{populated} GROUP BY {section};";
                     using var reader = command.ExecuteReader();
                     while (reader.Read())
                         facets.Add(new(section, Convert.ToString(reader.GetValue(0), CultureInfo.InvariantCulture)!, reader.GetInt32(1)));
                 }
                 if (query.Filters.TryGetValue(section, out var selected) &&
                     !facets.Any(facet => facet.Section == section && facet.Value == selected))
-                    facets.Add(new(section, selected, 0));
+                {
+                    string? label = null;
+                    if (section == "series")
+                    {
+                        command.Parameters.Clear();
+                        command.CommandText = "SELECT series_title FROM video_information r WHERE " + SeriesMatch(command, selected) + " LIMIT 1;";
+                        label = command.ExecuteScalar() as string;
+                    }
+                    facets.Add(new(section, selected, 0) { Label = label });
+                }
             }
             var counts = new Dictionary<LibraryConfiguration, int>();
             using (var command = connection.CreateCommand())
@@ -280,6 +348,8 @@ internal sealed partial class Store(Database database)
             Entry entry;
             string cast;
             string synopsis;
+            VideoChoice? series;
+            IReadOnlyList<Episode> episodes;
             using (var reader = command.ExecuteReader())
             {
                 if (!reader.Read())
@@ -287,19 +357,25 @@ internal sealed partial class Store(Database database)
                 entry = Read(reader);
                 cast = reader.GetString(reader.GetOrdinal("full_cast"));
                 synopsis = reader.GetString(reader.GetOrdinal("synopsis"));
+                var identity = reader.GetOrdinal("series_id");
+                series = reader.IsDBNull(identity) ? null : new VideoChoice(
+                    reader.GetString(reader.GetOrdinal("series_catalog")), reader.GetString(identity),
+                    Kind(reader.GetString(reader.GetOrdinal("series_type"))), reader.GetString(reader.GetOrdinal("series_title")));
+                var ordinal = reader.GetOrdinal("episodes");
+                episodes = reader.IsDBNull(ordinal) ? [] : JsonSerializer.Deserialize<Episode[]>(reader.GetString(ordinal)) ?? [];
             }
             command.CommandText = """
-                SELECT DISTINCT c.origin,c.name FROM source_files f
+                SELECT DISTINCT c.origin,c.name,f.file_index FROM source_files f
                 JOIN contributions c USING(origin) WHERE f.entry_id=$entry;
                 """;
             var origins = new List<Origin>();
             using (var reader = command.ExecuteReader())
                 while (reader.Read())
-                    origins.Add(new(reader.GetString(0), reader.GetString(1)));
-            return new Detail(entry, cast, synopsis, origins);
+                    origins.Add(new(reader.GetString(0), reader.GetString(1), reader.GetInt32(2)));
+            return new Detail(entry, cast, synopsis, origins) { Series = series, Episodes = episodes };
         }, cancellation);
 
-    internal Task ClearIdentification(Entry entry, CancellationToken cancellation) =>
+    internal Task EraseMetadata(Entry entry, CancellationToken cancellation) =>
         database.Run(connection =>
         {
             using var command = connection.CreateCommand();
@@ -340,17 +416,20 @@ internal sealed partial class Store(Database database)
     {
         using var command = connection.CreateCommand();
         command.CommandText = """
-            INSERT INTO video_information VALUES (
+            INSERT INTO video_information(catalog_id,video_id,language,title,type,year,genres,cast,synopsis,keywords,search,retrieved,
+                series_catalog,series_id,series_type,series_title,series_year,imdb_rating,imdb_kind,tmdb_rating,tmdb_kind,episodes) VALUES (
                 $catalog,$id,$language,$title,$type,$year,$genres,$cast,$synopsis,$keywords,$search,$retrieved,
-                $seriesCatalog,$seriesId,$seriesType,$seriesTitle,$seriesYear)
+                $seriesCatalog,$seriesId,$seriesType,$seriesTitle,$seriesYear,$imdbRating,$imdbKind,$tmdbRating,$tmdbKind,$episodes)
             ON CONFLICT(catalog_id,video_id) DO UPDATE SET language=excluded.language,
                 title=excluded.title,type=excluded.type,year=excluded.year,genres=excluded.genres,
                 cast=excluded.cast,synopsis=excluded.synopsis,keywords=excluded.keywords,
                 search=excluded.search,retrieved=excluded.retrieved,
                 series_catalog=excluded.series_catalog,series_id=excluded.series_id,series_type=excluded.series_type,
-                series_title=excluded.series_title,series_year=excluded.series_year;
+                series_title=excluded.series_title,series_year=excluded.series_year,
+                imdb_rating=excluded.imdb_rating,imdb_kind=excluded.imdb_kind,
+                tmdb_rating=excluded.tmdb_rating,tmdb_kind=excluded.tmdb_kind,episodes=excluded.episodes;
             """;
-        var title = string.Join(" · ", video.Episodes.Select(episode =>
+        var title = Joined(video.Episodes.Select(episode =>
             $"S{episode.Season:00}E{episode.Number:00} {episode.Name}").Prepend(video.Title));
         var synopsis = video.Kind == VideoKind.Episode
             ? string.Join("\n\n", video.Episodes.Select(episode => episode.Synopsis)) : video.Synopsis;
@@ -375,6 +454,11 @@ internal sealed partial class Store(Database database)
         command.Parameters.AddWithValue("$seriesType", video.Series is { } series ? Stored(series.Kind) : (object)DBNull.Value);
         command.Parameters.AddWithValue("$seriesTitle", (object?)video.Series?.Title ?? DBNull.Value);
         command.Parameters.AddWithValue("$seriesYear", (object?)video.Series?.Year ?? DBNull.Value);
+        command.Parameters.AddWithValue("$imdbRating", (object?)video.ImdbRating?.Value ?? DBNull.Value);
+        command.Parameters.AddWithValue("$imdbKind", video.ImdbRating is { } imdb ? Stored(imdb.Kind) : (object)DBNull.Value);
+        command.Parameters.AddWithValue("$tmdbRating", (object?)video.TmdbRating?.Value ?? DBNull.Value);
+        command.Parameters.AddWithValue("$tmdbKind", video.TmdbRating is { } tmdb ? Stored(tmdb.Kind) : (object)DBNull.Value);
+        command.Parameters.AddWithValue("$episodes", video.Episodes.Count == 0 ? (object)DBNull.Value : JsonSerializer.Serialize(video.Episodes));
         command.ExecuteNonQuery();
         SaveRecords(connection, video, language);
     }
@@ -389,20 +473,49 @@ internal sealed partial class Store(Database database)
         });
         foreach (var (section, value) in query.Filters)
         {
-            if (section == except)
+            if (section == except || except == "series" && section == "season")
                 continue;
-            if (section is "size" or "modified")
+            if (section == "series")
+                sql.Append(" AND " + SeriesMatch(command, value));
+            else if (section == "season")
+            {
+                var parameter = "$filter" + command.Parameters.Count;
+                sql.Append(query.Filters.ContainsKey("series")
+                    ? $" AND EXISTS(SELECT 1 FROM json_each(r.episodes) e WHERE CAST(json_extract(e.value,'$.Season') AS TEXT)={parameter})"
+                    : " AND 0=1");
+                command.Parameters.AddWithValue(parameter, value);
+            }
+            else if (section is "size" or "modified")
                 sql.Append(" AND " + Filter(section, value));
-            else if (section is "type" or "kind" or "year" or "genres")
+            else if (section is "type" or "kind" or "year" or "genres" or "artist" or "album")
             {
                 var parameter = "$filter" + command.Parameters.Count;
                 sql.Append(section == "genres"
-                    ? $" AND instr(' · ' || r.genres || ' · ',' · ' || {parameter} || ' · ')>0"
+                    ? $" AND instr('{Separator}' || r.genres || '{Separator}','{Separator}' || {parameter} || '{Separator}')>0"
                     : $" AND CAST(r.{section} AS TEXT)={parameter}");
                 command.Parameters.AddWithValue(parameter, value);
             }
         }
         return sql.ToString();
+    }
+
+    internal static string SeriesKey(VideoChoice series) => string.Join('/',
+        new[] { series.CatalogId, series.VideoId, Stored(series.Kind) }.Select(Uri.EscapeDataString));
+
+    private static string SeriesMatch(SqliteCommand command, string value)
+    {
+        var parts = value.Split('/');
+        if (parts.Length != 3)
+            return "0=1";
+        var predicates = new List<string>();
+        var columns = new[] { "series_catalog", "series_id", "series_type" };
+        for (var index = 0; index < columns.Length; index++)
+        {
+            var parameter = "$filter" + command.Parameters.Count;
+            predicates.Add($"r.{columns[index]}={parameter}");
+            command.Parameters.AddWithValue(parameter, Uri.UnescapeDataString(parts[index]));
+        }
+        return string.Join(" AND ", predicates);
     }
 
     private static readonly string[] Dates = ["today", "yesterday", "week", "last_week", "month", "last_month", "year", "older"];
@@ -452,6 +565,8 @@ internal sealed partial class Store(Database database)
             Genres = reader.GetString(8), Cast = reader.GetString(9), Artist = reader.GetString(10), Album = reader.GetString(11),
             Track = (int?)Number(12), Duration = Number(13),
             Created = Number(14), Modified = Number(15),
+            ImdbRating = ReadRating(reader, "imdb_rating", "imdb_kind"),
+            TmdbRating = ReadRating(reader, "tmdb_rating", "tmdb_kind"),
         };
     }
 }

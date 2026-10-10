@@ -99,9 +99,14 @@ internal sealed record VideoInformation(string CatalogId, string VideoId, string
     internal IReadOnlyList<string> Cast { get; init; } = [];
     internal string Synopsis { get; init; } = string.Empty;
     internal IReadOnlyList<string> Keywords { get; init; } = [];
+    internal Rating? ImdbRating { get; init; }
+    internal Rating? TmdbRating { get; init; }
 
     internal static int? ParseYear(string date) => date.Length >= 4 && int.TryParse(date[..4], out var year) ? year : null;
 }
+
+/// <summary>A rating on a ten-point scale for the specified movie or series.</summary>
+public sealed record Rating(double Value, VideoKind Kind);
 
 internal sealed record Episode(int Season, int Number, string Name, string Synopsis);
 

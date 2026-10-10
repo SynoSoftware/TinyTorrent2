@@ -37,7 +37,8 @@ internal sealed partial class Store
                 return null;
             using var command = connection.CreateCommand();
             command.CommandText = """
-                SELECT v.video_id,v.title,v.type,v.year,v.genres,v.cast,v.synopsis,v.keywords
+                SELECT v.video_id,v.title,v.type,v.year,v.genres,v.cast,v.synopsis,v.keywords,
+                    v.imdb_rating,v.imdb_kind,v.tmdb_rating,v.tmdb_kind
                 FROM video_information v WHERE catalog_id=$catalog AND type='movie' AND year=$year
                     AND (language=$language OR language='');
                 """;
@@ -58,6 +59,8 @@ internal sealed partial class Store
                     {
                         Year = reader.GetInt32(3), Genres = Split(reader.GetString(4)), Cast = Split(reader.GetString(5)),
                         Synopsis = reader.GetString(6), Keywords = Split(reader.GetString(7)),
+                        ImdbRating = ReadRating(reader, "imdb_rating", "imdb_kind"),
+                        TmdbRating = ReadRating(reader, "tmdb_rating", "tmdb_kind"),
                     };
                 }
             if (saved is null)
@@ -79,6 +82,12 @@ internal sealed partial class Store
             return saved with { Records = records };
         }, cancellation);
 
+    private static Rating? ReadRating(SqliteDataReader reader, string value, string kind)
+    {
+        var ordinal = reader.GetOrdinal(value);
+        return reader.IsDBNull(ordinal) ? null : new Rating(reader.GetDouble(ordinal), Kind(reader.GetString(reader.GetOrdinal(kind))));
+    }
+
     // Library rows and filters read these words from the database.
     private static string Stored(VideoKind kind) => kind switch
     {
@@ -98,9 +107,8 @@ internal sealed partial class Store
     // language, which Saved accepts for any requested language.
     private static string Stored(string? language) => language ?? string.Empty;
 
-    // A stored list keeps the separator the Genres filter splits on.
-    private static string Joined(IEnumerable<string> values) => string.Join(" · ", values);
-    private static IReadOnlyList<string> Split(string stored) => stored.Split(" · ", StringSplitOptions.RemoveEmptyEntries);
+    private static string Joined(IEnumerable<string> values) => string.Join(Separator, values);
+    private static IReadOnlyList<string> Split(string stored) => stored.Split(Separator, StringSplitOptions.RemoveEmptyEntries);
 
     private static void SaveRecords(SqliteConnection connection, VideoInformation video, string? language)
     {

@@ -9,7 +9,8 @@ public sealed partial class MainViewModel
 {
     private string _query = string.Empty;
     private TorrentFilter _filter;
-    private bool _filterOpen;
+    private bool _showsFilters;
+    private bool _filtersCollapsed;
     private WindowPage _page;
 
     public WindowPage Page
@@ -28,7 +29,6 @@ public sealed partial class MainViewModel
             Changed(nameof(FilterStatus));
             Changed(nameof(HasFilter));
             Changed(nameof(CountStatus));
-            Changed(nameof(IsFilterOpen));
             Changed(nameof(ShowsToolbar));
             ((RelayCommand)ClearFilters).Refresh();
         }
@@ -76,24 +76,33 @@ public sealed partial class MainViewModel
             RefreshWindow();
         }
     }
-    public bool IsFilterOpen
+    public FilterPane FilterPane
     {
-        get => Page == WindowPage.Library ? Library.IsFilterOpen : _filterOpen;
+        get => !_showsFilters ? FilterPane.Hidden
+            : _filtersCollapsed ? FilterPane.Compact : FilterPane.Open;
         set
         {
-            if (Page == WindowPage.Library)
-            {
-                Library.IsFilterOpen = value;
-                Changed(nameof(IsFilterOpen));
+            if (FilterPane == value)
                 return;
-            }
-            if (_filterOpen == value)
-                return;
-            _filterOpen = value;
+            _showsFilters = value != FilterPane.Hidden;
+            if (_showsFilters)
+                _filtersCollapsed = value == FilterPane.Compact;
+            Changed(nameof(FilterPane));
             Changed(nameof(IsFilterOpen));
+            Changed(nameof(ShowsFilters));
         }
     }
-    internal bool TorrentFiltersOpen => _filterOpen;
+    public bool IsFilterOpen
+    {
+        get => FilterPane == FilterPane.Open;
+        set => FilterPane = value ? FilterPane.Open : FilterPane.Hidden;
+    }
+    public bool ShowsFilters
+    {
+        get => _showsFilters;
+        set => FilterPane = !value ? FilterPane.Hidden
+            : _filtersCollapsed ? FilterPane.Compact : FilterPane.Open;
+    }
     public ICommand SwitchFilters { get; }
     public IReadOnlyList<FilterChoice> Filters { get; }
     public bool HasFilter => Page != WindowPage.Library && Filter != TorrentFilter.All;

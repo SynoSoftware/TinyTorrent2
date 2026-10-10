@@ -6,7 +6,8 @@
   xmlns:controls="using:Syno.TinyTorrent.Controls"
   xmlns:icons="using:Syno"
 >
-  <Grid Margin="32,24" RowSpacing="24">
+  <Grid Margin="32,24" RowSpacing="24" MaxWidth="{StaticResource TinyTorrentSettingsWidth}"
+    VerticalAlignment="Top">
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto" />
       <RowDefinition Height="*" />
@@ -27,16 +28,37 @@
           <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
         <StackPanel x:Name="Inputs" Spacing="16">
-          <TextBlock
-            Text="{x:Bind Model.Text.Get('connection_setup', 'capacity'), Mode=OneWay}"
-            Style="{StaticResource TinyTorrentGroupTitleTextStyle}"
-          />
-          <Grid MinHeight="40" ColumnSpacing="12">
+          <Grid MinHeight="32" ColumnSpacing="8">
             <Grid.ColumnDefinitions>
-              <ColumnDefinition Width="Auto" />
               <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
-            <Grid Width="176">
+            <TextBlock
+              Text="{x:Bind Model.Text.Get('connection_setup', 'capacity'), Mode=OneWay}"
+              Style="{StaticResource TinyTorrentGroupTitleTextStyle}" TextWrapping="Wrap" />
+            <Button Grid.Column="1" Style="{StaticResource TinyTorrentSubtleButtonStyle}"
+              VerticalAlignment="Center"
+              AutomationProperties.Name="{x:Bind Model.Text.Get('connection_setup', 'about_test'), Mode=OneWay}"
+              AutomationProperties.AutomationId="ConnectionTestInfo"
+              ToolTipService.ToolTip="{x:Bind Model.Text.Get('connection_setup', 'about_test'), Mode=OneWay}">
+              <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Info}" FontSize="16" />
+              <Button.Flyout>
+                <Flyout Placement="Bottom">
+                  <StackPanel MaxWidth="320" Spacing="12">
+                    <TextBlock Text="{x:Bind Model.Text.Get('connection_setup', 'about_test'), Mode=OneWay}"
+                      Style="{StaticResource TinyTorrentGroupTitleTextStyle}" TextWrapping="Wrap" />
+                    <TextBlock Text="{x:Bind Model.Text.Get('connection_setup', 'test_data'), Mode=OneWay}"
+                      TextWrapping="Wrap" />
+                    <TextBlock Text="{x:Bind Model.Text.Get('connection_setup', 'test_data_use'), Mode=OneWay}"
+                      TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    <HyperlinkButton Content="{x:Bind Model.Text.Get('connection_setup', 'test_privacy'), Mode=OneWay}"
+                      NavigateUri="https://www.cloudflare.com/privacypolicy/" HorizontalAlignment="Left" Padding="0" />
+                  </StackPanel>
+                </Flyout>
+              </Button.Flyout>
+            </Button>
+            <Grid x:Name="TestActions" Grid.Column="2" VerticalAlignment="Center">
               <controls:ActionButton Text="{x:Bind Model.TestLabel, Mode=OneWay}" HorizontalAlignment="Stretch"
                 Glyph="{x:Bind icons:Lucide.Gauge}"
                 ToolTipService.ToolTip="{x:Bind Model.Text.Get('connection_setup', 'test_hint'), Mode=OneWay}"
@@ -47,20 +69,20 @@
                 Glyph="{x:Bind icons:Lucide.X}"
                 ToolTipService.ToolTip="{x:Bind Model.Text.Get('connection_setup', 'cancel_test_hint'), Mode=OneWay}"
                 Visibility="{x:Bind Model.IsTesting, Mode=OneWay}"
-                IsEnabled="{x:Bind Model.CanCancelTest, Mode=OneWay}" Click="OnCancelTest" />
+                IsEnabled="{x:Bind Model.CanCancelTest, Mode=OneWay}" Click="OnCancelTest"
+                AutomationProperties.AutomationId="ConnectionCancelTest" />
             </Grid>
-            <ProgressRing Grid.Column="1" Width="20" Height="20" HorizontalAlignment="Left"
-              IsActive="{x:Bind Model.IsTesting, Mode=OneWay}" />
           </Grid>
-          <TextBlock Text="{x:Bind Model.TestStatus, Mode=OneWay}" TextTrimming="CharacterEllipsis"
-            ToolTipService.ToolTip="{x:Bind Model.TestStatus, Mode=OneWay}" />
-          <TextBlock Text="{x:Bind Model.Text.Get('connection_setup', 'test_data'), Mode=OneWay}"
-            TextTrimming="CharacterEllipsis"
-            ToolTipService.ToolTip="{x:Bind Model.Text.Get('connection_setup', 'test_data_use'), Mode=OneWay}"
-            Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-          <HyperlinkButton Content="{x:Bind Model.Text.Get('connection_setup', 'test_privacy'), Mode=OneWay}"
-            ToolTipService.ToolTip="{x:Bind Model.Text.Get('connection_setup', 'test_data_use'), Mode=OneWay}"
-            NavigateUri="https://www.cloudflare.com/privacypolicy/" HorizontalAlignment="Left" Padding="0" />
+          <Grid x:Name="StatusArea">
+            <TextBlock Text="{x:Bind Model.TestStatus, Mode=OneWay}" TextWrapping="Wrap"
+              MaxLines="2" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Margin="0,0,0,4"
+              Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+              ToolTipService.ToolTip="{x:Bind Model.TestStatus, Mode=OneWay}" />
+            <ProgressBar Height="3" VerticalAlignment="Bottom"
+              IsIndeterminate="{x:Bind Model.IsTesting, Mode=OneWay}"
+              Visibility="{x:Bind Model.IsTesting, Mode=OneWay}"
+              AutomationProperties.AccessibilityView="Raw" />
+          </Grid>
           <TextBox
             x:Name="Download"
             Text="{x:Bind Model.Download, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
@@ -117,13 +139,16 @@
           <TextBlock
             Text="{x:Bind Model.Text.Get('connection_setup', 'preview'), Mode=OneWay}"
             Style="{StaticResource TinyTorrentGroupTitleTextStyle}"
+            MinHeight="32"
           />
-          <Grid ColumnSpacing="12">
+          <Grid ColumnSpacing="12" MinHeight="32">
             <Grid.ColumnDefinitions>
               <ColumnDefinition Width="2*" />
               <ColumnDefinition Width="*" />
               <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
+            <TextBlock Text="{x:Bind Model.Text.Get('connection_setup', 'setting'), Mode=OneWay}"
+              Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
             <TextBlock Grid.Column="1" HorizontalAlignment="Right"
               Text="{x:Bind Model.Text.Get('connection_setup', 'current'), Mode=OneWay}"
               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
@@ -134,7 +159,8 @@
           <ItemsControl ItemsSource="{x:Bind Model.Rows, Mode=OneWay}">
             <ItemsControl.ItemTemplate>
               <DataTemplate x:DataType="views:ConnectionChange">
-                <Grid MinHeight="40" ColumnSpacing="12">
+                <Grid MinHeight="40" ColumnSpacing="12" BorderThickness="0,0,0,1"
+                  BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}">
                   <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="2*" />
                     <ColumnDefinition Width="*" />
@@ -157,7 +183,8 @@
         </StackPanel>
       </Grid>
     </ScrollViewer>
-    <Grid Grid.Row="2" ColumnSpacing="24">
+    <Grid Grid.Row="2" ColumnSpacing="24" Padding="0,20,0,0" BorderThickness="0,1,0,0"
+      BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}">
       <Grid.ColumnDefinitions>
         <ColumnDefinition Width="*" />
         <ColumnDefinition Width="Auto" />

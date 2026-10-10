@@ -7,8 +7,14 @@ internal sealed partial class Acquisition
 {
     private readonly SemaphoreSlim _signal = new(0, 1);
     private readonly HashSet<string> _finding = new(StringComparer.OrdinalIgnoreCase);
-    private bool CanAcquire => _connected && Enabled && Ready && !Rechecking &&
-        Failure is not SubtitleFailure.Authentication and not SubtitleFailure.Unconfigured and not SubtitleFailure.Unavailable;
+    private bool CanAcquire => _connected && Enabled && Ready && !Rechecking && !NeedsSetup(Failure);
+    private bool CanFind => _connected && Enabled && Ready && !Rechecking && !Finding;
+    private bool CanRecheck => _connected && !Rechecking && !Finding;
+
+    // These failures persist until the person changes the supplier setup, so
+    // work waits instead of retrying.
+    private static bool NeedsSetup(SubtitleFailure reason) =>
+        reason is SubtitleFailure.Authentication or SubtitleFailure.Unconfigured or SubtitleFailure.Unavailable;
 
     private void Wake()
     {
@@ -48,7 +54,7 @@ internal sealed partial class Acquisition
                             cancellation = _requests.Token;
                             revision = _revision;
                         }
-                        var retry = await database.Run(connection =>
+                        var retry = await Run(connection =>
                         {
                             using var command = connection.CreateCommand();
                             command.CommandText = "SELECT MIN(retry_at) FROM subtitle_jobs WHERE outcome=$pending;";
@@ -64,7 +70,7 @@ internal sealed partial class Acquisition
                             break;
                         }
                         var targets = (await Targets(cancellation).ConfigureAwait(false)).Where(Eligible).ToArray();
-                        var target = await database.Run(connection =>
+                        var target = await Run(connection =>
                         {
                             using var command = connection.CreateCommand();
                             command.CommandText = """
@@ -92,7 +98,7 @@ internal sealed partial class Acquisition
                     }
                 }
                 catch (OperationCanceledException) { }
-                catch (SqliteException) { Failure = SubtitleFailure.Database; }
+                catch (SqliteException) { }
                 finally
                 {
                     _operation.Release();
@@ -108,7 +114,7 @@ internal sealed partial class Acquisition
         cancellation.ThrowIfCancellationRequested();
         if (!_connected || !Enabled || revision != Interlocked.Read(ref _revision))
             throw new OperationCanceledException(cancellation);
-        var current = await database.Run(connection => Current(connection, target.Videos.Where(video => video.Eligible)), cancellation).ConfigureAwait(false);
+        var current = await Run(connection => Current(connection, target.Videos.Where(video => video.Eligible)), cancellation).ConfigureAwait(false);
         if (!current)
             throw new OperationCanceledException(cancellation);
     }
@@ -123,7 +129,7 @@ internal sealed partial class Acquisition
                 await Record(target, false, cancellation).ConfigureAwait(false);
                 return;
             }
-            var stage = await database.Run(connection =>
+            var stage = await Run(connection =>
             {
                 if (Supplier?.SupportsHash != true)
                     Execute(connection, "UPDATE subtitle_jobs SET stage=$stage WHERE path=$path AND language=$language;",
@@ -147,7 +153,7 @@ internal sealed partial class Acquisition
                 await Validate(target, revision, token).ConfigureAwait(false);
                 if (!hashing)
                     return;
-                var current = await database.Run(connection =>
+                var current = await Run(connection =>
                 {
                     using var command = connection.CreateCommand();
                     command.CommandText = """
@@ -184,7 +190,7 @@ internal sealed partial class Acquisition
             var bytes = await RequireSupplier(SupplierId).Acquire(http, _account, lookup, cancellation).ConfigureAwait(false);
             await ValidateLookup(cancellation).ConfigureAwait(false);
             Checked = true;
-            Failure = SubtitleFailure.None;
+            _supplierFailure = SubtitleFailure.None;
             if (bytes is null)
             {
                 await Defer(target, SubtitleOutcome.NoMatch, null, cancellation).ConfigureAwait(false);
@@ -196,12 +202,11 @@ internal sealed partial class Acquisition
         }
         catch (SubtitleException error)
         {
-            Failure = error.Reason == SubtitleFailure.Format ? SubtitleFailure.None : error.Reason;
+            _supplierFailure = error.Reason is SubtitleFailure.Format or SubtitleFailure.Quota ? SubtitleFailure.None : error.Reason;
             if (error.Reason == SubtitleFailure.Format)
                 await ReportFile(target.Path, error.Reason).ConfigureAwait(false);
             var outcome = error.Reason == SubtitleFailure.Format ? SubtitleOutcome.Failed :
-                error.Reason is SubtitleFailure.Authentication or SubtitleFailure.Unconfigured or SubtitleFailure.Unavailable
-                    ? SubtitleOutcome.Unavailable : SubtitleOutcome.Pending;
+                NeedsSetup(error.Reason) ? SubtitleOutcome.Unavailable : SubtitleOutcome.Pending;
             await Defer(target, outcome,
                 error.Reason == SubtitleFailure.Quota ? DateTimeOffset.UtcNow : error.RetryAt, cancellation).ConfigureAwait(false);
         }
@@ -218,15 +223,12 @@ internal sealed partial class Acquisition
         }
         finally
         {
-            var allowance = RequireSupplier(SupplierId).Allowance(_account);
-            await SaveAllowance(allowance).ConfigureAwait(false);
-            if (allowance.RetryAt > DateTimeOffset.UtcNow && Failure == SubtitleFailure.None)
-                Failure = SubtitleFailure.Quota;
+            await SaveAllowance(RequireSupplier(SupplierId).Allowance(_account)).ConfigureAwait(false);
         }
     }
 
     private Task Defer(Target target, SubtitleOutcome outcome, DateTimeOffset? retry, CancellationToken cancellation) =>
-        database.Run(connection =>
+        Run(connection =>
         {
             if (outcome == SubtitleOutcome.Pending && retry is null)
             {
@@ -249,31 +251,23 @@ internal sealed partial class Acquisition
 
     internal async Task Find()
     {
-        if (!Enabled || !Ready || Rechecking || _finding.Count > 0 || !_connected)
+        if (!CanFind)
             return;
         await _operation.WaitAsync(_lifetime.Token).ConfigureAwait(false);
         try
         {
-            if (!Enabled || !Ready || Rechecking || _finding.Count > 0 || !_connected)
+            if (!CanFind)
                 return;
             CancellationToken cancellation;
             lock (_requestSync)
                 cancellation = _requests.Token;
             var targets = (await Targets(cancellation).ConfigureAwait(false)).Where(Eligible).ToArray();
-            var accepted = await database.Run(connection =>
+            var accepted = await Run(connection =>
             {
                 var paths = new List<string>();
-                foreach (var target in targets.Where(target => target.Complete))
-                {
-                    using var command = connection.CreateCommand();
-                    command.CommandText = "SELECT 1 FROM subtitle_outputs WHERE path=$path AND language=$language;";
-                    command.Parameters.AddWithValue("$path", target.Path);
-                    command.Parameters.AddWithValue("$language", target.Language);
-                    if (command.ExecuteScalar() is not null)
-                        continue;
+                foreach (var target in targets.Where(target => target.Complete && !Recorded(connection, target)))
                     if (Accept(connection, target, true))
                         paths.Add(target.Path);
-                }
                 return paths;
             }, cancellation).ConfigureAwait(false);
             foreach (var path in accepted)
@@ -291,12 +285,12 @@ internal sealed partial class Acquisition
 
     internal async Task Recheck()
     {
-        if (Rechecking || _finding.Count > 0 || !_connected)
+        if (!CanRecheck)
             return;
         await _operation.WaitAsync(_lifetime.Token).ConfigureAwait(false);
         try
         {
-            if (Rechecking || _finding.Count > 0 || !_connected)
+            if (!CanRecheck)
                 return;
             Rechecking = true;
             Rechecked = 0;
@@ -313,7 +307,7 @@ internal sealed partial class Acquisition
                 cancellation.ThrowIfCancellationRequested();
                 var present = await Task.Run(() => SubtitleFile.Exists(target.Path), cancellation).ConfigureAwait(false);
                 var recorded = present ? await Record(target, false, cancellation).ConfigureAwait(false) :
-                    await database.Run(connection =>
+                    await Run(connection =>
                     {
                         if (!Current(connection, target.Videos.Where(video => video.Eligible)))
                             return false;
@@ -327,7 +321,7 @@ internal sealed partial class Acquisition
                 Notify();
             }
             var now = DateTimeOffset.Now;
-            await database.Run(connection =>
+            await Run(connection =>
             {
                 Execute(connection, "UPDATE subtitle_settings SET checked_at=$time WHERE singleton=1;",
                     ("$time", now.ToString("O")));
@@ -335,11 +329,13 @@ internal sealed partial class Acquisition
                 return true;
             }, cancellation).ConfigureAwait(false);
             LastRecheck = now;
+            _saveFailed = false;
         }
         catch (OperationCanceledException) { }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException or SqliteException)
+        catch (SqliteException) { }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
         {
-            Failure = error is SqliteException ? SubtitleFailure.Database : SubtitleFailure.Save;
+            _saveFailed = true;
         }
         finally
         {

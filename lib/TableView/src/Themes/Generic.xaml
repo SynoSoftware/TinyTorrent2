@@ -140,6 +140,14 @@
       <Setter.Value>
         <ControlTemplate TargetType="header:Cell">
           <Grid x:Name="Root" Background="{TemplateBinding Background}">
+            <Grid.Resources>
+              <Style TargetType="CheckBox" BasedOn="{StaticResource DefaultCheckBoxStyle}">
+                <Setter Property="MinWidth" Value="0" />
+                <Setter Property="MinHeight" Value="0" />
+                <Setter Property="Padding" Value="0" />
+                <Setter Property="VerticalAlignment" Value="Center" />
+              </Style>
+            </Grid.Resources>
             <Grid Padding="{TemplateBinding Padding}">
               <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
@@ -209,6 +217,7 @@
   <Style TargetType="header:Strip">
     <Setter Property="IsTabStop" Value="False" />
     <Setter Property="TabNavigation" Value="Once" />
+    <Setter Property="MinHeight" Value="32" />
     <Setter Property="Template">
       <Setter.Value>
         <ControlTemplate TargetType="header:Strip">
@@ -218,12 +227,15 @@
                          themes, where the layer fills vanish in Dark. -->
           <Border
             x:Name="PART_Clip"
+            Margin="4,0"
             Background="{ThemeResource ControlAltFillColorTertiaryBrush}"
-            BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
-            BorderThickness="0,0,0,1"
+            CornerRadius="{ThemeResource ListViewItemCornerRadius}"
           >
-            <Grid>
+            <!-- Inset the chrome to match native row selection, keeping columns at the row origin. -->
+            <Grid Margin="-4,0">
               <local:CellsPanel x:Name="PART_HeaderPanel" />
+              <Rectangle Height="1" Margin="4,0" VerticalAlignment="Bottom"
+                Fill="{ThemeResource DividerStrokeColorDefaultBrush}" IsHitTestVisible="False" />
 
               <!--
                                 Section 11's insertion marker, positioned by the strip on the

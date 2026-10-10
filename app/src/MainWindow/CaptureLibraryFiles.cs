@@ -1,8 +1,10 @@
 using System.Diagnostics;
 using System.Text.Json;
 using Microsoft.UI.Windowing;
+using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
 using Syno.TinyTorrent.Controls;
 using Syno.TinyTorrent.Models;
 using Syno.TinyTorrent.Library;
@@ -154,6 +156,129 @@ public sealed partial class MainWindow
         }
         outcomes.Add(new { journey = "Information source controls", source = option.ProviderId, delay = 0,
             networkRequests = "none; capture reviews presentation only" });
+        await Model.Library.PrepareTiming();
+        Model.SelectLanguage("en");
+        await CaptureReady(Model, () => Model.Text.Language == "en");
+        await Model.Settings.SelectTheme("light");
+        AppWindow.Resize(new SizeInt32((int)(1120 * Root.XamlRoot.RasterizationScale), (int)(760 * Root.XamlRoot.RasterizationScale)));
+        Model.Library.Refresh();
+        await CaptureReady(Model.Library, () => Model.Library.Rows.Count == 2 &&
+            Model.Library.Rows.All(row => row.Entry.Type == "movie"));
+        Model.Library.Select(Model.Library.Rows[0]);
+        await CaptureReady(Model.Library, () => Model.Library.Cast.Length > 0 && Model.Library.Synopsis.Length > 0);
+        foreach (var language in new[] { "en", "es" })
+        foreach (var theme in new[] { "light", "dark" })
+        foreach (var width in new[] { 1280, 960, 800 })
+        {
+            Model.IsFilterOpen = width == 800;
+            Model.SelectLanguage(language);
+            await CaptureReady(Model, () => Model.Text.Language == language);
+            await Model.Settings.SelectTheme(theme);
+            var scale = Root.XamlRoot.RasterizationScale;
+            var minimum = ((OverlappedPresenter)AppWindow.Presenter).PreferredMinimumWidth ?? 0;
+            AppWindow.Resize(new SizeInt32(Math.Max((int)(width * scale), minimum), (int)(760 * scale)));
+            var name = $"library-identified-{language}-{theme}-{width}";
+            await CapturePage(name);
+            completed.Add(name);
+        }
+        var heading = (Controls.Section)CaptureElements(InspectorContent).OfType<Details>().Single().Content;
+        heading.Header = "Coastal mystery: the disappearance of the fishing boat and the secrets of the old harbour";
+        await CapturePage("library-long-heading");
+        completed.Add("library-long-heading");
+        Model.Library.Configuration = LibraryConfiguration.Music;
+        await CaptureReady(Model.Library, () => Model.Library.Rows.Count == 1 && Model.Library.Rows[0].Artist.Length > 0);
+        Model.Library.Select(Model.Library.Rows[0]);
+        await CapturePage("library-music");
+        completed.Add("library-music");
+        outcomes.Add(new { journey = "Populated information layout", source = "local diagnostic database facts",
+            networkRequests = "none; fixture data, not supplier or Windows metadata evidence" });
+        await Navigate(WindowPage.Torrents);
+        Model.IsFilterOpen = false;
+        AppWindow.Resize(new SizeInt32((int)(1280 * Root.XamlRoot.RasterizationScale), (int)(760 * Root.XamlRoot.RasterizationScale)));
+        var target = Model.VisibleTorrents[0];
+        Torrents.Selection = new Syno.TableView.Selection([target], target);
+        await SelectTorrent();
+        Run(Model.Properties);
+        Model.Inspector.Select(InspectorSection.General);
+        await CaptureReady(Model.Inspector, () => !Model.Inspector.IsLoading);
+        foreach (var theme in new[] { "light", "dark" })
+        {
+            await Model.Settings.SelectTheme(theme);
+            var name = $"library-shared-inspector-{theme}";
+            await CapturePage(name, InspectorContent.Content as Microsoft.UI.Xaml.FrameworkElement);
+            completed.Add(name);
+        }
+        Model.Inspector.Select(InspectorSection.Pieces);
+        await CaptureReady(Model.Inspector, () => !Model.Inspector.IsLoading && Model.Inspector.Pieces is { Count: > 0 });
+        await CapturePage("pieces-switch-before");
+        completed.Add("pieces-switch-before");
+        var map = CaptureElements(InspectorContent).OfType<PiecesMap>().Single();
+        var bitmap = (Image)map.FindName("Bitmap");
+        var drawing = (FrameworkElement)map.FindName("Drawing");
+        var alternate = Model.VisibleTorrents.First(torrent => torrent != target);
+        await Switch(false);
+        target = alternate;
+        alternate = Model.VisibleTorrents.First(torrent => torrent != target);
+        await Switch(true);
+
+        async Task Switch(bool rapid)
+        {
+            var previous = bitmap.Source ?? throw new InvalidOperationException("The initial Pieces map has no bitmap.");
+            var expected = rapid ? target : alternate;
+            var clock = Stopwatch.StartNew();
+            var samples = new List<object>();
+            var ready = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var stage = "before";
+            void Sample()
+            {
+                var retained = ReferenceEquals(bitmap.Source, previous);
+                if (Model.Inspector.Target != target && retained && drawing.IsHitTestVisible)
+                    ready.TrySetException(new InvalidOperationException("The retained Pieces map still accepts input for another torrent."));
+                if (samples.Count < 240)
+                    samples.Add(new { stage, elapsedMs = clock.Elapsed.TotalMilliseconds,
+                        torrentId = Model.Inspector.Target?.TorrentId, loading = Model.Inspector.IsLoading,
+                        retainedBitmap = retained, hasBitmap = bitmap.Source is not null,
+                        opacity = bitmap.Opacity, interactive = drawing.IsHitTestVisible });
+                if (stage == "waiting" && Model.Inspector.Target == expected &&
+                    !Model.Inspector.IsLoading && Model.Inspector.Pieces is { Count: > 0 } &&
+                    bitmap.Source is not null && !retained && drawing.IsHitTestVisible)
+                    ready.TrySetResult();
+            }
+            void Frame(object? sender, object args) => Sample();
+            CompositionTarget.Rendering += Frame;
+            try
+            {
+                Sample();
+                stage = "alternate";
+                if (!await SelectTorrent(new Syno.TableView.Selection([alternate], alternate)))
+                    throw new InvalidOperationException("The Pieces switch did not accept the alternate torrent.");
+                Sample();
+                if (rapid)
+                {
+                    stage = "return";
+                    if (!await SelectTorrent(new Syno.TableView.Selection([target], target)))
+                        throw new InvalidOperationException("The rapid Pieces switch did not accept the latest torrent.");
+                    Sample();
+                }
+                stage = "waiting";
+                Sample();
+                await ready.Task.WaitAsync(TimeSpan.FromSeconds(20));
+                var name = rapid ? "pieces-switch-rapid" : "pieces-switch";
+                await CapturePage(name);
+                Sample();
+                if (Model.Inspector.Target != expected || Model.Inspector.IsLoading ||
+                    Model.Inspector.Pieces is null || !drawing.IsHitTestVisible)
+                    throw new InvalidOperationException("The Pieces map did not settle on the latest torrent.");
+                completed.Add(name);
+                outcomes.Add(new { journey = name, initialTorrentId = target.TorrentId,
+                    alternateTorrentId = alternate.TorrentId, expectedTorrentId = expected.TorrentId,
+                    samples, scope = "Real torrent selection and engine detail; rendering callbacks record bitmap retention, opacity and hit testing. No physical input or presentation assertions." });
+            }
+            finally
+            {
+                CompositionTarget.Rendering -= Frame;
+            }
+        }
     }
 
     private async Task CaptureLibraryTiming(string fixture, List<object> outcomes, List<string> completed)

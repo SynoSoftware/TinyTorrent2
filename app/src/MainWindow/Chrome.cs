@@ -1,5 +1,4 @@
 using Microsoft.UI;
-using Microsoft.UI.Input;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
@@ -15,7 +14,6 @@ namespace Syno.TinyTorrent;
 public sealed partial class MainWindow
 {
     private readonly UISettings _uiSettings = new();
-    private (string Language, double Scale, ElementTheme Theme, double Expanded, double Compact)? _pageMeasurement;
 
     private void OnTextScaling(UISettings sender, object args) =>
         DispatcherQueue.TryEnqueue(() =>
@@ -169,21 +167,29 @@ public sealed partial class MainWindow
             - ThemeButton.ActualWidth
             - SearchArea.Margin.Left
             - SearchArea.Margin.Right;
-        var pages = MeasurePages();
-        var compact = available - pages.Expanded < Search.MinWidth;
-        TorrentsPage.Text = compact ? string.Empty : Model.Text.Get("window", "torrents");
-        LibraryPage.Text = compact ? string.Empty : Model.Text.Get("library", "title");
-        available -= compact ? pages.Compact : pages.Expanded;
         TitleSpeeds.Visibility =
             Model.ShowsTitleSpeeds
             && available >= Search.MinWidth + speedWidth + TitleSpeeds.Margin.Left
                 ? Visibility.Visible
                 : Visibility.Collapsed;
+        var searchSpace = available
+            - (TitleSpeeds.Visibility == Visibility.Visible ? speedWidth + TitleSpeeds.Margin.Left : 0);
         Search.Width = Math.Clamp(
-            available - (TitleSpeeds.Visibility == Visibility.Visible ? speedWidth + TitleSpeeds.Margin.Left : 0),
+            searchSpace,
             Search.MinWidth,
             Search.MaxWidth
         );
+        var searchStart = left + CaptionStart.ActualWidth + Menus.ActualWidth + SearchArea.Margin.Left;
+        var offset = Math.Clamp(
+            (Caption.ActualWidth - Search.Width) / 2 - searchStart,
+            0,
+            Math.Max(0, searchSpace - Search.Width)
+        );
+        if (Search.Margin.Left != offset)
+        {
+            Search.Margin = new Thickness(offset, 0, 0, 0);
+            DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, UpdateChrome);
+        }
         if (Caption.ActualHeight <= 0)
             return;
         var start = AppWindow.TitleBar.LeftInset;
@@ -199,7 +205,6 @@ public sealed partial class MainWindow
             BackButton,
             AppIcon,
             Menus,
-            Pages,
             Search,
             SettingsButton,
             ThemeButton,
@@ -217,9 +222,6 @@ public sealed partial class MainWindow
         if (end > start)
             rectangles.Add(new RectInt32(start, 0, end - start, height));
         AppWindow.TitleBar.SetDragRectangles(rectangles.ToArray());
-        InputNonClientPointerSource
-            .GetForWindowId(AppWindow.Id)
-            .SetRegionRects(NonClientRegionKind.Icon, [GetRegion(AppIcon)]);
     }
 
     private RectInt32 GetRegion(FrameworkElement control)
@@ -238,37 +240,13 @@ public sealed partial class MainWindow
         );
     }
 
-    private (double Expanded, double Compact) MeasurePages()
-    {
-        if (_pageMeasurement is { } measured && measured.Language == Model.Text.Language &&
-            measured.Scale == _uiSettings.TextScaleFactor && measured.Theme == Pages.ActualTheme)
-            return (measured.Expanded, measured.Compact);
-        // Measuring both label states on every layout keeps invalidating the selector.
-        var torrents = TorrentsPage.Text;
-        var library = LibraryPage.Text;
-        TorrentsPage.Text = Model.Text.Get("window", "torrents");
-        LibraryPage.Text = Model.Text.Get("library", "title");
-        Pages.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-        var expanded = Pages.DesiredSize.Width;
-        TorrentsPage.Text = LibraryPage.Text = string.Empty;
-        Pages.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-        var compact = Pages.DesiredSize.Width;
-        TorrentsPage.Text = torrents;
-        LibraryPage.Text = library;
-        if (Pages.XamlRoot is not null)
-            _pageMeasurement = (Model.Text.Language, _uiSettings.TextScaleFactor, Pages.ActualTheme, expanded, compact);
-        return (expanded, compact);
-    }
-
     private void UpdateMinimum(double scale)
     {
         if (AppWindow.Presenter is not OverlappedPresenter presenter)
             return;
         var content =
-            48
-            + BackButton.ActualWidth
+            CaptionStart.ActualWidth
             + Menus.ActualWidth
-            + MeasurePages().Compact
             + SearchArea.Margin.Left
             + Search.MinWidth
             + SearchArea.Margin.Right
@@ -371,6 +349,9 @@ public sealed partial class MainWindow
         FiltersTitle.Text = Model.Text.Get("filters", "title");
         AutomationProperties.SetName(Filters, Model.Text.Get("filters", "title"));
         NameButton(FiltersClose, Model.Text.Get("filters", "close"));
+        NameButton(FiltersMinimize, Model.Text.Get("filters", "minimize"));
+        NameButton(FiltersToggle, Model.Text.Get("filters", "title"));
+        NameButton(InspectorToggle, Model.Text.Get("inspector", "expand"));
         AutomationProperties.SetName(Split, Model.Text.Get("inspector", "resize"));
         Torrents.Strings = Model.Text.Table;
         Root.FlowDirection = Model.Text.IsRightToLeft

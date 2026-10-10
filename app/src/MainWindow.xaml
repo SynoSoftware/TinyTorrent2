@@ -47,20 +47,34 @@
             FontSize="16"
           />
         </Button>
-        <Image
+        <Button
           x:Name="AppIcon"
-          Width="24"
-          Height="24"
-          Margin="16,0,8,0"
-          AutomationProperties.AccessibilityView="Raw"
+          Style="{StaticResource TinyTorrentCaptionButtonStyle}"
+          Margin="8,0,0,0"
+          Click="OnPageSwitch"
+          PointerEntered="OnNavigationEnter"
+          PointerExited="OnNavigationLeave"
+          PointerCanceled="OnNavigationLeave"
+          GotFocus="OnNavigationInput"
+          LostFocus="OnNavigationInput"
+          AutomationProperties.AutomationId="PageSwitch"
         >
-          <Image.Source>
-            <SvgImageSource UriSource="ms-appx:///Assets/tinyTorrent.svg" />
-          </Image.Source>
-        </Image>
+          <Button.Resources>
+            <SolidColorBrush x:Key="TinyTorrentCaptionHoverBrush" Color="Transparent" />
+            <SolidColorBrush x:Key="TinyTorrentCaptionPressedBrush" Color="Transparent" />
+          </Button.Resources>
+          <Grid Width="24" Height="24" IsHitTestVisible="False" AutomationProperties.AccessibilityView="Raw">
+            <Grid.Projection><PlaneProjection x:Name="NavigationProjection" /></Grid.Projection>
+            <Image x:Name="TorrentsFace" Width="24" Height="24" AutomationProperties.AccessibilityView="Raw">
+              <Image.Source><SvgImageSource UriSource="ms-appx:///Assets/tinyTorrent.svg" /></Image.Source>
+            </Image>
+            <FontIcon x:Name="LibraryFace" FontFamily="{x:Bind icons:Lucide.Font}"
+              Glyph="{x:Bind icons:Lucide.Library}" FontSize="24" Visibility="Collapsed"
+              AutomationProperties.AccessibilityView="Raw" />
+          </Grid>
+        </Button>
       </StackPanel>
-      <StackPanel Grid.Column="2" Orientation="Horizontal">
-      <MenuBar x:Name="Menus" Padding="0" VerticalAlignment="Center">
+      <MenuBar x:Name="Menus" Grid.Column="2" Padding="0" VerticalAlignment="Center">
         <!-- Without IsAccessKeyScope, a quick Alt+F opens the menu but its
                      items' access keys stay inactive, so Alt+F, X does nothing:
                      https://github.com/microsoft/microsoft-ui-xaml/issues/10791 -->
@@ -69,16 +83,6 @@
         <MenuBarItem x:Name="ViewMenu" IsAccessKeyScope="True" />
         <MenuBarItem x:Name="HelpMenu" IsAccessKeyScope="True" />
       </MenuBar>
-      <SelectorBar x:Name="Pages" Margin="24,0,0,0" VerticalAlignment="Center" SelectionChanged="OnPageSelected"
-        AutomationProperties.AutomationId="Pages">
-        <SelectorBarItem x:Name="TorrentsPage" IsSelected="True" AutomationProperties.AutomationId="TorrentsPage">
-          <SelectorBarItem.Icon><FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Download}" /></SelectorBarItem.Icon>
-        </SelectorBarItem>
-        <SelectorBarItem x:Name="LibraryPage" AutomationProperties.AutomationId="LibraryPage">
-          <SelectorBarItem.Icon><FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Library}" /></SelectorBarItem.Icon>
-        </SelectorBarItem>
-      </SelectorBar>
-      </StackPanel>
       <Grid x:Name="SearchArea" Grid.Column="3" Margin="24,0" VerticalAlignment="Center">
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="*" />
@@ -88,7 +92,7 @@
           x:Name="Search"
           MaxWidth="320"
           MinWidth="200"
-          HorizontalAlignment="Right"
+          HorizontalAlignment="Left"
           Text="{x:Bind Model.Query, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
           QueryIcon="Find"
           TextMemberPath="Label"
@@ -164,7 +168,7 @@
       >
         <FontIcon
           FontFamily="{x:Bind icons:Lucide.Font}"
-          Glyph="{x:Bind icons:Lucide.Settings}"
+          Glyph="{x:Bind icons:Lucide.Wrench}"
           FontSize="16"
         />
       </Button>
@@ -181,67 +185,97 @@
     <SplitView
       x:Name="Workspace"
       DisplayMode="Inline"
+      CompactPaneLength="10"
       OpenPaneLength="196"
-      IsPaneOpen="{x:Bind Model.IsFilterOpen, Mode=TwoWay}"
+      IsPaneOpen="{x:Bind Model.IsFilterOpen, Mode=OneWay}"
       PaneBackground="Transparent"
       Background="Transparent"
     >
       <SplitView.Pane>
-        <Grid RowSpacing="8" Padding="8,8,8,0" KeyDown="OnFiltersKey">
-          <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" />
-            <RowDefinition Height="Auto" />
-          </Grid.RowDefinitions>
-          <Grid ColumnSpacing="8">
-            <Grid.ColumnDefinitions>
-              <ColumnDefinition Width="*" />
-              <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
-            <TextBlock
-              x:Name="FiltersTitle"
-              Margin="8,0"
-              Style="{StaticResource TinyTorrentGroupTitleTextStyle}"
-            />
-            <Button
-              Style="{StaticResource TinyTorrentSubtleButtonStyle}"
-              x:Name="FiltersClose"
-              Grid.Column="1"
-              Click="OnFiltersClose"
+        <Grid KeyDown="OnFiltersKey">
+        <Button
+          x:Name="FiltersToggle"
+          Style="{StaticResource TinyTorrentSubtleButtonStyle}"
+          Width="8"
+          Margin="0,0,2,0"
+          MinWidth="0"
+          Height="Auto"
+          MinHeight="0"
+          HorizontalAlignment="Left"
+          VerticalAlignment="Stretch"
+          Click="OnFiltersOpen"
+          Visibility="Collapsed"
+          AutomationProperties.AutomationId="FiltersToggle"
+        >
+          <Grid Width="8" Height="16" AutomationProperties.AccessibilityView="Raw">
+            <Grid.Clip><RectangleGeometry Rect="0,0,8,16" /></Grid.Clip>
+            <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.EllipsisVertical}"
+              Width="16" Height="16" FontSize="16" HorizontalAlignment="Center"
+              AutomationProperties.AccessibilityView="Raw" />
+          </Grid>
+        </Button>
+        <controls:Pane
+          Visibility="{x:Bind Model.IsFilterOpen, Mode=OneWay}"
+          Margin="4,0,4,4"
+        >
+          <controls:Pane.Header>
+            <Grid ColumnSpacing="8">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+              </Grid.ColumnDefinitions>
+              <TextBlock
+                x:Name="FiltersTitle"
+                Style="{StaticResource TinyTorrentGroupTitleTextStyle}"
+              />
+              <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4">
+                <Button x:Name="FiltersMinimize" Style="{StaticResource TinyTorrentSubtleButtonStyle}"
+                  Click="OnFiltersMinimize" AutomationProperties.AutomationId="FiltersMinimize">
+                  <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Pin}" FontSize="16" />
+                </Button>
+                <Button Style="{StaticResource TinyTorrentSubtleButtonStyle}" x:Name="FiltersClose"
+                  Click="OnFiltersClose" />
+              </StackPanel>
+            </Grid>
+          </controls:Pane.Header>
+          <Grid RowSpacing="8" Padding="0,8,0,0">
+            <Grid.RowDefinitions>
+              <RowDefinition Height="*" />
+              <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+            <ListView
+              x:Name="Filters"
+              SelectionMode="Single"
+              SelectionChanged="OnFilterChanged"
+            >
+              <ListView.ItemTemplate>
+                <DataTemplate x:DataType="local:FilterChoice">
+                  <Grid ColumnSpacing="8">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="*" />
+                      <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="{x:Bind Label, Mode=OneWay}" TextWrapping="Wrap" />
+                    <TextBlock
+                      Grid.Column="1"
+                      Text="{x:Bind Count, Mode=OneWay}"
+                      Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    />
+                  </Grid>
+                </DataTemplate>
+              </ListView.ItemTemplate>
+            </ListView>
+            <ScrollViewer x:Name="LibraryFilters" Margin="16,0" Visibility="Collapsed" />
+            <controls:ActionButton
+              x:Name="ClearFiltersButton"
+              Glyph="{x:Bind icons:Lucide.FunnelX}"
+              Grid.Row="1"
+              Margin="16,8"
+              Command="{x:Bind Model.ClearFilters}"
+              HorizontalAlignment="Stretch"
             />
           </Grid>
-          <ListView
-            x:Name="Filters"
-            Grid.Row="1"
-            SelectionMode="Single"
-            SelectionChanged="OnFilterChanged"
-          >
-            <ListView.ItemTemplate>
-              <DataTemplate x:DataType="local:FilterChoice">
-                <Grid ColumnSpacing="8">
-                  <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                  </Grid.ColumnDefinitions>
-                  <TextBlock Text="{x:Bind Label, Mode=OneWay}" TextWrapping="Wrap" />
-                  <TextBlock
-                    Grid.Column="1"
-                    Text="{x:Bind Count, Mode=OneWay}"
-                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                  />
-                </Grid>
-              </DataTemplate>
-            </ListView.ItemTemplate>
-          </ListView>
-          <ScrollViewer x:Name="LibraryFilters" Grid.Row="1" Visibility="Collapsed" />
-          <controls:ActionButton
-            x:Name="ClearFiltersButton"
-            Glyph="{x:Bind icons:Lucide.FunnelX}"
-            Grid.Row="2"
-            Margin="8"
-            Command="{x:Bind Model.ClearFilters}"
-            HorizontalAlignment="Stretch"
-          />
+        </controls:Pane>
         </Grid>
       </SplitView.Pane>
       <Grid Background="Transparent">
@@ -548,17 +582,13 @@
           <controls:Splitter
             x:Name="Split"
             Grid.Row="1"
-            Visibility="{x:Bind Model.HasInspector, Mode=OneWay}"
+            Visibility="Collapsed"
           />
           <Grid
             x:Name="InspectorSurface"
             Grid.Row="2"
-            Visibility="{x:Bind Model.HasInspector, Mode=OneWay}"
-            Margin="8,0"
-            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-            BorderBrush="{ThemeResource SurfaceStrokeColorDefaultBrush}"
-            BorderThickness="1"
-            CornerRadius="{ThemeResource OverlayCornerRadius}"
+            Visibility="Collapsed"
+            Margin="0,0,4,4"
           >
             <ContentControl
               x:Name="InspectorContent"
@@ -566,6 +596,18 @@
               VerticalContentAlignment="Stretch"
             />
           </Grid>
+          <Button x:Name="InspectorToggle" Grid.Row="2" Visibility="Collapsed"
+            Style="{StaticResource TinyTorrentSubtleButtonStyle}"
+            Height="8" Margin="0,2,0,0" MinHeight="0" Width="Auto" MinWidth="0"
+            HorizontalAlignment="Stretch" Padding="0" Click="OnInspectorOpen"
+            AutomationProperties.AutomationId="InspectorToggle">
+            <Grid Width="16" Height="8">
+              <Grid.Clip><RectangleGeometry Rect="0,0,16,8" /></Grid.Clip>
+              <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Ellipsis}"
+                Width="16" Height="16" FontSize="16" VerticalAlignment="Center"
+                AutomationProperties.AccessibilityView="Raw" />
+            </Grid>
+          </Button>
         </Grid>
       </Grid>
     </SplitView>

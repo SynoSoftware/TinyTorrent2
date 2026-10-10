@@ -2,6 +2,7 @@ using System.ComponentModel;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Syno.TinyTorrent.Models;
 using SubtitleSettings = Syno.TinyTorrent.Subtitles.Settings;
 
 namespace Syno.TinyTorrent.Views;
@@ -23,15 +24,20 @@ public sealed partial class SettingsPage
         if (IsLoaded && SubtitlesContent.Content is SubtitleSettings content)
             content.Attach(Main.Subtitles);
         SubtitleTitle.Text = Model.Text.Get("subtitles", "automatic");
+        SubtitleDescription.Text = Model.Text.Get("subtitles", "help");
         SubtitleCue.Text = Model.Text.Get("subtitles", "setup");
         ToolTipService.SetToolTip(SubtitleSetup, Model.Text.Get("subtitles", "help"));
         ToolTipService.SetToolTip(SubtitleDismiss, Model.Text.Get("subtitles", "dismiss"));
         AutomationProperties.SetName(SubtitleSetup, SubtitleTitle.Text + " " + SubtitleCue.Text);
+        AutomationProperties.SetHelpText(SubtitleSetup, SubtitleDescription.Text);
         AutomationProperties.SetName(SubtitleDismiss, Model.Text.Get("subtitles", "dismiss"));
         if (_subtitleProblem is not null && SubtitlesContent.Content is SubtitleSettings subtitles)
         {
             _subtitleProblem.Text = subtitles.Problem;
             _subtitleProblem.Visibility = subtitles.Problem.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
+            // Resolved again on each refresh, which the theme change also requests,
+            // because a brush assigned from code does not follow the theme.
+            _subtitleProblem.Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["SystemFillColorCriticalBrush"];
         }
         if (Main.SubtitleHelpSeen)
             IndexContent.Children.Remove(SubtitleHelp);
@@ -50,8 +56,7 @@ public sealed partial class SettingsPage
     private void OnSubtitleSetup(object sender, RoutedEventArgs args)
     {
         DismissSubtitles();
-        Categories.SelectedItem = SubtitlesCategory;
-        SubtitlesCategory.Focus(FocusState.Programmatic);
+        Navigate(new(SettingsCategory.Subtitles));
     }
 
     private void OnSubtitleDismiss(object sender, RoutedEventArgs args)

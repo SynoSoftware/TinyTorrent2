@@ -206,9 +206,8 @@ public class ColumnResizeTests
             Assert.AreEqual(0, events());
         });
 
-    /// <summary>A completed resize is a width override, and section 18 persists it.</summary>
     [TestMethod]
-    public Task ACompletedResizeBecomesAPersistedOverride() =>
+    public Task ACompletedResizeChangesTheLiveWidth() =>
         TestHost.RunAsync(async () =>
         {
             Table table = await LoadAsync();
@@ -218,7 +217,7 @@ public class ColumnResizeTests
             TrackResize(strip, FirstSeparator + 75);
             CompleteResize(strip);
 
-            Assert.AreEqual(275d, table.Layout.WidthOverrides["a"]);
+            Assert.AreEqual(275d, TableHarness.EffectiveWidth(table, "a"));
         });
 
     // ------------------------------------------------------------------ helpers
@@ -249,7 +248,6 @@ public class ColumnResizeTests
 
         table.Width = 700;
         table.Height = 200;
-        table.Layout = TestData.DeclaredWidths(table);
 
         if (rows is not null)
         {
@@ -257,6 +255,7 @@ public class ColumnResizeTests
         }
 
         await TableHarness.LoadAsync(table);
+        TestData.ApplyDeclaredWidths(table);
         table.UpdateLayout();
 
         if (rows is not null)

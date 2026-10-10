@@ -224,6 +224,9 @@ try {
             Assert $reply.ok 'The verified Library fixture did not pause'
             $reply = Send-Command @{ command = 'session_pause'; paused = $true }
             Assert $reply.ok 'The Library fixture did not pause its session'
+            $members += Add-Torrent (New-Torrent 'Unfinished sample.bin' @(
+                @{ path = 'Unfinished sample.bin'; bytes = [Text.Encoding]::ASCII.GetBytes('missing piece') }
+            )) $payload
         }
         'library' {
             $bundle = [ordered]@{

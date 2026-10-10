@@ -9,11 +9,11 @@ public sealed partial class Browser
     private CancellationTokenSource? _informationRequest;
     private bool _informationVisible;
     private bool _windowActive;
-    private bool _detailLoaded;
     private bool _hasDialog;
     private bool _noVideoMatch;
     private VideoException? _fetchFailure;
     private IProvider? _viewProvider;
+    private bool _viewEnabled;
 
     public bool IsOnDemand => Provider?.Schedule is not (null or VideoSchedule.Background);
     public bool IsFetching { get; private set; }
@@ -115,23 +115,29 @@ public sealed partial class Browser
             _viewProvider = Provider;
             _noVideoMatch = false;
             _fetchFailure = null;
+            Changed(nameof(IsOnDemand));
+        }
+        if (_viewEnabled != IsEnrichmentEnabled)
+        {
+            _viewEnabled = IsEnrichmentEnabled;
+            Changed(nameof(IsEnrichmentEnabled));
         }
         Changed(nameof(Providers));
         Changed(nameof(Provider));
         Changed(nameof(ProviderIndex));
-        Changed(nameof(IsOnDemand));
         Changed(nameof(CanConfigure));
         Changed(nameof(FetchLabel));
         Changed(nameof(FetchTip));
         Changed(nameof(FetchMessage));
         Changed(nameof(Message));
+        RefreshCommands();
         ScheduleInformation();
     }
 
     private void ScheduleInformation()
     {
         if (_informationRequest is not null || !CanFetch || !_visible || !IsOpen || !_informationVisible ||
-            !_windowActive || _hasDialog || !_detailLoaded || _selected?.Entry.Type.Length != 0 ||
+            !_windowActive || _hasDialog || _loadedDetail is null || _selected?.Entry.Type.Length != 0 ||
             Provider?.Schedule is not VideoSchedule.Selection || _videos?.Failure is not null)
             return;
         _ = RequestInformation(true);
@@ -162,6 +168,7 @@ public sealed partial class Browser
             Changed(nameof(FetchLabel));
             Changed(nameof(FetchMessage));
             Changed(nameof(Message));
+            RefreshCommands();
             var found = await _videos.Lookup(entry, !delayed, cancellation.Token);
             if (!cancellation.IsCancellationRequested)
                 _noVideoMatch = !found;
@@ -186,6 +193,7 @@ public sealed partial class Browser
                 Changed(nameof(IsFetching));
                 Changed(nameof(FetchLabel));
                 Changed(nameof(FetchMessage));
+                RefreshCommands();
             }
         }
     }
@@ -199,5 +207,6 @@ public sealed partial class Browser
         IsFetching = false;
         Changed(nameof(IsFetching));
         Changed(nameof(FetchLabel));
+        RefreshCommands();
     }
 }

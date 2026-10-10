@@ -56,7 +56,7 @@
       VerticalAlignment="Bottom"
       Margin="0,0,-160,-140"
     />
-      <Grid x:Name="PageContent" Margin="16,16,16,0">
+      <Grid x:Name="PageContent" Margin="16,16,16,0" MaxWidth="{StaticResource TinyTorrentSettingsWidth}">
         <Grid.RowDefinitions>
           <RowDefinition Height="Auto" />
           <RowDefinition Height="*" />
@@ -212,12 +212,15 @@
                       <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
                       </Grid.RowDefinitions>
                       <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Captions}"
                         Style="{StaticResource TinyTorrentGroupIconStyle}" />
                       <TextBlock x:Name="SubtitleTitle" Grid.Column="1"
                         Style="{StaticResource TinyTorrentGroupTitleTextStyle}" />
-                      <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Spacing="8"
+                      <TextBlock x:Name="SubtitleDescription" Grid.Row="1" Grid.Column="1"
+                        Style="{StaticResource TinyTorrentTitleDetailTextStyle}" />
+                      <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" Spacing="8"
                         HorizontalAlignment="Right" Margin="0,8,0,0">
                         <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.ArrowRight}"
                           Style="{StaticResource TinyTorrentGroupIconStyle}" />
@@ -514,9 +517,11 @@
                 </controls:SettingsRow>
                 <controls:SettingsRow Header="{x:Bind Main.Library.InformationLabel, Mode=OneWay}"
                   StateText="{x:Bind controls:SettingsRow.State(Main.Library.IsEnrichmentEnabled, Model.OnText, Model.OffText), Mode=OneWay}">
-                  <controls:ActionButton x:Name="VideoInformation" Text="{x:Bind Main.Library.InformationAction, Mode=OneWay}" Glyph="{x:Bind icons:Lucide.Film}"
+                  <ToggleSwitch x:Name="VideoInformation" IsOn="{x:Bind Main.Library.IsEnrichmentEnabled, Mode=OneWay}"
+                    IsEnabled="{x:Bind Main.Library.CanEnable, Mode=OneWay}" Toggled="OnVideoInformation"
                     ToolTipService.ToolTip="{x:Bind Main.Library.InformationTip, Mode=OneWay}"
-                    Command="{x:Bind Main.Library.Enable}" AutomationProperties.AutomationId="VideoInformation" />
+                    AutomationProperties.Name="{x:Bind Main.Library.InformationLabel, Mode=OneWay}"
+                    AutomationProperties.AutomationId="VideoInformation" />
                 </controls:SettingsRow>
                 </StackPanel>
               </controls:SettingsSection>

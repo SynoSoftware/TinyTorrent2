@@ -331,17 +331,22 @@ public sealed partial class Week : UserControl
                 X(_minute)
             );
         }
-        var description =
-            selected?.Description
-            ?? _model.Text.Format(
-                "settings",
-                "day_schedule",
-                _model.Day(_day),
-                Schedule.Time(_minute)
-            );
+        var position = _model.Text.Format(
+            "settings",
+            "day_schedule",
+            _model.Day(_day),
+            Schedule.Time(_minute)
+        );
+        var description = selected?.Description ?? position;
+        // The name always carries the cursor, which the arrow keys move while
+        // an opened period keeps its description.
         AutomationProperties.SetName(
             this,
-            _model.Text.Format("settings", "timeline_name", description)
+            _model.Text.Format(
+                "settings",
+                "timeline_name",
+                selected is null ? position : description + ". " + position
+            )
         );
         AutomationProperties.SetHelpText(this, Hint);
         UpdateTip(description);

@@ -281,7 +281,28 @@ public sealed partial class MainWindow
         );
     }
 
+    private void OnFiltersOpen(object sender, RoutedEventArgs args)
+    {
+        var keyboard = FiltersToggle.FocusState == FocusState.Keyboard;
+        Model.IsFilterOpen = true;
+        if (!keyboard)
+            return;
+        var page = Model.Page;
+        DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
+        {
+            if (Model.IsFilterOpen && Model.Page == page && !HasDialog)
+                FiltersClose.Focus(FocusState.Keyboard);
+        });
+    }
+
     private void OnFiltersClose(object sender, RoutedEventArgs args) => CloseFilters();
+
+    private void OnFiltersMinimize(object sender, RoutedEventArgs args)
+    {
+        var focus = FiltersMinimize.FocusState == FocusState.Keyboard ? FocusState.Keyboard : FocusState.Programmatic;
+        Model.FilterPane = FilterPane.Compact;
+        FiltersToggle.Focus(focus);
+    }
 
     private void OnFiltersKey(object sender, KeyRoutedEventArgs args)
     {
@@ -297,7 +318,7 @@ public sealed partial class MainWindow
         if (Model.Page == WindowPage.Library)
             _libraryTable.FocusRows();
         else
-            Torrents.Focus(FocusState.Programmatic);
+            Torrents.Focus(FocusState.Keyboard);
     }
 
     private void OnFilterChanged(object sender, SelectionChangedEventArgs args)
@@ -364,6 +385,11 @@ public sealed partial class MainWindow
 
     private void UpdateInspectorSize()
     {
+        var expanded = Model.HasInspector && !Model.IsInspectorCompact;
+        var opening = InspectorSurface.Visibility != Visibility.Visible;
+        Split.Visibility = InspectorSurface.Visibility = expanded ? Visibility.Visible : Visibility.Collapsed;
+        InspectorToggle.Visibility = Model.HasInspector && Model.IsInspectorCompact
+            ? Visibility.Visible : Visibility.Collapsed;
         if (!Model.HasInspector)
         {
             InspectorRow.Height = new GridLength(0);
@@ -373,21 +399,53 @@ public sealed partial class MainWindow
         {
             var pane = new InspectorPane(Model.Inspector);
             pane.Close.Click += OnInspectorClose;
+            pane.Minimize.Click += OnInspectorMinimize;
             if (_placement?.Inspector is { } layout)
                 pane.Layout = layout;
             InspectorContent.Content = pane;
         }
         ((InspectorPane)InspectorContent.Content).ShowLibrary(Model.Page == WindowPage.Library ? Model.Library : null);
+        if (Model.IsInspectorCompact)
+        {
+            InspectorRow.Height = new GridLength(10);
+            return;
+        }
         var toolbar = Model.ShowsToolbar
             ? Toolbar.ActualHeight + Toolbar.Margin.Top + Toolbar.Margin.Bottom
             : 0;
         var maximum = Math.Max(0, Workspace.ActualHeight - toolbar - 126);
-        var minimum = Math.Min(300, maximum);
-        var opening = InspectorRow.Height.Value == 0;
-        Split.SetBounds(minimum, maximum, _splitHeight);
-        InspectorRow.Height = new GridLength(Math.Clamp(_splitHeight, minimum, maximum));
+        Split.SetBounds(0, maximum, _splitHeight);
+        InspectorRow.Height = new GridLength(Split.Value);
         if (opening && Model.Page == WindowPage.Torrents)
             _motion.Play(InspectorSurface, 12);
+    }
+
+    private void OnInspectorMinimize(object sender, RoutedEventArgs args)
+    {
+        var focus = ((Button)sender).FocusState == FocusState.Keyboard ? FocusState.Keyboard : FocusState.Programmatic;
+        CollapseInspector(focus);
+    }
+
+    private void OnSplitCommitted(object? sender, double previous)
+    {
+        if (InspectorContent.Content is not InspectorPane pane || Split.Value >= 2 * pane.HeaderHeight)
+            return;
+        _splitHeight = previous;
+        CollapseInspector(Split.FocusState == FocusState.Keyboard ? FocusState.Keyboard : FocusState.Programmatic);
+    }
+
+    private void CollapseInspector(FocusState focus)
+    {
+        Model.IsInspectorCompact = true;
+        InspectorToggle.Focus(focus);
+    }
+
+    private void OnInspectorOpen(object sender, RoutedEventArgs args)
+    {
+        var focus = InspectorToggle.FocusState == FocusState.Keyboard ? FocusState.Keyboard : FocusState.Programmatic;
+        Model.IsInspectorCompact = false;
+        if (InspectorContent.Content is InspectorPane pane)
+            pane.Minimize.Focus(focus);
     }
 
     private async Task PickSettingsFolder(Setting setting)

@@ -8,32 +8,36 @@
     "empty": "Todavía no hay archivos", "no_matches": "No hay archivos coincidentes", "unidentified": "Sin identificar",
     "no_videos": "No hay vídeos coincidentes", "no_music": "No hay música coincidente", "none": "Ningún archivo seleccionado",
     "clear_search": "Borrar", "show_matches_tip": "Mostrar coincidencias en {0} ({1})",
+    "filter_tip": "Filtrar por {0}: {1}",
     "movie": "Película", "episode": "Episodio de TV", "video": "Vídeo", "audio": "Audio", "picture": "Imagen",
     "document": "Documento", "archive": "Archivo comprimido", "other": "Otro", "file": "Archivo",
-    "video_information": "Información de vídeo", "music_information": "Información de música",
+    "video_information": "Información de vídeo", "info": "Info",
     "name": "Nombre", "folder": "Carpeta", "size": "Tamaño", "modified": "Fecha de modificación", "created": "Creado",
     "kind": "Clase", "type": "Tipo", "year": "Año", "genres": "Géneros", "cast": "Reparto",
+    "series": "Serie", "season": "Temporada", "season_number": "Temporada {0}",
+    "episode_number": "Episodio {0}", "episode_numbers": "Episodios {0}",
+    "imdb": "IMDb", "tmdb": "TMDB", "rating": "{0} / 10", "series_rating": "Valoración de la serie",
     "artist": "Artista", "album": "Álbum", "track": "Pista", "duration": "Duración",
-    "clear_identification": "Borrar identificación", "show_torrents": "Mostrar en Torrents",
+    "erase_metadata": "Borrar metadatos", "show_torrents": "Mostrar en Torrents",
     "today": "Hoy", "yesterday": "Ayer", "week": "Esta semana", "last_week": "La semana pasada",
     "month": "Este mes", "last_month": "El mes pasado", "older": "Anterior",
     "tiny": "Muy pequeño (hasta 16 KiB)", "small": "Pequeño (16 KiB–1 MiB)", "medium": "Mediano (1–128 MiB)",
     "large": "Grande (128 MiB–1 GiB)", "huge": "Muy grande (1–4 GiB)", "gigantic": "Enorme (más de 4 GiB)",
-    "identify": "Identificar…", "edit": "Editar identificación", "enable": "Activar…", "ok": "Aceptar", "disable": "Desactivar",
+    "edit_metadata": "Editar metadatos", "enable": "Activar…", "ok": "Aceptar", "disable": "Desactivar",
     "enable_tip": "Permitir que el proveedor seleccionado consulte información de vídeo", "disable_tip": "Dejar de consultar información de vídeo",
-    "identify_tip": "Guardar la película o serie seleccionada para este archivo", "search_title": "Buscar una película o serie", "matches": "Películas y series coincidentes",
+    "save_metadata_tip": "Guardar la película o serie seleccionada para este archivo", "search_title": "Buscar una película o serie", "matches": "Películas y series coincidentes",
     "clear_search_tip": "Borrar la búsqueda de la biblioteca",
     "file_type": "Tipo de archivo", "opens_with": "Se abre con", "open_with": "Abrir con {0}",
     "source": "Proveedor", "configure": "Configurar", "configure_tip": "Configurar el proveedor seleccionado",
     "fetch": "Obtener", "refresh": "Actualizar", "fetching": "Obteniendo…",
     "fetch_tip": "Obtener detalles de vídeo del proveedor seleccionado", "refresh_tip": "Actualizar los detalles guardados desde el proveedor seleccionado",
-    "no_video_match": "No se encontró un título coincidente único. Usa Identificar para elegir la película o serie correcta.",
+    "no_video_match": "No se encontró un título coincidente único. Usa Editar metadatos para elegir la película o serie correcta.",
     "provider_unavailable": "El proveedor seleccionado no está disponible. Elige otro proveedor o reintenta cuando esté disponible.",
     "provider_retry_at": "{0} Las solicitudes pueden reanudarse a las {1}.",
-    "provider_changed": "El proveedor cambió. Vuelve a buscar antes de identificar este archivo.",
+    "provider_changed": "El proveedor cambió. Vuelve a buscar antes de guardar los metadatos de este archivo.",
     "episode_required": "Selecciona un archivo con número de temporada y episodio.",
     "information_off": "Información de vídeo desactivada",
-    "identification": "Identificación", "synopsis": "Sinopsis", "tags": "Etiquetas", "no_tags": "Ninguna",
+    "metadata": "Metadatos", "synopsis": "Sinopsis", "tags": "Etiquetas", "no_tags": "Ninguna",
     "source_unavailable": "Proveedor no disponible", "no_application": "Sin aplicación"
   },
   "tmdb": {
@@ -66,12 +70,12 @@
     "no_matches": "No hay torrents coincidentes", "no_matches_detail": "Borra el filtro para ver los otros torrents.", "clear_filters": "Borrar",
     "incoming": "Los pares pueden conectarse a TinyTorrent a través de su puerto de escucha.", "no_incoming": "Ningún par se ha conectado a TinyTorrent todavía, así que su puerto de escucha no está confirmado como abierto. Las descargas siguen funcionando.", "no_adapter": "El adaptador de red seleccionado {0} no está disponible, así que las transferencias están bloqueadas.", "incoming_status": "Puerto abierto", "no_incoming_status": "Puerto sin confirmar", "no_adapter_status": "Falta el adaptador", "proxy": "TinyTorrent usa el proxy {0} en {1}:{2} para las conexiones a Internet. Las funciones que no puedan usarlo no estarán disponibles. Los pares no pueden conectarse contigo.", "proxy_status": "Proxy en uso", "selected": "{0} seleccionados", "torrents_one": "{0:N0} torrent", "torrents_other": "{0:N0} torrents", "torrents_selected": "{0} · {1:N0} seleccionados", "search": "Buscar un torrent", "alternative": "Límites alternativos", "alternative_until": "Límites alternativos hasta {0}", "resumed_status": "Transferencias reanudadas", "alternative_off": "Límites alternativos desactivados", "add_tip": "Añadir un archivo torrent", "clear_filters_tip": "Borrar los filtros", "rate_cap": "{0} de {1}", "rate_limit": "Límite: {0}, de los {1}", "no_rate_limit": "Sin límite en los {0}", "speed_pair": "límites estándar", "alternative_pair": "límites alternativos"
   },
-  "chrome": { "dark": "Cambiar al tema oscuro", "light": "Cambiar al tema claro" },
-  "menus": { "file": "Archivo", "file_key": "A", "torrent": "Torrent", "torrent_key": "T", "view": "Ver", "view_key": "V", "help": "Ayuda", "help_key": "Y", "back": "Atrás", "queue": "Cola", "toolbar": "Barra de herramientas", "on": "Activado", "off": "Desactivado", "mixed": "Mixto", "add_file_key": "A", "add_magnet_key": "M", "settings_key": "J", "exit_key": "S", "close_key": "C", "pause_key": "P", "resume_key": "R", "force_key": "F", "open_key": "A", "open_folder_key": "C", "copy_magnet_key": "G", "copy_hash_key": "H", "properties_key": "O", "verify_key": "V", "move_key": "M", "queue_key": "L", "sequential_key": "S", "first_last_key": "I", "speed_limit_key": "K", "remove_key": "E", "delete_files_key": "B", "pause_all_key": "T", "resume_all_key": "N", "limits_key": "D", "up_key": "S", "down_key": "B", "top_key": "P", "bottom_key": "F", "filters_key": "F", "toolbar_key": "B", "about_key": "A", "update_key": "U" },
+  "chrome": { "dark": "Cambiar al tema oscuro", "light": "Cambiar al tema claro", "switch_page": "Cambiar a {0}" },
+  "menus": { "file": "Archivo", "file_key": "A", "torrent": "Torrent", "torrent_key": "T", "view": "Ver", "view_key": "V", "help": "Ayuda", "help_key": "Y", "back": "Atrás", "queue": "Cola", "toolbar": "Barra de herramientas", "on": "Activado", "off": "Desactivado", "mixed": "Mixto", "add_file_key": "A", "add_magnet_key": "M", "settings_key": "J", "exit_key": "S", "close_key": "C", "pause_key": "P", "resume_key": "R", "force_key": "F", "open_key": "A", "open_folder_key": "C", "copy_magnet_key": "G", "copy_hash_key": "H", "properties_key": "O", "verify_key": "V", "move_key": "M", "queue_key": "L", "sequential_key": "S", "first_last_key": "I", "speed_limit_key": "K", "remove_key": "E", "delete_files_key": "B", "pause_all_key": "T", "resume_all_key": "N", "limits_key": "D", "up_key": "S", "down_key": "B", "top_key": "P", "bottom_key": "F", "filters_key": "F", "inspector_key": "I", "toolbar_key": "B", "about_key": "A", "update_key": "U" },
   "shortcuts": { "control": "Ctrl", "alt": "Alt", "shift": "Mayús", "delete": "Supr", "add": "+", "subtract": "-", "comma": ",", "left": "Izquierda", "number_1": "1", "number_2": "2", "f4": "F4", "o": "O", "q": "Q", "p": "P", "s": "S", "m": "M", "r": "R", "v": "V", "f": "F", "e": "E", "k": "K", "tip": "{0} ({1})" },
   "filters": {
     "active": "Filtros: {0} · {1:N0}",
-    "title": "Filtros", "close": "Cerrar filtros", "all": "Todos", "downloading": "Descargando", "seeding": "Compartiendo", "paused": "En pausa", "queued": "En cola", "errors": "Errores", "count": "{0} · {1:N0}"
+    "title": "Filtros", "close": "Cerrar filtros", "minimize": "Minimizar filtros", "all": "Todos", "downloading": "Descargando", "seeding": "Compartiendo", "paused": "En pausa", "queued": "En cola", "errors": "Errores", "count": "{0} · {1:N0}"
   },
   "finding": {
     "placeholder": "Buscar en TinyTorrent", "search": "Buscar torrents, comandos y ajustes", "torrent": "Torrents", "command": "Comandos", "settings": "Ajustes", "empty": "Sin resultados",
@@ -133,7 +137,7 @@
   "files": { "name": "Archivo", "priority": "Prioridad", "summary": "{0} de {1} archivos · {2}", "search": "Buscar un archivo", "all_matching": "Seleccionar o desmarcar todos los archivos coincidentes", "expand_all": "Expandir todo", "collapse_all": "Contraer todo", "unchanged": "Dejar sin cambios", "skip": "No descargar", "low": "Baja", "normal": "Normal", "high": "Alta", "skip_key": "N", "low_key": "B", "normal_key": "O", "high_key": "A" },
   "outcomes": { "accepted": "{0}: solicitud aceptada.", "queue": "Orden de la cola" },
   "inspector": {
-    "close": "Cerrar inspector", "resize": "Cambiar tamaño del inspector", "downloaded": "Descargado",
+    "close": "Cerrar inspector", "minimize": "Minimizar inspector", "expand": "Expandir inspector", "title": "Inspector", "resize": "Cambiar tamaño del inspector", "downloaded": "Descargado",
     "general": "General", "files": "Archivos", "peers": "Pares", "trackers": "Rastreadores", "speed": "Velocidad", "pieces": "Piezas",
     "sections": "Propiedades del torrent", "transfer": "Transferencia", "properties": "Propiedades", "created": "Creado", "creator": "Creado por",
     "privacy": "Privacidad", "private": "Torrent privado", "public": "Torrent público", "comment": "Comentario",
@@ -569,6 +573,8 @@
   "connection_setup": {
     "title": "Configurar conexión",
     "capacity": "Capacidad de la conexión",
+    "about_test": "Acerca de la prueba de velocidad",
+    "setting": "Ajuste",
     "download_limit": "Límite de descarga",
     "upload_limit": "Límite de subida",
     "mode": "Modo de límites",
@@ -637,7 +643,7 @@
   "subtitles": {
     "title": "Subtítulos", "summary": "Subtítulos automáticos, proveedor e idiomas", "existing": "Vídeos existentes",
     "automatic": "Subtítulos automáticos", "automatic_hint": "Busca subtítulos para los vídeos nuevos y sin terminar mientras la ventana está abierta. El trabajo aceptado continúa al abrirla de nuevo. Se conservan los subtítulos existentes.",
-    "finished": "Descargas terminadas", "files": "Archivos de subtítulos", "supplier": "Proveedor de subtítulos", "languages": "Idiomas deseados",
+    "finished": "Descargas terminadas", "files": "Archivos de subtítulos", "supplier": "Proveedor de subtítulos", "languages": "Idiomas deseados", "language_selection": "Idiomas de subtítulos",
     "find": "Buscar", "recheck": "Revisar", "check": "Comprobar", "edit": "Editar", "add": "Añadir", "reset": "Restablecer",
     "check_hint": "Comprobar el acceso al proveedor con estos valores, sin guardarlos ni enviar información de películas",
     "save_hint": "Guardar el proveedor y los datos de la cuenta. Cambiar de proveedor desactiva los subtítulos automáticos.",
@@ -664,7 +670,7 @@
     "file_failure": "{0}: {1}",
     "retry_at": "Se ha agotado la cuota del proveedor. El trabajo aceptado se reanuda a las {0}.",
     "failure_format": "El proveedor devolvió datos de subtítulos no compatibles. Vuelve a usar Buscar o elige otro proveedor.",
-    "help": "Subtítulos junto a tus películas, preferiblemente antes de terminar la descarga.", "setup": "Configurar subtítulos", "dismiss": "Ocultar la ayuda de subtítulos"
+    "help": "Busca subtítulos en tus idiomas preferidos mientras se descargan los vídeos.", "setup": "Configurar subtítulos", "dismiss": "Ocultar la ayuda de subtítulos"
   },
   "websites": {
     "name": "Sitios web públicos",

@@ -9,6 +9,7 @@ using Microsoft.UI.Xaml.Documents;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
+using Syno.TinyTorrent.Helpers;
 using Syno.TinyTorrent.Models;
 using Syno.TinyTorrent.Services;
 using Windows.ApplicationModel.DataTransfer;
@@ -30,6 +31,7 @@ public sealed partial class PiecesMap : UserControl
     // The hatch and cross line width, matching the legend's StrokeThickness.
     private const double Stroke = 1.5;
     private readonly UISettings _display = new();
+    private readonly Motion _arrival = new();
     private Pieces? _data;
     private Raster? _layout;
     private Strings? _text;
@@ -114,7 +116,9 @@ public sealed partial class PiecesMap : UserControl
         if (data is null || _data?.Count != data.Count)
         {
             _selectedPiece = -1;
-            Clear();
+            _layout = null;
+            Drawing.IsHitTestVisible = false;
+            _arrival.Fade(Bitmap, 0.25);
         }
         _data = data;
         _text = text;
@@ -177,6 +181,7 @@ public sealed partial class PiecesMap : UserControl
             root.Changed -= OnRoot;
         _root = null;
         _revision++;
+        _arrival.Stop();
         Clear();
     }
 
@@ -202,6 +207,8 @@ public sealed partial class PiecesMap : UserControl
 
     private async Task Draw()
     {
+        if (_data is null)
+            return;
         if (
             !IsLoaded
             || _data is not { Count: > 0 } data
@@ -244,12 +251,20 @@ public sealed partial class PiecesMap : UserControl
             using (var stream = bitmap.PixelBuffer.AsStream())
                 stream.Write(layout.Pixels);
             bitmap.Invalidate();
+            var arriving = _layout is null;
             _layout = layout with { Pixels = [] };
             Hover.Width = Hover.Height = layout.Side + 2;
             Selection.Width = Selection.Height = layout.Side + 4;
             Drawing.Width = Bitmap.Width = layout.Width;
             Drawing.Height = Bitmap.Height = layout.Height;
             Bitmap.Source = bitmap;
+            Drawing.IsHitTestVisible = true;
+            if (arriving)
+            {
+                _arrival.Stop();
+                Bitmap.Opacity = 0;
+                _arrival.Fade(Bitmap, 1);
+            }
             Refresh();
         }
         finally

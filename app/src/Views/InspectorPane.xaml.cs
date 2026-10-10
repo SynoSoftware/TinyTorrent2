@@ -18,8 +18,11 @@ public sealed partial class InspectorPane : UserControl
     private Torrent? _target;
     private InspectorSection _section;
     private bool _refreshing;
+    private bool _awaitingArrival;
     private bool _composing;
+    private (Torrent Target, int Index)? _fileReveal;
     public Inspector Model { get; }
+    internal double HeaderHeight => Surface.HeaderHeight;
     internal InspectorLayout Layout
     {
         get => new(Peers.Layout, TrackerTable.Layout);
@@ -37,7 +40,7 @@ public sealed partial class InspectorPane : UserControl
         Model = model;
         InitializeComponent();
         SectionContent.SizeChanged += Motion.Clip;
-        _files = new FileBrowser(model.Files);
+        _files = new FileBrowser(model.Files) { ToolbarPadding = new Thickness(16,12,16,0) };
         FileContent.Content = _files;
         TrackerInput.TextCompositionStarted += (_, _) => _composing = true;
         TrackerInput.TextCompositionEnded += (_, _) => _composing = false;
@@ -59,7 +62,8 @@ public sealed partial class InspectorPane : UserControl
             if (_composing || !Model.CanSaveTrackers)
                 return;
             await Model.CommitTrackers();
-            if (!Model.IsEditingTrackers)
+            // Someone who moved on during the request keeps their place.
+            if (!Model.IsEditingTrackers && HasTrackerEditorFocus())
                 DispatcherQueue.TryEnqueue(() => EditTrackers.Focus(FocusState.Programmatic));
         };
         _torrentSections = new[]
@@ -127,6 +131,7 @@ public sealed partial class InspectorPane : UserControl
         };
         Unloaded += (_, _) =>
         {
+            CancelReveal();
             _motion.Stop();
             _arrival.Stop();
             Model.TextChanged -= OnText;
@@ -140,6 +145,22 @@ public sealed partial class InspectorPane : UserControl
     }
 
     private void OnText(object? sender, EventArgs args) => RefreshText();
+
+    // Focus still belongs to the editor when it sits inside it, or when the
+    // editor has collapsed under it and nothing holds focus.
+    private bool HasTrackerEditorFocus()
+    {
+        var element = Microsoft.UI.Xaml.Input.FocusManager.GetFocusedElement(XamlRoot) as DependencyObject;
+        if (element is null)
+            return true;
+        while (element is not null)
+        {
+            if (ReferenceEquals(element, TrackerEditor))
+                return true;
+            element = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetParent(element);
+        }
+        return false;
+    }
 
     private void OnRecovery(object? sender, EventArgs args) =>
         Recover().Focus(FocusState.Programmatic);
@@ -167,7 +188,46 @@ public sealed partial class InspectorPane : UserControl
             TrackerTable.RefreshView();
     }
 
-    private void OnModel(object? sender, PropertyChangedEventArgs args) => Refresh();
+    private void OnModel(object? sender, PropertyChangedEventArgs args)
+    {
+        if (_library is null)
+            Refresh();
+    }
+
+    internal void RevealFile(int index)
+    {
+        if (Model.Target is not { } target)
+            return;
+        CancelReveal();
+        _fileReveal = (target, index);
+        _files.LayoutUpdated += OnFileLayout;
+        Model.Select(InspectorSection.Files);
+        Refresh();
+    }
+
+    internal void CancelReveal()
+    {
+        _fileReveal = null;
+        _files.LayoutUpdated -= OnFileLayout;
+    }
+
+    private void OnFileLayout(object? sender, object args) => RevealFile();
+
+    private void RevealFile()
+    {
+        if (_fileReveal is not { } reveal)
+            return;
+        if (Model.Target != reveal.Target || !Model.IsOpen || !Model.IsAvailable || Model.HasError ||
+            Model.Section != InspectorSection.Files)
+        {
+            CancelReveal();
+            return;
+        }
+        if (!IsLoaded || !Model.HasFiles)
+            return;
+        if (_files.Reveal(reveal.Index))
+            CancelReveal();
+    }
 
     private async void OnSection(SelectorBar sender, SelectorBarSelectionChangedEventArgs args)
     {
@@ -197,9 +257,16 @@ public sealed partial class InspectorPane : UserControl
             Model.Section >= _section ? 1 : -1);
         if (_target != Model.Target)
         {
-            if (_target is not null && inspecting && _section == Model.Section)
-                _arrival.Play(SectionViews);
+            _awaitingArrival = _target is not null && inspecting && _section == Model.Section
+                && Model.Section != InspectorSection.Pieces;
             _target = Model.Target;
+        }
+        if (_section != Model.Section)
+            _awaitingArrival = false;
+        if (_awaitingArrival && !Model.IsLoading)
+        {
+            _arrival.Play(SectionViews);
+            _awaitingArrival = false;
         }
         _section = Model.Section;
         _refreshing = true;
@@ -225,11 +292,15 @@ public sealed partial class InspectorPane : UserControl
                 : "Transferring",
             false
         );
+        RevealFile();
     }
 
     internal void RefreshText()
     {
         Bindings.Update();
+        ActionButton.Align([EditTrackers, Reannounce]);
+        if (_library is not null)
+            Bindings.StopTracking();
         var text = Model.Text;
         FlowDirection = text.IsRightToLeft ? FlowDirection.RightToLeft : FlowDirection.LeftToRight;
         foreach (var section in _torrentSections)
@@ -245,6 +316,8 @@ public sealed partial class InspectorPane : UserControl
         AutomationProperties.SetName(Sections, text.Get("inspector", "sections"));
         AutomationProperties.SetName(Close, text.Get("inspector", "close"));
         ToolTipService.SetToolTip(Close, text.Get("inspector", "close"));
+        AutomationProperties.SetName(Minimize, text.Get("inspector", "minimize"));
+        ToolTipService.SetToolTip(Minimize, text.Get("inspector", "minimize"));
         AutomationProperties.SetName(TrackerInput, text.Get("inspector", "trackers"));
         Peers.Strings = TrackerTable.Strings = text.Table;
         EndpointColumn.DisplayName = text.Get("peers", "endpoint");

@@ -6,12 +6,12 @@
   xmlns:table="using:Syno.TableView"
   xmlns:local="using:Syno.TinyTorrent.Controls"
 >
-  <Grid RowSpacing="8">
+  <Grid RowSpacing="12">
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto" />
       <RowDefinition Height="*" />
     </Grid.RowDefinitions>
-    <Grid ColumnSpacing="12">
+    <Grid x:Name="Toolbar" ColumnSpacing="12">
       <Grid.ColumnDefinitions>
         <ColumnDefinition Width="*" />
         <ColumnDefinition Width="Auto" />
@@ -76,7 +76,6 @@
             <StackPanel Orientation="Horizontal" Spacing="8">
               <CheckBox
                 x:Name="All"
-                MinWidth="0"
                 IsChecked="{x:Bind Model.AllMatching, Mode=OneWay}"
                 IsEnabled="{x:Bind Model.IsEnabled, Mode=OneWay}"
                 Click="OnAll"

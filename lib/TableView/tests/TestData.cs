@@ -16,12 +16,13 @@ internal static class TestData
             Width = defaultWidth,
         };
 
-    /// <summary>
-    /// A saved layout holding every column's declared width, so the table keeps those widths
-    /// instead of filling its width.
-    /// </summary>
-    internal static ColumnLayout DeclaredWidths(Table table) =>
-        Layout(widths: table.Columns.ToDictionary(column => column.Id!, column => column.Width));
+    internal static void ApplyDeclaredWidths(Table table)
+    {
+        table.UpdateLayout();
+        foreach (var column in table.Columns)
+            TableHarness.SetWidth(table, column.Id!, column.Width);
+        table.UpdateLayout();
+    }
 
     /// <summary>A table with the given columns declared, not yet loaded.</summary>
     internal static Table Table(params Column[] columns)
@@ -38,14 +39,12 @@ internal static class TestData
     internal static ColumnLayout Layout(
         IReadOnlyList<string>? order = null,
         IReadOnlyDictionary<string, bool>? visibility = null,
-        IReadOnlyDictionary<string, double>? widths = null,
         string? sortColumnId = null,
         SortDirection direction = SortDirection.Ascending
     ) =>
         new(
             order ?? Array.Empty<string>(),
             visibility ?? new Dictionary<string, bool>(),
-            widths ?? new Dictionary<string, double>(),
             sortColumnId,
             direction
         );

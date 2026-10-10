@@ -33,6 +33,13 @@ public enum TransferPreset
     Custom,
 }
 
+public enum FilterPane
+{
+    Hidden,
+    Compact,
+    Open,
+}
+
 public enum Consumer
 {
     Summary,

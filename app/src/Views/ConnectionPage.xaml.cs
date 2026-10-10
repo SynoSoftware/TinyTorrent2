@@ -53,6 +53,8 @@ public sealed partial class ConnectionPage : UserControl
     private void UpdateColumns()
     {
         var scale = _display.TextScaleFactor;
+        TestActions.Width = 120 * scale;
+        StatusArea.Height = 44 * scale;
         var stacked = Body.ActualWidth < 880 * scale;
         InputColumn.Width = stacked ? new GridLength(1, GridUnitType.Star) : new GridLength(320 * scale);
         PreviewColumn.Width = stacked ? new GridLength(0) : new GridLength(1, GridUnitType.Star);

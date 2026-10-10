@@ -51,6 +51,7 @@ public sealed partial class SettingsPage : UserControl
         var subtitles = new SubtitleSettings(Model.Text, Main.RetrySubtitles);
         subtitles.SupplierRequested += (_, _) => SupplierRequested?.Invoke(this, EventArgs.Empty);
         subtitles.ProblemChanged += (_, _) => RefreshSubtitles();
+        ActualThemeChanged += (_, _) => RefreshSubtitles();
         SubtitlesContent.Content = subtitles;
         Watch(Destination);
         Watch(IncompleteFolder);
@@ -370,7 +371,6 @@ public sealed partial class SettingsPage : UserControl
                 _subtitleProblem = new TextBlock
                 {
                     TextWrapping = TextWrapping.Wrap,
-                    Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["SystemFillColorCriticalBrush"],
                     Margin = new Thickness(0, 8, 0, 0),
                 };
                 content.Children.Add(_subtitleProblem);
@@ -452,7 +452,7 @@ public sealed partial class SettingsPage : UserControl
     internal double MeasureWidth()
     {
         Categories.Measure(new Windows.Foundation.Size(double.PositiveInfinity, double.PositiveInfinity));
-        PageContent.MaxWidth = Math.Max(1000, Categories.DesiredSize.Width);
+        PageContent.MaxWidth = Math.Max((double)Application.Current.Resources["TinyTorrentSettingsWidth"], Categories.DesiredSize.Width);
         return PageContent.MaxWidth + PageContent.Margin.Left + PageContent.Margin.Right;
     }
 
@@ -645,6 +645,16 @@ public sealed partial class SettingsPage : UserControl
             return;
         setting.Input = (string)value;
         await Model.Commit(setting);
+    }
+
+    private void OnVideoInformation(object sender, RoutedEventArgs args)
+    {
+        if (_refreshing || VideoInformation.IsOn == Main.Library.IsEnrichmentEnabled)
+            return;
+        // Consent or persistence can refuse the change, so retain the confirmed state.
+        VideoInformation.IsOn = Main.Library.IsEnrichmentEnabled;
+        if (Main.Library.Enable.CanExecute(null))
+            Main.Library.Enable.Execute(null);
     }
 
     private async void OnStartup(object sender, RoutedEventArgs args)

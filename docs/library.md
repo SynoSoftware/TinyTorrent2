@@ -28,6 +28,11 @@ Library is a separate page alongside Torrents. It uses the existing TableView
 and the application's navigation, visual language and keyboard conventions.
 The normal journey is to open Library, type to narrow the file list, select a
 file to read its details, and open it in its Windows-associated application.
+Finding a known title, choosing something to watch and opening it take priority
+when deciding what is prominent. Titles, synopsis, ratings and Open support
+those everyday tasks; file properties and maintenance actions remain available
+without dominating them. Apply the product's
+[usability principle](architecture.md#usability-comes-first) to that hierarchy.
 
 Library lists only finished files. A file appears as soon as it finishes
 downloading, without waiting for movie identification or provider access.
@@ -377,12 +382,12 @@ without reading video contents.
 Associate automatically only when the available evidence supports an
 unambiguous match. A first search result is not sufficient evidence by itself.
 Unmatched and ambiguous files remain usable under their original filenames.
-Provide Identify, correction and clear-identification actions without prompting
-for every file. Clearing an incorrect association preserves the user's decision
+Provide Edit metadata and Erase metadata actions without prompting
+for every file. Erasing an incorrect association preserves the user's decision
 instead of immediately recreating the same automatic match.
 
 Manual decisions survive restart and take precedence over automatic work.
-Identify, Edit and Clear apply to all current source entries at the selected
+Edit metadata and Erase metadata apply to all current source entries at the selected
 location in one SQLite transaction, so cross-seeded files do not show competing
 identifications. When locations meet, the most recently saved explicit choice,
 including Clear, applies to all contributors. It remains with each if their
@@ -458,8 +463,12 @@ Library free of filesystem discovery and background validation work.
 
 ## Presentation and interaction
 
-The [Library prototype](../app/library-prototype.html) is the visual reference
-for this section. Its sample data and browser code are not production design.
+The [Library prototype](../app/library-prototype.html) opens directly and reuses
+the canonical assets in `resources/`. Its layout selector compares A — Reading,
+B — Inspector and C — Sections. C is the owner's approved implementation target.
+The [implementation review](#prototype-implementation-review)
+records the accumulated decisions and outstanding work. Sample data and browser
+code are not production architecture.
 
 Every part of the page reuses what the product already has for the same job:
 the same controls, the same implementation and the same labels. A second
@@ -471,6 +480,194 @@ Help text follows the [interface contract](interface.md#text-icons-and-typograph
 The enabling dialog also includes the disclosure required by
 [privacy requirements](#privacy-and-provider-release-requirements).
 
+### Prototype implementation review
+
+This is the acceptance checklist for the current Library design work, recorded
+on 2026-10-10. It owns the pending prototype-to-app review, not a second UI
+contract. The owner approved C — Sections and authorized native implementation.
+Builds and tests need separate owner
+authorization; prototype screenshot review is already authorized.
+
+An unchecked item means native implementation and its appropriate evidence
+have not both been established. A prototype edit, source review or successful
+build alone does not complete a visual or interaction requirement. Record the
+changed owner and evidence against each item when implementing; carry unfinished
+items forward rather than asking the owner to rediscover them.
+
+#### Shared ownership and prototype scope
+
+- [ ] Reuse the existing Inspector shell, Section, Field, responsive layout,
+  typography, spacing, brushes, icons and commands. Audit their owners before
+  adding anything; Library must not introduce parallel layout authority.
+- [ ] Where a heading composition is missing, polish the shared composition
+  and move its applicable consumers to that owner. Do not copy a Library-only
+  implementation or add tokens without a distinct, demonstrated need.
+- [ ] Keep one Library prototype, `app/library-prototype.html`. The former
+  `library-details-prototype.html`, wrapper, duplicate renderers and obsolete
+  references must stay removed. Canonical app assets remain referenced, not
+  copied into a second icon catalogue.
+- [ ] Preserve all three Inspector alternatives during review. Implement the
+  finally approved composition; the earlier B selection does not override the
+  later approval of C. Keep the prototype's labels, commands and surrounding
+  shell aligned with the mature app except for explicitly requested experiments.
+
+#### Inspector composition
+
+- [ ] Use the approved C — Sections composition: Synopsis and Cast form
+  the main content, with a separate right metadata column. At narrower widths,
+  sections reflow without clipping, collisions or excessive empty gaps.
+  Cast uses its own column only when the side-by-side content fits the inspector's
+  available height. Otherwise it stays below Synopsis with names wrapping across
+  rows, even in a wide window, so the column does not introduce avoidable scrolling.
+- [ ] Use one full-width heading above content and metadata. Refresh or Fetch
+  sits at the far right, not stranded at the edge of the left content column,
+  and retains its established command and availability rules.
+- [ ] Place the media type beside the title, using the latest shared text
+  baseline alignment and clear separation. Movie, TV episode and Audio use the
+  same composition; do not restore a whole subtitle row merely for type or Year.
+- [ ] For episodes, show the episode title first and Series · Season · Episode
+  context beneath it. Series and Season are filter links; episode numbers remain
+  readable context. Multi-episode files must not repeat the same series/season
+  information for every episode.
+- [ ] Put video metadata in this order: available IMDb and TMDB ratings, Year,
+  Genres. Music uses Track, Duration, Year, Genres. Year appears only in this
+  metadata group. This supersedes the earlier Genres-before-Year arrangement.
+- [ ] Keep genres last and allow all their filter links to wrap into the space
+  below. Keep each genre name together. No clipped links, hidden remainder or
+  "+N more" menu; spacing separates links without leading or stranded dots.
+  This explicit genre-link treatment is an exception to ordinary single-line
+  metadata, not permission to wrap every Field.
+- [ ] Keep series ratings identified as series ratings. Preserve missing-score
+  behavior and the existing information/provider states rather than inventing
+  scores or new provider requests to fill the layout.
+- [ ] Match the app's action glyphs and button treatment: Play, Show in Torrents,
+  More and Close. Edit metadata belongs in More at every width. A vertical divider
+  separates these item actions from the inspector's Pin and Close controls. Show in
+  Torrents uses LocateFixed, never the software logo or a download action glyph.
+  The prototype must not replace Play with an external-window glyph.
+- [ ] Retain readable synopsis line spacing, heading-to-body spacing and the
+  established File tab and Inspector shell behavior. Review the entire window,
+  not just the changed text block.
+
+#### Filters and navigation
+
+- [ ] Year and every genre link use the existing filter operation and reveal
+  the filter pane, retaining unrelated filters.
+- [ ] Music Artist and Album are clickable filters using complete values, not
+  pieces split at punctuation or display separators.
+- [ ] Episode Series selects that show and clears an earlier Season choice.
+  Season selects both its series and season atomically, never the same season
+  number across unrelated shows. Use canonical series identity, not its label.
+- [ ] All these filters participate in the existing choices, counts, active
+  filter display and Clear behavior, including Files when such a filter is
+  active. Keep active zero-result choices visible and human-readable.
+- [ ] View starts with Filters in both modes. Its open/closed state has one
+  shared window owner and survives switching between Library and Torrents;
+  the selected filter criteria still belong to their respective page.
+- [ ] Resolve the reported filter-pane opening jump/flash. Inspect the initial
+  frame, motion direction and simultaneous content/Inspector movement; a smooth
+  tail after an initial layout jump is not a fix. Native runtime diagnosis is
+  still outstanding; the earlier static trace did not establish a cause.
+- [ ] Double-click and Enter invoke Properties and never launch an external
+  player. Playback requires an explicit Play/Open action, using the existing
+  command owner.
+- [ ] Preserve the existing Show in Torrents command: select the owning torrent
+  and reveal the exact file in its Inspector's Files section, clearing a blocking
+  file search and expanding its ancestors. Back / Alt+Left returns to the same Library selection,
+  query, filters, scroll and Inspector context. Reuse the command from every
+  offered surface; account for files held by more than one torrent through the
+  existing origin model.
+- [ ] Offer Show in Torrents directly in the Inspector title row beside the
+  existing actions, with a tooltip and accessible name. Retain its More route
+  when the narrow layout hides header actions. The owner approved this placement.
+- [ ] Share Inspector Pin, Close and View visibility behavior across both modes.
+  Pin retains the current content in a ten-pixel bottom bar with a horizontal
+  Ellipsis; showing after hiding restores the collapsed or expanded presentation.
+  Properties and exact-file navigation expand it. Collapsing preserves drafts;
+  hiding uses the existing draft guards.
+
+#### Approved title-bar navigation
+
+The [title-bar contract](interface.md#native-controls-and-visual-authority) owns
+the approved navigation and caption behavior.
+
+- [ ] Remove the Torrents/Library page selector and add no navigation row or
+  mode-selection menu. Use the existing app-icon position as the direct page
+  switch; keep the File/current-page/View/Help menus.
+- [ ] Use the actual `resources/tinyTorrent.svg` for Torrents and the Library
+  face for Library. Do not substitute a Lucide download glyph for the brand.
+- [ ] At rest, show the current page's face. Hover or keyboard focus previews
+  the destination with the two-sided flip demonstrated by LabServer. Respect
+  reduced motion and provide a destination tooltip and accessible name.
+- [ ] Clicking commits the displayed destination and leaves that face visible
+  through the rest of the same hover/focus session. Leaving keeps the current
+  face; only the next hover/focus entry previews the other destination. Verify
+  both directions, including after rerendering, so click does not flip back.
+- [ ] Keep Ctrl+1 / Ctrl+2, search, current-page menus, focus and Settings/About
+  return behavior consistent with the existing navigation owner.
+
+#### Outstanding decisions
+
+- Library status-bar emphasis is under discussion. Review file counts and
+  active filters against transfer/environment readings, including the
+  prototype's repeated filtered count. Preserve one shared status-bar owner;
+  no new arrangement has been approved.
+
+#### Implementation evidence and handoff
+
+Prototype evidence on 2026-10-10: movie, episode and music compositions were
+visually inspected; an eight-genre sample was inspected at 1280 and 900 pixels.
+The actual-brand icon flip was captured through hover, click, leave and re-entry
+in both directions after fixing the post-click reversal. The new Inspector
+Show in Torrents action was captured selecting the sample's source torrent,
+opening its Inspector, and returning to the same Library selection and open
+Inspector through Back. These observations do
+not establish native parity or validate the outstanding native filter animation.
+
+The canonical prototype was committed at `8b4b3ca`, with the final icon/action
+corrections at `ef37eb4`. It now opens C by default and reads the vendored Lucide
+font instead of keeping copied icon outlines. The later HTML capture review
+inspected the movie and 900-pixel episode compositions and the More menu with
+Edit. Show in Torrents uses the locate glyph in these renders.
+
+Native source now composes C through `Details`, shared `Section`, `FieldColumns`
+and `WrapPanel`; `Browser` and `Store` own the extended filters. `OriginActions`
+shares the one-source/direct and multiple-source/choice presentation across the
+Inspector and Library menus, retaining `Browser.ShowTorrent` as the operation
+owner. `MainWindow` retains page navigation and owns the app-icon switch. These
+changes have source review only; no build, test or native capture has run for
+this batch. The filter-opening jump remains unresolved pending runtime evidence.
+
+The subsequent menu review added the missing choice icons and moved Filters
+first in both modes. Native pane visibility now has one owner in
+`MainViewModel.FilterPane`; Library requests opening instead of storing a
+second value. The pane distinguishes hidden, compact and open; Close hides it,
+while Minimize keeps a ten-pixel bar with EllipsisVertical and leaves View > Filters checked.
+Hiding preserves the compact or expanded presentation, and View restores it.
+HTML captures confirmed the menu order and icons, and opening in
+Library persisted into Torrents while closing there persisted on return. Native
+source review found no remaining issue; runtime verification is still pending.
+
+- [ ] Audit all unbuilt native changes against the approved composition and
+  interactions; earlier partial edits do not establish parity.
+- [ ] Compare native code with this checklist and the approved prototype item
+  by item. Resolve drift in the owning control, formatter or command, and remove
+  implementations made obsolete by the change.
+- [ ] After authorization, build and run only the checks justified by
+  [testing](testing.md). Use the app's existing off-screen capture layer for
+  native visual evidence; capture before/after when useful, at least after.
+- [ ] Visually inspect movie, episode, multi-episode, music and long-genre
+  content, missing information, wide/narrow layouts, and the affected language
+  and theme states. Inspect interactions as well as still frames where motion
+  or navigation is involved.
+- [ ] Judge regression by whether the whole app and the changed area look and
+  work worse, not pixel equality. Fix related problems found during review;
+  record unrelated or deferred findings explicitly with their remaining work.
+- [ ] Report implementation, source review, build/test evidence and visual
+  evidence separately. Close this checklist only when the relevant evidence
+  exists, and update the existing Library/interface contracts to the approved
+  result rather than retaining competing specifications.
+
 ### Page and menus
 
 **Owner ruling: Library is a page, a peer of Torrents, not a View of Torrents.**
@@ -481,8 +678,8 @@ Library, the menus are:
 | Menu | Items |
 | --- | --- |
 | File | Unchanged. |
-| Library | Open, Open folder, Properties; Identify…, Edit, Clear identification; Show in Torrents. The row context menu has the same items. |
-| View | Videos, Music, Files as choices; Filters. Library has no toolbar, so View has no Toolbar item there. |
+| Library | Open, Open folder, Properties; Edit metadata, Erase metadata; Show in Torrents. The row context menu has the same items. |
+| View | Filters first; then Videos, Music, Files as choices. Library has no toolbar, so View has no Toolbar item there. |
 | Help | Unchanged. |
 
 ### Search
@@ -500,7 +697,7 @@ Videos is the default, and the window remembers the last choice.
 
 | Configuration | Rows | Default columns and sort | Hidden columns, available from the column menu |
 | --- | --- | --- | --- |
-| Videos | Video files | Title, Type, Released, Genres; sorted by Title | Cast, Size, Name, Folder, Date modified |
+| Videos | Video files | Title, Type, Released, IMDb, TMDB, Genres; sorted by Title | Cast, Size, Name, Folder, Date modified |
 | Music | Audio files | Title, Artist, Album, Track, Duration, Year; sorted by Artist, then Album, then Track | Genre, Name, Folder, Size, Date modified |
 | Files | Every file | Name, Folder, Size, Date modified; sorted by Name | Kind, Title |
 
@@ -513,6 +710,14 @@ are hidden by default and appear at the end when the person adds them.
 - Type, in Videos, is Movie, TV episode or the reason the file is not
   identified yet, such as "Waiting for TMDB".
 - Released is a movie's release year or an episode's air year.
+- **Owner ruling: IMDb and TMDB have separate columns in Videos and both
+  available scores appear in the Info details.** Each column holds only the
+  number; the header identifies its source. Details group the scores with
+  their source labels and scale, so they read as related facts. A series rating
+  is identified as such rather than presented as an episode rating. A missing
+  score stays empty; it is not zero.
+  The selected provider supplies the scores it knows through its existing
+  metadata response; showing ratings does not start another provider lookup.
 - Kind, in Files, is the file's kind from its extension, as Explorer names it:
   Video, Audio, Picture, Document, Archive or Other.
 - Date modified is the file's modified date from its
@@ -549,13 +754,19 @@ SelectorBar in that title row, the Wide and Narrow states, the empty state and
 the error InfoBar with Retry. Library adds no second card.
 
 - The title row shows the file's type glyph, its name and its size. The
-  SelectorBar offers "Video information" (or "Music information" for audio) and
-  "File". A file that is neither opens on File, with the first item disabled.
-  Open, Edit and More follow, then Close. In the Narrow state, Open and Edit move
-  into More.
-- The information page uses the Inspector General tab's structure: a
-  statistics strip with `controls:Strip`, a heading, then the two-column grid
-  of `controls:Field` rows. The synopsis wraps where General shows Comment.
+  SelectorBar offers "Info" and "File" for both video and audio. A file that is
+  neither opens on File, with the first item disabled.
+  Play, Show in Torrents and More follow, then Close. In the Narrow state, Play
+  and Show in Torrents move into More. Edit metadata stays in More at every
+  width.
+- The approved C — Sections Info composition is recorded in the
+  [prototype implementation review](#prototype-implementation-review).
+  The File page and shared Inspector shell retain their existing
+  structure.
+- Year and individual genres in Info apply the corresponding table filter and
+  open the filter pane, so the person can see and change the active filters.
+  They retain other filters and use the same filtering operation as the pane.
+  In Files, these additional filters stay visible in the pane while active.
 - The File page describes this one file, not its torrent, because General
   describes the whole torrent. It uses the same `controls:Field` grid:
 
@@ -570,14 +781,20 @@ the error InfoBar with Retry. Library adds no second card.
 Windows supplies the type name, the default app and its icon, as it does for
 Explorer. The Open button's tooltip names the same app.
 
-**Show in Torrents** is one command, from the File page, the Library menu and
-the row context menu. It switches to Torrents, selects the torrent and opens its
-Inspector on the section last used there. Back then returns to Library with the
+**Show in Torrents** is one command, from the Inspector title, its narrow More
+fallback, the File page, the Library menu and the row context menu. Its LocateFixed
+glyph means reveal the source; the app logo is not a torrent glyph. A single
+origin opens directly; multiple origins offer named choices. It switches to
+Torrents, selects the torrent and reveals the exact file in its Inspector's Files
+section. Reveal clears a blocking file search, expands the file's ancestors and
+selects and scrolls to the file, so a large torrent does not leave the person
+searching for it. Back then returns to Library with the
 same row selected.
 
-**Identify and Edit.** Identify… opens the Identify dialog for a file without
-an identification. Edit opens the same dialog, titled "Edit identification",
-with Save and Cancel. More holds Clear identification.
+**Metadata.** Edit metadata opens the same dialog for a file with or without
+an existing match. It is titled "Edit metadata", with Save and Cancel.
+More holds Erase metadata. The Library menu and row context menu use these
+same commands and labels.
 
 ### States
 
@@ -587,7 +804,7 @@ The page has no loading state; see the owner ruling under
 | State | Presentation |
 | --- | --- |
 | No files | "No files yet", with a button that opens Torrents. |
-| No matches | "No videos match" and the query (or music, or files), with one button for each other configuration that has matches, and its count, plus Clear search. |
+| No matches | "No videos match" and the query (or music, or files), with one button for each other configuration that has matches, and its count, plus Clear search. The action buttons share the widest button's natural width through the shared ActionButton alignment. |
 | Engine disconnected | The window's existing connection InfoBar. Open and Identify are disabled. |
 | Database unavailable | The existing persistent workspace InfoBar reports the storage failure and offers Retry. Any last view stays non-actionable; normal torrent work remains available. |
 | Video information off | The status bar and the card's Video information page offer "Turn on…", which opens the consent dialog. There is no notice above the table. |
@@ -598,8 +815,11 @@ TMDB's attribution is under Credits on the About page, not on the Library page.
 
 ### Interaction
 
-Open, Enter and double-click call one implementation and target stable entry
-identity. Sorting or a late reply must not change which file the action opens.
+Enter and double-click show and expand the selected file's inspector through
+Properties, including when it was hidden or compact, so browsing does not
+launch an external application. Only an explicit Open action
+opens the file, targeting stable entry identity. Sorting or a late reply must
+not change which file the action opens.
 Preserve query, configuration, filters, selection and scroll position across
 page navigation. When an entry disappears, recover focus predictably and stop
 presenting its old details as actionable.
@@ -616,6 +836,11 @@ uses one explicit enablement with an accurate disclosure, not per-file consent
 dialogs. Disabling it stops further provider work and cancels pending requests
 where possible. Cached information remains usable only as permitted by the
 applicable terms; source entries and filename search remain usable regardless.
+
+Settings presents Video information with the same ToggleSwitch and state label
+as its other on/off preferences. It invokes the existing enablement command,
+including the disclosure when turning on, and reflects accepted state so a
+cancelled disclosure never leaves the switch showing On.
 
 Send only the matching inputs a request needs. Do not upload a Library
 inventory, absolute paths, torrent info hashes, trackers, peers or movie bytes.
