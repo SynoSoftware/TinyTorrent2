@@ -61,6 +61,11 @@ bool Engine::State::SamePath(std::filesystem::path const& left, std::filesystem:
     return !PathBefore(left, right) && !PathBefore(right, left);
 }
 
+bool Engine::State::PathLess::operator()(std::string const& left, std::string const& right) const
+{
+    return PathBefore(FullPath(Wide(left)), FullPath(Wide(right)));
+}
+
 // Compares two UTF-8 folders, such as save paths, as full paths.
 bool Engine::State::SameFolder(std::string const& left, std::string const& right)
 {

@@ -12,7 +12,11 @@ namespace Syno.TinyTorrent.Views;
 public sealed partial class InspectorPane : UserControl
 {
     private readonly FileBrowser _files;
+    private readonly SelectorBarItem[] _torrentSections;
     private readonly Motion _motion = new();
+    private readonly Motion _arrival = new();
+    private Torrent? _target;
+    private InspectorSection _section;
     private bool _refreshing;
     private bool _composing;
     public Inspector Model { get; }
@@ -32,10 +36,19 @@ public sealed partial class InspectorPane : UserControl
     {
         Model = model;
         InitializeComponent();
+        SectionContent.SizeChanged += Motion.Clip;
         _files = new FileBrowser(model.Files);
         FileContent.Content = _files;
         TrackerInput.TextCompositionStarted += (_, _) => _composing = true;
         TrackerInput.TextCompositionEnded += (_, _) => _composing = false;
+        TrackerInput.KeyDown += (_, args) =>
+        {
+            if (args.Key != Windows.System.VirtualKey.Escape || _composing || !Model.CancelTrackers.CanExecute(null))
+                return;
+            Model.CancelTrackers.Execute(null);
+            DispatcherQueue.TryEnqueue(() => EditTrackers.Focus(FocusState.Programmatic));
+            args.Handled = true;
+        };
         // Focus moves after the click, once the editor has opened or closed.
         EditTrackers.Click += (_, _) =>
             DispatcherQueue.TryEnqueue(() => TrackerInput.Focus(FocusState.Programmatic));
@@ -49,7 +62,7 @@ public sealed partial class InspectorPane : UserControl
             if (!Model.IsEditingTrackers)
                 DispatcherQueue.TryEnqueue(() => EditTrackers.Focus(FocusState.Programmatic));
         };
-        var sections = new[]
+        _torrentSections = new[]
         {
             GeneralSection,
             FilesSection,
@@ -58,9 +71,9 @@ public sealed partial class InspectorPane : UserControl
             SpeedSection,
             PiecesSection,
         };
-        for (var index = 0; index < sections.Length; index++)
-            sections[index].Tag = (InspectorSection)index;
-        Sections.SelectedItem = sections[(int)model.Section];
+        for (var index = 0; index < _torrentSections.Length; index++)
+            _torrentSections[index].Tag = (InspectorSection)index;
+        Sections.SelectedItem = _torrentSections[(int)model.Section];
         // The values are selectable text, so a double-click can arrive already handled.
         foreach (
             var (element, command) in new (UIElement, ICommand)[]
@@ -115,6 +128,7 @@ public sealed partial class InspectorPane : UserControl
         Unloaded += (_, _) =>
         {
             _motion.Stop();
+            _arrival.Stop();
             Model.TextChanged -= OnText;
             Model.PropertyChanged -= OnModel;
             Model.RowsUpdated -= OnRows;
@@ -143,7 +157,7 @@ public sealed partial class InspectorPane : UserControl
         text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
 
     private void OnGeneralSize(object sender, SizeChangedEventArgs args) =>
-        VisualStateManager.GoToState(this, args.NewSize.Width >= 760 ? "Wide" : "Narrow", false);
+        VisualStateManager.GoToState(this, args.NewSize.Width >= FieldColumns.WideMinimum ? "Wide" : "Narrow", false);
 
     private void OnRows(object? sender, InspectorSection section)
     {
@@ -157,6 +171,12 @@ public sealed partial class InspectorPane : UserControl
 
     private async void OnSection(SelectorBar sender, SelectorBarSelectionChangedEventArgs args)
     {
+        if (_library is not null && !_refreshing)
+        {
+            _librarySection = sender.SelectedItem;
+            RefreshLibrary();
+            return;
+        }
         if (_refreshing || sender.SelectedItem is not { Tag: InspectorSection section })
             return;
         Refresh();
@@ -165,17 +185,23 @@ public sealed partial class InspectorPane : UserControl
 
     private void Refresh()
     {
+        if (_library is not null)
+        {
+            RefreshLibrary();
+            return;
+        }
+        EmptyText.Text = Model.EmptyText;
         var inspecting = Model.Target is not null;
         FrameworkElement[] views = [General, Files, Peers, Trackers, Speed, Map];
-        var changed = inspecting && views[(int)Model.Section].Visibility != Visibility.Visible;
-        for (var index = 0; index < views.Length; index++)
-            views[index].Visibility =
-                inspecting && index == (int)Model.Section
-                    ? Visibility.Visible
-                    : Visibility.Collapsed;
-        EmptyState.Visibility = inspecting ? Visibility.Collapsed : Visibility.Visible;
-        if (changed)
-            _motion.Play(SectionContent, 12);
+        _motion.Show(inspecting ? views[(int)Model.Section] : EmptyState,
+            Model.Section >= _section ? 1 : -1);
+        if (_target != Model.Target)
+        {
+            if (_target is not null && inspecting && _section == Model.Section)
+                _arrival.Play(SectionViews);
+            _target = Model.Target;
+        }
+        _section = Model.Section;
         _refreshing = true;
         Sections.IsEnabled = inspecting;
         Sections.SelectedItem = Sections.Items.First(item => Equals(item.Tag, Model.Section));
@@ -206,11 +232,13 @@ public sealed partial class InspectorPane : UserControl
         Bindings.Update();
         var text = Model.Text;
         FlowDirection = text.IsRightToLeft ? FlowDirection.RightToLeft : FlowDirection.LeftToRight;
-        foreach (var section in Sections.Items)
+        foreach (var section in _torrentSections)
         {
+            if (section.Tag is not InspectorSection kind)
+                continue;
             section.Text = text.Get(
                 "inspector",
-                ((InspectorSection)section.Tag).ToString().ToLowerInvariant()
+                kind.ToString().ToLowerInvariant()
             );
             AutomationProperties.SetName(section, section.Text);
         }

@@ -1,15 +1,20 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
+using Windows.UI.ViewManagement;
 
 namespace Syno.TinyTorrent.Controls;
 
-// A ContentDialog whose buttons keep their natural width: at the right with
-// Footer at their left, or centred without one. The implicit style in App.xaml
-// draws it, because ContentDialog's own template always splits the row into
-// equal buttons.
+// A ContentDialog with natural button widths unless a FooterAction joins them.
+// Buttons sit at the right with Footer at their left, or centred in a narrow
+// dialog without one. The implicit style in App.xaml draws it, because
+// ContentDialog's own template always splits the row into equal buttons.
 public sealed partial class Dialog : ContentDialog
 {
+    private readonly UISettings _display = new();
+    // WinUI's generated XAML assigns this property after construction.
+    public ActionButton? FooterAction { get; set; }
+    private long _footerText;
     public static readonly DependencyProperty FooterProperty = DependencyProperty.Register(
         nameof(Footer),
         typeof(object),
@@ -102,27 +107,90 @@ public sealed partial class Dialog : ContentDialog
             new PropertyMetadata(value)
         );
 
+    // The default button is the act the person chose, as the interface
+    // contract's button rulings require.
     public Dialog()
     {
-        Opened += (_, _) => FocusOnOpen();
+        DefaultButton = ContentDialogButton.Primary;
+        Opened += (_, _) => { AlignActions(); FocusOnOpen(); };
+        // The footer button belongs to the content, which can outlive the
+        // dialog, so the dialog listens to it only while shown.
+        Loaded += (_, _) =>
+        {
+            _display.TextScaleFactorChanged += OnTextScale;
+            _footerText =
+                FooterAction?.RegisterPropertyChangedCallback(
+                    ActionButton.TextProperty,
+                    (_, _) => AlignActions()
+                ) ?? 0;
+        };
+        Unloaded += (_, _) =>
+        {
+            _display.TextScaleFactorChanged -= OnTextScale;
+            FooterAction?.UnregisterPropertyChangedCallback(ActionButton.TextProperty, _footerText);
+        };
         RegisterPropertyChangedCallback(TitleProperty, (_, _) => ShowTitle());
+    }
+
+    // Lifts ContentDialog's maximum size, for content that sizes itself to the
+    // window.
+    public void SizeToContent()
+    {
+        Resources["ContentDialogMaxWidth"] = double.PositiveInfinity;
+        Resources["ContentDialogMaxHeight"] = double.PositiveInfinity;
     }
 
     protected override void OnApplyTemplate()
     {
         base.OnApplyTemplate();
+        foreach (var name in new[] { "CommandSpace", "PrimaryButton", "SecondaryButton", "CloseButton" })
+        {
+            if (GetTemplateChild(name) is not FrameworkElement part)
+                continue;
+            part.SizeChanged += (_, _) => PlaceButtons();
+            if (part is ActionButton button)
+                button.RegisterPropertyChangedCallback(ActionButton.TextProperty, (_, _) => AlignActions());
+        }
         ShowTitle();
         ShowFooter();
+        AlignActions();
     }
 
-    // Buttons sit at the right of a Footer. Without one, the empty footer
-    // column and EndColumn share the free space, so the buttons are centred.
+    private void OnTextScale(UISettings sender, object args) => DispatcherQueue.TryEnqueue(AlignActions);
+
+    private void AlignActions()
+    {
+        if (FooterAction is not { } action)
+            return;
+        var buttons = new[] { "PrimaryButton", "SecondaryButton", "CloseButton" }
+            .Select(GetTemplateChild).OfType<ActionButton>().Where(button => button.Text.Length > 0);
+        ActionButton.Align(buttons.Prepend(action));
+    }
+
     private void ShowFooter()
     {
         if (GetTemplateChild("FooterHost") is UIElement host)
             host.Visibility = Footer is null ? Visibility.Collapsed : Visibility.Visible;
-        if (GetTemplateChild("EndColumn") is ColumnDefinition end)
-            end.Width = Footer is null ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
+        PlaceButtons();
+    }
+
+    // The first column and EndColumn share the space the buttons leave free;
+    // EndColumn takes half of it only to centre the buttons. A gap of less
+    // than a third of the row reads as leftover rather than as a deliberate
+    // division, so buttons that fill more than two thirds are centred.
+    private void PlaceButtons()
+    {
+        if (
+            GetTemplateChild("CommandSpace") is not Grid row
+            || GetTemplateChild("EndColumn") is not ColumnDefinition end
+        )
+            return;
+        var free = row.ColumnDefinitions[0].ActualWidth + end.ActualWidth;
+        var width = row.ActualWidth - row.Padding.Left - row.Padding.Right;
+        end.Width =
+            Footer is null && free < width / 3
+                ? new GridLength(1, GridUnitType.Star)
+                : new GridLength(0);
     }
 
     // The template cannot reach Lucide.Font. An empty icon still takes the
@@ -145,9 +213,8 @@ public sealed partial class Dialog : ContentDialog
         }
     }
 
-    // The person can type and press Escape at once. Focus goes to the first
-    // text box that leaves Enter and Escape to the dialog; without one, to the
-    // default button, so Enter runs the button the person sees focused.
+    // Focus starts in the first text field, or on the default button when
+    // there is no editable text, so the person can act without first tabbing.
     private void FocusOnOpen()
     {
         if (Content is DependencyObject content && Field(content) is { } field)
@@ -166,17 +233,18 @@ public sealed partial class Dialog : ContentDialog
             button.Focus(FocusState.Programmatic);
     }
 
-    // A combo box and a search box use Enter and Escape for their own lists.
-    private static TextBox? Field(DependencyObject parent)
+    // A combo box uses Enter and Escape for its own list.
+    private static Control? Field(DependencyObject parent)
     {
         if (
             parent
             is UIElement { Visibility: Visibility.Collapsed }
                 or Control { IsEnabled: false }
                 or ComboBox
-                or AutoSuggestBox
         )
             return null;
+        if (parent is AutoSuggestBox { IsTabStop: true } search)
+            return search;
         if (parent is TextBox { IsReadOnly: false, AcceptsReturn: false, IsTabStop: true } box)
             return box;
         for (var index = 0; index < VisualTreeHelper.GetChildrenCount(parent); index++)

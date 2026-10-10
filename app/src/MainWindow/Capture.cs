@@ -41,6 +41,7 @@ public sealed partial class MainWindow
         "files-layout" => CaptureMode.FilesLayout,
         "search" => CaptureMode.Search,
         "library" => CaptureMode.Library,
+        "library-files" => CaptureMode.LibraryFiles,
         "traffic" => CaptureMode.Traffic,
         "edits" => CaptureMode.Edits,
         "add-layout" => CaptureMode.AddLayout,
@@ -75,7 +76,10 @@ public sealed partial class MainWindow
             Root.Loaded += (_, _) =>
             {
                 if (_capture is null)
+                {
+                    Bindings.Initialize();
                     _capture = CaptureReview();
+                }
             };
             return;
         }
@@ -130,6 +134,8 @@ public sealed partial class MainWindow
                 byte[] pixels;
                 var stable = false;
                 var rendering = Stopwatch.StartNew();
+                // Theme transitions can produce identical frames during their initial delay.
+                var unchanged = Stopwatch.StartNew();
                 do
                 {
                     await bitmap.RenderAsync(
@@ -138,7 +144,9 @@ public sealed partial class MainWindow
                         (int)Math.Ceiling(element.ActualHeight * scale)
                     );
                     pixels = (await bitmap.GetPixelsAsync()).ToArray();
-                    stable = previous is not null && pixels.AsSpan().SequenceEqual(previous);
+                    if (previous is null || !pixels.AsSpan().SequenceEqual(previous))
+                        unchanged.Restart();
+                    stable = unchanged.ElapsedMilliseconds >= 300;
                     previous = pixels;
                 } while (!stable && rendering.ElapsedMilliseconds < 3000);
                 var frame = frames.Count == 0 ? "window.png" : $"popup-{frames.Count}.png";
@@ -260,7 +268,7 @@ public sealed partial class MainWindow
         await ready.Task.WaitAsync(TimeSpan.FromSeconds(20));
     }
 
-    private static async Task CaptureReady(INotifyPropertyChanged owner, Func<bool> ready)
+    private static async Task CaptureReady(INotifyPropertyChanged owner, Func<bool> ready, TimeSpan? timeout = null)
     {
         var completion = new TaskCompletionSource(
             TaskCreationOptions.RunContinuationsAsynchronously
@@ -275,7 +283,7 @@ public sealed partial class MainWindow
         {
             if (ready())
                 completion.TrySetResult();
-            await completion.Task.WaitAsync(TimeSpan.FromSeconds(20));
+            await completion.Task.WaitAsync(timeout ?? TimeSpan.FromSeconds(20));
         }
         finally
         {
@@ -295,8 +303,14 @@ public sealed partial class MainWindow
         scroll?.ChangeView(null, 0, null, true);
         await CaptureLayout();
         await CaptureUi(name);
-        if (scroll is not { ScrollableHeight: > 0 })
+        if (scroll is not { ScrollableHeight: > 0, ViewportHeight: > 0 })
             return;
+        for (var offset = scroll.ViewportHeight * 0.8; offset < scroll.ScrollableHeight; offset += scroll.ViewportHeight * 0.8)
+        {
+            scroll.ChangeView(null, offset, null, true);
+            await CaptureLayout();
+            await CaptureUi(name + "-middle-" + (int)offset);
+        }
         scroll.ChangeView(null, scroll.ScrollableHeight, null, true);
         await CaptureLayout();
         await CaptureUi(name + "-bottom");
@@ -433,7 +447,7 @@ public sealed partial class MainWindow
         {
             await Model.Settings.SelectTheme(theme);
             await CaptureReady(Model, () => Model.CanClose && Model.Theme == theme);
-            foreach (var width in new[] { 1040, 720 })
+            foreach (var width in new[] { 1280, 1040, 720 })
             {
                 var scale = Root.XamlRoot.RasterizationScale;
                 var minimum =
@@ -664,9 +678,10 @@ public sealed partial class MainWindow
                 TorrentMenu,
                 ViewMenu,
                 HelpMenu,
+                TorrentsPage,
+                LibraryPage,
                 Search,
-                AddButton,
-                MagnetButton,
+                SettingsButton,
                 ThemeButton,
             }
         )
@@ -678,25 +693,25 @@ public sealed partial class MainWindow
                 );
             Hit(control.Name, center, control == AppIcon ? HTSYSMENU : HTCLIENT);
         }
-        var menu = Menus
+        var pages = Pages
             .TransformToVisual(Root)
             .TransformBounds(
-                new Windows.Foundation.Rect(0, 0, Menus.ActualWidth, Menus.ActualHeight)
+                new Windows.Foundation.Rect(0, 0, Pages.ActualWidth, Pages.ActualHeight)
             );
         var search = Search
             .TransformToVisual(Root)
             .TransformBounds(
                 new Windows.Foundation.Rect(0, 0, Search.ActualWidth, Search.ActualHeight)
             );
-        if (search.Left <= menu.Right)
+        if (search.Left <= pages.Right)
             throw new InvalidOperationException(
-                "The review caption has no unused gap between its menu and search."
+                "The review caption has no unused gap between its page switcher and search."
             );
         Hit(
             "gap",
             new Windows.Foundation.Point(
-                (menu.Right + search.Left) / 2,
-                (menu.Top + menu.Bottom) / 2
+                (pages.Right + search.Left) / 2,
+                (pages.Top + pages.Bottom) / 2
             ),
             HTCAPTION
         );
@@ -780,7 +795,7 @@ public sealed partial class MainWindow
             // Each cleared day saves at once until none is left, so the saved
             // period keeps whichever days remained before the last.
             ClearDays();
-            await CaptureReady(schedule, () => schedule.HasScheduleError);
+            await CaptureReady(schedule, () => schedule.HasError);
             if (
                 schedule.Draft != draft
                 || draft.Start?.TotalMinutes != 1337
@@ -809,7 +824,7 @@ public sealed partial class MainWindow
                 schedule,
                 () =>
                     !schedule.IsPending
-                    && !schedule.HasScheduleError
+                    && !schedule.HasError
                     && schedule.OpenPeriod?.Days.Count == 1
             );
             created = schedule.Periods.Single(period =>
@@ -883,7 +898,7 @@ public sealed partial class MainWindow
                         await schedule.Open(created);
                         await CapturePage(prefix + "-open", page);
                         ClearDays();
-                        await CaptureReady(schedule, () => schedule.HasScheduleError);
+                        await CaptureReady(schedule, () => schedule.HasError);
                         await CaptureLayout();
                         await CaptureUi(prefix + "-validation");
                         await schedule.Close();
@@ -906,7 +921,7 @@ public sealed partial class MainWindow
                 schedule.OpenPeriod
                 ?? throw new InvalidOperationException("The moved period did not stay open.");
             if (
-                schedule.HasScheduleError
+                schedule.HasError
                 || created.Start != 1350
                 || created.End != 116
                 || created.Span.Duration != 206
@@ -968,7 +983,7 @@ public sealed partial class MainWindow
         input.Focus(FocusState.Programmatic);
         input.Text = magnet;
         await CaptureLayout();
-        if (Model.AddDraft.Magnet != magnet || !Model.AddDraft.HasChanges)
+        if (Model.AddDraft.Magnet != magnet || !Model.AddDraft.HasDraft)
             throw new InvalidOperationException(
                 "The unfinished native magnet input did not reach its draft."
             );
@@ -1039,7 +1054,7 @@ public sealed partial class MainWindow
                     if (
                         input.Text != magnet
                         || Model.AddDraft.Magnet != magnet
-                        || !Model.AddDraft.HasChanges
+                        || !Model.AddDraft.HasDraft
                     )
                         throw new InvalidOperationException(
                             "Keep input lost the unfinished magnet."
@@ -1089,7 +1104,7 @@ public sealed partial class MainWindow
         if (
             input.Text != magnet
             || Model.AddDraft.Magnet != magnet
-            || !Model.AddDraft.HasChanges
+            || !Model.AddDraft.HasDraft
             || !ReferenceEquals(FocusManager.GetFocusedElement(Root.XamlRoot), input)
         )
             throw new InvalidOperationException(
@@ -1120,7 +1135,7 @@ public sealed partial class MainWindow
         await closed;
         await CaptureReady(
             Model.AddDraft,
-            () => !Model.AddDraft.HasChanges && !Model.AddDraft.EditingMagnet
+            () => !Model.AddDraft.HasDraft && !Model.AddDraft.EditingMagnet
         );
         outcomes.Add(new { journey = "cancel recovered Add", draftCleared = true });
 
@@ -1509,7 +1524,7 @@ public sealed partial class MainWindow
             await Model.AddDraft.PrepareAll().WaitAsync(TimeSpan.FromSeconds(20));
             await CaptureReady(
                 Model.AddDraft,
-                () => Model.AddDraft.HasFiles && !Model.AddDraft.IsPending
+                () => Model.AddDraft.HasFiles && !Model.AddDraft.IsBusy
             );
             await CapturePage("details-add-file-preview", dialog.Content as FrameworkElement);
             var table = CaptureElements(dialog)
@@ -1835,6 +1850,13 @@ public sealed partial class MainWindow
                 await CaptureSettings(outcomes, completed);
                 return;
             }
+            if (ReviewMode == CaptureMode.LibraryFiles)
+            {
+                Model.CanStartFeatures = true;
+                Model.RequestSnapshot();
+                await CaptureLibraryFiles(outcomes, completed);
+                return;
+            }
             if (ReviewMode == CaptureMode.SettingsLayout)
             {
                 foreach (var language in new[] { "en", "es" })
@@ -1916,7 +1938,7 @@ public sealed partial class MainWindow
                                     "Native registration switches do not match their settled observed state."
                                 );
                         }
-                        foreach (var section in new[] { "StartupSection", "DefaultAppSection" })
+                        foreach (var section in new[] { "IntegrationSection", "LifecycleSection" })
                         {
                             var element =
                                 page.FindName(section) as FrameworkElement
@@ -2158,9 +2180,7 @@ public sealed partial class MainWindow
                         {
                             var states = new[]
                             {
-                                (AddButton, "PointerOver"),
-                                (MagnetButton, "Pressed"),
-                                (ThemeButton, "Disabled"),
+                                (ThemeButton, "PointerOver"),
                             };
                             try
                             {
@@ -2285,8 +2305,6 @@ public sealed partial class MainWindow
                                     },
                                     caption = new
                                     {
-                                        add = AddButton.ActualWidth,
-                                        magnet = MagnetButton.ActualWidth,
                                         theme = ThemeButton.ActualWidth,
                                         inset = AppWindow.TitleBar.RightInset,
                                     },
@@ -2383,7 +2401,7 @@ public sealed partial class MainWindow
                             CaptureInvoke(preview);
                             await CaptureReady(
                                 Model.AddDraft,
-                                () => Model.AddDraft.HasMagnetError && !Model.AddDraft.IsPending
+                                () => Model.AddDraft.HasMagnetError && !Model.AddDraft.IsBusy
                             );
                             if (
                                 editor.Text != "invalid magnet"
@@ -2414,7 +2432,7 @@ public sealed partial class MainWindow
                                 CaptureInvoke(preview);
                                 await CaptureReady(
                                     Model.AddDraft,
-                                    () => Model.AddDraft.HasSources && !Model.AddDraft.IsPending
+                                    () => Model.AddDraft.HasSources && !Model.AddDraft.IsBusy
                                 );
                                 await CapturePage(
                                     prefix + "magnet-preview",
@@ -2453,7 +2471,7 @@ public sealed partial class MainWindow
                             await CaptureReady(
                                 Model.AddDraft,
                                 () =>
-                                    !Model.AddDraft.IsPending && Model.AddDraft.Failure is not null
+                                    !Model.AddDraft.IsBusy && Model.AddDraft.Failure is not null
                             );
                             if (
                                 Model.AddDraft.Failure

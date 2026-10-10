@@ -10,6 +10,7 @@ using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Data;
 using Microsoft.UI.Xaml.Input;
 using Syno.TinyTorrent.Controls;
+using Syno.TinyTorrent.Helpers;
 using Syno.TinyTorrent.Models;
 using Syno.TinyTorrent.Services;
 using Syno.TinyTorrent.Views;
@@ -41,9 +42,21 @@ public sealed partial class MainWindow : Window
     public MainWindow(Strings strings)
     {
         Model = new MainViewModel(strings, DispatcherQueue);
+#if CAPTURE
+        Model.CanStartFeatures = !IsCaptureReview;
+#endif
         Back = new RelayCommand(GoBack, () => true);
         InitializeComponent();
-        Root.Unloaded += (_, _) => _motion.Stop();
+        ConfigureLibrary();
+        PageContent.SizeChanged += Motion.Clip;
+        SettingsContent.SizeChanged += Motion.Clip;
+        _pages.Show(Workspace);
+        Root.Unloaded += (_, _) =>
+        {
+            _motion.Stop();
+            _pages.Stop();
+            _settings.Stop();
+        };
         ConfigureCapture();
         ConfigureNotifications();
         Filters.ItemsSource = Model.Filters;
@@ -73,7 +86,8 @@ public sealed partial class MainWindow : Window
         Caption.SizeChanged += (_, _) => UpdateChrome();
         CaptionStart.SizeChanged += (_, _) => UpdateChrome();
         Menus.SizeChanged += (_, _) => UpdateChrome();
-        AddButtons.SizeChanged += (_, _) => UpdateChrome();
+        SettingsButton.Loaded += (_, _) => UpdateChrome();
+        SettingsButton.SizeChanged += (_, _) => UpdateChrome();
         ThemeButton.Loaded += (_, _) => UpdateChrome();
         ThemeButton.SizeChanged += (_, _) => UpdateChrome();
         SearchArea.SizeChanged += (_, _) => UpdateChrome();
@@ -367,7 +381,7 @@ public sealed partial class MainWindow : Window
         RefreshText();
     }
 
-    private void Bind(
+    private void BindAddDraft(
         FrameworkElement control,
         DependencyProperty property,
         string path,
@@ -399,6 +413,8 @@ public sealed partial class MainWindow : Window
             UpdateChrome();
         if (args.PropertyName == nameof(MainViewModel.Page))
             UpdatePage();
+        if (args.PropertyName == nameof(MainViewModel.IsFilterOpen) && Model.IsFilterOpen && Model.Page == WindowPage.Library)
+            RefreshLibraryFilters();
         if (Model.CanRestart)
             Reveal();
         if (
@@ -482,21 +498,11 @@ public sealed partial class MainWindow : Window
 
     private async Task ShowAdd()
     {
-        if (HasDialog || Model.IsClosing)
-            return;
         await Interact(async interaction =>
         {
-            interaction.Restore = () => !interaction.IsResolved ? ShowAdd() : Task.CompletedTask;
+            interaction.Restore = ShowAdd;
             interaction.ResolveDraft = async () =>
-            {
-                if (!Model.AddDraft.HasChanges)
-                    return true;
-                return interaction.IsResolved = await ResolveDraft(
-                    "add",
-                    Model.AddDraft.Submit,
-                    Model.AddDraft.Cancel
-                );
-            };
+                !Model.AddDraft.HasDraft || (interaction.IsResolved = await ResolveDraft("add"));
             _addDialog = new AddDialog(Model, Root.XamlRoot);
             _addDialog.DestinationRequested += async (_, _) => await PickDestination();
             _addDialog.AllowDrop = true;
@@ -504,61 +510,51 @@ public sealed partial class MainWindow : Window
             _addDialog.Drop += OnDrop;
             var neverShow = new CheckBox();
             AutomationProperties.SetAutomationId(neverShow, "NeverShow");
-            Bind(
+            BindAddDraft(
                 neverShow,
                 ToggleButton.IsCheckedProperty,
                 nameof(AddDraft.NeverShow),
                 BindingMode.TwoWay
             );
-            Bind(neverShow, Control.IsEnabledProperty, nameof(AddDraft.CanEdit));
+            BindAddDraft(neverShow, Control.IsEnabledProperty, nameof(AddDraft.CanEdit));
             var dialog = new Dialog
             {
-                XamlRoot = Root.XamlRoot,
                 Content = _addDialog,
                 Footer = neverShow,
-                DefaultButton = ContentDialogButton.Primary,
                 PrimaryGlyph = Syno.Lucide.CirclePlus,
             };
+            dialog.SizeToContent();
             _addDialog.CloseRequested += (_, _) => dialog.Hide();
-            dialog.Resources["ContentDialogMaxWidth"] = double.PositiveInfinity;
-            dialog.Resources["ContentDialogMaxHeight"] = double.PositiveInfinity;
             Model.IsAddOpen = true;
-            Bind(dialog, ContentDialog.IsPrimaryButtonEnabledProperty, nameof(AddDraft.CanSubmit));
-            Bind(dialog, ContentDialog.PrimaryButtonTextProperty, nameof(AddDraft.SubmitText));
-            Bind(dialog, Dialog.PrimaryToolTipProperty, nameof(AddDraft.SubmitToolTip));
-            dialog.PrimaryButtonClick += async (_, args) =>
-            {
-                await Submit(interaction, args, Model.AddDraft.Submit);
-                if (args.Cancel)
-                    _addDialog?.FocusError();
-            };
+            BindAddDraft(dialog, ContentDialog.PrimaryButtonTextProperty, nameof(AddDraft.SubmitText));
+            BindAddDraft(dialog, Dialog.PrimaryToolTipProperty, nameof(AddDraft.SubmitToolTip));
             dialog.Opened += (_, _) => _addDialog?.FocusError();
-            dialog.Closing += (_, args) =>
-            {
-                if ((Model.AddDraft.IsSubmitting || Model.IsPicking) && !Model.IsClosing)
-                    args.Cancel = true;
-            };
             var completed = false;
             try
             {
-                await ShowDialog(
+                await ShowEditor(
                     interaction,
                     dialog,
+                    Model.AddDraft,
                     () =>
                     {
                         AutomationProperties.SetName(dialog, Model.Text.Get("add", "title"));
-                        dialog.CloseButtonText = Model.Text.Get("add", "cancel");
                         neverShow.Content = Model.Text.Get("add", "never_show");
                         _addDialog?.RefreshText();
+                    },
+                    submit: async () =>
+                    {
+                        var submitted = await Model.AddDraft.Submit();
+                        if (!submitted)
+                            _addDialog?.FocusError();
+                        return submitted;
                     }
                 );
-                interaction.IsResolved |= !Model.IsClosing;
                 completed = true;
             }
             finally
             {
                 _addDialog?.Dispose();
-                dialog.Content = null;
                 Model.IsAddOpen = false;
                 if (!Model.IsClosing && completed)
                 {
@@ -678,8 +674,6 @@ public sealed partial class MainWindow : Window
         {
             var dialog = new Dialog
             {
-                XamlRoot = Root.XamlRoot,
-                DefaultButton = ContentDialogButton.Primary,
                 Glyph = Syno.Lucide.Power,
                 PrimaryGlyph = Syno.Lucide.Power,
             };
@@ -692,7 +686,6 @@ public sealed partial class MainWindow : Window
                     dialog.Title = Model.Text.Get("exit", "title");
                     dialog.Content = Model.Text.Get("exit", "active");
                     dialog.PrimaryButtonText = Model.Text.Get("commands", "exit");
-                    dialog.CloseButtonText = Model.Text.Get("add", "cancel");
                 }
             );
             if (choice == ContentDialogResult.Primary)
@@ -716,11 +709,11 @@ public sealed partial class MainWindow : Window
         DialogInteraction? suspended = null;
         try
         {
-            // Unfinished input can keep the window open. Exit stays visible until
-            // the engine accepts it, so a pending decision cannot look complete.
+            // Close and Exit hide the window before any waiting, so closing never
+            // leaves a frozen window on screen. Only a decision the person must
+            // make keeps it visible, and a failed close shows it again.
             if (
-                !_exiting
-                && !HasDialog
+                !HasDialog
                 && !Model.HasDraft
                 && !Model.Settings.Schedule.HasDraft
                 && !Model.IsPicking
@@ -774,10 +767,10 @@ public sealed partial class MainWindow : Window
                 if (!await ResolveRemainingDraft())
                     return;
             }
-            if (!_exiting)
-                AppWindow.Hide();
+            AppWindow.Hide();
             await SavePlacement();
             await Model.Close(_exiting);
+            await Model.CloseFeatures();
             _allowClose = true;
             Close();
         }
@@ -807,7 +800,8 @@ public sealed partial class MainWindow : Window
             {
                 if (suspended?.Restore is { } restore)
                 {
-                    _ = restore();
+                    if (!suspended.IsResolved)
+                        _ = restore();
                     await Model.ReplyActivation(true);
                 }
                 ShowDeferredAdd();
@@ -847,18 +841,10 @@ public sealed partial class MainWindow : Window
 
     private Task<bool> ResolveRemainingDraft()
     {
-        if (Model.AddDraft.HasChanges)
-            return ResolveDraft("add", Model.AddDraft.Submit, Model.AddDraft.Cancel);
-        if (Model.FileDraft.HasChanges)
-            return ResolveDraft(
-                "move",
-                Model.FileDraft.Submit,
-                () =>
-                {
-                    Model.FileDraft.Cancel();
-                    return Task.CompletedTask;
-                }
-            );
+        if (Model.AddDraft.HasDraft)
+            return ResolveDraft("add");
+        if (Model.FileDraft.HasDraft)
+            return ResolveDraft("move");
         if (!Model.Inspector.HasDraft)
             return Task.FromResult(true);
         // As with Settings, an edit that cannot be saved, because the engine or

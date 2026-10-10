@@ -1,5 +1,9 @@
 # Implementation handover — 2026-10-05
 
+Historical handover and evidence. Its goals, next steps and review requests
+describe earlier sessions, not current instructions. Use the
+[active contracts](README.md) and the owner's current scope when continuing work.
+
 ## Release acceptance checkpoint — 2026-10-07
 
 The full release goal is not achieved. The libtorrent fork and `Dependencies.ps1`
@@ -873,8 +877,9 @@ no `TinyTorrent.exe` or `Engine.exe`. No desktop automation remains active.
 | First usable download | Completed previously, `e0a5a92` | Historical journeys and first resource measurements are recorded. |
 | Everyday torrent actions | Completed previously, `6afbf65` | Historical evidence is recorded, with stated physical Explorer/drop and accessibility gaps. |
 | Background and desktop behavior | `43e47eb`; later close/recovery journeys and `3f6de13` notification preferences | Actual Windows notification delivery, physical sleep/logon and native caption gestures remain unverified. |
-| Details and preferences | `c9e3995`, later canonical Settings/search routing, `1eaf391` Add access keys, `245479e` header/contrast, `6b6163b` selection recovery; schedule feedback corrected after fresh visual review | Supplied-image gate closes with zero remaining counted defects. Physical keys, Narrator, OS High Contrast and scaling remain unverified; requested720 uses the documented current minimum. |
+| Details and preferences | `c9e3995`, later canonical Settings/search routing, `1eaf391` Add access keys, `245479e` header/contrast, `6b6163b` selection recovery; schedule feedback corrected after fresh visual review; full Settings `954d291` with fixes `2e54a11` and `0fb1172` | Supplied-image gate closes with zero remaining counted defects. Physical keys, Narrator, OS High Contrast and scaling remain unverified; requested720 uses the documented current minimum. Settings evidence predates `2e54a11`; see [Settings status](settings-implementation.md#implementation-status--2026-10-08). |
 | Move and delete files | `c9e3995`; `007dcde` file lifecycle and final FileNames, FilesSafety and CheckpointRetry checks; current open-file and cross-volume checks pass | Physical picker, device/disconnect failures, dropped alerts, real-download marking and native unfinished-file launch remain unverified. |
+| Distribution | `dca0852` installer, `Release.cmd` and update check | No signing certificate is configured. The [installer validations](../installer/README.md#what-the-installer-does), the release resource checks and installer shutdown issues #162 and #163 remain open. |
 
 These checkpoints do not claim release acceptance. Native search submission
 currently reaches the authoritative Settings editor and selected inspector.

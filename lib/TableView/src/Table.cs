@@ -148,9 +148,7 @@ public sealed partial class Table : Control
                 visibility,
                 widths,
                 sort?.Column.Id,
-                sort?.Direction ?? SortDirection.Ascending,
-                _fitButtonHidden,
-                _fillButtonHidden
+                sort?.Direction ?? SortDirection.Ascending
             );
         }
         set
@@ -171,8 +169,6 @@ public sealed partial class Table : Control
             {
                 RebuildView();
             }
-
-            _headerStrip?.UpdateButtons();
         }
     }
 
@@ -186,9 +182,7 @@ public sealed partial class Table : Control
                 ? new Dictionary<string, double>()
                 : new Dictionary<string, double>(value.WidthOverrides),
             value.SortColumnId,
-            value.SortDirection,
-            value.FitButtonHidden,
-            value.FillButtonHidden
+            value.SortDirection
         );
 
     protected override void OnApplyTemplate()
@@ -372,8 +366,6 @@ public sealed partial class Table : Control
             ApplyLayoutCore(pending);
         }
 
-        // The strip sized itself in the layout pass before this Loaded, against no columns.
-        _headerStrip?.UpdateButtons();
         FillOnce();
 
         if (_hasPendingSort)
@@ -564,8 +556,6 @@ public sealed partial class Table : Control
         EnsureOneVisibleColumn(ordered);
 
         bool sortChanged = RestoreSort(state, byId);
-        _fitButtonHidden = state.FitButtonHidden;
-        _fillButtonHidden = state.FillButtonHidden;
 
         // SetOrder republishes the layout, which re-applies each header cell's sort indicator.
         EffectiveLayout.SetOrder(ordered);
@@ -621,7 +611,7 @@ public sealed partial class Table : Control
         DependencyPropertyChangedEventArgs e
     ) => ((Table)d).SetItemsSource(e.NewValue as IEnumerable);
 
-    private void SetItemsSource(IEnumerable? source) => _source.SetSource(source);
+    private void SetItemsSource(IEnumerable? source) => _source.Set(source);
 
     private void OnSnapshotChanged(object? sender, IReadOnlyList<object> snapshot) =>
         RebuildView(snapshot);

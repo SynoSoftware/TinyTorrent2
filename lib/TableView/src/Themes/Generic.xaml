@@ -113,7 +113,7 @@
   </Style>
 
   <!-- The platform's subtle button: transparent at rest, a subtle fill on hover and press. An
-         icon button sits in the cell or header surface and must not read as louder than the
+         icon button sits in the cell surface and must not read as louder than the
          labels beside it. -->
   <Style TargetType="local:SubtleButton" BasedOn="{StaticResource SubtleButtonStyle}">
     <Setter Property="VerticalAlignment" Value="Stretch" />
@@ -224,24 +224,6 @@
           >
             <Grid>
               <local:CellsPanel x:Name="PART_HeaderPanel" />
-
-              <!--
-                                Fit columns and Fill width, offered in the strip's trailing space.
-                                Opt-in: the table adds no visible command to a host's header unless
-                                asked, and a host that already has its own buttons for these
-                                commands would otherwise show two of each. The strip collapses them
-                                whenever the columns reach far enough right to need that space, so
-                                they are only ever where nothing else wants to be.
-
-                                No icons here. The strip gives each button the same one the menu
-                                gives its command, from Icons, so the two cannot show different
-                                pictures for the same command and the font path is named in one
-                                place.
-                            -->
-              <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
-                <local:SubtleButton x:Name="PART_FitButton" Visibility="Collapsed" />
-                <local:SubtleButton x:Name="PART_FillButton" Visibility="Collapsed" />
-              </StackPanel>
 
               <!--
                                 Section 11's insertion marker, positioned by the strip on the

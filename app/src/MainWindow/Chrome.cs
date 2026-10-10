@@ -15,6 +15,7 @@ namespace Syno.TinyTorrent;
 public sealed partial class MainWindow
 {
     private readonly UISettings _uiSettings = new();
+    private (string Language, double Scale, ElementTheme Theme, double Expanded, double Compact)? _pageMeasurement;
 
     private void OnTextScaling(UISettings sender, object args) =>
         DispatcherQueue.TryEnqueue(() =>
@@ -53,6 +54,12 @@ public sealed partial class MainWindow
 
     private async void OnFilterStatus(object sender, DoubleTappedRoutedEventArgs args)
     {
+        if (Model.Page == WindowPage.Library)
+        {
+            Model.IsFilterOpen = true;
+            LibraryFilters.Focus(FocusState.Programmatic);
+            return;
+        }
         if (!await ShowTorrents())
             return;
         Model.IsFilterOpen = true;
@@ -158,15 +165,25 @@ public sealed partial class MainWindow
             - right
             - CaptionStart.ActualWidth
             - Menus.ActualWidth
-            - AddButtons.ActualWidth
+            - SettingsButton.ActualWidth
             - ThemeButton.ActualWidth
             - SearchArea.Margin.Left
             - SearchArea.Margin.Right;
+        var pages = MeasurePages();
+        var compact = available - pages.Expanded < Search.MinWidth;
+        TorrentsPage.Text = compact ? string.Empty : Model.Text.Get("window", "torrents");
+        LibraryPage.Text = compact ? string.Empty : Model.Text.Get("library", "title");
+        available -= compact ? pages.Compact : pages.Expanded;
         TitleSpeeds.Visibility =
             Model.ShowsTitleSpeeds
             && available >= Search.MinWidth + speedWidth + TitleSpeeds.Margin.Left
                 ? Visibility.Visible
                 : Visibility.Collapsed;
+        Search.Width = Math.Clamp(
+            available - (TitleSpeeds.Visibility == Visibility.Visible ? speedWidth + TitleSpeeds.Margin.Left : 0),
+            Search.MinWidth,
+            Search.MaxWidth
+        );
         if (Caption.ActualHeight <= 0)
             return;
         var start = AppWindow.TitleBar.LeftInset;
@@ -182,8 +199,9 @@ public sealed partial class MainWindow
             BackButton,
             AppIcon,
             Menus,
+            Pages,
             Search,
-            AddButtons,
+            SettingsButton,
             ThemeButton,
         }
             .Where(control => control.Visibility == Visibility.Visible && control.ActualWidth > 0)
@@ -220,6 +238,28 @@ public sealed partial class MainWindow
         );
     }
 
+    private (double Expanded, double Compact) MeasurePages()
+    {
+        if (_pageMeasurement is { } measured && measured.Language == Model.Text.Language &&
+            measured.Scale == _uiSettings.TextScaleFactor && measured.Theme == Pages.ActualTheme)
+            return (measured.Expanded, measured.Compact);
+        // Measuring both label states on every layout keeps invalidating the selector.
+        var torrents = TorrentsPage.Text;
+        var library = LibraryPage.Text;
+        TorrentsPage.Text = Model.Text.Get("window", "torrents");
+        LibraryPage.Text = Model.Text.Get("library", "title");
+        Pages.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        var expanded = Pages.DesiredSize.Width;
+        TorrentsPage.Text = LibraryPage.Text = string.Empty;
+        Pages.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        var compact = Pages.DesiredSize.Width;
+        TorrentsPage.Text = torrents;
+        LibraryPage.Text = library;
+        if (Pages.XamlRoot is not null)
+            _pageMeasurement = (Model.Text.Language, _uiSettings.TextScaleFactor, Pages.ActualTheme, expanded, compact);
+        return (expanded, compact);
+    }
+
     private void UpdateMinimum(double scale)
     {
         if (AppWindow.Presenter is not OverlappedPresenter presenter)
@@ -228,22 +268,28 @@ public sealed partial class MainWindow
             48
             + BackButton.ActualWidth
             + Menus.ActualWidth
+            + MeasurePages().Compact
             + SearchArea.Margin.Left
             + Search.MinWidth
             + SearchArea.Margin.Right
-            + AddButtons.ActualWidth
+            + SettingsButton.Width
             + ThemeButton.Width;
         var frame = AppWindow.Size.Width - AppWindow.ClientSize.Width;
+        var minimum = Model.Page == WindowPage.Settings && _settingsPage is { } settings
+            ? settings.MeasureWidth()
+            : 720;
         var width =
             (int)
                 Math.Ceiling(
-                    Math.Max(720, content + LeftInset.Width.Value + RightInset.Width.Value) * scale
+                    Math.Max(minimum, content + LeftInset.Width.Value + RightInset.Width.Value) * scale
                 ) + frame;
         var height = (int)Math.Ceiling(560 * scale);
         if (presenter.PreferredMinimumWidth != width)
             presenter.PreferredMinimumWidth = width;
         if (presenter.PreferredMinimumHeight != height)
             presenter.PreferredMinimumHeight = height;
+        if (Model.Page == WindowPage.Settings && AppWindow.Size.Width < width)
+            AppWindow.Resize(new SizeInt32(width, AppWindow.Size.Height));
     }
 
     private void UpdateColors()
@@ -286,6 +332,15 @@ public sealed partial class MainWindow
         Title = Model.Text.Get("window", "title");
         RefreshTheme();
         NameButton(
+            SettingsButton,
+            Model.Text.Format(
+                "shortcuts",
+                "tip",
+                Model.Text.Get("commands", "settings"),
+                ShortcutText(Model.ShowSettings)
+            )
+        );
+        NameButton(
             BackButton,
             Model.Text.Format(
                 "shortcuts",
@@ -309,7 +364,8 @@ public sealed partial class MainWindow
         SeedsColumn.DisplayName = Model.Text.Get("columns", "seeds");
         PeersColumn.DisplayName = Model.Text.Get("columns", "peers");
         AddedColumn.DisplayName = Model.Text.Get("columns", "added");
-        Search.PlaceholderText = Model.Text.Get("finding", "placeholder");
+        Search.PlaceholderText = Model.Text.Get(Model.Page == WindowPage.Library ? "library" : "finding",
+            Model.Page == WindowPage.Library ? "search" : "placeholder");
         AutomationProperties.SetName(Search, Model.Text.Get("finding", "search"));
         Search.ItemsSource = Model.FindSuggestions(Search.Text);
         FiltersTitle.Text = Model.Text.Get("filters", "title");
@@ -323,6 +379,8 @@ public sealed partial class MainWindow
         RefreshDialogs();
         _interaction?.RefreshText?.Invoke();
         Torrents.RefreshView();
+        RefreshNavigation();
+        UpdateChrome();
     }
 
     private void RefreshDialogs()

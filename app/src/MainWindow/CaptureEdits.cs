@@ -193,10 +193,13 @@ public sealed partial class MainWindow
             await Edit(rate, "96");
             BackButton.Focus(FocusState.Programmatic);
             await GoBack();
-            if (Model.Page != WindowPage.Settings || _settingsPage?.Category is not null
-                || rate.HasDraft || rate.ConfirmedNumber != 98304)
-                throw new InvalidOperationException("Returning to the settings index lost the pending rate edit.");
-            completed.Add("edits-index-departure");
+            if (Model.Page != WindowPage.Torrents || rate.HasDraft || rate.ConfirmedNumber != 98304)
+                throw new InvalidOperationException("Back did not leave Settings with the pending rate edit applied.");
+            completed.Add("edits-back-departure");
+
+            await ShowSettings(new());
+            if (_settingsPage?.Category is not null)
+                throw new InvalidOperationException("Opening Settings did not show its introductory cards.");
 
             await Edit(rate, "112");
             Search.Focus(FocusState.Programmatic);

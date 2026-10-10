@@ -35,8 +35,6 @@ public sealed partial class Strip : Control
     private const string ClipPartName = "PART_Clip";
     private const string PanelPartName = "PART_HeaderPanel";
     private const string InsertionMarkerPartName = "PART_ColumnInsertionMarker";
-    private const string FitButtonPartName = "PART_FitButton";
-    private const string FillButtonPartName = "PART_FillButton";
     private const string ResizeGuidePartName = "PART_ResizeGuide";
 
     /// <summary>Half of the separator hit width, so the grab zone is centred on the boundary.</summary>
@@ -44,13 +42,6 @@ public sealed partial class Strip : Control
 
     /// <summary>Horizontal movement below this is a click on the header, not a column drag.</summary>
     private const double DragThresholdDips = 4;
-
-    /// <summary>
-    /// How far the columns may end past <see cref="Room"/> and still leave the buttons shown. Fill
-    /// scales widths in floating point, so columns it ends at the room can sum a rounding error
-    /// past it, and that error would hide the button just clicked.
-    /// </summary>
-    private const double OverlapDips = 0.5;
 
     private static readonly InputCursor ResizeCursor = InputSystemCursor.Create(
         InputSystemCursorShape.SizeWestEast
@@ -63,8 +54,6 @@ public sealed partial class Strip : Control
     private CellsPanel? _panel;
     private FrameworkElement? _marker;
     private Popup? _resizeGuide;
-    private Button? _fitButton;
-    private Button? _fillButton;
     private Table? _owner;
     private int _activeIndex = -1;
 
@@ -94,17 +83,7 @@ public sealed partial class Strip : Control
     internal void RefreshText()
     {
         AutomationProperties.SetName(this, Text.HeaderStripAccessibleName);
-        if (_fitButton is not null)
-        {
-            AutomationProperties.SetName(_fitButton, Text.FitColumns);
-            ToolTipService.SetToolTip(_fitButton, Text.FitColumns);
-        }
-        if (_fillButton is not null)
-        {
-            AutomationProperties.SetName(_fillButton, Text.FillWidth);
-            ToolTipService.SetToolTip(_fillButton, Text.FillWidth);
-        }
-        _panel?.RefreshHeaderCells();
+        _panel?.RefreshHeader();
     }
 
     public Strip()
@@ -137,40 +116,14 @@ public sealed partial class Strip : Control
             _clip.SizeChanged -= OnClipSizeChanged;
         }
 
-        if (_fitButton is not null)
-        {
-            _fitButton.Click -= OnFitClick;
-        }
-
-        if (_fillButton is not null)
-        {
-            _fillButton.Click -= OnFillClick;
-        }
-
         _clip = GetTemplateChild(ClipPartName) as FrameworkElement;
         _panel = GetTemplateChild(PanelPartName) as CellsPanel;
         _marker = GetTemplateChild(InsertionMarkerPartName) as FrameworkElement;
-        _fitButton = GetTemplateChild(FitButtonPartName) as Button;
-        _fillButton = GetTemplateChild(FillButtonPartName) as Button;
         _resizeGuide = GetTemplateChild(ResizeGuidePartName) as Popup;
 
         if (_clip is not null)
         {
             _clip.SizeChanged += OnClipSizeChanged;
-        }
-
-        if (_fitButton is not null)
-        {
-            _fitButton.Click += OnFitClick;
-            // The all-columns glyph, because that is the command this button is: it fits every visible
-            // column, not the one nearest to it.
-            _fitButton.Content = Icons.FitColumns();
-        }
-
-        if (_fillButton is not null)
-        {
-            _fillButton.Click += OnFillClick;
-            _fillButton.Content = Icons.FillWidth();
         }
 
         if (_marker is not null)
@@ -197,78 +150,6 @@ public sealed partial class Strip : Control
         {
             Rect = new Rect(0, 0, e.NewSize.Width, e.NewSize.Height),
         };
-
-        UpdateButtons();
-    }
-
-    private void OnFitClick(object sender, RoutedEventArgs e) => _owner?.FitColumns();
-
-    private void OnFillClick(object sender, RoutedEventArgs e) => _owner?.FillWidth();
-
-    private bool OffersFit => _owner is { ShowsHeaderButtons: true, FitButtonHidden: false };
-
-    private bool OffersFill => _owner is { ShowsHeaderButtons: true, FillButtonHidden: false };
-
-    /// <summary>
-    /// The width the columns can take while the buttons this strip offers keep their place.
-    /// <see cref="Table.FillWidth"/> ends the columns here, so a clicked button stays under the
-    /// pointer.
-    /// </summary>
-    internal double Room
-    {
-        get
-        {
-            if (_clip is null)
-            {
-                return 0;
-            }
-
-            return _clip.ActualWidth
-                - WidthOf(_fitButton, OffersFit)
-                - WidthOf(_fillButton, OffersFill);
-
-            static double WidthOf(Button? button, bool offered)
-            {
-                if (button is null || !offered)
-                {
-                    return 0;
-                }
-
-                // A collapsed button measures to nothing, so it is shown to be measured.
-                Visibility visibility = button.Visibility;
-                button.Visibility = Visibility.Visible;
-                button.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-                double width = button.DesiredSize.Width;
-                button.Visibility = visibility;
-                return width;
-            }
-        }
-    }
-
-    /// <summary>
-    /// Show the fit-all buttons the person has not hidden, and only while the columns end within
-    /// <see cref="Room"/>, so a button never sits over a column.
-    /// </summary>
-    internal void UpdateButtons()
-    {
-        if (_clip is null)
-        {
-            return;
-        }
-
-        bool free =
-            _owner is { EffectiveLayout: { } layout } && layout.TotalWidth - Room <= OverlapDips;
-
-        Show(_fitButton, OffersFit && free);
-        Show(_fillButton, OffersFill && free);
-
-        static void Show(Button? button, bool shown)
-        {
-            if (button is not null)
-            {
-                button.Visibility = shown ? Visibility.Visible : Visibility.Collapsed;
-            }
-        }
     }
 
     private void OnHeaderGotFocus(object sender, RoutedEventArgs e)
@@ -399,7 +280,7 @@ public sealed partial class Strip : Control
 
         if (_gesture == HeaderGesture.None)
         {
-            ShowResizeCursor(SeparatorNear(x) is not null && !IsOnButton(e.OriginalSource));
+            ShowResizeCursor(SeparatorNear(x) is not null);
             return;
         }
 
@@ -515,7 +396,6 @@ public sealed partial class Strip : Control
 
         if (
             !IsMouseOrPen(e.PointerDeviceType)
-            || IsOnButton(e.OriginalSource)
             || SeparatorNear(e.GetPosition(this).X) is not EffectiveColumn column
         )
         {
@@ -690,28 +570,6 @@ public sealed partial class Strip : Control
 
         EffectiveColumn column = _owner.EffectiveLayout.VisibleColumns[index].Column;
         return column.Column.CanResize ? column : null;
-    }
-
-    /// <summary>
-    /// Whether this input landed on the fit or fill button. Fill ends the columns where the
-    /// buttons begin, so the last separator's grab zone reaches over a button, and there the
-    /// button takes the press.
-    /// </summary>
-    private bool IsOnButton(object source)
-    {
-        for (
-            DependencyObject? node = source as DependencyObject;
-            node is not null && !ReferenceEquals(node, this);
-            node = VisualTreeHelper.GetParent(node)
-        )
-        {
-            if (ReferenceEquals(node, _fitButton) || ReferenceEquals(node, _fillButton))
-            {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     private void ShowResizeCursor(bool onSeparator)

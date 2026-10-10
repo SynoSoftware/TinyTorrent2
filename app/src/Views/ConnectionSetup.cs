@@ -8,6 +8,8 @@ namespace Syno.TinyTorrent.Views;
 
 public sealed class ConnectionSetup : INotifyPropertyChanged
 {
+    private const double MinimumCapacity = 0.01;
+    private const double MaximumCapacity = int.MaxValue / 125000.0;
     private readonly Settings _settings;
     private readonly MainViewModel _main;
     private readonly PipeClient _client;
@@ -44,14 +46,16 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
         : _phase != ConnectionPhase.Idle ? Text.Get("connection_setup", "test_" + _phase.ToString().ToLowerInvariant())
         : HasCustomRoute ? Text.Get("connection_setup", "test_route")
         : Text.Get("connection_setup", "test_idle");
+    public string DownloadError => CapacityError(Download);
+    public string UploadError => CapacityError(Upload);
     public string Message
     {
         get
         {
             if (_failure is { } failure)
                 return Text.Error(failure);
-            if (Proposal is null && (Download.Length > 0 || Upload.Length > 0))
-                return Text.Get("connection_setup", "invalid");
+            if (Proposal is null)
+                return string.Empty;
             return Text.Get("connection_setup", CanApply ? "ready" : "no_changes");
         }
     }
@@ -349,27 +353,27 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
             _ => "custom",
         });
 
+    private string CapacityError(string input)
+    {
+        if (IsCapacity(Parse(input), optional: _preset == TransferPreset.FullSpeed))
+            return string.Empty;
+        return string.IsNullOrWhiteSpace(input)
+            ? Text.Get("connection_setup", "required")
+            : Text.Format("connection_setup", "invalid", MinimumCapacity, MaximumCapacity);
+    }
+
     private static bool IsCapacity(double value, bool optional)
     {
         if (optional && value == 0)
             return true;
-        return double.IsFinite(value) && value >= 0.01 && value <= int.MaxValue / 125000.0;
+        return double.IsFinite(value) && value >= MinimumCapacity && value <= MaximumCapacity;
     }
 
     private static double Parse(string input)
     {
         if (string.IsNullOrWhiteSpace(input))
             return 0;
-        if (
-            double.TryParse(
-                input,
-                NumberStyles.Float | NumberStyles.AllowThousands,
-                CultureInfo.CurrentCulture,
-                out var number
-            )
-        )
-            return number;
-        return double.NaN;
+        return Settings.TryNumber(input, out var number) ? number : double.NaN;
     }
 
     private static string Input(Setting setting)

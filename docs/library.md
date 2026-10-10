@@ -1,8 +1,8 @@
 # Library
 
-Agreed feature plan, updated 2026-10-08. Library is a searchable view of the
-finished files reported by its data sources. Movie and TV information comes
-from TMDB, and music information comes from the audio files' own tags. Torrents
+Agreed feature plan, updated 2026-10-09. Library is a searchable view of the
+finished files reported by its data sources. Video information comes from the
+selected provider, and music information comes from the audio files' own tags. Torrents
 are the first and only data source in this implementation. SQLite stores facts
 about those files; it does not establish that a file belongs in Library.
 
@@ -41,9 +41,10 @@ read of its dates and, for audio, its tags, described in
 ## Ownership and data sources
 
 **Owner ruling: all Library work lives in C#, in the product window process.**
-Library owns its data-source integration, local search, identification and file
-facts. The C# database owner creates SQLite, owns its schema and migrations,
-populates its tables and indexes, and performs every query, write and cleanup.
+Library owns local search, identification and file facts. Application wiring
+supplies shared source synchronization and each feature's schema and cleanup
+SQL. The C# database owner creates SQLite, checks its schema version and
+serializes every query, write and cleanup through one transaction path.
 Its work ends when the window closes, so the resident engine
 keeps no Library projection, database connection or enrichment worker. WinUI
 owns presentation, navigation, selection and scroll position; blocking Library
@@ -78,9 +79,9 @@ internals of the others:
 
 | Part | Owns | Does not know |
 | --- | --- | --- |
-| Data source (the torrent adapter now) | Seeding and synchronizing current contributions and file facts in SQLite, including unfinished targets and confirmed withdrawal | Provider behavior, search and feature eligibility |
+| Data source (the torrent adapter now) | Seeding and synchronizing current contributions and file facts in SQLite, including unfinished targets, confirmed withdrawal and shared filename interpretation: kind, title and normalized filename text | Provider behavior, Library queries and feature eligibility |
 | Library | Finished-entry eligibility, effective identification decisions, fact lifetime and its SQL text/filter queries | Torrent internals, provider transport, how a source finds files |
-| C# database owner (`library.db`) | Connection, schema migration order and transaction mechanics for current-source facts and both features' durable records | Provider behavior, presentation and feature decisions |
+| C# database owner (`library.db`) | Connection, schema version check and transaction mechanics for supplied current-source and feature SQL | Feature schemas, provider behavior, presentation and feature decisions |
 | TMDB lookup and file facts reader | Returning video information or local file facts for Library to validate and save | Source membership, search, presentation |
 
 Library and subtitles are sibling modules supplied with these shared resources
@@ -249,6 +250,8 @@ The database contains no media bytes. Its derived search index is rebuildable
 from stored information. Manual identification decisions are not disposable
 index data and must survive ordinary restarts and index rebuilding.
 
+Apply [saved-value recovery](architecture.md#saved-value-recovery) to readable
+saved settings without discarding manual identifications or subtitle records.
 If the shared database cannot open or serve queries, report the storage failure
 and pause feature work. Keep any last view non-actionable; do not present an
 empty collection or open an alternate database that silently omits saved
@@ -349,9 +352,8 @@ outdated detail replies. Reuse stable row objects where their facts have not
 changed and retain TableView's virtualization. Do not add a second sort before
 TableView, rerun search because transfer speed changed, or clear and repopulate
 unchanged rows on each ordinary torrent refresh. Source synchronization uses
-the existing protocol's bounded, coherent reads. A measured source-transfer
-problem returns to the implementation gate; it does not authorize a new native
-catalogue or feature transport.
+the existing protocol's bounded, coherent reads. Source-transfer work does not
+authorize a new native catalogue or feature transport.
 
 Searching stored text or maintaining an index over it is not filesystem
 discovery. It must never introduce folder enumeration. The short-query path
@@ -361,9 +363,14 @@ not match strings shorter than three characters, as documented in the
 
 ## Identification and early enrichment
 
-TMDB is the intended first provider, subject to the release requirements below.
-With enrichment enabled, identification begins when an accepted torrent
-supplies enough filename information; video completion is not a prerequisite.
+Choose one provider: TMDB or **Public websites**. Provider selection is
+exclusive, so changing it cancels work belonging to the previous provider.
+For Public websites configuration, request triggers, cache rules and browser
+access, read the [website provider contract](movie-websites.md). That plugin
+supports movies from the selected website and refuses Library-wide population.
+The shared identification rules below apply to both providers; early and
+background enrichment applies only to TMDB.
+
 Use names and structured clues such as title, year, season and episode numbers
 without reading video contents.
 
@@ -392,7 +399,11 @@ Persist enough identification outcome to avoid repeating unsuccessful automatic
 lookups on every restart without new evidence. Provider failure must not block
 local search, torrent operations or shutdown.
 
-Process only recognizable video candidates for movie/TV identification; other
+### TMDB early and background enrichment
+
+With TMDB selected and enrichment enabled, identification begins when an accepted
+torrent supplies enough filename information; video completion is not a
+prerequisite. Process only recognizable video candidates for movie/TV identification; other
 files retain ordinary filename search without provider requests. Reuse common
 series identification for a season pack and fetch episode-specific information
 only for represented episodes, rather than importing an entire series catalogue.
@@ -409,6 +420,8 @@ request must not occupy the worker that serves interactive Library queries.
 Save completed provider information once per coherent result, not as one durable
 write per cast member or field. Background work waits when idle; it does not
 periodically revisit the whole collection looking for something to refresh.
+
+### Subtitle independence
 
 Movie identification and [subtitle matching](subtitles.md) are distinct C#
 responsibilities. Identifying a title does not establish that a subtitle matches
@@ -454,10 +467,9 @@ search box, card, file renderer or name for an existing command is a second
 implementation that drifts from the first. A label is new only where the noun
 is new.
 
-Nothing on the page explains itself in sentences. Explanations go in tooltips
-and flyouts. The only exception is the disclosure in the dialog that turns
-video information on, which the
-[privacy requirements](#privacy-and-provider-release-requirements) demand.
+Help text follows the [interface contract](interface.md#text-icons-and-typography).
+The enabling dialog also includes the disclosure required by
+[privacy requirements](#privacy-and-provider-release-requirements).
 
 ### Page and menus
 
@@ -475,11 +487,9 @@ Library, the menus are:
 
 ### Search
 
-The title bar's search box serves the current page. On Library its placeholder
-is "Search Library", it filters the table as the person types, Escape clears
-it, and Down or Enter moves focus to the rows. It shows no suggestion list on
-Library, because a list would cover the rows being filtered. The query stays
-when the person changes configuration.
+The title bar follows the product's [search behavior](interface.md#main-window).
+Its Library placeholder is "Search Library". Live filtering uses the stored
+Library fields described above; no suggestion list covers the filtered rows.
 
 ### Configurations
 
@@ -610,13 +620,20 @@ applicable terms; source entries and filename search remain usable regardless.
 Send only the matching inputs a request needs. Do not upload a Library
 inventory, absolute paths, torrent info hashes, trackers, peers or movie bytes.
 Use HTTPS and keep credentials and search contents out of routine logs. State
-the actual network route before enablement; torrent proxy or adapter choices
-must not be represented as protecting provider traffic without implementation
-evidence.
+the actual network route before enablement. The shared
+[network-route rule](architecture.md#network-route) governs every provider;
+disclosure never permits a direct fallback. A provider that cannot honor the
+configured route remains unavailable. The current Public websites reader runs
+only with confirmed unrestricted direct access and stops when that route changes.
 
-The intended ordinary-user experience requires neither a provider account nor
-a manually entered API key. Before shipping the integration, establish publisher
-access that supports this experience and the actual distribution model.
+Follow [third-party provider access](architecture.md#third-party-provider-access).
+TMDB uses the free application credential supplied with the build; the person
+does not need a TMDB account or key. No paid access is part of this feature.
+Without an application credential, local Library search and saved information
+remain usable, but no TMDB requests run. TMDB limits use the existing wait
+and retry behavior rather than a paid fallback. Public websites availability is
+independent of that credential; its [request policy](movie-websites.md#requests-and-saved-information)
+owns retries and saved data.
 
 Verify applicable API/content permission, attribution, credential distribution,
 quotas, retention and cache-use requirements. Do not substitute an arbitrary
@@ -637,8 +654,7 @@ local torrent-backed search. This plan is not a certification of legality.
 **Owner ruling: Library is ready when the person opens it.** The page never
 shows a loading or preparing state, because a person who opens Library came to
 find a file now. Initialization uses existing torrent facts and local SQLite
-reads, never a scan of download folders. Source transfer and first-table time
-must be measured together; C# ownership alone does not prove either fast. If
+reads, never a scan of download folders. C# ownership alone does not prove it fast. If
 building the data takes long or needs minutes of scanning, the feature
 is badly designed or badly implemented. That is a defect to fix, not a state to
 show the person.
@@ -669,14 +685,11 @@ the inputs; total disk capacity and unrelated folders do not affect the work.
   collection. Read stored facts in sets, not once per row. No payload read or
   provider request is a prerequisite for filename search.
 - C# synchronization compares source snapshots and updates affected torrents and
-  files through existing coherent reads; do not ask for every torrent's file progress
-  on each summary tick. At 1,000 torrents, source retrieval must remain bounded
-  and allow commands through; measure this path before connecting the full UI.
-  The existing pipe reads one torrent's files at a time and supplies no file-list
-  revision. Aggregate progress does not identify every file change. The first
-  implementation gate verifies cold source retrieval and refresh coverage using
-  those actual reads; neither a warm SQLite query nor moving the wait into
-  window initialization proves the readiness target.
+  files through existing coherent reads; do not ask for every torrent's file
+  progress on each summary tick. Source retrieval stays bounded and allows
+  commands through. The existing pipe reads one torrent's files at a time and
+  supplies no file-list revision. Aggregate progress does not identify every
+  file change; synchronization must cover those changes.
 - SQLite has one C# connection owner and short serialized database jobs, shared
   by Library and subtitles. Searches retain only the active and latest pending
   query; writes and source updates must still make progress during rapid typing.
@@ -719,7 +732,7 @@ must be paid at the indicated time, rather than repeatedly while typing.
 | SQLite cache and identification writes | C# dependency size and local disk I/O; prevents repeated downloads and preserves corrections. | Read in sets, save coherent changes, reconcile removal when connected, and keep maintenance off the first-table path. |
 | Early provider enrichment | Network traffic, parsing and small database writes; enables genre, actor and subject search before download completion. | Enabled explicitly, one request in flight initially, cached records reused, shared requests deduplicated, no unused-series harvesting. |
 | Cast, synopsis and keyword search | More text to store and match; directly required by actor and subject searches. | Keep only useful fields, normalize on change and match distinct shared records once per query rather than once per file. |
-| One- and two-character matching | Can require examining active text because a trigram index cannot answer every short query; necessary for results from the first character. | Examine current entries and referenced titles only, cancel obsolete queries and measure this worst case explicitly. |
+| One- and two-character matching | Can require examining active text because a trigram index cannot answer every short query; necessary for results from the first character. | Examine current entries and referenced titles only and cancel obsolete queries. |
 | Combining shared file locations | Path comparison and a membership lookup; prevents duplicate rows for cross-seeded files. | Reconcile when a contribution changes using existing path rules, without file hashing or pairwise comparisons of every file on each query. |
 | Complete results and sorting | Summary serialization, row state and ordering; users must find every matching file and use the existing table. | Compact summaries, selected details only, existing virtualization and one sorting owner; optimize transport only when measured. |
 | Details card | One local detail read and visible text layout; lets users choose and open the right file. | Fetch only the current selection, discard obsolete reads, and do not instantiate details for hidden rows. |
@@ -732,75 +745,28 @@ background priority. On-demand Windows opening can still wait on the target
 drive or associated application; that latency is not part of local search and
 must not occupy the database worker or UI dispatcher.
 
-### Measurement gates
+### Measurement gates — cancelled
 
-For a representative collection of approximately 10,000 files and 1,000
-enriched titles or episodes, the provisional targets are:
+**Owner ruling, 2026-10-09:** the numerical search, first-open, memory and
+startup gates, both large-collection benchmarks, baseline comparisons,
+profiling and transfer measurements are **cancelled for this delivery**.
+They were delaying the feature. Existing failed measurements remain failed;
+no numerical performance claim is made.
 
-| Measurement | Target |
-| --- | --- |
-| Warm search, from input change through visible results | At most 100 ms at the 95th percentile, including any coalescing delay. |
-| First complete file table after Library navigation | At most 500 ms at the 95th percentile on the recorded SSD reference machine, without waiting for enrichment. |
-| Additional idle engine private memory with the window closed | No resident Library or subtitle projection, SQLite connection or provider worker; verify return to the torrent-only baseline. |
-| Additional combined memory with Library open | Below approximately 40 MB. |
-| Engine startup, until transfers resume and the torrent window is ready | **Owner ruling:** no measurable change attributable to Library. |
-| Torrent responsiveness and throughput | No material regression attributable to Library. |
-
-These are targets, not measured results or reasons to compromise correctness.
-Measure optimized builds on a recorded reference machine, with a before-feature
-baseline under the same conditions. Report cold process/database opening and
-warm reopening separately; a warm result is not evidence of cold-start speed.
-Record end-to-end latency, main-thread stalls, peak and settled private memory,
-allocation volume, database/payload size and background CPU/disk activity. Test
-empty, short and broad queries against the same latency target as selective
-queries, including rapid typing while enrichment finishes.
-
-Use a representative mixture of standalone movies, season packs, long paths
-and duplicate copies. Also measure 1,000 torrents containing approximately
-100,000 files, recording source-transfer time separately from SQL matching and
-TableView materialization/sorting. These fixture sizes are not product limits.
-Compare transfer
-responsiveness and throughput only through the repository's authorized checks.
-Installer/executable reporting includes SQLite and new resources; application
-code growth alone is not the feature's distribution cost.
-
-A failed target requires identifying which operation accounts for the time or
-memory, then removing repeated work before adding another cache, index, worker
-or transport mechanism. A retained expensive feature must still name its user
-benefit. Do not declare the plan fast on the strength of this review: passing
-these gates requires implementation measurements.
+Keep the implementation constraints above: complete results, bounded work,
+local search independent of enrichment, and no resident feature work after
+window closure. Cancellation does not require a TableView redesign, a saved
+stale file catalogue or new engine communication.
 
 ## Verification
 
-Follow the existing testing policy and use the cheapest seam that can reveal
-each failure. The high-return scenarios are:
-
-- Cached video information without a current source entry yields no result.
-- Removing a torrent withdraws its contribution and deletes everything stored
-  for it, including video information no remaining entry uses; keeping payload
-  on disk does not change that outcome. Facts left by a removal interrupted by a
-  crash, or while the window was closed, are gone after its next complete
-  reconciliation; an incomplete source read never deletes valid facts.
-- A file that is still downloading is not in Library, and its early
-  identification is shown when it finishes.
-- A shared location remains until its last contributing torrent is removed.
-- Restart reconstructs membership from torrent records without enumerating
-  folders or resurrecting removed entries.
-- Moves, renames and selection changes keep Open attached to the correct entry.
-- Late search/provider replies cannot replace newer results, undo a manual
-  decision or restore a removed entry.
-- Missing files, inaccessible locations and player errors are distinguished
-  without blocking search or purging entries.
-- Short queries, fragments, punctuation and accented names produce consistent
-  matches; broad queries do not silently truncate results.
-- Disabled or failed enrichment leaves local file search usable.
-
-Review the actual page for keyboard use, narrow-window layout, language/theme
-changes and preserved context during navigation. Existing capture modes whose
-names include Library currently exercise torrent-table fixtures; their name is
-not evidence that this new feature is covered. Add only the focused verification
-the new behavior needs. No product launch, transfer benchmark or implementation
-is authorized merely by saving this plan.
+Follow [testing](testing.md) and the
+[current delivery plan](library-implementation.md#finish-the-delivery).
+Comprehensive checklists and agent interaction runs are **cancelled**. Reuse
+existing valid evidence and review the settled change once. A new check must
+address a concrete failure introduced or exposed by that change, especially
+data loss, stale writes or incorrect file operations; it is not a coverage
+exercise. The approved prototype remains the presentation reference.
 
 ## Future data sources and exclusions
 

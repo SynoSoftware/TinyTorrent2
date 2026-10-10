@@ -763,7 +763,7 @@ Json Torrent::Row(bool sessionPaused) const
         {"detail", problem ? problem->detail : ""},
         {"seed_count", status.num_seeds}, {"peer_count", status.num_peers},
         // The tracker's scrape counts the whole swarm; without one, the peers this session has heard of
-        // are the best estimate, as qBittorrent shows them.
+        // are the best estimate.
         {"swarm_seed_count", status.num_complete >= 0 ? status.num_complete : status.list_seeds},
         {"swarm_leecher_count", status.num_incomplete >= 0 ? status.num_incomplete : status.list_peers - status.list_seeds},
         {"downloaded", status.all_time_download}, {"uploaded", status.all_time_upload},
@@ -830,7 +830,7 @@ void Torrent::ApplyIntent()
 
 // Each piece gets the highest priority of the wanted files it holds, as
 // libtorrent gives it. With firstLast the end pieces of each wanted file get
-// the top priority: qBittorrent's 1 % of the file at each end, at least one
+// the top priority: 1 % of the file at each end, at least one
 // piece, which covers a media header and an AVI index.
 void Torrent::PrioritizePieces(std::vector<lt::download_priority_t> const& priorities) const
 {

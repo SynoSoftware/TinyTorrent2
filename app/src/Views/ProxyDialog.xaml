@@ -2,8 +2,7 @@
   x:Class="Syno.TinyTorrent.Views.ProxyDialog"
   xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-  xmlns:icons="using:Syno"
-  xmlns:local="using:Syno.TinyTorrent.Views"
+  xmlns:controls="using:Syno.TinyTorrent.Controls"
 >
   <Grid x:Name="Root">
     <StackPanel Spacing="12">
@@ -30,13 +29,8 @@
         AutomationProperties.AutomationId="ProxyHost"
       >
         <TextBox.Header>
-          <TextBlock TextTrimming="CharacterEllipsis">
-            <Run Text="{x:Bind Model.Text.Get('settings', 'proxy_host'), Mode=OneWay}" />
-            <Run
-              Text="{x:Bind local:ProxyDialog.Separated(Proxy.HostError), Mode=OneWay}"
-              Foreground="{ThemeResource SystemFillColorCriticalBrush}"
-            />
-          </TextBlock>
+          <controls:FieldHeader Label="{x:Bind Model.Text.Get('settings', 'proxy_host'), Mode=OneWay}"
+            Error="{x:Bind Proxy.HostError, Mode=OneWay}" />
         </TextBox.Header>
       </TextBox>
       <NumberBox
@@ -50,13 +44,8 @@
         AutomationProperties.AutomationId="ProxyPort"
       >
         <NumberBox.Header>
-          <TextBlock TextTrimming="CharacterEllipsis">
-            <Run Text="{x:Bind Model.Text.Get('settings', 'proxy_port'), Mode=OneWay}" />
-            <Run
-              Text="{x:Bind local:ProxyDialog.Separated(Proxy.PortError), Mode=OneWay}"
-              Foreground="{ThemeResource SystemFillColorCriticalBrush}"
-            />
-          </TextBlock>
+          <controls:FieldHeader Label="{x:Bind Model.Text.Get('settings', 'proxy_port'), Mode=OneWay}"
+            Error="{x:Bind Proxy.PortError, Mode=OneWay}" />
         </NumberBox.Header>
       </NumberBox>
       <!-- A disabled field shows no tooltip and passes the pointer to its
@@ -75,6 +64,7 @@
           AutomationProperties.AutomationId="ProxyUsername"
         />
         <PasswordBox
+          x:Name="Password"
           Header="{x:Bind Model.Text.Get('settings', 'proxy_password'), Mode=OneWay}"
           Password="{x:Bind Proxy.Password, Mode=TwoWay}"
           IsEnabled="{x:Bind Proxy.CanSignIn, Mode=OneWay}"
@@ -84,48 +74,6 @@
         />
       </StackPanel>
     </StackPanel>
-    <Grid
-      x:Name="Status"
-      x:FieldModifier="internal"
-      ColumnSpacing="8"
-      Background="Transparent"
-      ToolTipService.ToolTip="{x:Bind Proxy.ResultTip, Mode=OneWay}"
-    >
-      <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="Auto" />
-        <ColumnDefinition Width="*" />
-      </Grid.ColumnDefinitions>
-      <ProgressRing
-        Width="16"
-        Height="16"
-        IsActive="{x:Bind Proxy.IsChecking, Mode=OneWay}"
-        Visibility="{x:Bind Proxy.IsChecking, Mode=OneWay}"
-      />
-      <FontIcon
-        FontFamily="{x:Bind icons:Lucide.Font}"
-        Glyph="{x:Bind icons:Lucide.CircleCheck}"
-        FontSize="16"
-        Foreground="{ThemeResource SystemFillColorSuccessBrush}"
-        Visibility="{x:Bind Proxy.Succeeded, Mode=OneWay}"
-        AutomationProperties.AccessibilityView="Raw"
-      />
-      <FontIcon
-        FontFamily="{x:Bind icons:Lucide.Font}"
-        Glyph="{x:Bind icons:Lucide.CircleX}"
-        FontSize="16"
-        Foreground="{ThemeResource SystemFillColorCriticalBrush}"
-        Visibility="{x:Bind Proxy.Failed, Mode=OneWay}"
-        AutomationProperties.AccessibilityView="Raw"
-      />
-      <TextBlock
-        Grid.Column="1"
-        Text="{x:Bind Proxy.Result, Mode=OneWay}"
-        Style="{StaticResource TinyTorrentBodyTextStyle}"
-        VerticalAlignment="Center"
-        TextTrimming="CharacterEllipsis"
-        AutomationProperties.HelpText="{x:Bind Proxy.ResultTip, Mode=OneWay}"
-        AutomationProperties.LiveSetting="Polite"
-      />
-    </Grid>
+    <controls:CheckStatus x:Name="Status" x:FieldModifier="internal" />
   </Grid>
 </UserControl>

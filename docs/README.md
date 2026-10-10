@@ -15,9 +15,9 @@ here so moving a topic does not require renaming its links.
 | 7 | [Testing](testing.md) | Which evidence earns its cost and what it establishes. |
 | 8 | [Naming and structure](naming.md) | Names and placement of types, files, folders, namespaces, and resource keys. |
 
-The [selected refactoring plan](architecture/proposed/README.md) consolidates
-the architecture reviews and delivery work. The active contracts above remain
-the authority for product behavior.
+The [selected refactoring plan](architecture/proposed/README.md) preserves
+the architecture reviews and delivery decisions at that checkpoint. The active
+contracts above remain the authority for product behavior.
 
 The architecture owns the [live decision list](architecture.md#decisions-still-open).
 Update it as choices are made; historical reviews do not supply active requirements.
@@ -69,6 +69,13 @@ between code and contract is a finding to resolve, not permission to rewrite
 the contract merely to describe whatever the code currently does.
 
 ## Historical material
+
+The [handover](handover.md) and [morning report](morning-report.md) preserve
+earlier goals and evidence, not current work queues. The
+[implementation record](implementation.md) is also historical except for its
+Wire representation section, which the protocol contract still uses. Prototype
+files and critiques describe their reviewed versions; current interface rulings
+decide which parts remain applicable.
 
 The [architecture review of 2026-10-03](archive/architecture-review-2026-10-03.md)
 preserves the assessment before the usability revisions, including superseded

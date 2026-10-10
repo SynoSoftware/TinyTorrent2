@@ -50,8 +50,9 @@ TinyTorrent. Peers include seeds and leechers.
 **Seed**: a torrent or a peer with the entire payload available for sharing,
 rather than only its wanted files complete.
 
-**Leecher**: a peer that does not yet have the entire payload.
-_Avoid_: peer, when seeds are excluded.
+**Leecher**: a peer that does not yet have the entire payload. The torrent
+list's Peers column counts leechers beside Seeds, as people expect from that
+column pair.
 
 **Swarm**: every peer sharing a torrent, whether TinyTorrent is connected to it
 or not.
@@ -145,6 +146,16 @@ _Avoid_: mode and tab; the person chooses a configuration in the View menu.
 **Video information**: descriptive facts about a movie, series or episode,
 from the provider.
 _Avoid_: metadata, which describes torrent content.
+
+**Provider**: the online service the person chose to supply video information,
+such as TMDB or Public websites.
+_Avoid_: source, which means a torrent file or magnet.
+
+**Series**: a TV show whose files Library identifies by season and episode
+number.
+_Avoid_: show, TV.
+
+**Episode**: one numbered part of a series' season.
 
 **Music information**: the artist, album, track and other tags inside an audio
 file.

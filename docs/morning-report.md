@@ -1,5 +1,9 @@
 # Morning report
 
+Historical decisions and evidence from earlier sessions. Pending checks and
+next steps below are not a current work queue; the [active contracts](README.md)
+and the owner's current instructions govern further work.
+
 ## Fork documentation and upstream tests — 2026-10-07
 
 The owner stopped further test execution and decided against an upstream PR.

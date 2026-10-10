@@ -130,9 +130,9 @@ constexpr char limitMode[] = "limit_mode";
 constexpr char notificationsEnabled[] = "notifications_enabled";
 constexpr char notifyProblems[] = "notify_problems";
 constexpr char notifyAdded[] = "notify_added";
+constexpr char notifyBackground[] = "notify_background";
 constexpr char preventSleep[] = "prevent_sleep";
 constexpr char preventSleepSeeding[] = "prevent_sleep_seeding";
-constexpr char backgroundNoticeShown[] = "background_notice_shown";
 constexpr char reportedPrograms[] = "reported_programs";
 }
 
@@ -396,9 +396,9 @@ Json Engine::State::Settings::ToJson() const
         {setting::notificationsEnabled, notificationsEnabled},
         {setting::notifyProblems, notifiesProblems},
         {setting::notifyAdded, notifiesAdded},
+        {setting::notifyBackground, notifiesBackground},
         {setting::preventSleep, preventsSleep},
         {setting::preventSleepSeeding, preventsSleepSeeding},
-        {setting::backgroundNoticeShown, backgroundNoticeShown},
         {setting::reportedPrograms, reportedPrograms}};
 }
 
@@ -410,8 +410,8 @@ Json Engine::State::Settings::ToFile() const
     return values;
 }
 
-// A value that settings.json holds incorrectly keeps its default, so the
-// person never has to repair the file; the next save writes the default.
+// Invalid saved values fall back or clamp to an accepted value, so the person
+// never has to repair settings.json; the next save writes the corrected values.
 void Engine::State::Settings::Read(Json const& saved)
 {
     if (auto chosen = ReadSaved(saved, setting::destination, std::string()); IsAbsolute(chosen))
@@ -556,6 +556,8 @@ void Engine::State::Settings::Read(Json const& saved)
             if (auto period = Period::Read(value))
             {
                 schedule.push_back(std::move(*period));
+                if (schedule.size() == periodLimit)
+                    break;
             }
         }
     }
@@ -574,9 +576,9 @@ void Engine::State::Settings::Read(Json const& saved)
     notificationsEnabled = ReadSaved(saved, setting::notificationsEnabled, notificationsEnabled);
     notifiesProblems = ReadSaved(saved, setting::notifyProblems, notifiesProblems);
     notifiesAdded = ReadSaved(saved, setting::notifyAdded, notifiesAdded);
+    notifiesBackground = ReadSaved(saved, setting::notifyBackground, notifiesBackground);
     preventsSleep = ReadSaved(saved, setting::preventSleep, preventsSleep);
     preventsSleepSeeding = ReadSaved(saved, setting::preventSleepSeeding, preventsSleepSeeding);
-    backgroundNoticeShown = ReadSaved(saved, setting::backgroundNoticeShown, backgroundNoticeShown);
     if (auto found = saved.find(setting::reportedPrograms); found != saved.end() && found->is_array())
     {
         reportedPrograms.clear();
@@ -900,6 +902,10 @@ std::optional<Engine::State::Settings> Engine::State::Settings::With(Json const&
         {
             next.notifiesAdded = value;
         }
+        else if (key == setting::notifyBackground && value.is_boolean())
+        {
+            next.notifiesBackground = value;
+        }
         else if (key == setting::preventSleep && value.is_boolean())
         {
             next.preventsSleep = value;
@@ -952,24 +958,24 @@ std::optional<Engine::State::Settings> Engine::State::Settings::With(Json const&
 
 // The changes apply to the settings saved when the change runs, so that
 // an earlier settings command still waiting in the queue is kept.
-void Engine::State::Configure(Json const& choices, Reply reply)
+void Engine::State::Configure(Json const& choices, std::function<void(Outcome)> completion)
 {
     auto chosen = choices.is_object() && !choices.empty() ? settings.With(choices) : std::nullopt;
     if (!chosen)
     {
-        reply(Failure(ErrorCode::InvalidRequest));
+        completion({ErrorCode::InvalidRequest});
         return;
     }
-    if (!changes.Queue([this, choices, reply]
+    if (!changes.Queue([this, choices, completion]
     {
         auto chosen = settings.With(choices);
         if (!chosen)
         {
-            reply(Failure(ErrorCode::InvalidRequest));
+            completion({ErrorCode::InvalidRequest});
             return;
         }
         auto next = *chosen;
-        auto finish = [this, choices]
+        auto finish = [this, choices, completion]
         {
             if (choices.contains(setting::limitMode))
             {
@@ -980,31 +986,41 @@ void Engine::State::Configure(Json const& choices, Reply reply)
                     std::optional<LimitMode>(settings.limitMode) : std::nullopt;
                 RefreshPolicy();
             }
-            return Success(settings.ToJson());
+            completion({});
         };
         if (next.ToJson() == settings.ToJson())
         {
-            reply(finish());
+            finish();
             return;
         }
         auto document = Saved();
         document.settings = next;
-        changes.Commit(document.ToJson(), reply, [this, next = document.settings, finish]
+        changes.Commit(document.ToJson(), [this, next = document.settings, finish, completion](StorageOutcome outcome)
         {
+            if (!outcome.succeeded)
+            {
+                completion({ErrorCode::StorageFailed, outcome.detail});
+                return;
+            }
             bool routeChanged = settings.proxy != next.proxy || settings.networkAdapter != next.networkAdapter;
+            if (routeChanged)
+            {
+                std::lock_guard lock(checkGate);
+                checkStop.request_stop();
+            }
+            if (routeChanged && connectionTest)
+                ReleaseConnectionTest(connectionTest->connectionId, ConnectionPhase::Cancelled);
             if (settings.scheduleEnabled != next.scheduleEnabled)
             {
                 limitOverride.reset();
             }
             settings = next;
             RefreshPolicy(true);
-            if (routeChanged && connectionTest)
-                ReleaseConnectionTest(connectionTest->connectionId, ConnectionPhase::Cancelled);
-            return finish();
+            finish();
         });
     }))
     {
-        reply(Failure(ErrorCode::Overloaded));
+        completion({ErrorCode::Overloaded});
         return;
     }
     // The chosen language shows at once; `settings` keeps the saved one
@@ -1067,33 +1083,6 @@ void Engine::State::PauseSession(bool paused, std::function<void(Outcome)> compl
             }
             settings.allPaused = paused;
             finish();
-        });
-    }))
-    {
-        completion({ErrorCode::Overloaded});
-    }
-}
-
-void Engine::State::RecordBackgroundNotice(std::function<void(Outcome)> completion)
-{
-    if (!changes.Queue([this, completion]
-    {
-        if (settings.backgroundNoticeShown)
-        {
-            completion({});
-            return;
-        }
-        auto document = Saved();
-        document.settings.backgroundNoticeShown = true;
-        changes.Commit(document.ToJson(), [this, completion](StorageOutcome outcome)
-        {
-            if (!outcome.succeeded)
-            {
-                completion({ErrorCode::StorageFailed, outcome.detail});
-                return;
-            }
-            settings.backgroundNoticeShown = true;
-            completion({});
         });
     }))
     {

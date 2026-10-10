@@ -24,7 +24,7 @@ fingerprint when needed. A fingerprint can identify a movie; it is not anonymous
 merely because it is a hash. The supplier sees the network address used for the
 request and the required application/version identification.
 
-The default OpenSubtitles integration uses TinyTorrent's application package,
+The default OpenSubtitles integration uses TinyTorrent's free application key,
 without requiring an end-user account. If you enter an optional OpenSubtitles
 account, its credentials are sent to OpenSubtitles for authentication. SubDL and
 SubSource each require your own API key for that supplier, which is sent with

@@ -16,6 +16,7 @@
 #include <list>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <set>
 #include <stop_token>
@@ -24,6 +25,13 @@
 
 namespace tt
 {
+struct NetworkAdapter
+{
+    unsigned ipv4Index = 0;
+    unsigned ipv6Index = 0;
+    std::vector<std::string> addresses;
+};
+
 // The engine's state and behavior. Engine.cpp holds the public API, and each
 // source file in src/Engine holds one responsibility.
 class Engine::State
@@ -183,9 +191,9 @@ public:
         bool notificationsEnabled = false;
         bool notifiesProblems = true;
         bool notifiesAdded = false;
+        bool notifiesBackground = true;
         bool preventsSleep = true;
         bool preventsSleepSeeding = false;
-        bool backgroundNoticeShown = false;
         // The missing programs that torrent handlers start, as last reported
         // to the person, so each one is reported once.
         std::vector<std::string> reportedPrograms;
@@ -211,6 +219,11 @@ public:
         static std::optional<LimitMode> Named(Json const& value);
     };
 
+    struct PathLess
+    {
+        bool operator()(std::string const& left, std::string const& right) const;
+    };
+
     // The saved document. A change edits a copy of the saved one and commits
     // it.
     struct Document
@@ -220,7 +233,7 @@ public:
         Settings settings;
         std::map<std::string, Facts> torrents;
         std::vector<std::string> queueOrder;
-        std::map<std::string, std::string> watchedSources;
+        std::map<std::string, std::string, PathLess> watchedSources;
 
         Json ToJson() const;
         void Read(Json const& saved);
@@ -256,7 +269,9 @@ public:
     Store sources;
     // Checks proxies, which can wait for one that does not answer.
     Store checks;
-    // Ends a running proxy check when the engine closes.
+    // Serializes route cancellation with nonblocking proxy connect/send calls.
+    std::mutex checkGate;
+    // Ends proxy checks when their route changes or the engine closes.
     std::stop_source checkStop;
     struct ConnectionTest
     {
@@ -282,14 +297,14 @@ public:
     std::string externalIpv6;
     Settings settings = Defaults();
     bool launchPaused = false;
-    std::map<std::string, std::string> watchedSources;
+    std::map<std::string, std::string, PathLess> watchedSources;
     struct WatchedFile
     {
         std::string stamp;
         std::chrono::steady_clock::time_point readyAt;
         bool reported = false;
     };
-    std::map<std::string, WatchedFile> watchedFiles;
+    std::map<std::string, WatchedFile, PathLess> watchedFiles;
     std::chrono::steady_clock::time_point watchAt{};
     bool scanningWatch = false;
     bool addingWatch = false;
@@ -324,6 +339,7 @@ public:
     std::optional<LimitMode> limitOverride;
     bool adapterMissing = false;
     std::string appliedListen;
+    std::string appliedAdapter;
     std::optional<Settings::Proxy> appliedProxy;
     std::optional<Encryption> appliedEncryption;
     std::optional<Transport> appliedTransport;
@@ -455,6 +471,7 @@ public:
     void RecordHashes(Torrent& torrent, lt::info_hash_t const& hashes);
 
     void RefreshPolicy(bool configure = false);
+    static std::optional<NetworkAdapter> FindAdapter(std::string const& name);
     void ApplyPolicy(lt::torrent_handle const& handle);
     ScheduleMode ScheduledMode() const;
     bool IsPaused() const;
@@ -465,7 +482,7 @@ public:
     void LimitSeeds();
     void QuerySeeds();
     bool ReachedSeedLimit(Torrent const& torrent) const;
-    void Configure(Json const& choices, Reply reply);
+    void Configure(Json const& choices, std::function<void(Outcome)> completion);
     // Connects to the proxy and signs in, without changing the session.
     // `completion` receives nothing when the check cannot run.
     void CheckProxy(Settings::Proxy proxy, std::function<void(std::optional<ProxyCheck>)> completion);
@@ -473,7 +490,6 @@ public:
     static std::string_view Name(ProxyOutcome outcome);
     static bool IsAbsolute(std::string const& path);
     void PauseSession(bool paused, std::function<void(Outcome)> completion);
-    void RecordBackgroundNotice(std::function<void(Outcome)> completion);
     void RecordPrograms(std::vector<std::string> programs, std::function<void(Outcome)> completion);
 
     void UpdatePreview(Preview& preview);

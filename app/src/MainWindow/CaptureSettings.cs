@@ -46,11 +46,11 @@ public sealed partial class MainWindow
 
             await ShowSettings(new(SettingsCategory.Limits));
             await ShowConnection();
-            if (SettingsContent.Content is not Views.ConnectionPage)
+            if (_settings.Current is not Views.ConnectionPage)
                 throw new InvalidOperationException("Connection setup did not open. " + string.Join("; ",
                     Model.Settings.All.Where(setting => setting.HasDraft || setting.Message.Length > 0)
                         .Select(setting => setting.Name + ": " + setting.Message))
-                    + " Schedule: " + Model.Settings.Schedule.ScheduleMessage);
+                    + " Schedule: " + Model.Settings.Schedule.Message);
             var connection = Model.Settings.Connection;
             await CapturePage(prefix + "-connection-empty", _connectionPage);
             connection.Download = "200";

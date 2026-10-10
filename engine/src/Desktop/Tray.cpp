@@ -2,13 +2,27 @@
 #include "Resources.h"
 #include <algorithm>
 #include <filesystem>
+#include <roapi.h>
 #include <shellapi.h>
+#include <windows.data.xml.dom.h>
+#include <windows.ui.notifications.h>
+#include <wrl/client.h>
+#include <wrl/event.h>
+#include <wrl/wrappers/corewrappers.h>
 
 namespace tt::desktop
 {
 namespace
 {
+using Microsoft::WRL::ComPtr;
+using Microsoft::WRL::Wrappers::HString;
+using Microsoft::WRL::Wrappers::HStringReference;
+namespace notifications = ABI::Windows::UI::Notifications;
+namespace xml = ABI::Windows::Data::Xml::Dom;
+
 constexpr UINT iconId = 1;
+// The toast button's activation argument.
+constexpr wchar_t backgroundOffArgument[] = L"background_off";
 // Notices that arrive within this many milliseconds share one balloon.
 constexpr ULONGLONG noticeDelay = 1000;
 // A balloon holds 255 characters, so a failure summary shortens the name and
@@ -50,12 +64,172 @@ HICON ErrorIcon()
     DeleteObject(icon.hbmMask);
     return result;
 }
+
+std::wstring EscapeXml(std::wstring const& text)
+{
+    std::wstring escaped;
+    for (auto character : text)
+    {
+        switch (character)
+        {
+        case L'&': escaped += L"&amp;"; break;
+        case L'<': escaped += L"&lt;"; break;
+        case L'>': escaped += L"&gt;"; break;
+        case L'"': escaped += L"&quot;"; break;
+        default: escaped += character; break;
+        }
+    }
+    return escaped;
 }
 
-Tray::Tray(HWND window, UINT callback, HWND broadcast, Strings const& strings, bool headless)
-    : window_(window), callback_(callback), broadcast_(broadcast), strings_(strings), headless_(headless)
+bool AcceptsNotifications()
 {
-    if (!headless_) errorIcon_ = ErrorIcon();
+    QUERY_USER_NOTIFICATION_STATE state{};
+    return SUCCEEDED(SHQueryUserNotificationState(&state)) && state == QUNS_ACCEPTS_NOTIFICATIONS;
+}
+
+std::wstring Number(double value, unsigned digits = 0)
+{
+    wchar_t number[64];
+    swprintf_s(number, L"%.*f", static_cast<int>(digits), value);
+    wchar_t decimal[16] = L".";
+    wchar_t thousand[16] = L",";
+    wchar_t grouping[16] = L"3;0";
+    auto locale = LOCALE_NAME_USER_DEFAULT;
+    GetLocaleInfoEx(locale, LOCALE_SDECIMAL, decimal, static_cast<int>(std::size(decimal)));
+    GetLocaleInfoEx(locale, LOCALE_STHOUSAND, thousand, static_cast<int>(std::size(thousand)));
+    GetLocaleInfoEx(locale, LOCALE_SGROUPING, grouping, static_cast<int>(std::size(grouping)));
+    UINT groups = 0;
+    for (auto character : std::wstring_view(grouping))
+    {
+        if (character == L'0') break;
+        if (character != L';') groups = groups * 10 + character - L'0';
+    }
+    if (grouping[wcslen(grouping) - 1] != L'0') groups *= 10;
+    NUMBERFMTW format{.NumDigits = digits, .LeadingZero = 1, .Grouping = groups,
+        .lpDecimalSep = decimal, .lpThousandSep = thousand, .NegativeOrder = 1};
+    wchar_t formatted[64];
+    if (GetNumberFormatEx(locale, 0, number, &format, formatted, static_cast<int>(std::size(formatted))))
+    {
+        return formatted;
+    }
+    return number;
+}
+}
+
+// A Windows toast notification. Unlike a balloon it can carry a button, so
+// the background notice uses it to let the person turn that notice off
+// without opening the window. Windows needs the AppUserModelID registered to
+// show it; the installer's Start menu shortcut registers it.
+class Tray::Toast
+{
+public:
+    // Toast objects are COM objects, used from the owner window's thread.
+    Toast() : initialized_(SUCCEEDED(CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED))) {}
+
+    // Removes the shown toast, so its button never outlives the engine.
+    ~Toast()
+    {
+        Hide();
+        shown_.Reset();
+        notifier_.Reset();
+        if (initialized_)
+        {
+            CoUninitialize();
+        }
+    }
+
+    Toast(Toast const&) = delete;
+    Toast& operator=(Toast const&) = delete;
+
+    // Replaces the shown toast. Selecting `button` posts `message` to
+    // `window`; selecting the rest of the toast only dismisses it. Returns
+    // whether Windows accepted the toast.
+    bool Show(std::wstring const& text, std::wstring const& button, HWND window, UINT message)
+    {
+        if (!notifier_)
+        {
+            ComPtr<notifications::IToastNotificationManagerStatics> manager;
+            if (FAILED(RoGetActivationFactory(
+                    HStringReference(RuntimeClass_Windows_UI_Notifications_ToastNotificationManager).Get(),
+                    IID_PPV_ARGS(manager.GetAddressOf()))) ||
+                FAILED(manager->CreateToastNotifierWithId(HStringReference(appId).Get(), notifier_.GetAddressOf())))
+            {
+                notifier_.Reset();
+                return false;
+            }
+        }
+        auto content = std::wstring(L"<toast><visual><binding template=\"ToastGeneric\"><text>") + productName +
+            L"</text><text>" + EscapeXml(text) + L"</text></binding></visual><actions><action content=\"" +
+            EscapeXml(button) + L"\" arguments=\"" + backgroundOffArgument + L"\"/></actions></toast>";
+        ComPtr<IInspectable> instance;
+        ComPtr<xml::IXmlDocumentIO> reader;
+        ComPtr<xml::IXmlDocument> document;
+        ComPtr<notifications::IToastNotificationFactory> factory;
+        ComPtr<notifications::IToastNotification> toast;
+        EventRegistrationToken token{};
+        if (FAILED(RoActivateInstance(HStringReference(RuntimeClass_Windows_Data_Xml_Dom_XmlDocument).Get(),
+                instance.GetAddressOf())) ||
+            FAILED(instance.As(&reader)) ||
+            FAILED(reader->LoadXml(HStringReference(content.c_str(), static_cast<unsigned>(content.size())).Get())) ||
+            FAILED(instance.As(&document)) ||
+            FAILED(RoGetActivationFactory(
+                HStringReference(RuntimeClass_Windows_UI_Notifications_ToastNotification).Get(),
+                IID_PPV_ARGS(factory.GetAddressOf()))) ||
+            FAILED(factory->CreateToastNotification(document.Get(), toast.GetAddressOf())) ||
+            FAILED(toast->add_Activated(
+                Microsoft::WRL::Callback<
+                    __FITypedEventHandler_2_Windows__CUI__CNotifications__CToastNotification_IInspectable>(
+                    [window, message](notifications::IToastNotification*, IInspectable* arguments) -> HRESULT
+                    {
+                        // Windows calls this on a thread of its own.
+                        ComPtr<notifications::IToastActivatedEventArgs> activated;
+                        HString chosen;
+                        if (arguments && SUCCEEDED(arguments->QueryInterface(IID_PPV_ARGS(activated.GetAddressOf()))) &&
+                            SUCCEEDED(activated->get_Arguments(chosen.GetAddressOf())) &&
+                            wcscmp(chosen.GetRawBuffer(nullptr), backgroundOffArgument) == 0)
+                        {
+                            PostMessageW(window, message, 0, 0);
+                        }
+                        return S_OK;
+                    }).Get(),
+                &token)))
+        {
+            return false;
+        }
+        Hide();
+        if (FAILED(notifier_->Show(toast.Get())))
+        {
+            return false;
+        }
+        shown_ = toast;
+        return true;
+    }
+
+private:
+    void Hide()
+    {
+        if (notifier_ && shown_)
+        {
+            notifier_->Hide(shown_.Get());
+        }
+        shown_.Reset();
+    }
+
+    bool initialized_;
+    ComPtr<notifications::IToastNotifier> notifier_;
+    ComPtr<notifications::IToastNotification> shown_;
+};
+
+Tray::Tray(HWND window, UINT callback, UINT backgroundOff, HWND broadcast, Strings const& strings, bool headless)
+    : window_(window), callback_(callback), backgroundOff_(backgroundOff), broadcast_(broadcast), strings_(strings),
+      headless_(headless)
+{
+    if (!headless_)
+    {
+        errorIcon_ = ErrorIcon();
+        toast_ = std::make_unique<Toast>();
+    }
 }
 
 Tray::~Tray()
@@ -257,19 +431,7 @@ std::wstring Tray::Rate(std::int64_t bytes) const
         value /= 1024;
         ++unit;
     }
-    wchar_t number[64];
-    swprintf_s(number, unit ? L"%.1f" : L"%.0f", value);
-    wchar_t decimal[8];
-    wchar_t const* locale = LOCALE_NAME_USER_DEFAULT;
-    GetLocaleInfoEx(locale, LOCALE_SDECIMAL, decimal, static_cast<int>(std::size(decimal)));
-    NUMBERFMTW format{.NumDigits = unit ? 1U : 0U, .LeadingZero = 1, .Grouping = 0,
-        .lpDecimalSep = decimal, .lpThousandSep = const_cast<LPWSTR>(L""), .NegativeOrder = 1};
-    wchar_t formatted[64];
-    if (GetNumberFormatEx(locale, 0, number, &format, formatted, static_cast<int>(std::size(formatted))))
-    {
-        wcscpy_s(number, formatted);
-    }
-    return strings_.Format("units", units[unit], {number});
+    return strings_.Format("units", units[unit], {Number(value, unit ? 1U : 0U)});
 }
 
 std::wstring Tray::Rates() const
@@ -284,16 +446,16 @@ std::wstring Tray::Counts() const
     auto count = activity_.torrentCount;
     if (activity_.paused)
     {
-        return strings_.Format("tray", count == 1 ? "paused_one" : "paused", {std::to_wstring(count)});
+        return strings_.Format("tray", count == 1 ? "paused_one" : "paused", {Number(count)});
     }
-    auto active = std::to_wstring(activity_.activeCount);
-    auto queued = std::to_wstring(activity_.queuedCount);
+    auto active = Number(activity_.activeCount);
+    auto queued = Number(activity_.queuedCount);
     return strings_.Format("tray", "counts", {active, queued});
 }
 
 std::wstring Tray::Tooltip() const
 {
-    auto errors = activity_.errorCount ? strings_.Format("tray", "errors", {std::to_wstring(activity_.errorCount)}) + L"\n" : std::wstring();
+    auto errors = activity_.errorCount ? strings_.Format("tray", "errors", {Number(activity_.errorCount)}) + L"\n" : std::wstring();
     if (loading_)
     {
         return errors + strings_.Text("startup", "loading");
@@ -328,8 +490,14 @@ void Tray::Queue(Notice notice)
     bool added = kind == NoticeKind::Added || kind == NoticeKind::Duplicate;
     if (headless_ || (failure && kind != NoticeKind::Failure && !activity_.notifiesProblems) ||
         (kind == NoticeKind::MissingProgram && !activity_.notifiesProblems) ||
-        (kind == NoticeKind::Completed && !activity_.notificationsEnabled) || (added && !activity_.notifiesAdded))
+        (kind == NoticeKind::Completed && !activity_.notificationsEnabled) || (added && !activity_.notifiesAdded) ||
+        (kind == NoticeKind::Background && !activity_.notifiesBackground))
     {
+        return;
+    }
+    if (kind == NoticeKind::Background)
+    {
+        ShowBackground();
         return;
     }
     // A failure balloon names only the failures, so a batch never mixes
@@ -348,20 +516,11 @@ void Tray::Queue(Notice notice)
         }
         ++batch_.failureCount;
     }
-    if (kind == NoticeKind::Completed)
-    {
-        if (!batch_.completion)
-        {
-            batch_.completion = notice;
-        }
-        ++batch_.completionCount;
-    }
     if (!batch_.first)
     {
         batch_.first = std::move(notice);
     }
     ++batch_.count;
-    batch_.added |= added;
     if (!batch_.due)
     {
         batch_.due = GetTickCount64() + noticeDelay;
@@ -379,16 +538,8 @@ void Tray::Notify()
 void Tray::Flush()
 {
     auto batch = std::exchange(batch_, {});
-    if ((batch.failure && batch.failure->kind != NoticeKind::Failure && !activity_.notifiesProblems) ||
-        (batch.completion && !activity_.notificationsEnabled) ||
-        (batch.added && !activity_.notifiesAdded))
-    {
-        return;
-    }
     notice_ = batch.count == 1 ? std::move(*batch.first) : Notice{NoticeKind::Aggregate};
-    QUERY_USER_NOTIFICATION_STATE state{};
-    bool accepted = SUCCEEDED(SHQueryUserNotificationState(&state)) && state == QUNS_ACCEPTS_NOTIFICATIONS;
-    if (!accepted)
+    if (!AcceptsNotifications())
     {
         notice_.reset();
     }
@@ -407,24 +558,21 @@ std::wstring Tray::Message(Notice const& notice, unsigned count) const
     std::wstring message;
     if (notice.kind == NoticeKind::Aggregate)
     {
-        message = strings_.Format("notification", "aggregate", {std::to_wstring(count)});
-    }
-    else if (notice.kind == NoticeKind::Background)
-    {
-        message = strings_.Text("tray", "background");
+        message = strings_.Format("notification", "aggregate", {Number(count)});
     }
     else if (notice.kind == NoticeKind::MissingProgram && notice.count > 1)
     {
         message = strings_.Format("notification", "missing_programs",
-            {Wide(notice.name), std::to_wstring(notice.count - 1)});
+            {Wide(notice.name), Number(notice.count - 1)});
     }
     else
     {
         message = strings_.Format("notification", ToString(notice.kind), {Wide(notice.name)});
     }
-    if (!notice.detail.empty())
+    auto detail = Detail(notice);
+    if (!detail.empty())
     {
-        message += L"\n" + Wide(notice.detail);
+        message += L"\n" + detail;
     }
     return message;
 }
@@ -437,9 +585,42 @@ std::wstring Tray::Failures(Notice const& first, unsigned count) const
         name = IsMagnet(first.name) ? strings_.Text("notification", "magnet") :
             std::filesystem::path(name).filename().wstring();
     }
-    auto detail = Wide(first.detail);
+    auto detail = Detail(first);
     return strings_.Format("notification", "failures",
-        {std::to_wstring(count), name.substr(0, nameLength), detail.substr(0, detailLength)});
+        {Number(count), name.substr(0, nameLength), detail.substr(0, detailLength)});
+}
+
+std::wstring Tray::Detail(Notice const& notice) const
+{
+    auto detail = Wide(notice.detail);
+    if (notice.code.empty())
+    {
+        return detail;
+    }
+    auto message = strings_.Text("error", notice.code);
+    if (message == Wide("error." + notice.code))
+    {
+        message = strings_.Text("error", "unknown");
+    }
+    return detail.empty() ? message : message + L"\n" + detail;
+}
+
+// When Windows refuses the toast, the notice still shows as a balloon, which
+// has no button.
+void Tray::ShowBackground()
+{
+    auto message = strings_.Text("tray", "background");
+    if (toast_->Show(message, strings_.Text("tray", "background_off"), window_, backgroundOff_))
+    {
+        return;
+    }
+    // A balloon replaces the shown one, so its click belongs to this notice.
+    notice_.reset();
+    if (AcceptsNotifications())
+    {
+        notice_ = Notice{NoticeKind::Background};
+        Balloon(message, false);
+    }
 }
 
 void Tray::Balloon(std::wstring const& message, bool error)

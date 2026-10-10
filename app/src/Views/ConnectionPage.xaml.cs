@@ -29,7 +29,6 @@ public sealed partial class ConnectionPage : UserControl
         {
             _display.TextScaleFactorChanged += OnTextScale;
             UpdateColumns();
-            Download.Focus(FocusState.Programmatic);
         };
         Unloaded += (_, _) => _display.TextScaleFactorChanged -= OnTextScale;
     }
@@ -40,6 +39,8 @@ public sealed partial class ConnectionPage : UserControl
 
     public static Visibility Hidden(bool visible) => visible
         ? Visibility.Collapsed : Visibility.Visible;
+
+    internal void FocusInput() => Download.Focus(FocusState.Programmatic);
 
     private async void OnTest(object sender, RoutedEventArgs args) => await Model.Test();
 

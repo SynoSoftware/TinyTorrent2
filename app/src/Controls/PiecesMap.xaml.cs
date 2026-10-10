@@ -15,6 +15,7 @@ using Windows.ApplicationModel.DataTransfer;
 using Windows.Foundation;
 using Windows.System;
 using Windows.UI;
+using Windows.UI.ViewManagement;
 
 namespace Syno.TinyTorrent.Controls;
 
@@ -28,6 +29,7 @@ public sealed partial class PiecesMap : UserControl
 
     // The hatch and cross line width, matching the legend's StrokeThickness.
     private const double Stroke = 1.5;
+    private readonly UISettings _display = new();
     private Pieces? _data;
     private Raster? _layout;
     private Strings? _text;
@@ -45,6 +47,14 @@ public sealed partial class PiecesMap : UserControl
     public PiecesMap()
     {
         InitializeComponent();
+        foreach (var entry in Legend.Children.OfType<Grid>())
+        {
+            Grid.SetColumn(entry, Legend.ColumnDefinitions.Count);
+            Legend.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            entry.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            entry.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            entry.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        }
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
         ActualThemeChanged += (_, _) => QueueDraw();
@@ -129,6 +139,7 @@ public sealed partial class PiecesMap : UserControl
                 totals[(int)kind].Text = counts is null ? "—" :
                     counts[(int)kind].ToString("N0", CultureInfo.CurrentCulture);
             }
+            RefreshLegend();
             AutomationProperties.SetName(this, text.Get("inspector", "pieces"));
             Refresh();
         }
@@ -140,11 +151,28 @@ public sealed partial class PiecesMap : UserControl
     {
         _root = XamlRoot;
         _root.Changed += OnRoot;
+        _display.TextScaleFactorChanged += OnTextScale;
+        RefreshLegend();
         QueueDraw();
+    }
+
+    private void RefreshLegend()
+    {
+        for (var index = 0; index < Legend.Children.Count; index++)
+        {
+            var entry = (Grid)Legend.Children[index];
+            var label = (TextBlock)entry.Children[1];
+            ToolTipService.SetToolTip(label, ((Run)label.Inlines[0]).Text);
+            entry.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            Legend.ColumnDefinitions[index].MinWidth = entry.Children[0].DesiredSize.Width +
+                entry.Children[2].DesiredSize.Width + 2 * entry.ColumnSpacing;
+            Legend.ColumnDefinitions[index].MaxWidth = entry.DesiredSize.Width;
+        }
     }
 
     private void OnUnloaded(object sender, RoutedEventArgs args)
     {
+        _display.TextScaleFactorChanged -= OnTextScale;
         if (_root is { } root)
             root.Changed -= OnRoot;
         _root = null;
@@ -153,6 +181,8 @@ public sealed partial class PiecesMap : UserControl
     }
 
     private void OnRoot(XamlRoot sender, XamlRootChangedEventArgs args) => QueueDraw();
+
+    private void OnTextScale(UISettings sender, object args) => DispatcherQueue.TryEnqueue(RefreshLegend);
 
     private void OnSize(object sender, SizeChangedEventArgs args) => QueueDraw();
 

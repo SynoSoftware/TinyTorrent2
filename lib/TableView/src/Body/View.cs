@@ -1,18 +1,46 @@
 using System.Collections.ObjectModel;
+using Windows.Foundation.Collections;
 
 namespace Syno.TableView.Body;
 
 /// <summary>
 /// The private view handed to the row surface. A source snapshot is applied in place, as
 /// removals, insertions and replacements matched by section 5 identity, so a row that did not
-/// change keeps its container and the list animates only what moved. Never <c>Move</c>: see
-/// <see cref="MoveItem"/>. Never <c>Clear</c>: see <see cref="ClearItems"/>.
+/// change keeps its container and the list animates only what moved. The collection exposes no
+/// <c>Move</c> operation. Never <c>Clear</c>: see <see cref="ClearItems"/>.
 /// </summary>
-internal sealed class View : ObservableCollection<object>
+internal sealed class View : Collection<object>, IObservableVector<object>
 {
     private readonly ItemIdentity _identity;
 
     internal View(ItemIdentity identity) => _identity = identity;
+
+    // Native vector events avoid marshaling a .NET collection event and its item lists per row.
+    public event VectorChangedEventHandler<object>? VectorChanged;
+
+    protected override void InsertItem(int index, object item)
+    {
+        base.InsertItem(index, item);
+        VectorChanged?.Invoke(this, new Change(CollectionChange.ItemInserted, index));
+    }
+
+    protected override void RemoveItem(int index)
+    {
+        base.RemoveItem(index);
+        VectorChanged?.Invoke(this, new Change(CollectionChange.ItemRemoved, index));
+    }
+
+    protected override void SetItem(int index, object item)
+    {
+        base.SetItem(index, item);
+        VectorChanged?.Invoke(this, new Change(CollectionChange.ItemChanged, index));
+    }
+
+    private sealed class Change(CollectionChange change, int index) : IVectorChangedEventArgs
+    {
+        public CollectionChange CollectionChange => change;
+        public uint Index => (uint)index;
+    }
 
     /// <summary>Bring the view to <paramref name="snapshot"/>.</summary>
     /// <remarks>
@@ -434,18 +462,5 @@ internal sealed class View : ObservableCollection<object>
         throw new NotSupportedException(
             "Never Clear a displayed collection: the list drops every container and nothing "
                 + "animates. Reconcile the snapshot in place instead."
-        );
-
-    /// <summary>
-    /// Refused. A Move notification makes the row surface stop its item transitions and
-    /// flash the whole list, not the moved row; the owner measured it by debugging it directly,
-    /// twice, in two other products. A reorder is <c>RemoveAt</c> then <c>Insert</c>, which
-    /// animates only the row that moved. The base class exposes <c>Move</c> publicly, so the rule
-    /// is enforced here rather than remembered.
-    /// </summary>
-    protected override void MoveItem(int oldIndex, int newIndex) =>
-        throw new NotSupportedException(
-            "Never Move a displayed row: the row surface stops its transitions and flashes the "
-                + "whole list. Reorder with RemoveAt then Insert."
         );
 }

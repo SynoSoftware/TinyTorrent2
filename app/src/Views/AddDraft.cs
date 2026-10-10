@@ -9,7 +9,7 @@ using Syno.TinyTorrent.Services;
 
 namespace Syno.TinyTorrent.Views;
 
-public sealed class AddDraft : INotifyPropertyChanged
+public sealed class AddDraft : IDraft
 {
     private readonly MainViewModel _owner;
     private readonly PipeClient _client;
@@ -29,8 +29,11 @@ public sealed class AddDraft : INotifyPropertyChanged
     private Task _pass = Task.CompletedTask;
     private readonly FileSelection _emptyFiles;
     private bool _preparing;
-    public bool IsSubmitting { get; private set; }
-    internal bool IsPending => _preparing || IsSubmitting;
+    // A submit holds the dialog open; preparing a source does not, because
+    // AcceptMagnet releases a preview whose dialog has closed. Closing the
+    // window waits for both.
+    public bool IsPending { get; private set; }
+    internal bool IsBusy => _preparing || IsPending;
     public ObservableCollection<AddSource> Sources { get; } = [];
     public bool HasSources => Sources.Count > 0;
     public FileSelection Files => Sources.Count == 1 ? Sources[0].Files : _emptyFiles;
@@ -130,7 +133,7 @@ public sealed class AddDraft : INotifyPropertyChanged
         Sources.Count != 1 ? string.Empty
         : Sources[0].MetadataReady ? _strings.Bytes(Sources[0].Size)
         : _strings.Get("add", "metadata");
-    public string SubmitText => _strings.Get("add", IsSubmitting ? "pending" : "submit");
+    public string SubmitText => _strings.Get("add", IsPending ? "pending" : "submit");
     public string SubmitToolTip =>
         _strings.Format(
             "add",
@@ -176,6 +179,11 @@ public sealed class AddDraft : INotifyPropertyChanged
     private IEnumerable<Exception> Failures =>
         Sources.Select(source => source.Failure).Prepend(_failure).OfType<Exception>();
     internal Exception? Failure => Failures.FirstOrDefault();
+    internal void Report(Exception error)
+    {
+        _failure = error;
+        Refresh();
+    }
 
     internal static bool IsDestinationError(Exception? error) =>
         error is CommandException { Code: "invalid_destination" };
@@ -193,7 +201,7 @@ public sealed class AddDraft : INotifyPropertyChanged
         : string.Empty;
     public bool HasError => Message.Length > 0;
     public InfoBarSeverity Severity => InfoBarSeverity.Error;
-    private bool CanSave => _owner.CanSave && !IsPending;
+    private bool CanSave => _owner.CanSave && !IsBusy;
     public bool CanEdit => CanSave && !_owner.IsClosing;
     public bool CanSubmit =>
         CanEdit
@@ -208,7 +216,7 @@ public sealed class AddDraft : INotifyPropertyChanged
             !source.MetadataReady || source.IsDuplicate || source.Files.HasWanted
         )
         && (!HasFiles || Files.HasWanted);
-    public bool HasChanges => Sources.Count > 0 || !string.IsNullOrWhiteSpace(Magnet);
+    public bool HasDraft => Sources.Count > 0 || !string.IsNullOrWhiteSpace(Magnet);
     public event PropertyChangedEventHandler? PropertyChanged;
 
     internal AddDraft(MainViewModel owner, PipeClient client, Strings strings)
@@ -369,7 +377,7 @@ public sealed class AddDraft : INotifyPropertyChanged
             || (HasFiles && !Files.HasWanted)
         )
             return false;
-        IsSubmitting = true;
+        IsPending = true;
         Refresh();
         var destination = _destination;
         var paused = _paused;
@@ -476,7 +484,7 @@ public sealed class AddDraft : INotifyPropertyChanged
         }
         finally
         {
-            IsSubmitting = false;
+            IsPending = false;
             Refresh();
         }
     }
@@ -600,7 +608,7 @@ public sealed class AddDraft : INotifyPropertyChanged
         _defaultDestination = destination;
         _defaultPaused = !startsDownload;
         _defaultQueueTop = queueTop;
-        if (HasChanges)
+        if (HasDraft)
             return;
         if (usesDestination)
             _destination = _defaultDestination;

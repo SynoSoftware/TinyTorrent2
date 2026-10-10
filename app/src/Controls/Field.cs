@@ -3,7 +3,7 @@ using Microsoft.UI.Xaml.Controls;
 
 namespace Syno.TinyTorrent.Controls;
 
-// A value led by its icon and label. InspectorPane.xaml supplies the templates.
+// A value led by its icon and label, using the shared templates in App.xaml.
 public sealed partial class Field : ContentControl
 {
     public static readonly DependencyProperty GlyphProperty = Text(nameof(Glyph));

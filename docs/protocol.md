@@ -1,9 +1,10 @@
 # Protocol contract
 
 Target communication between the engine and WinUI in the
-[architecture](architecture.md). Concrete message fields will be defined with
-the first implementation. This document establishes their required behavior; it
-is not a second wire-format specification.
+[architecture](architecture.md). Concrete message fields are defined in the
+[implementation record](implementation.md#wire-representation). This document
+establishes their required behavior and names a field only where that behavior
+depends on it; it is not a second wire-format specification.
 
 ## One local connection
 
@@ -92,6 +93,9 @@ from transport failure. There is no separate draft-conflict message family.
 Send stable status/error codes and typed arguments, not English sentences the window
 must parse. The [localisation contract](localisation.md) owns rendering, including
 a generic message for unknown codes and optional raw diagnostic detail.
+Storage queue exhaustion replies with `overloaded`, rather than advice about a
+failed data folder. Direct addition preserves a duplicate tracker's merge refusal
+code and detail, so the window can explain the actual reason.
 
 ## Snapshots and detail
 

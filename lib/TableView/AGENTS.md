@@ -21,8 +21,7 @@ interface follows the [architecture](../../docs/architecture.md).
   [implementation map](docs/tableview-implementation.md).
 - Text and formatting follow [localisation](../../docs/localisation.md), including
   the control's own `en.json` and live language changes.
-- Test scope follows [testing](../../docs/testing.md). Building a WinUI test host
-  does not run it; running it opens a real window and requires an explicit request.
+- Test scope follows [testing](../../docs/testing.md).
 
 ## Control work
 
@@ -63,7 +62,9 @@ Keep [Directory.Build.props](../../Directory.Build.props)'s generated-output exc
 they prevent the XAML compiler's `bin-fl` output from re-entering source globs.
 If changing them, verify repeated builds do not deepen the output tree.
 
-Do not launch the sample, UI test host, or product unless explicitly requested.
-If rendered or out-of-process automation evidence is needed but unavailable,
+Building a WinUI test host does not run it. Running the sample or the UI test
+host opens a real window on the owner's desktop, so do it only when explicitly
+requested; the [root instructions](../../AGENTS.md#working-rules) govern
+launching the product. If rendered or out-of-process automation evidence is needed but unavailable,
 report that gap. A compile result, an in-process automation cache, or an old
 measurement cannot establish current pixels, Narrator behavior, or responsiveness.

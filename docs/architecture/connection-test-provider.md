@@ -8,9 +8,10 @@ the subsequent decision; runtime evidence is in the
 
 The owner selected Cloudflare's public HTTP endpoints for the small native
 integration. TinyTorrent uses Windows WinHTTP, without a package, JavaScript,
-or WebView. Windows automatic proxy configuration applies; a configured
-torrent proxy or bound adapter disables this operation instead of bypassing
-the person's torrent route. The page discloses the provider, IP/data use,
+or WebView. The [product network route](../architecture.md#network-route)
+governs this operation. Its current WinHTTP implementation cannot enforce a
+configured proxy or adapter, so that route leaves testing unavailable. The page
+discloses the provider, IP/data use,
 privacy link, temporary torrent pause, and approximate traffic ceiling before
 the person selects Test.
 [WinHttpOpen automatic proxy](https://learn.microsoft.com/en-us/windows/win32/api/winhttp/nf-winhttp-winhttpopen)

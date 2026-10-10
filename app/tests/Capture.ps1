@@ -1,14 +1,21 @@
 param(
     [ValidateSet('1', 'smoke', 'shell', 'schedule', 'desktop', 'details', 'details-files', 'files', 'files-layout',
-        'search', 'library', 'traffic', 'edits', 'add-layout', 'settings-layout', 'settings-prototype', 'footer')]
+        'search', 'library', 'library-files', 'traffic', 'edits', 'add-layout', 'settings-layout', 'settings-prototype', 'footer')]
     [string] $Review = '1',
     [ValidateSet('en', 'es')]
     [string] $Language,
     [string] $ArtifactsPath,
+    [ValidateSet('Debug', 'Release')]
+    [string] $Configuration = 'Debug',
+    [ValidateSet(0, 10000, 100000)]
+    [int] $LibraryFiles = 0,
     [switch] $Transfer
 )
 
 $ErrorActionPreference = 'Stop'
+if ($LibraryFiles -and $Review -ne 'library-files') {
+    throw 'Library timing uses the library-files capture mode.'
+}
 # The traffic review downloads real payload from the Transfer peer, which takes
 # minutes of the owner's machine, so it runs only when the owner asks.
 if ($Review -eq 'traffic' -and -not $Transfer) {
@@ -29,14 +36,26 @@ for ($parent = $ArtifactsPath; $parent; $parent = Split-Path $parent -Parent) {
 $properties = ([xml](Get-Content (Join-Path $repository 'Directory.Build.props'))).Project.PropertyGroup
 $engineName = $properties.EngineTargetName | Where-Object { $_ }
 $windowName = $properties.WindowTargetName | Where-Object { $_ }
-$output = Join-Path $ArtifactsPath 'bin/TinyTorrent/debug_win-x64_capture'
+$output = Join-Path $ArtifactsPath "bin/TinyTorrent/$($Configuration.ToLowerInvariant())_win-x64_capture"
 $executable = Join-Path $output "$engineName.exe"
 $window = Join-Path $output "$windowName.exe"
 if (-not (Test-Path -LiteralPath $window)) {
     throw "$output has no capture build. Build the app with /p:EnableCapture=true first."
 }
-if (Get-Process -Name $engineName, $windowName, 'Transfer' -ErrorAction SilentlyContinue) {
-    throw 'The capture review refuses to attach while TinyTorrent or the Transfer peer is running.'
+$session = (Get-Process -Id $PID).SessionId
+$running = @(Get-Process -Name $engineName, $windowName, 'Transfer' -ErrorAction SilentlyContinue |
+    Where-Object { $_.SessionId -eq $session })
+foreach ($instance in $running) {
+    if (-not ($instance.Path.StartsWith($repository + '\', [StringComparison]::OrdinalIgnoreCase) -or
+        $instance.Path.StartsWith($ArtifactsPath + '\', [StringComparison]::OrdinalIgnoreCase))) {
+        throw "The capture review cannot replace an installed copy outside this checkout: $($instance.Path)"
+    }
+}
+# One engine owns the logon's pipe, so a review replaces stray development instances
+# before starting its disposable store. It never attaches to the person's engine.
+foreach ($instance in $running) {
+    Stop-Process -Id $instance.Id -Force -ErrorAction SilentlyContinue
+    if (-not $instance.WaitForExit(10000)) { throw "Could not stop development process $($instance.Id)." }
 }
 . (Join-Path $repository 'engine/tests/Engine.ps1')
 
@@ -81,8 +100,8 @@ function Add-Torrent([string] $source, [string] $destination, [hashtable] $choic
     return $reply.data.torrent_id
 }
 
-function Wait-Until([scriptblock] $condition, [string] $failure) {
-    $until = [DateTime]::UtcNow.AddSeconds(30)
+function Wait-Until([scriptblock] $condition, [string] $failure, [int] $seconds = 30) {
+    $until = [DateTime]::UtcNow.AddSeconds($seconds)
     while (-not (& $condition)) {
         Assert ([DateTime]::UtcNow -lt $until) $failure
         [Threading.Thread]::Sleep(100)
@@ -93,7 +112,7 @@ function Test-Idle($torrents) {
     return -not ($torrents | Where-Object { -not $_.paused -or $_.peer_count -or $_.download_rate -or $_.upload_rate })
 }
 
-if ($Review -in 'files', 'files-layout', 'library', 'traffic') {
+if ($Review -in 'files', 'files-layout', 'library', 'library-files', 'traffic') {
     $document = @{ format = 1; torrents = @(); settings = @{ language = 'en'; theme = 'light'; port_mapping = $false;
         check_for_updates = $false; show_splash = $false; notifications_enabled = $false; prevent_sleep = $false } }
 } else {
@@ -102,7 +121,7 @@ if ($Review -in 'files', 'files-layout', 'library', 'traffic') {
     $document = Get-Content -LiteralPath (Join-Path $fixture 'settings.json') -Raw | ConvertFrom-Json -AsHashtable
 }
 $document.settings.default_destination = $payload
-$document.settings.all_paused = $Review -notin 'add-layout', 'traffic'
+$document.settings.all_paused = $Review -notin 'add-layout', 'traffic', 'library-files'
 if ($Language) { $document.settings.language = $Language }
 foreach ($torrent in $document.torrents) { $torrent.save_path = $payload }
 if ($Review -eq 'traffic') {
@@ -160,6 +179,51 @@ try {
             } else {
                 $members = @($torrents) + $outside
             }
+        }
+        'library-files' {
+            if ($LibraryFiles) {
+                $bytes = [Text.Encoding]::ASCII.GetBytes('fixture')
+                $members = for ($pack = 1; $pack -le $LibraryFiles / 100; $pack++) {
+                    $name = 'Library collection with long folder name {0:0000}' -f $pack
+                    $files = for ($index = 0; $index -lt 100; $index++) {
+                        $filename = switch ($index % 4) {
+                            0 { 'Movies/Example.Movie.{0:0000}.2024.mkv' -f $index }
+                            1 { 'Music/Example.Artist/Example.Album/Track.{0:0000}.mp3' -f $index }
+                            2 { 'Season packs/Example.Series/Season.01/Example.S01E{0:00}.mkv' -f $index }
+                            3 { 'Documents and duplicate copies/Example.Notes.{0:0000}.txt' -f $index }
+                        }
+                        Write-File (Join-Path (Join-Path $payload $name) $filename) $bytes
+                        @{ path = $filename; bytes = $bytes }
+                    }
+                    Add-Torrent (New-Torrent $name @($files)) $payload @{ paused = $false }
+                }
+                Wait-Until {
+                    $torrents = (Send-Command @{ command = 'snapshot' }).data.torrents
+                    $torrents.Count -eq $LibraryFiles / 100 -and -not ($torrents | Where-Object { -not $_.complete })
+                } 'The Library timing fixture did not verify' 180
+                $reply = Send-Command @{ command = 'pause'; torrent_ids = @($members) }
+                Assert $reply.ok 'The Library timing fixture did not pause'
+                $reply = Send-Command @{ command = 'session_pause'; paused = $true }
+                Assert $reply.ok 'The Library timing session did not pause'
+                Write-Json (Join-Path $directory 'library-timing.json') @{
+                    files = $LibraryFiles; enginePid = $script:process.Id; configuration = $Configuration
+                }
+                break
+            }
+            $name = 'Library samples'
+            $files = foreach ($filename in 'Coastal.Example.2024.mkv', 'Ocean.S01E02.mkv', 'Harbor.mp3', 'Readme.txt') {
+                $bytes = [Text.Encoding]::ASCII.GetBytes('sample ' * 64)
+                $full = Join-Path (Join-Path $payload $name) $filename
+                Write-File $full $bytes
+                $preserved[$full] = Payload-Hash $full
+                @{ path = $filename; bytes = $bytes }
+            }
+            $members = @(Add-Torrent (New-Torrent $name @($files)) $payload @{ paused = $false })
+            Wait-Until { (Send-Command @{ command = 'snapshot' }).data.torrents[0].complete } 'The Library fixture did not verify'
+            $reply = Send-Command @{ command = 'pause'; torrent_ids = $members }
+            Assert $reply.ok 'The verified Library fixture did not pause'
+            $reply = Send-Command @{ command = 'session_pause'; paused = $true }
+            Assert $reply.ok 'The Library fixture did not pause its session'
         }
         'library' {
             $bundle = [ordered]@{

@@ -6,6 +6,7 @@ using Microsoft.UI.Xaml.Controls;
 using Syno.TinyTorrent.Models;
 using Syno.TinyTorrent.Services;
 using Syno.TinyTorrent.Views;
+using LibraryBrowser = Syno.TinyTorrent.Library.Browser;
 
 namespace Syno.TinyTorrent;
 
@@ -51,11 +52,24 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     private bool _addOpen;
     private bool _dark;
     private bool _toolbarOpen = true;
+    private bool _subtitleHelpSeen;
 
     public Strings Text { get; }
     public IReadOnlyList<Torrent> Torrents => _torrents;
     public AddDraft AddDraft { get; }
     public Settings Settings { get; }
+    internal bool SubtitleHelpSeen
+    {
+        get => _subtitleHelpSeen;
+        set
+        {
+            if (_subtitleHelpSeen == value)
+                return;
+            _subtitleHelpSeen = value;
+            Changed(nameof(SubtitleHelpSeen));
+        }
+    }
+    public LibraryBrowser Library { get; }
     public string Theme =>
         Settings.Theme.ConfirmedText.Length > 0 ? Settings.Theme.ConfirmedText : "system";
     public bool ShowsTitleSpeeds => Settings.ShowTitleSpeeds.ConfirmedOn;
@@ -82,7 +96,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         && !_picking
         && !_receivingActivations
         && _arrivals.IsCompleted
-        && !AddDraft.IsPending
+        && !AddDraft.IsBusy
         && !Inspector.IsPending
         && !Settings.IsPending
         && !FileDraft.IsPending
@@ -90,7 +104,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         && _limitsChoice is null;
     public bool CanExit => _connected && CanClose;
     public string? DataDirectory => _client.DataDirectory;
-    public bool HasDraft => AddDraft.HasChanges || Inspector.HasDraft || FileDraft.HasChanges;
+    public bool HasDraft => AddDraft.HasDraft || Inspector.HasDraft || FileDraft.HasDraft;
     internal bool CanSave =>
         _connected && !_loading && !_storageFailed && !_shuttingDown && !_picking;
     public bool CanEdit => CanSave && !_closing;
@@ -146,9 +160,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
                 return;
             _toolbarOpen = value;
             Changed(nameof(IsToolbarOpen));
+            Changed(nameof(ShowsToolbar));
         }
     }
     public ICommand SwitchToolbar { get; }
+    public bool ShowsToolbar => Page != WindowPage.Library && IsToolbarOpen;
     public bool IsSessionPaused => _connected && IsPaused;
 
     private string Rate(double rate) =>
@@ -215,12 +231,30 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         SpeedLimit = new SpeedLimit(this, _client);
         Inspector = new Inspector(this, _client);
         Settings = new Settings(this, _client);
+        Library = new LibraryBrowser(strings, dispatcher);
+        Library.RetryRequested += (_, _) => RequestSnapshot();
+        Library.PropertyChanged += (_, args) =>
+        {
+            if (Page != WindowPage.Library)
+                return;
+            if (args.PropertyName is nameof(Library.Query) or "")
+                Changed(nameof(Query));
+            if (args.PropertyName is nameof(Library.IsOpen) or "")
+                Changed(nameof(HasInspector));
+            if (args.PropertyName is nameof(Library.Status) or "")
+                Changed(nameof(CountStatus));
+        };
         Filters = Enum.GetValues<TorrentFilter>()
             .Select(filter => new FilterChoice(this, filter))
             .ToArray();
         AddDraft.PropertyChanged += OnTaskChanged;
         Inspector.PropertyChanged += OnTaskChanged;
-        Settings.PropertyChanged += OnTaskChanged;
+        Settings.PropertyChanged += (sender, args) =>
+        {
+            if (!_closed && !_applyingSettings && _providerRoute is not null)
+                ConfigureRoute();
+            OnTaskChanged(sender, args);
+        };
         FileDraft.PropertyChanged += OnTaskChanged;
         SpeedLimit.PropertyChanged += OnTaskChanged;
         Restart = new RelayCommand(
@@ -367,7 +401,14 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             () => Inspect(Inspector.Section),
             () => CanEdit && _selected.Length == 1
         );
-        ClearFilters = new RelayCommand(ClearFinding, () => Filter != TorrentFilter.All);
+        ClearFilters = new RelayCommand(() =>
+        {
+            if (Page != WindowPage.Library)
+                return ClearFinding();
+            Library.ClearFilters.Execute(null);
+            return Task.CompletedTask;
+        }, () => Page == WindowPage.Library ? Library.ClearFilters.CanExecute(null) : Filter != TorrentFilter.All);
+        Library.ClearFilters.CanExecuteChanged += (_, _) => ((RelayCommand)ClearFilters).Refresh();
         ShowSettings = new RelayCommand(
             () => RequestSettings(new()),
             () => true
@@ -380,6 +421,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             },
             () => true
         );
+        Library.TorrentsRequested += (_, _) => ShowTorrents.Execute(null);
+        ShowLibrary = new RelayCommand(() =>
+        {
+            LibraryRequested?.Invoke(this, EventArgs.Empty);
+            return Task.CompletedTask;
+        }, () => true);
         ShowAbout = new RelayCommand(
             () =>
             {
@@ -488,11 +535,20 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             return;
         }
         var settings = snapshot.GetProperty("settings");
-        Settings.Apply(
-            settings,
-            snapshot.GetProperty("proxy"),
-            snapshot.GetProperty("proxy_check")
-        );
+        _applyingSettings = true;
+        try
+        {
+            Settings.Apply(
+                settings,
+                snapshot.GetProperty("proxy"),
+                snapshot.GetProperty("proxy_check")
+            );
+            ConfigureRoute();
+        }
+        finally
+        {
+            _applyingSettings = false;
+        }
         _client.SetRefreshInterval(settings.GetProperty("refresh_interval").GetInt32());
         IsPaused = snapshot.GetProperty("session_paused").GetBoolean();
         HasIncoming = snapshot.GetProperty("has_incoming").GetBoolean();
@@ -560,6 +616,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         ObserveUpdates();
         if (first)
             ShowRequested?.Invoke(this, EventArgs.Empty);
+        ObserveFiles(snapshot);
         Inspector.Observe(sessionId);
         SnapshotApplied?.Invoke(this, new SnapshotAppliedEventArgs(published, eligibilityChanged));
         // Torrents added together are shown together, once all of them are in the list.
@@ -694,7 +751,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         var revision = ++_languageRevision;
         try
         {
-            var catalogue = await Task.Run(() => Strings.Prepare(language));
+            var catalogue = await Task.Run(() => Text.Prepare(language));
             if (revision != _languageRevision || _closed)
                 return;
             Publish(catalogue);
@@ -734,7 +791,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
                 var published = false;
                 try
                 {
-                    var catalogue = await Task.Run(() => Strings.Prepare(language));
+                    var catalogue = await Task.Run(() => Text.Prepare(language));
                     if (_closed)
                         return;
                     if (revision != _languageRevision)
@@ -774,6 +831,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             torrent.RefreshText();
         AddDraft.Refresh();
         Inspector.RefreshText();
+        Library.RefreshText();
+        _ = RefreshFeatures();
         Settings.RefreshText();
         FileDraft.Refresh();
         Refresh();
@@ -1022,6 +1081,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         _closed = true;
         _updateRequest?.Cancel();
         AddDraft.StopPolling();
+        Library.Dispose();
         _client.Dispose();
         lock (_snapshotGate)
             _latest = null;

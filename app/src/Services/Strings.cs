@@ -9,17 +9,21 @@ namespace Syno.TinyTorrent.Services;
 public sealed class Strings
 {
     private Catalogue _current;
+    private readonly string[] _languageTags;
 
     public string Language => _current.Language;
     internal Syno.TableView.Strings Table => _current.Table;
     internal bool IsRightToLeft => _current.IsRightToLeft;
 
-    public Strings()
+    public Strings() : this([]) { }
+
+    internal Strings(IEnumerable<string> languageTags)
     {
+        _languageTags = languageTags.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         _current = Prepare("en");
     }
 
-    internal static Catalogue Prepare(string language)
+    internal Catalogue Prepare(string language)
     {
         var english = Read("en") ?? throw new InvalidDataException("Missing English catalogue.");
         var text = english.ToDictionary(
@@ -46,15 +50,33 @@ public sealed class Strings
                 text[group.Key][message.Key] = message.Value;
             }
         }
+        var names = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var previous = CultureInfo.CurrentUICulture;
+        try
+        {
+            CultureInfo.CurrentUICulture = culture;
+            foreach (var tag in _languageTags.Append(language).Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                try { names.Add(tag, CultureInfo.GetCultureInfo(tag).DisplayName); }
+                catch (CultureNotFoundException) { names.Add(tag, tag); }
+            }
+        }
+        finally
+        {
+            CultureInfo.CurrentUICulture = previous;
+        }
         return new Catalogue(
             language,
             text,
             Syno.TableView.Strings.Load(language),
-            culture.TextInfo.IsRightToLeft
+            culture.TextInfo.IsRightToLeft,
+            names
         );
     }
 
     internal void Publish(Catalogue catalogue) => Volatile.Write(ref _current, catalogue);
+
+    internal string LanguageName(string tag) => _current.LanguageNames.GetValueOrDefault(tag, tag);
 
     private static Dictionary<string, Dictionary<string, string>>? Read(string language)
     {
@@ -83,7 +105,8 @@ public sealed class Strings
 
     private static HashSet<string> Arguments(string text) =>
         Regex
-            .Matches(text, @"\{(\d+)(?:[^}]*)\}")
+            .Matches(text, @"\{\{|\{(\d+)(?:[^}]*)\}")
+            .Where(match => match.Groups[1].Success)
             .Select(match => match.Groups[1].Value)
             .ToHashSet();
 
@@ -119,8 +142,14 @@ public sealed class Strings
             : Format("errors", "detail", message, detail);
     }
 
-    public string Error(Exception error) =>
-        error is CommandException ? error.Message : Error("unknown", error.Message);
+    public string Error(Exception error) => error switch
+    {
+        CommandException => error.Message,
+        DatabaseVersionException => Get("errors", "database_version"),
+        Library.VideoException video => Get(video.Section, video.Reason),
+        Subtitles.SubtitleException subtitle => Get("subtitles", "failure_" + subtitle.Reason.ToString().ToLowerInvariant()),
+        _ => Error("unknown", error.Message),
+    };
 
     public string Bytes(double value)
     {
@@ -134,7 +163,7 @@ public sealed class Strings
         return Format("units", units[unit], value);
     }
 
-    /// <summary>Formats a remaining time in its two largest units; 100 days or more reads as never, as in qBittorrent.</summary>
+    /// <summary>Formats a remaining time in its two largest units; 100 days or more reads as never.</summary>
     public string Duration(double seconds)
     {
         var minutes = (long)Math.Ceiling(seconds / 60);
@@ -175,6 +204,7 @@ public sealed class Strings
         string Language,
         Dictionary<string, Dictionary<string, string>> Text,
         Syno.TableView.Strings Table,
-        bool IsRightToLeft
+        bool IsRightToLeft,
+        IReadOnlyDictionary<string, string> LanguageNames
     );
 }

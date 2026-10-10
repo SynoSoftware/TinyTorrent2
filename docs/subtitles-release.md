@@ -13,9 +13,26 @@ explicitly offers professional packages for commercial applications. Its
 describes application subscriptions assigned to consumer keys, including access
 without end-user authentication. Commercial integration is therefore a supported
 route, not categorically prohibited. An end-user VIP account and an application
-subscription are different arrangements. The owner's selected default is an
-application-funded package without end-user accounts. Procuring and provisioning
-it is TinyTorrent's responsibility; users are not asked to buy or configure access.
+subscription are different arrangements. The selected access model follows
+[third-party provider access](architecture.md#third-party-provider-access): retain
+the owner's existing free OpenSubtitles key; TinyTorrent funds no paid package.
+
+Development does not require buying that package. Checked on 2026-10-09, the
+supplier's Pro packages guide directs developers to create a Consumer and test
+the application before choosing a paid plan. A free consumer API key can
+establish the development integration. The
+[getting-started guide](https://opensubtitles.tawk.help/article/getting-started)
+requires a key on every request while allowing limited free downloads without
+user login: five downloads per 24 hours per IP. Verify the free application-key
+path and actual rate-limit/reset responses before release. The owner reports a
+four-request per-IP limit; its time window still needs confirmation. Optional
+login is separate from the application key; quota exhaustion never purchases access.
+
+The production anonymous acquisition path passed on 2026-10-09 with the existing
+free consumer key, yielding a valid 39,992-byte SRT. Its evidence and scope are
+recorded in [implementation evidence](subtitles-implementation.md#existing-evidence-and-release-gates).
+This establishes the observed download path; quota/reset responses and
+distribution terms remain unverified.
 
 The [website terms](https://opensubtitles.tawk.help/article/terms-of-service)
 and [legal information](https://opensubtitles.tawk.help/article/legal-information)
@@ -23,14 +40,14 @@ do not establish the scope of a TinyTorrent API agreement; the latter discusses
 the older .org website and other products. Neither a library's open-source
 license nor API availability licenses all subtitle content. The linked
 [subscription page](https://opensubtitles.stoplight.io/docs/opensubtitles-api/fcgiyz3p7sqn9-api-subscription-prices)
-yielded no readable terms in this review. No signed agreement, approved consumer
-registration, or applicable plan was supplied for TinyTorrent.
+yielded no readable terms in this review. The owner reports an existing free
+consumer key; the applicable distribution terms remain to be verified.
 
 Resolve the actual agreement's scope: desktop and Store distribution, commercial
 use if applicable, automatic and early searches, local downloads, permitted key
 distribution, quotas, attribution, and treatment of rights complaints. An
 explicit applicable published grant suffices; request written clarification only
-where those terms leave a material gap. Obtain account-free access for the default.
+where those terms leave a material gap. Verify the selected free integration.
 Apply the same check to each supplier before it is offered as working.
 
 SubDL's [terms](https://subdl.com/terms) permit an application, including a
@@ -39,8 +56,14 @@ pooling keys and asking for SubDL passwords. No attribution requirement was
 found. Its [API documentation](https://subdl.com/developers) states that search
 and download work on a free key, limited to 50 downloads a day. One user report
 from June 2026 ([Bazarr issue 3393](https://github.com/morpheus65535/bazarr/issues/3393))
-describes free keys receiving HTTP 402 on downloads. A test with a real free key
-settles this before SubDL is offered as working.
+describes free keys receiving HTTP 402 on downloads. On 2026-10-09 the configured
+development key downloaded one exact unpacked SRT over the fixed API origin
+with HTTP 200; the production decoder preserved its 135,733 bytes. The
+[implementation evidence](subtitles-implementation.md#existing-evidence-and-release-gates)
+records its digest and scope. This proves that key's observed download access,
+not every free plan. SubDL does not report a full/forced-only flag in the observed
+response; the matching contract requires an exact release and language and rejects
+explicit partial-subtitle labels, as defined in [Automatic subtitles](subtitles.md).
 
 SubSource's [API documentation](https://subsource.net/api-docs) issues each
 account its own key and sets rate limits per key. Its
@@ -66,11 +89,9 @@ does not. No movie information is necessary to check supplier access. This is
 an implementation approach to validate against the final agreement and data
 flow, not a guarantee of certification.
 
-The owner selected the existing torrent proxy/adapter route for every subtitle
-request, with no direct fallback when unavailable. This is settled product behavior;
-transport support and route verification remain implementation work. Check and
-authentication obey it as well as searches and downloads, so setup cannot bypass
-the user's route. The release policy must describe the verified implementation.
+Supplier operations follow the product's [network route](architecture.md#network-route).
+Transport support and route verification remain implementation work. The release
+policy describes the verified implementation.
 
 Where GDPR applies, [the regulation](https://eur-lex.europa.eu/eli/reg/2016/679/oj/eng)
 requires a lawful processing basis, transparency, minimization, and appropriate
@@ -115,7 +136,7 @@ torrent clients; renaming functionality is not a rights or privacy remedy.
 
 | Scope | Missing evidence or work | Completion evidence |
 | --- | --- | --- |
-| Supplier release | OpenSubtitles: TinyTorrent's applicable API/content permission and access arrangement are unverified; supplier guides establish the available route. SubDL: its terms permit each user's own key, but free-key downloads are unverified. SubSource: its terms do not address application use. Store 11.2 establishes the content-rights obligation. | Record the applicable grant/agreement and plan, resolve material scope/key-distribution/attribution questions, and verify authorized search/download access. |
+| Supplier release | OpenSubtitles: TinyTorrent's applicable API/content permission and access arrangement are unverified; the free application key passed Check and production anonymous acquisition. SubDL: its terms permit each user's own key; production acquisition, explicit partial-label rejection and the 73-language mapping are verified. SubSource: its terms do not address application use. Store 11.2 establishes the content-rights obligation. | Record the applicable grant/agreement and plan, resolve material scope/key-distribution/attribution questions, and verify the remaining authorized search/download paths. |
 | Feature release and Store | The actual privacy policy, publisher contact, API data handling, and network routing have not been established. Store 10.5 and applicable privacy law govern this. | Publish the accurate policy, link it in-app and in Partner Center, and verify disclosed payloads, credential handling, enable/disable behavior, recipients, retention and any applicable transfers. |
 | Store only | The treatment of supplier-contributed subtitles under UGC and age-rating provisions is unresolved. Sections 11.11/11.12 supply a concrete question, not proof of rejection. | Document applicable treatment for the submission date; implement any required unobtrusive reporting/source information and content access control, or retain authoritative evidence that a provision does not apply. |
 

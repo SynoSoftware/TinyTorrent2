@@ -12,7 +12,7 @@ void Engine::State::WatchFolder()
         return;
     watchAt = now;
     scanningWatch = true;
-    auto found = std::make_shared<std::map<std::string, std::string>>();
+    auto found = std::make_shared<std::map<std::string, std::string, PathLess>>();
     auto folder = settings.watchPath;
     auto recursive = settings.watchesRecursively;
     sources.Run([found, folder, recursive]
@@ -22,11 +22,10 @@ void Engine::State::WatchFolder()
             if (!entry.is_regular_file() || entry.is_symlink() ||
                 CompareStringOrdinal(entry.path().extension().c_str(), -1, L".torrent", -1, TRUE) != CSTR_EQUAL)
                 return;
-            auto path = std::filesystem::absolute(entry.path()).lexically_normal().wstring();
-            CharLowerBuffW(path.data(), static_cast<DWORD>(path.size()));
+            auto path = FullPath(entry.path());
             auto stamp = std::to_string(entry.file_size()) + ":" +
                 std::to_string(entry.last_write_time().time_since_epoch().count());
-            found->emplace(Utf8(path), std::move(stamp));
+            found->emplace(Utf8(path.wstring()), std::move(stamp));
         };
         if (recursive)
         {

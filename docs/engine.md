@@ -20,6 +20,11 @@ user's policy, not another transfer scheduler. The tray, pipe, and window cannot
 implement their own queue policy or reconstruct state from command
 acknowledgements.
 
+Native desktop actions call named Engine operations with typed outcomes, so
+tray behavior does not depend on protocol JSON. The protocol dispatcher adapts
+the same operation outcomes to replies. Settings validation and persistence
+remain in the single settings owner for both callers.
+
 Queue moves operate on libtorrent's download queue. Completed seeds have no
 download queue position and are refused as move targets; a placement before a
 seed means append to the download queue. Restore applies saved positions only
@@ -263,6 +268,8 @@ Direct addition follows the same ordering.
 
 The watched folder remembers unchanged source files while they remain in its
 current scan scope, so removing a torrent does not immediately add it again.
+Watched paths use the engine's Windows path comparison and retain their original
+spelling for messages; comparison does not rewrite the person's path.
 A successful complete scan forgets sources no longer in that scope; placing a
 source back or selecting a different folder permits admission again. Failed or
 incomplete scans retain the records. The 10,000-source bound applies to files
@@ -321,20 +328,14 @@ fetches the metadata from peers and checks the files already on disk, so no
 downloaded data is lost. An unreadable `settings.json` still refuses the whole
 store, because it is the list of torrents.
 
-**Owner ruling:** a value that `settings.json` holds incorrectly is repaired
-when the store loads, not refused, because the product keeps working and the
-person should not have to repair files. A number outside its range takes the
-nearest value it accepts. A value of the wrong type, an unknown word, a
-relative folder or a negative count takes its default, and an unreadable
-schedule period is dropped. An incomplete-download folder that cannot be used
-turns that folder off. An adapter name that matches no adapter is kept,
-because it blocks transfers instead of letting them use another adapter. In a
-torrent's record, each damaged value takes its default; a record without its
-folder takes the one in its resume file, and a record without its identity
-comes back from its saved hashes under a new one. The next save writes the
-repaired values. Only loading repairs: a settings command with an invalid
-value is still refused, so the window keeps the person at that field. The
-store is refused only when `settings.json` is not JSON, names another format
+Apply [saved-value recovery](architecture.md#saved-value-recovery) to
+`settings.json`. An adapter name that matches no adapter is kept, because it
+blocks transfers instead of letting them use another adapter. A torrent record
+without its folder takes the one in its resume file, and a record without its
+identity comes back from its saved hashes under a new one. The next save writes the
+repaired values. Loading keeps the first 128 valid schedule periods, the same
+limit that an edit accepts, so an oversized saved schedule cannot block later
+edits. The store is refused only when `settings.json` is not JSON, names another format
 or holds no readable list of torrents, because then no correct value exists
 and a save would drop the person's torrents.
 
@@ -580,10 +581,11 @@ that cannot acquire the mutex forwards its activation through the engine to the
 existing window and exits. The mutex stores no product state; the engine still
 owns launch policy.
 
-When Show dialog when adding torrents is on, incoming sources open or activate
-the window and join its Add dialog. When it is off, the engine adds them through
-the same guarded workflow at the default destination without opening or raising
-the window, even if it is already running. Duplicate sources report the existing
+Activation follows the interface's [Add policy](interface.md#add). Several
+sources are added directly; a single source opens or activates the Add dialog
+when Show dialog when adding torrents is on. Direct additions use the same
+guarded workflow at the default destination without opening or raising the
+window, even if it is already running. Duplicate sources report the existing
 torrent instead of opening a tracker-merge prompt. Queue and pause policy still
 apply, so a background addition cannot lift a deliberate pause.
 
@@ -608,12 +610,13 @@ an error, the tooltip starts with the error count and, while Notify about
 problems is on, the icon shows its error variant, so the problem stays visible
 after its notification has gone. Both follow the error count and clear when no
 torrent has an error. The complete menu has
-two live, nonclickable status rows, a separator, Show window and Pause Transfers,
+two live, nonclickable status rows, a separator, Show window and Pause all,
 a separator, and Exit. The first status row shows aggregate download and upload
 speed; the second shows active and queued counts. While the session is paused,
-the second row is Paused with the torrent count. Resume Transfers replaces
-Pause Transfers only while the person or the schedule paused transfers, because
-Resume cannot lift a missing adapter's pause; the tooltip names that adapter
+the second row is Paused with the torrent count. The [interface](interface.md#main-window)
+owns command names. Resume all replaces Pause all only while the person or the
+schedule paused transfers, because Resume cannot lift a missing adapter's pause;
+the tooltip names that adapter
 instead. The pause command uses the saved session pause above and keeps
 each torrent's own choice. A single left-click shows this same lightweight menu;
 it never opens WinUI. Wait for Windows' double-click interval before showing it,
@@ -739,7 +742,8 @@ reported programs to `settings.json` and keeps them after they are no longer
 found, so a problem the person leaves alone, or a check that timed out once,
 does not return at every start. Selecting the notification opens Settings.
 
-Every start also moves what only the product before this one wrote: a per-user
+Every start on the default store also moves what only the product before this
+one wrote: a per-user
 command on the `.torrent` or `magnet` key that starts a `TinyTorrent.exe`
 becomes this copy's command while the handlers are registered and is removed
 while they are not, and a `.torrent` default naming TinyTorrent's class is
@@ -794,9 +798,12 @@ setup reports the condition and can be retried. No process is force-terminated.
 Closing WinUI normally exits without confirmation. Resolve actual unfinished
 edits according to [the interface](interface.md#committing-edits), and do not
 silently drop changes already committed in the window but still being submitted.
-For Close, hide the window before waiting when no draft, dialog or picker needs it, so
-closing does not leave a disabled window on screen. Show it again if an edit
-decision or failed close needs the person's attention.
+**Owner ruling: Close and Exit hide the window at once.** The window hides
+before it waits for anything, unless a draft, dialog or picker needs the person,
+because a window that stays on screen while it closes looks frozen and holds the
+screen for no one. Show it again only if an edit decision or failed close needs
+the person's attention. Waiting for accepted work, saving and shutdown happen
+with the window hidden; the tray icon stays until the engine exits.
 Accepted operations and transfers continue in the engine. Window-only snapshots and
 detail collection stop or are released with their last consumer; tray status,
 queue policy, swarm activity, [speed history](#state-and-work), and persistence
@@ -808,8 +815,6 @@ confirmation is on by default and belongs to the desktop host, so tray Exit and
 window Exit use one check even when WinUI is closed. While the window is open,
 the host asks it to show the prompt in the app's dialog style; the host shows a
 native prompt when the window is closed or cannot show a dialog at that moment.
-The window stays visible through confirmation and close preparation until the
-engine accepts its close reply, so waiting for a decision never looks like a completed Exit.
 Windows shutdown and headless operation bypass it. After confirmation, engine Exit closes
 the window by the same rules as Close: a prompt appears only for actual unfinished
 input, and Cancel in that prompt cancels Exit. If a move or file deletion is running, Exit
@@ -908,6 +913,12 @@ engine checks the proxy itself each time it applies one: it connects, signs in
 and reports the outcome in the snapshot. The `check_proxy` command runs the
 same check on values that are not saved.
 
+Proxy checks use the confirmed adapter for name resolution and the TCP connection,
+including checks of draft proxy credentials. A missing adapter reports the proxy
+as unreachable without opening a connection. A confirmed proxy or adapter change,
+or loss of that adapter, cancels earlier checks before they can send credentials;
+the automatic check runs again when the selected route becomes available.
+
 The network adapter setting, by default any adapter, limits torrent
 traffic to one adapter, such as a VPN, through libtorrent's listen and outgoing
 interface settings. While that adapter is absent, no torrent traffic flows and
@@ -915,10 +926,10 @@ the window and the tray tooltip say why, so traffic never leaks onto another
 adapter.
 
 Speed limits and a second pair, alternative limits, use libtorrent's session
-rate limits. The window's Limits selector chooses None, which applies neither
-pair, Speed limits, Alternative limits, or the enabled schedule. None is its own
-choice, so turning limits off keeps the caps the person typed. Outside
-scheduled periods, the schedule applies speed limits. Both pairs include LAN and loopback peers: global means all torrent
+rate limits. The interface owns the [speed-mode choices](interface.md#main-window).
+A fixed choice saves `schedule_enabled: false` with `limit_mode`; Weekly schedule
+enables the saved periods. Turning limits off keeps the caps the person typed.
+Outside scheduled periods, the schedule applies standard limits. Both pairs include LAN and loopback peers: global means all torrent
 traffic, with no undisclosed local-network exemption. The engine assigns every
 peer socket type to libtorrent's global peer class while retaining its other
 class defaults. This makes the displayed limits apply to local transfers too.
@@ -929,12 +940,12 @@ Weekly periods repeat in local time with Monday numbered zero. Equal start and
 end times span a full day beginning at that time; an earlier end spans midnight.
 Pause wins over alternative limits on overlap. Manual Pause all remains saved
 and authoritative. Explicit Resume during a scheduled pause bypasses that pause
-until the next schedule-mode change; an explicit limit choice similarly
-overrides the current mode until that boundary or an explicit Follow schedule.
-Editing periods without changing the current scheduled mode preserves the
-override; changing whether the schedule is enabled clears the rate override.
+until the next schedule-mode change. Editing periods without changing the current
+scheduled mode preserves that pause exemption. A fixed limit choice disables
+scheduling until the person selects Weekly schedule again; it does not expire
+at a period boundary.
 A limit choice never resumes paused transfers. An absent selected adapter
-still blocks transfers. These temporary schedule overrides are not saved or
+still blocks transfers. The temporary pause exemption is not saved or
 replayed after restart. The saved limit choice remains the manual default
 when scheduling is disabled. Snapshots report the applied mode and caps, their
 controlling origin and the current pause reason together, so the window does not infer
@@ -993,9 +1004,11 @@ connection owns the operation, so another caller cannot release or replace it.
 
 The engine keeps the defaults of the pinned libtorrent release, v2.1.2, because
 they are tuned and a changed value can slow transfers without a visible
-benefit. The Settings page changes only the libtorrent settings in
-[Network settings](#network-settings) and the four Advanced controls described
-in [Disk write caching](#disk-write-caching). The disk backend stays at its
+benefit. The Settings page exposes the approved [product settings](interface.md#settings),
+including network protocol choices, preallocation, queue and seeding policy,
+and the memory and checking controls in [Disk write caching](#disk-write-caching).
+The [wire record](implementation.md#wire-representation) owns their fields and ranges.
+The disk backend stays at its
 default ([Disk write caching](#disk-write-caching)). The engine changes three
 more defaults:
 
@@ -1017,17 +1030,19 @@ more defaults:
 
 By default, success is quiet and problems interrupt. A person who asked for a
 download does not need to be told that it happened, but does need to know when
-it stopped. Three switches let a person choose otherwise, including turning
+it stopped. Four switches let a person choose otherwise, including turning
 every notification off: Notify when a download finishes and Notify when a
-torrent is added start off; Notify about problems starts on. A failure of
+torrent is added start off; Notify about problems and Notify when the window
+closes and transfers continue start on. A failure of
 something the person just asked for, such as the final save on Exit, opening a
 source or starting the window, is not one of these notifications and always
 shows, because staying silent would leave the person believing it worked.
 
 A Windows notification uses the existing tray's
 [`Shell_NotifyIcon`](https://learn.microsoft.com/en-us/windows/win32/shell/notification-area)
-path. Respect Windows notification suppression and quiet time; delivery is best
-effort and needs no WinUI process or new notification runtime. Send one only
+path, except the notice when the window closes, described below. Respect
+Windows notification suppression and quiet time; delivery is best effort and
+needs no WinUI process or added library. Send one only
 when its switch is on. Problems and completions use the open window when one
 exists; background additions still use the tray so they do not raise that window:
 
@@ -1053,10 +1068,16 @@ an existing seed is restored or rechecked, and only after libtorrent has written
 the finished data to disk and the finished files have their real names, so a
 file opened from that folder is whole.
 
-The first time the window closes while the engine keeps running, show one
-notification that TinyTorrent is still running in the notification area and that
-Exit is in its menu. Windows 11 places new tray icons in the hidden overflow, so
-without it the person cannot tell that transfers continue.
+Each time the window closes while the engine keeps running, show a
+notification that TinyTorrent is still running in the notification area and
+that Exit is in its menu. Windows 11 places new tray icons in the hidden
+overflow, so without it the person cannot tell that transfers continue. Notify
+when the window closes and transfers continue starts on. This notification is a Windows
+[toast](https://learn.microsoft.com/en-us/windows/apps/design/shell/tiles-and-notifications/send-local-toast)
+with a Don't show again button that turns that switch off, because a balloon
+cannot carry a button and opening the window the person just closed would undo
+their action. Selecting the rest of the toast only dismisses it. When Windows
+refuses the toast, the same text shows as a balloon.
 
 The idle-sleep setting starts enabled for active payload downloads on mains
 power. A second setting, also while seeding, starts disabled; it keeps the PC
@@ -1121,7 +1142,7 @@ Advanced also exposes three controls for verification and large seeding librarie
 
 Defaults match the pinned libtorrent release. Changes use the existing settings
 commit and session update, including after restart. Windows working-set trimming,
-disk backend selection, cache bypasses, and protocol tuning are not controls:
+disk backend selection and cache bypasses are not controls:
 they add paging or change storage behavior without an established benefit for
 this backend. A Windows working-set limit would not cap allocations or the
 separate WinUI process.

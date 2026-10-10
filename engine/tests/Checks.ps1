@@ -20,6 +20,7 @@ $engineName = ([xml](Get-Content (Join-Path $repository 'Directory.Build.props')
 $configuration = if ($Check -eq 'Pause') { 'Debug' } else { 'Release' }
 $executable = Join-Path $repository "artifacts/bin/Engine/$configuration/$engineName.exe"
 if ($EnginePath) { $executable = [IO.Path]::GetFullPath($EnginePath) }
+$peerExecutable = [IO.Path]::GetFullPath((Join-Path (Split-Path $executable -Parent) '../../Transfer/Release/Transfer.exe'))
 $directory = Join-Path $repository ('artifacts/evidence/' + $Check + '-' + [guid]::NewGuid())
 $null = New-Item -ItemType Directory -Path $directory
 $payload = Join-Path $directory 'payload'
@@ -521,14 +522,14 @@ try {
             Assert (@($trackers).Count -eq 0) 'An explicit empty tracker list restored the original trackers'
         }
         'SettingsPolicy' {
-            Assert ($initial.settings.notify_problems -eq $true -and $initial.settings.notifications_enabled -eq $false -and $initial.settings.notify_added -eq $false) 'Fresh notification settings do not keep successes quiet and problems visible'
+            Assert ($initial.settings.notify_problems -eq $true -and $initial.settings.notifications_enabled -eq $false -and $initial.settings.notify_added -eq $false -and $initial.settings.notify_background -eq $true) 'Fresh notification settings do not keep successes quiet and problems visible'
             Assert ($initial.settings.encryption -eq 'preferred' -and $initial.settings.proxy_type -eq 'none') 'Fresh network settings do not prefer encryption without a proxy'
             $previewId = Preview
             $reply = Send-Command @{ command = 'add'; preview_id = $previewId; destination = $payload; paused = $true }
             Assert $reply.ok 'Settings policy fixture addition failed'
             $torrentId = $reply.data.torrent_id
             $period = @{ days = @(0, 1, 2, 3, 4, 5, 6); start = 0; end = 0; mode = 'paused' }
-            $reply = Send-Command @{ command = 'settings'; changes = @{ schedule_enabled = $true; schedule = @($period); check_for_updates = $false; active_downloads = 1; port_mapping = $false; notify_problems = $false; notifications_enabled = $true; notify_added = $true } }
+            $reply = Send-Command @{ command = 'settings'; changes = @{ schedule_enabled = $true; schedule = @($period); check_for_updates = $false; active_downloads = 1; port_mapping = $false; notify_problems = $false; notifications_enabled = $true; notify_added = $true; notify_background = $false } }
             Assert $reply.ok 'The weekly schedule could not be committed'
             $snapshot = (Send-Command @{ command = 'snapshot' }).data
             Assert $snapshot.session_paused 'An all-day paused period did not pause the session'
@@ -566,7 +567,7 @@ try {
             $snapshot = Start-Engine
             Assert ($snapshot.settings.schedule.Count -eq 1 -and $snapshot.settings.schedule[0].mode -eq 'alternative') 'A committed weekly period was lost at restart'
             Assert ($snapshot.settings.active_downloads -eq 1 -and -not $snapshot.settings.check_for_updates -and -not $snapshot.settings.port_mapping) 'Committed settings were lost at restart'
-            Assert ($snapshot.settings.notify_problems -eq $false -and $snapshot.settings.notifications_enabled -eq $true -and $snapshot.settings.notify_added -eq $true) 'Notification choices were lost at restart'
+            Assert ($snapshot.settings.notify_problems -eq $false -and $snapshot.settings.notifications_enabled -eq $true -and $snapshot.settings.notify_added -eq $true -and $snapshot.settings.notify_background -eq $false) 'Notification choices were lost at restart'
             Assert ($snapshot.settings.proxy_type -eq 'socks5' -and $snapshot.settings.proxy_password -eq $secret) 'The proxy and its password were lost at restart'
             Assert (-not [IO.File]::ReadAllText((Join-Path $directory 'settings.json')).Contains($secret)) 'settings.json holds the proxy password as plain text'
             Assert ($snapshot.limits.mode -eq 'alternative' -and $snapshot.torrents[0].paused) 'Restart replayed a temporary override or lost individual pause intent'
@@ -629,7 +630,7 @@ try {
             $reply = Send-Command @{ command = 'add'; preview_id = $reply.data.preview_id; destination = $payload; paused = $false }
             Assert $reply.ok 'Magnet could not be confirmed before metadata'
             $torrentId = $reply.data.torrent_id
-            $peer = Start-Process -FilePath (Join-Path $repository 'artifacts/bin/Transfer/Release/Transfer.exe') `
+            $peer = Start-Process -FilePath $peerExecutable `
                 -ArgumentList @(('"' + $peerDirectory + '"'), '6881') -WindowStyle Hidden -PassThru `
                 -RedirectStandardOutput (Join-Path $directory 'peer.log') -RedirectStandardError (Join-Path $directory 'peer-error.log')
             $until = [DateTime]::UtcNow.AddSeconds(100)
@@ -678,7 +679,7 @@ try {
                 ConvertTo-Json | Tee-Object -FilePath (Join-Path $directory 'repair.json')
         }
         'SelectedTransfer' {
-            $peer = Start-Process -FilePath (Join-Path $repository 'artifacts/bin/Transfer/Release/Transfer.exe') `
+            $peer = Start-Process -FilePath $peerExecutable `
                 -ArgumentList @(('"' + $peerDirectory + '"'), '6881', 'seed-files') -WindowStyle Hidden -PassThru `
                 -RedirectStandardOutput (Join-Path $directory 'peer.log') -RedirectStandardError (Join-Path $directory 'peer-error.log')
             $until = [DateTime]::UtcNow.AddSeconds(30)
@@ -845,7 +846,7 @@ try {
         'DiskError' {
             $collision = Join-Path $payload 'transfer.bin'
             $null = New-Item -ItemType Directory -Path $collision
-            $peer = Start-Process -FilePath (Join-Path $repository 'artifacts/bin/Transfer/Release/Transfer.exe') `
+            $peer = Start-Process -FilePath $peerExecutable `
                 -ArgumentList @(('"' + $peerDirectory + '"'), '6881') -WindowStyle Hidden -PassThru `
                 -RedirectStandardOutput (Join-Path $directory 'peer.log') -RedirectStandardError (Join-Path $directory 'peer-error.log')
             $previewId = Preview
@@ -882,7 +883,7 @@ try {
             $magnet = 'magnet:?xt=urn:btih:' + $reply.data.hashes[0]
             $reply = Send-Command @{ command = 'cancel_preview'; preview_id = $reply.data.preview_id }
             Assert $reply.ok 'File preview did not release'
-            $peer = Start-Process -FilePath (Join-Path $repository 'artifacts/bin/Transfer/Release/Transfer.exe') `
+            $peer = Start-Process -FilePath $peerExecutable `
                 -ArgumentList @(('"' + $peerDirectory + '"'), '6881') -WindowStyle Hidden -PassThru `
                 -RedirectStandardOutput (Join-Path $directory 'peer.log') -RedirectStandardError (Join-Path $directory 'peer-error.log')
             $reply = Send-Command @{ command = 'preview'; source = $magnet; destination = $payload }
@@ -916,7 +917,7 @@ try {
             Assert (@($snapshot.torrents).Count -eq 0) 'Cancelled preview became membership after restart'
         }
         'RemoveKeepFiles' {
-            $peer = Start-Process -FilePath (Join-Path $repository 'artifacts/bin/Transfer/Release/Transfer.exe') `
+            $peer = Start-Process -FilePath $peerExecutable `
                 -ArgumentList @(('"' + $peerDirectory + '"'), '6881') -WindowStyle Hidden -PassThru `
                 -RedirectStandardOutput (Join-Path $directory 'peer.log') -RedirectStandardError (Join-Path $directory 'peer-error.log')
             $previewId = Preview

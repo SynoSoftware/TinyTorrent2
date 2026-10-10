@@ -31,7 +31,7 @@ public sealed partial class Row : ContentControl
         DefaultStyleKey = typeof(Row);
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
-        DataContextChanged += OnRowItemChanged;
+        DataContextChanged += OnItemChanged;
     }
 
     protected override void OnApplyTemplate()
@@ -59,7 +59,7 @@ public sealed partial class Row : ContentControl
         _owner = FindOwner(this);
         if (_owner is not null)
         {
-            _owner.RowVisualsChanged += OnRowVisualsChanged;
+            _owner.RowVisualsChanged += OnVisualsChanged;
         }
 
         UpdateStates(useTransitions: false);
@@ -78,15 +78,15 @@ public sealed partial class Row : ContentControl
             return;
         }
 
-        _owner.RowVisualsChanged -= OnRowVisualsChanged;
+        _owner.RowVisualsChanged -= OnVisualsChanged;
         _owner = null;
     }
 
     /// <summary>A recycled container gets a new row item and must repaint before it is shown.</summary>
-    private void OnRowItemChanged(FrameworkElement sender, DataContextChangedEventArgs args) =>
+    private void OnItemChanged(FrameworkElement sender, DataContextChangedEventArgs args) =>
         UpdateStates(useTransitions: false);
 
-    private void OnRowVisualsChanged(object? sender, EventArgs e) =>
+    private void OnVisualsChanged(object? sender, EventArgs e) =>
         UpdateStates(useTransitions: true);
 
     /// <summary>

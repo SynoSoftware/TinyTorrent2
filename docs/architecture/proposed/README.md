@@ -7,7 +7,9 @@ without requiring the original review folders. Source checks started at
 `8e92ce9` and included the changing working tree; historical findings are not a
 claim about what remains unimplemented today.
 
-This proposal supersedes the competing review recommendations for planning.
+This proposal preserves the selected refactoring plan at that checkpoint;
+superseded presentation and workflow choices are historical, not a second
+backlog or authority for current work.
 The [active contracts](../../README.md) own required behavior, including the
 settled owner rulings; implementation updates the relevant source maps and
 records its evidence against those contracts.
@@ -17,10 +19,8 @@ Implementation from `db6ec1d` is tracked in the
 [current source map](../../architecture-current.md) describes the implemented
 owners. Historical deletion targets below are not a second backlog.
 
-Apply the owner's [governing goal](delivery.md#governing-goal) to every slice,
-including work underway and deferred issues. Put each decision in one owner,
-retain distinctions that affect behavior, and remove the old path when replacing
-it. Neither smaller files nor fewer lines alone establish an improvement.
+Follow the [root instructions](../../../AGENTS.md) for current implementation
+decisions; the delivery document preserves the earlier sequencing and rationale.
 
 - This document describes the target and its reasons.
 - [Decisions](decisions.md) accounts for the input reviews, including rejected

@@ -121,11 +121,17 @@
             <TextBox
               x:Name="Destination"
               AutomationProperties.AutomationId="MoveDestination"
+              AutomationProperties.Name="{x:Bind Model.Text.Get('file_action', 'destination'), Mode=OneWay}"
+              AutomationProperties.HelpText="{x:Bind Model.FileDraft.DestinationError, Mode=OneWay}"
               IsReadOnly="True"
               Text="{x:Bind Model.FileDraft.Destination, Mode=OneWay}"
               ToolTipService.ToolTip="{x:Bind Model.FileDraft.Destination, Mode=OneWay}"
               FlowDirection="LeftToRight"
-            />
+            >
+              <TextBox.Header>
+                <controls:FieldHeader Error="{x:Bind Model.FileDraft.DestinationError, Mode=OneWay}" />
+              </TextBox.Header>
+            </TextBox>
             <controls:ActionButton
               Glyph="{x:Bind icons:Lucide.FolderSearch}"
               ToolTipService.ToolTip="{x:Bind Model.Text.Get('file_action', 'browse_tip'), Mode=OneWay}"

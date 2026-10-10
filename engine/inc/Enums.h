@@ -335,6 +335,7 @@ enum class ErrorCode
     PreviewExpired,
     PreviewFailed,
     TorrentRemoved,
+    AliasConflict,
     AddFailed,
     RegistrationFailed
 };

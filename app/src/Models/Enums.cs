@@ -1,10 +1,28 @@
 namespace Syno.TinyTorrent.Models;
 
+public enum FileKind
+{
+    Video,
+    Audio,
+    Picture,
+    Document,
+    Archive,
+    Other,
+}
+
 public enum WindowPage
 {
     Torrents,
     Settings,
     About,
+    Library,
+}
+
+public enum LibraryConfiguration
+{
+    Videos,
+    Music,
+    Files,
 }
 
 public enum TransferPreset
@@ -20,6 +38,7 @@ public enum Consumer
     Summary,
     Inspector,
     Draft,
+    Files,
 }
 
 public enum PieceOrder
@@ -69,6 +88,49 @@ public enum SettingsCategory
     Appearance,
     Advanced,
     Schedule,
+    Subtitles,
+}
+
+internal enum SubtitleSupplier
+{
+    OpenSubtitles,
+    SubDL,
+    SubSource,
+}
+
+internal enum SubtitleStage
+{
+    Release,
+    Complete,
+}
+
+internal enum SubtitleOutcome
+{
+    Pending,
+    NoMatch,
+    Unavailable,
+    Failed,
+}
+
+internal enum SubtitleFailure
+{
+    None,
+    Unconfigured,
+    Unavailable,
+    Authentication,
+    Quota,
+    Network,
+    Route,
+    Database,
+    Save,
+    Format,
+}
+
+internal enum SubtitlePathAccess
+{
+    Pending,
+    Protected,
+    Allowed,
 }
 
 public enum InspectorSection
@@ -130,6 +192,13 @@ internal enum ExitAnswer
     Cancelled,
     // The window cannot show the prompt now, so the engine asks natively.
     Unavailable,
+}
+
+public enum VideoKind
+{
+    Movie,
+    Series,
+    Episode,
 }
 
 internal enum PauseReason
@@ -213,6 +282,7 @@ internal enum CaptureMode
     Search,
     Library,
     Traffic,
+    LibraryFiles,
     Edits,
     AddLayout,
     SettingsLayout,

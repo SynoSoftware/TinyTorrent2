@@ -1,11 +1,10 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Documents;
 
 namespace Syno.TinyTorrent.Controls;
 
-// SettingsPage.xaml supplies the shared template for each setting.
+// App.xaml supplies the shared template for each setting.
 public sealed partial class SettingsRow : ContentControl
 {
     public static readonly DependencyProperty HeaderProperty = Text(nameof(Header));
@@ -114,23 +113,6 @@ public sealed partial class SettingsRow : ContentControl
 
     private void Update()
     {
-        if (GetTemplateChild("HeaderRun") is Run label)
-            label.Text = Header;
-        if (GetTemplateChild("ErrorText") is Run error)
-            error.Text =
-                Error.Length > 0
-                    ? (Header.Length > 0 ? " · " : string.Empty) + Error
-                    : string.Empty;
-        if (GetTemplateChild("CautionText") is Run caution)
-            caution.Text =
-                Caution.Length > 0
-                    ? (Header.Length > 0 || Error.Length > 0 ? " · " : string.Empty) + Caution
-                    : string.Empty;
-        if (GetTemplateChild("HeaderText") is TextBlock header)
-            ToolTipService.SetToolTip(
-                header,
-                string.Join(" · ", new[] { Header, Error, Caution }.Where(text => text.Length > 0))
-            );
         Show("DetailPresenter", Detail is not null);
         Show("StateLabel", StateText.Length > 0);
         Show("UnitLabel", Unit.Length > 0);

@@ -1,12 +1,16 @@
 using System.Runtime.InteropServices;
 using Microsoft.UI.Xaml;
 using Syno.TinyTorrent.Controls;
+using Syno.TinyTorrent.Models;
 using Syno.TinyTorrent.Services;
+using Supplier = Syno.TinyTorrent.Subtitles.Supplier;
 
 namespace Syno.TinyTorrent;
 
 public partial class App : Application
 {
+    internal static Version Version { get; } = typeof(App).Assembly.GetName().Version ?? new Version(0, 0, 0, 0);
+    internal static string UserAgent { get; } = "TinyTorrent/" + Version;
     private Mutex? _instance;
     private MainWindow? _window;
 
@@ -76,7 +80,7 @@ public partial class App : Application
             return;
         }
 
-        _strings = await Task.Run(() => new Strings());
+        _strings = await Task.Run(() => new Strings(Supplier.CreateAll().SelectMany(supplier => supplier.Languages)));
         _window = new MainWindow(_strings);
         _windowHandle = WinRT.Interop.WindowNative.GetWindowHandle(_window);
         _window.Closed += (_, _) =>

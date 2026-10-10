@@ -23,7 +23,8 @@ When principles conflict, prefer them in this order:
 3. **Established platform or domain vocabulary over invented terminology.** A second word for one
    concept makes the reader decide whether two concepts exist.
 4. **Structure over repeated context.** Repeating the owner, namespace, type, or layer in every name
-   hides the distinction the reader actually needs.
+   hides the distinction the reader actually needs. This principle is never traded against the
+   others: a name that repeats its scope is invalid, as the first rule below states.
 5. **One word before two.** Add a second word only when it carries a distinction the use site still
    needs.
 
@@ -38,9 +39,17 @@ its outcome rather than name a domain concept.
 
 ### Carry only the necessary distinctions
 
+- A name never repeats context its scope already supplies: the namespace, the file, the enclosing
+  type or method, or the property path that reaches it. Such a name is invalid, because the reader
+  always reads the name with that context, so the repeated word only hides the distinction the name
+  should carry. Write `Tmdb.Provider`, not `TmdbProvider`; `Episode.Number`, not `EpisodeNumber`;
+  and `query` inside `Search(string query)`, not `searchQuery`. A member may still name the part of
+  its scope that it holds, as `KeyValuePair.Key` does and as `_website` does inside `WebsiteDialog`;
+  the rule rejects a word that only qualifies what the scope already says, such as
+  `Schedule.ScheduleMessage`. Keys are the one exception, below.
 - A name says only what its namespace, enclosing type, member type, relationships, and invariants do
   not already say. A local may rely heavily on nearby context; a widely used type or public contract
-  may need more of its distinction in the name.
+  may need more of its distinction in the name, but never by repeating its scope.
 - A type never repeats its namespace: `Syno.TableView.Column`, not `Syno.TableView.TableColumn`.
   A type named exactly like its namespace's last segment also breaks consumers: inside any `Syno.*`
   namespace the name resolves to the namespace, and C# reports CS0118.
@@ -56,16 +65,18 @@ its outcome rather than name a domain concept.
   unless multiple representations coexist at that use site. A `string` must not read like an object,
   nor an `int` like a collection: `string torrent` claims a torrent but holds only a hash, and
   nothing checks the claim.
-- Keys name the concept they identify: `TorrentId`, never a bare `Id`. A command or snapshot can
-  carry several identities, such as torrent identity and engine-session identity, and a bare `Id`
-  does not say which one it holds.
+- Keys name the concept they identify, even on their own owner: `TorrentId`, never a bare `Id`, and
+  `Website.WebsiteId`, not `Website.Id`. A key's value is a bare number, string or GUID that callers
+  compare, store and pass apart from its owner, where a bare `Id` no longer says what it identifies.
+  A command or snapshot can also carry several identities, such as torrent identity and
+  engine-session identity. This is the one exception to the scope rule above.
 - Use the grammar of the code: types and state are nouns, actions are verbs, booleans are affirmative
   conditions, and collections are plural. Let the owner supply the object of an action when it is
   already clear: `column.Hide()`, not `column.HideColumn()`.
 - A boolean switch uses the platform's frame for its kind, so a WinUI reader recognizes it: `Can`
   for a capability (`Column.CanHide`, `Table.CanReorder`, as `ListView.CanReorderItems`),
   `Is…Enabled` for a gesture (`IsMarqueeEnabled`, as `UIElement.IsTapEnabled`), and `Shows` for
-  optional chrome (`ShowsHeaderButtons`, as `ListViewBase.ShowsScrollingPlaceholders`). The frame does
+  optional chrome (as `ListViewBase.ShowsScrollingPlaceholders`). The frame does
   not count toward the word guidance above. A property's change callback drops the frame and keeps
   the concept: `OnReorderChanged` for `CanReorder`, because the frame adds nothing to a callback
   that only that property calls.
@@ -101,6 +112,8 @@ For every new or changed name, answer all of these before accepting it:
 2. What context is reliably present at its busiest use sites?
 3. Which distinctions must the name still carry after that context is considered?
 4. Does every word carry one of those distinctions, or repeat the owner, type, layer, or mechanism?
+   A word that repeats the namespace, file, enclosing type or method, or property path makes the
+   name invalid, unless the name is a key.
 5. Would removing a word lose meaning, or only remove redundancy?
 6. If qualifiers accumulate, should the structure express some of them instead?
 
@@ -120,16 +133,20 @@ is a fragmentation check: group a smaller file with its owner unless its standal
 required by the framework or build. Generated files are exempt. Never pad a file to meet the
 minimum. A low caller count is not proof that a cohesive asset is obsolete.
 
-The required central enum vocabulary uses `Enums.cs` in managed projects and
-`Enums.h` in the native project. That prescribed home may be smaller than the
-fragmentation minimum; keep it concise rather than padding it or scattering enums.
+Each project has one enum file, and every enum the project declares lives there,
+one member per line, including enums only one type uses. This gives each
+project's vocabulary one discoverable home instead of scattering declarations
+among their current consumers. Managed projects use `Enums.cs`: the product app
+keeps it in `Models/`, and a library keeps it beside its project file. The
+native engine uses `engine/inc/Enums.h`. That prescribed home may be smaller
+than the fragmentation minimum; keep it concise rather than padding it.
 
 Split code by authority, lifetime, thread ownership or transaction boundary, not by screen, action
 or file length: those splits scatter one decision across files that must change together. Code
 lives with its owner. Add no dumping-ground file such as `Utils.cs`, `Common.cs` or
 `TableHelper.cs`. A library adds no folder by kind such as `Helpers/`, `Models/` or
-`Converters/`, because each separates code from the decision it serves. The product app groups by
-role instead, as [app folders](#app-folders) describes. Apart from those, the fixed `Themes/` and
+`Converters/`, because each separates code from the decision it serves. The product app's shared
+code groups by role, as [app folders](#app-folders) describes. Apart from those, the fixed `Themes/` and
 `Resources/` folders below and the package folders `Assets/` and `Properties/` are the only folders
 by kind, with the native engine's `engine/inc/`, which holds its headers by the repository owner's
 ruling. Extension methods stay technical and hold no product rule.
@@ -192,8 +209,10 @@ resolve without a `using`, so the host would hide what every real consumer has t
 A library's tests are not a host and keep the library's namespace (`Syno.TableView.Tests`). A type that XAML forces public only to fill a template part stays in its feature
 namespace, because no consumer writes it.
 
-Never name a folder after a member of the types that use it. Inside such a type the member hides
-the namespace and `Rows.View` fails with CS0119, which is why the table's row folder is `Body`.
+Avoid namespace references that a member hides: inside a type with a `Rows` member,
+`Rows.View` fails with CS0119, which is why the table's row folder is `Body`.
+For established feature names such as Library and Subtitles, import their types
+or fully qualify an ambiguous reference instead of renaming the feature.
 A library with a single type puts it in the company namespace under the library's name: the class
 `Syno.Lucide`, used as `Lucide.Font`. A `Syno.Lucide` namespace beside it would make the name
 resolve to the namespace (CS0118).
@@ -206,12 +225,25 @@ Project names are unique in the repository, because each project writes to
 
 ### App folders
 
-The product app in `app/src` groups its files by role, the way the repository owner's other WinUI
-apps do, so the same folder answers the same question in each of them:
+The product app in `app/src` keeps its built-in Library and Subtitles features in
+`Library/` and `Subtitles/`. Each folder owns its feature's presentation, behavior,
+and persistence operations, so a feature change stays local instead of spreading
+through the torrent app. They remain in the existing project. There is no
+`Plugins/` wrapper: these features have no independent installation or loading
+mechanism for that name to describe.
+
+Library's `Public/` and `Tmdb/` folders own their respective metadata providers;
+Library owns the shared lookup, identity and cache decisions. Subtitles owns its
+supplier implementations and acquisition workflow. Shared file membership,
+database transactions, network routing and window/dialog coordination remain
+outside both features, because they serve the app and both features. Neither
+feature owns the other's lifetime or error handling.
+
+Shared app code remains grouped by role:
 
 - The root holds `App`, `MainWindow` and `MainViewModel` with their parts folders. The main view
   model owns every other view model, so the owner sits above the folders that hold what it owns.
-- `Views/` holds each page and dialog content beside the view model it binds to. They are user
+- `Views/` holds shared and torrent page and dialog content beside the view model it binds to. They are user
   controls that the main window hosts; the app has no navigation frame, so the folder is not
   `Pages/`. A `*Dialog` view is the content placed inside `Controls/Dialog`.
 - `Controls/` holds the custom controls that a view or the main window places in its layout, with

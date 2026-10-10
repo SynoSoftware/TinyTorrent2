@@ -51,7 +51,8 @@ are product concepts, not settled wire keys or type declarations.
 | --- | --- |
 | Enabled | Off until the selected supplier is configured and ready; the person then turns it on to authorize automatic matching. |
 | Supplier | OpenSubtitles, SubDL, or SubSource. The supplier dialog selects a supplier and saves its account details together. |
-| User name and password | Keep optional account fields in the supplier dialog for OpenSubtitles; blank uses TinyTorrent's application access. Require credentials only when the selected supplier requires them. SubDL and SubSource require the person's own API key and present that field instead. |
+| API key | OpenSubtitles uses the free application key without customer setup. SubDL and SubSource require the person's own key, following [third-party provider access](architecture.md#third-party-provider-access). |
+| User name and password | OpenSubtitles optionally accepts a personal login alongside the application key. Both blank omits user login; entering either requires the complete pair. Other suppliers show only the key. |
 | Wanted languages | When unset, use the interface language. An explicit choice downloads one suitable subtitle for **each** selected language, so this is not an ordered fallback list. |
 
 **Owner ruling: when subtitle languages are unset, use the current interface
@@ -66,22 +67,18 @@ than silently substituting another language. At least one supported language and
 the supplier's required access make the configuration usable. Readiness means
 that the shipped integration is authorized, required credentials are supplied,
 and an effective language is available; access status separately reports observed
-results. An account-free integration can be configured without a
-username or password. Configuration stays editable while automatic downloading
+results. OpenSubtitles can be configured without personal credentials when the
+free application key is available. Configuration stays editable while automatic downloading
 is Off, so setup never depends on first enabling unconfigured work.
 
-**Owner ruling: use an application-funded, account-free OpenSubtitles package
-by default.** TinyTorrent supplies the integration and handles access so people
-do not need an OpenSubtitles account, password, personal API key, or subscription.
-Once the release's package is authorized and provisioned, setup is already ready
-with the interface language; the person can enable it directly. Keep User name
-(optional) and Password (optional) in the supplier dialog so people may use their own
-OpenSubtitles account. Both blank selects application access; entering an account
-requires a complete credential pair; actual authentication establishes whether it
-works. Clearing both restores application
-access. Do not silently fall back after failed personal authentication, because
-that would obscure which account and allowance are being used. Developer
-procurement and key management never become end-user setup instructions.
+OpenSubtitles uses the existing free application key with an optional user login. Its
+[getting-started guide](https://opensubtitles.tawk.help/article/getting-started)
+requires a key on every API request and describes limited free downloads without
+user login. No paid application package is part of this plan. Actual replies
+establish available access and allowance; quota exhaustion waits for the supplier's
+reset without purchasing access. Clearing the login restores anonymous use with
+the application key. Failed login never silently
+falls back to anonymous access, because that changes the allowance being used.
 
 **Owner ruling: supplier selection and account details belong in an explicit
 Save/Cancel dialog, like proxy configuration.** They form one coherent edit: a
@@ -99,9 +96,16 @@ the draft credentials so the previous supplier's account cannot be sent to the
 new one; the saved configuration keeps running until Save. On a failed save,
 keep the draft and explain the failure inside the dialog.
 
+Apply [saved-value recovery](architecture.md#saved-value-recovery) when loading:
+an unreadable secret becomes no saved secret, malformed language choices use
+the interface-language default, and an invalid saved date becomes none. Repair
+only damaged values and retain subtitle records, pending work and valid quota
+deadlines, so recovery cannot cause repeat downloads.
+
 Use Windows user-scoped DPAPI protection in the C# database owner. Presentation
-exposes account status, never a saved secret. An application API key belongs to
-the integration; a supplier-required personal key belongs to this configuration.
+exposes account status, never a saved secret. Personal supplier keys and optional
+login belong to the person's configuration; the free OpenSubtitles application
+key belongs to the integration.
 Reopening the editor preserves a saved secret without returning it to its fields.
 Distinguish keeping, replacing and clearing that secret; masked placeholder text
 is never a credential. Check uses the same draft interpretation as Save.
@@ -225,9 +229,9 @@ Find explicitly accepts them again.
 
 ### Discovery and permission
 
-The Settings index carries a dismissible Automatic subtitles help card; the
-[handoff](../app/settings-options-prototype.md#subtitles) owns its presentation.
-The help never takes focus or overlays the task. Dismissing it or leaving the
+The Settings index carries a dismissible Automatic subtitles shortcut, with
+its explanation in a tooltip rather than body text, following the
+[interface](interface.md). It never takes focus or overlays the task. Dismissing it or leaving the
 index without using it counts as seen. Save that fact with window settings and
 never show it again on restart or update, because ignoring help is a valid
 choice. Set up subtitles navigates only; it never turns the feature on.
@@ -289,7 +293,10 @@ applicable requirement, recorded with evidence in the
    and has no conflicting movie, year, or edition information. A title-only
    match is insufficient for automatic download because different cuts can
    have different timing. Require full subtitles: forced-only tracks omit most
-   dialogue and cannot satisfy a language request. Among otherwise equivalent
+   dialogue and cannot satisfy a language request. Use the supplier's explicit
+   full/forced field when available. For SubDL, which has no such field, reject
+   forced-only labels in release names, file names and descriptions while still
+   requiring the exact release and requested language. Among otherwise equivalent
    matches, use the supplier's quality ordering.
 4. If a reliable release match is unavailable and the supplier supports movie
    hashes, wait for the shared [file-read readiness rule](library.md#sqlite-and-video-information).
@@ -375,6 +382,10 @@ opens C# SQLite.
   Check current torrent payload paths too: a subtitle may itself be another
   torrent's payload, which these best-effort operations must leave alone.
   All gestures for this command use this one C# path.
+  An accepted window-side cleanup waits for a refreshed source and the removed
+  origins to disappear. Its receipt exists only in that window, so reconnecting
+  can finish it without replaying deletion after a restart. Current movie-sidecar
+  destinations protect a caption even before their associations are recorded.
 - A removal performed while C# is absent leaves subtitle files in place. The
   next window discards obsolete records; it does not replay destructive work.
   Other files and paths without a created record remain untouched.
@@ -394,12 +405,9 @@ instead of adding C++ feature code or a cross-process transaction.
 
 ## Ownership and quiet recovery
 
-**Owner ruling: reuse the existing implementation before adding another.** Inspect
-the owners below and their callers before changing code. Extend the owner that
-already performs an operation; when shared code must be extracted, move its
-existing callers in the same change. Copying a helper into the subtitle module
-would leave two implementations free to diverge. Add only the supplier-specific
-request, match, and work decisions that do not already exist.
+The [product code rules](../AGENTS.md#code-style) govern reuse and ownership.
+The table below identifies the existing owners for subtitle work; supplier
+implementations add only the request and decoding behavior that differs.
 
 | Responsibility | Existing owner to reuse or extend |
 | --- | --- |
@@ -449,7 +457,12 @@ automatic retry time. The [handoff](../app/settings-options-prototype.md#subtitl
 places it in critical text on the Supplier card and the Subtitles category card.
 This lets the person understand missing subtitles without reading logs; routine
 success and transient retries remain invisible. Diagnostics retain technical
-detail without credentials. When early release matching finds no match, retry
+detail without credentials.
+File save and format failures retain their affected paths independently of the
+last supplier request, so another movie's success cannot hide them. Success at
+that path clears its failure; an explicit Recheck acknowledges cleanup failures
+that have no remaining acquisition job.
+When early release matching finds no match, retry
 once with a C# movie hash after confirmed torrent completion if the supplier
 supports it; otherwise retry release evidence once at per-file completion.
 Do not repeat a lookup already made with that eligible evidence. Further polling would
@@ -458,55 +471,28 @@ so reopening TinyTorrent does not reset those limits.
 
 ## Delivery order
 
-First prove the shared source synchronization and startup gate in the
-[Library plan](library-implementation.md#1-move-library-ownership-to-c-and-prove-source-synchronization).
-Then establish shared persistence and one complete acquisition path before
-expanding presentation and supplier coverage. All browse, count and eligibility
-queries use SQLite; no disk search discovers movies or subtitles.
+Use the [current implementation plan](subtitles-implementation.md#finish-the-delivery).
+The feature is implemented in C# alongside Library's shared source and database
+owners. Finish concrete defects and presentation corrections without repeating
+the old source/startup feasibility gate.
 
-1. Establish the concrete supplier request/response contract with authorized
-   development access and lawful fixtures: account-free access, optional login,
-   non-content Check, language codes, release/hash evidence, forced-only
-   marking, SRT downloads and their text encoding, quotas, and actual network
-   routing. Record what each response proves; do not
-   turn a successful connection into a guarantee of download entitlement.
-   Start the first complete path with SubDL and the available development access;
-   extend the same supplier seam to SubSource, then OpenSubtitles once its package
-   is provisioned. Each supplier retains its own release gate. For SubSource, also record the
-   form of `releaseInfo` in real results and the files inside a downloaded
-   ZIP.
-2. Implement one C# path from a wanted movie to a safely published
-   subtitle, including durable settings, protected credentials, subtitle
-   records in shared C# SQLite, restart recovery, and stale-result rejection.
-   Prove that closing WinUI releases work and reopening safely resumes it.
-3. Add completed-file hashing, C# subtitle-file handling and all requested
-   languages through the same acquisition path.
-   Verify a subtitle before movie completion with `.!tt`
-   both enabled and disabled; verify that an existing file at the subtitle's
-   name is never replaced.
-4. Add Find and Recheck for finished downloads, with their counts derived from
-   the records.
-5. Connect the approved native Settings UI directly to the C# owner. Use the
-   shared Dialog, native AutoSuggestBox and supplier Flyout; remove simulated
-   outcomes. Finish the focused checks below and the separate release assessment.
-
-These are implementation slices, not permission to ship partial behavior. The
-feature is complete only when early arrival, multiple languages, quiet recovery,
-and the approved Settings flow work together.
+**Owner ruling, 2026-10-09:** benchmarks, agent interaction runs, exhaustive
+supplier/route/failure matrices and comprehensive test checklists are
+**cancelled for this delivery**. Reuse useful work and valid evidence. Keep the
+behavioral rules in this design, including early arrival, languages, quiet
+recovery, source validation, no-replace publication and file ownership.
 
 ## Supplier access and privacy
 
-OpenSubtitles.com with an account-free application package is the selected first
-integration direction, subject to release authorization. Its
+OpenSubtitles.com access follows the free application key and optional login described
+above, subject to release authorization. Its
 [official overview](https://opensubtitles.tawk.help/article/about-the-api)
 documents searches by title, release name, IMDb ID, and movie hash. Its
 [hash reference](https://opensubtitles.github.io/oshash/) specifies the required
 video bytes, and its
 [integration guide](https://opensubtitles.tawk.help/article/getting-started)
-describes application keys and download quotas. Its
-[professional packages](https://opensubtitles.tawk.help/article/pro-packages)
-include application access without end-user sign-in. These establish a possible
-integration route, not proof that TinyTorrent has acquired the necessary rights.
+describes API keys and download quotas. These establish a possible integration
+route, not proof that TinyTorrent has acquired the necessary rights.
 The [release assessment](subtitles-release.md) records the evidence and gaps.
 
 Each shipped supplier needs terms covering the intended application distribution,
@@ -533,30 +519,14 @@ specifies this feature's contribution; it needs the publisher's actual identity,
 contact, recipients, routing, and retention facts before publication. Supplier
 website policies do not establish API-specific retention.
 
-**Owner ruling: all subtitle traffic follows the configured torrent proxy and
-network adapter; if that route is unavailable, wait without direct fallback.**
-This includes Check, authentication, searches, download links and redirected
-subtitle downloads. Apply the selected adapter to connections
-to the proxy as well. Resolve supplier hostnames through the proxy where its
-protocol supports it; an unsupported route must not silently leak a direct lookup
-or request. With neither proxy nor adapter selected, use the normal system route.
-Changing the route cancels obsolete requests and retries through the new route.
-Keep credentials scoped to their intended endpoint across redirects. Verify this
-behavior in the transport implementation before describing it as provided.
-
-Every proxy type carries HTTPS unchanged, because TLS runs inside the proxy's
-TCP tunnel. Only the host name lookup differs. SOCKS5 and HTTP CONNECT send the
-supplier's host name to the proxy. Plain SOCKS4 accepts only an IPv4 address, so
-subtitle requests use the SOCKS4a form, which adds the host name to the same
-SOCKS4 request. `libtorrent::socks5_stream` sends plain SOCKS4 with an address
-only, so it cannot serve this route as it stands. A SOCKS4 proxy that refuses
-host names is a persistent problem with the remedy "Use a SOCKS5 or HTTP proxy
-for subtitles"; TinyTorrent never resolves the name directly instead.
+All supplier operations follow the product's [network route](architecture.md#network-route).
+Verify the shared transport before describing its behavior as provided.
 
 ### SubDL
 
 **Owner ruling: SubDL is the second supplier.** It gives development a supplier
-that can be tested before the OpenSubtitles package exists. Facts below come from
+that can be tested with the person's own key alongside OpenSubtitles' free
+application-key access. Facts below come from
 SubDL's [API documentation](https://subdl.com/developers) and
 [terms](https://subdl.com/terms), read 2026-10-08.
 
@@ -565,11 +535,11 @@ SubDL's [API documentation](https://subdl.com/developers) and
   forbid sharing one free key across an application's users and asking for
   SubDL passwords. TinyTorrent therefore ships no SubDL key and asks only for
   the API key, never a SubDL password.
-- Matching uses the release filename search, `GET /api/v2/files/search`, whose
-  results carry a match score from 0 to 1; SubDL calls 0.8 or more a confident
-  release match, which is the acceptance threshold. SubDL has no movie-hash
-  search, so step 4's completed-file hashing does not apply; filename search
-  can start as soon as metadata names the file.
+- Matching uses the release filename search, `GET /api/v2/files/search`, and
+  accepts an individual SRT only when its release and language match exactly
+  under the matching rules above. Explicit forced or foreign-part labels are
+  rejected. SubDL has no movie-hash search, so step 4's completed-file hashing
+  does not apply; filename search can start as soon as metadata names the file.
 - `GET /api/v2/me` reports the key's plan, usage, and reset times without movie
   information, so Check uses it.
 - A free key allows 2,000 searches and 50 downloads a day. Responses report the
@@ -613,63 +583,15 @@ completion or disguising torrent features.
 
 ## Verification and contract integration
 
-Follow [testing](testing.md) with focused evidence for these observable outcomes:
+Follow [testing](testing.md) and the current implementation plan. The former
+comprehensive verification checklist is **cancelled**. Existing successful
+storage, filesystem, supplier and UI evidence remains useful; do not rerun it
+for unchanged behavior or probe suppliers to fill every unverified combination.
 
-- Before setup, automatic downloading is Off. Supplier-specific setup works
-  while Off, and no movie-identifying request precedes affirmative enabling.
-  Disabling prevents new requests and retries; supplier changes require enabling
-  for the new recipient. Temporary outages preserve the existing choice.
-  Opening Settings and choosing languages make no supplier request, and the
-  language list works offline.
-- Discovery navigates directly to Subtitles without enabling it. Dismissed or
-  ignored help stays gone; the category and search remain available.
-- Check validates the supplier draft without saving, changing proxy credentials,
-  or enabling downloads. Cancel/Escape preserve the saved supplier and credentials;
-  Save commits them together, and only a saved supplier change resets the switch.
-  Language search accepts supported names and codes, adds no duplicate,
-  and preserves explicit choices across interface-language changes. Unset choices
-  follow the interface language, including after removing the last explicit choice.
-- With a known matching release and available supplier, a subtitle appears while
-  the movie is incomplete and the product window is open. Closing the window
-  stops requests; reopening resumes saved work after source reconciliation.
-- When release matching fails, C# hashes only a completed video after confirmed
-  torrent completion and settled paths, using its required byte ranges. An episode
-  in an unfinished pack waits for that same condition, even with suffix disabled.
-  Subtitle work creates no native piece demand or priority
-  changes, and a preallocated incomplete file is never treated as hashable.
-- Each requested language gets the correct basename with the unfinished-file
-  suffix both enabled and disabled; a file already at that name is never
-  replaced and satisfies its language, and forced-only supplier results are
-  never accepted. A ZIP holding exactly one SRT saves it under the derived
-  name; a ZIP with none or several, or one that unpacks past its size bound,
-  saves nothing.
-- Restart and repeated metadata updates do not duplicate
-  downloads. Corrected credentials or a quota reset resume accepted work even
-  after movie completion; persistent failures are explained only in Settings.
-- Every supplier operation follows the selected proxy/adapter, including Check
-  and redirects. An unavailable route waits without direct DNS or HTTPS fallback;
-  changing the route or disabling the feature invalidates obsolete work.
-  Through SOCKS4, the supplier's host name reaches the proxy; a proxy that
-  refuses it produces the persistent problem, never a direct lookup.
-- With Automatic subtitles On, Find for finished downloads queues every
-  finished movie on disk once. Before it runs, the row shows the missing total
-  and Find's tooltip the count per language; during the run, how many are left; afterwards, how
-  many were found. It waits for quota resets. Pressing it again adds no
-  duplicate lookups; turning the switch Off cancels the rest. Showing the
-  counts reads no file.
-- Recheck adds found records for subtitles added outside TinyTorrent and removes
-  records whose files are gone, with no supplier request, while Off as well.
-- Removing a torrent deletes its subtitle records and leaves its files; adding
-  it again to another folder counts its subtitles as missing. A shared output
-  remains recorded while another current source uses it, without another lookup.
-- After a supplier change, a chosen language the new supplier lacks stays
-  listed, is marked as not offered, and is not requested.
-- C# reconciles created subtitle paths after observed movie moves, including
-  reopening after a move. Found files remain untouched. Confirmed Delete files
-  from the window handles eligible created subtitles through the C# command
-  owner; plain Remove, uncertain outcomes and removal while closed never infer
-  destructive subtitle work. Exercise the documented publication race without
-  claiming atomicity with native payload operations.
+Keep focused review of concrete correctness findings, particularly unwanted
+network requests, stale publication, overwriting an existing file, or moving
+and deleting files the feature does not own. These are behavior requirements,
+not a mandate to create a test for each scenario.
 
 When implementing, update the owning architecture, engine, protocol, and
 interface contracts for their respective changes and replace the corresponding

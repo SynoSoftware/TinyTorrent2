@@ -45,6 +45,7 @@
                 AutomationProperties.AutomationId="ConnectionTest" />
               <controls:ActionButton Text="{x:Bind Model.Text.Get('connection_setup', 'cancel_test'), Mode=OneWay}" HorizontalAlignment="Stretch"
                 Glyph="{x:Bind icons:Lucide.X}"
+                ToolTipService.ToolTip="{x:Bind Model.Text.Get('connection_setup', 'cancel_test_hint'), Mode=OneWay}"
                 Visibility="{x:Bind Model.IsTesting, Mode=OneWay}"
                 IsEnabled="{x:Bind Model.CanCancelTest, Mode=OneWay}" Click="OnCancelTest" />
             </Grid>
@@ -62,24 +63,38 @@
             NavigateUri="https://www.cloudflare.com/privacypolicy/" HorizontalAlignment="Left" Padding="0" />
           <TextBox
             x:Name="Download"
-            Header="{x:Bind Model.Text.Get('connection_setup', 'download'), Mode=OneWay}"
             Text="{x:Bind Model.Download, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
             PlaceholderText="{x:Bind Model.Text.Get('connection_setup', 'enter'), Mode=OneWay}"
             InputScope="Number"
             IsEnabled="{x:Bind Model.CanEdit, Mode=OneWay}"
+            AutomationProperties.Name="{x:Bind Model.Text.Get('connection_setup', 'download'), Mode=OneWay}"
+            AutomationProperties.HelpText="{x:Bind Model.DownloadError, Mode=OneWay}"
             AutomationProperties.AutomationId="ConnectionDownload"
-          />
+          >
+            <TextBox.Header>
+              <controls:FieldHeader Label="{x:Bind Model.Text.Get('connection_setup', 'download'), Mode=OneWay}"
+                Error="{x:Bind Model.DownloadError, Mode=OneWay}" />
+            </TextBox.Header>
+          </TextBox>
           <TextBox
             x:Name="Upload"
-            Header="{x:Bind Model.Text.Get('connection_setup', 'upload'), Mode=OneWay}"
             Text="{x:Bind Model.Upload, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
             PlaceholderText="{x:Bind Model.Text.Get('connection_setup', 'enter'), Mode=OneWay}"
             InputScope="Number"
             IsEnabled="{x:Bind Model.CanEdit, Mode=OneWay}"
+            AutomationProperties.Name="{x:Bind Model.Text.Get('connection_setup', 'upload'), Mode=OneWay}"
+            AutomationProperties.HelpText="{x:Bind Model.UploadError, Mode=OneWay}"
             AutomationProperties.AutomationId="ConnectionUpload"
-          />
+          >
+            <TextBox.Header>
+              <controls:FieldHeader Label="{x:Bind Model.Text.Get('connection_setup', 'upload'), Mode=OneWay}"
+                Error="{x:Bind Model.UploadError, Mode=OneWay}" />
+            </TextBox.Header>
+          </TextBox>
           <RadioButtons
             Header="{x:Bind Model.Text.Get('connection_setup', 'preset'), Mode=OneWay}"
+            ToolTipService.ToolTip="{x:Bind Model.Text.Get('connection_setup', 'policy_hint'), Mode=OneWay}"
+            AutomationProperties.HelpText="{x:Bind Model.Text.Get('connection_setup', 'policy_hint'), Mode=OneWay}"
             SelectedIndex="{x:Bind Model.PresetIndex, Mode=TwoWay}"
             IsEnabled="{x:Bind Model.CanEdit, Mode=OneWay}"
             MaxColumns="1"
@@ -97,12 +112,6 @@
                 TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
             </RadioButton>
           </RadioButtons>
-          <TextBlock
-            Text="{x:Bind Model.Text.Get('connection_setup', 'policy'), Mode=OneWay}"
-            TextTrimming="CharacterEllipsis"
-            ToolTipService.ToolTip="{x:Bind Model.Text.Get('connection_setup', 'policy_hint'), Mode=OneWay}"
-            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-          />
         </StackPanel>
         <StackPanel x:Name="Preview" Grid.Column="1" Spacing="12">
           <TextBlock
@@ -157,14 +166,16 @@
         ToolTipService.ToolTip="{x:Bind Model.Message, Mode=OneWay}"
         VerticalAlignment="Center" MinHeight="40" />
       <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-        <controls:ActionButton Text="{x:Bind Model.Text.Get('connection_setup', 'cancel'), Mode=OneWay}"
-          Glyph="{x:Bind icons:Lucide.X}"
-          IsEnabled="{x:Bind Model.CanLeave, Mode=OneWay}" Click="OnCancel" />
         <controls:ActionButton Text="{x:Bind Model.Text.Get('connection_setup', 'apply'), Mode=OneWay}"
           Glyph="{x:Bind icons:Lucide.Check}"
           Style="{StaticResource AccentButtonStyle}"
           IsEnabled="{x:Bind Model.CanApply, Mode=OneWay}" Click="OnApply"
-          AutomationProperties.AutomationId="ConnectionApply" />
+          AutomationProperties.AutomationId="ConnectionApply"
+          ToolTipService.ToolTip="{x:Bind Model.Text.Get('connection_setup', 'apply_hint'), Mode=OneWay}" />
+        <controls:ActionButton Text="{x:Bind Model.Text.Get('dialog', 'cancel'), Mode=OneWay}"
+          Glyph="{x:Bind icons:Lucide.X}"
+          ToolTipService.ToolTip="{x:Bind Model.Text.Get('connection_setup', 'cancel_hint'), Mode=OneWay}"
+          IsEnabled="{x:Bind Model.CanLeave, Mode=OneWay}" Click="OnCancel" />
       </StackPanel>
     </Grid>
   </Grid>

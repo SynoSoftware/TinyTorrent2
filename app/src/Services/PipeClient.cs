@@ -11,7 +11,7 @@ using Syno.TinyTorrent.Models;
 
 namespace Syno.TinyTorrent.Services;
 
-internal sealed class PipeClient : IDisposable
+internal sealed partial class PipeClient : IDisposable
 {
     private const int MaximumFrame = 16 * 1024 * 1024;
     private const int CommandLimit = 32;
@@ -38,6 +38,7 @@ internal sealed class PipeClient : IDisposable
     private long _requestId;
     private long _awaitingId;
     private bool _awaitingCommand;
+    private bool _changesFiles;
     private bool _connected;
     private bool _disposed;
     private bool _hasConnected;
@@ -99,6 +100,7 @@ internal sealed class PipeClient : IDisposable
     internal event Action<JsonElement>? Notice;
     internal event Action<JsonElement>? Detail;
     internal event Action? CommandCompleted;
+    internal event Action? FilesChanged;
 
     internal PipeClient(Strings strings) => _strings = strings;
 
@@ -175,8 +177,11 @@ internal sealed class PipeClient : IDisposable
                 return command;
             if (_reads.Count == 0)
                 return null;
-            var read = _reads[0];
-            _reads.RemoveAt(0);
+            var index = _reads.FindIndex(read => read.Consumer != Consumer.Files);
+            if (index < 0)
+                index = 0;
+            var read = _reads[index];
+            _reads.RemoveAt(index);
             return read;
         }
     }
@@ -322,6 +327,8 @@ internal sealed class PipeClient : IDisposable
             }
             _commands.Clear();
             _reads.Clear();
+            EndFiles();
+            EndInspector();
         }
     }
 
@@ -374,6 +381,8 @@ internal sealed class PipeClient : IDisposable
 
     private async Task Execute(NamedPipeClientStream pipe, Command command, CancellationToken token)
     {
+        if (!BeginDetail(command))
+            return;
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
         deadline.CancelAfter(RequestTimeout);
         try
@@ -391,15 +400,20 @@ internal sealed class PipeClient : IDisposable
             );
             _awaitingId = requestId;
             _awaitingCommand = command.Consumer is null && command.Name != "snapshot";
+            _changesFiles = command.Name is "add" or "remove" or "delete_files" or "move" or "verify" ||
+                command.Name == "edit" && fields.TryGetValue("changes", out var changes) &&
+                changes.TryGetProperty("priorities", out _);
             await Write(pipe, fields, deadline.Token);
             var reply = await _reply.Task.WaitAsync(deadline.Token);
             var data = ReadOutcome(reply, _strings, command.Name);
+            CompleteDetail(command, data);
             if (command.Name == "snapshot")
                 Snapshot?.Invoke(data);
             command.Completion.TrySetResult(data);
         }
         catch (CommandException error)
         {
+            CompleteDetail(command, default);
             command.Completion.TrySetException(error);
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
@@ -443,7 +457,10 @@ internal sealed class PipeClient : IDisposable
                     else if (type.GetString() == "notice")
                         Notice?.Invoke(message);
                     else if (type.GetString() == "detail")
+                    {
+                        ReceiveDetail(message);
                         Detail?.Invoke(message);
+                    }
                 }
                 else if (
                     message.TryGetProperty("request_id", out var id)
@@ -452,6 +469,8 @@ internal sealed class PipeClient : IDisposable
                 {
                     if (_awaitingCommand)
                         CommandCompleted?.Invoke();
+                    if (_changesFiles && message.GetProperty("ok").GetBoolean())
+                        FilesChanged?.Invoke();
                     _reply?.TrySetResult(message);
                 }
             }

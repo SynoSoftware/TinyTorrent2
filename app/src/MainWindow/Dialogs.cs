@@ -1,4 +1,8 @@
+using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Data;
+using Syno.TinyTorrent.Controls;
+using Syno.TinyTorrent.Views;
 
 namespace Syno.TinyTorrent;
 
@@ -9,7 +13,7 @@ public sealed partial class MainWindow
 
     private sealed class DialogInteraction
     {
-        public ContentDialog? Dialog { get; set; }
+        public Dialog? Dialog { get; set; }
         public Action? RefreshText { get; set; }
         public Func<Task>? Restore { get; set; }
         public Func<Task<bool>>? ResolveDraft { get; set; }
@@ -24,10 +28,13 @@ public sealed partial class MainWindow
         bool isDraftDecision = false
     )
     {
-        if (HasDialog)
+        // While the window closes, only the question about an unfinished
+        // draft may open.
+        if (HasDialog || Model.IsClosing && !isDraftDecision)
             return false;
         var interaction = new DialogInteraction { IsDraftDecision = isDraftDecision };
         _interaction = interaction;
+        Model.Library.SetDialog(true);
         var completed = false;
         try
         {
@@ -41,6 +48,7 @@ public sealed partial class MainWindow
         finally
         {
             _interaction = null;
+            Model.Library.SetDialog(false);
             interaction.Completion.TrySetResult(completed);
         }
         ShowDeferredAdd();
@@ -80,16 +88,22 @@ public sealed partial class MainWindow
 
     private async Task<ContentDialogResult> ShowDialog(
         DialogInteraction interaction,
-        ContentDialog dialog,
+        Dialog dialog,
         Action refreshText
     )
     {
+        void ShowText()
+        {
+            dialog.CloseButtonText = Model.Text.Get("dialog", "cancel");
+            refreshText();
+        }
+        dialog.XamlRoot = Root.XamlRoot;
         interaction.Dialog = dialog;
-        interaction.RefreshText = refreshText;
+        interaction.RefreshText = ShowText;
         try
         {
             RefreshDialogs();
-            refreshText();
+            ShowText();
             return await dialog.ShowAsync();
         }
         finally
@@ -97,5 +111,59 @@ public sealed partial class MainWindow
             interaction.Dialog = null;
             interaction.RefreshText = null;
         }
+    }
+
+    // An editor's primary button submits its draft. The dialog stays open while
+    // the draft or a picker is pending, and after a refused submit. A dialog
+    // passes `submit` only to add a step to the draft's own.
+    private async Task ShowEditor(
+        DialogInteraction interaction,
+        Dialog dialog,
+        IDraft draft,
+        Action refreshText,
+        Func<Task<bool>>? submit = null
+    )
+    {
+        dialog.SetBinding(
+            ContentDialog.IsPrimaryButtonEnabledProperty,
+            new Binding
+            {
+                Source = draft,
+                Path = new PropertyPath(nameof(IDraft.CanSubmit)),
+                Mode = BindingMode.OneWay,
+            }
+        );
+        dialog.PrimaryButtonClick += async (_, args) =>
+            await Submit(interaction, args, submit ?? draft.Submit);
+        dialog.Closing += (_, args) =>
+        {
+            if ((draft.IsPending || Model.IsPicking) && !Model.IsClosing)
+                args.Cancel = true;
+        };
+        try
+        {
+            await ShowDialog(interaction, dialog, refreshText);
+            interaction.IsResolved |= !Model.IsClosing;
+        }
+        finally
+        {
+            dialog.Content = null;
+        }
+    }
+
+    private static async Task<bool> SaveOnClose(DialogInteraction interaction, IDraft draft, bool canSave) =>
+        !draft.HasDraft || !canSave || (interaction.IsResolved = await draft.Submit());
+
+    // A confirmation's facts, one trimmed line each.
+    private static UIElement Lines(IEnumerable<string> texts)
+    {
+        var lines = new StackPanel { Spacing = 4 };
+        foreach (var text in texts)
+        {
+            var line = new TextBlock { Text = text, TextTrimming = TextTrimming.CharacterEllipsis };
+            ToolTipService.SetToolTip(line, text);
+            lines.Children.Add(line);
+        }
+        return new ScrollViewer { MaxHeight = 240, Content = lines };
     }
 }

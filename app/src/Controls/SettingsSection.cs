@@ -3,13 +3,25 @@ using Microsoft.UI.Xaml.Controls;
 
 namespace Syno.TinyTorrent.Controls;
 
-// SettingsPage.xaml supplies the shared template for each settings group.
+// App.xaml supplies the shared template for each settings group.
 public sealed partial class SettingsSection : ContentControl
 {
     public bool IsAdvanced { get; set; }
     public static readonly DependencyProperty GlyphProperty = Text(nameof(Glyph));
     public static readonly DependencyProperty HeaderProperty = Text(nameof(Header));
     public static readonly DependencyProperty DescriptionProperty = Text(nameof(Description));
+    public static readonly DependencyProperty HeaderActionProperty = DependencyProperty.Register(
+        nameof(HeaderAction),
+        typeof(UIElement),
+        typeof(SettingsSection),
+        new PropertyMetadata(null)
+    );
+
+    public UIElement? HeaderAction
+    {
+        get => (UIElement?)GetValue(HeaderActionProperty);
+        set => SetValue(HeaderActionProperty, value);
+    }
 
     public string Glyph
     {

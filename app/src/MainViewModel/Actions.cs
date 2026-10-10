@@ -83,7 +83,7 @@ public sealed partial class MainViewModel
     public ICommand LimitSpeed { get; }
     public SpeedLimit SpeedLimit { get; }
     public Inspector Inspector { get; }
-    public bool HasInspector => Inspector.IsOpen;
+    public bool HasInspector => Page == WindowPage.Library ? Library.IsOpen : Inspector.IsOpen;
     public ICommand AddMagnet { get; }
     public ICommand Force { get; }
     public ICommand Verify { get; }

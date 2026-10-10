@@ -42,7 +42,7 @@ public sealed partial class Scheduler : UserControl
         AddPeriod.Focus(FocusState.Programmatic);
     }
 
-    internal Control Editor(string? name) => _editor.Editor(name);
+    internal Control Field(string? name) => _editor.Field(name);
 
     private void OnModel(object? sender, PropertyChangedEventArgs args)
     {
@@ -146,7 +146,7 @@ public sealed partial class Scheduler : UserControl
             selected.Content = _editor;
             selected.IsExpanded = true;
         }
-        if (!Model.HasScheduleError)
+        if (!Model.HasError)
             return;
         UpdateLayout();
         FrameworkElement feedback = Model.IsOpen ? _editor.Feedback : PeriodsRow;

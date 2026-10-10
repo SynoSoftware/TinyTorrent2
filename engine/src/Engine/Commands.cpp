@@ -98,7 +98,10 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
         // Answered above, even while shutting down or loading.
         break;
     case Command::Settings:
-        Configure(request.at("changes"), reply);
+        Configure(request.at("changes"), [this, reply](Outcome outcome)
+        {
+            reply(outcome.error ? Failure(*outcome.error, outcome.detail) : Success(settings.ToJson()));
+        });
         break;
     case Command::ConnectionTest:
     {

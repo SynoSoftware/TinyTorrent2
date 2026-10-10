@@ -387,66 +387,14 @@ properties in an in-process cache alone do not establish that experience.
 
 ## Files browser integration
 
-The same `FileBrowser` continues to serve Add and the inspector. Replace its
-hand-built header and TreeView rows with the real TableView. Remove the duplicate
-column widths, `Indent`/`Lead`/`Expander` compensation and 960-DIP table width cap.
-Keep its existing search, summary, Expand all/Collapse all and domain state
-owner. Column widths, the first fill and overflow use TableView's existing
-behavior; removing the cap does not introduce stretch columns.
-
-The Name column is the hierarchy column. Its host content is the wanted
-checkbox, file-type icon and name; the library places the indent and arrow
-before that content. Size, Progress and Priority remain ordinary columns.
-Progress is present for the inspector and omitted from the Add schema, where
-it has no meaning. Both views use the same browser implementation with the
-appropriate schema established before load.
-
-Both hosts keep column resizing, Fit, visibility and ordering, with File fixed
-first and visible. Neither enables row reordering: a file's place belongs to
-its torrent path, and sorting changes only sibling display order. When Add
-switches its file model, the browser follows the new roots, detaches from the
-previous model and clears row selection so matching paths in another torrent
-cannot inherit command targets.
-
-Files supplies sort keys for each column. Size uses total descendant bytes,
-Progress its byte-weighted fraction, and Priority the existing numeric priority,
-including the mixed sentinel before Skip in ascending order. Name uses the
-default schema string comparer. Use values rather than formatted text so units
-and language cannot corrupt ordering; keep folder aggregation at its existing
-application owner.
-
-Keep the existing [file-choice semantics](../../../docs/interface.md#add)
-at their product owner: search changes visibility, folder wanted/priority
-actions include all descendants, and the header wanted checkbox applies to
-matching files. Row Ctrl+A selects visible rows for commands; it does not change
-wanted state. A click on a wanted checkbox changes only that checkbox's domain
-scope and preserves row selection. The checkbox remains reachable by keyboard
-as a rich cell control, with Space toggling wanted state when it has focus.
-This distinguishes download choices from temporary command targets.
-
-Add a discoverable Priority action on the browser's compact action row, enabled
-when rows are selected and editing is available, plus the same choices in the
-row context menu. Use the existing Low, Normal, High and Skip meanings; mixed
-selection does not show a falsely uniform value or apply a value on opening.
-The context menu uses TableView's existing target-selection rules, so a context
-request over a selected row preserves the selected packet.
-
-F2 on a passive row opens that same priority choice for the selection when the
-current row belongs to it, otherwise for the current row alone. Retain the
-inline priority choice for single-row edits; changing it applies only to that
-row's domain scope. All entry points call the same application priority
-operation, so bulk editing does not add a second implementation of the rule.
-
-That operation expands selected folder targets to their actual descendant
-files, unions them by file identity and applies each file once. Selecting a
-folder and one of its children never submits the child twice. The operation
-uses the existing Add-draft or inspector commit path and its existing failure
-handling. TableView emits rows, never torrent file indices or engine commands.
-
-The Files host preserves wanted choices, priorities and expansion across search.
-Selection follows visible-row pruning; clearing search does not restore hidden
-selection. Folder aggregates cover their actual descendants, including filtered
-ones, so the displayed folder value and the scope of its command agree.
+The product's [Files policy](../../../docs/interface.md#add) owns its columns,
+priority actions, command targets and wanted choices. The shared `FileBrowser`
+uses a hierarchy column whose host content is the checkbox, file-type icon and
+name; TableView supplies the indent and arrow. Column widths, first fill,
+overflow, selection and sibling sorting use the existing control mechanics.
+The host supplies domain sort keys and folder aggregates. TableView emits rows,
+never torrent file indices or engine commands, so the library remains usable
+by hosts without torrent concepts.
 
 ## Contract amendments for implementation
 

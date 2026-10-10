@@ -88,29 +88,12 @@ is one of two things: a contract a host binds to, which is section 5's public
 surface and the event payloads; or a mechanism whose price is stated here beside
 it.
 
-An unpriced mechanism has already been implemented faithfully into a worse
-product here: recorded in `AGENTS.md`, a token rule was applied to a literal
-default, the header cell's padding was deleted, and the control rendered
-misaligned until a host wrote a style. The rule read perfectly. It did not say
-what it cost, so nobody weighed the cost, and it was obeyed into a defect.
-
-The reason is what makes a rule arguable. A rule with a stated reason can be
-checked against the case in front of you and raised as a finding when it does
-not apply. A bare instruction cannot — the next reader assumes somebody had a
-purpose, and implements it forever.
-
-Raised as a finding, not removed. The opposite mistake has also been made here,
-and it is the more expensive one. Section 14 and section 16 make a press wait
-for the release in three cases. An implementer judged those waits unpriced,
-priced them at the button hold, removed them, and rewrote this document and
-`AGENTS.md` to match — attributing the change to the owner, who had not asked
-for it and does not call the button hold sluggish. A rule you believe is wrong
-is a question for the owner. It is never a licence to change behaviour and then
-edit the specification into agreement.
-
-So: a rule that says what must be true belongs here. A rule that says how to
-make it true belongs here only with its price. A rule you think is mispriced is
-a finding to raise, not a thing to delete.
+Apply the [root rule-handling policy](../../../AGENTS.md#every-rule-states-why)
+when a reason does not hold. Preserve the public and observable contract and
+settled owner rulings: a simpler mechanism may replace an existing one, but
+rewriting the specification cannot turn a regression into intended behavior.
+The deliberate press/release decisions in sections 14 and 16 remain part of
+that observable behavior; time spent holding a button is not handler latency.
 
 ## 2. Scope and intentional non-goals
 
@@ -258,7 +241,6 @@ public sealed class Table : Control
     public ColumnLayout Layout { get; set; }
     public Sort? Sort { get; set; }
     public TimeSpan SortInterval { get; set; }
-    public bool ShowsHeaderButtons { get; set; }    // default false
     public void RefreshView();
     public void Release(IEnumerable<object> items);
     public void ScrollIntoView(object item);
@@ -1056,8 +1038,7 @@ the width a column has before the first fill.
 **Owner ruling: a table fills its width once, when it first has one.** When
 the table first has a usable width and no column has a width override, it
 scales the visible resizable columns from their baseline widths by the scaling
-step of `FillWidth()`, so they end where the header buttons begin, or at the
-table's right edge. A width override is a width the person chose: restored
+step of `FillWidth()`, so they end at the table's right edge. A width override is a width the person chose: restored
 from a saved layout, set by a resize, or set by a fit. The person's choice
 wins, so a table restored with saved widths keeps them. The declared widths
 alone would cut off or waste space on first use. Filling depends only on the
@@ -1091,14 +1072,10 @@ a competing direct-touch resize recognizer to a dense header.
 - the header menu includes **Fit this column**, **Fit columns**, and
   **Fill width** when applicable, and offers no
   per-step width command;
-- `ShowsHeaderButtons` offers the same two visible-column commands as buttons in
-  the header's trailing space. It is off by default, because a table must not
-  add a visible control to a host's header uninvited and a host with its own
-  buttons for these commands would then show two of each; turning it on is not a guarantee that
-  they appear, since the strip withholds both whenever the columns reach far
-  enough right to want that space. The person can hide either button from the
-  header menu; that choice persists in `Layout`, and `ResetLayout()` shows both
-  again;
+- the header itself holds no command buttons: every part of it belongs to a
+  column, so a button there would either take width from the columns or cover
+  one. A host that wants **Fit columns** and **Fill width** visible calls
+  `FitColumns()` and `FillWidth()` from its own command surface;
 - the table raises one coalesced `LayoutChanged` notification when a gesture,
   fit, or menu width command changes the effective layout, not one persistence
   write per pointer movement.
@@ -1129,11 +1106,9 @@ hidden measurement table. A per-column fit changes only that column; it MUST
 NOT fall back to a fit of other columns when its result is unchanged.
 
 `FillWidth()` runs the same fit as `FitColumns()` and then scales the
-visible resizable columns by one factor so the visible columns end where the
-header buttons the table offers begin, or at the table's right edge when it
-offers none: wider when space is left, narrower when they run past it. The
-buttons therefore keep their place, and the Fill button a person just clicked
-stays under the pointer instead of disappearing. One factor keeps the fitted
+visible resizable columns by one factor so the visible columns end at the
+table's right edge: wider when space is left, narrower when they run past it.
+One factor keeps the fitted
 proportions, so the widest fitted columns, which a fit that sees only realized
 rows marks as the most likely to hold longer values, keep the most room. A column the factor would take below its `MinWidth` stays
 at `MinWidth` and the others share what is left; when even the minimums do not
@@ -1202,16 +1177,14 @@ pointer actions and keyboard-accessible alternatives:
 - **Hide column “Name”** for the column the menu was opened on, while it is
   hideable and another column can remain, which becomes **Show column “Name”**
   once that column is hidden;
-- **Fit column “Name”** for a resizable active column, and **Fit columns**
-  and **Fill width** when at least one
-  visible column is resizable;
+- **Fit column “Name”** for a resizable active column;
 - **Move left** and **Move right** for the active column;
+- a separator, because the items above act on the active column and the items
+  below act on every column;
+- **Fit columns** and **Fill width** when at least one visible column is
+  resizable;
 - one item per declared column, hidden ones included, carrying a check when the
-  column is visible;
-- when `ShowsHeaderButtons` is on, a separator and then one item per header
-  button, **Fit button** and **Fill button**, carrying a check when that button
-  is not hidden. They are shown and hidden the way the columns above them are,
-  and the separator keeps them from reading as columns.
+  column is visible.
 
 Labels stay short because the longest one sets the width of the whole menu.
 
@@ -1601,9 +1574,7 @@ public sealed record ColumnLayout(
     IReadOnlyDictionary<string, bool> VisibilityOverrides,
     IReadOnlyDictionary<string, double> WidthOverrides,
     string? SortColumnId,
-    SortDirection SortDirection,
-    bool FitButtonHidden = false,
-    bool FillButtonHidden = false);
+    SortDirection SortDirection);
 ```
 
 The snapshot is read and written through one property, `Table.Layout`.
@@ -1625,10 +1596,6 @@ column ID means “use that column's baseline.” Reading `Layout` follows the
 same rule, so untouched defaults do not become duplicate persisted
 configuration. A column with no `Id` is not persisted at all: it appears in
 neither `Order` nor either override map.
-
-`FitButtonHidden` and `FillButtonHidden` record that the person hid that header
-button from the menu. False is the baseline, so a snapshot stored before these
-fields existed restores both buttons shown.
 
 Persist:
 

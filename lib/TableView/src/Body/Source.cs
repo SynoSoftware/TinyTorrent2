@@ -28,7 +28,7 @@ internal sealed class Source
     /// <summary>The last accepted source snapshot.</summary>
     internal IReadOnlyList<object> Snapshot => _snapshot;
 
-    internal void SetSource(IEnumerable? source)
+    internal void Set(IEnumerable? source)
     {
         RequireUiThread();
 

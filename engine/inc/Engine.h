@@ -63,8 +63,8 @@ struct Notice
     NoticeKind kind;
     std::string name;
     std::string detail;
-    // The code of the torrent problem the notice reports, which the window
-    // explains; empty for other notices.
+    // The code of the problem, translated by the surface showing the notice;
+    // empty when the notice carries no problem code.
     std::string code;
     std::string torrentId;
     unsigned count = 1;
@@ -105,9 +105,9 @@ struct Activity
     bool notificationsEnabled = false;
     bool notifiesProblems = true;
     bool notifiesAdded = false;
+    bool notifiesBackground = true;
     bool preventsSleep = true;
     bool preventsSleepSeeding = false;
-    bool backgroundNoticeShown = false;
     std::vector<std::string> reportedPrograms;
     bool filesBusy = false;
     bool confirmsExit = true;
@@ -131,7 +131,7 @@ public:
     // otherwise its cause, which is empty when the cause is unknown.
     void Shutdown(std::function<void(std::optional<std::string> failure)> completion);
     void PauseSession(bool paused, std::function<void(Outcome)> completion);
-    void RecordBackgroundNotice(std::function<void(Outcome)> completion);
+    void SetBackgroundNotification(bool enabled, std::function<void(Outcome)> completion);
     // Saves the missing programs that torrent handlers start, once reported.
     void RecordPrograms(std::vector<std::string> programs, std::function<void(Outcome)> completion);
     // Adds a source to the default destination with the default file choices.
@@ -226,6 +226,7 @@ std::string Base64(std::string_view bytes);
 std::wstring Executable();
 char const* ToString(NoticeKind kind);
 char const* ToString(ErrorCode code);
+std::optional<ErrorCode> ParseError(std::string_view word);
 Json Success(Json data = Json::object());
 Json Failure(ErrorCode code, std::string detail = {});
 // A request refused because of a torrent's problem reports that problem.

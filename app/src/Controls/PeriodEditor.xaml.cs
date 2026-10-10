@@ -15,7 +15,7 @@ public sealed partial class PeriodEditor : UserControl
         InitializeComponent();
     }
 
-    internal Control Editor(string? name) =>
+    internal Control Field(string? name) =>
         (name is null ? null : FindName(name) as Control) ?? StartTime;
 
     internal FrameworkElement Feedback => Model.DaysMessage.Length > 0 ? DaysRow : PeriodError;

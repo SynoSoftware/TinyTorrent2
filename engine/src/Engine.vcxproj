@@ -88,7 +88,7 @@
     </ResourceCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
-      <AdditionalDependencies>advapi32.lib;shell32.lib;user32.lib;ole32.lib;uuid.lib;crypt32.lib;iphlpapi.lib;ws2_32.lib;propsys.lib;dwmapi.lib;uxtheme.lib;comctl32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>advapi32.lib;shell32.lib;user32.lib;ole32.lib;uuid.lib;crypt32.lib;iphlpapi.lib;ws2_32.lib;propsys.lib;dwmapi.lib;uxtheme.lib;comctl32.lib;runtimeobject.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'">

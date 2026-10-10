@@ -242,7 +242,7 @@ void Engine::State::MeasureConnection(std::shared_ptr<ConnectionTest> const& tes
     auto deadline = test->deadline;
     checks.Run([test, rates, deadline]
     {
-        InternetHandle internet(WinHttpOpen(L"TinyTorrent connection test", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
+        InternetHandle internet(WinHttpOpen(L"TinyTorrent connection test", WINHTTP_ACCESS_TYPE_NO_PROXY,
             WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0));
         WinHttpSetTimeouts(internet.Get(), 5000, 5000, 5000, 5000);
         InternetHandle connection(WinHttpConnect(internet.Get(), L"speed.cloudflare.com", INTERNET_DEFAULT_HTTPS_PORT, 0));

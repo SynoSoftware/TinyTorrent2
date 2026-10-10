@@ -94,7 +94,6 @@ internal static class Menu
                 )
             );
 
-            menu.Items.Add(new MenuFlyoutSeparator());
             menu.Items.Add(
                 Item(
                     () => owner.Strings.FitColumn(active.Column.DisplayName),
@@ -103,10 +102,30 @@ internal static class Menu
                     () => owner.Fit(active)
                 )
             );
+
+            int LeftStep() => owner.FlowDirection == FlowDirection.RightToLeft ? 1 : -1;
+            menu.Items.Add(
+                Item(
+                    () => owner.Strings.MoveLeft,
+                    Icons.MoveLeft,
+                    () => owner.CanMoveColumnBy(active, LeftStep()),
+                    () => owner.MoveColumnBy(active, LeftStep())
+                )
+            );
+            menu.Items.Add(
+                Item(
+                    () => owner.Strings.MoveRight,
+                    Icons.MoveRight,
+                    () => owner.CanMoveColumnBy(active, -LeftStep()),
+                    () => owner.MoveColumnBy(active, -LeftStep())
+                )
+            );
+
+            // The commands above act on this column; the ones below act on every column.
+            menu.Items.Add(new MenuFlyoutSeparator());
         }
 
-        // A right-click on unused header space has no column to act on, so the whole menu is about
-        // the column set: these commands and the list below them, with no door between them.
+        // A right-click on unused header space has no column to act on, so the menu starts here.
         menu.Items.Add(
             Item(
                 () => owner.Strings.FitColumns,
@@ -133,28 +152,6 @@ internal static class Menu
         // wants in a single invocation. If continuous keyboard resizing is wanted it belongs on the
         // focused header as a held key, where repeat does the work.
 
-        if (active is not null)
-        {
-            int LeftStep() => owner.FlowDirection == FlowDirection.RightToLeft ? 1 : -1;
-            menu.Items.Add(new MenuFlyoutSeparator());
-            menu.Items.Add(
-                Item(
-                    () => owner.Strings.MoveLeft,
-                    Icons.MoveLeft,
-                    () => owner.CanMoveColumnBy(active, LeftStep()),
-                    () => owner.MoveColumnBy(active, LeftStep())
-                )
-            );
-            menu.Items.Add(
-                Item(
-                    () => owner.Strings.MoveRight,
-                    Icons.MoveRight,
-                    () => owner.CanMoveColumnBy(active, -LeftStep()),
-                    () => owner.MoveColumnBy(active, -LeftStep())
-                )
-            );
-        }
-
         // The column list, in this menu rather than in a submenu of it. A submenu is a second popup
         // with its own dismissal, and MenuFlyoutSubItem exposes no way to refuse it: the root menu
         // could be held open across a change and the list still collapsed underneath, so turning
@@ -178,34 +175,6 @@ internal static class Menu
                     () => owner.SetColumnVisibility(target, !target.IsVisible),
                     () => target.IsVisible ? owner.Strings.ColumnShown : owner.Strings.ColumnHidden
                 )
-            );
-        }
-
-        // The header's own buttons, shown and hidden the way the columns above are, and set apart
-        // from them by a separator because they are not columns.
-        if (owner.ShowsHeaderButtons)
-        {
-            void AddButton(Func<string> text, Func<bool> hidden, Action<bool> hide) =>
-                menu.Items.Add(
-                    Item(
-                        text,
-                        () => hidden() ? null : Icons.Shown(),
-                        () => true,
-                        () => hide(!hidden()),
-                        () => hidden() ? owner.Strings.ButtonHidden : owner.Strings.ButtonShown
-                    )
-                );
-
-            menu.Items.Add(new MenuFlyoutSeparator());
-            AddButton(
-                () => owner.Strings.FitButton,
-                () => owner.FitButtonHidden,
-                hide => owner.FitButtonHidden = hide
-            );
-            AddButton(
-                () => owner.Strings.FillButton,
-                () => owner.FillButtonHidden,
-                hide => owner.FillButtonHidden = hide
             );
         }
 

@@ -401,9 +401,9 @@ tt::Activity Engine::State::Activity() const
     activity.notificationsEnabled = settings.notificationsEnabled;
     activity.notifiesProblems = settings.notifiesProblems;
     activity.notifiesAdded = settings.notifiesAdded;
+    activity.notifiesBackground = settings.notifiesBackground;
     activity.preventsSleep = settings.preventsSleep;
     activity.preventsSleepSeeding = settings.preventsSleepSeeding;
-    activity.backgroundNoticeShown = settings.backgroundNoticeShown;
     activity.reportedPrograms = settings.reportedPrograms;
     activity.filesBusy = FilesBusy();
     activity.confirmsExit = settings.confirmsExit;
@@ -577,7 +577,10 @@ void Engine::State::RecordHashes(Torrent& torrent)
 Engine::State::~State()
 {
     sources.Abandon();
-    checkStop.request_stop();
+    {
+        std::lock_guard lock(checkGate);
+        checkStop.request_stop();
+    }
     if (connectionTest)
         connectionTest->stop.request_stop();
     checks.Abandon();

@@ -142,7 +142,7 @@ public sealed partial class Table
             _sortDirection = direction;
 
             // Complete presentation before selection handlers can run or throw.
-            _headerStrip?.Panel?.RefreshHeaderCells();
+            _headerStrip?.Panel?.RefreshHeader();
             RebuildView(preparedOrder: order);
 
             RaiseLayoutChanged(LayoutChange.Sort);

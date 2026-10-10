@@ -99,6 +99,7 @@ public sealed class Settings : INotifyPropertyChanged
     public Setting ProblemNotifications { get; }
     public Setting FinishedNotifications { get; }
     public Setting AddedNotifications { get; }
+    public Setting BackgroundNotifications { get; }
     public Setting PreventSleep { get; }
     public Setting SeedingSleep { get; }
     public Setting Updates { get; }
@@ -119,11 +120,12 @@ public sealed class Settings : INotifyPropertyChanged
     internal Setting? RefusedSetting =>
         All.FirstOrDefault(setting => setting.HasDraft && setting.Failure is CommandException);
     public bool HasError =>
-        RefusedSetting is not null || Schedule.HasDraft && Schedule.HasScheduleError;
+        RefusedSetting is not null || Schedule.HasDraft && Schedule.HasError;
     public bool IsPending =>
         All.Any(setting => setting.IsPending) || _registering || Schedule.IsPending || Connection.IsPending;
     public bool CanEdit => _owner.CanEdit;
     internal bool CanSave => _owner.CanSave;
+    internal LimitMode? FixedLimits => _owner.FixedLimits;
     public bool CanRegister => CanEdit && !_registering;
     private bool HasStartupError =>
         _registrationError?.Action is "enable_startup" or "disable_startup" or "open_startup";
@@ -136,13 +138,19 @@ public sealed class Settings : INotifyPropertyChanged
     // Another TinyTorrent copy's entry is still TinyTorrent's registration, so
     // it counts as on and the Other message names that copy.
     public bool Startup => Registered("startup") != "none";
+    public bool StartupUsesOtherCopy => Registered("startup") == "other";
     public string StartupOtherMessage => Other("startup");
+    public string StartupAction => Text.Get("settings", StartupUsesOtherCopy ? "use_this_copy" : "startup_settings");
+    public string StartupText => StartupUsesOtherCopy ? Text.Get("settings", "use") : Text.Get("commands", "open");
+    public string StartupGlyph => StartupUsesOtherCopy ? Lucide.ArrowLeftRight : Lucide.ExternalLink;
+    public string StartupTip => Text.Get("settings", StartupUsesOtherCopy ? "startup_use_hint" : "startup_settings_hint");
     public bool HandlersRegistered => Registered("handlers") != "none";
+    public bool HandlersUseOtherCopy => Registered("handlers") == "other";
 
     // A default that starts a missing program needs action before another
     // TinyTorrent copy does, so its message takes the caution line.
     public string HandlersCaution =>
-        IsBroken
+        HasBrokenHandlers
             ? Text.Format(
                 "settings",
                 "handlers_broken",
@@ -154,7 +162,7 @@ public sealed class Settings : INotifyPropertyChanged
                 )
             )
             : Other("handlers");
-    private bool IsBroken => Broken().Any();
+    public bool HasBrokenHandlers => Broken().Any();
 
     // Repair then asks Windows for an administrator, which Windows marks with
     // a shield on the control that asks.
@@ -168,30 +176,29 @@ public sealed class Settings : INotifyPropertyChanged
     // apps only while another working app is the default, so the link offers
     // one step at a time.
     public bool NeedsDefaults =>
-        IsBroken
+        HasBrokenHandlers
         || HandlersRegistered
             && (
-                Registered("handlers") == "other"
+                HandlersUseOtherCopy
                 || Field("torrent_default").ValueKind == JsonValueKind.False
                 || Field("magnet_default").ValueKind == JsonValueKind.False
             );
     public string DefaultsAction =>
         Text.Get(
             "settings",
-            IsBroken ? "repair_defaults"
-                : Registered("handlers") == "other" ? "use_this_copy"
+            HasBrokenHandlers ? "repair_defaults"
+                : HandlersUseOtherCopy ? "use_this_copy"
                 : "defaults_settings"
         );
-    public string StartupAction =>
-        Text.Get(
-            "settings",
-            Registered("startup") == "other" ? "use_this_copy" : "startup_settings"
-        );
+    public string DefaultsText => HasBrokenHandlers ? Text.Get("settings", "repair_defaults")
+        : HandlersUseOtherCopy ? Text.Get("settings", "use") : Text.Get("commands", "open");
+    public string DefaultsGlyph => HasBrokenHandlers ? (Elevates ? Lucide.Shield : Lucide.Wrench)
+        : HandlersUseOtherCopy ? Lucide.ArrowLeftRight : Lucide.ExternalLink;
     public string DefaultsMessage
     {
         get
         {
-            if (IsBroken)
+            if (HasBrokenHandlers)
                 return Text.Get("settings", "repair_defaults_tip");
             var detail = Text.Get("settings", "defaults_detail");
             if (!HandlersRegistered)
@@ -479,6 +486,12 @@ public sealed class Settings : INotifyPropertyChanged
             SettingKind.Boolean,
             SettingsCategory.General
         );
+        BackgroundNotifications = new(
+            this,
+            "notify_background",
+            SettingKind.Boolean,
+            SettingsCategory.General
+        );
         PreventSleep = new(this, "prevent_sleep", SettingKind.Boolean, SettingsCategory.General);
         // Seeding only extends Prevent sleep, so it has no effect while that is off.
         SeedingSleep = new(
@@ -549,6 +562,7 @@ public sealed class Settings : INotifyPropertyChanged
             ProblemNotifications,
             FinishedNotifications,
             AddedNotifications,
+            BackgroundNotifications,
             PreventSleep,
             SeedingSleep,
             Updates,
@@ -576,7 +590,7 @@ public sealed class Settings : INotifyPropertyChanged
         OpenDefaults = new RelayCommand(() => RegisterHandlers(), () => CanRegister);
         Connection = new(this, owner, client);
         OpenStartup = new RelayCommand(
-            () => Register(Registered("startup") == "other" ? "enable_startup" : "open_startup"),
+            () => Register(StartupUsesOtherCopy ? "enable_startup" : "open_startup"),
             () => CanRegister
         );
     }
@@ -884,16 +898,14 @@ public sealed class Settings : INotifyPropertyChanged
             value = bytes;
             return true;
         }
-        if (
-            !double.TryParse(
-                setting.Input,
-                NumberStyles.Float | NumberStyles.AllowThousands,
-                CultureInfo.CurrentCulture,
-                out var number
-            )
-        )
-            return false;
-        if (!double.IsFinite(number) || number < 0)
+        double number;
+        if (setting.Kind == SettingKind.Integer && !setting.IsDuration)
+        {
+            if (!TryInteger(setting.Input, out var integer))
+                return false;
+            number = integer;
+        }
+        else if (!TryNumber(setting.Input, out number))
             return false;
         if (setting.IsDuration)
             number = Math.Round(number * setting.DurationScale, 8);
@@ -913,21 +925,19 @@ public sealed class Settings : INotifyPropertyChanged
         return true;
     }
 
+    internal static bool TryInteger(string input, out int number) =>
+        int.TryParse(input, NumberStyles.Integer | NumberStyles.AllowThousands,
+            CultureInfo.CurrentCulture, out number) && number >= 0;
+
+    internal static bool TryNumber(string input, out double number) =>
+        double.TryParse(input, NumberStyles.Float | NumberStyles.AllowThousands,
+            CultureInfo.CurrentCulture, out number) && double.IsFinite(number) && number >= 0;
+
     // A speed limit is typed in KiB/s and sent in bytes a second.
     internal static bool TryRate(string input, out int bytes)
     {
         bytes = 0;
-        if (
-            !double.TryParse(
-                input,
-                NumberStyles.Float | NumberStyles.AllowThousands,
-                CultureInfo.CurrentCulture,
-                out var number
-            )
-            || !double.IsFinite(number)
-            || number < 0
-            || number > int.MaxValue / 1024.0
-        )
+        if (!TryNumber(input, out var number) || number > int.MaxValue / 1024.0)
             return false;
         bytes = checked((int)Math.Round(number * 1024));
         return true;
@@ -1106,16 +1116,7 @@ public sealed class Setting(
             return;
         var scale = DurationScale;
         DurationUnit = unit;
-        if (
-            double.TryParse(
-                _input,
-                NumberStyles.Float | NumberStyles.AllowThousands,
-                CultureInfo.CurrentCulture,
-                out var number
-            )
-            && double.IsFinite(number)
-            && number >= 0
-        )
+        if (Settings.TryNumber(_input, out var number))
             _input = (number * scale / DurationScale).ToString("G", CultureInfo.CurrentCulture);
         _confirmedInput = ConfirmedNumber == 0
             ? string.Empty

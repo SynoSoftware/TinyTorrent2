@@ -164,6 +164,11 @@ Capture journeys are excluded from ordinary builds. Build the app with
 `_capture` suffix under `artifacts/`, so a diagnostic build cannot replace the
 ordinary product. The option does not launch anything.
 Run a review with the launcher, [Capture.ps1](../app/tests/Capture.ps1) `-Review <mode>`.
+The launcher stops development instances from this checkout in the current
+Windows session before claiming the engine pipe. This pauses their transfers;
+installed copies outside the checkout are left alone. The review still verifies
+its engine process and disposable store before issuing commands, so stale
+development processes do not require manual cleanup or expose personal data.
 It prepares a disposable store from the fixture in `app/tests/Store/`, or
 generates the torrents a mode needs, then starts the engine and hidden window
 from `artifacts/bin/TinyTorrent/debug_win-x64_capture/` and fails when the
@@ -180,7 +185,11 @@ time and dimensions. With `TINYTORRENT_CAPTURE_REVIEW=1` and an absolute
 diagnostic visits the real pages and cancels their dialogs automatically. It
 uses a window outside the desktop, does not activate it, saves images and XAML
 control bounds, and closes itself. A connected store mismatch stops the review
-before changes. A second review window exits without activating an existing
+before changes. Frames must remain unchanged for 300 ms before they count as
+stable, so an entrance animation's initial delay cannot produce a blank capture.
+Long pages include overlapping middle captures as well as their
+top and bottom, so controls between the endpoints receive layout review too.
+A second review window exits without activating an existing
 application. Normal launches perform no automatic capture.
 Use `TINYTORRENT_CAPTURE_REVIEW=smoke` to rerun the recovery journeys without
 repeating the Settings viewport or full themes-and-sizes batches.
@@ -194,8 +203,8 @@ They also submit a disposable magnet with a relative download folder, capture th
 engine refusal and focus recovery, then correct the folder. One short-window case
 retries Add paused successfully; every source and destination belongs to the
 disposable store. These cases do not run unrelated journeys.
-The English 1040-wide case also captures caption hover, pressed and disabled
-visual states in Light and Dark through WinUI's state manager. This checks the
+The English 1040-wide case also captures the theme button's PointerOver
+state in Light and Dark through WinUI's state manager. This checks the
 custom template's appearance, not pointer input or OS High Contrast rendering.
 Use `TINYTORRENT_CAPTURE_REVIEW=footer` to capture filter, selected-torrent error
 and update presentation at fixed window sizes, including their combined state.
@@ -207,7 +216,10 @@ It then resumes the paused fixture through the real Resume command while every
 transfer stays paused, and checks at every size, language and theme that the row
 shows All paused and that the informational notice names the torrent and offers
 Resume. It does not press that button, and pauses the fixture again afterwards.
-It does not cover a scheduled pause or a missing adapter.
+These existing text and severity comparisons are diagnostic implementation,
+not a requirement to assert translated presentation; review the captured
+notice under [What earns a test](#what-earns-a-test). It does not cover a
+scheduled pause or a missing adapter.
 Use `TINYTORRENT_CAPTURE_REVIEW=shell` for the title-bar menus, narrow layouts,
 themes, selection commands, secondary pages and retained filter state.
 It also queries the review window's native `WM_NCHITTEST` response at the app
@@ -227,9 +239,15 @@ Use `TINYTORRENT_CAPTURE_REVIEW=search` for native AutoSuggestBox result
 submission: unavailable commands, Properties from Settings, speed-limit
 navigation, named-setting focus and reopening suggestions. It captures localized
 results across themes and sizes; it does not synthesize Ctrl+K keyboard input.
+`TINYTORRENT_CAPTURE_SEARCH_BASELINE=1` suppresses that mode's failure checks
+for baseline images; such a capture is not evidence that the search checks pass.
+Use `TINYTORRENT_CAPTURE_REVIEW=settings-prototype` for the implemented Settings
+index and categories with advanced controls hidden and shown, plus manual
+Connection setup. It uses English/Dark and Spanish/Light fixtures; its typed
+capacity is sample input, not a network measurement.
 Use `TINYTORRENT_CAPTURE_REVIEW=edits` for ordinary Settings departure,
 new input and explicit commits during a pending acknowledgement, and schedule
-Save/Discard/Cancel. The acknowledgement races change the setting input
+edits applied on departure. The acknowledgement races change the setting input
 synchronously before the UI thread yields and verify its native display
 afterward; ordinary departure uses native editors. A two-field departure edits
 Download again when Upload starts saving, then verifies that the first navigation
@@ -250,6 +268,14 @@ with mixed states, partial progress and 20,000 aggregated pieces. They replace
 only the diagnostic map temporarily; the live torrent header describes another
 fixture. These images establish rendering, not engine accuracy or live transfers.
 No live traffic is implied by this paused fixture.
+`TINYTORRENT_CAPTURE_REVIEW=library-files` visits the Library page and file
+properties with its disposable two-file fixture across English/Spanish and
+Light/Dark. Its separate `library-timing.json` branch is the retained timing
+diagnostic; the [cancelled Library validation programme](library.md#measurement-gates--cancelled)
+does not authorize running it. Existing `app/tests/SourceChecks.ps1` and
+`ProviderChecks.ps1` are focused source-membership and provider checks, not a
+standing requirement to rerun them for every edit. Preserve their earlier
+evidence and apply this document's test-selection rules to any future run.
 Use `TINYTORRENT_CAPTURE_REVIEW=traffic` only with the
 launcher's `traffic-capture.json` manifest. It captures the active workspace,
 General, populated Peers, mixed Pieces and nonzero Speed history across the

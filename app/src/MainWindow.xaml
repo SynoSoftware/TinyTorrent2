@@ -59,7 +59,8 @@
           </Image.Source>
         </Image>
       </StackPanel>
-      <MenuBar x:Name="Menus" Grid.Column="2" Padding="0" VerticalAlignment="Center">
+      <StackPanel Grid.Column="2" Orientation="Horizontal">
+      <MenuBar x:Name="Menus" Padding="0" VerticalAlignment="Center">
         <!-- Without IsAccessKeyScope, a quick Alt+F opens the menu but its
                      items' access keys stay inactive, so Alt+F, X does nothing:
                      https://github.com/microsoft/microsoft-ui-xaml/issues/10791 -->
@@ -68,6 +69,16 @@
         <MenuBarItem x:Name="ViewMenu" IsAccessKeyScope="True" />
         <MenuBarItem x:Name="HelpMenu" IsAccessKeyScope="True" />
       </MenuBar>
+      <SelectorBar x:Name="Pages" Margin="24,0,0,0" VerticalAlignment="Center" SelectionChanged="OnPageSelected"
+        AutomationProperties.AutomationId="Pages">
+        <SelectorBarItem x:Name="TorrentsPage" IsSelected="True" AutomationProperties.AutomationId="TorrentsPage">
+          <SelectorBarItem.Icon><FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Download}" /></SelectorBarItem.Icon>
+        </SelectorBarItem>
+        <SelectorBarItem x:Name="LibraryPage" AutomationProperties.AutomationId="LibraryPage">
+          <SelectorBarItem.Icon><FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Library}" /></SelectorBarItem.Icon>
+        </SelectorBarItem>
+      </SelectorBar>
+      </StackPanel>
       <Grid x:Name="SearchArea" Grid.Column="3" Margin="24,0" VerticalAlignment="Center">
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="*" />
@@ -77,7 +88,7 @@
           x:Name="Search"
           MaxWidth="320"
           MinWidth="200"
-          HorizontalAlignment="Stretch"
+          HorizontalAlignment="Right"
           Text="{x:Bind Model.Query, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
           QueryIcon="Find"
           TextMemberPath="Label"
@@ -145,37 +156,18 @@
           </StackPanel>
         </StackPanel>
       </Grid>
-      <StackPanel x:Name="AddButtons" Grid.Column="4" Orientation="Horizontal">
-        <Button
-          x:Name="AddButton"
-          Style="{StaticResource TinyTorrentCaptionButtonStyle}"
-          Command="{x:Bind Model.Add}"
-        >
-          <FontIcon
-            FontFamily="{x:Bind icons:Lucide.Font}"
-            Glyph="{x:Bind icons:Lucide.FilePlus}"
-            FontSize="16"
-          />
-        </Button>
-        <Button
-          x:Name="MagnetButton"
-          Style="{StaticResource TinyTorrentCaptionButtonStyle}"
-          Command="{x:Bind Model.AddMagnet}"
-        >
-          <FontIcon
-            FontFamily="{x:Bind icons:Lucide.Font}"
-            Glyph="{x:Bind icons:Lucide.Link}"
-            FontSize="16"
-          />
-        </Button>
-        <Border
-          Width="1"
-          Height="16"
-          Margin="8,0"
-          VerticalAlignment="Center"
-          Background="{ThemeResource DividerStrokeColorDefaultBrush}"
+      <Button
+        x:Name="SettingsButton"
+        Grid.Column="4"
+        Style="{StaticResource TinyTorrentCaptionButtonStyle}"
+        Command="{x:Bind Model.ShowSettings}"
+      >
+        <FontIcon
+          FontFamily="{x:Bind icons:Lucide.Font}"
+          Glyph="{x:Bind icons:Lucide.Settings}"
+          FontSize="16"
         />
-      </StackPanel>
+      </Button>
       <Button
         x:Name="ThemeButton"
         Grid.Column="5"
@@ -185,9 +177,9 @@
         <FontIcon x:Name="ThemeIcon" FontFamily="{x:Bind icons:Lucide.Font}" FontSize="16" />
       </Button>
     </Grid>
+    <Grid x:Name="PageContent" Grid.Row="1">
     <SplitView
       x:Name="Workspace"
-      Grid.Row="1"
       DisplayMode="Inline"
       OpenPaneLength="196"
       IsPaneOpen="{x:Bind Model.IsFilterOpen, Mode=TwoWay}"
@@ -241,6 +233,7 @@
               </DataTemplate>
             </ListView.ItemTemplate>
           </ListView>
+          <ScrollViewer x:Name="LibraryFilters" Grid.Row="1" Visibility="Collapsed" />
           <controls:ActionButton
             x:Name="ClearFiltersButton"
             Glyph="{x:Bind icons:Lucide.FunnelX}"
@@ -256,132 +249,65 @@
           <RowDefinition Height="Auto" />
           <RowDefinition Height="*" />
         </Grid.RowDefinitions>
-        <StackPanel
+        <CommandBar
           x:Name="Toolbar"
-          Orientation="Horizontal"
-          Spacing="4"
-          Margin="4"
+          HorizontalAlignment="Left"
+          Background="Transparent"
+          DefaultLabelPosition="Right"
           TabFocusNavigation="Once"
           XYFocusKeyboardNavigation="Enabled"
-          Visibility="{x:Bind Model.IsToolbarOpen, Mode=OneWay}"
+          Visibility="{x:Bind Model.ShowsToolbar, Mode=OneWay}"
         >
-          <Button
-            x:Name="ResumeButton"
-            Style="{StaticResource TinyTorrentSubtleButtonStyle}"
-            Command="{x:Bind Model.Resume}"
-          >
-            <FontIcon
-              FontFamily="{x:Bind icons:Lucide.Font}"
-              Glyph="{x:Bind icons:Lucide.Play}"
-              FontSize="16"
-            />
-          </Button>
-          <Button
-            x:Name="PauseButton"
-            Style="{StaticResource TinyTorrentSubtleButtonStyle}"
-            Command="{x:Bind Model.Pause}"
-          >
-            <FontIcon
-              FontFamily="{x:Bind icons:Lucide.Font}"
-              Glyph="{x:Bind icons:Lucide.Pause}"
-              FontSize="16"
-            />
-          </Button>
-          <Border
-            Width="1"
-            Height="16"
-            Margin="4,0"
-            VerticalAlignment="Center"
-            Background="{ThemeResource DividerStrokeColorDefaultBrush}"
-          />
-          <Button
-            x:Name="FolderButton"
-            Style="{StaticResource TinyTorrentSubtleButtonStyle}"
-            Command="{x:Bind Model.OpenFolder}"
-          >
-            <FontIcon
-              FontFamily="{x:Bind icons:Lucide.Font}"
-              Glyph="{x:Bind icons:Lucide.FolderOpen}"
-              FontSize="16"
-            />
-          </Button>
-          <Button
-            x:Name="PropertiesButton"
-            Style="{StaticResource TinyTorrentSubtleButtonStyle}"
-            Command="{x:Bind Model.Properties}"
-          >
-            <FontIcon
-              FontFamily="{x:Bind icons:Lucide.Font}"
-              Glyph="{x:Bind icons:Lucide.Info}"
-              FontSize="16"
-            />
-          </Button>
-          <Border
-            Width="1"
-            Height="16"
-            Margin="4,0"
-            VerticalAlignment="Center"
-            Background="{ThemeResource DividerStrokeColorDefaultBrush}"
-          />
-          <Button
-            x:Name="VerifyButton"
-            Style="{StaticResource TinyTorrentSubtleButtonStyle}"
-            Command="{x:Bind Model.Verify}"
-          >
-            <FontIcon
-              FontFamily="{x:Bind icons:Lucide.Font}"
-              Glyph="{x:Bind icons:Lucide.RefreshCw}"
-              FontSize="16"
-            />
-          </Button>
-          <Border
-            Width="1"
-            Height="16"
-            Margin="4,0"
-            VerticalAlignment="Center"
-            Background="{ThemeResource DividerStrokeColorDefaultBrush}"
-          />
-          <Button
-            x:Name="RemoveButton"
-            Style="{StaticResource TinyTorrentSubtleButtonStyle}"
-            Command="{x:Bind Model.Remove}"
-          >
-            <FontIcon
-              FontFamily="{x:Bind icons:Lucide.Font}"
-              Glyph="{x:Bind icons:Lucide.ListX}"
-              FontSize="16"
-            />
-          </Button>
-          <Button
-            x:Name="DeleteButton"
-            Style="{StaticResource TinyTorrentSubtleButtonStyle}"
-            Command="{x:Bind Model.DeleteFiles}"
-          >
-            <FontIcon
-              FontFamily="{x:Bind icons:Lucide.Font}"
-              Glyph="{x:Bind icons:Lucide.Trash2}"
-              FontSize="16"
-            />
-          </Button>
-          <Border
-            Width="1"
-            Height="16"
-            Margin="4,0"
-            VerticalAlignment="Center"
-            Background="{ThemeResource DividerStrokeColorDefaultBrush}"
-          />
-          <Button
-            x:Name="SettingsButton"
-            Style="{StaticResource TinyTorrentSubtleButtonStyle}"
-            Command="{x:Bind Model.ShowSettings}"
-          >
-            <FontIcon
-              FontFamily="{x:Bind icons:Lucide.Font}"
-              Glyph="{x:Bind icons:Lucide.Settings}"
-              FontSize="16"
-            />
-          </Button>
-        </StackPanel>
+          <AppBarButton x:Name="AddButton" Command="{x:Bind Model.Add}">
+            <AppBarButton.Icon>
+              <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.FilePlus}" />
+            </AppBarButton.Icon>
+          </AppBarButton>
+          <AppBarButton x:Name="MagnetButton" Command="{x:Bind Model.AddMagnet}">
+            <AppBarButton.Icon>
+              <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Link}" />
+            </AppBarButton.Icon>
+          </AppBarButton>
+          <AppBarSeparator />
+          <AppBarButton x:Name="ResumeButton" Command="{x:Bind Model.Resume}">
+            <AppBarButton.Icon>
+              <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Play}" />
+            </AppBarButton.Icon>
+          </AppBarButton>
+          <AppBarButton x:Name="PauseButton" Command="{x:Bind Model.Pause}">
+            <AppBarButton.Icon>
+              <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Pause}" />
+            </AppBarButton.Icon>
+          </AppBarButton>
+          <AppBarSeparator />
+          <AppBarButton x:Name="FolderButton" Command="{x:Bind Model.OpenFolder}">
+            <AppBarButton.Icon>
+              <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.FolderOpen}" />
+            </AppBarButton.Icon>
+          </AppBarButton>
+          <AppBarButton x:Name="PropertiesButton" Command="{x:Bind Model.Properties}">
+            <AppBarButton.Icon>
+              <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Info}" />
+            </AppBarButton.Icon>
+          </AppBarButton>
+          <AppBarSeparator />
+          <AppBarButton x:Name="VerifyButton" Command="{x:Bind Model.Verify}">
+            <AppBarButton.Icon>
+              <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.RefreshCw}" />
+            </AppBarButton.Icon>
+          </AppBarButton>
+          <AppBarSeparator />
+          <AppBarButton x:Name="RemoveButton" Command="{x:Bind Model.Remove}">
+            <AppBarButton.Icon>
+              <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.ListX}" />
+            </AppBarButton.Icon>
+          </AppBarButton>
+          <AppBarButton x:Name="DeleteButton" Command="{x:Bind Model.DeleteFiles}">
+            <AppBarButton.Icon>
+              <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Trash2}" />
+            </AppBarButton.Icon>
+          </AppBarButton>
+        </CommandBar>
         <Grid x:Name="TorrentWorkspace" Grid.Row="1" Background="Transparent">
           <Grid.RowDefinitions>
             <RowDefinition Height="*" MinHeight="110" />
@@ -391,7 +317,6 @@
           <table:Table
             x:Name="Torrents"
             Background="Transparent"
-            ShowsHeaderButtons="True"
             ItemsSource="{x:Bind Model.VisibleTorrents, Mode=OneWay}"
             CanReorder="{x:Bind Model.CanReorder, Mode=OneWay}"
           >
@@ -618,6 +543,8 @@
               </table:Column>
             </table:Table.Columns>
           </table:Table>
+          <ContentControl x:Name="LibraryContent" Grid.Row="0" Visibility="Collapsed"
+                          HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
           <controls:Splitter
             x:Name="Split"
             Grid.Row="1"
@@ -642,16 +569,12 @@
         </Grid>
       </Grid>
     </SplitView>
-    <ContentControl
+    <Grid
       x:Name="SettingsContent"
-      Grid.Row="1"
-      HorizontalContentAlignment="Stretch"
-      VerticalContentAlignment="Stretch"
       Visibility="Collapsed"
     />
     <ScrollViewer
       x:Name="AboutContent"
-      Grid.Row="1"
       Visibility="Collapsed"
       VerticalScrollBarVisibility="Auto"
     >
@@ -670,6 +593,7 @@
         <TextBlock
           Text="{x:Bind Model.AboutTitle, Mode=OneWay}"
           Style="{StaticResource TinyTorrentPageTitleTextStyle}"
+          AutomationProperties.HeadingLevel="Level1"
         />
         <TextBlock
           Text="{x:Bind Model.AboutDescription, Mode=OneWay}"
@@ -682,8 +606,14 @@
           TextWrapping="Wrap"
           IsTextSelectionEnabled="True"
         />
+        <TextBlock Text="{x:Bind Model.CreditsText, Mode=OneWay}" Margin="0,16,0,0"
+          Style="{StaticResource TinyTorrentSurfaceTitleTextStyle}" />
+        <HyperlinkButton Content="TMDB" NavigateUri="https://www.themoviedb.org/" Padding="0" />
+        <TextBlock Text="{x:Bind Model.TmdbCredit, Mode=OneWay}" TextWrapping="Wrap"
+          Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
       </StackPanel>
     </ScrollViewer>
+    </Grid>
     <StackPanel Grid.Row="1" VerticalAlignment="Bottom" Margin="16,0,16,8" Spacing="8">
       <!-- The informational background is translucent, and this notice
                  overlays the page, so it gets the solid colour it resembles. -->
@@ -911,7 +841,7 @@
           Orientation="Horizontal"
           Spacing="6"
           Background="Transparent"
-          ToolTipService.ToolTip="{x:Bind Model.TorrentCount, Mode=OneWay}"
+          ToolTipService.ToolTip="{x:Bind Model.CountStatus, Mode=OneWay}"
         >
           <FontIcon
             Style="{StaticResource TinyTorrentStatusIconStyle}"
@@ -920,7 +850,8 @@
           />
           <TextBlock
             x:Name="CountLabel"
-            Text="{x:Bind Model.TorrentCount, Mode=OneWay}"
+            Text="{x:Bind Model.CountStatus, Mode=OneWay}"
+            AutomationProperties.Name="{x:Bind Model.CountStatus, Mode=OneWay}"
             Style="{StaticResource TinyTorrentStatusTextStyle}"
           />
         </StackPanel>

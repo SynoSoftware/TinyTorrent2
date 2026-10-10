@@ -267,53 +267,34 @@ public class ColumnFitTests
         });
 
     /// <summary>
-    /// The fill's one rule: the columns end where the header buttons begin and the space is shared
-    /// in the fitted proportions. Filling to the strip's own edge hid the Fill button under the
-    /// pointer that had just clicked it.
+    /// The fill's one rule: the columns end at the table's edge and the space is shared in the
+    /// fitted proportions.
     /// </summary>
     [TestMethod]
-    public Task FillingSharesTheSpareWidthAndEndsAtTheHeaderButtons() =>
+    public Task FillingSharesTheSpareWidthAndEndsAtTheEdge() =>
         TestHost.RunAsync(async () =>
         {
             Column a = Column("a", 400);
             a.Header = new Border { Width = 200, Height = 20 };
             Table table = await LoadAsync(Rows(20, 100), a, Column("b", 300));
-            table.ShowsHeaderButtons = true;
             table.FitColumns();
             Func<int> events = LayoutChanges(table);
 
             table.FillWidth();
-            table.UpdateLayout();
 
-            Header.Strip strip = Descendants<Header.Strip>(table).First();
-            Button fit = Descendants<Button>(strip)
-                .Single(button => button.Name == "PART_FitButton");
-            Button fill = Descendants<Button>(strip)
-                .Single(button => button.Name == "PART_FillButton");
-            double buttons = fit.TransformToVisual(strip).TransformPoint(default).X;
-            Assert.AreEqual(
-                buttons,
-                TableHarness.TotalWidth(table),
-                0.5,
-                "the columns end at the buttons"
-            );
-            Assert.AreEqual(Visibility.Visible, fit.Visibility, "the buttons keep their place");
-            Assert.AreEqual(
-                Visibility.Visible,
-                fill.Visibility,
-                "the button just used stays under the pointer"
-            );
+            double edge = Descendants<Header.Strip>(table).First().ActualWidth;
+            Assert.AreEqual(edge, TableHarness.TotalWidth(table), 0.5, "the columns end at the edge");
 
             // Fitted, a is its 200 header and b its 100 cell, each plus the inset; the one factor then
-            // spreads those over the room the buttons leave.
+            // spreads those over the whole width.
             double fitted = 300 + 2 * Inset(table);
             Assert.AreEqual(
-                (200 + Inset(table)) * buttons / fitted,
+                (200 + Inset(table)) * edge / fitted,
                 TableHarness.EffectiveWidth(table, "a"),
                 0.5
             );
             Assert.AreEqual(
-                (100 + Inset(table)) * buttons / fitted,
+                (100 + Inset(table)) * edge / fitted,
                 TableHarness.EffectiveWidth(table, "b"),
                 0.5
             );

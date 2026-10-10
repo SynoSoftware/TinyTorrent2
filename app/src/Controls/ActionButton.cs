@@ -31,7 +31,7 @@ public sealed partial class ActionButton : Button
     }
     public string Text
     {
-        get => (string)GetValue(TextProperty);
+        get => (string?)GetValue(TextProperty) ?? string.Empty;
         set => SetValue(TextProperty, value);
     }
 
@@ -47,6 +47,20 @@ public sealed partial class ActionButton : Button
             Spacing = 8,
             Children = { _icon, _text },
         };
+    }
+
+    internal static void Align(IEnumerable<ActionButton> actions)
+    {
+        var buttons = actions.ToArray();
+        if (buttons.Length == 0)
+            return;
+        foreach (var button in buttons)
+            button.Width = double.NaN;
+        foreach (var button in buttons)
+            button.Measure(new Windows.Foundation.Size(double.PositiveInfinity, double.PositiveInfinity));
+        var width = buttons.Max(button => button.DesiredSize.Width);
+        foreach (var button in buttons)
+            button.Width = width;
     }
 
     private static DependencyProperty Register(string name) =>

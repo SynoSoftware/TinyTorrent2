@@ -284,7 +284,7 @@ void Engine::State::SaveMove()
         });
     }))
     {
-        EndMove(Problem{ProblemKind::MoveFailed, ToString(ProblemKind::StorageOverloaded)});
+        EndMove(Problem{ProblemKind::StorageOverloaded});
     }
 }
 

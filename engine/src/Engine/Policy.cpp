@@ -19,20 +19,10 @@ constexpr ULONG adapterLimit = 1024 * 1024;
 // A schedule period starts and ends at a minute of the day.
 constexpr int dayMinutes = 24 * 60;
 
-std::vector<std::string> Interfaces(std::string const& name, IpFamily family)
+}
+
+std::optional<NetworkAdapter> Engine::State::FindAdapter(std::string const& name)
 {
-    if (name.empty())
-    {
-        if (family == IpFamily::Ipv4)
-        {
-            return {"0.0.0.0"};
-        }
-        if (family == IpFamily::Ipv6)
-        {
-            return {"::"};
-        }
-        return {"0.0.0.0", "::"};
-    }
     ULONG size = adapterBuffer;
     std::vector<char> buffer(size);
     auto read = [&]
@@ -60,16 +50,11 @@ std::vector<std::string> Interfaces(std::string const& name, IpFamily family)
             {
                 return {};
             }
-            if (family == IpFamily::Both)
-            {
-                return {name};
-            }
-            std::vector<std::string> addresses;
+            NetworkAdapter found{adapter->IfIndex, adapter->Ipv6IfIndex};
             for (auto address = adapter->FirstUnicastAddress; address; address = address->Next)
             {
                 auto socket = address->Address.lpSockaddr;
-                if (!socket || (family == IpFamily::Ipv4 ? socket->sa_family != AF_INET :
-                    socket->sa_family != AF_INET6))
+                if (!socket || (socket->sa_family != AF_INET && socket->sa_family != AF_INET6))
                 {
                     continue;
                 }
@@ -90,14 +75,16 @@ std::vector<std::string> Interfaces(std::string const& name, IpFamily family)
                         value += "%" + std::to_string(scope);
                     }
                 }
-                addresses.push_back(std::move(value));
+                found.addresses.push_back(std::move(value));
             }
-            return addresses;
+            return found.addresses.empty() ? std::nullopt : std::optional(std::move(found));
         }
     }
     return {};
 }
 
+namespace
+{
 // Windows names an adapter by its GUID in upper case, and libtorrent matches
 // that name exactly.
 std::string AdapterName(std::string name)
@@ -221,8 +208,34 @@ void Engine::State::RefreshPolicy(bool configure)
     }
     auto adapter = AdapterName(settings.networkAdapter);
     auto family = settings.proxy.type == ProxyType::None ? settings.ipFamily : IpFamily::Both;
-    auto interfaces = Interfaces(adapter, family);
+    std::vector<std::string> interfaces;
+    if (adapter.empty())
+    {
+        if (family != IpFamily::Ipv6)
+            interfaces.push_back("0.0.0.0");
+        if (family != IpFamily::Ipv4)
+            interfaces.push_back("::");
+    }
+    else if (auto selected = FindAdapter(adapter))
+    {
+        if (family == IpFamily::Both)
+            interfaces.push_back(adapter);
+        else
+            for (auto const& address : selected->addresses)
+                if ((address.find(':') != std::string::npos) == (family == IpFamily::Ipv6))
+                    interfaces.push_back(address);
+    }
+    auto wasMissing = adapterMissing;
     adapterMissing = interfaces.empty();
+    bool routeChanged = appliedProxy != settings.proxy || appliedAdapter != adapter || wasMissing != adapterMissing;
+    if (routeChanged)
+    {
+        std::lock_guard lock(checkGate);
+        checkStop.request_stop();
+        checkStop = std::stop_source{};
+        requestedCheck.reset();
+        proxyOutcome.reset();
+    }
     auto port = std::to_string(settings.listenPort);
     std::string listen;
     std::string outgoing;
@@ -249,7 +262,7 @@ void Engine::State::RefreshPolicy(bool configure)
     bool proxyChanged = appliedProxy != settings.proxy;
     // Connection policy and peer classes apply to new peers, so changing them
     // reconnects existing peers too.
-    bool networkChanged = appliedListen != listen || proxyChanged || appliedEncryption != settings.encryption ||
+    bool networkChanged = appliedListen != listen || routeChanged || appliedEncryption != settings.encryption ||
         appliedTransport != settings.transport || appliedFamily != family || appliedLan != settings.limitsLan;
     if (!configure && !networkChanged && appliedPause == paused && appliedLimits == limits)
     {
@@ -263,10 +276,6 @@ void Engine::State::RefreshPolicy(bool configure)
     if (networkChanged)
     {
         session->pause();
-    }
-    if (proxyChanged)
-    {
-        proxyOutcome.reset();
     }
     lt::settings_pack pack;
     if (configure || networkChanged)
@@ -390,6 +399,7 @@ void Engine::State::RefreshPolicy(bool configure)
         session->resume();
     }
     appliedListen = std::move(listen);
+    appliedAdapter = adapter;
     appliedProxy = settings.proxy;
     appliedEncryption = settings.encryption;
     appliedTransport = settings.transport;
@@ -399,7 +409,7 @@ void Engine::State::RefreshPolicy(bool configure)
     appliedLimits = limits;
     // libtorrent cannot tell a proxy that fails from peers that are offline,
     // so the engine checks the proxy itself.
-    if (proxyChanged && settings.proxy.type != ProxyType::None)
+    if (routeChanged && settings.proxy.type != ProxyType::None)
     {
         CheckProxy(settings.proxy, [this, checked = settings.proxy](std::optional<ProxyCheck> check)
         {

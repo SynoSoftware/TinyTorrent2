@@ -119,6 +119,7 @@
                     IsEnabled="{x:Bind Model.AddDraft.CanEdit, Mode=OneWay}"
                     Loaded="OnDestinationLoaded"
                     AutomationProperties.LabeledBy="{x:Bind DestinationLabel}"
+                    AutomationProperties.HelpText="{x:Bind Model.AddDraft.DestinationMessage, Mode=OneWay}"
                     ToolTipService.ToolTip="{x:Bind Model.AddDraft.Destination, Mode=OneWay}"
                   />
                   <controls:ActionButton
@@ -149,14 +150,8 @@
                       Visibility="{x:Bind Model.AddDraft.LacksSpace, Mode=OneWay}"
                     />
                   </Grid>
-                  <TextBlock
-                    Text="{x:Bind Model.AddDraft.DestinationMessage, Mode=OneWay}"
-                    Style="{StaticResource TinyTorrentBodyTextStyle}"
-                    Foreground="{ThemeResource SystemFillColorCriticalBrush}"
-                    IsTextSelectionEnabled="True"
-                    AutomationProperties.Name="{x:Bind Model.AddDraft.DestinationMessage, Mode=OneWay}"
-                    ToolTipService.ToolTip="{x:Bind Model.AddDraft.DestinationMessage, Mode=OneWay}"
-                    Visibility="{x:Bind Model.AddDraft.HasDestinationError, Mode=OneWay}"
+                  <controls:FieldHeader
+                    Error="{x:Bind Model.AddDraft.DestinationMessage, Mode=OneWay}"
                   />
                 </Grid>
                 <TextBlock
@@ -286,14 +281,11 @@
               Text="{x:Bind Model.AddDraft.Magnet, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
               IsEnabled="{x:Bind Model.AddDraft.CanEdit, Mode=OneWay}"
               AutomationProperties.LabeledBy="{x:Bind MagnetLabel}"
+              AutomationProperties.HelpText="{x:Bind Model.AddDraft.MagnetMessage, Mode=OneWay}"
             />
-            <InfoBar
+            <controls:FieldHeader
               Grid.Row="2"
-              IsClosable="False"
-              Severity="Error"
-              IsOpen="{x:Bind Model.AddDraft.HasMagnetError, Mode=OneWay}"
-              Visibility="{x:Bind Model.AddDraft.HasMagnetError, Mode=OneWay}"
-              Message="{x:Bind Model.AddDraft.MagnetMessage, Mode=OneWay}"
+              Error="{x:Bind Model.AddDraft.MagnetMessage, Mode=OneWay}"
             />
             <Grid Grid.Row="3" HorizontalAlignment="Center">
               <Grid.ColumnDefinitions>

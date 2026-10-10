@@ -1,7 +1,9 @@
 using System.Diagnostics;
+using System.Net;
 using System.Net.Http;
 using System.Text.Json;
 using System.Windows.Input;
+using Syno.TinyTorrent.Services;
 
 namespace Syno.TinyTorrent;
 
@@ -9,25 +11,28 @@ public sealed partial class MainViewModel
 {
     private const string ReleasePage =
         "https://github.com/SynoSoftware/TinyTorrent2/releases/latest";
-    private static readonly Version RunningVersion =
-        typeof(MainViewModel).Assembly.GetName().Version ?? new Version(0, 0, 0, 0);
     private ReleaseCheck? _releaseCheck;
     private string? _updatesPath;
     private Task? _updateCheck;
     private CancellationTokenSource? _updateRequest;
 
     public bool HasUpdate =>
-        Settings.Updates.IsOn && _releaseCheck?.Version is { } version && version > RunningVersion;
+        Settings.Updates.IsOn && _releaseCheck?.Version is { } version && version > App.Version;
     public string UpdateText => Text.Get("about", "update");
     public ICommand OpenUpdate { get; }
+    private bool CanCheckUpdates =>
+        !_closed && !_featuresClosed && _connected && !_loading && !_storageFailed
+        && _providerRoute is not null && Settings.Updates.IsOn;
 
     private void ObserveUpdates()
     {
-        if (_closed || !Settings.Updates.IsOn)
+        if (!CanCheckUpdates)
         {
             _updateRequest?.Cancel();
             return;
         }
+        if (_applyingSettings)
+            return;
         if (_updateCheck is { IsCompleted: false })
             return;
         _updateCheck = CheckUpdates();
@@ -56,8 +61,7 @@ public sealed partial class MainViewModel
         }
         // A check saved in the future, after the clock was wrong, counts as old.
         if (
-            _closed
-            || !Settings.Updates.IsOn
+            !CanCheckUpdates
             || _releaseCheck is { } previous
                 && previous.CheckedAt <= DateTimeOffset.UtcNow
                 && DateTimeOffset.UtcNow - previous.CheckedAt < TimeSpan.FromDays(1)
@@ -65,25 +69,25 @@ public sealed partial class MainViewModel
             return;
         _releaseCheck = new(DateTimeOffset.UtcNow, _releaseCheck?.Version);
         await SaveCheck();
-        if (_closed || !Settings.Updates.IsOn)
+        if (!CanCheckUpdates)
             return;
         using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(8));
         _updateRequest = cancellation;
         try
         {
-            using var http = new HttpClient();
-            http.DefaultRequestHeaders.UserAgent.ParseAdd("TinyTorrent/" + RunningVersion);
-            http.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
-            http.DefaultRequestHeaders.Add("X-GitHub-Api-Version", "2026-03-10");
-            using var stream = await http.GetStreamAsync(
-                "https://api.github.com/repos/SynoSoftware/TinyTorrent2/releases/latest",
-                cancellation.Token
-            );
+            using var request = new HttpRequestMessage(HttpMethod.Get,
+                "https://api.github.com/repos/SynoSoftware/TinyTorrent2/releases/latest");
+            request.Headers.Accept.ParseAdd("application/vnd.github+json");
+            request.Headers.Add("X-GitHub-Api-Version", "2026-03-10");
+            var reply = await _providerHttp.Send(request, ProviderHttp.JsonLimit, cancellation.Token);
+            if (reply.Status != HttpStatusCode.OK)
+                return;
+            using var stream = new MemoryStream(reply.Bytes, writable: false);
             using var release = await JsonDocument.ParseAsync(
                 stream,
                 cancellationToken: cancellation.Token
             );
-            if (_closed || !Settings.Updates.IsOn)
+            if (!CanCheckUpdates)
                 return;
             if (
                 !release.RootElement.TryGetProperty("tag_name", out var tag)
@@ -104,7 +108,7 @@ public sealed partial class MainViewModel
             await SaveCheck();
         }
         catch (Exception error)
-            when (error is HttpRequestException or OperationCanceledException or JsonException)
+            when (error is HttpRequestException or OperationCanceledException or JsonException or IOException or InvalidOperationException)
         {
             Debug.WriteLine($"Update check did not complete: {error.Message}");
         }

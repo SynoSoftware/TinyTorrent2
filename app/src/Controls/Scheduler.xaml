@@ -69,7 +69,7 @@
       HorizontalContentAlignment="Stretch"
       IsTabStop="False"
     />
-    <StackPanel>
+    <StackPanel Visibility="{x:Bind Model.FollowsSchedule, Mode=OneWay}">
       <StackPanel MinHeight="56" Orientation="Horizontal" Spacing="24">
         <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
           <Border

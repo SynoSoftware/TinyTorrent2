@@ -16,6 +16,7 @@ namespace
 constexpr UINT dispatch = WM_APP + 1;
 constexpr UINT tray = WM_APP + 2;
 constexpr UINT wake = WM_APP + 3;
+constexpr UINT backgroundOff = WM_APP + 4;
 constexpr UINT_PTR tickTimer = 1;
 constexpr UINT_PTR trayTimer = 2;
 
@@ -206,7 +207,7 @@ Application::Application(std::filesystem::path directory, std::wstring sid, bool
     {
         throw std::runtime_error("Cannot create the broadcast window.");
     }
-    tray_ = std::make_unique<Tray>(owner_.get(), tray, broadcast_.get(), strings_, headless_);
+    tray_ = std::make_unique<Tray>(owner_.get(), tray, backgroundOff, broadcast_.get(), strings_, headless_);
     auto data = directory.wstring();
     engine_ = std::make_unique<Engine>(std::move(directory),
         [this] { PostMessageW(owner_.get(), wake, 0, 0); });
@@ -296,6 +297,17 @@ LRESULT Application::Handle(UINT message, WPARAM first, LPARAM second)
         return 0;
     case tray:
         OnTray(first, second);
+        return 0;
+    case backgroundOff:
+        engine_->SetBackgroundNotification(false, [this](Outcome outcome)
+        {
+            if (outcome.error)
+            {
+                auto detail = Utf8(strings_.Text("error", "notification")) + " " + outcome.detail;
+                Notify({.kind = NoticeKind::Failure, .name = Utf8(productName), .detail = detail});
+            }
+            Refresh();
+        });
         return 0;
     case WM_TIMER:
         if (first == tickTimer)
@@ -656,7 +668,7 @@ void Application::OnClosed(Reply const& reply)
     ForgetWindow();
     if (!IsExiting())
     {
-        ExplainBackground();
+        Notify({.kind = NoticeKind::Background});
     }
 }
 
@@ -785,25 +797,6 @@ void Application::ForgetWindow()
     {
         Shutdown();
     }
-}
-
-// The first time the window closes while transfers continue, a notice says
-// where TinyTorrent went.
-void Application::ExplainBackground()
-{
-    if (headless_ || noticeSaving_ || engine_->Activity().backgroundNoticeShown)
-    {
-        return;
-    }
-    noticeSaving_ = true;
-    engine_->RecordBackgroundNotice([this](Outcome outcome)
-    {
-        noticeSaving_ = false;
-        if (!outcome.error)
-        {
-            Notify({.kind = NoticeKind::Background});
-        }
-    });
 }
 
 bool Application::Open()
@@ -1283,8 +1276,6 @@ void Application::Notify(Notice notice)
             {"count", notice.count}});
         return;
     }
-    if (notice.code == "watch_limit")
-        notice.detail = Utf8(strings_.Text("error", notice.code));
     tray_->Queue(std::move(notice));
 }
 

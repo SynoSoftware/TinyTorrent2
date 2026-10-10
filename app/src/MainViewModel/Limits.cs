@@ -31,9 +31,6 @@ public sealed partial class MainViewModel
     internal LimitMode? FixedLimits =>
         HasLimits && CurrentLimits != LimitMode.Schedule ? CurrentLimits : null;
     public bool FollowsSchedule => FixedLimits is null;
-    public string ScheduleStatus =>
-        !HasLimits ? Text.Get("status", "unknown")
-        : Text.Get("settings", FollowsSchedule ? "schedule_on" : "schedule_off");
     public bool CanUseNone => CanChoose(LimitMode.None);
     public bool CanUseSpeed => CanChoose(LimitMode.Speed);
     public bool CanUseAlternative => CanChoose(LimitMode.Alternative);
@@ -177,6 +174,7 @@ public sealed partial class MainViewModel
 
     private void ApplyLimits(JsonElement limits)
     {
+        var fixedLimits = FixedLimits;
         _limitOrigin = limits.GetProperty("origin").GetString() switch
         {
             "manual" => LimitOrigin.Manual,
@@ -202,6 +200,9 @@ public sealed partial class MainViewModel
             "connection_test" => PauseReason.ConnectionTest,
             _ => throw new InvalidDataException("Unknown pause reason."),
         };
+        // The week draws a fixed choice in place of its periods.
+        if (FixedLimits != fixedLimits)
+            Settings.Schedule.Refresh();
         // The notice after Resume all explains only a missing adapter's pause.
         if (_pause == PauseReason.None || _waiting is [] && MissingAdapter.Length == 0)
             _waiting = null;

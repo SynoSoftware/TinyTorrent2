@@ -40,6 +40,9 @@ An attractive placeholder is not evidence that its backend feature exists.
   Alt+Left; an additional "All settings" row wastes vertical space. Back from
   Connection setup returns to Speed limits and restores the previous scroll
   position and focus to its launching row.
+- Settings sits immediately left of the theme button with the same caption
+  style and a Lucide gear. It opens the introductory index; Back from a category
+  returns to torrents because the index is an entry point, not a history step.
 - There is **one Show advanced options switch**. It reveals advanced rows,
   cards, and the Advanced category together. Advanced options may belong inside
   an ordinary category; the Advanced tab is not a dump of every uncommon option.
@@ -159,18 +162,22 @@ Search includes supplier/account terms, captions, SRT, and language names; each
 result opens the existing setting rather than a second editor. The shared field
 inventory also makes these controls available in the comparison layouts.
 
-The default is TinyTorrent's provisioned, account-free OpenSubtitles package.
+Supplier access follows
+[third-party provider access](../docs/architecture.md#third-party-provider-access).
 Settings shows Subtitle supplier on the left and the clickable saved supplier
 with Edit on the right, all in one row. The value and action align with the
 language input and Add. Edit opens the supplier/account
-dialog; user name and password there are optional for OpenSubtitles. Blank uses
-TinyTorrent's access; a complete pair uses the person's account. No personal API
-key or subscription is required. Check examines the draft, Save commits it as one
+dialog. OpenSubtitles uses the existing free application key and offers optional
+user name and password fields; both blank omits login. A complete pair adds
+personal login. SubDL and SubSource require the person's own API key. Check examines
+the draft, Save commits it as one
 configuration, and Cancel/Escape discard it. Nothing applies merely on typing,
 focus departure, or Check. Automatic downloading and language edits remain
 immediate on the Settings page.
 
-Automatic subtitles starts Off, ready to enable using the interface language.
+Automatic subtitles starts Off, using the interface language by default.
+OpenSubtitles is ready to enable when the free application key is available;
+other suppliers require the person's configured key. No paid package is required.
 An unset language choice follows the current interface language; choosing
 languages makes that selection independent, and Reset restores the default.
 Its tooltip says "Use the interface language for subtitles"; it keeps its Lucide
@@ -269,8 +276,8 @@ credentials never become subtitle values. Preserve None and SOCKS4's disabled
 fields, Fluent spacing and equal footer button widths beside reserved feedback.
 
 The supplier selector includes OpenSubtitles, SubDL, and SubSource. SubDL and
-SubSource need the person's own API key, so for them the dialog hides User name
-and labels the secret field API key; its reveal button reads Show API key. Each
+SubSource show a required API key field with Show API key as its reveal action.
+OpenSubtitles shows optional User name and Password fields with no key setup. Each
 supplier's flyout links that supplier's own privacy policy and terms. Selecting another supplier clears only draft
 credentials; Cancel preserves the saved configuration. The prototype toolbar
 supplies not-checked, successful-check, unconfigured, access-error,
@@ -432,15 +439,18 @@ maximum process working set or control Windows' cache.
 ## Scheduler: preserve the working feature
 
 Schedule retains its own category and existing engine behavior. The compact
-standard/alternative download/upload summary sits above the week, with Edit
-leading to the existing Speed limits fields, so users can see what those names
-mean without adding another editor below an already tall schedule.
+standard/alternative download/upload summary sits above the week, with Edit at
+the right of its card header leading to the existing Speed limits fields, so
+users can see what those names mean without adding another editor below an
+already tall schedule.
 
 Preserve local-time periods, overnight continuation, overlap precedence, and
 standard limits outside special periods through the existing schedule owner.
-The HTML demonstrates editing saved periods while the schedule is off; changing
-the mode retains them. Its week, simple period editor, Add/Remove/Undo, and
-sample data do **not** cover the production scheduler's complete interaction.
+The week shows the limits that apply: fixed modes fill every day, while Weekly
+schedule shows the saved periods and their editor. Changing modes retains the
+periods so returning to Weekly schedule restores them. Its week, simple period
+editor, Add/Remove/Undo, and sample data do **not** cover the production
+scheduler's complete interaction.
 Keep the existing drag creation/move/resize, keyboard routes, save ordering,
 validation, and focus behavior described in the
 [interface contract](../docs/interface.md#settings). Reuse the existing scheduler
@@ -456,7 +466,6 @@ owner's settled UI decisions.
 | --- | --- |
 | Placement and scope | This prototype places Queue and Peer connections in Speed limits and expands Advanced. The current interface contract still places Queue in Transfers and names a smaller Advanced inventory. Update the relevant contract alongside adoption; do not classify every sample field as already implemented. |
 | Dependent rows and help | The owner's stable-layout and tooltip-only decisions govern. Older Settings prose still mentions revealing dependencies and visible descriptions. Read it with the newer text/row rulings, not as a reason to reintroduce wrapping help. |
-| Schedule when inactive | HTML keeps saved periods editable while inactive; current interface prose shows a neutral fixed-mode week and hides the period editor outside Weekly schedule. Resolve this presentation difference explicitly while preserving saved periods and scheduler capabilities. |
 | Adding a schedule period | HTML uses a new-period draft with Save/Cancel. The current production contract creates/opens a default period and applies edits individually. Preserve the existing implementation unless this difference is deliberately resolved; copying HTML would change the journey. |
 | Queue implementation | HTML's explanatory text mentions how slow torrents count. Verify it against the actual queue/policy implementation, rather than assuming raw libtorrent `active_*` settings have exactly that behavior. The prototype must not introduce a second queue owner. |
 | New asynchronous operation | The speed-test suspension/recovery lifecycle needs engine/protocol support. It is not implemented by the HTML. |

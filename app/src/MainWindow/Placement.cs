@@ -191,6 +191,7 @@ public sealed partial class MainWindow
         _viewRestored = true;
         if (_placement is not { } placement)
             return;
+        Model.SubtitleHelpSeen = placement.SubtitleHelpSeen;
         // An unknown saved value keeps its default; the rest still restores.
         if (Enum.IsDefined(placement.Filter))
             Model.Filter = placement.Filter;
@@ -211,6 +212,12 @@ public sealed partial class MainWindow
         // After the inspector, which sets how many rows fit, and before another
         // page hides the table.
         Torrents.ScrollTo(placement.VerticalOffset);
+        if (placement.LibraryLayouts is { } libraryLayouts)
+            _libraryTable.RestoreLayouts(libraryLayouts);
+        if (placement.LibraryFilters is { } libraryFilters)
+            Model.Library.RestoreFilters(libraryFilters);
+        if (Enum.IsDefined(placement.LibraryConfiguration))
+            Model.Library.Configuration = placement.LibraryConfiguration;
         if (placement.Page == WindowPage.Settings)
         {
             var category = placement.Category;
@@ -220,6 +227,8 @@ public sealed partial class MainWindow
         }
         else if (placement.Page == WindowPage.About)
             await ShowAbout();
+        else if (placement.Page == WindowPage.Library)
+            await Navigate(WindowPage.Library);
     }
 
     private async Task SavePlacement()
@@ -228,7 +237,10 @@ public sealed partial class MainWindow
             await reading;
         if (_placementPath is null || !_viewRestored)
             return;
+        if (Model.Page == WindowPage.Settings && ReferenceEquals(_settings.Current, _settingsPage))
+            _settingsPage?.Depart();
         RememberBounds();
+        _libraryTable.SaveLayout();
         var placement = new Placement
         {
             X = _normalBounds.X,
@@ -247,13 +259,17 @@ public sealed partial class MainWindow
             Page = Model.Page,
             Category = _settingsPage?.Category,
             Filter = Model.Filter,
-            FiltersOpen = Model.IsFilterOpen,
+            FiltersOpen = Model.TorrentFiltersOpen,
             ToolbarOpen = Model.IsToolbarOpen,
             Selected = [.. Model.Selected.Select(torrent => torrent.TorrentId)],
             Current = Model.Current?.TorrentId,
-            InspectorOpen = Model.HasInspector,
+            InspectorOpen = Model.Inspector.IsOpen,
             Section = Model.Inspector.Section,
             VerticalOffset = Torrents.VerticalOffset,
+            LibraryConfiguration = Model.Library.Configuration,
+            LibraryLayouts = _libraryTable.Layouts,
+            LibraryFilters = Model.Library.SaveFilters(),
+            SubtitleHelpSeen = Model.SubtitleHelpSeen,
         };
         var temporary = _placementPath + ".tmp";
         try
@@ -289,5 +305,9 @@ public sealed partial class MainWindow
         public bool InspectorOpen { get; init; }
         public InspectorSection Section { get; init; }
         public double VerticalOffset { get; init; }
+        public LibraryConfiguration LibraryConfiguration { get; init; }
+        public Dictionary<LibraryConfiguration, Syno.TableView.ColumnLayout>? LibraryLayouts { get; init; }
+        public Dictionary<LibraryConfiguration, Dictionary<string, string>>? LibraryFilters { get; init; }
+        public bool SubtitleHelpSeen { get; init; }
     }
 }

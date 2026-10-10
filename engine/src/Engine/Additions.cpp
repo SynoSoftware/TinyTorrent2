@@ -219,7 +219,11 @@ void Engine::State::AddSource(std::string source, std::function<void(Outcome, Ad
             MergeTrackers(*preview, duplicate, [finish, duplicate](Json reply)
             {
                 if (!reply.at("ok").get<bool>())
-                    finish({ErrorCode::StorageFailed}, {});
+                {
+                    auto const& error = reply.at("error");
+                    finish({ParseError(error.at("code").get<std::string>()).value_or(ErrorCode::Unavailable),
+                        error.at("detail").get<std::string>()}, {});
+                }
                 else
                     finish({}, {AdditionKind::Duplicate, duplicate});
             });

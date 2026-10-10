@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Globalization;
 using System.Text.Json;
+using Syno.TinyTorrent.Models;
 using Syno.TinyTorrent.Services;
 
 namespace Syno.TinyTorrent.Controls;
@@ -208,7 +209,8 @@ public sealed class FileSelection(Strings strings) : INotifyPropertyChanged
         _files.OrderBy(file => file.Index).Select(file => file.Priority).ToArray();
 
     private bool Matches(FileNode file) =>
-        file.Path.Contains(_search, StringComparison.OrdinalIgnoreCase);
+        _search.Length == 0 || FileName.Normalize(file.Path).Contains(
+            FileName.Normalize(_search), StringComparison.Ordinal);
 
     private void Project()
     {
@@ -254,33 +256,7 @@ public sealed class FileNode : INotifyPropertyChanged
     public string Glyph =>
         IsFolder
             ? Lucide.Folder
-            : System.IO.Path.GetExtension(Name).ToLowerInvariant() switch
-            {
-                ".mkv"
-                or ".mp4"
-                or ".avi"
-                or ".mov"
-                or ".wmv"
-                or ".webm"
-                or ".m4v"
-                or ".mpg"
-                or ".mpeg"
-                or ".ts" => Lucide.FileVideoCamera,
-                ".flac" or ".mp3" or ".wav" or ".aac" or ".ogg" or ".opus" or ".m4a" or ".wma" =>
-                    Lucide.FileMusic,
-                ".jpg" or ".jpeg" or ".png" or ".gif" or ".webp" or ".bmp" => Lucide.FileImage,
-                ".txt"
-                or ".nfo"
-                or ".md"
-                or ".pdf"
-                or ".doc"
-                or ".docx"
-                or ".srt"
-                or ".ass"
-                or ".sub" => Lucide.FileText,
-                ".zip" or ".rar" or ".7z" or ".tar" or ".gz" or ".iso" => Lucide.FileArchive,
-                _ => Lucide.File,
-            };
+            : FileName.Glyph(FileName.Kind(Name));
     public long TotalSize => Files().Sum(file => file.Size);
     public string SizeText => _owner.Text.Bytes(TotalSize);
     public double? Progress

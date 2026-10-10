@@ -54,6 +54,7 @@ int WINAPI wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ PWSTR, _In_ int)
     bool headless = false;
     try
     {
+        tt::Strings strings;
         SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
         if (FAILED(SetCurrentProcessExplicitAppUserModelID(tt::appId)))
         {
@@ -91,19 +92,19 @@ int WINAPI wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ PWSTR, _In_ int)
             {
                 if (++index == count)
                 {
-                    throw std::runtime_error("The --registration option needs an action.");
+                    throw std::runtime_error(tt::Utf8(strings.Text("error", "argument_registration")));
                 }
                 registration = tt::Utf8(arguments[index]);
                 if (registration.empty())
                 {
-                    throw std::runtime_error("The --registration option needs an action.");
+                    throw std::runtime_error(tt::Utf8(strings.Text("error", "argument_registration")));
                 }
             }
             else if (!literal && argument == tt::option::data)
             {
                 if (++index == count || std::wstring(arguments[index]) == tt::option::literal)
                 {
-                    throw std::runtime_error("The --data option needs a folder.");
+                    throw std::runtime_error(tt::Utf8(strings.Text("error", "argument_folder")));
                 }
                 directory = arguments[index];
             }
@@ -111,7 +112,7 @@ int WINAPI wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ PWSTR, _In_ int)
             {
                 if (++index == count)
                 {
-                    throw std::runtime_error("The --repair-class option needs a class.");
+                    throw std::runtime_error(tt::Utf8(strings.Text("error", "argument_class")));
                 }
                 repairClasses.push_back(arguments[index]);
             }
@@ -129,15 +130,15 @@ int WINAPI wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ PWSTR, _In_ int)
         LocalFree(arguments);
         if (!registration.empty() && !sources.empty())
         {
-            throw std::runtime_error("Registration actions cannot include torrent sources.");
+            throw std::runtime_error(tt::Utf8(strings.Text("error", "argument_sources")));
         }
         if (exiting && (!registration.empty() || !sources.empty() || background || !directory.empty()))
         {
-            throw std::runtime_error("The --exit option cannot include other operations or torrent sources.");
+            throw std::runtime_error(tt::Utf8(strings.Text("error", "argument_exit")));
         }
         if (!sources.empty() && !tt::desktop::Application::ValidSources(sources))
         {
-            throw std::runtime_error("Torrent sources exceed the supported count or length.");
+            throw std::runtime_error(tt::Utf8(strings.Text("error", "sources_limit")));
         }
         // The window starts this repair as an administrator, and forwarding
         // would hand it to the person's own engine, which cannot change
@@ -147,7 +148,7 @@ int WINAPI wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ PWSTR, _In_ int)
         {
             if (!registration.empty() || !sources.empty() || exiting || background || !directory.empty())
             {
-                throw std::runtime_error("The --repair-class option cannot include other operations.");
+                throw std::runtime_error(tt::Utf8(strings.Text("error", "argument_repair")));
             }
             tt::Registration().RepairMachine(repairClasses);
             return 0;
@@ -204,14 +205,14 @@ int WINAPI wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ PWSTR, _In_ int)
             }
             if (forwarding == tt::Forwarding::OtherVersion)
             {
-                throw std::runtime_error(tt::Utf8(tt::Strings().Text("error", "version")));
+                throw std::runtime_error(tt::Utf8(strings.Text("error", "version")));
             }
             if (exiting)
             {
                 acquired = WaitForSingleObject(mutex.get(), 30'000);
                 if (acquired != WAIT_OBJECT_0 && acquired != WAIT_ABANDONED)
                 {
-                    throw std::runtime_error("TinyTorrent is still running. Finish any open prompt or operation, then retry.");
+                    throw std::runtime_error(tt::Utf8(strings.Text("error", "engine_running")));
                 }
             }
             else
@@ -219,7 +220,7 @@ int WINAPI wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ PWSTR, _In_ int)
                 mutex.reset();
                 if (forwarding == tt::Forwarding::Refused)
                 {
-                    throw std::runtime_error("The running engine could not accept the activation request.");
+                    throw std::runtime_error(tt::Utf8(strings.Text("error", "activation_refused")));
                 }
                 return 0;
             }
@@ -242,7 +243,7 @@ int WINAPI wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ PWSTR, _In_ int)
                 auto closed = WaitForSingleObject(window.get(), 0);
                 if (closed != WAIT_OBJECT_0 && closed != WAIT_ABANDONED)
                 {
-                    throw std::runtime_error(tt::Utf8(tt::Strings().Text("error", "window_open")));
+                    throw std::runtime_error(tt::Utf8(strings.Text("error", "window_open")));
                 }
                 ReleaseMutex(window.get());
             }
@@ -256,7 +257,9 @@ int WINAPI wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ PWSTR, _In_ int)
             result = response.value("ok", false) ? 0 : 1;
             if (result)
             {
-                throw std::runtime_error(response.at("error").at("detail").get<std::string>());
+                auto message = tt::Utf8(strings.Text("error", "registration_failed"));
+                auto detail = response.at("error").at("detail").get<std::string>();
+                throw std::runtime_error(detail.empty() ? message : message + "\n\n" + detail);
             }
         }
         else

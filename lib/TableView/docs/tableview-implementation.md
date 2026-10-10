@@ -1,6 +1,7 @@
 # TableView implementation
 
-Source map updated 2026-10-04. This describes the existing TableView library and
+Source map reviewed as a whole on 2026-10-04; later commits edited individual
+sections. This describes the existing TableView library and
 the reasons for its construction. The [contract](tableview-contract.md) owns
 observable behavior and the public API; this map is not a competing specification.
 The sample and tests exist. No new rendering or runtime verification was performed
@@ -53,6 +54,11 @@ instances and changes in visual order.
 Pointer, keyboard, menu, and automation paths must reach the same operations.
 Marquee and drag visuals do not decide which gesture is active.
 
+The private view sends native observable-vector insert, remove and replacement
+events. It avoids projecting .NET collection-event arguments and their item
+lists for every membership change, a measured cost on large Library searches.
+The reconciliation algorithm and the positions it announces remain unchanged.
+
 The current arbiter has `None`, `Pressed`, `Marquee`, and `RowDrag` phases. Earlier
 notes describing a `Committed` phase and calling the marquee during a row drag
 are stale; inspect the current transitions before proposing a fix. Deferred click
@@ -89,8 +95,9 @@ and out-of-process automation still require relevant runtime evidence under the
 `Strings.Load` prepares an immutable catalogue with parent/English fallback
 and placeholder validation. `Table.Strings`, `Column.DisplayName` and `Column.Header`
 refresh existing presentation through the table's text path. Generated menu items
-subscribe while open. The standalone default remains English. This code has not
-yet been built or exercised in a live language switch.
+subscribe while open. The standalone default remains English. The product's
+captures switch language live with the table present, but they check retained
+input and focus, not that headers and menus show the new text.
 
 `Body.Source` suspends collection subscriptions on unload, recaptures notifying
 sources on reload and retains plain snapshots. Explicit detached setters reconcile
@@ -137,7 +144,8 @@ evidence is recorded in [implementation](../../../docs/implementation.md);
 it does not establish Narrator, detached reload or unrealized-row behavior.
 The later item-data and header-peer changes have source review only. The focused
 `AutomationTests` cover item selection, keyed replacement and selection policy;
-they have not run, and do not establish out-of-process provider routing.
+their four tests passed on 2026-10-06, and they do not establish out-of-process
+provider routing.
 
 ## API verification
 

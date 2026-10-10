@@ -8,28 +8,6 @@ namespace Syno.TableView.Tests;
 [TestClass]
 public class LayoutStateTests
 {
-    // ------------------------------------------------------------ hidden header buttons
-
-    /// <summary>
-    /// A header button the person hid stays hidden across a restart, so it travels in the snapshot
-    /// a host restores at construction, and reset brings it back.
-    /// </summary>
-    [TestMethod]
-    public Task Section18_AHiddenHeaderButtonIsRestoredAndResetShowsIt() =>
-        TestHost.RunAsync(async () =>
-        {
-            Table table = TestData.Table(TestData.Column("a"), TestData.Column("b"));
-            table.Layout = TestData.Layout() with { FitButtonHidden = true };
-            await TableHarness.LoadAsync(table);
-
-            Assert.IsTrue(table.Layout.FitButtonHidden, "restored at schema capture");
-            Assert.IsFalse(table.Layout.FillButtonHidden, "the other button keeps its baseline");
-
-            table.ResetLayout();
-
-            Assert.IsFalse(table.Layout.FitButtonHidden);
-        });
-
     // --------------------------------------------------------- sparse output
 
     [TestMethod]

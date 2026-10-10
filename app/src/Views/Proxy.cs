@@ -9,7 +9,7 @@ namespace Syno.TinyTorrent.Views;
 // The proxy server setting, and the Edit proxy server dialog's draft of it.
 // The dialog saves all five values together, because a proxy works only with
 // its type, address and port.
-public sealed class Proxy : INotifyPropertyChanged
+public sealed class Proxy : IDraft
 {
     private readonly Settings _owner;
     private readonly PipeClient _client;
@@ -40,6 +40,15 @@ public sealed class Proxy : INotifyPropertyChanged
     private string SavedPort =>
         _saved.Port > 0 ? _saved.Port.ToString(CultureInfo.CurrentCulture) : string.Empty;
     public bool IsInUse => _saved.Type != ProxyType.None;
+    internal HttpRoute RouteSettings(string adapter) => new()
+    {
+        Type = _saved.Type,
+        Host = _saved.Host,
+        Port = _saved.Port,
+        Username = _saved.Username,
+        Password = _saved.Password,
+        Adapter = adapter,
+    };
     public string Summary =>
         IsInUse
             ? Text.Format("settings", "proxy_summary", Name(_saved.Type), _saved.Host, _saved.Port)
@@ -277,7 +286,7 @@ public sealed class Proxy : INotifyPropertyChanged
         };
 
     private int? ParsePort() =>
-        int.TryParse(_port.Trim(), NumberStyles.Integer, CultureInfo.CurrentCulture, out var port)
+        Settings.TryInteger(_port, out var port)
         && port is >= 1 and <= 65535
             ? port
             : null;

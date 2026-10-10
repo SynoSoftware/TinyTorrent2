@@ -45,6 +45,11 @@ of independent pause intent. Requests use the provider's tested 10 MB sample tie
 The evidence and its scope are listed below. The prototype remains the design
 reference; no browser UI is shipped.
 
+The settings capture, file-policy and connection-measurement evidence below
+predates `2e54a11`, `0fb1172` and `2ba65f8`. Those commits changed watched
+folders, skipped-file pausing, the connection-test release path and the Settings
+page, and none of those runs has been repeated since.
+
 | Stage | Current source status |
 | --- | --- |
 | 1: Baseline | Existing keys and effective defaults traced before adding settings. Missing keys preserve existing transfer behavior; prototype sample values do not replace production defaults. |
@@ -137,10 +142,10 @@ mode and the small dialog declaration grouped with its SpeedLimit owner.
 - Last destination changes only after a successful admission. Preallocation is
   chosen when preparing a new source; an already prepared addition keeps its
   storage mode. Neither choice moves existing files.
-- Wire settings additions and connection testing use protocol version 10. The parallel detail-read
-  document and implementation remain with their owner. Review peer-detail
-  invalidation at network changes when that implementation becomes available;
-  this slice does not introduce a competing cache or query path.
+- Wire settings additions and connection testing arrived in protocol version 10;
+  [detail reads](architecture/detail-reads.md) raised it to 11. Detail reads are
+  now implemented, but the review of peer-detail invalidation at network changes
+  has not been done; this slice does not introduce a competing cache or query path.
 
 Source checks cover JSON parsing, duplicate resource keys, matching English and
 Spanish placeholders, XAML structure and literal resource references, and diff
@@ -184,6 +189,39 @@ Structural checks and diff checks passed before native verification. The
 integration evidence above records subsequent builds, captures and runtime checks.
 
 ### Ownership and naming review — 2026-10-08
+
+Keep the fixed whole-week limit choice typed through Schedule, so Alternative
+uses its existing week style as well as its caption. Settings owns registration
+action text, glyphs and help; the page binds those facts instead of repeating
+the state decisions. Use the established Edit/Pencil action for provider drafts,
+the shared subtle style for subtitle dismissal, and secondary text for the TMDB
+credit. Keep both speed choosers on their existing common command; matching
+markup alone does not justify replacement controls.
+Retain the two declarative speed chooser projections: extracting their compiled
+localization bindings into a template would add registration and visual-tree
+plumbing to preserve named focus targets, per-instance IDs and language refresh.
+Both continue to use the existing shared limit state and command owner.
+Give page navigation and Library Inspector actions stable automation IDs,
+matching the existing named interactive controls.
+Show provider-selection failures on their SettingsRow and retain the failed
+exception for language refresh; retry clears that field's error. Show the
+existing On/Off state beside feature enablement controls. Keep persistent
+subtitle file/category problems separate and retain immediate settings versus
+supplier draft commits, because those operations have different save semantics.
+Keep the Pieces legend on one line using native grids: preserve each swatch and
+count, trim only names, and expose complete entry text through tooltips and
+accessibility. Cap the six flexible entry columns at their natural measured
+widths in PiecesMap, refreshing on load and for labels, counts and text scaling.
+Native columns handle resizing; wide entries keep unequal natural widths without
+a new panel or layout framework.
+Move the existing shared SettingsRow, SettingsSection and Field templates into
+application resources and remove Inspector resource plumbing from Library details.
+Keep approved Inspector compositions and context-specific surfaces. Show known
+editor validation beside its field while preserving request-wide feedback;
+FieldHeader owns the existing label/error/warning Runs shared by SettingsRow and
+vertical editor headers; validation remains with each draft.
+keep Add clipboard failures inside the modal editor. Use the existing formatting
+and menu owners for confirmed duration, binary-unit and command presentation drift.
 
 - SettingsPage has one traversal for field discovery, disclosure, and visible
   row alignment. Its category panels come from XAML; only the persisted enum
@@ -327,7 +365,7 @@ These decisions are local gates, not reasons to hold up unrelated UI work.
 | Decision | Planned disposition and reason |
 | --- | --- |
 | Layout and disclosure | Settled: C's index/search plus compact rows; one advanced switch; tab-wide numeric/switch alignment only when visible units exist. Do not reopen this during implementation. |
-| Schedule editing outside Weekly schedule | Adopt the prototype's ability to inspect/edit saved periods without activating them, with a clear inactive state. Preserve the native scheduler's gestures, draft handling, and ordered saves. Reconcile the older hide-when-inactive contract when doing stage 3; the prototype is not a replacement scheduler. |
+| Schedule editing outside Weekly schedule | Settled by the owner: follow `app/speed-prototype.html`, not variant C. While a fixed choice applies, the week shows that choice all day and hides the legend and periods, because a map of periods that do not apply misstates the limits. The Schedule tab repeats the limits chooser so the person can choose Weekly schedule there. |
 | New schedule period | Keep the native create/open-default-period and individual commit behavior. The HTML's new-period Save/Cancel is a demonstration shortcut, not a request for a second schedule editor. |
 | Preset policy | Use the handoff's 50%/85%/uncapped and 2/2/3 versus 3/5/8 table as the initial candidate. Validate units, supported limits, combined queue behavior, and recovery from Reduced before enabling Apply; this is not a requirement to discover optimal performance for every connection. Keep peers unchanged and explain caps without promising speed. Existing defaults remain unchanged until a person applies a preset. |
 | History interval change | Recommended implementation: retain timestamped completed samples, end partial aggregation at the change boundary, and start new buckets with the new interval. Apply time/count bounds without inventing missing detail. Record this policy at the engine owner before stage 5; do not erase the chart merely to simplify configuration. |

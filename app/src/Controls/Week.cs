@@ -252,10 +252,28 @@ public sealed partial class Week : UserControl
     {
         Tip.Visibility = Visibility.Collapsed;
         PlaceNow();
+        IsHitTestVisible = IsTabStop = _model.FollowsSchedule;
         if (ActualWidth <= Gutter + 24)
         {
             Trim(Blocks, 0);
             Trim(Outlines, 0);
+            return;
+        }
+        // A fixed choice applies all week, so the week shows it in place of the
+        // saved periods, which apply again once the schedule is chosen.
+        if (_model.FixedMode is { } mode)
+        {
+            var limits = _model.FormatFixedLimits(mode);
+            for (var day = 0; day < 7; day++)
+                Block(day, day, new ScheduleRange(0, 1440, mode, null), limits);
+            Trim(Blocks, 7);
+            Trim(Outlines, 0);
+            var allDay = _model.Text.Get("settings", "time_all_day");
+            AutomationProperties.SetName(
+                this,
+                _model.Text.Format("settings", "day_schedule", limits, allDay)
+            );
+            AutomationProperties.SetHelpText(this, string.Empty);
             return;
         }
         var preview = _drag is { HasMoved: true } drag ? drag.Period.WithSpan(drag.Span) : null;

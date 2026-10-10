@@ -2,8 +2,8 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Data;
-using Microsoft.UI.Xaml.Media;
 using Syno.TinyTorrent.Controls;
+using Syno.TinyTorrent.Helpers;
 using Windows.ApplicationModel.DataTransfer;
 
 namespace Syno.TinyTorrent.Views;
@@ -148,26 +148,13 @@ public sealed partial class AddDialog : UserControl, IDisposable
         // takes focus, so the binding's first value is set again here.
         Destination.Text = string.Empty;
         Destination.Text = Model.AddDraft.Destination;
-        if (Editor(Destination) is not { } editor)
+        if (TextEditor.Find(Destination, "EditableText") is not { } editor)
             return;
         editor.TextChanged += (_, _) =>
         {
             if (Model.AddDraft.CanEdit)
                 Model.AddDraft.Destination = editor.Text;
         };
-    }
-
-    private static TextBox? Editor(DependencyObject parent)
-    {
-        for (var index = 0; index < VisualTreeHelper.GetChildrenCount(parent); index++)
-        {
-            var child = VisualTreeHelper.GetChild(parent, index);
-            if (child is TextBox { Name: "EditableText" } box)
-                return box;
-            if (Editor(child) is { } found)
-                return found;
-        }
-        return null;
     }
 
     public static Visibility Hidden(bool value) =>
@@ -197,7 +184,7 @@ public sealed partial class AddDialog : UserControl, IDisposable
         }
         catch (Exception error)
         {
-            Model.Report(error);
+            Model.AddDraft.Report(error);
         }
     }
 
@@ -217,7 +204,7 @@ public sealed partial class AddDialog : UserControl, IDisposable
             ShowChoices();
             UpdateLayout();
             Destination.StartBringIntoView();
-            if (Editor(Destination) is { } editor)
+            if (TextEditor.Find(Destination, "EditableText") is { } editor)
                 editor.Focus(FocusState.Programmatic);
             else
                 Destination.Focus(FocusState.Programmatic);

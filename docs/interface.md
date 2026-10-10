@@ -16,10 +16,11 @@ the user can do, not merely because an internal state changed. The
 
 Describe the affected layout, information order, commands, states, sizing, and
 keyboard paths before writing production UI. Review them from user,
-product-design, Microsoft Fluent, and keyboard-only perspectives. Use independent
-review for substantial new journeys. Resolve concrete findings before
-implementation, matching review depth to the change; a wording fix does not need
-a new screen design.
+product-design, Microsoft Fluent, and keyboard-only perspectives, with depth
+matched to the magnitude of the change: a wording fix needs no new screen
+design, and a substantial new journey gets independent review, because
+building in the wrong direction costs far more than the review. Resolve
+concrete findings before implementation.
 
 Review both clutter and missing essentials: every visible element should support
 a decision, and every required task needs a discoverable path. A successful build
@@ -44,7 +45,7 @@ the tray menu, keep the appearance Windows gives them.
 The logo uses the canonical SVG so it remains sharp at different display scales;
 Windows shell icons use the canonical ICO. Windows owns the caption buttons.
 Application commands use native WinUI controls and their standard states.
-The title-bar theme shortcut keeps the existing custom caption-button style:
+The title-bar Settings and theme shortcuts keep the existing custom caption-button style:
 full caption height, square hover surface and caption-button width, so it feels
 part of the window chrome. This is the exception to standard button visuals.
 
@@ -72,21 +73,28 @@ that is empty beside the others. A menu of only on/off choices, such as View,
 uses native check-mark items with Lucide icons, because no column stands empty.
 
 The custom title bar contains one row: app icon, File/Torrent/View/Help MenuBar,
-the page switcher, bounded Search, Add torrent file and Add magnet link, a small separator, the
-light/dark switch, and native caption buttons. Resume, Pause, Verify and Remove
-stay in the Torrent menu, not the header. Each button runs the same command as
-its menu item. Keep the existing
-custom title bar; do not replace it with the WinUI TitleBar control. A 24-pixel
+the page switcher, bounded Search, Settings, the light/dark switch, and native caption
+buttons. Add and the selection commands are on the toolbar, not the title bar.
+Fit columns and Fill width are only in the table's column-header menu: in the
+title bar they read as window commands, and the column header holds no buttons
+because every part of it belongs to a column. A 24-pixel
 icon and 32-pixel Search sit within a 48-pixel row so the content has breathing room.
 
-**Owner's decision: retain the custom toolbar implementation.** Compose ordinary
-Buttons with the existing TinyTorrentCaptionButtonStyle, not CommandBar or
-AppBarButton. All app-side header actions share its size, spacing and states;
-the theme button sits immediately beside the native caption buttons, with no
-extra gap. CommandBar's separate button metrics break that visual consistency.
+**Owner ruling: keep the existing custom title bar; do not replace it with the
+WinUI TitleBar control.**
+
+Title-bar actions are ordinary Buttons with the existing
+TinyTorrentCaptionButtonStyle, so they share its size, spacing and states with
+each other and with the native caption buttons beside them; CommandBar's
+separate button metrics would break that consistency. Settings sits immediately
+left of the theme button, using the Lucide gear icon. The theme button sits
+immediately beside the native caption buttons, with no extra gap.
 Windows still owns minimize, maximize and close; never simulate those controls.
 
-Inset the icon, separate logical groups, and reserve Windows' caption insets plus
+Inset the icon and leave 24 effective pixels between the menu and page switcher,
+so page navigation reads as a separate group of controls. Search aligns to the
+right of its available space, before optional transfer speeds and caption actions;
+the spare space before it remains draggable. Reserve Windows' caption insets plus
 a command buffer. Search is at most 320 effective pixels wide. The minimum window
 width accommodates the measured menus, the page switcher as icons, a 200-pixel
 search and the caption buttons, including translated labels. Unused title-bar space retains native dragging,
@@ -105,7 +113,7 @@ owner.
 are peer pages.** A SelectorBar, the page switcher, follows the MenuBar and
 offers Torrents (Ctrl+1) and Library (Ctrl+2); when the search box would drop
 below 200 pixels, its items show only their icons, with the names and shortcuts
-in tooltips. Search also offers both pages. The second menu belongs to the
+in tooltips. Global search also offers both pages. The second menu belongs to the
 current page: Torrent on Torrents, Library on Library. View shows the current
 page's presentation. File and Help do not change.
 
@@ -171,6 +179,11 @@ text, which shifts everything below it as the text, the language or the window
 width changes. A person scans a surface by its lines, and wrapped or empty lines
 break that scan.
 
+Dialog bodies are the exception for prose: sentences supplied as plain strings
+wrap so consent and confirmation text remains readable. Lists of facts, labels,
+values and field errors keep one line per fact and expose their full text when
+trimmed. The shared Dialog template owns this distinction.
+
 Every button carries a Lucide icon, as [Buttons](#buttons) rules; elsewhere,
 add an icon when it helps recognition or scanning. Keep Lucide for
 application-authored icons and retain platform-owned control glyphs. Preserve
@@ -207,6 +220,22 @@ dialog and pane titles use Subtitle; group headings use Body
 Strong; field labels, values, commands and status text use Body. Secondary facts
 such as free space keep that body size and use the secondary text brush instead
 of smaller type. App.xaml owns the shared title and body styles.
+The approved Inspector General composition in variant H retains its statistic
+captions, larger values, state heading and monospaced identifiers; those roles
+make its summary distinct from the detailed property rows. Shared Body and Status
+styles keep the same type size; Status uses tight line bounds for compact facts
+beside icons. Existing approved prototypes remain the authority for their
+compositions rather than a reason to flatten them into identical rows.
+
+Shared controls and application resources own repeated parts: Dialog owns dialog
+chrome and buttons; SettingsRow and SettingsSection own settings rows and groups;
+Field and FieldColumns own property rows and their columns; FieldHeader owns
+editor labels with field errors; CheckStatus owns interactive check feedback.
+ActionButton and the subtle/caption button styles own application buttons. The
+TinyTorrent text, icon and surface styles in App.xaml supply their shared looks.
+Strip, WrapPanel, Splitter and FileBrowser retain their existing layout and file
+interaction responsibilities. A feature composes these parts without copying
+their templates; purposeful page and Inspector compositions remain distinct.
 Equivalent groups use the same heading treatment and content inset, so a person
 can recognise the hierarchy without learning a different visual language in each
 pane. Native controls keep their internal spacing; a dialog or page does not compensate
@@ -214,18 +243,26 @@ for it with negative margins.
 
 ## Buttons
 
-**Owner ruling: dialog buttons keep their natural width. When the dialog has
-supporting content for the button row, such as a status or a check box, that
-content holds the left of the row and the buttons sit at the right; when it has
-none, the buttons are centred.** ContentDialog's own template stretches its
-buttons across the row, which on a wide dialog draws two buttons of about 480
-pixels and leaves no place for a check box beside them, while right-aligned
-buttons beside an empty left look misplaced. Every dialog therefore uses the
-shared Dialog control, which draws the row this way from whether its Footer is
-set, with less padding above and below. The buttons keep the Windows order: the action first, then Cancel. A
+**Owner ruling: dialog buttons keep their natural width and sit at the right
+of the row. Supporting content for the button row, such as a status, a check
+box or a button that acts on that status, holds the left of the row. Without
+such content, buttons that fill more than two thirds of the row are centred.**
+ContentDialog's own template stretches its buttons across the row, which on a
+wide dialog draws two buttons of about 480 pixels and leaves no place for a
+check box beside them. Buttons at the right sit where the eye finishes reading
+and share the right edge of the content above. A gap of a third of the row or
+more reads as a deliberate division; a smaller one reads as leftover beside
+right-aligned buttons, so the buttons are centred with equal margins instead.
+Every dialog therefore uses the shared Dialog control, which draws the row this
+way from its Footer and the space its buttons leave free, with less padding
+above and below. The buttons keep the Windows order: the action first, then Cancel. A
 dialog opens with focus on its first text box that leaves Enter and Escape to
 the dialog, or otherwise on its default button, so the person can type or press
 Enter at once.
+
+Natural button widths retain the normal dialog minimum. The supplier/proxy
+footer is the approved exception: Check, Save and Cancel share the widest action
+width, so the related actions align without clipping localized labels.
 
 **Owner ruling: a button is one word, one leading Lucide icon, and a tooltip
 that carries everything the word does not say.** The three are one rule. The
@@ -260,8 +297,8 @@ Remove, Delete and Exit default to the requested act, not Cancel, because the
 person already chose the act and the dialog only confirms it, as File Explorer's
 permanent-delete confirmation does. A Cancel default answers a request with its
 opposite. The one exception is the question that a pending Add or Move raises
-when the window closes: it asks about an act the person did not choose, so Keep
-editing is its default.
+when the window closes: it asks about an act the person did not choose, so
+Cancel is its default.
 
 A button runs a command or opens a surface. A control that directly changes a
 setting, such as View > Toolbar, is a toggle or a selection control: it
@@ -271,9 +308,10 @@ Label wording and icon use follow
 
 - **One act, one name.** The same act has the same label, the same accelerator,
   and, where it shows one, the same Lucide icon in the toolbar, the context menu,
-  and dialogs. Where [Main window](#main-window) names a command, that name is
-  the label. A person who learns Pause once recognizes it everywhere, while two
-  names for one act read as two acts.
+  and dialogs. Where [Main window](#main-window) names a command, menus use that
+  name and a button uses its one word, with the full name in the tooltip. A
+  person who learns Pause once recognizes it everywhere, while two names for one
+  act read as two acts.
 - **The accent marks the default button.** The platform's accent style goes on a
   surface's default button, the one Enter runs, and every other button keeps the
   standard style. The default is the commit, such as Add or Save, and in a
@@ -310,7 +348,8 @@ selection. The view is restored once, from the first snapshot whose storage
 loaded. A window closed before then saves nothing, so an Exit during startup
 does not replace the saved view with defaults. The engine does not read or
 write this file.
-A missing or damaged layout uses the declared defaults; a layout write failure
+A missing or damaged layout uses the declared defaults under
+[saved-value recovery](architecture.md#saved-value-recovery); a layout write failure
 does not keep the window or engine open. Layout recovery never changes downloads.
 Use documented title-bar and backdrop APIs. The product window uses desktop
 acrylic as its base material, with the platform's fallback where acrylic is
@@ -327,9 +366,14 @@ Respect system accent, contrast, animation, and text settings. Preserve the
 expected rest, hover, pressed, selected, focused, disabled, loading, and error
 states of standard controls. Meaning must survive without color or motion.
 
-Motion is the platform's: built-in control animations and WinUI theme
-transitions with their own durations and easing. Do not add another animation
-system or decorative motion. Motion never delays input or a state change. When
+Standard controls retain their built-in animations. Page and tab changes use
+the LabForms SettingsPage pattern: outgoing and incoming content slide together
+horizontally over 180 ms with cubic ease-out, clipped to their host. The direction
+follows tab order. Changing the inspected torrent moves the new content gently
+into place once; live statistics never restart the transition. These changes
+do not fade through a blank surface. Rapid navigation continues from the current
+positions rather than snapping back to the start. One motion owner supplies the
+shared timing and easing. Motion never delays input or a state change. When
 the user turns animations off in Windows, the same changes stay clear without
 substitute motion.
 
@@ -382,7 +426,7 @@ keeps focus, and shows nothing until the save fails. This follows
 the distinction in Microsoft's [toggle guidance](https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/toggles).
 
 Use an explicit Save/Cancel editor only when values form one coherent change:
-a tracker list, a schedule period, the Add dialog, or moving or deleting files.
+a tracker list, the Add dialog, or moving or deleting files.
 Keep its draft until submitted or cancelled. Viewing details, changing a setting
 that has already applied, and ordinary navigation do not create a dirty page. A
 pending accepted command is engine work, not an unsaved draft requiring another
@@ -416,18 +460,22 @@ the engine or the torrent is unavailable, file choices are dropped on leaving,
 because Retry is unavailable and they have no Cancel, and closing the window
 drops any edit that cannot be saved.
 
+The subtitle supplier editor requires explicit Save and discards its draft on
+window close, because changing supplier turns automatic subtitles off and stores
+account details the person has not confirmed.
+
 Add and Move still ask, because applying them would start a download or a file
 move that the person has not confirmed. Save runs the editor's own action, Add
 or Move; if it fails, the editor stays open with its error. Discard drops the
-draft and continues. Keep editing keeps the editor and focus. Deleting files
+draft and continues. Cancel keeps the editor and focus. Deleting files
 still shows its own confirmation of what will be deleted.
 
 On window close, ask only for work the person has actually entered: a torrent
 source or a move destination. Opening an untouched editor or changing Add or
 Move options without a source or destination does not justify a question. The
 question names the unfinished work and its primary action: Add or Move.
-Its text explains what Discard drops and that Keep editing cancels closing the
-window. Keep editing is the default button, so Enter cannot unexpectedly add a
+The Save and Discard tooltips say what each does, following the
+[help-text ruling](#text-icons-and-typography). Cancel is the default button, so Enter cannot unexpectedly add a
 torrent, move files or discard input while the person is trying to close.
 
 Send only intended changes through the [engine's edit path](engine.md#committed-edits).
@@ -465,12 +513,17 @@ without a draft. The selected source then opens the Add dialog for destination,
 Start paused and Add/Cancel, following the Show dialog when adding torrents setting.
 
 The torrent table is the primary workspace, with an optional inspector and
-focused Add and Settings tasks. The caption contains native search for
-torrents, commands and settings. Selecting a result reveals its torrent, runs
-the existing command, or opens and focuses the named setting without changing
-it. Typing this global search does not silently filter the torrent table.
-Ctrl+K, Ctrl+F and Ctrl+E focus it. Scope labels distinguish a command for the
-selection from a command for all torrents.
+focused Add and Settings tasks. Outside Library, the caption contains native
+search for torrents, commands and settings. Selecting a result reveals its
+torrent, runs the existing command, or opens and focuses the named setting
+without changing it. Typing does not silently filter the torrent table.
+On Library, search filters the current configuration as the person types and
+shows no suggestion list, keeping the filtered rows visible. Escape clears
+the filter; Down or Enter focuses the rows. The query stays when the
+configuration changes. Commands and Settings remain available through the
+menus, title-bar Settings button and their shortcuts. Ctrl+K, Ctrl+F and Ctrl+E
+focus the current page's search. Scope labels in global search distinguish a
+command for the selection from a command for all torrents.
 
 The Filters toggle opens a collapsible native pane with All, Downloading,
 Seeding, Paused, Queued and Errors choices and live counts. Closing the drawer
@@ -484,6 +537,10 @@ sortable in the table. Tracker information
 belongs in the selected torrent's inspector. TableView owns generic interaction.
 Settings opens from File and About from Help. Close and Exit
 are File commands and keep their existing pending-work and draft guards.
+Help places subtitle setup before application updates and About. Subtitle setup
+restores the dismissible introduction on the Settings index, so closing that card
+does not make its guidance unreachable. Native add/remove transitions close the
+card and move the remaining categories into place without a layout jump.
 Keyboard and search paths invoke the same owners. About shows the product
 identity and running version on the same acrylic surface. The current page
 belongs to the main view model.
@@ -500,16 +557,16 @@ native MenuFlyout behavior, because command menus should respond as Windows user
 expect.
 
 Settings and About retain the same title-bar layout, with the Back arrow added
-before the app icon. Back returns to the table,
-preserving selection and the inspector. Torrent and View menus are disabled while
+before the app icon. Back returns to the page they were opened from,
+preserving its selection and the inspector. Torrent and View menus are disabled while
 a secondary page is visible so commands cannot act on a hidden selection.
 
 The table starts with Name, Size, Progress, Status, Down speed, Up speed, Time
 left, Ratio, Seeds, Peers, and Added; the person can hide, show, and reorder them.
 Time left reads in its two largest units, such as 3 d 4 h or 45 min, and 100
-days or more reads as ∞, as in qBittorrent, because a raw count of minutes cannot
+days or more reads as ∞, because a raw count of minutes cannot
 be read at a glance. Seeds and Peers each show the connected count with the
-swarm total in parentheses, as qBittorrent does: the tracker's count when it
+swarm total in parentheses: the tracker's count when it
 reports one, otherwise the peers this session has heard of. Peers excludes
 seeds. Added reads as elapsed time, such as 3 hours ago, because how long ago a
 torrent arrived is what the person compares; the exact date and time is its
@@ -531,11 +588,12 @@ click makes a mixed selection consistent. The inspector does not repeat them:
 the item already shows the choice where it is changed. Open hands the file
 of a single-file torrent, or the folder of a multi-file torrent, to Windows as
 Explorer does, only on the person's request. Double-click and Enter on a row
-open the inspector; Properties in the torrent context menu does the same. The
-panel has a Close action rather than an ambiguous toolbar toggle, because its
+open the inspector; Properties in the torrent context menu does the same.
+On Library, Enter and double-click open the selected file through its Open command.
+The pane has a Close action rather than an ambiguous toolbar toggle, because its
 entry points already identify the torrent being inspected. Only Close closes
-the panel. When no torrent or several are selected, or the inspected torrent is
-removed, the panel stays open and shows how many are selected, because a panel that
+the pane. When no torrent or several are selected, or the inspected torrent is
+removed, the pane stays open and shows how many are selected, because a pane that
 closes and reopens as rows are selected moves the table under the person.
 Add torrent file opens
 the native picker, and Add magnet
@@ -567,24 +625,25 @@ Its accessible text names download and upload instead of the arrows. It sorts
 by download limit and then upload limit, with no limit as the highest value, so
 an ascending sort lists the limited torrents first.
 
-The toolbar, a row above the table that View shows or hides, holds Resume,
-Pause, Open folder, Properties, Verify, Remove and Delete files, as subtle
-icon buttons in groups split by dividers. It shows only the commands whose icon
-a person recognizes without its tooltip, because Fluent asks a toolbar for
-familiar icons; the menus keep every command. Copy magnet link stays off it
-because its link icon is Add magnet link's in the title bar above. Its buttons
-act on the selection and are disabled without one, as their menu items are; Add
-stays in the title bar so it is visible while the toolbar is hidden. Settings
-ends the toolbar after its own divider, because it acts on the application
-rather than the selection, so it stays enabled without one. The
-toolbar is one Tab stop, and the arrow keys move inside it. It starts visible,
+The toolbar, a row above the table that View shows or hides, is a CommandBar
+holding Add, Magnet, Resume, Pause, Open, Properties, Verify, Remove and
+Delete as AppBarButtons in
+groups split by AppBarSeparators. Each button shows its label beside its icon,
+so a person knows what it does without hovering; when the window is too narrow
+for every label, the CommandBar moves the commands that do not fit into its
+More menu instead of clipping them. The menus keep every command. Copy magnet
+link stays off it because its link icon is Add magnet link's. Add comes first and stays enabled
+without a selection; with the toolbar hidden, the File menu, its
+shortcuts, drag-and-drop and paste still add torrents. The other buttons
+act on the selection and are disabled without one, as their menu items are.
+Settings stays available in the title bar even when the toolbar is hidden.
+The toolbar is one Tab stop, and the arrow keys move inside it. It starts visible,
 and the window layout remembers it.
 
 Dropping torrent files or magnet text on the window, or pasting them with Ctrl+V
-while the table has focus, follows the same Show dialog when adding torrents setting. Sources
-join an already-open Add task; otherwise that setting decides whether the
-dialog opens or addition proceeds directly. An empty list says how
-to add a torrent.
+while the table has focus, follows the [Add policy](#add): several sources are
+added directly; a single source follows Show dialog when adding torrents.
+An empty list says how to add a torrent.
 
 The status bar shows status only, on one line, and holds no buttons, because
 a control there is easy to miss and mixes acting with reading. Each label is
@@ -613,7 +672,9 @@ tells a person who cannot see the status bar. The right group describes the list
 connection. From the left, it shows: Update available when a newer release
 exists; the external IP while Appearance shows it; the number of torrents and,
 while some are selected, how many, as File Explorer counts items; the active
-filter and its count while one is chosen; and whether incoming connections
+filter and its count while one is chosen. On Library the list facts instead
+name its configuration, row count and active filters; torrent selection and
+filter facts stay with Torrents. The final item says whether incoming connections
 arrive, a proxy is in use, or the selected network adapter is absent. The
 right group is aligned to the right edge, so an item that appears or changes
 moves the items to its left. Update available appears on its own, so it comes
@@ -670,9 +731,9 @@ editor keeps its own keys.
 | Ctrl+O | Add a torrent file |
 | Ctrl+Shift+O | Add a magnet link |
 | Ctrl+V | Add the pasted magnet link or torrent file |
-| Ctrl+K, Ctrl+F, Ctrl+E | Search torrents, commands and settings |
+| Ctrl+K, Ctrl+F, Ctrl+E | Focus global search outside Library, or the Library filter |
 | Ctrl+A | Select all torrents |
-| Enter | Open the inspector, as double-click does |
+| Enter | Open the torrent inspector, or the selected Library file, as double-click does |
 | Ctrl+S | Resume |
 | Ctrl+P | Pause |
 | Ctrl+M | Force start |
@@ -694,12 +755,13 @@ use. Ctrl+W does nothing, because in Windows it closes a document or a tab, not
 the application.
 
 Remove keeps data; delete-data is an explicit, distinct decision. Each confirms
-once with the affected torrent names or count, a specific action such as Remove
-or Delete files, and a safe Cancel action. Remove confirms because a removed
+once with the affected torrent names or count, a specific action button,
+Remove or Delete, and a safe Cancel action. Remove confirms because a removed
 torrent cannot be restored without its torrent file or magnet link. Delete files
-also states the file scope, that deletion is permanent, and that files other
-torrents use are kept. Deletion bypasses the Recycle Bin,
-because people delete a torrent's files to free disk space. The dialog's default,
+also states the file scope, whether files go to the Recycle Bin or are deleted
+permanently, and that files other torrents use are kept. The deletion setting
+chooses the initial option; the confirmation makes that choice explicit so a
+saved preference cannot hide an irreversible action. The dialog's default,
 focus and buttons follow the ruling in [Buttons](#buttons).
 Routine pause, resume, and applied settings need no confirmation.
 
@@ -819,8 +881,30 @@ one owner. Keep its summary, search, and bulk actions on one compact row and giv
 the list the remaining viewport, because files are the task's primary content.
 Expand all and Collapse all appear when the list has folders, and each row shows
 an icon for its file type so a long list can be scanned.
-F2 opens the native priority choice for the focused file row; ordinary tree,
-checkbox and ComboBox keyboard behavior remains native.
+The compact action row offers Priority for selected rows, with the same choices
+in the row context menu. F2 on a passive row opens that choice for the selection
+when the current row belongs to it, otherwise for the current row alone. The
+inline priority editor changes only its own row. All entry points use the same
+priority operation: expand folders to their descendant files, union by file
+identity, and apply each file once. This keeps an overlapping folder and child
+selection from submitting the child twice. Ordinary tree, checkbox and ComboBox
+keyboard behavior remains native.
+
+The File column stays first and visible. Size and Priority are available in
+both Add and the inspector; Progress belongs only to the inspector because an
+addition has no download progress yet. Neither host permits row reordering.
+Sorting applies to siblings, using file names and numeric sizes, priorities
+and byte-weighted progress rather than formatted text. A new torrent clears
+row selection so paths shared with the previous torrent cannot inherit command
+targets. Search preserves wanted choices, priorities and expansion; selection
+follows the table's visible-row pruning. Folder values include all descendants,
+so a displayed total describes the same files its command changes.
+Row Ctrl+A selects visible command targets without changing wanted state.
+Changing a wanted checkbox preserves row selection, and Space uses the native
+checkbox behavior. Mixed priority does not present a uniform value or change
+files merely by opening its menu; it sorts before Skip in ascending order.
+The context menu follows the table's target selection, and priority changes
+retain the existing Add-draft or inspector commit and failure path.
 Keep file identity and selected bytes clear; when a known list
 has no wanted files, explain why Add is unavailable. The destination starts from
 the configured default or last-used download folder, initially Windows' Downloads
@@ -837,8 +921,8 @@ Network drives show no free space, because asking a disconnected one can block t
 window.
 
 The dialog shows the folder and options on the left and files on the right, with a splitter between
-them that keeps its share of the width while the dialog is open. Hide folder and options
-gives the files the whole width; the left side starts hidden when the files would
+them that keeps its share of the width while the dialog is open. An icon toggle,
+whose tooltip reads Hide folder and options, gives the files the whole width; the left side starts hidden when the files would
 have too little room beside them, so file names stay readable in a small window. ContentDialog cannot
 be resized by dragging, so the dialog has Maximize and Restore in its header: the
 default size suits a typical torrent, and Maximize fills the window and follows it.
@@ -849,8 +933,8 @@ vertically, using the available right-pane space. Wrapping does not insert line
 breaks into the link. Paste and Preview sit centred below it with the shared
 button treatment. When sources are previewed, they share the pane with the editor
 so its height cannot hide the preview.
-The commit button names its result, Add or Add paused, and Add all or Add all
-paused when several torrents, including typed magnet text, will be added.
+The commit button names its result, Add or Add paused; when several torrents,
+including typed magnet text, will be added, its tooltip gives the count.
 
 Keep one dialog with a reachable native footer. A long body scrolls; the virtualized
 file list has a finite viewport and owns its collection scrolling. Do not create
@@ -898,9 +982,10 @@ across categories. Search includes those settings and reveals the chosen row.
 own.** The title-bar search already finds settings, including advanced settings;
 a second box duplicates the task and takes a row away from the settings. Keep
 the title-bar search's existing scope of torrents, commands and settings.
-The category index provides the overview, and title-bar Back returns from a
-category to that index without an extra navigation row. Keep an explicit
-editor's actions reachable. Native navigation
+The category index is an introductory convenience shown when Settings opens
+from its button. It is not a Back destination: title-bar Back leaves Settings
+directly from a category or the index, preserving the ordinary edit guards.
+Keep an explicit editor's actions reachable. Native navigation
 and scrolling handle smaller windows. Settings uses a full page with horizontal
 category selection and grouped sections, so settings have room without obscuring
 the task. Returning to torrents preserves selection and the inspector view.
@@ -919,18 +1004,32 @@ units reserve no column. Advanced disclosure recomputes this once for the catego
 Put Browse beside the default and incomplete download paths,
 and beside Add's destination, using the native Windows folder picker. Cancelling
 the picker preserves the current path and other unfinished input.
-Do not show an engine field dump. Advanced holds Memory and files (Disk write
-buffer and Open-file limit) and Torrent checking (Checking memory and Checking
-threads), following the [engine policy](engine.md#disk-write-caching). Each
+Do not show an engine field dump. Advanced includes Memory and files (Disk write
+buffer and Open-file limit), Torrent checking (Checking memory and Checking
+threads), interface refresh and speed-history intervals, and the protocol and
+storage choices in their task categories. Memory and checking controls follow
+the [engine policy](engine.md#disk-write-caching). Each
 control names its units, range, default, and speed/resource tradeoff in its
-help. Buffer targets do not claim to cap total memory. The category strip
-scrolls horizontally when its labels do not fit, so Advanced stays reachable
-at smaller widths and larger text sizes.
+help. Buffer targets do not claim to cap total memory. Settings has a wider
+shared header and body. Its window minimum accommodates the complete category
+strip in the current language and text size, so every category stays visible
+without horizontal scrolling.
 
-Transfers groups Adding torrents, Files, and Seeding limits. Speed limits groups
+The category order is General, Transfers, Speed limits, Appearance, Network,
+Schedule, Subtitles, and Advanced. Routine download controls and personalisation
+precede connectivity, scheduled automation, optional subtitles, and tuning.
+Subtitles puts its main switch first, then supplier and languages, then Existing
+videos for Find and Recheck: setup precedes maintenance of earlier downloads.
+Appearance keeps language and theme first and groups status-bar choices together.
+
+Transfers leads with Files, keeping each folder selector beside its destination,
+then Adding torrents, File selection, Seeding limits, and Watched folder. Routine
+file choices precede allocation and naming details. Speed limits shows the current
+mode before the optional connection-setup aid, then groups
 standard and alternative caps, queue activity, peer connections, and bandwidth
 accounting. Schedule has its own category, with actual standard and alternative
-caps above the existing weekly editor.
+caps and Edit at the right of their card header, then the same limits chooser
+and current limits as Speed limits, above the existing weekly editor.
 Connection setup is a child Settings page because its capacity inputs and
 multi-field proposal form one explicit operation. Inputs and proposed changes
 sit side by side when they fit and stack otherwise; Apply and Cancel stay in
@@ -949,8 +1048,16 @@ Files holds the default folder, the incomplete-filename suffix, and an optional
 separate incomplete folder. Folder and suffix defaults apply to new torrents;
 the help makes that scope explicit. Turning off Show dialog when adding torrents
 lets torrent files and magnet links add in the background, respecting pause and
-queue choices. General holds Default app, Closing, Notifications, Startup, Power,
-and Updates. Closing offers confirmation before Exit stops active transfers;
+queue choices. General holds Windows integration, Notifications, Startup and
+closing, Power, Updates, and Library. Windows integration groups torrent and
+magnet associations with sign-in startup and its Windows Settings action.
+Common feedback and window settings precede infrequent power choices,
+maintenance, and optional video information.
+Show advanced settings reveals deliberate tuning, not merely less-used features:
+start-paused and splash settings, peer-connection caps, external-IP diagnostics,
+and protocol, storage, and polling controls. Download locations, seeding limits,
+VPN adapter choice, notifications, and sleep prevention remain ordinary settings.
+Closing offers confirmation before Exit stops active transfers;
 the engine's desktop host owns that decision so it also works without WinUI.
 The open window shows the prompt as its own dialog; the host shows a native
 prompt only when no window can. Closing only the window does not ask to stop transfers.
@@ -975,27 +1082,28 @@ engine's check of the proxy in use, once it has ended, the proxy's type and
 address or Off, and Edit. Edit opens the Edit proxy server dialog, because the
 proxy's five values save together and a half-made proxy would stop every
 connection. The dialog's Check connects with the typed values without saving
-them, and its one-line result sits in the Footer at the left; Save does not
-require a check. Choosing None or SOCKS4 disables the fields that it does not
+them; Check and its one-line result sit in the Footer at the left, and Save
+and Cancel at the right. Save does not require a check. Choosing None or SOCKS4 disables the fields that it does not
 use instead of hiding them, so the dialog keeps its size. While a proxy is in
 use, the port and port-mapping rows are disabled, because peers cannot connect
 in through a proxy.
 
-General has a Notifications section with three switches in order of
-importance: Notify about problems, Notify when a download finishes, and Notify
-when a torrent is added. The order shows which notifications matter most.
-Turning all three off stops every Windows notification except the one-time
-notice that TinyTorrent keeps running in the notification area. Problems are
-one switch, because no one needs to silence one kind of problem and keep
-another.
+General has a Notifications section with four switches in order of
+importance: Notify about problems, Notify when a download finishes, Notify
+when a torrent is added, and Notify when the window closes and transfers
+continue. The order shows which notifications matter most. Turning all four off
+stops every Windows notification except failures of something the person just
+asked for. Problems are one switch, because no one needs to silence one kind of
+problem and keep another.
 
 Scheduler presents one weekly overview with standard limits, alternative limits,
 and paused periods, because separate schedules obscure their combined effect.
 Time runs left to right beneath a 00–24 hour ruler; each day has one row, and
 segments occupy widths proportional to their duration. The week shows saved
-periods, and a line marks the current day and time. Saved periods remain editable
-while a fixed limit mode is active; a stable status line explains when the
-schedule is inactive. Editing does not activate it. Periods are coloured, and
+periods, and a line marks the current day and time. While a fixed choice
+applies, the week shows that choice on every day, all day, and hides the legend
+and the periods, because the map shows the limits that actually apply; the
+periods return when Weekly schedule is chosen. Periods are coloured, and
 the time between them is named Standard limits where the gap is wide enough to
 read. A legend names
 the three fills, and a Periods row with Add lists a fixed All other times row
@@ -1059,9 +1167,11 @@ Appearance offers Show external IP in the status bar, off by default. The status
 bar shows the IPv4 and IPv6 addresses libtorrent reports, or Not available until
 one is known. A changed network clears the old addresses; no external lookup
 service is needed. Appearance also offers the application language and Follow Windows, Light, and Dark
-through the existing theme owner. General's Startup group holds Start when I
-sign in, a Start in the notification area switch, and a Show the splash screen
-while opening switch. Start in the notification area, off by default, makes
+through the existing theme owner. General's Windows integration group holds
+Start when I sign in. Startup and closing holds Start in the notification area,
+Ask before exiting with active transfers, and the advanced startup-paused and
+splash settings. Start in the
+notification area, off by default, makes
 starting TinyTorrent start only the engine in the tray; opening TinyTorrent
 while it runs still shows the window. The splash switch, on by default, serves
 a person who opens TinyTorrent often and finds the splash in the way. All categories
@@ -1074,10 +1184,12 @@ engine's [registration owner](engine.md#windows-registration) and show its
 observed state. Turning the handler switch on finishes automatically when
 TinyTorrent is already the default; otherwise it takes the person to the
 supported Windows choice and refreshes on return. While Windows still opens
-either kind with another app, a Windows Default apps link sits under the
-switch. While any torrent or magnet handler starts a program that is missing,
+either kind with another app, Windows Default apps offers Open under the switch.
+The row remains visible with its action disabled when no step is needed, so
+registration changes do not move nearby controls or leave an unexplained gap.
+While any torrent or magnet handler starts a program that is missing,
 whichever app registered it, the switch's caution line names that program and
-the link becomes Repair, which removes the broken handlers, asking Windows for
+the action becomes Repair, which removes the broken handlers, asking Windows for
 an administrator when some were registered for all users, and registers
 TinyTorrent. Only Repair asks for an administrator, and it then shows
 Windows' shield beside its name; the switch never asks. A problem notification about such a handler opens this page.
@@ -1089,12 +1201,16 @@ registry-status panel.
 TinyTorrent's registration, so its switch shows on, with a caution line naming
 that copy's executable; it never shows as unregistered.
 
-While an entry starts another copy, the link under its switch becomes Use this
-copy, which moves that entry to the running copy. Each switch keeps one link
+While an entry starts another copy, the action under its switch becomes Use this
+copy, which moves that entry to the running copy. Each switch keeps one action
 that names the next step, so the row never changes height.
 
-Keep a Windows Startup settings link beside the sign-in control for Windows'
-independent override. Open the relevant [Windows Settings page](https://learn.microsoft.com/en-us/windows/apps/develop/launch/launch-settings),
+Keep Windows Startup settings directly below the sign-in control for Windows'
+independent override: a shared settings row names the destination on the left,
+with a neutral Open button and Lucide launch icon on the right. When another copy
+owns startup, that same row offers Use with a tooltip naming the current copy.
+This separates the destination from its action and keeps both aligned with the
+other settings, without a floating text link. Open the relevant [Windows Settings page](https://learn.microsoft.com/en-us/windows/apps/develop/launch/launch-settings),
 using the general page when a more specific route is unsupported. Show failures
 beside the affected action and preserve the user's work. Routine successful
 changes need neither a confirmation dialog nor a technical explanation.
@@ -1105,14 +1221,11 @@ General, Files, Peers, Trackers, Speed, and Pieces answer different questions;
 request data only for the visible view. Preserve useful data coverage and choose
 each layout for its task. The Pieces view is the [Pieces map](#pieces-map).
 Peers and Trackers use the existing TableView, sharing its header, selection,
-column, keyboard, and scrolling behavior with the main torrent table. Files uses
-a native TreeView with wanted, size, progress, and priority content, because
-folders require hierarchy and TableView's contract excludes tree rows. Reuse the
-file browser in Add; do not extend TableView with torrent-specific tree behavior.
-
-The accepted [hierarchical rows extension](../lib/TableView/docs/hierarchy.md#files-browser-integration)
-supersedes this TreeView choice for both Files hosts and keeps torrent-specific
-file commands in the application.
+column, keyboard, and scrolling behavior with the main torrent table. Files and
+the Add dialog's file browser use TableView's
+[hierarchical rows extension](../lib/TableView/docs/hierarchy.md#files-browser-integration)
+for wanted, size, progress, and priority content, because folders require
+hierarchy. Torrent-specific file commands stay in the application.
 
 **Owner ruling:** the six inspector sections use a native SelectorBar, centred
 in one header row between the torrent name and an icon Close button. The owner
@@ -1179,8 +1292,8 @@ Move files and Delete files are available from selection actions, the row contex
 menu and command search. Shift+Delete opens Delete files; Delete still opens
 Remove, which keeps downloaded files. Delete files groups the torrents by
 folder with each torrent's size, shows the torrent count and total size beside
-its buttons, warns that deletion is permanent, and lists outside torrents whose
-shared files will be kept. It opens at once with nothing to wait for, and
+its buttons, states the selected Recycle Bin or permanent-deletion action, and
+lists outside torrents whose shared files will be kept. It opens at once with nothing to wait for, and
 Delete is always available, following
 [the deletion ruling](engine.md#removal-and-moves). Its default follows
 [Buttons](#buttons).
@@ -1261,8 +1374,10 @@ outlines, as that map's were; change them only when the
   its count in semibold, as the Speed legend shows its values. Sharing the line
   saves a row of squares in the short inspector. The counts are the legend, so
   the two cannot disagree. Entries keep their own width with even gaps between
-  them, because equal-width entries leave uneven gaps after the short ones; in a
-  narrow panel the legend wraps onto more lines.
+  them, because equal-width entries leave uneven gaps after the short ones. The
+  legend stays on one line: in a narrow pane each entry keeps its swatch and
+  count and trims its name, whose full text is in its tooltip and accessible
+  name.
 - **Detail.** The second line describes one square: its piece number or range,
   how many connected peers have its missing pieces that are not downloading,
   the count of each state it holds, each after a small copy of its legend

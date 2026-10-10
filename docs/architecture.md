@@ -22,6 +22,19 @@ platform behavior, resolve the conflict at the rule's owner. The
 [interface contract](interface.md#native-controls-and-visual-authority) owns the
 concrete presentation guidance.
 
+## Saved-value recovery
+
+**Owner ruling:** loading repairs a damaged saved value when the rest of its
+store remains readable, because the person should not have to repair files to
+keep the product working. Preserve healthy values and records. Use that value's
+default or nearest accepted value, whichever best preserves the person's choice;
+write the repair through the existing store. An unreadable protected secret
+becomes no saved secret and requires credentials again where the supplier needs
+them. Keep unknown identities and unavailable network routes fail-closed rather
+than substituting another identity or route. Refuse a store whose unreadable
+format or records cannot be repaired without dropping the person's data.
+Commands still reject invalid input at its editor; recovery applies only to loading.
+
 ## Product and scope
 
 TinyTorrent is a small, fast client that does the everyday torrent tasks well
@@ -53,33 +66,75 @@ and queries the database and owns subtitle-file handling. These features use
 existing torrent facts and commands without adding native feature code or APIs.
 The plan owns the feature's detailed behavior and future data-source seam.
 
+### Third-party provider access
+
+**Owner ruling: retain free application-key access for TMDB and OpenSubtitles.**
+This avoids customer key setup where a provider supports free application
+access. TinyTorrent funds no paid package and never upgrades access automatically;
+provider limits delay optional work instead. Applicable free terms must cover
+the integration; a working key alone does not establish that. Other providers,
+including SubDL and SubSource, require the person's own key, so their allowances
+and any charges belong to that person. Local features remain usable without
+provider access.
+
+### Product boundaries
+
 Design the interface around these tasks and libtorrent's capabilities. Remote
 servers, browser access, interchangeable engines, other platforms, online torrent
-discovery, and torrent creation are outside scope. History, blocklists, and
-automation, such as a watched folder or running a program when a download
-finishes, need an identified user requirement before they become implementation
-work. The initial release includes automatic port mapping (UPnP/NAT-PMP), an
+discovery, and torrent creation are outside scope. Blocklists and running a
+program when a download finishes need an identified user requirement before
+they become implementation work. The approved Settings scope includes one
+watched torrent folder, configurable speed-history intervals, addition and
+seeding defaults, protocol and storage choices, and a Recycle Bin preference.
+These serve the workflows in [Settings](interface.md#settings); they do not
+authorize a general automation system or arbitrary engine tuning.
+The initial release includes automatic port mapping (UPnP/NAT-PMP), an
 editable listen port, binding torrent traffic to one network adapter such as a
 VPN, notifications, preventing idle sleep while downloading on mains power, and
 an update check. Port mapping, notifications about problems, idle-sleep
 prevention while downloading, and the update check start enabled and can be
 turned off; notifications about finished and added downloads start disabled.
 A connection encryption setting, Preferred by default, shows that TinyTorrent
-encrypts, and an optional SOCKS5, SOCKS4 or HTTP proxy carries peer and tracker
+encrypts, and an optional SOCKS5, SOCKS4 or HTTP proxy carries outgoing
 connections.
 
 A setting exists only where people need different behavior. When one answer
 is right for nearly everyone, it is fixed behavior; when no one has shown a
-problem, there is neither. Engine tuning, diagnostics, cosmetic choices, and
-protocol internals therefore stay fixed until a demonstrated workflow needs
-otherwise, because every setting is read by everyone and its saved key is
-permanent.
+problem, there is neither. Beyond the approved Settings scope, engine tuning,
+diagnostics, cosmetic choices, and protocol internals stay fixed until a
+demonstrated workflow needs otherwise, because every setting is read by everyone
+and its saved key is permanent.
 
 Several torrents can use the same files, so the same content can be seeded from
 several trackers, as established clients allow. The
 [shared-files policy](engine.md#shared-files) keeps file deletion and moves
 from reaching another torrent's files. Automatic replacement of an existing
 torrent is outside the initial scope.
+
+### Network route
+
+**Owner ruling: every outbound connection TinyTorrent makes or starts follows
+the confirmed proxy and network adapter.** This protects the person's selected
+route across torrent traffic, update checks, providers and browser operations.
+A request that cannot use that route is not sent; disclosure never authorizes
+a bypass. An unknown or unavailable route has no direct fallback.
+
+Apply the adapter to the proxy connection too, and resolve destination names
+through the proxy where its protocol supports it. With neither proxy nor adapter
+selected, use the normal system route. A route change cancels obsolete requests;
+later work uses the newly confirmed route. Credentials stay scoped to their
+intended endpoint across redirects.
+
+The product window configures its shared HTTP owner from one confirmed settings
+snapshot before starting requests, independently of Library storage readiness.
+The current external browser reader cannot enforce a proxy or adapter, so it
+runs only when unrestricted direct access is confirmed. Its operation uses the
+route's cancellation lifetime, so a route change stops the browser operation.
+
+C# HTTP uses SOCKS4a for a SOCKS4 proxy: plain SOCKS4 carries an IPv4 address,
+whereas SOCKS4a carries the destination name without a direct DNS lookup. A proxy
+that refuses that form leaves the request unavailable. TLS stays inside the
+proxy tunnel for every supported proxy type.
 
 ## Two processes, one download authority
 
@@ -222,9 +277,9 @@ path.
 
 | Location | Purpose |
 | --- | --- |
-| `engine/src/` | Existing native project and libtorrent session check; extend it for the First usable download milestone. |
+| `engine/src/` | The native engine project. |
 | `engine/inc/` | The native project's headers. Includes name a header from this root, such as `Engine/State.h`. |
-| `app/` | Product instructions exist; add the WinUI host for the First usable download milestone. |
+| `app/` | The WinUI product host and its instructions. |
 | `lib/TableView/` | Existing reusable control library and the only TableView: the library in `src/`, focused verification in `tests/`, and a demonstration host in `sample/`. |
 | `lib/Lucide/` | The Lucide icon font and its glyph names, for any WinUI project. |
 | `resources/` | Product branding: the application icon and logo. |
@@ -425,7 +480,7 @@ The [testing policy](testing.md) governs evidence and desktop execution.
 | Milestone | What it establishes | Completion evidence |
 | --- | --- | --- |
 | First usable download | The narrow path above: libtorrent state, durable identity, one command and persistence owner, [safe addition](engine.md#addition-and-identity), and [bounded diagnostics](engine.md#diagnostics). One pipe connects the WinUI host to that engine, and a minimal tray icon offers Open and Exit. Use [text catalogues](localisation.md#one-catalogue-per-project) from the first screen. | Add a real torrent, see progress, pause and resume. Closing WinUI leaves the transfer running; Open from the tray restores confirmed state, and Exit stops the engine. Membership and intent survive engine restart; failed storage is not reported as saved. Complete a hands-on [journey review](interface.md#implementation-review) with pointer and keyboard and the first [resource check](testing.md#resource-checks) before expanding the UI. |
-| Everyday torrent actions | Extend the same Add path with magnet metadata preview and file choices, several sources in one Add dialog, drag-and-drop and paste, and tracker merging for duplicates. Then add queue ordering, force start, verification, Remove keeping files, text search and the Errors shortcut, the [main window commands](interface.md#main-window), and the global and alternative speed limits. Establish the [preview guard](engine.md#addition-and-identity) before acquiring magnet metadata. | Preview writes no payload; cancellation and duplicates preserve existing downloads. Intended choices reach the engine. Thirty torrent files opened from Explorer arrive in one Add dialog. A confirmed removal stays removed after restart while its files remain. Reconnect reconciles pending work without silently repeating uncertain commands. |
+| Everyday torrent actions | Extend the same Add path with magnet metadata preview and file choices, [several-source addition](interface.md#add), drag-and-drop and paste, and tracker merging for duplicates. Then add queue ordering, force start, verification, Remove keeping files, text search and the Errors shortcut, the [main window commands](interface.md#main-window), and the global and alternative speed limits. Establish the [preview guard](engine.md#addition-and-identity) before acquiring magnet metadata. | Preview writes no payload; cancellation and duplicates preserve existing downloads. Intended choices reach the engine. Thirty torrent files opened from Explorer are added directly without an Add dialog. A confirmed removal stays removed after restart while its files remain. Reconnect reconciles pending work without silently repeating uncertain commands. |
 | Background and desktop behavior | Complete tray, activation, splash, startup failure feedback, coordinated Exit, and [Windows registration](engine.md#windows-registration). Add the scoped completion and error notifications, the first-close notice, and idle-sleep behavior. | Tray and launch actions reach the same engine; engine restart reattaches a surviving window; saved work survives shutdown and Exit protects unfinished input. Registration uses one owner. Notifications and sleep behavior work with WinUI closed. |
 | Details and Settings | Add the [inspector journeys](interface.md#inspector-and-edits) and [Settings](interface.md#settings), one task at a time. Include file choices and priorities, trackers, peer information, speed/pieces visuals, live language switching, and RTL header navigation. | Committed choices apply without unnecessary save prompts; real drafts survive failed edits. Hidden views stop detail work. The Speed view shows transfer from while WinUI was closed. Switching languages updates existing surfaces, controls, and tray without losing input or breaking keyboard navigation; the [live-switch exercise](localisation.md#cost-and-proportionate-evidence) proves it. Review each adopted surface in use. |
 | Move and delete files | Moves and explicit delete-data, following [removal and moves](engine.md#removal-and-moves) and the [shared-files policy](engine.md#shared-files). | A destination collision is reported, not replaced. A move interrupted by a crash leaves the torrent paused with Move interrupted instead of downloading again. Neither deletion nor a move reaches the files of a torrent outside the command; cross-seeded torrents move and delete together. |
@@ -450,6 +505,4 @@ unrelated questions remain open.
 
 | Decision | When it matters | Owner |
 | --- | --- | --- |
-| Release prerequisites and installation mechanics | With the first release build. Pin supported runtime versions/architectures and official downloads, signing configuration, and recoverable upgrade ordering for the selected installer. | [Installation and updates](#installation-and-updates) |
-| Settings, screen layouts, and tray contents | Before each affected journey. Choose the controls needed for the agreed scope. | [Product scope](#product-and-scope), [engine](engine.md), and [interface](interface.md) |
 | Table row appearance | With hands-on testing before product integration. Review row hover, selection accent, corner shape, and focus treatment. Retain the existing appearance until that review; invisible keyboard location remains an accessibility gap. | [TableView visual contract](../lib/TableView/docs/tableview-contract.md#8-rendering-layout-and-visual-language) |

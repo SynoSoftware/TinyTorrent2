@@ -21,19 +21,36 @@ public sealed partial class MainViewModel
                 return;
             _page = value;
             Inspector.SetVisible(value == WindowPage.Torrents);
+            Library.SetVisible(value == WindowPage.Library);
             Changed(nameof(Page));
+            Changed(nameof(Query));
+            Changed(nameof(HasInspector));
+            Changed(nameof(FilterStatus));
+            Changed(nameof(HasFilter));
+            Changed(nameof(CountStatus));
+            Changed(nameof(IsFilterOpen));
+            Changed(nameof(ShowsToolbar));
+            ((RelayCommand)ClearFilters).Refresh();
         }
     }
+
     public string AboutTitle => Text.Get("window", "title");
     public string AboutDescription => Text.Get("about", "description");
-    public string VersionText => Text.Format("about", "version", RunningVersion.ToString());
+    public string VersionText => Text.Format("about", "version", App.Version.ToString());
+    public string CreditsText => Text.Get("about", "credits");
+    public string TmdbCredit => Text.Get("about", "tmdb");
 
     public IReadOnlyList<Torrent> VisibleTorrents { get; private set; } = [];
     public string Query
     {
-        get => _query;
+        get => Page == WindowPage.Library ? Library.Query : _query;
         set
         {
+            if (Page == WindowPage.Library)
+            {
+                Library.Query = value;
+                return;
+            }
             if (_query == value)
                 return;
             _query = value;
@@ -61,18 +78,26 @@ public sealed partial class MainViewModel
     }
     public bool IsFilterOpen
     {
-        get => _filterOpen;
+        get => Page == WindowPage.Library ? Library.IsFilterOpen : _filterOpen;
         set
         {
+            if (Page == WindowPage.Library)
+            {
+                Library.IsFilterOpen = value;
+                Changed(nameof(IsFilterOpen));
+                return;
+            }
             if (_filterOpen == value)
                 return;
             _filterOpen = value;
             Changed(nameof(IsFilterOpen));
         }
     }
+    internal bool TorrentFiltersOpen => _filterOpen;
     public ICommand SwitchFilters { get; }
     public IReadOnlyList<FilterChoice> Filters { get; }
-    public bool HasFilter => Filter != TorrentFilter.All;
+    public bool HasFilter => Page != WindowPage.Library && Filter != TorrentFilter.All;
+    public string CountStatus => Page == WindowPage.Library ? Library.Status : TorrentCount;
     public string FilterLabel =>
         Filter == TorrentFilter.All
             ? Text.Get("filters", "title")
@@ -85,9 +110,11 @@ public sealed partial class MainViewModel
     private string FilterName => Text.Get("filters", Filter.ToString().ToLowerInvariant());
     public ICommand ShowSettings { get; }
     public ICommand ShowTorrents { get; }
+    public ICommand ShowLibrary { get; }
     public ICommand ShowAbout { get; }
     public event EventHandler<SettingTarget>? SettingsRequested;
     public event EventHandler? TorrentsRequested;
+    public event EventHandler? LibraryRequested;
     public event EventHandler? AboutRequested;
 
     internal static bool Matches(Torrent torrent, TorrentFilter filter) =>
@@ -147,7 +174,7 @@ public sealed partial class MainViewModel
 
     public IReadOnlyList<Suggestion> FindSuggestions(string query)
     {
-        var words = query.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+        var words = FileName.Normalize(query).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
         var commands = CommandSuggestions().Where(suggestion => suggestion.IsEnabled);
         if (words.Length == 0)
             return commands
@@ -155,6 +182,7 @@ public sealed partial class MainViewModel
                     suggestion.Command == ShowSettings
                     || suggestion.Command == Add
                     || suggestion.Command == ShowTorrents
+                    || suggestion.Command == ShowLibrary
                     || suggestion.Command == ShowAbout
                     || suggestion.Command == AddMagnet
                     || suggestion.Command == (IsPausedByChoice ? ResumeAll : PauseAll)
@@ -197,6 +225,7 @@ public sealed partial class MainViewModel
             SuggestionScope.Command,
             ShowTorrents
         );
+        yield return new(Text.Get("library", "title"), string.Empty, SuggestionScope.Command, ShowLibrary);
         yield return new(
             Text.Get("about", "title"),
             string.Empty,
@@ -320,8 +349,11 @@ public sealed partial class MainViewModel
             );
     }
 
-    private static bool MatchesQuery(string text, string[] words) =>
-        words.All(word => text.Contains(word, StringComparison.CurrentCultureIgnoreCase));
+    private static bool MatchesQuery(string text, string[] words)
+    {
+        var normalized = FileName.Normalize(text);
+        return words.All(word => normalized.Contains(word, StringComparison.Ordinal));
+    }
 
     private static bool MatchesQuery(Suggestion suggestion, string[] words) =>
         MatchesQuery(suggestion.Label + " " + suggestion.Detail + " " + suggestion.SearchTerms, words);
@@ -329,10 +361,8 @@ public sealed partial class MainViewModel
     private IEnumerable<Suggestion> SettingSuggestions()
     {
         foreach (var category in Enum.GetValues<SettingsCategory>())
-            yield return SettingSuggestion(
-                new(category),
-                Text.Get("settings", category.ToString().ToLowerInvariant())
-            );
+            yield return SettingSuggestion(new(category),
+                Text.Get("settings", category.ToString().ToLowerInvariant()));
         foreach (var setting in Settings.All)
         {
             if (setting == Settings.CapacityDownload || setting == Settings.CapacityUpload)
@@ -356,6 +386,11 @@ public sealed partial class MainViewModel
             new(SettingsCategory.Network, "proxy"),
             Text.Get("settings", "proxy")
         );
+        yield return SettingSuggestion(new(SettingsCategory.General, "library_provider"), Library.ProviderLabel);
+        yield return SettingSuggestion(new(SettingsCategory.General, "video_information"), Library.InformationLabel);
+        foreach (var name in new[] { "automatic", "supplier", "languages", "finished", "files" })
+            yield return SettingSuggestion(new(SettingsCategory.Subtitles, "subtitle_" + name),
+                Text.Get("subtitles", name));
     }
 
     private Suggestion SettingSuggestion(SettingTarget target, string label) =>
@@ -370,7 +405,7 @@ public sealed partial class MainViewModel
                 ),
             SuggestionScope.Settings,
             new RelayCommand(() => RequestSettings(target), () => true),
-            target.Name is { } name ? Text.Find("search_terms", name) ?? string.Empty : string.Empty
+            Text.Find("search_terms", target.Name ?? target.Category?.ToString().ToLowerInvariant() ?? string.Empty) ?? string.Empty
         );
 }
 

@@ -38,6 +38,8 @@
     <Compile Remove="MainWindow\Capture*.cs" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.12" />
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.5" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.2705" />
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.4.0" />
     <ProjectReference Include="..\..\lib\TableView\src\TableView.csproj" />
@@ -62,5 +64,7 @@
       Visible="false"
     />
     <AssemblyMetadata Include="EngineFile" Value="$(EngineTargetName).exe" />
+    <AssemblyMetadata Include="TmdbToken" Value="$(TmdbToken)" Condition="'$(TmdbToken)' != ''" />
+    <AssemblyMetadata Include="OpenSubtitlesKey" Value="$(OpenSubtitlesKey)" Condition="'$(OpenSubtitlesKey)' != ''" />
   </ItemGroup>
 </Project>

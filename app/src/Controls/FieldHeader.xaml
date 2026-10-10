@@ -1,0 +1,12 @@
+<UserControl
+  x:Class="Syno.TinyTorrent.Controls.FieldHeader"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+>
+  <TextBlock x:Name="Text" Style="{StaticResource TinyTorrentBodyTextStyle}"
+    IsTextSelectionEnabled="True" AutomationProperties.LiveSetting="Assertive">
+    <Run x:Name="LabelRun" />
+    <Run x:Name="ErrorRun" Foreground="{ThemeResource SystemFillColorCriticalBrush}" />
+    <Run x:Name="CautionRun" Foreground="{ThemeResource SystemFillColorCautionBrush}" />
+  </TextBlock>
+</UserControl>

@@ -145,7 +145,12 @@ public sealed partial class FileBrowser : UserControl
             var (key, priority) in new[] { ("skip", 0), ("low", 1), ("normal", 4), ("high", 7) }
         )
         {
-            MenuFlyoutItem item = new() { Text = Model.Text.Get("files", key) };
+            ToggleMenuFlyoutItem item = new()
+            {
+                Text = Model.Text.Get("files", key),
+                AccessKey = Model.Text.Get("files", key + "_key"),
+                IsChecked = nodes.All(node => node.Priority == priority),
+            };
             item.Click += (_, _) => Model.Change(nodes, priority);
             menu.Items.Add(item);
         }

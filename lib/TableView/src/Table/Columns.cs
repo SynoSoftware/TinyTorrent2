@@ -6,7 +6,7 @@ using Windows.Foundation;
 namespace Syno.TableView;
 
 /// <summary>
-/// The column baseline, the cell padding and header buttons settings, and every operation on the
+/// The column baseline, the cell padding setting, and every operation on the
 /// effective column layout: section 10's widths and fits, section 11's move, and the visibility
 /// change section 12's menu makes. Each operation has a matching predicate, so a menu item is
 /// enabled by the same rule that decides whether the operation changes anything.
@@ -16,18 +16,8 @@ public sealed partial class Table
     private static readonly Size Unbounded = new(double.PositiveInfinity, double.PositiveInfinity);
 
     private bool _filledOnce;
-    private bool _fitButtonHidden;
-    private bool _fillButtonHidden;
 
     private static readonly Thickness DefaultCellPadding = new(12, 6, 12, 6);
-
-    public static readonly DependencyProperty ShowsHeaderButtonsProperty =
-        DependencyProperty.Register(
-            nameof(ShowsHeaderButtons),
-            typeof(bool),
-            typeof(Table),
-            new PropertyMetadata(false, OnHeaderButtonsChanged)
-        );
 
     public static readonly DependencyProperty CellPaddingProperty = DependencyProperty.Register(
         nameof(CellPadding),
@@ -41,26 +31,6 @@ public sealed partial class Table
     /// <c>Loaded</c> and a structural change afterwards is a configuration error.
     /// </summary>
     public ObservableCollection<Column> Columns { get; } = new();
-
-    /// <summary>
-    /// Offer <see cref="FitColumns"/> and <see cref="FillWidth"/> as buttons in the header's
-    /// trailing space. Off by default.
-    /// </summary>
-    /// <remarks>
-    /// The commands already exist in the header context menu of section 12; these are the same
-    /// commands made discoverable, in space that is otherwise empty. It is opt-in rather than on
-    /// by default because the table should not add a visible control to a host's header uninvited,
-    /// and a host with its own buttons for these commands would otherwise show two of each.
-    /// <para>
-    /// Turning it on does not guarantee they are shown. The strip hides them whenever the columns
-    /// reach far enough right to want that space, so they never cover a header.
-    /// </para>
-    /// </remarks>
-    public bool ShowsHeaderButtons
-    {
-        get => (bool)GetValue(ShowsHeaderButtonsProperty);
-        set => SetValue(ShowsHeaderButtonsProperty, value);
-    }
 
     /// <summary>
     /// The inset inside every column, applied to the header cell and the row cell alike so that
@@ -80,36 +50,6 @@ public sealed partial class Table
         get => (Thickness)GetValue(CellPaddingProperty);
         set => SetValue(CellPaddingProperty, value);
     }
-
-    /// <summary>
-    /// The person hid the <see cref="FitColumns"/> button from the header menu. It persists in
-    /// <see cref="Layout"/>, as a hidden column does.
-    /// </summary>
-    internal bool FitButtonHidden
-    {
-        get => _fitButtonHidden;
-        set
-        {
-            _fitButtonHidden = value;
-            RaiseLayoutChanged(LayoutChange.Visibility);
-        }
-    }
-
-    /// <summary>The same choice for the <see cref="FillWidth"/> button.</summary>
-    internal bool FillButtonHidden
-    {
-        get => _fillButtonHidden;
-        set
-        {
-            _fillButtonHidden = value;
-            RaiseLayoutChanged(LayoutChange.Visibility);
-        }
-    }
-
-    private static void OnHeaderButtonsChanged(
-        DependencyObject d,
-        DependencyPropertyChangedEventArgs e
-    ) => ((Table)d)._headerStrip?.UpdateButtons();
 
     /// <summary>
     /// Fit one column to the header and cells the current visual layout has already realized.
@@ -139,9 +79,8 @@ public sealed partial class Table
     }
 
     /// <summary>
-    /// Fit each visible resizable column, then scale those columns so they end where the header
-    /// buttons begin, or at the table's right edge when it offers none, and report the whole
-    /// operation once.
+    /// Fit each visible resizable column, then scale those columns so they end at the table's
+    /// right edge, and report the whole operation once.
     /// </summary>
     public void FillWidth()
     {
@@ -160,7 +99,7 @@ public sealed partial class Table
 
     /// <summary>
     /// Scale the visible resizable columns by one factor so the visible columns end at the
-    /// header strip's room: wider when there is space left, narrower when they run past it.
+    /// header strip's right edge: wider when there is space left, narrower when they run past it.
     /// </summary>
     /// <remarks>
     /// One factor keeps the fitted proportions, so the columns a fit found widest, which are the
@@ -171,7 +110,7 @@ public sealed partial class Table
     /// </remarks>
     private void ScaleToWidth()
     {
-        double width = _headerStrip?.Room ?? 0;
+        double width = _headerStrip?.ActualWidth ?? 0;
         if (width <= 0)
         {
             return;
@@ -239,7 +178,7 @@ public sealed partial class Table
     /// </remarks>
     private void FillOnce()
     {
-        if (_filledOnce || !_schemaCaptured || _headerStrip is not { Room: > 0 } strip)
+        if (_filledOnce || !_schemaCaptured || _headerStrip is not { ActualWidth: > 0 } strip)
         {
             return;
         }
@@ -250,24 +189,18 @@ public sealed partial class Table
         if (EffectiveLayout.Order.All(column => column.WidthOverride is null))
         {
             ScaleToWidth();
-            strip.UpdateButtons();
         }
     }
 
     /// <summary>
     /// Sections 5 and 10: return to the captured baseline. Every width and visibility override is
-    /// discarded, hidden header buttons are shown again, the effective order returns to the
+    /// discarded, the effective order returns to the
     /// declared one, and because that baseline carries no sort criterion the local sort goes with
     /// it. It fits nothing to the current data.
     /// </summary>
     public void ResetLayout()
     {
-        bool changed =
-            !EffectiveLayout.Order.SequenceEqual(_baselineOrder)
-            || _fitButtonHidden
-            || _fillButtonHidden;
-        _fitButtonHidden = false;
-        _fillButtonHidden = false;
+        bool changed = !EffectiveLayout.Order.SequenceEqual(_baselineOrder);
 
         foreach (EffectiveColumn column in _baselineOrder)
         {
@@ -469,13 +402,7 @@ public sealed partial class Table
         return afterLastVisible;
     }
 
-    internal void RaiseLayoutChanged(LayoutChange kind)
-    {
-        // Widths, visibility and order all move where the columns end, which is what decides
-        // whether the strip has trailing space to offer its fit commands in.
-        _headerStrip?.UpdateButtons();
-        LayoutChanged?.Invoke(this, kind);
-    }
+    internal void RaiseLayoutChanged(LayoutChange kind) => LayoutChanged?.Invoke(this, kind);
 
     private EffectiveColumn RequireColumn(Column column, string parameter)
     {

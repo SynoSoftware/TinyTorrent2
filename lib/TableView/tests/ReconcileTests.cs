@@ -1,7 +1,7 @@
 using System.Collections;
-using System.Collections.Specialized;
 using System.Reflection;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using Windows.Foundation.Collections;
 
 namespace Syno.TableView.Tests;
 
@@ -108,19 +108,12 @@ public class ReconcileTests
         object view = NewView(rows);
         object[] snapshot = { rows[2], pinned, rows[3], rows[0] };
 
-        List<object> removed = new();
-        ((INotifyCollectionChanged)view).CollectionChanged += (_, e) =>
-        {
-            if (e.OldItems is not null)
-            {
-                removed.AddRange(e.OldItems.Cast<object>());
-            }
-        };
+        Watcher watch = new(view);
 
         Reconcile(view, snapshot, new[] { 0, 1, 2, 3 }, new HashSet<object> { pinned });
 
         CollectionAssert.AreEqual(snapshot, Rows(view), "the view is the snapshot");
-        CollectionAssert.DoesNotContain(removed, pinned, "the pinned row kept its container");
+        CollectionAssert.DoesNotContain(watch.Removed, pinned, "the pinned row kept its container");
     }
 
     // ------------------------------------------------------------------ the unwindowed case
@@ -167,7 +160,7 @@ public class ReconcileTests
         object view = NewView(rows);
         IList live = (IList)view;
 
-        NotifyCollectionChangedEventHandler check = (_, _) =>
+        VectorChangedEventHandler<object> check = (_, _) =>
         {
             HashSet<object> seen = new(ReferenceEqualityComparer.Instance);
             foreach (object row in live)
@@ -179,10 +172,10 @@ public class ReconcileTests
             }
         };
 
-        ((INotifyCollectionChanged)view).CollectionChanged += check;
+        ((IObservableVector<object>)view).VectorChanged += check;
         object[] snapshot = order(rows);
         Reconcile(view, snapshot, realized);
-        ((INotifyCollectionChanged)view).CollectionChanged -= check;
+        ((IObservableVector<object>)view).VectorChanged -= check;
 
         CollectionAssert.AreEqual(snapshot, Rows(view), "the view is the snapshot");
     }
@@ -244,12 +237,14 @@ public class ReconcileTests
         internal Watcher(object view)
         {
             _shadow = ((IList)view).Cast<object>().ToList();
-            ((INotifyCollectionChanged)view).CollectionChanged += Apply;
+            ((IObservableVector<object>)view).VectorChanged += Apply;
         }
 
         internal int Notifications { get; private set; }
 
         internal int Count => _shadow.Count;
+
+        internal List<object> Removed { get; } = new();
 
         internal void AssertListAgreesAt(IReadOnlyList<int> realized, object view)
         {
@@ -264,23 +259,25 @@ public class ReconcileTests
             }
         }
 
-        private void Apply(object? sender, NotifyCollectionChangedEventArgs e)
+        private void Apply(IObservableVector<object> sender, IVectorChangedEventArgs e)
         {
             Notifications++;
+            int index = (int)e.Index;
 
-            switch (e.Action)
+            switch (e.CollectionChange)
             {
-                case NotifyCollectionChangedAction.Remove:
-                    _shadow.RemoveAt(e.OldStartingIndex);
+                case CollectionChange.ItemRemoved:
+                    Removed.Add(_shadow[index]);
+                    _shadow.RemoveAt(index);
                     break;
-                case NotifyCollectionChangedAction.Add:
-                    _shadow.Insert(e.NewStartingIndex, e.NewItems![0]!);
+                case CollectionChange.ItemInserted:
+                    _shadow.Insert(index, ((IList)sender)[index]!);
                     break;
-                case NotifyCollectionChangedAction.Replace:
-                    _shadow[e.NewStartingIndex] = e.NewItems![0]!;
+                case CollectionChange.ItemChanged:
+                    _shadow[index] = ((IList)sender)[index]!;
                     break;
                 default:
-                    Assert.Fail($"the view raised {e.Action}, which the list is never sent");
+                    Assert.Fail($"the view raised {e.CollectionChange}, which the list is never sent");
                     break;
             }
         }

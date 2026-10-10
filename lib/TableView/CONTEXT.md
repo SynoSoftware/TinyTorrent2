@@ -76,8 +76,7 @@ realized for a column.
 _Avoid_: autofit, auto-size.
 
 **Fill**: a fit of the visible columns followed by one proportional scale that
-makes them end where the header buttons begin, or at the table's right edge
-when there are none, wider or narrower.
+makes them end at the table's right edge, wider or narrower.
 _Avoid_: stretch.
 
 **First fill**: the one proportional scale of the baseline widths to the
@@ -87,17 +86,13 @@ override exists. It measures nothing.
 **Trailing space**: the part of the table to the right of the last visible
 column.
 
-**Header buttons**: the fit button and the fill button that a host can let the
-table offer in the trailing space. A person can hide each one.
-_Avoid_: fit buttons, for the pair.
-
 **Visibility override**: a shown or hidden state that takes precedence over the
 baseline after the user shows or hides a column, or after a restored layout.
 
 **Effective layout**: column order, visibility, widths, and sort resolved against
 the baseline and current overrides.
 
-**Layout snapshot**: a record of column, sort, and header button choices that a
+**Layout snapshot**: a record of column and sort choices that a
 host can retain and restore, separate from row content and selection.
 
 ### Interaction

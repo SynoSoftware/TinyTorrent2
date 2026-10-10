@@ -26,23 +26,35 @@ public sealed class Schedule : INotifyPropertyChanged
         Draft is { } draft && OpenPeriod is { } open && draft.Period?.Matches(open) != true;
     public bool IsPending => _saving is not null || _changing is not null;
     public bool CanEdit => _owner.CanEdit;
-    public bool CanSchedule => CanEdit && !IsPending;
+
+    // A fixed choice fills the week; null lets the saved periods decide it.
+    internal ScheduleMode? FixedMode =>
+        _owner.FixedLimits switch
+        {
+            null => null,
+            LimitMode.Alternative => ScheduleMode.Alternative,
+            _ => ScheduleMode.Normal,
+        };
+    internal string FormatFixedLimits(ScheduleMode mode) => _owner.FixedLimits == LimitMode.None
+        ? Text.Get("transfer_limits", "none") : FormatMode(mode);
+    public bool FollowsSchedule => FixedMode is null;
+    public bool CanSchedule => CanEdit && !IsPending && FollowsSchedule;
     public bool IsOpen => _open is not null;
     public bool HasAlternative => Periods.Any(period => period.Mode == ScheduleMode.Alternative);
-    public bool HasScheduleError => _refusal is not null;
+    public bool HasError => _refusal is not null;
     public string DaysMessage =>
         _refusal?.Reason == RefusalReason.InvalidPeriod
             ? Text.Get("settings", "invalid_period")
             : string.Empty;
-    public string ScheduleMessage =>
+    public string Message =>
         _refusal switch
         {
             { Reason: RefusalReason.DuplicatePeriod } => Text.Get("settings", "duplicate_period"),
             { Failure: { } failure } => Text.Error(failure),
             _ => string.Empty,
         };
-    public string PeriodMessage => IsOpen ? ScheduleMessage : string.Empty;
-    public string PeriodsMessage => IsOpen ? string.Empty : ScheduleMessage;
+    public string PeriodMessage => IsOpen ? Message : string.Empty;
+    public string PeriodsMessage => IsOpen ? string.Empty : Message;
     public Strings Text => _owner.Text;
     public event PropertyChangedEventHandler? PropertyChanged;
     public event EventHandler? TextChanged;
@@ -478,10 +490,10 @@ public sealed class SchedulePeriod
                 Schedule.Time(End)
             );
     public string Length =>
-        Span.Duration < 60 ? _owner.Text.Format("settings", "duration_minutes", Span.Duration)
+        Span.Duration < 60 ? _owner.Text.Format("units", "minutes", Span.Duration)
         : Span.Duration % 60 == 0
-            ? _owner.Text.Format("settings", "duration_hours", Span.Duration / 60)
-        : _owner.Text.Format("settings", "duration_both", Span.Duration / 60, Span.Duration % 60);
+            ? _owner.Text.Format("units", "hours", Span.Duration / 60)
+        : _owner.Text.Format("units", "hours_minutes", Span.Duration / 60, Span.Duration % 60);
     public string TimeLabel => _owner.Text.Format("settings", "time_summary", TimeRange, Length);
     public string Description =>
         Start == 0 && End == 0

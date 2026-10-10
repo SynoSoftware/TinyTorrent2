@@ -40,7 +40,6 @@ private:
         Reply const& reply);
     void Disconnect(std::shared_ptr<Pipe::Connection> const& client);
     void ForgetWindow();
-    void ExplainBackground();
     bool Open();
     bool IsWindowRunning() const;
     void Exit();
@@ -73,7 +72,6 @@ private:
     // The final save runs during Exiting and during Ending, so it is not a
     // stage of its own.
     bool saving_ = false;
-    bool noticeSaving_ = false;
     bool programsChecked_ = false;
     bool showsSettings_ = false;
     unsigned sequence_ = 0;

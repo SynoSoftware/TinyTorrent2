@@ -3,14 +3,12 @@ using Microsoft.UI.Xaml.Controls;
 namespace Syno.TableView.Header;
 
 /// <summary>
-/// The icons the control draws in the menu it generates and on the header's own button.
+/// The icons the control draws in the menu it generates.
 /// </summary>
 /// <remarks>
 /// Lucide, referenced by the library rather than taken from the host, so the generated menu looks
 /// right in an application that ships no icon font. The glyph for each idea is named once here,
-/// so nothing else in the control carries a second opinion about which glyph means what —
-/// including the header button, which is given its icon in code for that reason rather than
-/// declaring a second copy in the template.
+/// so nothing else in the control carries a second opinion about which glyph means what.
 /// </remarks>
 internal static class Icons
 {

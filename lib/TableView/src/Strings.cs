@@ -62,15 +62,6 @@ public sealed class Strings
 
     internal string FillWidth => Get("column_menu", "fill_width");
 
-    // The menu entries that show or hide the header buttons for the two commands above.
-    internal string FitButton => Get("column_menu", "fit_button");
-
-    internal string FillButton => Get("column_menu", "fill_button");
-
-    internal string ButtonShown => Get("column_menu", "button_shown");
-
-    internal string ButtonHidden => Get("column_menu", "button_hidden");
-
     internal string MoveLeft => Get("column_menu", "move_left");
 
     internal string MoveRight => Get("column_menu", "move_right");

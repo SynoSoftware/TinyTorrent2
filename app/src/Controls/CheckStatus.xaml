@@ -1,0 +1,43 @@
+<UserControl
+  x:Class="Syno.TinyTorrent.Controls.CheckStatus"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:controls="using:Syno.TinyTorrent.Controls"
+  xmlns:icons="using:Syno"
+>
+  <Grid x:Name="Root" ColumnSpacing="8" Background="Transparent">
+    <Grid.ColumnDefinitions>
+      <ColumnDefinition Width="Auto" />
+      <ColumnDefinition Width="Auto" />
+      <ColumnDefinition Width="*" />
+    </Grid.ColumnDefinitions>
+    <controls:ActionButton x:Name="Check" x:FieldModifier="internal" Glyph="{x:Bind icons:Lucide.Plug}" />
+    <ProgressRing x:Name="Progress" Grid.Column="1" Width="16" Height="16" IsActive="False" Visibility="Collapsed" />
+    <FontIcon
+      x:Name="Success"
+      Grid.Column="1"
+      FontFamily="{x:Bind icons:Lucide.Font}"
+      Glyph="{x:Bind icons:Lucide.CircleCheck}"
+      Style="{StaticResource TinyTorrentStatusIconStyle}"
+      Foreground="{ThemeResource SystemFillColorSuccessBrush}"
+      Visibility="Collapsed"
+      AutomationProperties.AccessibilityView="Raw"
+    />
+    <FontIcon
+      x:Name="Failure"
+      Grid.Column="1"
+      FontFamily="{x:Bind icons:Lucide.Font}"
+      Glyph="{x:Bind icons:Lucide.CircleX}"
+      Style="{StaticResource TinyTorrentStatusIconStyle}"
+      Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+      Visibility="Collapsed"
+      AutomationProperties.AccessibilityView="Raw"
+    />
+    <TextBlock
+      x:Name="Message"
+      Grid.Column="2"
+      Style="{StaticResource TinyTorrentBodyTextStyle}"
+      AutomationProperties.LiveSetting="Polite"
+    />
+  </Grid>
+</UserControl>

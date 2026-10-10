@@ -68,47 +68,58 @@ Json Success(Json data)
     return {{"ok", true}, {"data", std::move(data)}};
 }
 
-char const* ToString(ErrorCode code)
-{
-    switch (code)
-    {
-    case ErrorCode::InvalidRequest: return "invalid_request";
-    case ErrorCode::UnknownCommand: return "unknown_command";
-    case ErrorCode::InvalidSource: return "invalid_source";
-    case ErrorCode::InvalidSources: return "invalid_sources";
-    case ErrorCode::InvalidDestination: return "invalid_destination";
-    case ErrorCode::InvalidPriorities: return "invalid_priorities";
-    case ErrorCode::InvalidTrackers: return "invalid_trackers";
-    case ErrorCode::InvalidTorrents: return "invalid_torrents";
-    case ErrorCode::ResponseTooLarge: return "response_too_large";
-    case ErrorCode::WindowConnected: return "window_connected";
-    case ErrorCode::Starting: return "starting";
-    case ErrorCode::ShuttingDown: return "shutting_down";
-    case ErrorCode::Unavailable: return "unavailable";
-    case ErrorCode::Overloaded: return "overloaded";
-    case ErrorCode::StorageFailed: return "storage_failed";
-    case ErrorCode::RecoveryRequired: return "recovery_required";
-    case ErrorCode::FilesBusy: return "files_busy";
-    case ErrorCode::SharedFiles: return "shared_files";
-    case ErrorCode::DestinationConflict: return "destination_conflict";
-    case ErrorCode::DestinationInUse: return "destination_in_use";
-    case ErrorCode::MoveInterrupted: return "move_interrupted";
-    case ErrorCode::MetadataUnavailable: return "metadata_unavailable";
-    case ErrorCode::PreviewExpired: return "preview_expired";
-    case ErrorCode::PreviewFailed: return "preview_failed";
-    case ErrorCode::TorrentRemoved: return "torrent_removed";
-    case ErrorCode::AddFailed: return "add_failed";
-    case ErrorCode::RegistrationFailed: return "registration_failed";
-    }
-    return "";
-}
-
 namespace
 {
+constexpr std::pair<std::string_view, ErrorCode> errors[] = {
+    {"invalid_request", ErrorCode::InvalidRequest},
+    {"unknown_command", ErrorCode::UnknownCommand},
+    {"invalid_source", ErrorCode::InvalidSource},
+    {"invalid_sources", ErrorCode::InvalidSources},
+    {"invalid_destination", ErrorCode::InvalidDestination},
+    {"invalid_priorities", ErrorCode::InvalidPriorities},
+    {"invalid_trackers", ErrorCode::InvalidTrackers},
+    {"invalid_torrents", ErrorCode::InvalidTorrents},
+    {"response_too_large", ErrorCode::ResponseTooLarge},
+    {"window_connected", ErrorCode::WindowConnected},
+    {"starting", ErrorCode::Starting},
+    {"shutting_down", ErrorCode::ShuttingDown},
+    {"unavailable", ErrorCode::Unavailable},
+    {"overloaded", ErrorCode::Overloaded},
+    {"storage_failed", ErrorCode::StorageFailed},
+    {"recovery_required", ErrorCode::RecoveryRequired},
+    {"files_busy", ErrorCode::FilesBusy},
+    {"shared_files", ErrorCode::SharedFiles},
+    {"destination_conflict", ErrorCode::DestinationConflict},
+    {"destination_in_use", ErrorCode::DestinationInUse},
+    {"move_interrupted", ErrorCode::MoveInterrupted},
+    {"metadata_unavailable", ErrorCode::MetadataUnavailable},
+    {"preview_expired", ErrorCode::PreviewExpired},
+    {"preview_failed", ErrorCode::PreviewFailed},
+    {"torrent_removed", ErrorCode::TorrentRemoved},
+    {"alias_conflict", ErrorCode::AliasConflict},
+    {"add_failed", ErrorCode::AddFailed},
+    {"registration_failed", ErrorCode::RegistrationFailed}};
+
 Json Error(char const* code, std::string detail)
 {
+    if (std::string_view(code) == ToString(ErrorCode::StorageFailed) && detail == "storage_overloaded")
+    {
+        code = ToString(ErrorCode::Overloaded);
+        detail.clear();
+    }
     return {{"ok", false}, {"error", {{"code", code}, {"detail", std::move(detail)}}}};
 }
+}
+
+char const* ToString(ErrorCode code)
+{
+    auto word = Word(errors, code);
+    return word.empty() ? "" : word.data();
+}
+
+std::optional<ErrorCode> ParseError(std::string_view word)
+{
+    return Parse(errors, word);
 }
 
 Json Failure(ErrorCode code, std::string detail)
@@ -179,14 +190,14 @@ void Engine::PauseSession(bool paused, std::function<void(Outcome)> completion)
     }
     state_->PauseSession(paused, std::move(completion));
 }
-void Engine::RecordBackgroundNotice(std::function<void(Outcome)> completion)
+void Engine::SetBackgroundNotification(bool enabled, std::function<void(Outcome)> completion)
 {
     if (auto refusal = state_->Refusal())
     {
         completion({*refusal});
         return;
     }
-    state_->RecordBackgroundNotice(std::move(completion));
+    state_->Configure(Json{{"notify_background", enabled}}, std::move(completion));
 }
 void Engine::RecordPrograms(std::vector<std::string> programs, std::function<void(Outcome)> completion)
 {

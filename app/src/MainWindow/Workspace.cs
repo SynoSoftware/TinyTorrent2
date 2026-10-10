@@ -15,6 +15,9 @@ public sealed partial class MainWindow
     private SettingsPage? _settingsPage;
     private ConnectionPage? _connectionPage;
     private readonly Motion _motion = new();
+    private readonly Motion _pages = new();
+    private readonly Motion _settings = new();
+    private WindowPage _page;
     private bool _refreshingFilters;
     private bool _selecting;
     private double _splitHeight = 360;
@@ -51,18 +54,13 @@ public sealed partial class MainWindow
     {
         if (HasDialog || Model.IsClosing || _allowClose)
             return;
-        if (Model.Page == WindowPage.Settings && SettingsContent.Content is ConnectionPage)
+        if (Model.Page == WindowPage.Settings && _settings.Current is ConnectionPage)
         {
             await ReturnToSettings();
             return;
         }
-        if (Model.Page == WindowPage.Settings && _settingsPage?.Category is not null)
-        {
-            if (await Navigate(WindowPage.Settings))
-                _settingsPage.BackToIndex();
-            return;
-        }
-        await ShowTorrents();
+        _fromLibrary = false;
+        await Navigate(_returnPage);
     }
 
     private async Task ReturnToSettings()
@@ -72,15 +70,15 @@ public sealed partial class MainWindow
         if (!await Model.Settings.Connection.Depart())
             return;
         if (HasDialog || Model.IsClosing || _allowClose || Model.Page != WindowPage.Settings
-            || SettingsContent.Content is not ConnectionPage)
+            || _settings.Current is not ConnectionPage)
             return;
-        SettingsContent.Content = _settingsPage;
-        _motion.Play(SettingsContent);
+        if (_settingsPage is { } page)
+            _settings.Show(page, -1);
         DispatcherQueue.TryEnqueue(
             Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,
             () =>
             {
-                if (Model.Page == WindowPage.Settings && ReferenceEquals(SettingsContent.Content, _settingsPage))
+                if (Model.Page == WindowPage.Settings && ReferenceEquals(_settings.Current, _settingsPage))
                     _settingsPage?.FocusConnection();
             }
         );
@@ -97,13 +95,22 @@ public sealed partial class MainWindow
         )
             return;
         Model.Settings.Connection.Open();
+        _settingsPage?.Depart();
         if (_connectionPage is null)
         {
             _connectionPage = new ConnectionPage(Model.Settings.Connection);
             _connectionPage.ReturnRequested += async (_, _) => await ReturnToSettings();
+            SettingsContent.Children.Add(_connectionPage);
         }
-        SettingsContent.Content = _connectionPage;
-        _motion.Play(SettingsContent);
+        _settings.Show(_connectionPage);
+        DispatcherQueue.TryEnqueue(
+            Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,
+            () =>
+            {
+                if (Model.Page == WindowPage.Settings && _settings.Current is ConnectionPage page)
+                    page.FocusInput();
+            }
+        );
     }
 
     private async Task<bool> Navigate(WindowPage page)
@@ -128,6 +135,10 @@ public sealed partial class MainWindow
         }
         if (HasDialog || Model.IsClosing || _allowClose)
             return false;
+        if (page is WindowPage.Settings or WindowPage.About && Model.Page is WindowPage.Torrents or WindowPage.Library)
+            _returnPage = Model.Page;
+        if (Model.Page == WindowPage.Settings && page != WindowPage.Settings && ReferenceEquals(_settings.Current, _settingsPage))
+            _settingsPage?.Depart();
         Model.Page = page;
         return true;
     }
@@ -145,16 +156,16 @@ public sealed partial class MainWindow
         if (_settingsPage is null)
         {
             _settingsPage = new SettingsPage(Model);
+            SettingsContent.Children.Add(_settingsPage);
             _settingsPage.FolderRequested += async (_, setting) =>
                 await PickSettingsFolder(setting);
             _settingsPage.ProxyRequested += async (_, _) => await ShowProxy();
+            _settingsPage.SupplierRequested += async (_, _) => await ShowSupplier();
             _settingsPage.ConnectionRequested += async (_, _) => await ShowConnection();
+            _settingsPage.LayoutChanged += (_, _) => UpdateChrome();
         }
-        var changed = !ReferenceEquals(SettingsContent.Content, _settingsPage);
-        SettingsContent.Content = _settingsPage;
         _settingsPage.Navigate(target);
-        if (changed)
-            _motion.Play(SettingsContent);
+        _settings.Show(_settingsPage, -1);
     }
 
     private void UpdatePage()
@@ -165,19 +176,13 @@ public sealed partial class MainWindow
             WindowPage.About => AboutContent,
             _ => Workspace,
         };
-        var changed = content.Visibility != Visibility.Visible;
-        Workspace.Visibility =
-            Model.Page == WindowPage.Torrents ? Visibility.Visible : Visibility.Collapsed;
-        SettingsContent.Visibility =
-            Model.Page == WindowPage.Settings ? Visibility.Visible : Visibility.Collapsed;
-        AboutContent.Visibility =
-            Model.Page == WindowPage.About ? Visibility.Visible : Visibility.Collapsed;
+        _pages.Show(content, Model.Page >= _page ? 1 : -1);
+        _page = Model.Page;
         BackButton.Visibility =
-            Model.Page == WindowPage.Torrents ? Visibility.Collapsed : Visibility.Visible;
-        TorrentMenu.IsEnabled = Model.Page == WindowPage.Torrents;
-        ViewMenu.IsEnabled = Model.Page == WindowPage.Torrents;
-        if (changed)
-            _motion.Play(content);
+            Model.Page is WindowPage.Torrents or WindowPage.Library && !_fromLibrary ? Visibility.Collapsed : Visibility.Visible;
+        TorrentMenu.IsEnabled = Model.Page is WindowPage.Torrents or WindowPage.Library;
+        ViewMenu.IsEnabled = TorrentMenu.IsEnabled;
+        UpdateLibraryPage();
     }
 
     private async Task<bool> SelectTorrent(Syno.TableView.Selection? selection = null)
@@ -218,18 +223,17 @@ public sealed partial class MainWindow
 
     // Only Add and Move still ask, because applying them on close would start
     // a download or a file move that the person has not confirmed.
-    private async Task<bool> ResolveDraft(string editor, Func<Task<bool>> save, Func<Task> discard)
+    private async Task<bool> ResolveDraft(string editor)
     {
+        var isAdd = editor == "add";
         var focused = FocusManager.GetFocusedElement(Root.XamlRoot) as Control;
         return await Interact(
             async interaction =>
             {
                 var prompt = new Dialog
                 {
-                    XamlRoot = Root.XamlRoot,
                     DefaultButton = ContentDialogButton.Close,
                     SecondaryGlyph = Syno.Lucide.Undo2,
-                    CloseGlyph = Syno.Lucide.Pencil,
                 };
                 var choice = await ShowDialog(
                     interaction,
@@ -238,7 +242,7 @@ public sealed partial class MainWindow
                     {
                         prompt.Title = Model.Text.Get("changes", editor + "_title");
                         (prompt.Content, prompt.PrimaryButtonText, prompt.Glyph) =
-                            editor == "add"
+                            isAdd
                                 ? (
                                     Lines([Model.AddDraft.Heading]),
                                     Model.AddDraft.SubmitText,
@@ -256,17 +260,17 @@ public sealed partial class MainWindow
                             "changes",
                             editor + "_discard_tip"
                         );
-                        // Two words, because Cancel would not say whether it cancels the
-                        // edit or the act that is leaving it.
-                        prompt.CloseButtonText = Model.Text.Get("changes", "keep_editing");
                     }
                 );
                 var resolved = false;
                 if (choice == ContentDialogResult.Primary)
-                    resolved = await save();
+                    resolved = isAdd ? await Model.AddDraft.Submit() : await Model.FileDraft.Submit();
                 else if (choice == ContentDialogResult.Secondary)
                 {
-                    await discard();
+                    if (isAdd)
+                        await Model.AddDraft.Cancel();
+                    else
+                        Model.FileDraft.Cancel();
                     resolved = true;
                 }
                 if (!resolved && focused is { IsLoaded: true })
@@ -290,7 +294,10 @@ public sealed partial class MainWindow
     private void CloseFilters()
     {
         Model.IsFilterOpen = false;
-        Torrents.Focus(FocusState.Programmatic);
+        if (Model.Page == WindowPage.Library)
+            _libraryTable.FocusRows();
+        else
+            Torrents.Focus(FocusState.Programmatic);
     }
 
     private void OnFilterChanged(object sender, SelectionChangedEventArgs args)
@@ -309,6 +316,11 @@ public sealed partial class MainWindow
 
     private void ShowSuggestions()
     {
+        if (Model.Page == WindowPage.Library)
+        {
+            Search.IsSuggestionListOpen = false;
+            return;
+        }
         Search.ItemsSource = Model.FindSuggestions(Search.Text);
         Search.IsSuggestionListOpen = true;
     }
@@ -318,6 +330,11 @@ public sealed partial class MainWindow
         if (args.Reason != AutoSuggestionBoxTextChangeReason.UserInput)
             return;
         Model.Query = sender.Text;
+        if (Model.Page == WindowPage.Library)
+        {
+            sender.IsSuggestionListOpen = false;
+            return;
+        }
         sender.ItemsSource = Model.FindSuggestions(sender.Text);
     }
 
@@ -328,6 +345,11 @@ public sealed partial class MainWindow
     {
         if (HasDialog || Model.IsClosing)
             return;
+        if (Model.Page == WindowPage.Library)
+        {
+            _libraryTable.FocusRows();
+            return;
+        }
         var suggestion =
             args.ChosenSuggestion as Suggestion
             ?? Model.FindSuggestions(args.QueryText).FirstOrDefault(value => value.IsEnabled);
@@ -355,7 +377,8 @@ public sealed partial class MainWindow
                 pane.Layout = layout;
             InspectorContent.Content = pane;
         }
-        var toolbar = Model.IsToolbarOpen
+        ((InspectorPane)InspectorContent.Content).ShowLibrary(Model.Page == WindowPage.Library ? Model.Library : null);
+        var toolbar = Model.ShowsToolbar
             ? Toolbar.ActualHeight + Toolbar.Margin.Top + Toolbar.Margin.Bottom
             : 0;
         var maximum = Math.Max(0, Workspace.ActualHeight - toolbar - 126);

@@ -1,83 +1,72 @@
 # Library implementation plan
 
-## First directive: use common sense
+## Delivery ruling — 2026-10-09
 
-Implement the current [Library spec](library.md) and the page rulings in the
-[interface contract](interface.md), not an earlier version of either. The
-[Library prototype](../app/library-prototype.html) shows the presentation; its
-browser code and sample data are not production design. Apply
-[Usability comes first](architecture.md#usability-comes-first) before each
-stage: inspect the current owner, reuse working behavior, and remove work from
-this plan when the agreed outcome stays intact. Report a conflict with the spec
-or an owner ruling; do not resolve it by changing the feature.
+**Owner ruling: finish the feature; cancel the validation programme.** The
+following work is cancelled, because its cost is delaying delivery of an
+implemented feature:
 
-**Owner ruling: the goal is easy-to-read, low-bloat code, not preservation of
-the current structure.** Refactor when it materially simplifies the code,
-removes duplication, clarifies ownership or makes responsibilities easier to
-understand. Do not add an abstraction or split a function where that only adds
-indirection, ceremony or navigation cost. Apply this judgment to work underway
-and deferred decisions alike; calling a necessary correction a redesign is not
-a reason to preserve bad code. Existing code, committed or not, is evidence to
-inspect, not a structure to protect. Keep the focus on Library and the shared
-owners it directly needs; do not restructure unrelated code.
+- **Cancelled:** all benchmarks, numerical latency and memory gates, baseline
+  comparisons, 10,000/100,000-file runs, and further profiling for this delivery.
+- **Cancelled:** agent-driven interaction journeys, capture matrices, exhaustive
+  keyboard/theme/provider/route combinations, and comprehensive test checklists.
+- **Cancelled:** repeated intermediate reviews and builds. Use existing valid
+  evidence; review the settled changes once and rebuild only changed code.
+- **Cancelled:** a TableView reset/animation redesign or persisted stale file
+  catalogue as a prerequisite for delivery. Keep the current behavior.
 
-Each responsibility has one owner and each operation one implementation. When
-a refactor replaces an implementation, move its direct callers and remove the
-replaced path in the same stage, so the feature cannot grow two authorities.
-Split a module when that makes its responsibility easier to understand; keep
-work together when a split only makes the reader follow forwarding calls.
+Cancellation changes delivery scope, not the feature's data-safety rules.
+Follow [repository rules](../AGENTS.md), [testing](testing.md), the
+[Library spec](library.md), [interface](interface.md), and
+[approved prototype](../app/library-prototype.html). Those owners define the
+behavior; this plan does not repeat their requirements.
 
-Apply [naming and structure](naming.md) and the [product vocabulary](../CONTEXT.md)
-before settling every new or changed declaration and file location. Review
-names at their use sites after ownership changes; an old qualifier may no longer
-carry meaning. Names below that identify current source are navigation aids,
-not exemptions from that review. Rename affected callers together without
-aliases or compatibility wrappers for unshipped internal code.
+## Current status
 
-Prepared 2026-10-08 against the working tree. The proposed types, fields and
-messages are implementation decisions, not claims that code exists or that
-checks have passed.
+Library is implemented in C#: source synchronization, shared SQLite, complete
+local search, filters, file details and opening, identification, optional video
+providers, and native page/dialog integration. Subtitles shares the source and
+database owners, not Library enablement.
 
-Success means every stored fact, state transition and user operation has one
-owner, and the delivery stages cover the spec through those owners. The checks
-below establish implementation evidence; this document alone does not.
+The integrated builds, focused production storage/file checks, supplier checks
+and 21-scene native review already recorded in `artifacts/evidence/` remain
+valid for the code they exercised. The last verified capture app is
+`76F011E3`; the native review is
+`Capture-library-files-f8426b9a-a43c-4cd6-83a6-e8a261a46299`.
+These are existing results, not instructions to repeat them.
+The current ownership, routing, naming and presentation corrections have passed
+colleague source review. They are not yet compiled or visually captured; earlier
+build evidence describes the source at that time. The owner has authorized a
+batched Debug x64 compilation and the relevant targeted offline checks.
 
-## Ownership change and current source
+The cancelled 10,000-file benchmark did not pass: worst warm p95 was 421.55 ms
+for Videos, 376.81 ms for Music and 612.87 ms for Files. First navigation was a
+single 1,083 ms observation, not a percentile. Memory observations were not a
+controlled before-feature comparison. Cancellation does not make these targets
+passed, and this delivery makes no “instant at 10,000 files” claim.
 
-The earlier native `Library`, `Videos`, `Clues`, `Tmdb`, `LibrarySource.cpp` and
-`Enrichment.cpp` attempt is no longer in the current working tree. Its removal
-is source evidence only, not a build or runtime result. The owner now places
-Library, TMDB and subtitle downloading in C#. Both features run while the product window
-is open and use one C# SQLite owner. The [subtitle plan](subtitles-implementation.md)
-owns subtitle behavior. C# creates, migrates, populates and queries SQLite and
-downloads TMDB information and subtitles. No Library or subtitle feature code,
-provider/search/job API, native helper or hidden C# process is part of the engine.
-
-The engine supplies torrent and file facts through its existing pipe and owns
-torrent commands and payload operations. It holds no Library rows, provider
-cache, SQLite handle or enrichment scheduler. Its installed SQLite dependency
-in `3rdParty/` stays untouched; remove project references when native callers
-are removed.
-
-The page prototype is presentation evidence, not production behavior. Existing
-capture modes named Library exercise torrent-table fixtures. No successful
-implementation or performance check is implied by this plan.
+The Public websites provider remains optional and removable. Its recorded
+browser-access limitations remain in [its status](movie-websites.md#implementation-status).
+The owner stopped further browser experiments; do not reopen them.
 
 ## Owners and reuse
 
 These are responsibilities in the existing C# app, not one project, interface
-or forwarding class per row. Place code by [app role](naming.md#app-folders);
-the data-source seam explicitly required by the spec is the one future seam.
+or forwarding class per row. Keep feature code in `app/src/Library/` and
+`app/src/Subtitles/`, following [app folders](naming.md#app-folders);
+the membership source seam and movie provider seam serve distinct decisions.
+Movie providers share the request and persistence owners; provider capability
+determines whether background population is available.
 
 | Owner | Responsibility |
 | --- | --- |
 | C# torrent adapter | Seed and synchronize accepted membership and file facts in SQLite through PipeClient, including unfinished and unwanted files. It decides neither Library eligibility nor subtitle eligibility and exposes no separate file catalogue. |
 | Library | Query finished entries from SQLite; own identification decisions, enrichment acceptance and SQL search/filter/count queries. |
-| C# database owner | One connection, migration sequence and serialized transaction path. Library and subtitles keep their domain SQL with their behavior; the shared owner does not accumulate all feature queries or rules. |
+| C# database owner | One connection, schema version check and serialized transaction path. Existing application wiring supplies each owner's schema; Library and subtitles keep their domain SQL with their behavior. |
 | Filename interpretation | One file-kind classification and filename interpretation used by both features, without provider or scheduling decisions. |
-| TMDB lookup | Provider requests and response decoding; Library accepts the returned identification evidence and video information. |
+| Video lookup | Selected-provider requests, cancellation and background eligibility; Library accepts identification evidence and saves video information. TMDB owns its API decoding; Public websites owns website extraction and installed-browser access. |
 | File facts reader | Windows property reads for dates and audio tags; Library accepts and saves the returned facts. |
-| Library presentation owner under MainViewModel | Query/configuration input, stable row objects, selection, navigation and opening outcomes. TableView performs the only sort. |
+| Library Browser | Query/configuration input, stable row objects, selection, navigation and opening outcomes; Library initialization, worker events, failure pause, retry and worker drain. TableView performs the only sort. |
 | Existing Inspector and opening owners | Shared card mechanics and Windows file execution. Library supplies a target and consumes the outcome. |
 | C# subtitle owner | Supplier matching, downloading, configuration, saved work and records as defined in its plan; it queries current torrent files in SQLite, including unfinished targets, independently of Library queries and enablement. |
 
@@ -96,6 +85,145 @@ current-source projection in SQLite, not an adapter catalogue plus separate
 Library and subtitle catalogues. The database owns transaction mechanics;
 each feature owns the meaning of its queries. These responsibilities need no
 common enrichment interface, new host class, service layer or repository.
+
+## Replaceable movie providers
+
+The owner requires optional providers to be removable and new providers to use
+the same Library workflow. The following seam replaces concrete TMDB/Public
+branches. The source implements this seam; existing evidence is summarized in
+[Current status](#current-status).
+This is compile-time composition in the existing app, because no runtime plugin
+installation or discovery is required.
+
+A provider owns only what differs between providers: how it searches, how it
+describes a choice, which kinds it knows, when Library may ask it, and its own
+settings. It knows neither current torrent membership nor whether an answer may
+be saved, and it receives no `Store`:
+
+```csharp
+internal interface IProvider
+{
+    string CatalogId { get; }
+    bool IsAvailable { get; }
+    VideoSchedule Schedule { get; }
+    bool IsLocalized { get; }
+    IReadOnlySet<VideoKind> Kinds { get; }
+
+    Task<IReadOnlyList<VideoChoice>> Search(
+        string query, string language, CancellationToken cancellation);
+    Task<VideoInformation> Describe(
+        VideoChoice choice, VideoRequest request, CancellationToken cancellation);
+}
+
+internal interface IConfigurable : IProvider
+{
+    VideoEditor Edit(Strings text, Func<IReadOnlyDictionary<string, string>, Task> save);
+}
+
+internal sealed record ProviderOption(string ProviderId, string TextSection,
+    Func<IReadOnlyDictionary<string, string>, IProvider> Create);
+
+internal sealed record VideoRequest(Release Release, string Language, SavedRecord Saved);
+```
+
+Library owns automatic identification. It searches the provider for the
+release's title, keeps choices of the release's kind whose title or original
+title and year agree, and describes the one remaining choice. The description
+must agree with that choice, because a search result can lack its year or carry
+a looser title. A provider whose `Kinds` lack the release's kind is not asked.
+The series hint comes from Library's current, accepted sibling decisions, and
+Library describes it directly. No unique match ends the attempt as a miss, so
+restarting does not repeat the lookup. `Describe` returns information or a
+failure; it does not return null. Library describes a series choice only for a
+file whose name gives a season, and refuses any other as `episode_required`.
+
+`VideoKind` names a movie, a series or an episode; Library stores the existing
+words for them. `VideoInformation` carries facts: genres, cast and keywords are
+lists, and an episode carries its series title and each episode's number, name
+and synopsis. Library composes the stored title, such as
+`Show · S01E01 Pilot`, and the joined text its search and filters read.
+
+`VideoSchedule` is `Background`, `Selection(Delay)` or `Manual`, so a zero delay
+never stands for a second behavior. The provider ID persists selection, such as
+`public`; `CatalogId` qualifies information, such as `public/imdb`. Changing
+Public's website keeps the selected provider but changes its catalogue. These
+IDs are implementation-owned stable strings, because removing a provider must
+not require changing central enum ordinals.
+
+Provider names and consent use the existing Strings owner and their text
+section. Settings binds to the provider options; details reads the schedule.
+MainWindow hosts the editor of an `IConfigurable` provider through the existing
+Interact/ShowEditor owners and imports no provider implementation. A provider
+without settings implements no editor.
+
+Library saves each provider's settings under its provider ID and creates the
+provider from them. The settings cross the seam as text, because that is their
+stored form; only the provider reads them, through its typed settings. Public
+owns those typed settings, its editor, browser access and website
+implementations inside `Library/Public/`. Its editor submits new settings;
+Library cancels old work, serializes the change, saves the settings and replaces
+the provider. A failed save leaves the previous provider intact. An editor left
+open while the person chose another provider saves nothing. TMDB reuses saved
+raw records through the request's `Saved` lookup, which returns none when
+refreshing.
+
+VideoLookup has one guarded execution/commit path for background work, delayed
+lookup, Fetch, Refresh and explicit identification. It captures the provider,
+catalogue, language and current entry evidence, serializes requests, reuses
+matching normalized information unless refreshing, and commits only through
+Library's current-membership and latest-decision guards. Provider and settings
+changes cancel that context. Visibility and dwell remain with Library Browser;
+providers do not subscribe to the window. Expected provider failures carry a
+localized message reference. A failure of one video, such as an unreadable page
+or record, uses `VideoException`; it ends an automatic lookup as a miss and an
+explicit one with its error. A provider that cannot serve any request now uses
+`ProviderException` with an optional retry time. So one bad page cannot suspend
+unrelated enrichment. Cancellation stays OperationCanceledException; storage
+errors stay with the existing failure owner.
+
+A miss permits background work on the next eligible file. A provider failure
+with a retry time suspends background work until that time; without one, it
+suspends automatic work until explicit Retry or a relevant configuration change.
+This prevents a blocked provider receiving the same request for every file.
+An on-demand failure ends the attempt without scheduling another request. A
+later explicit request before a retry deadline reports the remaining wait
+without contacting the provider. Library owns these decisions and cancellable
+waits; adapters own no retry loop.
+
+VideoLookup cancels and drains background and interactive requests before the
+application disposes storage or shared HTTP access. Library Browser cancels its
+dwell and selection requests. Each adapter observes the supplied cancellation;
+Public's browser reader finishes its per-call process, stream and temporary
+profile cleanup before completing. The current adapters need no separate
+provider lifetime interface, because resources are shared or scoped to a call.
+
+Normalized videos, identification associations and attempts carry catalogue
+identity. Raw records use catalogue, record key and language; providers interpret
+their content, while the shared store preserves their references atomically with
+the existing VideoInformation response. Library supplies the language: it saves
+information from a provider that is not `IsLocalized`, such as a website page,
+as valid for every language. Cached normalized facts remain readable
+after a provider is removed. Episode information records its reusable series
+choice explicitly, so the live shared Series query does not decode TMDB's
+`tv/...` identifier. That query retains its contribution/directory/evidence and
+conflict checks and restricts the hint to the captured catalogue.
+
+The existing feature construction is the only registration location. Adding an
+independent provider adds its folder, text section and one `ProviderOption`;
+Public owns the implementations of its two websites; adding a website there
+changes only that provider's implementation and choices.
+Removing Public deletes its folder, construction entry, resources and dedicated
+checks. Shared lookup, storage, settings, details and dialog code require no edits.
+When a saved provider is absent, enrichment is durably disabled with no selected
+provider; silently falling back would change the person's disclosed network
+behavior.
+
+Migration replaces concrete provider enums/branches and the three shared-owner
+partials under Public. No release has written `library.db`, so it has one
+current schema and no SQL upgrade steps. Preserve current decisions, cached facts, failed-refresh retention,
+stale-result rejection and cancellation through this change. Runtime loaders,
+new projects, pluggable databases and provider-specific schedulers add no required
+behavior.
 
 ## Decisions that keep one implementation
 
@@ -135,308 +263,163 @@ common enrichment interface, new host class, service layer or repository.
   non-actionable. Retry uses the same open and source-reconciliation path;
   never substitute an empty collection, an alternate database or a destructive
   reset. Torrent operations remain independent of the database.
-- **Migration preserves facts.** Inspect whether a retained native database
-  exists before changing its schema. Implement an import only for an actual
-  retained schema and saved user facts; an abandoned native attempt alone does
-  not require a compatibility layer. C# becomes the database's sole owner;
-  never open it concurrently with an old engine or discard corrections as cache.
-  Advance schema versions at that owner. Native settings cease owning enrichment consent;
-  transfer an existing saved choice only when its disclosure still describes
-  the new route, otherwise require the feature's normal enablement.
+- **One unshipped schema.** Create the current version 1 schema in one step;
+  refuse higher versions. There is no released feature database requiring
+  historical migrations or an import. C# is the sole database owner.
 
-## Delivery order
+## Finish the delivery
 
-Each slice moves its callers and removes the superseded native implementation
-together. Do not add C# beside a still-active native fallback. Re-read shared
-files before editing because the working tree contains other work. Consume the
-existing torrent protocol; this plan adds no C++ source catalogue, feature
-invalidation, byte-availability API or subtitle-aware file operation. Calling a
-feature helper generic does not move it into engine scope.
+- Keep native tray command names aligned with the interface's Pause all and
+  Resume all. Format rates and counts using Windows regional settings, and
+  render stable notice codes through the engine catalogue while preserving
+  diagnostic details. Localize actionable startup and command-line errors at
+  their existing native surface. Keep Windows-owned dialog buttons in the
+  platform's language; this does not require a universal native dialog framework.
+- Resolve the accepted #249 UI defects at their existing owners: expose
+  feature settings through the existing global search targets; show Library
+  facts independently of torrent filters; preserve focused controls during
+  settings saves; and cancel unfinished tracker input with composition protection.
+  Keep the prototype's Library search without suggestions, file activation,
+  page switching and editor layouts. Correct table text readability without
+  redesigning columns. Do not add a shared recovery bar to existing dialogs.
+  Source review covers these paths; builds and execution remain with the owner.
 
-### 1. Move Library ownership to C# and prove source synchronization
+- Take every displayed shortcut key and numeric unit from the catalogue, and name
+  KiB/s beside both torrent speed limits. Keep Settings as the owner of regional
+  whole-number and decimal parsing, with rate conversion using the decimal rule;
+  ports share whole-number grammar while durations retain fractional input.
+  Describe the proxy and adapter as product-wide routes in supplier disclosure
+  and connection-test help. Preserve ranges, unlimited values and no direct fallback.
 
-**Result:** the engine supplies facts only; C# owns the database and reconciled
-Library. Closing the window leaves no Library work in the engine.
+Complete the confirmed shared-owner corrections in the same batch:
 
-**First gate: prove the existing read path before building the full feature.**
-The existing torrent Files reply reads one torrent at a time; PipeClient
-serializes requests. Inspect the current detail-read implementation rather than
-assuming its internal scheduling. `Torrent::Row` has aggregate progress and paths, but no
-file-list revision. Temporary SQLite tables therefore require a cold collection
-read on every new window. Benchmark that real path at both fixture sizes,
-including command responsiveness; a synthetic SQLite benchmark cannot establish
-startup readiness. Do not promise the 500 ms target, hide this cost in window
-startup, or add C++ machinery to make the numbers pass. A failed target is a
-reported design constraint before dependent UI work, not an excuse to display
-stale cached files as confirmed.
+- Use namespace-scoped names for Store, Entry, Query, Matches, Detail, Facet and
+  Origin, with OriginId identifying a contribution. Rename the provider interface
+  to IProvider while retaining IConfigurable and VideoEditor, because configurable
+  providers own an editor the host can remove. Preserve LibraryTable, LibraryRow
+  and concept-qualified keys; update owner paths and reflection consumers together.
+- Apply the product [network route](architecture.md#network-route) through one
+  shared HTTP lifetime configured from confirmed settings before update or feature
+  requests. Apply acknowledged proxy and adapter changes at the completed settings
+  notification, and defer snapshot callbacks until all settings are confirmed.
+  Keep update-check cancellation, daily caching and quiet failures.
+  Gate external browser reads through that owner before launch and link their
+  cancellation to its route lifetime; an unsupported route sends no request.
 
-- Inspect existing snapshots, file replies and PipeClient. Build the C# adapter
-  from their accepted-torrent identity, paths, names and completion facts.
-  All feature translation, change comparison and projection building stays in
-  C#. Do not extend C++ to prepare Library rows or subtitle inputs.
-- Initialize during window connection, off the dispatcher. Obtain the complete
-  contribution set before cleanup; file metadata still pending is not removal.
-  Apply source changes arriving during initialization before publishing results.
-  Disconnect retains a non-actionable last view and pauses target work;
-  reconnect reconciles it against the new engine session.
-- Compare incoming source facts with the current SQLite projection and refresh
-  affected file facts through existing reads. Synchronize once for both features
-  and bound outstanding reads; do not fetch every file in every torrent on each
-  telemetry tick. At 1,000 torrents, measure source transfer separately from
-  local queries. Commands run
-  between reads and partial data is never complete. Optimize scheduling and local
-  processing in C#, without a new native catalogue or bulk feature endpoint.
-  Use one read consumer for the shared adapter and await each requested torrent
-  before submitting the next: PipeClient replaces an unsent read for the same
-  consumer, so queueing every torrent under that consumer loses requests.
-  Refresh on admission/reconnect, relevant summary transitions and completion
-  of the window's own file commands. While incomplete torrents make progress,
-  schedule bounded file refreshes through this same owner. Aggregate progress
-  is a hint, not a file revision; retry unfinished final-name transitions until
-  settled, and verify idle renames/priority changes with unchanged byte totals.
-  Record any change the existing contract cannot observe rather than claiming
-  event-driven freshness that it does not supply.
-- Put Microsoft.Data.Sqlite in the existing app. C# owns database creation,
-  schema, migrations, population, indexing, cleanup and every query. Its
-  [async methods execute synchronously](https://learn.microsoft.com/en-us/dotnet/standard/data/sqlite/async),
-  so use one connection on its serialized background work path. Network and
-  property-system work are separate bounded operations; neither holds that connection.
-- Reconcile contributions and populate temporary search tables in set-based
-  transactions. One withdrawal transaction applies each feature's cleanup SQL,
-  removing source associations and unreferenced facts even when the features
-  are off. The source owner orders the transaction; each feature owns its rules.
-  Reconcile removals missed while the window was closed through that same path.
-  Publish changes only after commit; feature queries and worker-result validation
-  read this SQLite state. Do not hand pipe replies to either feature or retain
-  another current-file collection in the adapter.
-- Port required native identification/storage behavior into its C# owners;
-  implement the behavior from the current spec where the earlier code is gone.
-  Verify that no native Library classes, workers, commands, settings or project
-  references return. Preserve unrelated engine networking, torrent persistence
-  and other working-tree changes; no C++ subtitle copy is retained.
-- Keep normal torrent startup, activation and shutdown independent of the C#
-  database. No database initialization or provider work occurs without a window.
+- Keep keyboard focus on the active table when Filters closes, and update Library
+  facet controls in place so count refreshes preserve focus and open choices.
+  Preserve Library's separate facet dimensions. Match its empty-state typography
+  and spacing to the torrent table while retaining its recovery actions; place
+  its failure bar over the table without shrinking the rows.
+- Keep website-delay drafts as typed text, including invalid input, using the
+  existing NumberBox editor pattern. Give identification search the native query
+  icon and initial text focus through the shared Dialog owner. Add stable
+  automation IDs to actionable controls in these paths, not decorative content.
+- Share General and Library's field-column geometry through `Controls.FieldColumns`:
+  two content slots, fixed 3:2 columns with a 48-pixel gap, stacked below 760 pixels.
+  Keep content, headings and actions with their current owners. Trace initial
+  narrow layout, resizing and Library section replacement in source; the existing
+  delivery hold on builds and interaction programmes remains in force.
+- Keep TextBox lookup at the existing `TextEditor` helper. Add's editable
+  destination uses its exact `EditableText` name; existing callers still match
+  any TextBox, including the supplied root. Password reveal lookup stays separate.
+  This removes Add's duplicate traversal without introducing a visual-tree framework.
+- Compose feature schemas, source cleanup and cache-invalidation SQL in the
+  existing `MainViewModel/Features.cs` wiring. The database executes supplied SQL
+  through its one connection and transaction path without importing features.
+- Keep `FileFacts` with Library, its only consumer. Recover interrupted video
+  attempts at the start of `VideoLookup.Initialize`, before creating providers
+  or allowing requests, so a restart does not leave unfinished attempts stuck.
+- Report shared source failures through the app error surface. Both features
+  follow source readiness; Library keeps its own property/provider failures and
+  shows unavailable while the shared source cannot serve either feature.
+  Report once per source failure episode and clear suppression only after
+  successful readiness, so ordinary snapshot retries do not repeat the same
+  announcement. Keep retries and cancellation unchanged; use the existing source
+  gate to suppress failures from obsolete or disposed work.
+- Keep concrete construction, provider registration and shared SQL composition
+  in `Features.cs`. Browser owns Library initialization, its worker events,
+  failure pause, retry/resume and worker drain, so these policies no longer
+  cross into the window. The app forwards source readiness and requests fresh
+  snapshots; it disposes shared resources only after Library has drained.
+  Capture builds gate feature startup on the model before requesting snapshots;
+  ordinary builds carry no capture state in this path.
+- FileSources exposes collected file rows and pending origins through temporary
+  views. Library and Subtitles consume those views rather than interpreting
+  `contributions.collected`, so source currency has one owner. Preserve cleanup
+  retention while synchronization is pending and the existing late-result
+  guards; this changes no durable schema and needs no migration.
+  Keep contribution scheduling, readiness and checked timestamps at FileSources;
+  TorrentSource coordinates engine reads without its own database SQL. Retain
+  its range-checked verification projection: the Pieces display model also
+  parses availability/downloading and classifies every piece, which this source
+  does not need. Feature cleanup consumes the shared currency views for each
+  feature's own tables. The current schema/hook composition is complete and
+  ordered; no checked-registration framework is required without an omission.
+- Keep shared filename interpretation, title and normalized text on ingestion,
+  and correct the master plan's owner table. Moving it adds query work without
+  improving behavior. Keep `library.db` so existing saved records remain in use.
+  `FileName.Kind` owns the extension table used by ingestion and the file tree;
+  retain the formats either table already recognizes, including NFO, Markdown,
+  subtitles and ISO files. `FileName.Glyph` maps each kind once for both file
+  presentations; Library retains its identified-episode TV icon. Use the engine's
+  final filename unchanged, because stripping a textual `.!tt` suffix also
+  changes genuine filenames.
+- Use the existing accent- and case-insensitive normalization for title-bar
+  suggestions on both pages, so the same query finds the same spelling. Keep
+  the subtitle category's summary and search terms in the existing Settings
+  suggestion builder rather than repeating its navigation command.
+- Library Browser owns identification action text and glyph. Table/window
+  menus and Inspector actions consume the same conditional Identify/Edit label;
+  responsive placement stays with the Inspector.
+- Share the application assembly version and HTTP User-Agent at `App`, and the
+  provider date-prefix year parsing at `VideoInformation`. Torrent's display
+  mapping does not duplicate the source's settled predicate; TMDB's object-array
+  names and Public's recursive JSON-LD names have different contracts and stay
+  with their providers. `ProviderReply` parses the HTTP Retry-After fact once;
+  Library and Subtitles retain their retry defaults and quota/reset decisions.
+  Keep the full retry deadline and bound each cancellable worker wait, because
+  a valid long provider delay can exceed the platform timer's supported duration.
 
-**Check:** exercise the C# owner with a temporary database and deterministic
-source facts. Cover unfinished contributions, shared locations, remove/re-add,
-late writes, restart and removals while closed. Verify source reads with the
-unfinished suffix on and off, one finished episode inside an unfinished pack,
-and name/priority changes that leave aggregate bytes unchanged. Derive shared
-file-read readiness in the source SQL projection under the
-[spec's rule](library.md#sqlite-and-video-information); byte counts do not
-establish it. Property reads and subtitle hashing query that one condition.
-Use a pipe round trip only
-for the source facts the C# adapter actually needs; no provider key is necessary.
+Trace startup/recovery, retry, withdrawal, replacement/moves, cache invalidation,
+source failure and teardown in the final source diff. These traces establish
+source reasoning; the final affected Debug x64 compile remains with the delivery
+owner after the batch settles. Repeated builds, tests, benchmarks and interaction
+programmes remain cancelled.
 
-### 2. Implement SQL search and file facts, then measure the costly path
+The current batch contains source changes for the accepted ownership and
+presentation findings: compact absent-information details, shared Inspector
+layout, source invalidation, one subtitle suggestion, refreshed menu language,
+duplicate-error handling and unchanged-selection detail reads. It also routes
+Clear through the existing page command, shares its tooltips/count formatter,
+localizes the typed database downgrade failure and subtitle timestamps, handles
+malformed TMDB responses and route failures, exposes source-currency views and
+applies the accepted local naming corrections in Schedule, PeriodEditor and
+private TableView code. These are source changes, not compiled or pixel-reviewed
+results. Other proposed architectural changes are not accepted by inclusion in
+an AI report.
 
-**Result:** one C# implementation supplies searchable rows and counts for all
-three configurations, with no extra engine search memory.
+The lifecycle and source-failure changes are implemented in source. Have the
+colleague review the settled batch for correctness and ownership. One affected Debug x64
+compile remains pending with the delivery owner. Reuse the valid earlier
+evidence; do not reinstate benchmarks, capture journeys, tests or a new
+validation framework for this delivery.
 
-- Normalize text once on change; preserve original display values. Implement
-  literal whitespace-AND fragment matching, case/accent folding, filters and
-  counts in SQL. Different terms may match file fields and shared video text.
-  Unknown dates/tags stay absent. Start without FTS; add an index only when
-  measurements justify its disk/write cost and preserve one-character behavior.
-- Run the 10,000-file fixture and a 1,000-torrent/100,000-file fixture before
-  building more search machinery. Measure source reads, SQL, row allocation and
-  TableView sorting separately. A fast SQL query is not an end-to-end pass.
-- Classify file kind and derive fallback titles once in the C# filename owner.
-  Library classification and subtitle eligibility use that vocabulary; title
-  parsing failure must not turn a recognizable video into an ineligible file.
-- Read dates and audio tags through the Windows property system off the
-  dispatcher/database worker, selecting targets through SQLite's shared
-  file-read readiness condition. Bound reads, coalesce shared locations, and save
-  successful empty results. Failed reads leave facts unread and retry once on a
-  confirmed location change or a later window initialization, through the same
-  reader; never retry them on each summary refresh.
-  A file waiting for readiness has not been attempted; never save an empty result
-  merely because its torrent is still writing.
-  Discard results for obsolete identity/evidence, not merely obsolete paths.
-- Return facet counts using the spec's query and other-section rules, including
-  selected choices with zero matches. Query other configurations' counts from
-  SQLite too, using their retained filters and the shared text query.
-- Materialize compact typed rows: entry identity, origins, file facts and
-  applicable video/music fields. Multi-episode information remains one file.
-  Derive waiting/off states from current work/settings, not persisted flags.
-  Compose effective titles in one place for rows, search and details.
-- Read full cast/synopsis from SQLite only for selected details; provider
-  enrichment saves searchable text before selection, so actor/subject search
-  finds unseen files. Reuse unchanged row
-  objects; update affected rows without rebuilding the entire collection.
+Final source review found and closed two readiness races:
+provider-change completion must read and resume its current connection state
+under VideoLookup's existing gate; the app must serialize source-readiness
+acceptance and both features' activation with immediate disconnect. Browser's
+retry and initialization continuations use its current readiness rather than
+replaying captured flags. These corrections keep worker cancellation immediate,
+notifications on the dispatcher and every await outside the app's lifetime gate.
 
-**Check:** short/accented/punctuation and cross-field matches, SQL facet counts,
-a shared location, saved empty tag reads and a tagged audio fixture. Record
-initial performance evidence; do not assert targets from the design alone.
-Exercise search, counts and recorded details with inaccessible payload folders:
-they must use SQLite without opening those paths or sending pipe requests.
+The shared-route source review also closed acknowledged-settings publication,
+update-cache continuation and shutdown gaps. The browser gate and update check
+now consume that same confirmed route. These are colleague-reviewed source
+results; the current owner hold on compilation and execution still applies.
 
-### 3. Pages and title bar
-
-**Result:** Torrents and Library are peer pages, as
-[interface.md](interface.md) rules.
-
-- Add `WindowPage.Library`. Add the page switcher SelectorBar after the MenuBar,
-  with Ctrl+1 and Ctrl+2. Its items show only icons when the search box would
-  drop below 200 pixels. Add its icon width to `UpdateMinimum` in Chrome.cs.
-- The second MenuBar item shows the current page's menu: Torrent or Library.
-  View shows the current page's items. Library's View has no Toolbar item.
-- Back returns to the page that opened Settings or About. Show in Torrents
-  also shows Back on Torrents, which returns to Library.
-- Search serves the current page. On Library, it has the placeholder "Search
-  Library", no suggestion list, Escape clears it, and Down or Enter moves to
-  the rows. The Torrents search offers both pages.
-- MainViewModel owns each page's retained state; MainWindow routes native
-  controls and focus to that owner. Preserve the existing draft guards when
-  changing pages or Inspector targets. Add English and Spanish text with each
-  surface, rather than leaving localization until the last stage.
-
-**Check:** review the title bar at the minimum width in English and Spanish.
-
-### 4. The Library table
-
-**Result:** a person can find and open a finished file.
-
-- One table host, with a shared construction path and row renderers. Videos,
-  Music and Files each have their own `ColumnLayout`, sort and filters, saved in
-  `window.json` next to the torrent layout. Videos is the default, and the
-  window remembers the last configuration.
-- TableView's [schema is fixed after loading](../lib/TableView/docs/tableview-contract.md#5-public-control-contract).
-  A union of every column would expose irrelevant choices in its column menu.
-  On configuration change, save the outgoing layout, detach its table and
-  create the one active TableView with the chosen configuration's columns.
-  Reuse row objects and retained presentation state, restore the saved layout,
-  and recover selection, focus and scroll position. No three hidden tables,
-  copied page implementations or runtime schema mutation are needed.
-- Each configuration exposes only its applicable columns in the column menu.
-  TableView sorts one column; give Artist a composite Artist, Album, Track key
-  through its existing `SortKey` comparer to implement the Music default.
-  TableView still performs the only sort, and `ColumnLayout` saves Artist as
-  the active column. No multi-column sorting framework is needed.
-- Filters use the existing drawer, with the sections and nesting date ranges in
-  [filters](library.md#filters). The status footer names the configuration, its
-  count and the active filters.
-- The states in [states](library.md#states). There is no loading state.
-- Open, Enter, double-click and Retry invoke the same command, bound to stable
-  entry identity and its current recorded path. Extend `Opening.cs` to return
-  its actual outcome to the caller instead of only calling `Model.Report`;
-  existing torrent callers keep the same Windows execution path. The Library
-  presentation owner records Missing, Unavailable or Couldn't open only as
-  supported by that outcome, with its time, and clears it after a successful
-  Open. No existence probe is added.
-- Open folder, Properties and Show in Torrents use the same commands and
-  availability from the page menu, context menu and card. When a shared entry
-  offers several torrents, Show in Torrents offers those named targets rather
-  than selecting an arbitrary torrent; the File page already identifies each.
-- Hold rows by entry id, so a refresh updates changed rows and keeps selection
-  and scroll position.
-- Disable the specified actions while disconnected without clearing the last
-  collection. Reconcile engine session and current membership on reconnect;
-  discard removed-target detail and opening outcomes.
-
-**Check:** the off-screen [capture review](../app/AGENTS.md#capture-review) of
-the three configurations and the empty and no-match states, at the minimum
-width and at a wide width, in English and Spanish, light and dark.
-
-### 5. The details card
-
-**Result:** selecting a file shows its information and its file facts in the
-Inspector card.
-
-- Reuse one InspectorPane card, splitter, section selector, responsive states
-  and error presentation. Its target supplies header, sections, content and
-  commands. Keep torrent file/tracker drafts with the torrent Inspector model
-  and Library selection details with Library's presentation owner; sharing the
-  card must not turn either into a nullable mixture of both domains. Move any
-  extracted card mechanics with their existing torrent caller in this stage.
-- The Inspector takes its section list from its target, so a Library entry
-  offers Video information or Music information, and File. Other file kinds
-  open on File with the information item disabled, as the spec requires. Add
-  the actions slot for Open, Edit and More, which moves Open and Edit into More
-  in the Narrow state.
-- The information pages use General's Strip, heading and Field grid. Add one
-  wrapping value style for the synopsis.
-- The File page uses the same Field grid. One window-owned shell lookup supplies
-  Type of file, Opens with and the app icon to both the File page and Open's
-  tooltip. Resolve association information without opening or inspecting the
-  payload, and handle both desktop and packaged default apps; do not assume
-  every association is an executable path. Missing association information does
-  not prevent Open from asking Windows to handle the file.
-- Show in Torrents switches page, selects the torrent and opens its Inspector
-  on its last section, from the File page, the Library menu and the row context
-  menu.
-- Read only the visible selection and section through the existing context
-  checks, discarding replies after a target, section, session or page change.
-
-**Check:** in the combined capture review, inspect Torrents and Library with
-the card open, including both Library sections, a non-media file, a shared file
-and a failed Open. Confirm the existing torrent edits still use their original
-owners after the card is shared.
-
-### 6. Identification and video information
-
-**Result:** a person can turn video information on, identify a file, correct it
-and clear it.
-
-- The Identify dialog calls the C# Library owner directly. Edit opens the same
-  dialog, titled "Edit identification", with Save and Cancel. Clear
-  identification is in More.
-- Provider operations use cancellable C# asynchronous I/O, with one active
-  request and bounded pending work. Closing the dialog cancels its search;
-  closing the window cancels network work and preserves already committed
-  decisions. No provider operation crosses the engine pipe. The database worker
-  never waits for HTTP, and late replies cannot replace a newer explicit choice.
-- Automatic identification, Identify, Edit and Clear use Library's single
-  decision path from stage 1. Provider requests remain bounded, explicit work
-  goes before pending automatic work, and disabling enrichment invalidates
-  pending provider results. Reuse shared series information and fetch only
-  missing referenced records; a partially warm cache must not refetch them all.
-- Clear is a local saved decision. It remains available for an identified
-  entry when enrichment is off or provider access is unavailable.
-- "Turn on…" opens the consent dialog with the disclosure. The video
-  information setting also appears in Settings, disabled when the build has no
-  access token.
-- TMDB's attribution goes under Credits on the About page.
-- Use the same C# HTTP owner as the subtitle adapters, keeping TMDB request
-  parsing and identification decisions at their own owners. Verify and disclose
-  its actual route; no provider operation is delegated to C++.
-- Provider release requirements remain the [spec's gate](library.md#privacy-and-provider-release-requirements).
-  A token proves access only, not distribution or retention permission. Local
-  search can be completed and verified while that release gate is pending.
-- Finish the live English/Spanish review of the integrated page, card and
-  dialogs, including theme changes and retained navigation state. Text is added
-  with each surface in stage 3's workflow, using existing keys for shared facts
-  and commands.
-
-**Check:** with a build that has an access token, identify one movie and one
-episode, edit one, clear one, restart, and confirm that each decision stays.
-
-### 7. Measurement
-
-Measure every [measurement gate](library.md#measurement-gates) on the Release
-build with both collection sizes in the spec. Verify that closing the window
-releases SQLite and feature workers and leaves the engine at its baseline.
-A failed target is a defect in the work above, not a reason to add a loading state.
-
-## Tests that earn their place
-
-These are candidate checks, not a mandatory suite. Follow [testing](testing.md):
-use the cheapest production seam that exposes the failure, C# logic and SQLite
-before a pipe round trip. Add a test only when the compiler, an existing check or the
-focused stage evidence does not already guard it. No running window is needed
-to prove database or membership rules.
-
-| Failure the test watches | What the person would see |
-| --- | --- |
-| Video information without a current entry produces a result | A file no current data source reports appears in Library. |
-| Removal or a late enrichment write leaves contribution facts in `library.db` | Information about a removed torrent stays and is used again. |
-| Startup cleanup uses only finished files | An unfinished file loses its early identification and repeats provider work. |
-| A late automatic decision replaces a manual one | The person's correction disappears. |
-| A shared location goes or changes row identity when its first contributor is removed | A still-reported file disappears or loses selection. |
-| Text matches and rows come from different Library versions | Search displays an obsolete match or misses a newly matching file. |
-| Short or accented queries do not match | Typing "e" or "amelie" does not find "Amélie". |
-
-The prototype is presentation evidence only. Its browser sorting,
-hard-coded shell associations and incomplete translations do not override the
-spec or the existing native owners. Existing capture modes named Library still
-exercise Torrents; extend capture coverage deliberately and review the images.
+Implementation is delivered when the required operations are implemented and
+no concrete correctness finding remains open. Benchmark closure, exhaustive
+coverage and supplier distribution paperwork are not implementation gates.
+Keep release permissions and privacy publication in the
+[release assessment](subtitles-release.md).

@@ -3,6 +3,7 @@
 #include "Strings.h"
 #include <windows.h>
 #include <oleacc.h>
+#include <memory>
 #include <optional>
 
 namespace tt::desktop
@@ -12,12 +13,13 @@ namespace tt::desktop
 // they do not raise the window.
 bool UsesWindow(NoticeKind kind);
 
-// The notification-area icon: its tooltip, its menu and its balloon
-// notifications.
+// The notification-area icon: its tooltip, its menu and its notifications.
 class Tray
 {
 public:
-    Tray(HWND window, UINT callback, HWND broadcast, Strings const& strings, bool headless);
+    // `backgroundOff` is posted to `window` when the person turns off the
+    // background notice from the notice itself.
+    Tray(HWND window, UINT callback, UINT backgroundOff, HWND broadcast, Strings const& strings, bool headless);
     ~Tray();
     Tray(Tray const&) = delete;
     Tray& operator=(Tray const&) = delete;
@@ -43,13 +45,12 @@ private:
         unsigned count = 0;
         std::optional<Notice> failure;
         unsigned failureCount = 0;
-        std::optional<Notice> completion;
-        unsigned completionCount = 0;
-        bool added = false;
         ULONGLONG due = 0;
     };
+    class Toast;
     void Apply(DWORD action);
     void Flush();
+    void ShowBackground();
     void Balloon(std::wstring const& message, bool error);
     Row* Find(UINT id);
     Row& Fill(TrayItem item);
@@ -62,8 +63,10 @@ private:
     std::wstring PauseText() const;
     std::wstring Message(Notice const& notice, unsigned count) const;
     std::wstring Failures(Notice const& first, unsigned count) const;
+    std::wstring Detail(Notice const& notice) const;
     HWND window_;
     UINT callback_;
+    UINT backgroundOff_;
     HWND broadcast_;
     Strings const& strings_;
     bool headless_;
@@ -78,5 +81,6 @@ private:
     Row counts_;
     Batch batch_;
     std::optional<Notice> notice_;
+    std::unique_ptr<Toast> toast_;
 };
 }

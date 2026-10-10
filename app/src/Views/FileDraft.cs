@@ -5,7 +5,7 @@ using Syno.TinyTorrent.Services;
 
 namespace Syno.TinyTorrent.Views;
 
-public sealed class FileDraft : INotifyPropertyChanged
+public sealed class FileDraft : IDraft
 {
     private readonly MainViewModel _owner;
     private readonly PipeClient _client;
@@ -24,7 +24,7 @@ public sealed class FileDraft : INotifyPropertyChanged
     private DeletionMode _deletion;
     public FileAction Action { get; private set; }
     public bool IsPending => _submitting || IsMove && _reading;
-    public bool HasChanges =>
+    public bool HasDraft =>
         Action == FileAction.Move
         && !string.IsNullOrWhiteSpace(Destination)
         && (Destination != _originalDestination || IncludeShared || UseExisting);
@@ -50,9 +50,7 @@ public sealed class FileDraft : INotifyPropertyChanged
             ? _owner.Text.Get("commands", "move")
             : _owner.Text.Get("file_action", "delete_title");
     public bool IsDelete => !IsMove;
-    public string SubmitText =>
-        _owner.Text.Get("file_action",
-            IsMove ? "move" : _deletion == DeletionMode.Recycle ? "recycle" : "delete");
+    public string SubmitText => _owner.Text.Get("file_action", IsMove ? "move" : "delete");
     public string SubmitGlyph => IsMove ? Lucide.FolderInput : Lucide.Trash2;
     public string SubmitToolTip =>
         _owner.Text.Get("file_action",
@@ -108,8 +106,10 @@ public sealed class FileDraft : INotifyPropertyChanged
                 "delete_shared",
                 string.Join(", ", _shared.Select(torrent => torrent.Name))
             );
-    public string Message => _failure is null ? string.Empty : _owner.Text.Error(_failure);
-    public bool HasError => _failure is not null;
+    public string DestinationError => IsMove && _failure is { } failure && AddDraft.IsDestinationError(failure)
+        ? _owner.Text.Error(failure) : string.Empty;
+    public string Message => _failure is null || DestinationError.Length > 0 ? string.Empty : _owner.Text.Error(_failure);
+    public bool HasError => Message.Length > 0;
     public string Destination
     {
         get => _destination;
@@ -231,6 +231,9 @@ public sealed class FileDraft : INotifyPropertyChanged
                 IsMove && IncludeShared
                     ? _torrentIds.Concat(_shared.Select(torrent => torrent.TorrentId)).ToArray()
                     : _torrentIds;
+            var subtitles = _owner.Subtitles;
+            var subtitleDeletion = !IsMove && subtitles is not null
+                ? await subtitles.CaptureDeletion(torrentIds) : null;
             var outcome = IsMove
                 ? await _client.Send(
                     "move",
@@ -247,6 +250,8 @@ public sealed class FileDraft : INotifyPropertyChanged
                     deletion = _deletion == DeletionMode.Recycle ? "recycle" : "permanent",
                 });
             _owner.AnnounceAccepted("commands", IsMove ? "move" : "delete_files");
+            if (subtitleDeletion is not null && subtitles is not null)
+                await subtitles.Delete(subtitleDeletion, _deletion);
             if (!IsMove)
             {
                 var count = outcome.GetProperty("kept_files");

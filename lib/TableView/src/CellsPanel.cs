@@ -21,7 +21,7 @@ public sealed partial class CellsPanel : Panel
 
     private Table? _owner;
     private EffectiveLayout? _layout;
-    private bool _isHeaderPanel;
+    private bool _isHeader;
 
     public CellsPanel()
     {
@@ -33,7 +33,7 @@ public sealed partial class CellsPanel : Panel
     /// <summary>Claimed by <see cref="Header.Strip"/> before the panel is ever loaded.</summary>
     internal void AttachAsHeader(Table owner)
     {
-        _isHeaderPanel = true;
+        _isHeader = true;
         Attach(owner);
     }
 
@@ -128,7 +128,7 @@ public sealed partial class CellsPanel : Panel
 
     private void OnDataContextChanged(FrameworkElement sender, DataContextChangedEventArgs args)
     {
-        if (_isHeaderPanel || _layout is null)
+        if (_isHeader || _layout is null)
         {
             return;
         }
@@ -192,9 +192,9 @@ public sealed partial class CellsPanel : Panel
     /// Re-apply each header cell's sort indicator. Sorting changes no geometry, so nothing else
     /// republishes the header.
     /// </summary>
-    internal void RefreshHeaderCells()
+    internal void RefreshHeader()
     {
-        if (_isHeaderPanel)
+        if (_isHeader)
         {
             SyncChildren();
         }
@@ -239,7 +239,7 @@ public sealed partial class CellsPanel : Panel
     {
         Thickness padding = _owner?.CellPadding ?? default;
 
-        if (_isHeaderPanel)
+        if (_isHeader)
         {
             Header.Cell cell = new() { Padding = padding };
             cell.SetColumn(column);

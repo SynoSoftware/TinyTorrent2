@@ -1,5 +1,11 @@
 # Implementation decisions and evidence
 
+This file preserves implementation history and its evidence limits. Earlier
+navigation, presentation and next-step decisions are historical; the
+[active contracts](README.md) govern current work. The
+[Wire representation](#wire-representation) section remains the field record
+referenced by the protocol contract.
+
 ## Approved application navigation
 
 Four perspectives considered the remaining prototype navigation in sequence:
@@ -1293,12 +1299,18 @@ and theme (`system`, `light`, `dark`); unknown fields or values are refused. A
 settings acknowledgement confirms the same durable replacement as membership.
 Settings also accept `default_destination` (absolute path), `show_add` and
 `limit_mode` (`none`, `speed` or `alternative` for a manual choice, default
-`none`, or null to clear its temporary override while scheduling is enabled), and `download_limit`, `upload_limit`,
+`none`, or null to clear its temporary override while scheduling is enabled).
+The product's [mode selector](interface.md#main-window) commits
+`schedule_enabled: false` with a fixed `limit_mode`; Weekly schedule commits
+`schedule_enabled: true` with `limit_mode: null`. The nullable wire value does
+not make a fixed UI choice expire at the next schedule boundary.
+Settings also accept `download_limit`, `upload_limit`,
 `alternative_download_limit`, `alternative_upload_limit` (bytes per second,
 integer 0 through INT_MAX; 0 means unlimited). Alternative limits initially use
 10 KiB/s in each direction. Settings also accept `notify_problems` (default true),
 `notifications_enabled` (finished downloads, default false), `notify_added`
-(default false), `prevent_sleep` and `prevent_sleep_seeding` (booleans).
+(default false), `notify_background` (the notice when the window closes,
+default true), `prevent_sleep` and `prevent_sleep_seeding` (booleans).
 Settings also accept `encryption` (`preferred`, the default, `required`,
 `allowed` or `disabled`) and the proxy: `proxy_type` (`none`, the default,
 `socks5`, `socks4` or `http`), `proxy_host`, `proxy_port` (0 through 65,535),
@@ -1323,9 +1335,7 @@ its control moves to Advanced. These settings use the existing settings reply
 and snapshot object.
 Existing saved notification choices keep their value.
 Session pause is persisted as `all_paused` through
-its command and preserves individual torrent intent. The desktop host records
-`background_notice_shown` through its own engine call; the settings command
-refuses it.
+its command and preserves individual torrent intent.
 `registration` takes an `action` string: `observe`, `register_handlers`,
 `unregister_handlers`, `enable_startup`, `disable_startup`, `open_defaults`, or
 `open_startup`. Its data contains `handlers`, `handlers_target`, `startup`,
@@ -2077,6 +2087,6 @@ adversarial review was run during this final checkpoint.
 The prescribed Everything stray-folder check returned exit 0 and no paths after
 the smoke run; a separate traversal also found no stray output folders. All
 launched processes closed, and the final process check found no app or engine.
-Milestones 3–5 remain incomplete and uncommitted. Resume from
-[handover.md](handover.md), which records the pending closing/source-admission
-question, completion gates and the cheapest next evidence.
+This record ends at 2026-10-05. Later milestone work is committed; the
+[plan status](handover.md#plan-status) holds current milestone status and the
+remaining release evidence.
