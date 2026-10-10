@@ -9,6 +9,7 @@
      sample data in memory, and nothing reaches a network or the disk.
      Three Info compositions in the same Library shell, switchable with ?variant=A, B or C. -->
 <style>
+@font-face { font-family:Lucide; src:url('../lib/Lucide/src/Fonts/lucide.ttf') format('truetype'); }
 * { box-sizing:border-box; }
 :root { color-scheme:light; --page:#f3f3f3; --card:#fbfbfb; --ctl:#fdfdfd; --ctlBorder:#e5e5e5; --ctlLine:#868686; --text:#1a1a1a; --muted:#5f5f5f;
   --accent:#005fb8; --accentText:#003e92; --onAccent:#fff; --hover:rgb(0 0 0 / .037); --pressed:rgb(0 0 0 / .024); --sel:rgb(0 0 0 / .055);
@@ -21,7 +22,7 @@ body.dark { color-scheme:dark; --page:#273035; --card:#323b40; --ctl:#3c4448; --
 body { margin:0; background:#161616; color:var(--text); font:14px/20px 'Segoe UI Variable Text','Segoe UI',sans-serif; }
 body:not(.dark) { background:#d9d9d9; }
 button, input, select { font:inherit; color:inherit; }
-svg.i { width:16px; height:16px; flex:none; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+.i { display:inline-block; width:16px; height:16px; flex:none; font:16px/1 Lucide; text-align:center; }
 .muted { color:var(--muted); } .crit { color:var(--critical); } .caut { color:var(--caution); } .ok { color:var(--success); }
 .trim { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
 .sr { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
@@ -48,13 +49,13 @@ svg.i { width:16px; height:16px; flex:none; fill:none; stroke:currentColor; stro
 .tbar { height:48px; flex:none; display:flex; align-items:center; }
 .cap { width:46px; height:48px; flex:none; display:grid; place-items:center; border:0; background:transparent; border-radius:0; }
 .cap:hover { background:var(--hover); } .cap.close:hover { background:#c42b1c; color:#fff; }
-.cap svg { width:16px; height:16px; } .cap.win svg { width:12px; height:12px; stroke-width:1.4; }
+.cap .i { width:16px; height:16px; } .cap.win .i { width:12px; height:12px; font-size:12px; }
 .appicon { margin-left:8px; color:var(--accentText); perspective:48rem; }
 .appicon:hover, .appicon:focus-visible { background:transparent; }
 .appicon .icon-scene { position:relative; width:24px; height:24px; transform:rotateY(0deg); transform-style:preserve-3d; transition:transform 220ms cubic-bezier(.4,0,.2,1); }
 .appicon .icon-face { position:absolute; inset:0; display:grid; place-items:center; backface-visibility:hidden; }
 .appicon .icon-face.back { transform:rotateY(180deg); }
-.appicon img, .appicon svg { display:block; width:24px; height:24px; object-fit:contain; }
+.appicon img, .appicon .i { display:block; width:24px; height:24px; font-size:24px; object-fit:contain; }
 .appicon.library .icon-scene { transform:rotateY(180deg); }
 .appicon:not(.held):focus-visible .icon-scene { transform:rotateY(180deg); }
 .appicon.library:not(.held):focus-visible .icon-scene { transform:rotateY(0deg); }
@@ -77,7 +78,7 @@ svg.i { width:16px; height:16px; flex:none; fill:none; stroke:currentColor; stro
 .gbox input::placeholder { color:var(--muted); }
 .gbox .qi { width:32px; display:grid; place-items:center; color:var(--muted); flex:none; }
 .gbox .clear { width:28px; height:24px; border:0; padding:0; display:grid; place-items:center; background:transparent; border-radius:4px; flex:none; }
-.gbox .clear:hover { background:var(--hover); } .gbox .clear svg { width:12px; height:12px; }
+.gbox .clear:hover { background:var(--hover); } .gbox .clear .i { width:12px; height:12px; font-size:12px; }
 .vdiv { width:1px; height:16px; background:var(--line); margin:0 8px; flex:none; }
 .tb-end { display:flex; align-items:center; margin-left:auto; flex:none; }
 
@@ -87,10 +88,10 @@ svg.i { width:16px; height:16px; flex:none; fill:none; stroke:currentColor; stro
 .btn:hover:not(:disabled) { background:var(--card); } .btn:disabled { opacity:.45; }
 .btn.accent { background:var(--accent); border-color:var(--accent); color:var(--onAccent); } .btn.accent:hover:not(:disabled) { filter:brightness(1.08); background:var(--accent); }
 .btn.subtle { background:transparent; border:0; } .btn.subtle:hover:not(:disabled) { background:var(--hover); }
-.btn[data-fly=more] svg.i { width:20px; height:20px; }
+.btn[data-fly=more] .i { width:20px; height:20px; font-size:20px; }
 .btn.icon { width:32px; padding:0; justify-content:center; }
 .btn.on { background:var(--sel); }
-.btn .chev { width:12px; height:12px; color:var(--muted); }
+.btn .chev { width:12px; height:12px; font-size:12px; color:var(--muted); }
 select.combo, input.tx { height:32px; border-radius:4px; background:var(--ctl); border:1px solid var(--ctlBorder); border-bottom-color:var(--ctlLine); padding:0 8px; min-width:0; }
 input.tx:focus { outline:0; border-bottom:2px solid var(--accent); background:var(--card); }
 .seg { display:inline-flex; gap:2px; padding:2px; border-radius:6px; background:var(--sel); }
@@ -122,7 +123,7 @@ input.tx:focus { outline:0; border-bottom:2px solid var(--accent); background:va
 .tv th button { width:100%; height:32px; border:0; background:transparent; text-align:inherit; padding:0 12px; display:flex; align-items:center; gap:4px; color:inherit; justify-content:inherit; border-radius:0; }
 .tv th button:hover { background:var(--hover); color:var(--text); }
 .tv th.r { text-align:right; } .tv th.r button { justify-content:flex-end; }
-.tv th svg { width:12px; height:12px; }
+.tv th .i { width:12px; height:12px; font-size:12px; }
 .tv td { height:36px; padding:0 12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .tv td.r { text-align:right; font-variant-numeric:tabular-nums; }
 .tv tr.row { cursor:default; }
@@ -132,18 +133,18 @@ input.tx:focus { outline:0; border-bottom:2px solid var(--accent); background:va
 .tv tr.row.sel td:first-child::before { content:''; position:absolute; left:2px; top:10px; bottom:10px; width:3px; border-radius:2px; background:var(--accent); }
 .tv tr.row:focus-visible { outline:2px solid var(--text); outline-offset:-2px; border-radius:0; }
 .tv.stale td { color:var(--muted); }
-.fn { display:flex; align-items:center; gap:8px; min-width:0; } .fn svg { color:var(--muted); }
+.fn { display:flex; align-items:center; gap:8px; min-width:0; } .fn .i { color:var(--muted); }
 .fn span { overflow:hidden; text-overflow:ellipsis; }
 .two { display:flex; flex-direction:column; justify-content:center; line-height:18px; min-width:0; }
 .two small { color:var(--muted); font-size:12px; line-height:16px; overflow:hidden; text-overflow:ellipsis; }
 .two b { font-weight:400; overflow:hidden; text-overflow:ellipsis; }
-.stw { display:inline-flex; align-items:center; gap:6px; } .stw svg { width:14px; height:14px; }
+.stw { display:inline-flex; align-items:center; gap:6px; } .stw .i { width:14px; height:14px; font-size:14px; }
 .ph { position:absolute; inset:40px 0 0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; padding:24px; text-align:center; }
 .ph h3 { margin:0; font:600 20px/28px 'Segoe UI Variable Display','Segoe UI',sans-serif; }
 
 .note { display:flex; align-items:flex-start; gap:12px; padding:12px 16px; border-radius:4px; border:1px solid var(--line); background:var(--infoBg); }
 .note.warn { background:var(--cautBg); }
-.note > svg { margin-top:2px; } .note.warn > svg { color:var(--caution); }
+.note > .i { margin-top:2px; } .note.warn > .i { color:var(--caution); }
 .note .msg { flex:1; min-width:0; } .note .msg b { font-weight:600; margin-right:6px; }
 .note .act { display:flex; gap:8px; flex:none; align-self:center; }
 .cands { display:flex; flex-direction:column; gap:2px; margin:0; padding:0; list-style:none; }
@@ -163,7 +164,7 @@ input.tx:focus { outline:0; border-bottom:2px solid var(--accent); background:va
 .insp { margin:0 8px; display:flex; flex-direction:column; min-height:155px; overflow:hidden; flex:none; }
 .ih { display:grid; grid-template-columns:minmax(0,1fr) auto minmax(0,1fr) auto; column-gap:12px; align-items:center; padding:0 16px; min-height:48px; border-bottom:1px solid var(--line); flex:none; }
 .ih .hn { display:flex; align-items:center; gap:12px; min-width:0; }
-.ih .gi { width:20px; height:20px; color:var(--accentText); flex:none; }
+.ih .gi { width:20px; height:20px; font-size:20px; color:var(--accentText); flex:none; }
 .ih .gi.crit, .fn .crit { color:var(--critical); }
 .ih .name { font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
 .ih .det { color:var(--muted); white-space:nowrap; }
@@ -173,30 +174,30 @@ input.tx:focus { outline:0; border-bottom:2px solid var(--accent); background:va
 .ibs { flex:1; min-height:0; overflow:auto; container-type:inline-size; scrollbar-width:thin; }
 .ib > .infobar { position:absolute; left:16px; right:16px; bottom:12px; }
 .iempty { height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; color:var(--muted); text-align:center; }
-.iempty svg { width:32px; height:32px; opacity:.6; }
+.iempty .i { width:32px; height:32px; font-size:32px; opacity:.6; }
 .details { display:grid; grid-template-columns:minmax(0,3fr) minmax(0,2fr); column-gap:48px; }
 @container (width < 760px) { .details { grid-template-columns:minmax(0,1fr); column-gap:0; } }
 .fld { display:grid; grid-template-columns:16px 120px minmax(0,1fr); column-gap:8px; align-items:center; min-height:32px; }
-.fld > svg { color:var(--muted); }
+.fld > .i { color:var(--muted); }
 .fld .fl { color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .fld .fv { display:grid; grid-template-columns:minmax(0,auto) auto; column-gap:4px; justify-content:start; align-items:center; min-width:0; }
 .fld .v { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; user-select:text; }
 .fld .v .appic { width:16px; height:16px; vertical-align:-3px; margin-right:8px; }
 .fld .v.id { font:13px/20px 'Cascadia Mono',Consolas,monospace; color:var(--muted); }
 .fld .fl, .fld .v { padding-block:6px; }
-.fld.wrap { align-items:start; } .fld.wrap > svg { margin-top:8px; } .fld.wrap .v { white-space:normal; }
-.infobar.err { background:var(--critBg); box-shadow:none; } .infobar.err > svg { color:var(--critical); }
+.fld.wrap { align-items:start; } .fld.wrap > .i { margin-top:8px; } .fld.wrap .v { white-space:normal; }
+.infobar.err { background:var(--critBg); box-shadow:none; } .infobar.err > .i { color:var(--critical); }
 
 /* InfoBar over the bottom of the workspace, above the status bar, overlaying every page */
 .infobars { position:absolute; left:16px; right:16px; bottom:8px; display:flex; flex-direction:column; gap:8px; z-index:5; pointer-events:none; }
 .infobar { pointer-events:auto; display:flex; align-items:center; gap:12px; padding:10px 12px 10px 16px; border-radius:4px; border:1px solid var(--line); background:var(--cautBg); box-shadow:0 4px 12px rgb(0 0 0 / .14); }
-.infobar > svg { color:var(--caution); }
+.infobar > .i { color:var(--caution); }
 .infobar .msg { flex:1; min-width:0; } .infobar .msg b { font-weight:600; margin-right:8px; }
 
 /* status bar, after MainWindow.xaml: one line, status only, labels shorten to icons when narrow */
 .sb { flex:none; display:flex; align-items:center; min-height:20px; margin:8px 16px 12px; white-space:nowrap; overflow:hidden; font-size:12px; line-height:16px; }
 .sb .grp { display:flex; align-items:center; gap:20px; min-width:0; } .sb .grp + .grp { margin-left:auto; padding-left:24px; }
-.si { display:inline-flex; align-items:center; gap:6px; flex:none; } .si svg { width:14px; height:14px; }
+.si { display:inline-flex; align-items:center; gap:6px; flex:none; } .si .i { width:14px; height:14px; font-size:14px; }
 .si.icon .t { display:none; }
 
 /* flyouts, menus and dialogs */
@@ -216,7 +217,7 @@ input.tx:focus { outline:0; border-bottom:2px solid var(--accent); background:va
 .dlg { width:560px; max-width:100%; max-height:calc(100% - 32px); display:flex; flex-direction:column; background:var(--card); border:1px solid var(--stroke); border-radius:8px; box-shadow:0 16px 48px rgb(0 0 0 / .35); overflow:hidden; }
 .dlg .body { padding:24px; overflow:auto; display:flex; flex-direction:column; gap:12px; min-height:0; }
 .dlg h2 { margin:0; display:flex; gap:12px; align-items:center; font:600 20px/28px 'Segoe UI Variable Display','Segoe UI',sans-serif; }
-.dlg h2 svg { width:20px; height:20px; color:var(--accentText); }
+.dlg h2 .i { width:20px; height:20px; font-size:20px; color:var(--accentText); }
 .dlg p { margin:0; }
 .dlg .foot { display:flex; justify-content:flex-end; gap:8px; padding:24px; background:var(--page); border-top:1px solid var(--line); flex:none; }
 .dlg .foot .btn { min-width:120px; justify-content:center; }
@@ -253,7 +254,7 @@ input.tx:focus { outline:0; border-bottom:2px solid var(--accent); background:va
   .preview .genre-links .filter-link { white-space:nowrap }
   .preview .meta { margin-top:4px; color:var(--muted); min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
   .preview .meta span { white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
-  .preview .meta svg { width:20px; height:20px }
+  .preview .meta .i { width:20px; height:20px; font-size:20px }
   .rating-cell { font-variant-numeric:tabular-nums }
   .preview .rating-strip { display:flex; gap:32px; align-items:start; margin-bottom:12px }
   .preview .rating-stat { min-width:80px; font-variant-numeric:tabular-nums }
@@ -263,11 +264,11 @@ input.tx:focus { outline:0; border-bottom:2px solid var(--accent); background:va
   .preview .refresh { align-self:start; flex:none; margin-top:0 }
   .preview .story { margin:0; line-height:20px; user-select:text }
   .preview .caption { display:flex; gap:8px; align-items:center; font-size:14px; line-height:20px; font-weight:600; margin:0 0 12px }
-  .preview .caption svg { width:20px; height:20px }
+  .preview .caption .i { width:20px; height:20px; font-size:20px }
   .preview .fact { min-width:0 }
   .preview .fact .value { white-space:nowrap; text-overflow:ellipsis; overflow:hidden; user-select:text }
   .preview .status { display:flex; gap:12px; align-items:center; min-width:0 }
-  .preview .status > svg { width:24px; height:24px; color:var(--muted); flex:none }
+  .preview .status > .i { width:24px; height:24px; font-size:24px; color:var(--muted); flex:none }
   .preview .status .btn { margin-left:12px; flex:none }
   .preview .status span { white-space:nowrap; text-overflow:ellipsis; overflow:hidden }
   .preview .reading { display:flex; flex-direction:column; gap:16px; min-width:0 }
@@ -282,7 +283,7 @@ input.tx:focus { outline:0; border-bottom:2px solid var(--accent); background:va
   .preview .folder { font-family:'Segoe UI',sans-serif }
   .preview .state-note { color:var(--muted) }
   .preview .section-title { font-size:14px; line-height:20px }
-  .preview .headline > svg { width:20px; height:20px; color:var(--accent) }
+  .preview .headline > .i { width:20px; height:20px; font-size:20px; color:var(--accent) }
   @container (width < 1040px) {
     .preview .section-columns { grid-template-columns:minmax(0,1fr); gap:20px }
     .preview .cast-list { flex-direction:row; gap:12px; flex-wrap:wrap }
@@ -298,7 +299,7 @@ input.tx:focus { outline:0; border-bottom:2px solid var(--accent); background:va
 .variant-switcher button { width:32px; height:32px; display:grid; place-items:center; border:0; border-radius:50%; background:#262626; color:#fff; }
 .variant-switcher button:hover { background:#444; }
 .variant-switcher output { min-width:180px; text-align:center; white-space:nowrap; }
-.variant-switcher .next svg { transform:rotate(180deg); }
+.variant-switcher .next .i { transform:rotate(180deg); }
 
 .insp.narrow .hacts .primary { display:none }
 .hacts .primary { display:flex; gap:4px }
@@ -338,64 +339,21 @@ input.tx:focus { outline:0; border-bottom:2px solid var(--accent); background:va
 <script>
 const detailLayouts = {A:'Reading',B:'Inspector',C:'Sections'};
 const params = new URLSearchParams(location.search);
-let detailLayout = Object.hasOwn(detailLayouts,params.get('variant')) ? params.get('variant') : 'B';
+let detailLayout = Object.hasOwn(detailLayouts,params.get('variant')) ? params.get('variant') : 'C';
 let flipHeld = false;
 const ratingSources = {imdb:'IMDb',tmdb:'TMDB'};
-// Play, Pencil, Ellipsis and X outlines come from lib/Lucide/src/Fonts/lucide.ttf.
-// Their 24-unit em uses a baseline at 24; the app maps these glyphs in Lucide.cs.
-const P = {
-  star:'<path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9z"/>',
-  search:'<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>', x:'<path fill="currentColor" stroke="none" transform="translate(0 24)" d="M5.736,-18.96C5.448,-18.864 5.232,-18.688 5.088,-18.432 5.04,-18.336 5.016,-18.192 5.016,-18 5.016,-17.808 5.04,-17.664 5.088,-17.568 5.136,-17.472 6.064,-16.52 7.872,-14.712L10.584,-12 7.872,-9.288C6.064,-7.48 5.136,-6.528 5.088,-6.432 5.04,-6.336 5.016,-6.2 5.016,-6.024 5.016,-5.848 5.036,-5.712 5.076,-5.616 5.116,-5.52 5.192,-5.416 5.304,-5.304 5.416,-5.192 5.52,-5.116 5.616,-5.076 5.712,-5.036 5.848,-5.016 6.024,-5.016 6.2,-5.016 6.336,-5.04 6.432,-5.088 6.528,-5.136 7.48,-6.064 9.288,-7.872L12,-10.584 14.712,-7.872C16.52,-6.064 17.472,-5.136 17.568,-5.088 17.664,-5.04 17.8,-5.016 17.976,-5.016 18.152,-5.016 18.288,-5.036 18.384,-5.076 18.48,-5.116 18.584,-5.192 18.696,-5.304 18.808,-5.416 18.884,-5.52 18.924,-5.616 18.964,-5.712 18.984,-5.848 18.984,-6.024 18.984,-6.2 18.96,-6.336 18.912,-6.432 18.864,-6.528 17.936,-7.48 16.128,-9.288L13.416,-12 16.128,-14.712C17.936,-16.52 18.864,-17.472 18.912,-17.568 18.96,-17.664 18.984,-17.808 18.984,-18 18.984,-18.192 18.96,-18.336 18.912,-18.432 18.8,-18.624 18.64,-18.776 18.432,-18.888 18.368,-18.92 18.312,-18.944 18.264,-18.96 18.216,-18.976 18.128,-18.984 18,-18.984 17.872,-18.984 17.784,-18.976 17.736,-18.96 17.688,-18.944 17.624,-18.92 17.544,-18.888 17.432,-18.824 16.48,-17.896 14.688,-16.104L12,-13.416 7.152,-18.24C6.8,-18.576 6.56,-18.792 6.432,-18.888 6.336,-18.952 6.224,-18.984 6.096,-18.984L6.048,-18.984C5.888,-18.984,5.784,-18.976,5.736,-18.96z"/>',
-  back:'<path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>', chev:'<path d="m6 9 6 6 6-6"/>', check:'<path d="M20 6 9 17l-5-5"/>',
-  film:'<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 3v18M3 7.5h4M3 12h18M3 16.5h4M17 3v18M17 7.5h4M17 16.5h4"/>',
-  tv:'<rect width="20" height="15" x="2" y="7" rx="2"/><path d="m17 2-5 5-5-5"/>',
-  video:'<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="m10 11 5 3-5 3v-6Z"/>',
-  file:'<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/>',
-  text:'<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8M16 13H8M16 17H8"/>',
-  music:'<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>',
-  image:'<rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/>',
-  disc:'<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="2"/>',
-  open:'<path d="M21 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h6"/><path d="m21 3-9 9"/><path d="M15 3h6v6"/>',
-  identify:'<path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="12" r="3"/><path d="m16 16-1.9-1.9"/>',
-  pencil:'<path fill="currentColor" stroke="none" transform="translate(0 24)" d="M18.864,-22.968C18.16,-22.92 17.504,-22.672 16.896,-22.224 16.72,-22.112 14.36,-19.776 9.816,-15.216 5.272,-10.656 2.936,-8.296 2.808,-8.136 2.648,-7.912 2.516,-7.652 2.412,-7.356 2.308,-7.06 2.052,-6.224 1.644,-4.848 1.236,-3.472 1.024,-2.736 1.008,-2.64 0.992,-2.496 1.004,-2.34 1.044,-2.172 1.084,-2.004 1.136,-1.864 1.2,-1.752 1.264,-1.64 1.36,-1.524 1.488,-1.404 1.616,-1.284 1.736,-1.2 1.848,-1.152 1.96,-1.104 2.088,-1.064 2.232,-1.032 2.376,-1 2.508,-0.992 2.628,-1.008 2.748,-1.024 3.536,-1.248 4.992,-1.68L7.128,-2.352C7.432,-2.448,7.64,-2.52,7.752,-2.568L7.776,-2.592C7.936,-2.672 8.12,-2.8 8.328,-2.976 8.616,-3.248 9.232,-3.848 10.176,-4.776L15.192,-9.792C19.752,-14.352 22.096,-16.72 22.224,-16.896 22.432,-17.184 22.6,-17.48 22.728,-17.784 23,-18.472 23.068,-19.176 22.932,-19.896 22.796,-20.616 22.472,-21.248 21.96,-21.792 21.56,-22.208 21.096,-22.52 20.568,-22.728 20.04,-22.936 19.472,-23.016 18.864,-22.968z M19.584,-20.952C19.904,-20.888 20.196,-20.724 20.46,-20.46 20.724,-20.196 20.888,-19.904 20.952,-19.584 21.048,-19.152 21,-18.744 20.808,-18.36 20.76,-18.264 20.684,-18.16 20.58,-18.048 20.476,-17.936 20.232,-17.68 19.848,-17.28L18.984,-16.416 16.416,-18.984 17.28,-19.848C17.68,-20.232 17.936,-20.476 18.048,-20.58 18.16,-20.684 18.264,-20.76 18.36,-20.808 18.744,-21 19.152,-21.048 19.584,-20.952z M12.312,-9.744C8.792,-6.224 6.996,-4.444 6.924,-4.404 6.852,-4.364 6.232,-4.164 5.064,-3.804 3.896,-3.444 3.304,-3.268 3.288,-3.276 3.272,-3.284 3.44,-3.872 3.792,-5.04 4.144,-6.208 4.336,-6.82 4.368,-6.876 4.4,-6.932 6.184,-8.736 9.72,-12.288L15.024,-17.592 17.568,-15.024z"/>',
-  eraser:'<path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/>',
-  funnel:'<path d="M10 20a1 1 0 0 0 .553.895l2 1A1 1 0 0 0 14 21v-7a2 2 0 0 1 .517-1.341L21.74 4.67A1 1 0 0 0 21 3H3a1 1 0 0 0-.742 1.67l7.225 7.989A2 2 0 0 1 10 14z"/>',
-  funnelX:'<path d="M12.531 3H3a1 1 0 0 0-.742 1.67l7.225 7.989A2 2 0 0 1 10 14v6a1 1 0 0 0 .553.895l2 1A1 1 0 0 0 14 21v-7a2 2 0 0 1 .517-1.341l.427-.473"/><path d="m16.5 3.5 5 5"/><path d="m21.5 3.5-5 5"/>',
-  done:'<circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>', down:'<path d="M12 5v14"/><path d="m19 12-7 7-7-7"/>', up:'<path d="m5 12 7-7 7 7"/><path d="M12 19V5"/>',
-  pause:'<rect x="14" y="4" width="4" height="16" rx="1"/><rect x="6" y="4" width="4" height="16" rx="1"/>',
-  missing:'<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="m14.5 12.5-5 5"/><path d="m9.5 12.5 5 5"/>',
-  unplug:'<path d="m19 5 3-3"/><path d="m2 22 3-3"/><path d="M6.3 20.3a2.4 2.4 0 0 0 3.4 0L12 18l-6-6-2.3 2.3a2.4 2.4 0 0 0 0 3.4Z"/><path d="M7.5 13.5 10 11"/><path d="M10.5 16.5 13 14"/><path d="m12 6 6 6 2.3-2.3a2.4 2.4 0 0 0 0-3.4l-2.6-2.6a2.4 2.4 0 0 0-3.4 0Z"/>',
-  alert:'<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
-  info:'<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>',
-  retry:'<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>',
-  library:'<path d="m16 6 4 14"/><path d="M12 6v14"/><path d="M8 8v12"/><path d="M4 4v16"/>',
-  torrents:'<path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/>',
-  fileplus:'<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M9 15h6M12 18v-6"/>',
-  link:'<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
-  moon:'<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>', sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2m-7.07-14.93 1.41 1.41m11.32 11.32 1.41 1.41M2 12h2m16 0h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>',
-  more:'<path fill="currentColor" stroke="none" transform="translate(0 24)" d="M4.752,-13.968C4.448,-13.952 4.16,-13.848 3.888,-13.656 3.504,-13.4 3.244,-13.06 3.108,-12.636 2.972,-12.212 2.976,-11.788 3.12,-11.364 3.264,-10.94 3.528,-10.592 3.912,-10.32 4.216,-10.112 4.576,-10.008 4.992,-10.008 5.28,-10.008 5.532,-10.052 5.748,-10.14 5.964,-10.228 6.18,-10.38 6.396,-10.596 6.612,-10.812 6.764,-11.028 6.852,-11.244 6.94,-11.46 6.984,-11.712 6.984,-12 6.984,-12.288 6.94,-12.54 6.852,-12.756 6.764,-12.972 6.616,-13.184 6.408,-13.392 6.232,-13.568 6.064,-13.696 5.904,-13.776 5.552,-13.952 5.168,-14.016 4.752,-13.968z M11.784,-13.968C11.544,-13.952 11.328,-13.896 11.136,-13.8 10.864,-13.672 10.636,-13.492 10.452,-13.26 10.268,-13.028 10.136,-12.776 10.056,-12.504 10.024,-12.376 10.008,-12.208 10.008,-12 10.008,-11.792 10.024,-11.624 10.056,-11.496 10.152,-11.144 10.328,-10.84 10.584,-10.584 10.84,-10.328 11.144,-10.152 11.496,-10.056 11.624,-10.024 11.792,-10.008 12,-10.008 12.208,-10.008 12.376,-10.024 12.504,-10.056 12.856,-10.152 13.16,-10.328 13.416,-10.584 13.672,-10.84 13.848,-11.144 13.944,-11.496 13.976,-11.624 13.992,-11.792 13.992,-12 13.992,-12.208 13.976,-12.376 13.944,-12.504 13.864,-12.776 13.732,-13.028 13.548,-13.26 13.364,-13.492 13.136,-13.672 12.864,-13.8 12.56,-13.96 12.2,-14.016 11.784,-13.968z M18.768,-13.968C18.32,-13.936 17.92,-13.744 17.568,-13.392 17.376,-13.184 17.236,-12.972 17.148,-12.756 17.06,-12.54 17.016,-12.288 17.016,-12 17.016,-11.712 17.06,-11.456 17.148,-11.232 17.236,-11.008 17.388,-10.792 17.604,-10.584 17.82,-10.376 18.036,-10.228 18.252,-10.14 18.468,-10.052 18.72,-10.008 19.008,-10.008 19.424,-10.008 19.784,-10.112 20.088,-10.32 20.472,-10.592 20.736,-10.94 20.88,-11.364 21.024,-11.788 21.028,-12.212 20.892,-12.636 20.756,-13.06 20.492,-13.404 20.1,-13.668 19.708,-13.932 19.264,-14.032 18.768,-13.968z"/>',
-  copy:'<rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
-  folder:'<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
-  hdd:'<path d="M22 12H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/><path d="M6 16h.01M10 16h.01"/>',
-  files:'<path d="M20 7h-3a2 2 0 0 1-2-2V2"/><path d="M9 18a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h7l4 4v10a2 2 0 0 1-2 2Z"/><path d="M3 7.6v12.8A1.6 1.6 0 0 0 4.6 22h9.8"/>',
-  network:'<rect x="16" y="16" width="6" height="6" rx="1"/><rect x="2" y="16" width="6" height="6" rx="1"/><rect x="9" y="2" width="6" height="6" rx="1"/><path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3"/><path d="M12 12V8"/>',
-  cloudoff:'<path d="m2 2 20 20"/><path d="M5.782 5.782A7 7 0 0 0 9 19h8.5a4.5 4.5 0 0 0 1.307-.193"/><path d="M21.532 16.5A4.5 4.5 0 0 0 17.5 10h-1.79A7.008 7.008 0 0 0 10 5.07"/>',
-  users:'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>',
-  tag:'<path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5"/>',
-  cal:'<rect width="18" height="18" x="3" y="4" rx="2"/><path d="M8 2v4M16 2v4M3 10h18"/>',
-  play:'<path fill="currentColor" stroke="none" transform="translate(0 24)" d="M6.432,-21.936C5.824,-21.824 5.3,-21.544 4.86,-21.096 4.42,-20.648 4.152,-20.128 4.056,-19.536 4.024,-19.36 4.008,-16.848 4.008,-12 4.008,-7.152 4.024,-4.64 4.056,-4.464 4.152,-3.872 4.424,-3.352 4.872,-2.904 5.48,-2.28 6.232,-1.984 7.128,-2.016 7.352,-2.032 7.548,-2.06 7.716,-2.1 7.884,-2.14 8.064,-2.2 8.256,-2.28 8.4,-2.344 10.452,-3.532 14.412,-5.844 18.372,-8.156 20.448,-9.376 20.64,-9.504 20.912,-9.68 21.152,-9.9 21.36,-10.164 21.568,-10.428 21.724,-10.716 21.828,-11.028 21.932,-11.34 21.984,-11.664 21.984,-12 21.984,-12.336 21.936,-12.664 21.84,-12.984 21.616,-13.592 21.24,-14.08 20.712,-14.448 20.584,-14.544 18.528,-15.752 14.544,-18.072 10.56,-20.392 8.496,-21.592 8.352,-21.672 8.064,-21.816 7.748,-21.912 7.404,-21.96 7.06,-22.008 6.736,-22 6.432,-21.936z M7.392,-19.896C7.536,-19.848 9.612,-18.652 13.62,-16.308 17.628,-13.964 19.66,-12.764 19.716,-12.708 19.772,-12.652 19.832,-12.56 19.896,-12.432 19.928,-12.352 19.952,-12.284 19.968,-12.228 19.984,-12.172 19.992,-12.096 19.992,-12 19.992,-11.904 19.984,-11.828 19.968,-11.772 19.952,-11.716 19.928,-11.648 19.896,-11.568 19.832,-11.44 19.768,-11.344 19.704,-11.28 19.64,-11.216 17.572,-10 13.5,-7.632 9.428,-5.264 7.332,-4.064 7.212,-4.032 7.092,-4 6.976,-3.992 6.864,-4.008 6.496,-4.088 6.24,-4.28 6.096,-4.584L6.024,-4.752 6.024,-19.248 6.096,-19.416C6.208,-19.656 6.392,-19.824 6.648,-19.92 6.904,-20.016 7.152,-20.008 7.392,-19.896z"/>', settings:'<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/>',
-  verify:'<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>', listx:'<path d="M11 12H3"/><path d="M16 6H3"/><path d="M16 18H3"/><path d="m19 10-4 4"/><path d="m15 10 4 4"/>',
-  trash:'<path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
-  clock:'<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
-  folderOpen:'<path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/>',
-  alignLeft:'<path d="M15 12H3"/><path d="M17 18H3"/><path d="M21 6H3"/>',
-  languages:'<path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/>',
-  dot:'<circle cx="12" cy="12" r="4" fill="currentColor"/>',
-  list:'<path d="M3 12h.01M3 18h.01M3 6h.01M8 12h13M8 18h13M8 6h13"/>',
-  pointer:'<path d="M5 3a2 2 0 0 0-2 2M19 3a2 2 0 0 1 2 2M5 21a2 2 0 0 1-2-2M9 3h1M9 21h2M14 3h1M3 9v1M21 9v2M3 14v1"/><path d="m12 12 4 10 1.7-5.3L23 15z"/>',
-  min:'<path d="M4 12h16"/>', max:'<rect x="5" y="5" width="14" height="14" rx="1"/>'
+// Glyph values follow lib/Lucide/src/Lucide.cs.
+const glyphs = {
+  star:'\uE17A', search:'\uE155', back:'\uE04C', chev:'\uE071', check:'\uE070',
+  film:'\uE0D4', tv:'\uE195', video:'\uE32D', file:'\uE0C4', text:'\uE0D0', music:'\uE126', image:'\uE0FA', disc:'\uE0B3',
+  open:'\uE0BD', identify:'\uE53C', pencil:'\uE1F9', eraser:'\uE28F', funnel:'\uE0E0', funnelX:'\uE3B9',
+  done:'\uE226', down:'\uE046', up:'\uE04E', pause:'\uE132', missing:'\uE0D1', unplug:'\uE462', alert:'\uE193', info:'\uE0FF',
+  retry:'\uE149', library:'\uE106', torrents:'\uE0B6', fileplus:'\uE0CD', link:'\uE108', moon:'\uE122', sun:'\uE17C', more:'\uE0BA', x:'\uE1B2',
+  copy:'\uE0A2', folder:'\uE0DB', hdd:'\uE0F1', files:'\uE0D3', network:'\uE129', cloudoff:'\uE091', users:'\uE1A4', tag:'\uE183', cal:'\uE067',
+  play:'\uE140', locate:'\uE1DB', settings:'\uE158', verify:'\uE14D', listx:'\uE240', trash:'\uE18E', clock:'\uE08B', folderOpen:'\uE247',
+  alignLeft:'\uE041', languages:'\uE104', dot:'\uE454', list:'\uE10C', pointer:'\uE50E', min:'\uE120', max:'\uE16B'
 };
-const ic = (n, cls='') => `<svg class="i ${cls}" viewBox="0 0 24 24" aria-hidden="true">${P[n] || P.file}</svg>`;
+const ic = (n, cls='') => `<span class="i ${cls}" aria-hidden="true">${glyphs[n] || glyphs.file}</span>`;
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const norm = s => String(s ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 
@@ -855,7 +813,7 @@ function sections(m) {
 function filePage(e) {
   const app = openApp(e);
   const folder = `<button class="btn icon subtle" data-act="open-folder" title="${T('openFolder')}" aria-label="${T('openFolder')}">${ic('folderOpen')}</button>`;
-  const torrent = `<button class="btn icon subtle" data-act="show-torrent" ${hasOrigin(e) ? '' : 'disabled'} title="${T('showT')}" aria-label="${T('showT')}">${ic('torrents')}</button>`;
+  const torrent = `<button class="btn icon subtle" data-act="show-torrent" ${hasOrigin(e) ? '' : 'disabled'} title="${T('showT')}" aria-label="${T('showT')}">${ic('locate')}</button>`;
   return `<div class="preview inspector"><div class="headline">${ic('info')}<h2 class="section-title">${label('properties')}</h2></div><div class="details">
     <div>${detailField('file','name',e.file)}${detailField('folder','folder',e.dir,folder)}${detailField('torrents','torrent',e.torrent,torrent)}</div>
     <div>${detailField('hdd','size',fmtSize(e.size))}${detailField(typeIcon(e),'type',typeName(e))}${field('open',label('opens'),app ? app[0] : T('noApp'),'','',app ? app[0] : T('noApp'),app ? appIcon(app) : '')}${detailField('cal','created',fmtStamp(e.created))}${detailField('clock','modified',fmtStamp(e.mod))}</div></div></div>`;
@@ -877,8 +835,7 @@ function detailsCard() {
   /* Icon buttons with tooltips, like the Inspector's Close, so the row still fits beside the centred sections at 800px. */
   const dis = canWrite() ? '' : 'disabled';
   const acts = e ? `<span class="hacts"><span class="primary"><button class="btn icon subtle" data-act="open" data-fid="open" ${dis} aria-label="${T('open')}" title="${openApp(e) ? `${T('open')} with ${openApp(e)[0]}` : T('open')}">${ic('play')}</button>
-    ${info(e) ? `<button class="btn icon subtle" data-act="correct" ${dis} aria-label="${T('edit')}" title="${T('edit')} · Change which movie or episode this file is">${ic('pencil')}</button>` : ''}
-    <button class="btn icon subtle" data-act="show-torrent" ${hasOrigin(e) ? '' : 'disabled'} aria-label="${T('showT')}" title="${T('showT')}">${ic('torrents')}</button></span>${moreBtn(e)}</span>` : '<span></span>';
+    <button class="btn icon subtle" data-act="show-torrent" ${hasOrigin(e) ? '' : 'disabled'} aria-label="${T('showT')}" title="${T('showT')}">${ic('locate')}</button></span>${moreBtn(e)}</span>` : '<span></span>';
   const body = e ? (page === 'file' ? filePage(e) : ({A:summary,B:inspector,C:sections})[detailLayout](media(e)))
     : `<div class="iempty">${ic('pointer')}<span>No file selected</span></div>`;
   const fail = e && e.fail ? `<div class="infobar err" role="status">${ic('alert')}<div class="msg" title="${esc(FAIL[e.fail.kind][1](e))}"><b>${FAIL[e.fail.kind][0]}</b><span class="muted">${e.fail.at}</span></div>
@@ -1063,7 +1020,7 @@ function entryCommands(mi) {
   return mi('open', T('open'), 'open', '', none || !canWrite()) + mi('open-folder', T('openFolder'), 'folder', '', none) + mi('properties', T('properties'), 'info', 'Enter / Alt+Enter', none) + '<hr>'
     + (video ? (info(e) ? mi('correct', T('edit'), 'pencil', '', !canWrite()) + mi('clear-id', T('clearId'), 'eraser', '', !canWrite())
       : mi(S.enrichment ? 'identify' : 'enable', S.enrichment ? T('identify') : T('turnOn'), 'identify', '', !canWrite())) + '<hr>'
-      : mi('identify', T('identify'), 'identify', '', true) + '<hr>') + mi('show-torrent', T('showT'), 'torrents', '', !hasOrigin(e));
+      : mi('identify', T('identify'), 'identify', '', true) + '<hr>') + mi('show-torrent', T('showT'), 'locate', '', !hasOrigin(e));
 }
 function menuItems(kind, mi = menuMi) {
   let html = '';
@@ -1085,8 +1042,8 @@ function flyoutBody(fl, mi) {
   }
   if (fl.kind === 'more') { const e = sel(), narrow = win.querySelector('.ibs')?.clientWidth < 760;
     html = (narrow ? mi('open',T('open'),'play','',!canWrite()) : '')
-      + (e && isVideo(e) && (narrow || !info(e)) ? mi(info(e) ? 'correct' : 'identify',T(info(e) ? 'edit' : 'identify'),'pencil','',!canWrite()) : '')
-      + (narrow ? mi('show-torrent',T('showT'),'torrents','',!hasOrigin(e)) : '')
+      + (e && isVideo(e) ? mi(info(e) ? 'correct' : 'identify',T(info(e) ? 'edit' : 'identify'),'pencil','',!canWrite()) : '')
+      + (narrow ? mi('show-torrent',T('showT'),'locate','',!hasOrigin(e)) : '')
       + mi('open-folder',T('openFolder'),'folderOpen') + mi('clear-id', T('clearId'), 'eraser', '', !e || !info(e) || !canWrite()); }
   if (fl.kind === 'rowmenu') html = entryCommands(mi);
   return html;
