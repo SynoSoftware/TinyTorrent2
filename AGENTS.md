@@ -80,6 +80,13 @@ do not define this product.
 - State assumptions and verifiable success criteria before implementing. Resolve
   material ambiguity before dependent changes.
 - Inspect the existing owner, data flow, and adjacent patterns before editing.
+- **Owner ruling: do not compile or run tests unless asked by the owner.** A
+  task that explicitly requires checking the app, such as reviewing screenshots,
+  authorizes only the build, launch and checks needed for that review. An
+  ordinary implementation or fix request does not authorize builds or tests,
+  so the owner controls when validation uses the machine. Otherwise review the
+  source and report validation gaps. This ruling overrides validation
+  instructions elsewhere.
 - Do not report or change line endings on disk. Files there mix CRLF and LF
   because Windows editors and tools write CRLF, and `.gitattributes` converts
   every text file to LF on commit, so the mix never reaches a diff or history.
@@ -89,14 +96,14 @@ do not define this product.
   rebuild anything in `3rdParty/`. The owner compiles the dependencies once,
   because building them again takes over an hour of the owner's machine. When
   a build reports that `3rdParty/` is incomplete, stop and report it.
-- Build affected native targets when compilation evidence is needed. Make all
+- For authorized compilation, build affected targets. Make all
   the edits first and build once, because each build holds the owner's
-  machine. Launch applications and desktop test hosts only when explicitly
-  requested; the off-screen [capture review](app/AGENTS.md#capture-review) is
-  the one exception. Close what you launched and report what was verified and
-  any material gaps.
-- Build Debug x64. Build Release only when the result depends on the
-  optimised build: a timing or performance measurement, `engine/tests/Checks.ps1`,
+  machine. Launch applications and desktop test hosts only when requested or
+  needed for an authorized app review. Close what you launched and report
+  what was verified and any material gaps.
+- For authorized builds, use Debug x64. Build Release only when the result
+  depends on the optimised build: a timing or performance measurement,
+  `engine/tests/Checks.ps1`,
   which runs the Release engine, a release candidate, or an owner request.
   Debug and Release are the only configurations. Release adds whole-program
   optimisation to every link and leaves a second set of executables, so an

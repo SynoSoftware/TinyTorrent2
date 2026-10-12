@@ -16,8 +16,8 @@ follows [testing](../docs/testing.md).
 
 Reference [TableView.csproj](../lib/TableView/src/TableView.csproj). Keep torrent
 commands, persistence, and product settings in their product owners; the
-library owns generic table mechanics. Build affected WinUI projects with Visual
-Studio MSBuild.
+library owns generic table mechanics. For authorized builds, use Visual Studio
+MSBuild for affected WinUI projects.
 
 ## Dialogs
 
@@ -54,13 +54,12 @@ follow the [button rulings](../docs/interface.md#buttons).
 A capture review is a diagnostic build that drives the app off-screen through
 scripted journeys. It saves screenshots and control bounds in English and
 Spanish, Light and Dark, at several window sizes. It does not take over the
-desktop, so you may run one without a request when the change earns it.
+desktop. The [root owner ruling](../AGENTS.md#working-rules) governs whether a
+review may run.
 
 It has found text and controls clipped or pushed out of view at narrow sizes or
-in Spanish, input and drafts lost, and crashes while the window closes. Run one when
-your change could cause such a defect in an area a mode covers. A change that
-leaves layout, dialogs, input handling and window lifetime alone does not earn
-one.
+in Spanish, input and drafts lost, and crashes while the window closes. For an
+authorized app review, choose a mode covering the requested checks.
 
 Each review costs a separate build and a run, and both hold the owner's
 machine. Finish the edits first, choose the narrowest mode that covers the

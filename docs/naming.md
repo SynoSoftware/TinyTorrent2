@@ -44,9 +44,8 @@ its outcome rather than name a domain concept.
   always reads the name with that context, so the repeated word only hides the distinction the name
   should carry. Write `Tmdb.Provider`, not `TmdbProvider`; `Episode.Number`, not `EpisodeNumber`;
   and `query` inside `Search(string query)`, not `searchQuery`. A member may still name the part of
-  its scope that it holds, as `KeyValuePair.Key` does and as `_website` does inside `WebsiteDialog`;
-  the rule rejects a word that only qualifies what the scope already says, such as
-  `Schedule.ScheduleMessage`. Keys are the one exception, below.
+  its scope that it holds, as `KeyValuePair.Key` does; the rule rejects a word that only qualifies
+  what the scope already says, such as `Schedule.ScheduleMessage`. Keys are the one exception, below.
 - A name says only what its namespace, enclosing type, member type, relationships, and invariants do
   not already say. A local may rely heavily on nearby context; a widely used type or public contract
   may need more of its distinction in the name, but never by repeating its scope.
@@ -66,8 +65,9 @@ its outcome rather than name a domain concept.
   nor an `int` like a collection: `string torrent` claims a torrent but holds only a hash, and
   nothing checks the claim.
 - Keys name the concept they identify, even on their own owner: `TorrentId`, never a bare `Id`, and
-  `Website.WebsiteId`, not `Website.Id`. A key's value is a bare number, string or GUID that callers
-  compare, store and pass apart from its owner, where a bare `Id` no longer says what it identifies.
+  `ProviderOption.ProviderId`, not `ProviderOption.Id`. A key's value is a bare number, string or
+  GUID that callers compare, store and pass apart from its owner, where a bare `Id` no longer says
+  what it identifies.
   A command or snapshot can also carry several identities, such as torrent identity and
   engine-session identity. This is the one exception to the scope rule above.
 - Use the grammar of the code: types and state are nouns, actions are verbs, booleans are affirmative

@@ -180,7 +180,9 @@ public:
         bool checksUpdates = true;
         bool scheduleEnabled = false;
         std::vector<Period> schedule;
-        bool showsAdd = true;
+        bool showsTorrentDialog = true;
+        bool showsMagnetDialog = true;
+        bool confirmsDelete = true;
         bool showsSplash = true;
         bool startsInTray = false;
         bool allPaused = false;
@@ -306,8 +308,7 @@ public:
     };
     std::map<std::string, WatchedFile, PathLess> watchedFiles;
     std::chrono::steady_clock::time_point watchAt{};
-    bool scanningWatch = false;
-    bool addingWatch = false;
+    WatchPhase watchPhase = WatchPhase::Idle;
     bool watchFailed = false;
     std::vector<std::string> queueOrder;
     bool queuePending = false;
@@ -319,8 +320,7 @@ public:
     std::map<std::string, Addition> additions;
     std::vector<std::shared_ptr<Preview>> parsing;
     Startup startup = Startup::Settings;
-    bool shuttingDown = false;
-    ShutdownPhase shutdownPhase = ShutdownPhase::Draining;
+    ShutdownPhase shutdownPhase = ShutdownPhase::Idle;
     std::vector<lt::torrent_handle> pausing;
     // When the current shutdown phase started to wait.
     std::optional<std::chrono::steady_clock::time_point> phaseStarted;
@@ -373,7 +373,7 @@ public:
     {
         std::vector<std::string> ids;
         std::string destination;
-        bool usesExisting = false;
+        bool recovering = false;
         std::size_t current = 0;
         std::vector<std::filesystem::path> holds;
         std::vector<std::filesystem::path> moved;
@@ -551,7 +551,7 @@ public:
     bool NamesReady();
     Outcome FilesReady(std::vector<std::string> const& ids);
     void StartMove(std::vector<std::string> const& ids, std::string const& destination,
-        bool useExisting, std::function<void(Outcome)> accepted);
+        std::function<void(Outcome)> accepted);
     void ContinueMove();
     void FinishMove(lt::torrent_handle const& handle, std::optional<Problem> problem);
     void RecoverMove();
@@ -637,6 +637,7 @@ public:
     void On(lt::piece_availability_alert const& alert);
     void On(lt::piece_info_alert const& alert);
 
+    bool IsShuttingDown() const { return shutdownPhase != ShutdownPhase::Idle; }
     void Shutdown(std::function<void(std::optional<std::string> failure)> completion);
     void ContinueShutdown();
     void Finish();

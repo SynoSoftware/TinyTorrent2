@@ -22,18 +22,18 @@ public sealed class AddDraft : IDraft
     private bool _queueTop;
     private bool _sequential;
     private bool _firstLast;
-    private bool _neverShow;
     private Exception? _failure;
     private CancellationTokenSource? _polling;
     private Task _poller = Task.CompletedTask;
     private Task _pass = Task.CompletedTask;
     private readonly FileSelection _emptyFiles;
-    private bool _preparing;
+    private AdditionPhase _phase;
+
     // A submit holds the dialog open; preparing a source does not, because
     // AcceptMagnet releases a preview whose dialog has closed. Closing the
     // window waits for both.
-    public bool IsPending { get; private set; }
-    internal bool IsBusy => _preparing || IsPending;
+    public bool IsPending => _phase == AdditionPhase.Submitting;
+    internal bool IsBusy => _phase != AdditionPhase.Idle;
     public ObservableCollection<AddSource> Sources { get; } = [];
     public bool HasSources => Sources.Count > 0;
     public FileSelection Files => Sources.Count == 1 ? Sources[0].Files : _emptyFiles;
@@ -107,15 +107,7 @@ public sealed class AddDraft : IDraft
             Refresh();
         }
     }
-    public bool NeverShow
-    {
-        get => _neverShow;
-        set
-        {
-            _neverShow = value;
-            Refresh();
-        }
-    }
+    public DialogPreference Confirmation { get; }
     public bool HasFiles =>
         Sources.Count == 1 && Sources[0].MetadataReady && !Sources[0].IsDuplicate;
     public bool GettingMetadata =>
@@ -179,6 +171,7 @@ public sealed class AddDraft : IDraft
     private IEnumerable<Exception> Failures =>
         Sources.Select(source => source.Failure).Prepend(_failure).OfType<Exception>();
     internal Exception? Failure => Failures.FirstOrDefault();
+
     internal void Report(Exception error)
     {
         _failure = error;
@@ -194,28 +187,33 @@ public sealed class AddDraft : IDraft
             ? _strings.Error(failure)
             : string.Empty;
     public string Message =>
-        !_owner.IsConnected ? _owner.Message
-        : Failures.FirstOrDefault(error => !IsDestinationError(error)) is { } failure
-            ? _strings.Error(failure)
-        : HasFiles && !Files.HasWanted ? _strings.Get("add", "no_files")
-        : string.Empty;
+        !_owner.IsConnected && _owner.CurrentStatus is { } status
+            ? status.Body.Length == 0
+                ? status.Title
+                : _strings.Format("errors", "detail", status.Title, status.Body)
+            : Failures.FirstOrDefault(error => !IsDestinationError(error)) is { } failure
+                ? _strings.Error(failure)
+                : HasFiles && !Files.HasWanted
+                    ? _strings.Get("add", "no_files")
+                    : string.Empty;
     public bool HasError => Message.Length > 0;
     public InfoBarSeverity Severity => InfoBarSeverity.Error;
     private bool CanSave => _owner.CanSave && !IsBusy;
     public bool CanEdit => CanSave && !_owner.IsClosing;
-    public bool CanSubmit =>
-        CanEdit
-        && !HasMagnetError
-        && (Sources.Count > 0 || !string.IsNullOrWhiteSpace(Magnet))
+    public bool CanSubmit => CanEdit && IsValid;
+    private bool IsValid =>
+        !HasMagnetError
+        && HasDraft
         && !string.IsNullOrWhiteSpace(_destination)
         && Sources.All(source =>
             source.PreviewId is not null || source.Failure is not null || source.Uncertain
         )
-        && Sources.All(source => !source.MetadataReady || source.SharedDestination == _destination)
         && Sources.All(source =>
-            !source.MetadataReady || source.IsDuplicate || source.Files.HasWanted
+            source.PreviewId is null
+            || !source.MetadataReady
+            || source.SharedDestination == _destination
         )
-        && (!HasFiles || Files.HasWanted);
+        && !Sources.Any(source => source.NeedsFiles);
     public bool HasDraft => Sources.Count > 0 || !string.IsNullOrWhiteSpace(Magnet);
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -224,6 +222,7 @@ public sealed class AddDraft : IDraft
         _owner = owner;
         _client = client;
         _strings = strings;
+        Confirmation = new(owner.Settings);
         _destination = _defaultDestination = Windows.Storage.UserDataPaths.GetDefault().Downloads;
         _emptyFiles = new FileSelection(strings);
     }
@@ -257,7 +256,7 @@ public sealed class AddDraft : IDraft
         var value = input.Trim();
         if (value.Length == 0)
             return true;
-        _preparing = true;
+        _phase = AdditionPhase.Preparing;
         _magnetFailure = null;
         Refresh();
         try
@@ -267,6 +266,7 @@ public sealed class AddDraft : IDraft
                 || address.Scheme != "magnet"
             )
                 throw new CommandException("invalid_source", null, _strings, "preview");
+            await _pass;
             var source = new AddSource(value, _strings, this);
             var destination = _destination;
             var preview = await PreviewSource(source, destination);
@@ -290,7 +290,7 @@ public sealed class AddDraft : IDraft
         }
         finally
         {
-            _preparing = false;
+            _phase = AdditionPhase.Idle;
             Refresh();
         }
     }
@@ -299,7 +299,7 @@ public sealed class AddDraft : IDraft
     {
         if (!CanEdit)
             return;
-        _preparing = true;
+        _phase = AdditionPhase.Preparing;
         Refresh();
         try
         {
@@ -310,7 +310,7 @@ public sealed class AddDraft : IDraft
         }
         finally
         {
-            _preparing = false;
+            _phase = AdditionPhase.Idle;
             Refresh();
         }
     }
@@ -368,16 +368,18 @@ public sealed class AddDraft : IDraft
 
     public async Task<bool> Submit()
     {
-        if (!CanSave || !await AcceptMagnet())
+        if (!CanSave || !IsValid)
             return false;
-        if (
-            !CanSave
-            || Sources.Count == 0
-            || string.IsNullOrWhiteSpace(_destination)
-            || (HasFiles && !Files.HasWanted)
-        )
+        var sharing = Sources.ToDictionary(
+            source => source,
+            source =>
+                !source.IsDuplicate && source.SharedDestination == _destination
+                    ? source.SharedWith
+                    : []
+        );
+        if (!await AcceptMagnet() || !CanSave || !IsValid)
             return false;
-        IsPending = true;
+        _phase = AdditionPhase.Submitting;
         Refresh();
         var destination = _destination;
         var paused = _paused;
@@ -387,24 +389,55 @@ public sealed class AddDraft : IDraft
         try
         {
             await _pass;
+            if (!IsValid)
+                return false;
             var captured = Sources.ToArray();
             // Prepending in reverse preserves the order shown in the dialog.
             if (queueTop)
                 Array.Reverse(captured);
             var revealed = new List<string>();
-            if (_neverShow)
-                await _owner.Settings.HideAddDialog();
+            // Reconcile and prepare the whole batch before adding any source.
+            // Newly acquired shared-file warnings need another confirmation.
             foreach (var source in captured)
             {
                 if (source.Uncertain && _owner.Find(source.Hashes) is { } existing)
                 {
                     Sources.Remove(source);
                     revealed.Add(existing.TorrentId);
+                    if (source.PreviewId is { } previewId)
+                        await Release(previewId);
                     continue;
                 }
                 if (source.PreviewId is null)
                     await Acquire(source);
-                if (source.PreviewId is null)
+            }
+            if (
+                Sources.Count > 0 && !IsValid
+                || Sources.Any(source =>
+                    source.PreviewId is not null
+                    && !source.IsDuplicate
+                    && source.SharedWith.Length > 0
+                    && (
+                        !sharing.TryGetValue(source, out var previous)
+                        || source.SharedWith.Any(name =>
+                            !previous.Contains(name, StringComparer.Ordinal)
+                        )
+                    )
+                )
+            )
+            {
+                _owner.Reveal([.. revealed]);
+                return false;
+            }
+            await Confirmation.Save(
+                captured
+                    .SelectMany(source => source.Inputs)
+                    .Select(_owner.Settings.AddPreference)
+                    .ToArray()
+            );
+            foreach (var source in captured)
+            {
+                if (!Sources.Contains(source) || source.PreviewId is null)
                     continue;
                 if (source.IsDuplicate)
                 {
@@ -448,13 +481,21 @@ public sealed class AddDraft : IDraft
                 if (addition.GetProperty("duplicate").GetBoolean())
                 {
                     source.PreviewId = previewId;
-                    source.Apply(
-                        await _client.Send(
-                            "preview_detail",
-                            new { preview_id = previewId, destination }
-                        ),
-                        destination
-                    );
+                    try
+                    {
+                        source.Apply(
+                            await _client.Send(
+                                "preview_detail",
+                                new { preview_id = previewId, destination }
+                            ),
+                            destination
+                        );
+                    }
+                    catch (CommandException error) when (error.Code == "preview_expired")
+                    {
+                        source.PreviewId = null;
+                        await Acquire(source);
+                    }
                     continue;
                 }
                 Sources.Remove(source);
@@ -484,7 +525,7 @@ public sealed class AddDraft : IDraft
         }
         finally
         {
-            IsPending = false;
+            _phase = AdditionPhase.Idle;
             Refresh();
         }
     }
@@ -600,7 +641,11 @@ public sealed class AddDraft : IDraft
 
     internal void ApplyDefaults(string destination, bool startsDownload, bool queueTop)
     {
-        if (_defaultDestination == destination && _defaultPaused == !startsDownload && _defaultQueueTop == queueTop)
+        if (
+            _defaultDestination == destination
+            && _defaultPaused == !startsDownload
+            && _defaultQueueTop == queueTop
+        )
             return;
         var usesDestination = _destination == _defaultDestination;
         var usesPaused = _paused == _defaultPaused;
@@ -634,7 +679,8 @@ public sealed class AddDraft : IDraft
         EditingMagnet = false;
         _paused = _defaultPaused;
         _queueTop = _defaultQueueTop;
-        _sequential = _firstLast = _neverShow = false;
+        _sequential = _firstLast = false;
+        Confirmation.NeverShow = false;
         _failure = null;
         _destination = _defaultDestination;
         Refresh();
@@ -706,7 +752,7 @@ public sealed class AddSource : INotifyPropertyChanged
 
     internal void Apply(JsonElement preview, string destination)
     {
-        var hadMetadata = MetadataReady;
+        var hadFiles = MetadataReady && !IsDuplicate;
         if (
             Failure is CommandException { Command: "preview" or "preview_detail" }
             || Failure is not CommandException && !Uncertain
@@ -732,7 +778,7 @@ public sealed class AddSource : INotifyPropertyChanged
             .Select(name => name.GetString()!)
             .ToArray();
         SharedDestination = destination;
-        if (!hadMetadata && MetadataReady && !IsDuplicate)
+        if (!hadFiles && MetadataReady && !IsDuplicate)
             Files.Load(preview.GetProperty("files"));
         Refresh();
     }

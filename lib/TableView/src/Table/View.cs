@@ -148,7 +148,7 @@ public sealed partial class Table
         }
         if (order.SequenceEqual(View, ReferenceEqualityComparer.Instance))
         {
-            CancelRowDrag();
+            ReconcileDrag();
             UpdatePlaceholder();
             ReconcileSelection(FocusState.Unfocused);
             return;
@@ -205,7 +205,7 @@ public sealed partial class Table
             _reconcilingView = false;
         }
 
-        CancelRowDrag();
+        ReconcileDrag();
 
         if (viewMoved)
         {

@@ -1,0 +1,83 @@
+<UserControl
+  x:Class="Syno.TableView.Body.Wheel"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  Width="288"
+  IsHitTestVisible="False"
+>
+  <Grid>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="252" />
+      <RowDefinition Height="Auto" />
+    </Grid.RowDefinitions>
+    <Border
+      Padding="16,12"
+      BorderThickness="0,0,0,1"
+      BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
+    >
+      <TextBlock
+        x:Name="Heading"
+        Style="{StaticResource BodyStrongTextBlockStyle}"
+        TextTrimming="CharacterEllipsis"
+      />
+    </Border>
+    <Grid x:Name="Rail" Grid.Row="1" Margin="16,0" FlowDirection="LeftToRight">
+      <Grid.Clip>
+        <RectangleGeometry Rect="0,0,256,252" />
+      </Grid.Clip>
+      <Rectangle
+        x:Name="Spine"
+        Width="1"
+        Margin="48,0,0,0"
+        HorizontalAlignment="Left"
+        Fill="{ThemeResource DividerStrokeColorDefaultBrush}"
+      />
+      <Canvas x:Name="Numbers" />
+      <TextBlock
+        x:Name="Empty"
+        Text="…"
+        Style="{StaticResource SubtitleTextBlockStyle}"
+        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+        HorizontalAlignment="Center"
+        VerticalAlignment="Center"
+        Visibility="Collapsed"
+      />
+      <Grid x:Name="Marker" Height="24" VerticalAlignment="Top" Visibility="Collapsed">
+        <Grid.RenderTransform>
+          <TranslateTransform x:Name="MarkerOffset" />
+        </Grid.RenderTransform>
+        <Rectangle
+          Height="2"
+          Margin="48,0,0,0"
+          Fill="{ThemeResource AccentFillColorDefaultBrush}"
+        />
+        <Ellipse
+          Width="8"
+          Height="8"
+          Margin="44,0,0,0"
+          HorizontalAlignment="Left"
+          Fill="{ThemeResource AccentFillColorDefaultBrush}"
+        />
+        <InfoBadge x:Name="Packet" HorizontalAlignment="Right" VerticalAlignment="Center" />
+      </Grid>
+    </Grid>
+    <Border
+      Grid.Row="2"
+      Padding="16,12"
+      BorderThickness="0,1,0,0"
+      BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
+      Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}"
+    >
+      <StackPanel Spacing="4">
+        <TextBlock x:Name="Destination" TextWrapping="Wrap" />
+        <TextBlock
+          x:Name="Hint"
+          Style="{StaticResource CaptionTextBlockStyle}"
+          TextWrapping="Wrap"
+          Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+        />
+      </StackPanel>
+    </Border>
+  </Grid>
+</UserControl>

@@ -101,6 +101,25 @@ repeated XAML builds cannot consume their own output. The
 [native project](../engine/src/Engine.vcxproj) uses that same root for its output
 and intermediates.
 
+The window build copies the engine through [CopyEngine.ps1](../app/CopyEngine.ps1).
+An identical binary stays untouched, so UI-only restarts leave transfers running.
+When the binary changes, the script forcibly stops the engine running from that
+destination in the current Windows session and waits before replacing it. This
+development restart bypasses Exit confirmation and the final checkpoint so the
+build can replace the executable without waiting for a dialog.
+
+Every TinyTorrent in a logon session shares one window lock and one engine
+pipe, so a launch hands off to whichever window holds the lock and connects to
+whichever engine owns the pipe, from any folder. A Debug window therefore acts
+on those two conflicts only. When the lock is held by a window started from
+another path, it stops that window and takes the lock; a window from its own
+path is shown as usual. On its first connection, it stops the engine that owns
+the pipe unless that engine runs from beside it, then starts its own. Path
+identifies the build because a running executable is locked and the build
+stops that engine before replacing it; identical bytes do not, because the
+capture output holds a copy of the same engine that a review runs on a
+disposable store. Release windows never stop anything.
+
 The native project selects the toolchain and static linking, and includes and
 links the libraries in `3rdParty/` that [Dependencies.ps1](../engine/src/Dependencies.ps1)
 builds, as [third-party dependencies](architecture.md#third-party-dependencies)

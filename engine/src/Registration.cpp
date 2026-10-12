@@ -2,7 +2,7 @@
 #include <windows.h>
 #include <shobjidl.h>
 #include <shlobj.h>
-#include <shellapi.h>
+#include <shlwapi.h>
 #include <algorithm>
 #include <chrono>
 #include <cwctype>
@@ -23,6 +23,8 @@ constexpr wchar_t fileAssociations[] = L"Software\\TinyTorrent\\Capabilities\\Fi
 constexpr wchar_t urlAssociations[] = L"Software\\TinyTorrent\\Capabilities\\URLAssociations";
 constexpr wchar_t openWith[] = L"Software\\Classes\\.torrent\\OpenWithProgids";
 constexpr wchar_t run[] = L"Software\\Microsoft\\Windows\\CurrentVersion\\Run";
+constexpr wchar_t approved[] = L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\StartupApproved\\Run";
+constexpr wchar_t toasts[] = L"Software\\Microsoft\\Windows\\CurrentVersion\\ApplicationAssociationToasts";
 constexpr wchar_t torrentClass[] = L"TinyTorrent.Torrent";
 constexpr wchar_t magnetClass[] = L"TinyTorrent.Magnet";
 constexpr wchar_t const* classes[] = {torrentClass, magnetClass};
@@ -31,26 +33,29 @@ HKEY const roots[] = {HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE};
 // for a network share.
 constexpr auto identityWait = std::chrono::milliseconds(250);
 
-// What Windows opens with a handler: the extension or protocol, and the
-// Capabilities subkey that names a registered application's class for it.
+// What Windows opens with a handler: the extension or protocol, the
+// Capabilities subkey that names a registered application's class for it,
+// TinyTorrent's class for it, and the key holding the person's saved choice.
 struct Kind
 {
     wchar_t const* name;
     ASSOCIATIONTYPE type;
     wchar_t const* associations;
+    wchar_t const* progId;
+    wchar_t const* choice;
 };
 constexpr Kind kinds[] = {
-    {L".torrent", AT_FILEEXTENSION, L"FileAssociations"},
-    {L"magnet", AT_URLPROTOCOL, L"URLAssociations"}};
+    {L".torrent", AT_FILEEXTENSION, L"FileAssociations", torrentClass,
+        L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.torrent\\UserChoice"},
+    {L"magnet", AT_URLPROTOCOL, L"URLAssociations", magnetClass,
+        L"Software\\Microsoft\\Windows\\Shell\\Associations\\UrlAssociations\\magnet\\UserChoice"}};
 
 constexpr std::pair<std::string_view, RegistrationAction> actions[] = {
     {"observe", RegistrationAction::Observe},
     {"register_handlers", RegistrationAction::RegisterHandlers},
     {"unregister_handlers", RegistrationAction::UnregisterHandlers},
     {"enable_startup", RegistrationAction::EnableStartup},
-    {"disable_startup", RegistrationAction::DisableStartup},
-    {"open_defaults", RegistrationAction::OpenDefaults},
-    {"open_startup", RegistrationAction::OpenStartup}};
+    {"disable_startup", RegistrationAction::DisableStartup}};
 
 bool Same(std::wstring const& first, std::wstring const& second)
 {
@@ -312,8 +317,9 @@ Copy Identify(std::wstring const& command)
 // product before this one left its command there, which a start repoints.
 bool Opens(std::wstring const& choice, wchar_t const* ours)
 {
-    return Same(choice, ours) ||
-        Identify(Read(choice + L"\\shell\\open\\command", nullptr, HKEY_CLASSES_ROOT)) == Copy::This;
+    auto command = Read(choice + L"\\shell\\open\\command", nullptr, HKEY_CLASSES_ROOT);
+    return !command.empty() &&
+        (Same(choice, ours) ? Identify(command) != Copy::Missing : Identify(command) == Copy::This);
 }
 
 // True when the person's default for `extension` or protocol opens with
@@ -518,19 +524,66 @@ void Remove(Broken const& broken)
     }
 }
 
-// Whether Windows opens `kind` with a working app other than TinyTorrent,
-// which only the person can change. A default whose open command is gone or
-// starts a missing program is not one: Windows asks at the next open instead.
-// A command it cannot check, such as a packaged app's, counts as working.
-bool OtherDefault(Kind const& kind, wchar_t const* ours)
+// The name of the app Windows opens `kind` with; empty when Windows names no
+// class with an open command, because Windows then asks which app to use.
+std::string AppName(Kind const& kind)
 {
     auto progId = Default(kind.name, kind.type);
-    if (progId.empty() || Opens(progId, ours) || !Exists(progId + L"\\shell\\open", HKEY_CLASSES_ROOT))
+    if (progId.empty() || !Exists(progId + L"\\shell\\open", HKEY_CLASSES_ROOT))
     {
-        return false;
+        return {};
     }
-    auto command = Read(progId + L"\\shell\\open\\command", nullptr, HKEY_CLASSES_ROOT);
-    return command.empty() || Identify(command) != Copy::Missing;
+    if (Opens(progId, kind.progId))
+    {
+        return Readable(productName);
+    }
+    // Windows can return its app chooser as the handler's friendly name.
+    wchar_t program[MAX_PATH]{};
+    DWORD programLength = MAX_PATH;
+    if (SUCCEEDED(AssocQueryStringW(ASSOCF_NONE, ASSOCSTR_EXECUTABLE, progId.c_str(), L"open", program, &programLength)))
+    {
+        wchar_t system[MAX_PATH]{};
+        GetSystemDirectoryW(system, MAX_PATH);
+        if (Same(program, (std::filesystem::path(system) / L"OpenWith.exe").wstring()))
+        {
+            return {};
+        }
+    }
+    std::wstring name(MAX_PATH, L'\0');
+    auto length = static_cast<DWORD>(name.size());
+    if (FAILED(AssocQueryStringW(ASSOCF_NONE, ASSOCSTR_FRIENDLYAPPNAME, progId.c_str(), L"open", name.data(), &length)))
+    {
+        return Readable(progId);
+    }
+    // The length counts the terminating null.
+    name.resize(length - 1);
+    return Readable(name);
+}
+
+// Makes TinyTorrent the app Windows opens `kind` with. Windows refuses to let
+// an app write the person's saved choice but lets their account delete it,
+// and without one Windows opens the per-user default that registration wrote.
+void TakeDefault(Kind const& kind)
+{
+    auto progId = Default(kind.name, kind.type);
+    if (!progId.empty() && Opens(progId, kind.progId))
+    {
+        return;
+    }
+    // Deleting the values first, as RegDeleteTreeW does, needs the Set Value
+    // right that Windows denies on this key; deleting the key does not.
+    Check(RegDeleteKeyW(HKEY_CURRENT_USER, kind.choice));
+}
+
+// Whether Windows has disabled TinyTorrent's Run entry. Windows Settings and
+// Task Manager disable an entry without removing it, recording an odd first
+// byte in its StartupApproved value.
+bool StartupDisabled()
+{
+    BYTE state[64]{};
+    DWORD size = sizeof(state);
+    return RegGetValueW(HKEY_CURRENT_USER, approved, productName, RRF_RT_REG_BINARY, nullptr, state, &size) ==
+        ERROR_SUCCESS && size > 0 && (state[0] & 1) != 0;
 }
 
 // Removes the broken per-user classes. One that Windows refuses to change
@@ -711,8 +764,11 @@ Json Registration::Observe() const
         {"handlers_target", Readable(Target(handlers))},
         {"startup", Owner(startup)},
         {"startup_target", Readable(Target(startup))},
+        {"startup_disabled", StartupDisabled()},
         {"torrent_default", IsDefault(L".torrent", AT_FILEEXTENSION, torrentClass)},
         {"magnet_default", IsDefault(L"magnet", AT_URLPROTOCOL, magnetClass)},
+        {"torrent_app", AppName(kinds[0])},
+        {"magnet_app", AppName(kinds[1])},
         {"broken", broken}
     };
 }
@@ -813,6 +869,7 @@ void Registration::Repair() const
         if (!kept && !HandlersComplete())
         {
             RegisterHandlers();
+            SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
         }
     });
     attempt([]
@@ -847,8 +904,15 @@ void Registration::RegisterHandlers() const
     Write(capabilities, L"ApplicationDescription", productName);
     Write(fileAssociations, L".torrent", torrentClass);
     Write(urlAssociations, L"magnet", magnetClass);
+    // Without this record that Windows has announced the class, Windows asks
+    // which app to use at the next open even while TinyTorrent is the default.
+    for (auto const& kind : kinds)
+    {
+        DWORD const announced = 0;
+        Check(RegSetKeyValueW(HKEY_CURRENT_USER, toasts, (std::wstring(kind.progId) + L"_" + kind.name).c_str(),
+            REG_DWORD, &announced, sizeof(announced)));
+    }
     Write(registered, productName, capabilities);
-    SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
 }
 
 void Registration::UnregisterHandlers() const
@@ -859,6 +923,10 @@ void Registration::UnregisterHandlers() const
         Check(RegDeleteTreeW(HKEY_CURRENT_USER, Key(progId).c_str()));
     }
     Remove(openWith, torrentClass);
+    for (auto const& kind : kinds)
+    {
+        Remove(toasts, (std::wstring(kind.progId) + L"_" + kind.name).c_str());
+    }
     Check(RegDeleteTreeW(HKEY_CURRENT_USER, capabilities));
     RepairLegacy(false);
     SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
@@ -875,43 +943,38 @@ Json Registration::Execute(std::string const& name) const
     {
         switch (*action)
         {
-        case RegistrationAction::OpenDefaults:
+        case RegistrationAction::RegisterHandlers:
             RemoveBroken();
             RegisterHandlers();
-            break;
-        case RegistrationAction::RegisterHandlers:
-            RegisterHandlers();
+            // Direct associations and the defaults belong to an explicit
+            // request; startup repair must not take them back from another
+            // application.
+            Write(Key(L".torrent"), nullptr, torrentClass);
+            Write(Key(L"magnet"), L"URL Protocol", L"");
+            Write(Key(L"magnet") + L"\\shell\\open\\command", nullptr, OpenCommand());
+            for (auto const& kind : kinds)
+            {
+                TakeDefault(kind);
+            }
+            SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
             break;
         case RegistrationAction::UnregisterHandlers:
             UnregisterHandlers();
             break;
         case RegistrationAction::EnableStartup:
             Write(run, productName, Launch());
+            // The person asked for startup, so Windows' record that it was
+            // disabled goes too; without it Windows runs the entry.
+            Remove(approved, productName);
             break;
         case RegistrationAction::DisableStartup:
             Remove(run, productName);
+            Remove(approved, productName);
             break;
         case RegistrationAction::Observe:
-        case RegistrationAction::OpenStartup:
             break;
         }
-        auto observed = Observe();
-        // Windows lets only the person choose default apps, so open_defaults
-        // opens Settings while another working app is the default.
-        bool other = OtherDefault(kinds[0], torrentClass) || OtherDefault(kinds[1], magnetClass);
-        if (action == RegistrationAction::OpenStartup || (action == RegistrationAction::OpenDefaults && other))
-        {
-            auto uri = action == RegistrationAction::OpenStartup
-                ? std::wstring(L"ms-settings:startupapps")
-                : L"ms-settings:defaultapps?registeredAppUser=" + std::wstring(productName);
-            // ShellExecuteW returns a value above 32 when it succeeds.
-            auto result = ShellExecuteW(nullptr, L"open", uri.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
-            if (reinterpret_cast<INT_PTR>(result) <= 32)
-            {
-                throw std::runtime_error("Windows Settings could not open.");
-            }
-        }
-        return Success(std::move(observed));
+        return Success(Observe());
     }
     catch (std::exception const& error)
     {

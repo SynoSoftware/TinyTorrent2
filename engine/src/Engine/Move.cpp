@@ -1,24 +1,15 @@
 #include "Engine/State.h"
 #include <algorithm>
-#include <set>
 
 namespace tt
 {
 void Engine::State::StartMove(std::vector<std::string> const& ids, std::string const& destination,
-    bool useExisting, std::function<void(Outcome)> accepted)
+    std::function<void(Outcome)> accepted)
 {
     if (auto ready = FilesReady(ids); ready.error)
     {
         accepted(std::move(ready));
         return;
-    }
-    for (auto const& id : ids)
-    {
-        if (!useExisting && !torrents.at(id).facts.moveDestination.empty())
-        {
-            accepted({ErrorCode::MoveInterrupted});
-            return;
-        }
     }
     if (!IsAbsolute(destination))
     {
@@ -34,7 +25,8 @@ void Engine::State::StartMove(std::vector<std::string> const& ids, std::string c
     Move moving;
     moving.ids = ids;
     moving.destination = destination;
-    moving.usesExisting = useExisting;
+    moving.recovering = std::any_of(ids.begin(), ids.end(), [this](auto const& id)
+        { return !torrents.at(id).facts.moveDestination.empty(); });
     for (auto const& id : ids)
     {
         auto const& torrent = torrents.at(id);
@@ -46,7 +38,7 @@ void Engine::State::StartMove(std::vector<std::string> const& ids, std::string c
             auto source = FullPath(std::filesystem::path(Wide(torrent.facts.savePath)) / path);
             auto target = FullPath(std::filesystem::path(Wide(destination)) / path);
             auto [known, inserted] = sources.emplace(target, source);
-            if (!useExisting && !inserted && !SamePath(known->second, source))
+            if (!inserted && !SamePath(known->second, source))
             {
                 accepted({ErrorCode::DestinationConflict});
                 return;
@@ -117,33 +109,63 @@ void Engine::State::PrepareMove()
         ContinueMove();
         return;
     }
-    std::set<std::filesystem::path, decltype(&PathBefore)> targets(PathBefore);
+    struct Location
+    {
+        std::filesystem::path source;
+        std::filesystem::path destination;
+        std::filesystem::path logicalSource;
+        std::filesystem::path logicalDestination;
+    };
+    std::vector<Location> files;
     std::vector<lt::torrent_handle> handles;
     for (auto const& id : ids)
     {
         auto const& torrent = torrents.at(id);
         handles.push_back(torrent.handle);
-        if (move->usesExisting)
-            continue;
-        auto physical = FilePaths(torrent, move->destination, false);
-        auto logical = FilePaths(torrent, move->destination);
-        targets.insert(physical.begin(), physical.end());
-        targets.insert(logical.begin(), logical.end());
+        auto physical = torrent.Paths();
+        auto logical = torrent.Paths(true);
+        for (std::size_t index = 0; index < physical.size(); ++index)
+        {
+            auto source = std::filesystem::path(Wide(torrent.facts.savePath));
+            auto destination = std::filesystem::path(Wide(move->destination));
+            files.push_back({FullPath(source / physical[index]), FullPath(destination / physical[index]),
+                FullPath(source / logical[index]), FullPath(destination / logical[index])});
+        }
     }
     move->phase = MovePhase::Preflight;
     auto problem = std::make_shared<std::optional<Problem>>();
-    payload.Run([this, handles, targets, problem]
+    auto existing = std::make_shared<std::vector<std::filesystem::path>>();
+    payload.Run([this, handles, files, problem, existing]
     {
         ReleaseFiles(handles);
-        for (auto const& path : targets)
+        auto present = [](auto const& path)
         {
-            if (std::filesystem::symlink_status(path).type() != std::filesystem::file_type::not_found)
+            return std::filesystem::symlink_status(path).type() != std::filesystem::file_type::not_found;
+        };
+        // Libtorrent can leave an empty placeholder before any bytes arrive.
+        auto occupied = [&present](auto const& path)
+        {
+            return present(path) && (!std::filesystem::is_regular_file(path) || std::filesystem::file_size(path) != 0);
+        };
+        for (auto const& file : files)
+        {
+            if (!present(file.destination) && !present(file.logicalDestination))
+                continue;
+            if (!SamePath(file.source, file.destination) && (occupied(file.source) || occupied(file.logicalSource)))
             {
-                *problem = Problem{ProblemKind::DestinationExists, Utf8(path.wstring())};
+                *problem = Problem{ProblemKind::DestinationExists, Utf8(file.destination.wstring())};
                 return;
             }
+            existing->push_back(file.destination);
         }
-    }, [this, problem](StorageOutcome outcome)
+        // An empty unfinished name would mask the final file after a partial move.
+        for (auto const& file : files)
+        {
+            if (!SamePath(file.source, file.logicalSource) && present(file.logicalDestination) &&
+                present(file.source) && !occupied(file.source))
+                std::filesystem::remove(file.source);
+        }
+    }, [this, problem, existing](StorageOutcome outcome)
     {
         if (!outcome.succeeded)
             *problem = Problem{ProblemKind::MoveFailed, outcome.detail};
@@ -152,6 +174,7 @@ void Engine::State::PrepareMove()
             FailMove(**problem);
             return;
         }
+        move->moved = std::move(*existing);
         move->phase = MovePhase::Ready;
         ContinueMove();
     });
@@ -198,7 +221,7 @@ void Engine::State::ContinueMove()
             [&path](auto const& other) { return SamePath(path, other); });
     };
     auto flags = lt::move_flags_t::fail_if_exist;
-    if (move->usesExisting || std::all_of(targets.begin(), targets.end(), alreadyMoved))
+    if (std::all_of(targets.begin(), targets.end(), alreadyMoved))
         flags = lt::move_flags_t::reset_save_path;
     else if (std::any_of(targets.begin(), targets.end(), alreadyMoved))
         flags = lt::move_flags_t::dont_replace;
@@ -291,8 +314,8 @@ void Engine::State::SaveMove()
 void Engine::State::FailMove(Problem problem)
 {
     // Before the first disk move, failure can clear a new staged destination.
-    // Use existing files may be resolving an earlier interrupted move.
-    if (move->phase == MovePhase::Preflight && !move->usesExisting)
+    // An earlier interrupted move must keep its recovery marker.
+    if (move->phase == MovePhase::Preflight && !move->recovering)
     {
         move->phase = MovePhase::Saving;
         if (changes.Queue([this, problem]

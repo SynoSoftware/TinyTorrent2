@@ -222,6 +222,10 @@ internal sealed partial class PipeClient : IDisposable
                         }
                         throw;
                     }
+#if DEBUG
+                    if (!_hasConnected && StopOtherEngine(pipe))
+                        continue;
+#endif
                     var hello = await ReadGreeting(pipe, _strings, token);
                     _ =
                         hello.GetProperty("session_id").GetString()
@@ -400,9 +404,11 @@ internal sealed partial class PipeClient : IDisposable
             );
             _awaitingId = requestId;
             _awaitingCommand = command.Consumer is null && command.Name != "snapshot";
-            _changesFiles = command.Name is "add" or "remove" or "delete_files" or "move" or "verify" ||
-                command.Name == "edit" && fields.TryGetValue("changes", out var changes) &&
-                changes.TryGetProperty("priorities", out _);
+            _changesFiles =
+                command.Name is "add" or "remove" or "delete_files" or "move" or "verify"
+                || command.Name == "edit"
+                    && fields.TryGetValue("changes", out var changes)
+                    && changes.TryGetProperty("priorities", out _);
             await Write(pipe, fields, deadline.Token);
             var reply = await _reply.Task.WaitAsync(deadline.Token);
             var data = ReadOutcome(reply, _strings, command.Name);
@@ -447,12 +453,14 @@ internal sealed partial class PipeClient : IDisposable
                 var message = await Read(pipe, token);
                 if (message.TryGetProperty("type", out var type))
                 {
-                    if (type.GetString()
+                    if (
+                        type.GetString()
                         is "activate"
                             or "close"
                             or "confirm_exit"
                             or "activations"
-                            or "settings")
+                            or "settings"
+                    )
                         Control?.Invoke(type.GetString()!);
                     else if (type.GetString() == "notice")
                         Notice?.Invoke(message);
@@ -526,7 +534,7 @@ internal sealed partial class PipeClient : IDisposable
             var hello = await Read(pipe, deadline.Token);
             if (
                 hello.GetProperty("type").GetString() != "hello"
-                || hello.GetProperty("version").GetInt32() != 11
+                || hello.GetProperty("version").GetInt32() != 13
             )
                 throw new InvalidDataException(strings.Get("connection", "version"));
             return hello;
@@ -582,6 +590,48 @@ internal sealed partial class PipeClient : IDisposable
         }
         Process.Start(start);
     }
+
+#if DEBUG
+    // Every engine in a logon session serves this pipe, so a development window
+    // would use another build's engine. Stops the engine that owns the pipe
+    // unless it runs from beside this window, so the window starts its own. A
+    // running executable is locked and the build stops that engine before
+    // replacing it, so its path identifies this build; identical bytes do not,
+    // because the capture output's copy may serve a review's disposable store.
+    private static bool StopOtherEngine(NamedPipeClientStream pipe)
+    {
+        if (!GetNamedPipeServerProcessId(pipe.SafePipeHandle, out var id))
+            return false;
+        try
+        {
+            using var current = Process.GetCurrentProcess();
+            using var engine = Process.GetProcessById((int)id);
+            // Paths compare as launched, which matches because this window
+            // starts the engine beside it. An engine running as administrator
+            // hides its path, so it keeps running.
+            var adjacent = Path.Combine(
+                Path.GetDirectoryName(current.MainModule!.FileName)!,
+                EngineFile
+            );
+            if (
+                engine.MainModule?.FileName is not { } path
+                || string.Equals(path, adjacent, StringComparison.OrdinalIgnoreCase)
+            )
+                return false;
+            engine.Kill();
+            return engine.WaitForExit(5000);
+        }
+        catch (Exception error)
+            when (error is ArgumentException or Win32Exception or InvalidOperationException)
+        {
+            return false;
+        }
+    }
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetNamedPipeServerProcessId(SafePipeHandle pipe, out uint processId);
+#endif
 
     // Runs the engine beside the window as an administrator to remove the
     // all-users open commands of `classes` that start a missing program. A

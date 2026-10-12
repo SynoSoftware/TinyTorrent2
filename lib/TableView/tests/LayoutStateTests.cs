@@ -73,7 +73,6 @@ public class LayoutStateTests
             CollectionAssert.AreEqual(new[] { "c", "a", "b" }, TableHarness.Order(table));
         });
 
-
     [TestMethod]
     public Task Section18_AnOmittedVisibilityClearsAnEarlierOverride() =>
         TestHost.RunAsync(async () =>
@@ -90,6 +89,7 @@ public class LayoutStateTests
 
             Assert.IsTrue(TableHarness.IsVisible(table, "b"));
         });
+
     [TestMethod]
     public Task Section18_ARequiredColumnSavedAsHiddenIsRestored() =>
         TestHost.RunAsync(async () =>
@@ -157,9 +157,7 @@ public class LayoutStateTests
                 TestData.Column("c", 150)
             );
 
-            table.Layout = TestData.Layout(
-                order: new[] { "c", "b", "a" }
-            );
+            table.Layout = TestData.Layout(order: new[] { "c", "b", "a" });
 
             await TableHarness.LoadAsync(table);
 

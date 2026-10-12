@@ -118,7 +118,9 @@ constexpr char seedingMinutes[] = "seeding_minutes";
 constexpr char checksUpdates[] = "check_for_updates";
 constexpr char scheduleEnabled[] = "schedule_enabled";
 constexpr char schedule[] = "schedule";
-constexpr char showsAdd[] = "show_add";
+constexpr char showsTorrentDialog[] = "torrent_dialog";
+constexpr char showsMagnetDialog[] = "magnet_dialog";
+constexpr char confirmsDelete[] = "confirm_delete";
 constexpr char showsSplash[] = "show_splash";
 constexpr char startsInTray[] = "start_in_tray";
 constexpr char allPaused[] = "all_paused";
@@ -384,7 +386,9 @@ Json Engine::State::Settings::ToJson() const
         {setting::checksUpdates, checksUpdates},
         {setting::scheduleEnabled, scheduleEnabled},
         {setting::schedule, std::move(periods)},
-        {setting::showsAdd, showsAdd},
+        {setting::showsTorrentDialog, showsTorrentDialog},
+        {setting::showsMagnetDialog, showsMagnetDialog},
+        {setting::confirmsDelete, confirmsDelete},
         {setting::showsSplash, showsSplash},
         {setting::startsInTray, startsInTray},
         {setting::allPaused, allPaused},
@@ -561,7 +565,11 @@ void Engine::State::Settings::Read(Json const& saved)
             }
         }
     }
-    showsAdd = ReadSaved(saved, setting::showsAdd, showsAdd);
+    // The old shared preference initializes both choices until each is saved separately.
+    auto showsAdd = ReadSaved(saved, "show_add", true);
+    showsTorrentDialog = ReadSaved(saved, setting::showsTorrentDialog, showsAdd);
+    showsMagnetDialog = ReadSaved(saved, setting::showsMagnetDialog, showsAdd);
+    confirmsDelete = ReadSaved(saved, setting::confirmsDelete, confirmsDelete);
     showsSplash = ReadSaved(saved, setting::showsSplash, showsSplash);
     startsInTray = ReadSaved(saved, setting::startsInTray, startsInTray);
     allPaused = ReadSaved(saved, setting::allPaused, allPaused);
@@ -654,9 +662,17 @@ std::optional<Engine::State::Settings> Engine::State::Settings::With(Json const&
             next.watchDestination = value.get<std::string>();
         else if (key == setting::rechecksFinished && value.is_boolean())
             next.rechecksFinished = value;
-        else if (key == setting::showsAdd && value.is_boolean())
+        else if (key == setting::showsTorrentDialog && value.is_boolean())
         {
-            next.showsAdd = value;
+            next.showsTorrentDialog = value;
+        }
+        else if (key == setting::showsMagnetDialog && value.is_boolean())
+        {
+            next.showsMagnetDialog = value;
+        }
+        else if (key == setting::confirmsDelete && value.is_boolean())
+        {
+            next.confirmsDelete = value;
         }
         else if (key == setting::incompleteFolder && value.is_string() && IsAbsolute(value.get<std::string>()))
         {

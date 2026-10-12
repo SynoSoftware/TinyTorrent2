@@ -25,6 +25,13 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     private Torrent[] _selected = [];
     private Torrent? _current;
     private Exception? _error;
+
+    // How the error notice describes _error: a title key from the
+    // notifications text, the torrent it names, and the reason when the
+    // engine sent one instead of an error code.
+    private string _errorTitle = string.Empty;
+    private string _errorSubject = string.Empty;
+    private string? _errorReason;
     private double _downloadRate;
     private double _uploadRate;
     private long? _freeSpace;
@@ -53,6 +60,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     private bool _dark;
     private bool _toolbarOpen = true;
     private bool _subtitleHelpSeen;
+    private bool _showsSettingsIndex = true;
 
     public Strings Text { get; }
     public IReadOnlyList<Torrent> Torrents => _torrents;
@@ -69,6 +77,17 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             Changed(nameof(SubtitleHelpSeen));
         }
     }
+    public bool ShowsSettingsIndex
+    {
+        get => _showsSettingsIndex;
+        set
+        {
+            if (_showsSettingsIndex == value)
+                return;
+            _showsSettingsIndex = value;
+            Changed(nameof(ShowsSettingsIndex));
+        }
+    }
     public LibraryBrowser Library { get; }
     public string Theme =>
         Settings.Theme.ConfirmedText.Length > 0 ? Settings.Theme.ConfirmedText : "system";
@@ -81,7 +100,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         && _spacePath == Settings.Destination.ConfirmedText
         && _freeSpace is not null;
     public string FreeSpaceStatus =>
-        _freeSpace is { } space ? Text.Format("window", "free_space", Text.Bytes(space)) : string.Empty;
+        _freeSpace is { } space
+            ? Text.Format("window", "free_space", Text.Bytes(space))
+            : string.Empty;
     public string DownloadSpeed => Rate(_downloadRate);
     public string UploadSpeed => Rate(_uploadRate);
     public bool IsConnected => _connected;
@@ -172,40 +193,117 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             ? Text.Format("units", "rate", Text.Bytes(rate))
             : "—";
 
-    public string TorrentError =>
-        _current is null || !_current.IsError
-            ? string.Empty
-            : Text.Format("errors", "torrent", _current.Name, _current.ErrorText);
-    public string Message
+#if CAPTURE
+    private Status? _presentedStatus;
+
+    // A status a capture journey shows without the state behind it.
+    internal Status? PresentedStatus
+    {
+        get => _presentedStatus;
+        set
+        {
+            _presentedStatus = value;
+            Changed(nameof(CurrentStatus));
+        }
+    }
+#endif
+
+    // The lasting problem the window reports in its message bar, most
+    // important first; null when nothing needs saying. While the engine
+    // starts, the list shows its own loading state instead.
+    internal Status? CurrentStatus
     {
         get
         {
+#if CAPTURE
+            if (_presentedStatus is { } presented)
+                return presented;
+#endif
+            var reason = _connectionReason ?? string.Empty;
             if (!_connected)
             {
-                var message = Text.Get(
-                    "window",
-                    _sessionId.Length == 0 ? "connecting" : "disconnected"
+                if (_sessionId.Length == 0 && reason.Length == 0)
+                    return null;
+                var title = _sessionId.Length == 0 ? "not_started" : "stopped";
+                var stopped = Text.Get("window", "disconnected");
+                return new(
+                    Text.Get("notifications", title),
+                    _sessionId.Length == 0 ? reason
+                        : reason.Length == 0 ? stopped
+                        : Text.Format("errors", "detail", stopped, reason),
+                    InfoBarSeverity.Error,
+                    CanRestart ? Restart : null,
+                    RestartText,
+                    Syno.Lucide.RotateCcw,
+                    Text.Get("connection", "restart_tip")
                 );
-                var detail = _connectionReason;
-                return string.IsNullOrEmpty(detail)
-                    ? message
-                    : Text.Format("errors", "detail", message, detail);
             }
             if (_storageFailed)
-                return Text.Error("storage_failed", _startupError);
+                return new(
+                    Text.Get("notifications", "storage"),
+                    string.IsNullOrWhiteSpace(_startupError)
+                        ? Text.Get("window", "storage_failed")
+                        : Text.Format(
+                            "errors",
+                            "detail",
+                            Text.Get("window", "storage_failed"),
+                            _startupError
+                        ),
+                    InfoBarSeverity.Error,
+                    OpenDataFolder,
+                    Text.Get("commands", "open_folder"),
+                    Syno.Lucide.FolderOpen,
+                    Text.Get("notifications", "storage_tip")
+                );
             if (_loading)
-                return Text.Get("window", "connecting");
-            if (HasFeatureFailure)
-                return FeatureFailure;
-            return !_languageSaved ? Text.Get("errors", "language_unsaved") : string.Empty;
+                return null;
+            if (FeatureFailure is { } featureFailure)
+                return FeatureStatus(featureFailure);
+            if (
+                Subtitles is { Failure: var failure } subtitles
+                && (subtitles.Enabled || subtitles.Finding)
+                && failure
+                    is SubtitleFailure.Authentication
+                        or SubtitleFailure.Unconfigured
+                        or SubtitleFailure.Unavailable
+                        or SubtitleFailure.Route
+                        or SubtitleFailure.Save
+            )
+                return new(
+                    Text.Get("notifications", "subtitles_paused"),
+                    Text.Get("subtitles", "failure_" + failure.ToString().ToLowerInvariant()),
+                    InfoBarSeverity.Warning,
+                    // A folder that refused a file is fixed outside the app,
+                    // so its action tries the work again.
+                    failure == SubtitleFailure.Save
+                        ? RetrySubtitleWork
+                        : ShowSubtitleSettings,
+                    Text.Get(
+                        failure == SubtitleFailure.Save ? "inspector" : "notifications",
+                        failure == SubtitleFailure.Save ? "retry" : "settings"
+                    ),
+                    failure == SubtitleFailure.Save ? Syno.Lucide.RotateCcw : Syno.Lucide.Settings,
+                    Text.Get(
+                        "notifications",
+                        failure == SubtitleFailure.Save ? "subtitles_retry_tip" : "subtitles_tip"
+                    )
+                );
+            if (!_languageSaved)
+                return new(
+                    Text.Get("notifications", "language"),
+                    Text.Get("errors", "language_unsaved"),
+                    InfoBarSeverity.Warning,
+                    ShowSettings,
+                    Text.Get("notifications", "settings"),
+                    Syno.Lucide.Settings,
+                    Text.Get("notifications", "language_tip")
+                );
+            return null;
         }
     }
-    public bool HasFeedback => Message.Length > 0;
-    public string CommandError => _error is null ? string.Empty : Text.Error(_error);
+    public string CommandError =>
+        _error is null ? string.Empty : _errorReason ?? Text.Error(_error);
     public bool HasCommandError => _error is not null;
-    public bool HasTorrentError => TorrentError.Length > 0;
-    public InfoBarSeverity Severity =>
-        _connected && (_storageFailed || HasFeatureFailure) ? InfoBarSeverity.Error : InfoBarSeverity.Warning;
 
     public event PropertyChangedEventHandler? PropertyChanged;
     public event EventHandler? TextChanged;
@@ -222,26 +320,32 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     public bool CanRestart => !_connected && _connectionReason is not null;
     public string RestartText => Text.Get("connection", "restart");
     private ICommand RetryFeatures { get; }
-    public ICommand Recovery => CanRestart ? Restart : RetryFeatures;
-    public bool CanRecover => CanRestart || _connected && !_loading && !_storageFailed && HasFeatureFailure;
-    public string RecoveryText => CanRestart ? RestartText : Text.Get("inspector", "retry");
-    public string RecoveryTip => CanRestart ? Text.Get("connection", "restart_tip") : Text.Get("window", "retry_features_tip");
+    private ICommand DeleteDatabase { get; }
+    private ICommand RepairDatabase { get; }
+    private ICommand ShowSubtitleSettings { get; }
+    private ICommand RetrySubtitleWork { get; }
+    public ICommand OpenDataFolder { get; }
 
-    internal MainViewModel(Strings strings, DispatcherQueue dispatcher)
+    internal MainViewModel(Strings strings, DispatcherQueue dispatcher, Navigation navigation)
     {
+        Navigation = navigation;
+        Navigation.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName == nameof(Navigation.Current))
+                RefreshNavigation();
+        };
         Text = strings;
         _dispatcher = dispatcher;
         _client = new PipeClient(strings);
-        OpenCompletion = new RelayCommand(OpenCompleted, () => CanOpenCompletion);
+        Settings = new Settings(this, _client);
         AddDraft = new AddDraft(this, _client, strings);
         FileDraft = new FileDraft(this, _client);
         SpeedLimit = new SpeedLimit(this, _client);
         Inspector = new Inspector(this, _client);
-        Settings = new Settings(this, _client);
         Library = new LibraryBrowser(strings, dispatcher);
         Library.RetryRequested += (_, _) => RequestSnapshot();
         Library.FiltersRequested += (_, _) => IsFilterOpen = true;
-        Library.PropertiesRequested += (_, _) => IsInspectorCompact = false;
+        Library.PropertiesRequested += (_, _) => OpenInspector();
         Library.PropertyChanged += (_, args) =>
         {
             if (args.PropertyName is nameof(Library.Failure) or "")
@@ -250,8 +354,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
                 return;
             if (args.PropertyName is nameof(Library.Query) or "")
                 Changed(nameof(Query));
-            if (args.PropertyName is nameof(Library.IsOpen) or "")
-                Changed(nameof(HasInspector));
             if (args.PropertyName is nameof(Library.Status) or "")
                 Changed(nameof(CountStatus));
         };
@@ -284,15 +386,19 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             },
             () => CanRestart
         );
-        RetryFeatures = new RelayCommand(async () =>
-        {
-            if (Library.HasFailure && Library.Retry.CanExecute(null))
-                Library.Retry.Execute(null);
-            else
-                RequestSnapshot();
-            try { await RetrySubtitles(); }
-            catch (Exception error) { ReportFeature(error); }
-        }, () => _connected && HasFeatureFailure);
+        RetryFeatures = new RelayCommand(RecoverFeatures, () => _connected && HasFeatureFailure);
+        DeleteDatabase = new RelayCommand(
+            () =>
+            {
+                DatabaseDeletionRequested?.Invoke(this, EventArgs.Empty);
+                return Task.CompletedTask;
+            },
+            () => _connected && HasIncompatibleDatabase
+        );
+        RepairDatabase = new RelayCommand(
+            ClearDatabaseReadOnly,
+            () => _connected && HasFeatureFailure
+        );
         Add = new RelayCommand(
             () =>
             {
@@ -421,16 +527,64 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             () => Inspect(Inspector.Section),
             () => CanEdit && _selected.Length == 1
         );
-        ClearFilters = new RelayCommand(() =>
-        {
-            if (Page != WindowPage.Library)
-                return ClearFinding();
-            Library.ClearFilters.Execute(null);
-            return Task.CompletedTask;
-        }, () => Page == WindowPage.Library ? Library.ClearFilters.CanExecute(null) : Filter != TorrentFilter.All);
+        ClearFilters = new RelayCommand(
+            () =>
+            {
+                if (Page != WindowPage.Library)
+                    return ClearFinding();
+                Library.ClearFilters.Execute(null);
+                return Task.CompletedTask;
+            },
+            () =>
+                Page == WindowPage.Library
+                    ? Library.ClearFilters.CanExecute(null)
+                    : Filter != TorrentFilter.All
+        );
         Library.ClearFilters.CanExecuteChanged += (_, _) => ((RelayCommand)ClearFilters).Refresh();
-        ShowSettings = new RelayCommand(
-            () => RequestSettings(new()),
+        ShowSettings = new RelayCommand(() => RequestSettings(new()), () => true);
+        ShowSubtitleSettings = new RelayCommand(
+            () => RequestSettings(new(SettingsCategory.Plugins)),
+            () => true
+        );
+        RetrySubtitleWork = new RelayCommand(
+            async () =>
+            {
+                try
+                {
+                    await RetrySubtitles();
+                }
+                catch (Exception error)
+                {
+                    ReportFeature(error);
+                }
+            },
+            () => true
+        );
+        DownloadSubtitles = new RelayCommand(
+            () =>
+            {
+                var entries = Library
+                    .Selection.Items.Cast<Syno.TinyTorrent.Library.LibraryRow>()
+                    .Where(row => row.Entry.Kind == FileKind.Video)
+                    .Select(row => row.Entry.EntryId)
+                    .ToHashSet();
+                SubtitlesRequested?.Invoke(this, entries);
+                return Task.CompletedTask;
+            },
+            () => CanDownloadSubtitles
+        );
+        Library.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName is nameof(Library.Selection) or nameof(Library.IsAvailable) or "")
+                ((RelayCommand)DownloadSubtitles).Refresh();
+        };
+        OpenDataFolder = new RelayCommand(
+            () =>
+            {
+                if (DataDirectory is { } directory)
+                    OpenRequested?.Invoke(this, new(directory));
+                return Task.CompletedTask;
+            },
             () => true
         );
         ShowTorrents = new RelayCommand(
@@ -442,11 +596,14 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             () => true
         );
         Library.TorrentsRequested += (_, _) => ShowTorrents.Execute(null);
-        ShowLibrary = new RelayCommand(() =>
-        {
-            LibraryRequested?.Invoke(this, EventArgs.Empty);
-            return Task.CompletedTask;
-        }, () => true);
+        ShowLibrary = new RelayCommand(
+            () =>
+            {
+                LibraryRequested?.Invoke(this, EventArgs.Empty);
+                return Task.CompletedTask;
+            },
+            () => true
+        );
         ShowAbout = new RelayCommand(
             () =>
             {
@@ -505,6 +662,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
                 else
                     CloseRequested?.Invoke(this, true);
             });
+        PropertyChanged += (_, _) => SyncNotices();
     }
 
     public void Start()
@@ -588,22 +746,17 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         )
             _languageLoad = LoadLanguage(tag);
         var present = new HashSet<string>();
-        var eligibilityChanged = false;
         foreach (var item in snapshot.GetProperty("torrents").EnumerateArray())
         {
             var torrentId = item.GetProperty("torrent_id").GetString()!;
             present.Add(torrentId);
-            var existing = _byId.TryGetValue(torrentId, out var torrent);
-            if (torrent is null)
+            if (!_byId.TryGetValue(torrentId, out var torrent))
             {
                 torrent = new Torrent(torrentId, Text);
                 _byId.Add(torrentId, torrent);
                 _torrents.Add(torrent);
             }
-            var couldReorder = torrent.Queue >= 0;
             torrent.Update(item);
-            eligibilityChanged |=
-                existing && couldReorder != (torrent.Queue >= 0) && Matches(torrent, Filter);
         }
         foreach (var torrent in Torrents.Where(row => !present.Contains(row.TorrentId)).ToArray())
         {
@@ -638,7 +791,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             ShowRequested?.Invoke(this, EventArgs.Empty);
         ObserveFiles(snapshot);
         Inspector.Observe(sessionId);
-        SnapshotApplied?.Invoke(this, new SnapshotAppliedEventArgs(published, eligibilityChanged));
+        SnapshotApplied?.Invoke(this, new SnapshotAppliedEventArgs(published));
         // Torrents added together are shown together, once all of them are in the list.
         if (_revealIds.Length > 0 && _revealIds.All(_byId.ContainsKey))
         {
@@ -932,14 +1085,25 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         FileDraft.Cancel();
     }
 
-    public void Report(Exception error)
+    public void Report(Exception error) => Report(error, ErrorTitle(error), string.Empty, null);
+
+    internal void Report(Exception error, string title, string subject, string? reason)
     {
         if (_closed)
             return;
         _error = error;
+        _errorTitle = title;
+        _errorSubject = subject;
+        _errorReason = reason;
         Refresh();
-        Announce(Text.Error(error));
+        Announce(CommandError);
     }
+
+    private string ErrorTitle(Exception error) =>
+        error is CommandException { Command: { } command }
+        && Text.Find("notifications", "failed_" + command) is not null
+            ? "failed_" + command
+            : "failed";
 
     internal void AnnounceAccepted(string group, string key) =>
         Announce(Text.Format("outcomes", "accepted", Text.Get(group, key)));
@@ -964,6 +1128,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     internal void EndClose()
     {
         _closing = false;
+        _ = RefreshFeatures();
         Refresh();
         if (_activationsPending)
             _ = ReceiveActivations();
@@ -1072,7 +1237,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
                 SwitchTheme,
                 Restart,
                 RetryFeatures,
-                OpenCompletion,
+                DeleteDatabase,
+                RepairDatabase,
             }
         )
             command.Refresh();
@@ -1109,10 +1275,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     }
 }
 
-internal sealed class SnapshotAppliedEventArgs(bool published, bool eligibilityChanged) : EventArgs
+internal sealed class SnapshotAppliedEventArgs(bool published) : EventArgs
 {
     public bool Published { get; } = published;
-    public bool EligibilityChanged { get; } = eligibilityChanged;
 }
 
 internal sealed class RelayCommand(Func<Task> execute, Func<bool> enabled) : ICommand

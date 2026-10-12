@@ -6,24 +6,9 @@
   xmlns:body="using:Syno.TableView.Body"
   xmlns:primitives="using:Microsoft.UI.Xaml.Controls.Primitives"
 >
-  <!--
-        The marker pair. Sections 11, 15 and 16 draw the column drop marker, the marquee and the row
-        drop marker as two strokes, a wide one with a narrow one inside it, so the cue stays visible
-        over any cell content whatever the theme. That is the same pair the platform builds a focus
-        visual from, and these markers used to read the platform's focus brushes directly. An
-        application that re-themes its focus visual overrides exactly those brushes — the sample
-        does, to a single accent stroke — and silently flattened all three cues to one tone. Built
-        from the platform's colours instead, the markers still track the theme and no longer sit in
-        the way of a decision about focus that belongs to the host.
-    -->
-  <SolidColorBrush
-    x:Key="TableViewMarkerOuterBrush"
-    Color="{ThemeResource FocusStrokeColorOuter}"
-  />
-  <SolidColorBrush
-    x:Key="TableViewMarkerInnerBrush"
-    Color="{ThemeResource FocusStrokeColorInner}"
-  />
+  <ResourceDictionary.MergedDictionaries>
+    <ResourceDictionary Source="ms-appx:///TableView/Themes/Markers.xaml" />
+  </ResourceDictionary.MergedDictionaries>
 
   <!-- Shared column geometry needs exactly these two container values. -->
   <Style
@@ -234,8 +219,13 @@
             <!-- Inset the chrome to match native row selection, keeping columns at the row origin. -->
             <Grid Margin="-4,0">
               <local:CellsPanel x:Name="PART_HeaderPanel" />
-              <Rectangle Height="1" Margin="4,0" VerticalAlignment="Bottom"
-                Fill="{ThemeResource DividerStrokeColorDefaultBrush}" IsHitTestVisible="False" />
+              <Rectangle
+                Height="1"
+                Margin="4,0"
+                VerticalAlignment="Bottom"
+                Fill="{ThemeResource DividerStrokeColorDefaultBrush}"
+                IsHitTestVisible="False"
+              />
 
               <!--
                                 Section 11's insertion marker, positioned by the strip on the
@@ -460,57 +450,6 @@
                 Visibility="Collapsed"
               >
                 <Rectangle Fill="{ThemeResource TextFillColorPrimaryBrush}" Opacity="0.14" />
-              </Grid>
-
-              <!--
-                                Section 16's insertion marker, positioned by the drag on the
-                                boundary a drop would use. It is section 11's column marker turned
-                                on its side, in the same marker pair, so the two boundaries read alike
-                                and the wider cap at the leading end is section 19's positional cue.
-                            -->
-              <Grid
-                x:Name="PART_RowInsertionMarker"
-                Height="9"
-                VerticalAlignment="Top"
-                IsHitTestVisible="False"
-                AutomationProperties.AccessibilityView="Raw"
-                Visibility="Collapsed"
-              >
-                <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="Auto" />
-                  <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
-
-                <Rectangle
-                  Grid.Column="0"
-                  Width="5"
-                  Height="9"
-                  HorizontalAlignment="Left"
-                  VerticalAlignment="Center"
-                  Fill="{ThemeResource TableViewMarkerInnerBrush}"
-                />
-                <Rectangle
-                  Grid.Column="0"
-                  Width="3"
-                  Height="7"
-                  HorizontalAlignment="Left"
-                  VerticalAlignment="Center"
-                  Margin="1,0,0,0"
-                  Fill="{ThemeResource TableViewMarkerOuterBrush}"
-                />
-
-                <Rectangle
-                  Grid.Column="1"
-                  Height="3"
-                  VerticalAlignment="Center"
-                  Fill="{ThemeResource TableViewMarkerInnerBrush}"
-                />
-                <Rectangle
-                  Grid.Column="1"
-                  Height="1"
-                  VerticalAlignment="Center"
-                  Fill="{ThemeResource TableViewMarkerOuterBrush}"
-                />
               </Grid>
             </Grid>
           </Grid>

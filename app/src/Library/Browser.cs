@@ -6,6 +6,7 @@ using Microsoft.UI.Xaml.Media;
 using Syno.TinyTorrent.Models;
 using Syno.TinyTorrent.Services;
 using Syno.TinyTorrent.Views;
+using Selection = Syno.TableView.Selection;
 
 namespace Syno.TinyTorrent.Library;
 
@@ -15,7 +16,7 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
     private readonly object _gate = new();
     private readonly Dictionary<long, LibraryRow> _rows = [];
     private readonly Dictionary<LibraryConfiguration, Dictionary<string, string>> _filters = [];
-    private readonly Dictionary<LibraryConfiguration, long> _selections = [];
+    private readonly Dictionary<LibraryConfiguration, Selection> _selections = [];
     private Store? _store;
     private VideoLookup? _videos;
     private FileFacts? _facts;
@@ -27,6 +28,11 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
     private int _revision;
     private bool _refresh;
     private bool _refreshDetail;
+    private bool _stored;
+    private bool _pacing;
+    private bool _searched;
+    private bool _available;
+    private string _emptyText = string.Empty;
     private bool _visible;
     private volatile bool _ready;
     private bool _connected;
@@ -34,61 +40,145 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
     private string _query = string.Empty;
     private Exception? _failure;
     private LibraryConfiguration _configuration;
-    private LibraryRow? _selected;
 
     public Strings Text { get; }
     public IReadOnlyList<LibraryRow> Rows { get; private set; } = [];
+    // Results keep their configuration while a search for another one is pending.
+    internal LibraryConfiguration RowsConfiguration { get; private set; }
+
+    internal async Task<Coverage?> ReadCoverage()
+    {
+        if (!IsAvailable || _store is not { } store)
+            return null;
+        try
+        {
+            return await store.ReadCoverage();
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception error)
+        {
+            if (ReferenceEquals(store, _store))
+                Report(error);
+        }
+        return null;
+    }
+
 #if CAPTURE
     internal Task SearchCompletion => _searching ?? Task.CompletedTask;
-    internal Task<int> PrepareTiming() => (_store ?? throw new InvalidOperationException("The timing capture has no store.")).PrepareTiming();
+
+    internal Task<int> PrepareTiming() =>
+        (
+            _store ?? throw new InvalidOperationException("The timing capture has no store.")
+        ).PrepareTiming();
 #endif
+
     public IReadOnlyList<Facet> Facets { get; private set; } = [];
-    public IReadOnlyDictionary<LibraryConfiguration, int> Counts { get; private set; } = new Dictionary<LibraryConfiguration, int>();
-    public LibraryRow? Selected => _selected;
-    public bool IsAvailable => !_disposed && _ready && _connected && _failure is null &&
-        _starting is { IsCompletedSuccessfully: true };
-    public bool IsOpen { get; private set; }
+    public IReadOnlyDictionary<LibraryConfiguration, int> Counts { get; private set; } =
+        new Dictionary<LibraryConfiguration, int>();
+    public Selection Selection { get; private set; } = Selection.Empty;
+    public LibraryRow? Selected =>
+        Selection.Items.Count == 1 ? Selection.Items[0] as LibraryRow : null;
+    public bool IsAvailable =>
+        !_disposed
+        && _connected
+        && _failure is null
+        && _starting is { IsCompletedSuccessfully: true };
     public string Failure => _failure is null ? string.Empty : Text.Error(_failure);
     internal bool HasFailure => _failure is not null;
-    public string Message => _selected?.OpeningFailure is not null ? _selected.Failure :
-        IsEnrichmentEnabled && _fetchFailure is { } fetchFailure ? Error(fetchFailure) :
-        IsEnrichmentEnabled && _videos?.Failure is { } failure ? Error(failure) : string.Empty;
+    internal Exception? FailureCause => _failure;
+
+    // Retry and RetryTip act on the failure that Message shows.
+    public string Message =>
+        Selected?.OpeningFailure is not null ? Selected.Failure
+        : IsEnrichmentEnabled && _fetchFailure is { } fetchFailure ? Error(fetchFailure)
+        : IsEnrichmentEnabled
+        && Selected?.Entry.Kind == FileKind.Video
+        && _videos?.Failure is { } failure
+            ? Error(failure)
+        : string.Empty;
+    internal string RetryTip =>
+        Selected?.OpeningFailure is not null ? Text.Get("library", "retry_open_tip")
+        : Option is { } option ? Text.Format("library", "retry_provider_tip", option.Name)
+        : string.Empty;
+
+    /// <summary>
+    /// Text such as "Waiting for TMDB" while a failure of the saved provider
+    /// holds lookups back, otherwise null. Videos without metadata show it in the card.
+    /// </summary>
+    internal string? Waiting =>
+        IsEnrichmentEnabled && _videos?.Failure is not null && Option is { } option
+            ? Text.Format("library", "waiting", option.Name)
+            : null;
 
     internal string Error(Exception error)
     {
         var message = Text.Error(error);
         return error is ProviderException { RetryAt: { } retry } && retry > DateTimeOffset.UtcNow
-            ? Text.Format("library", "provider_retry_at", message, Text.Time(retry)) : message;
+            ? Text.Format("library", "provider_retry_at", message, Text.Time(retry))
+            : message;
     }
-    public string Status => Text.Format("filters", "count", Text.Get("library", Configuration.ToString().ToLowerInvariant()), Rows.Count) +
-        (Filters.Count == 0 ? string.Empty : " · " + string.Join(" · ", Filters.Select(pair => FilterText(pair.Key, pair.Value)))) +
-        (Configuration == LibraryConfiguration.Videos && !IsEnrichmentEnabled ? " · " + Text.Get("library", "information_off") : string.Empty);
-    public bool IsEmpty => Query.Length == 0 && Filters.Count == 0 && !Counts.Values.Any(count => count > 0);
-    public string EmptyText => Text.Get("library", IsEmpty ? "empty" : Configuration switch
-    {
-        LibraryConfiguration.Videos => "no_videos",
-        LibraryConfiguration.Music => "no_music",
-        _ => "no_matches",
-    });
+
+    public string Status =>
+        Text.Format(
+            "filters",
+            "count",
+            Text.Get("library", Configuration.ToString().ToLowerInvariant()),
+            Rows.Count
+        )
+        + (
+            Filters.Count == 0
+                ? string.Empty
+                : " · "
+                    + string.Join(" · ", Filters.Select(pair => FilterText(pair.Key, pair.Value)))
+        )
+        + (
+            Configuration != LibraryConfiguration.Videos ? string.Empty
+            : !IsEnrichmentEnabled ? " · " + Text.Get("library", "download_off")
+            : Waiting is { } waiting ? " · " + waiting
+            : string.Empty
+        );
+    public bool IsEmpty =>
+        Query.Length == 0 && Filters.Count == 0 && !Counts.Values.Any(count => count > 0);
+
+    // Only a completed search of an available collection shows that nothing
+    // matched; otherwise the table stays blank.
+    public string EmptyText =>
+        !_searched || !IsAvailable
+            ? string.Empty
+            : Text.Get(
+                "library",
+                IsEmpty
+                    ? "empty"
+                    : Configuration switch
+                    {
+                        LibraryConfiguration.Videos => "no_videos",
+                        LibraryConfiguration.Music => "no_music",
+                        _ => "no_matches",
+                    }
+            );
     private Detail? _loadedDetail;
     public string Cast => _loadedDetail?.Cast ?? string.Empty;
     public string Synopsis => _loadedDetail?.Synopsis ?? string.Empty;
     internal VideoChoice? Series => _loadedDetail?.Series;
     internal IReadOnlyList<Episode> Episodes => _loadedDetail?.Episodes ?? [];
     public bool IsProviderAvailable => _videos?.IsAvailable == true;
-    public bool CanEnable => IsAvailable && IsProviderAvailable;
     public bool IsEnrichmentEnabled => _videos?.Enabled == true;
-    public string InformationLabel => Text.Get("library", "video_information");
-    public string InformationTip => Text.Get("library", IsEnrichmentEnabled ? "disable_tip" : "enable_tip");
-    public string EditMetadataLabel => Text.Get("library", "edit_metadata");
-    public string EditMetadataGlyph => Lucide.Pencil;
+    private string? LookupCatalog => IsEnrichmentEnabled ? Provider?.CatalogId : null;
+    public string DownloadLabel => Text.Get("library", "download_information");
+    public string FetchMetadataLabel => Text.Get("library", "fetch_metadata");
+    public string FetchMetadataGlyph => Lucide.Download;
     public IReadOnlyList<Origin> Origins => _loadedDetail?.Origins ?? [];
     public string FileType { get; private set; } = string.Empty;
     public string Application { get; private set; } = string.Empty;
     public ImageSource? ApplicationIcon { get; private set; }
-    public string OpenTip => Application.Length == 0 ? Text.Get("commands", "open") : Text.Format("library", "open_with", Application);
+    public string OpenTip =>
+        Application.Length == 0
+            ? Text.Get("commands", "open")
+            : Text.Format("library", "open_with", Application);
     public IReadOnlyDictionary<string, string> Filters =>
-        _filters.TryGetValue(Configuration, out var filters) ? filters : new Dictionary<string, string>();
+        _filters.TryGetValue(Configuration, out var filters)
+            ? filters
+            : new Dictionary<string, string>();
     public LibraryConfiguration Configuration
     {
         get => _configuration;
@@ -96,10 +186,9 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
         {
             if (_configuration == value)
                 return;
-            if (_selected is not null)
-                _selections[_configuration] = _selected.Entry.EntryId;
+            _selections[_configuration] = Selection;
             _configuration = value;
-            Select(null);
+            Select(Selection.Empty);
             SearchChanged();
             Changed(nameof(Configuration));
         }
@@ -121,98 +210,149 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
     public ICommand OpenFolder { get; }
     public ICommand Properties { get; }
     public ICommand EraseMetadata { get; }
-    public ICommand EditMetadata { get; }
-    public ICommand Enable { get; }
+    public ICommand FetchMetadata { get; }
+    public ICommand ShowSettings { get; }
     public ICommand Retry { get; }
     public ICommand ClearFilters { get; }
     public ICommand ShowTorrents { get; }
     internal event EventHandler<LibraryRow>? OpenRequested;
     internal event EventHandler<string>? FolderRequested;
     internal event EventHandler<Origin>? TorrentRequested;
-    internal event EventHandler? EditMetadataRequested;
-    internal event EventHandler? EnableRequested;
+    internal event EventHandler<ProviderOption>? FetchMetadataRequested;
+    internal event EventHandler? SettingsRequested;
     internal event EventHandler? TorrentsRequested;
     internal event EventHandler? RetryRequested;
     internal event EventHandler? FiltersRequested;
     internal event EventHandler? PropertiesRequested;
     internal event EventHandler<Exception>? CommandFailed;
+
+    // Raised with the number of files Fetch metadata left unidentified
+    // because the search limit refused their search.
+    internal event EventHandler<int>? BatchLimited;
     public event PropertyChangedEventHandler? PropertyChanged;
 
     internal Browser(Strings text, DispatcherQueue dispatcher)
     {
         Text = text;
         _dispatcher = dispatcher;
-        ShowTorrents = new RelayCommand(() =>
-        {
-            TorrentsRequested?.Invoke(this, EventArgs.Empty);
-            return Task.CompletedTask;
-        }, () => true);
-        Open = new RelayCommand(() =>
-        {
-            if (_selected is { } row)
-                OpenRequested?.Invoke(this, row);
-            return Task.CompletedTask;
-        }, () => IsAvailable && _selected is not null);
-        OpenFolder = new RelayCommand(() =>
-        {
-            if (_selected is { } row)
-                FolderRequested?.Invoke(this, row.Entry.Folder);
-            return Task.CompletedTask;
-        }, () => IsAvailable && _selected is not null);
-        Properties = new RelayCommand(() =>
-        {
-            PropertiesRequested?.Invoke(this, EventArgs.Empty);
-            OpenProperties();
-            return Task.CompletedTask;
-        }, () => _selected is not null);
-        EditMetadata = new RelayCommand(() =>
-        {
-            EditMetadataRequested?.Invoke(this, EventArgs.Empty);
-            return Task.CompletedTask;
-        }, () => IsAvailable && IsEnrichmentEnabled && _selected?.Entry.Kind == FileKind.Video);
-        Enable = new RelayCommand(() =>
-        {
-            EnableRequested?.Invoke(this, EventArgs.Empty);
-            return Task.CompletedTask;
-        }, () => CanEnable);
-        EraseMetadata = new RelayCommand(async () =>
-        {
-            if (_store is null || _selected is not { } row)
-                return;
-            try
+        ShowTorrents = new RelayCommand(
+            () =>
             {
-                await _store.EraseMetadata(row.Entry, CancellationToken.None);
-                Refresh();
-            }
-            catch (OperationCanceledException) { }
-            catch (Exception error) { ReportCommand(error); }
-        }, () => IsAvailable && _selected is { Entry.Type.Length: > 0 });
-        Retry = new RelayCommand(async () =>
-        {
-            if (_failure is null && _selected?.OpeningFailure is not null)
+                TorrentsRequested?.Invoke(this, EventArgs.Empty);
+                return Task.CompletedTask;
+            },
+            () => true
+        );
+        Open = new RelayCommand(
+            () =>
             {
-                Open.Execute(null);
-                return;
-            }
-            _failure = null;
-            Changed(nameof(Failure));
-            if (_starting is { IsFaulted: true } && _videos is not null)
-                _starting = _videos.Initialize(Text.Language);
-            RetryRequested?.Invoke(this, EventArgs.Empty);
-            await Observe();
-            if (!_disposed && _failure is null && _videos is not null && _starting is { IsCompletedSuccessfully: true })
+                foreach (var row in Selection.Items.Cast<LibraryRow>().ToArray())
+                    OpenRequested?.Invoke(this, row);
+                return Task.CompletedTask;
+            },
+            () => IsAvailable && Selection.Items.Count > 0
+        );
+        OpenFolder = new RelayCommand(
+            () =>
             {
-                try { await _videos.Retry(); }
+                foreach (
+                    var folder in Selection
+                        .Items.Cast<LibraryRow>()
+                        .Select(row => row.Entry.Folder)
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .ToArray()
+                )
+                    FolderRequested?.Invoke(this, folder);
+                return Task.CompletedTask;
+            },
+            () => IsAvailable && Selection.Items.Count > 0
+        );
+        Properties = new RelayCommand(
+            () =>
+            {
+                PropertiesRequested?.Invoke(this, EventArgs.Empty);
+                return Task.CompletedTask;
+            },
+            () => Selected is not null
+        );
+        FetchMetadata = new RelayCommand(
+            () =>
+            {
+                if (Option is { } option)
+                    Fetch(option);
+                return Task.CompletedTask;
+            },
+            () =>
+                CanLookup
+                && Selection
+                    .Items.Cast<LibraryRow>()
+                    .Any(row =>
+                        row.Entry.Kind == FileKind.Video
+                        && (Selection.Items.Count == 1 || !row.Entry.HasMetadata)
+                    )
+        );
+        ShowSettings = new RelayCommand(
+            () =>
+            {
+                SettingsRequested?.Invoke(this, EventArgs.Empty);
+                return Task.CompletedTask;
+            },
+            () => true
+        );
+        EraseMetadata = new RelayCommand(
+            async () =>
+            {
+                if (_store is not { } store)
+                    return;
+                var entries = Selection
+                    .Items.Cast<LibraryRow>()
+                    .Select(row => row.Entry)
+                    .Where(entry => entry.HasMetadata)
+                    .ToArray();
+                try
+                {
+                    foreach (var entry in entries)
+                        await store.EraseMetadata(entry, CancellationToken.None);
+                }
                 catch (OperationCanceledException) { }
-                catch (Exception error) { ReportCommand(error); }
-            }
-        }, () => _connected);
-        ClearFilters = new RelayCommand(() =>
-        {
-            _filters.Remove(Configuration);
-            SearchChanged();
-            return Task.CompletedTask;
-        }, () => Filters.Count > 0);
+                catch (Exception error)
+                {
+                    if (ReferenceEquals(store, _store))
+                        ReportCommand(error);
+                }
+                finally
+                {
+                    Refresh();
+                }
+            },
+            () =>
+                IsAvailable && Selection.Items.Cast<LibraryRow>().Any(row => row.Entry.HasMetadata)
+        );
+        Retry = new RelayCommand(
+            () =>
+            {
+                if (Selected?.OpeningFailure is not null)
+                    Open.Execute(null);
+                else if (_fetchFailure is not null)
+                    FetchDetails.Execute(null);
+                else
+                    _videos?.Retry();
+                return Task.CompletedTask;
+            },
+            () =>
+                Selected?.OpeningFailure is not null ? Open.CanExecute(null)
+                : _fetchFailure is not null ? FetchDetails.CanExecute(null)
+                : _videos?.Failure is { } failure && !(failure.RetryAt > DateTimeOffset.UtcNow)
+        );
+        ClearFilters = new RelayCommand(
+            () =>
+            {
+                _filters.Remove(Configuration);
+                SearchChanged();
+                return Task.CompletedTask;
+            },
+            () => Filters.Count > 0
+        );
         ConfigureInformation();
     }
 
@@ -222,32 +362,114 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
         _videos = videos;
         _facts = facts;
         videos.Changed += OnVideosChanged;
+        videos.Stored += OnStored;
+        videos.BatchFailed += OnBatchFailed;
+        videos.BatchLimited += OnBatchLimited;
         videos.Failed += OnWorkerFailed;
-        facts.Changed += OnFactsChanged;
+        facts.Changed += OnStored;
         facts.Failed += OnWorkerFailed;
         _starting = videos.Initialize(Text.Language);
         _ = Observe();
     }
 
-    private void OnVideosChanged(object? sender, EventArgs args) => _dispatcher.TryEnqueue(RefreshInformation);
-    private void OnFactsChanged(object? sender, EventArgs args) => _dispatcher.TryEnqueue(Refresh);
-    private void OnWorkerFailed(object? sender, Exception error) => Report(error);
+    private void OnVideosChanged(object? sender, EventArgs args) =>
+        _dispatcher.TryEnqueue(() =>
+        {
+            if (ReferenceEquals(sender, _videos))
+                RefreshInformation();
+        });
 
-    internal Task SetEnabled(bool enabled) => _videos?.SetEnabled(enabled) ?? Task.CompletedTask;
-    internal void RefreshInformation()
+    private void OnStored(object? sender, EventArgs args) =>
+        _dispatcher.TryEnqueue(() =>
+        {
+            if (ReferenceEquals(sender, _videos) || ReferenceEquals(sender, _facts))
+                StoredChanged();
+        });
+
+    private void OnBatchFailed(object? sender, Exception error) =>
+        _dispatcher.TryEnqueue(() =>
+        {
+            if (ReferenceEquals(sender, _videos))
+                ReportCommand(error);
+        });
+
+    private void OnBatchLimited(object? sender, int files) =>
+        _dispatcher.TryEnqueue(() =>
+        {
+            if (!_disposed && ReferenceEquals(sender, _videos))
+                BatchLimited?.Invoke(this, files);
+        });
+
+    private void OnWorkerFailed(object? sender, Exception error) =>
+        _dispatcher.TryEnqueue(() =>
+        {
+            if (ReferenceEquals(sender, _videos) || ReferenceEquals(sender, _facts))
+                Report(error);
+        });
+
+    // Lookups and file facts can store many files a second, and each refresh
+    // searches the Library again and replaces the table's rows. Their changes
+    // refresh the rows at once, then at most once a second while they arrive.
+    // The batch raises the same event for each file it finishes, so this also
+    // shows its progress.
+    private void StoredChanged()
     {
-        if (_disposed)
-            return;
-        Refresh();
-        RefreshProviders();
-        Changed(nameof(Status));
-        Changed(nameof(InformationTip));
-        Changed(nameof(Message));
+        _stored = true;
+        if (!_pacing)
+            _ = PaceRefresh();
     }
-    internal Task<IReadOnlyList<VideoChoice>> FindVideo(string query, CancellationToken cancellation) =>
-        _videos is null ? Task.FromResult<IReadOnlyList<VideoChoice>>([]) : _videos.Search(query, cancellation);
-    internal Task<bool> SaveMetadata(Entry entry, VideoChoice choice, CancellationToken cancellation) =>
-        _videos?.Identify(entry, choice, cancellation) ?? Task.FromResult(false);
+
+    private async Task PaceRefresh()
+    {
+        _pacing = true;
+        while (_stored && !_disposed)
+        {
+            _stored = false;
+            Refresh();
+            ChangedBatch();
+            await Task.Delay(TimeSpan.FromSeconds(1));
+        }
+        _pacing = false;
+    }
+
+    internal Task<IReadOnlyList<VideoChoice>> FindVideo(
+        string query,
+        ProviderOption source,
+        CancellationToken cancellation
+    ) =>
+        _videos is null
+            ? Task.FromResult<IReadOnlyList<VideoChoice>>([])
+            : _videos.Search(query, source, cancellation);
+
+    internal Task SaveMetadata(
+        Entry entry,
+        VideoChoice choice,
+        ProviderOption source,
+        CancellationToken cancellation
+    ) =>
+        (_videos ?? throw new InvalidOperationException("Library has no video lookup.")).Identify(
+            entry,
+            choice,
+            source,
+            cancellation
+        );
+
+    internal async Task Recover()
+    {
+        _failure = null;
+        Changed(nameof(Failure));
+        if (_starting is { IsFaulted: true } && _videos is not null)
+            _starting = _videos.Initialize(Text.Language);
+        RetryRequested?.Invoke(this, EventArgs.Empty);
+        await Observe();
+        if (
+            !_disposed
+            && _failure is null
+            && _videos is not null
+            && _starting is { IsCompletedSuccessfully: true }
+        )
+            _videos.Retry();
+    }
 
     internal Task Observe(bool ready, bool connected)
     {
@@ -287,6 +509,7 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
         lock (_gate)
         {
             _ready = false;
+            _connected = false;
             Pause();
         }
     }
@@ -303,7 +526,7 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
     {
         lock (_gate)
         {
-            if (IsAvailable)
+            if (_ready && IsAvailable)
             {
                 _facts?.SetConnected(true);
                 _videos?.Refresh(true, Text.Language);
@@ -319,6 +542,22 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
             CancelInformation();
         }
         Refresh();
+    }
+
+    // Their listeners rebuild menus and the empty state, which closes what
+    // the person has open, so these notify only when they change.
+    private void RefreshState()
+    {
+        if (_available != IsAvailable)
+        {
+            _available = IsAvailable;
+            Changed(nameof(IsAvailable));
+        }
+        if (_emptyText != EmptyText)
+        {
+            _emptyText = EmptyText;
+            Changed(nameof(EmptyText));
+        }
     }
 
     internal void SetVisible(bool visible)
@@ -345,7 +584,9 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
         if (section == "series")
         {
             if (value is not null && season is { } number)
-                filters["season"] = number.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                filters["season"] = number.ToString(
+                    System.Globalization.CultureInfo.InvariantCulture
+                );
             else
                 filters.Remove("season");
         }
@@ -353,21 +594,31 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
         SearchChanged();
     }
 
-    internal void FilterSeries(VideoChoice series, int? season = null) => Filter("series", Store.SeriesKey(series), season);
+    internal void FilterSeries(VideoChoice series, int? season = null) =>
+        Filter("series", Store.SeriesKey(series), season);
 
-    internal string FilterText(string section, string value) => section switch
-    {
-        "series" => Facets.FirstOrDefault(facet => facet.Section == section && facet.Value == value)?.Label ?? Text.Get("library", "series"),
-        "season" => Text.Format("library", "season_number", value),
-        "kind" when int.TryParse(value, out var kind) && Enum.IsDefined((FileKind)kind) =>
-            Text.Get("library", ((FileKind)kind).ToString().ToLowerInvariant()),
-        "type" => Text.Get("library", value.Length == 0 ? "unidentified" : value),
-        "modified" or "size" => Text.Get("library", value switch
+    internal string FilterText(string section, string value) =>
+        section switch
         {
-            "empty" => "zero_size", "year" => "this_year", _ => value,
-        }),
-        _ => value,
-    };
+            "series" => Facets
+                .FirstOrDefault(facet => facet.Section == section && facet.Value == value)
+                ?.Label
+                ?? Text.Get("library", "series"),
+            "season" => Text.Format("library", "season_number", value),
+            "kind" when int.TryParse(value, out var kind) && Enum.IsDefined((FileKind)kind) =>
+                Text.Get("library", ((FileKind)kind).ToString().ToLowerInvariant()),
+            "type" => Text.Get("library", value.Length == 0 ? "unidentified" : value),
+            "modified" or "size" => Text.Get(
+                "library",
+                value switch
+                {
+                    "empty" => "zero_size",
+                    "year" => "this_year",
+                    _ => value,
+                }
+            ),
+            _ => value,
+        };
 
     internal void Refresh()
     {
@@ -375,7 +626,7 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
             return;
         _refreshDetail = true;
         RefreshRows();
-        Changed(nameof(IsAvailable));
+        RefreshState();
         RefreshCommands();
     }
 
@@ -384,8 +635,12 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
         if (_disposed)
             return;
         _refresh = true;
-        if (_visible && IsAvailable && _store is not null &&
-            (_searching is null || _searching.IsCompleted))
+        if (
+            _visible
+            && IsAvailable
+            && _store is not null
+            && (_searching is null || _searching.IsCompleted)
+        )
             _searching = Search();
     }
 
@@ -409,13 +664,18 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
             {
                 var query = new Query(Query, Configuration)
                 {
-                    Configurations = _filters.ToDictionary(pair => pair.Key,
-                        pair => (IReadOnlyDictionary<string, string>)new Dictionary<string, string>(pair.Value)),
+                    CatalogId = LookupCatalog,
+                    Configurations = _filters.ToDictionary(
+                        pair => pair.Key,
+                        pair =>
+                            (IReadOnlyDictionary<string, string>)
+                                new Dictionary<string, string>(pair.Value)
+                    ),
                 };
                 var matches = await _store.Search(query, cancellation.Token);
                 if (revision != _revision || !IsAvailable || !_visible)
                     continue;
-                var previous = _selected;
+                var previous = Selected;
                 var previousEntry = previous?.Entry;
                 var refreshDetail = _refreshDetail;
                 _refreshDetail = false;
@@ -425,7 +685,7 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
                 {
                     retained.Add(entry.EntryId);
                     if (!_rows.TryGetValue(entry.EntryId, out var row))
-                        _rows[entry.EntryId] = row = new LibraryRow(entry, Text);
+                        _rows[entry.EntryId] = row = new LibraryRow(entry, this);
                     else
                         row.Update(entry);
                     rows.Add(row);
@@ -433,28 +693,47 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
                 foreach (var key in _rows.Keys.Where(key => !retained.Contains(key)).ToArray())
                     _rows.Remove(key);
                 Rows = rows;
+                RowsConfiguration = query.Configuration;
                 Facets = matches.Facets;
                 Counts = matches.Counts;
-                if (_selected is null && _selections.TryGetValue(Configuration, out var remembered) &&
-                    _rows.TryGetValue(remembered, out var restored))
-                    Select(restored);
-                if (_selected is { } selected && !retained.Contains(selected.Entry.EntryId))
-                    Select(null);
-                else if (_selected is not null && ReferenceEquals(previous, _selected) && IsOpen &&
-                    (refreshDetail || previousEntry != _selected.Entry))
+                _searched = true;
+                var selection =
+                    _selections.Remove(Configuration, out var remembered)
+                    && Selection.Items.Count == 0
+                        ? remembered
+                        : Selection;
+                var items = selection
+                    .Items.Cast<LibraryRow>()
+                    .Where(row => retained.Contains(row.Entry.EntryId))
+                    .Select(row => _rows[row.Entry.EntryId])
+                    .ToArray();
+                var current =
+                    selection.Current is LibraryRow focused
+                    && _rows.TryGetValue(focused.Entry.EntryId, out var restored)
+                        ? restored
+                        : items.FirstOrDefault();
+                Select(new Selection(items, current));
+                if (
+                    Selected is not null
+                    && ReferenceEquals(previous, Selected)
+                    && (refreshDetail || previousEntry != Selected.Entry)
+                )
                     _ = ReadDetail();
-                if (_selected is not null && previousEntry?.Path != _selected.Entry.Path)
+                if (Selected is not null && previousEntry?.Path != Selected.Entry.Path)
                     Changed(nameof(Selected));
-                if (previousEntry?.Type != _selected?.Entry.Type)
-                    Changed(nameof(EditMetadataLabel));
                 Changed(nameof(Rows));
                 Changed(nameof(Facets));
                 Changed(nameof(Counts));
                 Changed(nameof(Status));
+                RefreshState();
                 RefreshCommands();
             }
             catch (OperationCanceledException) { }
-            catch (Exception error) { Report(error); }
+            catch (Exception error)
+            {
+                if (!cancellation.IsCancellationRequested)
+                    Report(error);
+            }
             finally
             {
                 if (ReferenceEquals(_search, cancellation))
@@ -465,32 +744,39 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
         }
     }
 
-    public void Select(LibraryRow? row)
+    public void Select(LibraryRow? row) =>
+        Select(row is null ? Selection.Empty : new Selection([row], row));
+
+    internal void Select(Selection selection)
     {
-        if (ReferenceEquals(_selected, row))
+        if (
+            Selection.Items.SequenceEqual(selection.Items)
+            && ReferenceEquals(Selection.Current, selection.Current)
+        )
             return;
-        _selected = row;
-        _detail?.Cancel();
-        CancelInformation();
-        _loadedDetail = null;
-        _noVideoMatch = false;
-        _fetchFailure = null;
-        FileType = Application = string.Empty;
-        ApplicationIcon = null;
-        if (row is not null)
+        var previous = Selected;
+        Selection = selection;
+        if (!ReferenceEquals(previous, Selected))
         {
-            IsOpen = true;
-            _ = ReadDetail();
+            _detail?.Cancel();
+            CancelInformation();
+            _loadedDetail = null;
+            _noVideoMatch = false;
+            _fetchFailure = null;
+            FileType = Application = string.Empty;
+            ApplicationIcon = null;
+            if (Selected is not null)
+                _ = ReadDetail();
+            Changed(nameof(Selected));
+            Changed(nameof(Message));
         }
-        Changed(nameof(Selected));
-        Changed(nameof(IsOpen));
-        Changed(nameof(Message));
+        Changed(nameof(Selection));
         RefreshCommands();
     }
 
     private async Task ReadDetail()
     {
-        if (_store is null || _selected is not { } selected || !IsAvailable)
+        if (_store is null || Selected is not { } selected || !IsAvailable)
             return;
         _detail?.Cancel();
         var entry = selected.Entry;
@@ -498,14 +784,22 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
         _detail = cancellation;
         try
         {
-            var detail = await _store.Detail(entry.EntryId, cancellation.Token);
-            if (!ReferenceEquals(selected, _selected) || selected.Entry != entry ||
-                detail is not null && detail.Entry != entry ||
-                cancellation.IsCancellationRequested || !IsAvailable || !IsOpen)
+            var detail = await _store.Detail(entry.EntryId, LookupCatalog, cancellation.Token);
+            if (
+                !ReferenceEquals(selected, Selected)
+                || selected.Entry != entry
+                || cancellation.IsCancellationRequested
+                || !IsAvailable
+                || !_visible
+            )
                 return;
-            var changed = _loadedDetail?.Entry != detail?.Entry || Cast != (detail?.Cast ?? string.Empty) ||
-                Synopsis != (detail?.Synopsis ?? string.Empty) || Series != detail?.Series ||
-                !Episodes.SequenceEqual(detail?.Episodes ?? []) || !Origins.SequenceEqual(detail?.Origins ?? []);
+            var changed =
+                _loadedDetail?.Entry != detail?.Entry
+                || Cast != (detail?.Cast ?? string.Empty)
+                || Synopsis != (detail?.Synopsis ?? string.Empty)
+                || Series != detail?.Series
+                || !Episodes.SequenceEqual(detail?.Episodes ?? [])
+                || !Origins.SequenceEqual(detail?.Origins ?? []);
             _loadedDetail = detail;
             if (changed)
             {
@@ -513,10 +807,13 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
                 Changed(nameof(Synopsis));
                 Changed(nameof(Origins));
             }
-            ScheduleInformation();
         }
         catch (OperationCanceledException) { }
-        catch (Exception error) { Report(error); }
+        catch (Exception error)
+        {
+            if (!cancellation.IsCancellationRequested)
+                Report(error);
+        }
         finally
         {
             if (ReferenceEquals(_detail, cancellation))
@@ -530,44 +827,30 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
             TorrentRequested?.Invoke(this, source);
     }
 
-    internal void OpenProperties()
-    {
-        IsOpen = true;
-        _ = ReadDetail();
-        Changed(nameof(IsOpen));
-    }
-
-    internal void Close()
-    {
-        IsOpen = false;
-        _detail?.Cancel();
-        CancelInformation();
-        Changed(nameof(IsOpen));
-    }
-
     internal void ReportCommand(Exception error)
     {
+        var store = _store;
         if (error is SqliteException or DatabaseVersionException)
             Report(error);
         else
             _dispatcher.TryEnqueue(() =>
             {
-                if (!_disposed)
+                if (!_disposed && ReferenceEquals(store, _store))
                     CommandFailed?.Invoke(this, error);
             });
     }
 
     internal void Report(Exception error)
     {
+        var store = _store;
         _dispatcher.TryEnqueue(() =>
         {
-            if (_disposed)
+            if (_disposed || !ReferenceEquals(store, _store))
                 return;
             _failure = error;
             RefreshReadiness();
             Changed(nameof(Failure));
             Changed(nameof(Message));
-            Changed(nameof(IsAvailable));
         });
     }
 
@@ -577,14 +860,15 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
             return;
         row.OpeningFailure = error;
         row.Refresh();
-        if (ReferenceEquals(row, _selected))
+        if (ReferenceEquals(row, Selected))
             Changed(nameof(Message));
     }
 
     internal void Associate(FileAssociation association)
     {
-        var extension = Path.GetExtension(_selected?.Entry.Path) ?? string.Empty;
-        FileType = association.Type.Length == 0 ? extension : association.Type + " (" + extension + ")";
+        var extension = Path.GetExtension(Selected?.Entry.Path) ?? string.Empty;
+        FileType =
+            association.Type.Length == 0 ? extension : association.Type + " (" + extension + ")";
         Application = association.Application;
         ApplicationIcon = association.Icon;
         Changed(nameof(FileType));
@@ -602,14 +886,29 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
 
     private void RefreshCommands()
     {
-        foreach (var command in new[] { Open, OpenFolder, Properties, EditMetadata, Enable, EraseMetadata, Retry, ClearFilters, FetchDetails, ConfigureProvider })
+        foreach (
+            var command in new[]
+            {
+                Open,
+                OpenFolder,
+                Properties,
+                FetchMetadata,
+                ShowSettings,
+                EraseMetadata,
+                Retry,
+                ClearFilters,
+                FetchDetails,
+            }
+        )
             ((RelayCommand)command).Refresh();
     }
 
     internal Dictionary<LibraryConfiguration, Dictionary<string, string>> SaveFilters() =>
         _filters.ToDictionary(pair => pair.Key, pair => new Dictionary<string, string>(pair.Value));
 
-    internal void RestoreFilters(IReadOnlyDictionary<LibraryConfiguration, Dictionary<string, string>> filters)
+    internal void RestoreFilters(
+        IReadOnlyDictionary<LibraryConfiguration, Dictionary<string, string>> filters
+    )
     {
         foreach (var pair in filters)
             if (Enum.IsDefined(pair.Key))
@@ -626,17 +925,27 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
             Pause();
             _disposed = true;
         }
+        Stop();
+    }
+
+    private void Stop()
+    {
+        Disconnect();
+        _revision++;
         _search?.Cancel();
         _detail?.Cancel();
         CancelInformation();
         if (_videos is not null)
         {
             _videos.Changed -= OnVideosChanged;
+            _videos.Stored -= OnStored;
+            _videos.BatchFailed -= OnBatchFailed;
+            _videos.BatchLimited -= OnBatchLimited;
             _videos.Failed -= OnWorkerFailed;
         }
         if (_facts is not null)
         {
-            _facts.Changed -= OnFactsChanged;
+            _facts.Changed -= OnStored;
             _facts.Failed -= OnWorkerFailed;
         }
     }
@@ -646,53 +955,135 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
     private async Task Drain()
     {
         Dispose();
-        if (_starting is not null)
+        await Detach();
+    }
+
+    internal async Task Detach()
+    {
+        Stop();
+        var starting = _starting;
+        var searching = _searching;
+        var facts = _facts;
+        var videos = _videos;
+        _starting = null;
+        _store = null;
+        _facts = null;
+        _videos = null;
+        _rows.Clear();
+        _selections.Clear();
+        Select(Selection.Empty);
+        Rows = [];
+        RowsConfiguration = Configuration;
+        Facets = [];
+        Counts = new Dictionary<LibraryConfiguration, int>();
+        _searched = false;
+        _failure = null;
+        Changed(string.Empty);
+        RefreshState();
+        if (starting is not null)
         {
-            try { await _starting; }
-            catch (Exception error) { System.Diagnostics.Debug.WriteLine(error); }
+            try
+            {
+                await starting;
+            }
+            catch (Exception error)
+            {
+                System.Diagnostics.Debug.WriteLine(error);
+            }
         }
-        if (_facts is not null)
-            await _facts.DisposeAsync();
-        if (_videos is not null)
-            await _videos.DisposeAsync();
+        if (facts is not null)
+            await facts.DisposeAsync();
+        if (videos is not null)
+            await videos.DisposeAsync();
+        if (searching is not null)
+            await searching;
     }
 }
 
-public sealed class LibraryRow(Entry entry, Strings text) : INotifyPropertyChanged
+public sealed class LibraryRow(Entry entry, Browser library) : INotifyPropertyChanged
 {
+    private Strings Text => library.Text;
     internal Exception? OpeningFailure { get; set; }
-    public string Failure => OpeningFailure is null ? string.Empty :
-        (OpeningFailure is Win32Exception { NativeErrorCode: 2 } ? text.Get("library", "missing") :
-         OpeningFailure is Win32Exception { NativeErrorCode: 3 or 5 or 21 or 53 or 64 or 67 or 1231 } ? text.Get("library", "unavailable") :
-         text.Get("library", "opening_error")) + " " + text.Error(OpeningFailure);
+    public string Failure =>
+        OpeningFailure is null
+            ? string.Empty
+            : (
+                OpeningFailure is Win32Exception { NativeErrorCode: 2 }
+                    ? Text.Get("library", "missing")
+                : OpeningFailure
+                    is Win32Exception { NativeErrorCode: 3 or 5 or 21 or 53 or 64 or 67 or 1231 }
+                    ? Text.Get("library", "unavailable")
+                : Text.Get("library", "opening_error")
+            )
+                + " "
+                + Text.Error(OpeningFailure);
     public Entry Entry { get; private set; } = entry;
     public string Name => Entry.Name;
     public string Glyph =>
-        OpeningFailure is not null ? Lucide.TriangleAlert :
-        Entry.Kind == FileKind.Video && Entry.Type == "episode" ? Lucide.Tv :
-        FileName.Glyph(Entry.Kind);
+        OpeningFailure is not null ? Lucide.TriangleAlert
+        : Entry.Kind == FileKind.Video && Entry.Type == "episode" ? Lucide.Tv
+        : FileName.Glyph(Entry.Kind);
     public string Folder => Entry.Folder;
     public string Title => Entry.Title;
-    public string Type => text.Get("library", Entry.Type.Length == 0 ? "unidentified" : Entry.Type);
-    public string Year => Entry.Year?.ToString() ?? string.Empty;
-    public string ImdbRating => Score(Entry.ImdbRating);
-    public string TmdbRating => Score(Entry.TmdbRating);
+    public string Type => Text.Get("library", Entry.Type.Length > 0 ? Entry.Type : "unidentified");
+    public string Year => Provided(Entry.Year?.ToString() ?? string.Empty);
+    public string ImdbRating => Provided(Score(Entry.ImdbRating));
+    public string TmdbRating => Provided(Score(Entry.TmdbRating));
     public string ImdbTip => RatingTip(Entry.ImdbRating);
     public string TmdbTip => RatingTip(Entry.TmdbRating);
-    public string Genres => Entry.Genres;
-    public string Cast => Entry.Cast;
+    public string Genres => Provided(Entry.Genres);
+    public string Cast => Provided(Entry.Cast);
     public string Artist => Entry.Artist;
     public string Album => Entry.Album;
+    public string Subtitles =>
+        Entry.Subtitles.Count == 1
+            ? Text.LanguageName(Entry.Subtitles[0])
+            : string.Join(", ", Entry.Subtitles.Select(language => language.ToUpperInvariant()));
+    public string SubtitlesTip => string.Join(", ", Entry.Subtitles.Select(Text.LanguageName));
     public string Track => Entry.Track?.ToString() ?? string.Empty;
-    public string Duration => Entry.Duration is { } seconds ? TimeSpan.FromSeconds(seconds).ToString(@"h\:mm\:ss") : string.Empty;
-    public string Size => text.Bytes(Entry.Size);
-    public string Modified => Entry.Modified is { } time ? text.Time(DateTimeOffset.FromUnixTimeSeconds(time)) : string.Empty;
-    public string Created => Entry.Created is { } time ? text.Time(DateTimeOffset.FromUnixTimeSeconds(time)) : string.Empty;
-    public string Kind => text.Get("library", Entry.Kind.ToString().ToLowerInvariant());
+    public string Duration =>
+        Entry.Duration is { } seconds
+            ? TimeSpan.FromSeconds(seconds).ToString(@"h\:mm\:ss")
+            : string.Empty;
+    public string Bitrate =>
+        Entry.Bitrate is { } bits
+            ? bits >= 1_000_000
+                ? Text.Format("library", "bitrate_mbps", bits / 1_000_000d)
+                : Text.Format("library", "bitrate_kbps", bits / 1_000d)
+            : string.Empty;
+    public string Resolution =>
+        Entry.Width is { } width && Entry.Height is { } height
+            ? Text.Format("library", "dimensions", width, height)
+            : string.Empty;
+    public string Size => Text.Bytes(Entry.Size);
+    public string Modified =>
+        Entry.Modified is { } time
+            ? Text.Time(DateTimeOffset.FromUnixTimeSeconds(time))
+            : string.Empty;
+    public string Created =>
+        Entry.Created is { } time
+            ? Text.Time(DateTimeOffset.FromUnixTimeSeconds(time))
+            : string.Empty;
+    public string Kind => Text.Get("library", Entry.Kind.ToString().ToLowerInvariant());
+
     private static string Score(Rating? rating) => rating?.Value.ToString("0.0") ?? string.Empty;
-    private string RatingTip(Rating? rating) => rating is null ? string.Empty :
-        text.Format("library", "rating", Score(rating)) + (rating.Kind == VideoKind.Series ? " · " + text.Get("library", "series_rating") : string.Empty);
+
+    // An empty provider cell of an unmatched file shows a dash, so a file the
+    // provider does not have differs from one not looked up yet.
+    private string Provided(string value) => value.Length == 0 && Entry.IsUnmatched ? "—" : value;
+
+    private string RatingTip(Rating? rating) =>
+        rating is null
+            ? string.Empty
+            : Text.Format("library", "rating", Score(rating))
+                + (
+                    rating.Kind == VideoKind.Series
+                        ? " · " + Text.Get("library", "series_rating")
+                        : string.Empty
+                );
+
     public event PropertyChangedEventHandler? PropertyChanged;
+
     internal void Update(Entry value)
     {
         if (Entry == value)
@@ -702,5 +1093,7 @@ public sealed class LibraryRow(Entry entry, Strings text) : INotifyPropertyChang
         Entry = value;
         Refresh();
     }
-    internal void Refresh() => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
+
+    internal void Refresh() =>
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
 }

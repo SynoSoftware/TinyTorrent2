@@ -14,16 +14,27 @@ internal sealed partial class PipeClient
     {
         var files = await ReadSection(torrentId, "files", cancellation).ConfigureAwait(false);
         JsonElement? pieces = null;
-        if (files.GetProperty("metadata_ready").GetBoolean() &&
-            files.GetProperty("files").EnumerateArray().Any(file =>
-                !file.GetProperty("padding").GetBoolean() &&
-                file.GetProperty("downloaded").ValueKind == JsonValueKind.Number &&
-                file.GetProperty("downloaded").GetInt64() >= file.GetProperty("size").GetInt64()))
+        if (
+            files.GetProperty("metadata_ready").GetBoolean()
+            && files
+                .GetProperty("files")
+                .EnumerateArray()
+                .Any(file =>
+                    !file.GetProperty("padding").GetBoolean()
+                    && file.GetProperty("downloaded").ValueKind == JsonValueKind.Number
+                    && file.GetProperty("downloaded").GetInt64()
+                        >= file.GetProperty("size").GetInt64()
+                )
+        )
             pieces = await ReadSection(torrentId, "pieces", cancellation).ConfigureAwait(false);
         return new FileDetail(files, pieces);
     }
 
-    private async Task<JsonElement> ReadSection(string torrentId, string view, CancellationToken cancellation)
+    private async Task<JsonElement> ReadSection(
+        string torrentId,
+        string view,
+        CancellationToken cancellation
+    )
     {
         Task? inspector;
         lock (_gate)
@@ -41,16 +52,24 @@ internal sealed partial class PipeClient
         }
         try
         {
-            var reply = await Read(Consumer.Files, "torrent", new
-            {
-                torrent_id = torrentId,
-                context = pending.Context,
-                view,
-                include_files = view == "pieces",
-            }).WaitAsync(cancellation).ConfigureAwait(false);
+            var reply = await Read(
+                    Consumer.Files,
+                    "torrent",
+                    new
+                    {
+                        torrent_id = torrentId,
+                        context = pending.Context,
+                        view,
+                        include_files = view == "pieces",
+                    }
+                )
+                .WaitAsync(cancellation)
+                .ConfigureAwait(false);
             if (reply.GetProperty("ready").GetBoolean())
                 pending.Completion.TrySetResult(reply);
-            return await pending.Completion.Task.WaitAsync(RequestTimeout, cancellation).ConfigureAwait(false);
+            return await pending
+                .Completion.Task.WaitAsync(RequestTimeout, cancellation)
+                .ConfigureAwait(false);
         }
         finally
         {
@@ -78,8 +97,10 @@ internal sealed partial class PipeClient
             {
                 EndInspector();
                 var arguments = JsonSerializer.SerializeToElement(command.Arguments);
-                if (arguments.ValueKind == JsonValueKind.Object &&
-                    arguments.TryGetProperty("context", out var context))
+                if (
+                    arguments.ValueKind == JsonValueKind.Object
+                    && arguments.TryGetProperty("context", out var context)
+                )
                 {
                     _inspectorContext = context.GetInt64();
                     _inspector = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -94,8 +115,11 @@ internal sealed partial class PipeClient
         if (command.Consumer != Consumer.Inspector)
             return;
         lock (_gate)
-            if (data.ValueKind != JsonValueKind.Object ||
-                !data.TryGetProperty("ready", out var ready) || ready.GetBoolean())
+            if (
+                data.ValueKind != JsonValueKind.Object
+                || !data.TryGetProperty("ready", out var ready)
+                || ready.GetBoolean()
+            )
                 EndInspector();
     }
 
@@ -106,8 +130,11 @@ internal sealed partial class PipeClient
         {
             if (_inspectorContext == context)
                 EndInspector();
-            if (_files is not { } pending || pending.Context != context ||
-                message.GetProperty("torrent_id").GetString() != pending.TorrentId)
+            if (
+                _files is not { } pending
+                || pending.Context != context
+                || message.GetProperty("torrent_id").GetString() != pending.TorrentId
+            )
                 return;
             try
             {

@@ -34,7 +34,7 @@ public sealed partial class MainWindow
             return false;
         var interaction = new DialogInteraction { IsDraftDecision = isDraftDecision };
         _interaction = interaction;
-        Model.Library.SetDialog(true);
+        Model.Library.CancelInformation();
         var completed = false;
         try
         {
@@ -48,7 +48,6 @@ public sealed partial class MainWindow
         finally
         {
             _interaction = null;
-            Model.Library.SetDialog(false);
             interaction.Completion.TrySetResult(completed);
         }
         ShowDeferredAdd();
@@ -95,14 +94,17 @@ public sealed partial class MainWindow
         void ShowText()
         {
             dialog.CloseButtonText = Model.Text.Get("dialog", "cancel");
+            if (dialog.OptOut is { } optOut)
+                optOut.Content = Model.Text.Get("dialog", "never_show");
             refreshText();
         }
         dialog.XamlRoot = Root.XamlRoot;
+        dialog.Opened += (_, _) => RaiseNotices();
         interaction.Dialog = dialog;
         interaction.RefreshText = ShowText;
         try
         {
-            RefreshDialogs();
+            RefreshPopups();
             ShowText();
             return await dialog.ShowAsync();
         }
@@ -151,8 +153,34 @@ public sealed partial class MainWindow
         }
     }
 
-    private static async Task<bool> SaveOnClose(DialogInteraction interaction, IDraft draft, bool canSave) =>
-        !draft.HasDraft || !canSave || (interaction.IsResolved = await draft.Submit());
+    private static async Task<bool> SaveOnClose(
+        DialogInteraction interaction,
+        IDraft draft,
+        bool canSave
+    ) => !draft.HasDraft || !canSave || (interaction.IsResolved = await draft.Submit());
+
+    private async Task ConfirmDatabaseDeletion()
+    {
+        await Interact(async interaction =>
+        {
+            var dialog = new Dialog { Glyph = Lucide.Database, PrimaryGlyph = Lucide.Trash2 };
+            var choice = await ShowDialog(
+                interaction,
+                dialog,
+                () =>
+                {
+                    dialog.Title = Model.Text.Get("window", "delete_database_title");
+                    dialog.Content = Model.Text.Get("window", "delete_database_body");
+                    dialog.PrimaryButtonText = Model.Text.Get("file_action", "delete");
+                    dialog.PrimaryToolTip = Model.Text.Get("window", "delete_database_tip");
+                }
+            );
+            if (choice != ContentDialogResult.Primary)
+                return false;
+            await Model.RecreateDatabase();
+            return true;
+        });
+    }
 
     // A confirmation's facts, one trimmed line each.
     private static UIElement Lines(IEnumerable<string> texts)

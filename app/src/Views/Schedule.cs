@@ -35,8 +35,12 @@ public sealed class Schedule : INotifyPropertyChanged
             LimitMode.Alternative => ScheduleMode.Alternative,
             _ => ScheduleMode.Normal,
         };
-    internal string FormatFixedLimits(ScheduleMode mode) => _owner.FixedLimits == LimitMode.None
-        ? Text.Get("transfer_limits", "none") : FormatMode(mode);
+
+    internal string FormatFixedLimits(ScheduleMode mode) =>
+        _owner.FixedLimits == LimitMode.None
+            ? Text.Get("transfer_limits", "none")
+            : FormatMode(mode);
+
     public bool FollowsSchedule => FixedMode is null;
     public bool CanSchedule => CanEdit && !IsPending && FollowsSchedule;
     public bool IsOpen => _open is not null;
@@ -491,8 +495,7 @@ public sealed class SchedulePeriod
             );
     public string Length =>
         Span.Duration < 60 ? _owner.Text.Format("units", "minutes", Span.Duration)
-        : Span.Duration % 60 == 0
-            ? _owner.Text.Format("units", "hours", Span.Duration / 60)
+        : Span.Duration % 60 == 0 ? _owner.Text.Format("units", "hours", Span.Duration / 60)
         : _owner.Text.Format("units", "hours_minutes", Span.Duration / 60, Span.Duration % 60);
     public string TimeLabel => _owner.Text.Format("settings", "time_summary", TimeRange, Length);
     public string Description =>

@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TinyTorrent · Settings alignment prototype</title>
+<!-- Throwaway browser study. Open this file directly; settings stay in memory.
+     Native WinUI materials and controls are approximated, not replaced. -->
+<style>
+@font-face{font-family:Lucide;src:url('../lib/Lucide/src/Fonts/lucide.ttf')}
+:root{color-scheme:dark;--background:#282828;--card:#323232;--field:#3d3d3d;--border:#ffffff08;--text:#f5f5f5;--muted:#bcbcbc;--accent:#43c5f4;--hover:#ffffff09;--control:360px;--p-density:1}
+body.light{color-scheme:light;--background:#f3f3f3;--card:#fbfbfb;--field:#fff;--border:#00000012;--text:#202020;--muted:#606060;--accent:#0067a8;--hover:#00000006}
+*{box-sizing:border-box}
+body{margin:0;background:var(--background);color:var(--text);font:14px/1.45 'Segoe UI Variable Text','Segoe UI',sans-serif}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}button:disabled{cursor:default}
+button,input,select,textarea{border:1px solid var(--border);border-radius:4px;background:var(--field);min-height:32px}
+input,select,textarea{padding:5px 10px;min-width:0;width:100%}
+input,textarea{border-bottom-color:#888;caret-color:var(--accent)}
+input:focus,textarea:focus{border-bottom-color:var(--accent)}
+input::placeholder,textarea::placeholder{color:var(--muted);opacity:1}
+select option{background:var(--card)}
+button:hover:not(:disabled){filter:brightness(1.1)}
+:is(button,input,select,textarea):focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+:is(button,input,select,textarea):disabled{opacity:.4}
+::selection{background:var(--accent);color:var(--background)}
+*{scrollbar-color:var(--muted) transparent;scrollbar-width:thin}
+h1{font-size:28px;line-height:36px;font-weight:600;margin:0}
+h2{font-size:14px;font-weight:600;margin:0}
+.icon{font-family:Lucide;font-style:normal;font-weight:normal;line-height:1;flex:none}
+.page{height:100dvh;display:flex;flex-direction:column}
+.header,.content{width:min(1048px,100%);margin-inline:auto;padding-inline:24px}
+.header{padding-top:16px}
+.heading{display:flex;align-items:center;justify-content:space-between;gap:24px;margin-bottom:20px}
+.advanced{display:flex;align-items:center;gap:12px;font-size:13px}
+.tabs{display:flex;gap:4px;overflow-x:auto;white-space:nowrap;padding-bottom:20px}
+.tab{display:flex;align-items:center;gap:8px;padding:8px 10px;position:relative;font-size:14px}
+.tab .icon{font-size:14px}
+button.tab{background:transparent;border:0;border-radius:4px}
+.tab.active:after{content:'';position:absolute;bottom:-3px;left:calc(50% - 8px);width:16px;height:3px;border-radius:2px;background:var(--accent)}
+.scroll{flex:1;overflow:auto;min-height:0;scrollbar-gutter:stable both-edges}
+.content{padding-top:4px;padding-bottom:24px}
+.card{padding:20px 24px 12px;margin-bottom:16px;background:var(--card);border:1px solid var(--border);border-radius:5px}
+.card:last-child{margin-bottom:0}
+.section-heading{display:flex;align-items:center;gap:16px;margin-bottom:12px;min-height:24px}
+.section-heading .icon{font-size:20px;color:#8de2f1}
+.light .section-heading .icon{color:var(--accent)}
+.row{display:grid;grid-template-columns:minmax(0,1fr) var(--control);column-gap:24px;align-items:center;min-height:calc(44px * var(--p-density));padding-block:6px}
+.label{min-width:0;overflow-wrap:break-word}
+.control{min-width:0}
+.path{display:grid;grid-template-columns:minmax(0,1fr) 104px;gap:12px}
+.browse{display:flex;align-items:center;justify-content:center;gap:8px;padding:4px 8px;white-space:nowrap}
+.browse .icon{font-size:16px}
+.duration{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px}
+.duration .unit{align-self:center}
+.limits-summary{display:grid;grid-template-columns:minmax(0,1fr) 180px 180px;align-items:center;gap:32px;padding:16px 24px 24px}
+.limits-identity{display:flex;align-items:center;gap:24px;min-width:0}
+.limits-identity>.icon{font-size:80px;color:var(--accent)}
+.limits-identity h2{font-size:18px;line-height:26px}
+.limits-identity small{display:block;color:var(--muted);font-size:12px;margin-top:2px}
+.limit-cap{display:flex;align-items:center;gap:12px}
+.limit-cap>.icon{font-size:20px}
+.limit-cap strong{display:block;font-size:14px;font-weight:600}
+.limit-cap span{display:block;font-size:12px;color:var(--muted);margin-top:2px;font-variant-numeric:tabular-nums}
+.connection{display:flex;width:160px;max-width:100%;align-items:center;justify-content:center;gap:8px;padding:5px 12px;min-height:32px;border:1px solid var(--border);border-radius:4px;background:var(--field);color:var(--text);white-space:nowrap}
+.connection .icon{font-size:16px}
+.connection:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+input[type=number]{font-variant-numeric:tabular-nums}
+.number{width:calc((100% - 12px)/2)}
+.speed{--control:240px}
+.speed .duration{grid-template-columns:160px minmax(0,1fr)}
+.speed .number{width:160px}
+.speed .control>select{max-width:240px}
+.switch{display:inline-flex;align-items:center;gap:12px;min-height:32px;background:transparent;border:0;padding:6px 0}
+.switch:hover:not(:disabled){filter:none}
+.track{display:block;width:40px;height:20px;border:1px solid #aaa;border-radius:12px;position:relative}
+.track:after{content:'';position:absolute;left:3px;top:3px;width:12px;height:12px;background:#ccc;border-radius:50%}
+.switch[aria-checked=true] .track{background:var(--accent);border-color:var(--accent)}
+.switch[aria-checked=true] .track:after{left:23px;background:#17282f}
+.light .switch[aria-checked=true] .track:after{background:#fff}
+.light .switch[aria-checked=false] .track:after{background:#666}
+.state{min-width:24px;text-align:left}
+.patterns{padding-top:12px}
+.patterns label{display:block;margin-bottom:12px}
+.patterns textarea{height:96px;resize:vertical;display:block}
+.footer{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 24px;font-size:12px;color:var(--muted);border-top:1px solid var(--border)}
+.footer button{font-size:12px;padding:4px 12px;min-height:28px}
+dialog{width:min(500px,calc(100vw - 32px));border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--text);padding:24px;box-shadow:0 12px 32px #0004}
+dialog::backdrop{background:#0007}
+.setup-page{height:100dvh}
+.setup-page iframe{display:block;width:100%;height:100%;border:0}
+dialog h2{font-size:20px;margin-bottom:16px}dialog p{color:var(--muted);font-size:13px}
+dialog label{display:block;margin-bottom:8px}.actions{display:flex;justify-content:flex-end;gap:8px;margin-top:24px}.actions button{padding:4px 16px}
+.error{font-size:12px;color:#ffb4ab;margin-top:8px}.error:empty{display:none}.light .error{color:#a4262c}
+[hidden]{display:none!important}
+@media(max-width:860px){:root{--control:320px}.header,.content{padding-inline:20px}.card{padding-inline:20px}.row{column-gap:24px}}
+@media(max-width:860px){.limits-summary{grid-template-columns:minmax(0,1fr) 132px 132px;gap:20px;padding-inline:20px}.limits-identity{gap:16px}.limits-identity>.icon{font-size:64px}}
+@media(max-width:680px){.limits-summary{grid-template-columns:1fr 1fr;gap:20px;padding:12px 16px 24px}.limits-identity{grid-column:1/-1}}
+@media(max-width:680px){.heading{align-items:flex-start;flex-direction:column;gap:12px;margin-bottom:12px}.header,.content{padding-inline:16px}.card{padding-inline:16px}.row{grid-template-columns:minmax(0,1fr);gap:8px;padding-block:10px}.control{width:100%}.row:has(.switch){grid-template-columns:minmax(0,1fr) 100px;gap:16px;min-height:48px}.footer{padding-inline:16px}.tabs{gap:0}.tab{padding-inline:8px}.section-heading{margin-bottom:8px}}
+</style>
+<div class="page">
+  <header class="header">
+    <div class="heading"><h1>Settings</h1><div class="advanced"><span id="advanced-label">Show advanced settings</span><button class="switch" id="advanced" role="switch" aria-labelledby="advanced-label" aria-checked="false"><span class="track"></span><span class="state">Off</span></button></div></div>
+    <nav class="tabs" aria-label="Settings categories">
+      <span class="tab"><i class="icon" aria-hidden="true">&#xE158;</i>General</span><button class="tab active" data-page="transfers" aria-current="page"><i class="icon" aria-hidden="true">&#xE04A;</i>Transfers</button><button class="tab" data-page="speed"><i class="icon" aria-hidden="true">&#xE1BF;</i>Speed limits</button><span class="tab"><i class="icon" aria-hidden="true">&#xE1DD;</i>Appearance</span><span class="tab"><i class="icon" aria-hidden="true">&#xE129;</i>Network</span><span class="tab"><i class="icon" aria-hidden="true">&#xE067;</i>Schedule</span><span class="tab"><i class="icon" aria-hidden="true">&#xE3A8;</i>Subtitles</span><span class="tab" id="advanced-tab" hidden><i class="icon" aria-hidden="true">&#xE1B1;</i>Advanced</span>
+    </nav>
+  </header>
+  <main class="scroll"><div class="content" id="content"></div></main>
+  <footer class="footer"><span>Prototype · Alignment only · Sample values</span><button id="theme">Light theme</button></footer>
+</div>
+<dialog id="picker"><form id="folder-form"><h2>Choose folder</h2><p>Prototype: enter a sample path. No files or app settings are changed.</p><label for="folder">Folder</label><input id="folder" required><div class="actions"><button type="button" id="cancel">Cancel</button><button type="submit">Select folder</button></div></form></dialog>
+<section id="setup" class="setup-page" aria-label="Connection setup" hidden><iframe title="Connection setup"></iframe></section>
+<script>
+const state={advanced:false,location:'Default folder',destination:'C:\\Users\\user\\Downloads',incomplete:false,incompletePath:'C:\\Users\\user\\Downloads\\Incomplete',deletion:'Move to Recycle Bin',suffix:true,preallocate:false,start:true,queue:false,layout:'Keep folder structure',duplicate:'Keep existing trackers',exclude:false,patterns:'*.tmp\nThumbs.db',ratio:'1',time:'2',timeUnit:'minutes',inactive:'',inactiveUnit:'minutes',rule:'Any limit is reached',watch:false,watchPath:'',recursive:false,watchDestination:''};
+Object.assign(state,{mode:'Standard limits',download:'',upload:'',alternativeDownload:'1024',alternativeUpload:'256',activeDownloads:'3',activeSeeds:'5',activeTotal:'8',ignoreSlow:true,slowDownload:'2',slowUpload:'2',slowWait:'60',connections:'200',torrentConnections:'50',overhead:false,lan:true});
+let capacity={download:0,upload:0};
+const modes={none:'No limits',speed:'Standard limits',alternative:'Alternative limits',schedule:'Weekly schedule'};
+const content=document.getElementById('content');
+const escape=value=>String(value).replaceAll('&','&amp;').replaceAll('"','&quot;').replaceAll('<','&lt;').replaceAll('>','&gt;');
+const icon=code=>`<i class="icon" aria-hidden="true">&#x${code};</i>`;
+const toggle=(key,label,disabled=false)=>`<button id="${key}" data-key="${key}" class="switch" role="switch" aria-label="${escape(label)}" aria-checked="${state[key]}" ${disabled?'disabled':''}><span class="track"></span><span class="state">${state[key]?'On':'Off'}</span></button>`;
+const row=(label,control)=>`<div class="row"><div class="label">${label}</div><div class="control">${control}</div></div>`;
+const choice=(key,label,options)=>`<select id="${key}" data-key="${key}" aria-label="${escape(label)}">${options.map(value=>`<option ${value===state[key]?'selected':''}>${escape(value)}</option>`).join('')}</select>`;
+const field=(key,label,disabled=false)=>`<div class="path"><input id="${key}" data-key="${key}" aria-label="${escape(label)}" title="${escape(state[key])}" value="${escape(state[key])}" ${disabled?'disabled':''}><button class="browse" data-folder="${key}" aria-label="Browse ${escape(label.toLowerCase())}" ${disabled?'disabled':''}>${icon('E247')}Browse…</button></div>`;
+const number=(key,label,disabled=false,unlimited=true)=>`<input type="number" min="0" step="any" id="${key}" data-key="${key}" aria-label="${escape(label)}" value="${escape(state[key])}" placeholder="${unlimited?'Unlimited':''}" ${disabled?'disabled':''}>`;
+const duration=(key,unit,label)=>`<div class="duration">${number(key,label)}${choice(unit,label+' unit',['minutes','hours','days'])}</div>`;
+const section=(title,glyph,rows)=>`<section class="card" aria-label="${title}"><div class="section-heading">${icon(glyph)}<h2>${title}</h2></div>${rows}</section>`;
+const quantity=(key,label,unit='',disabled=false,unlimited=true)=>{
+  const input=number(key,label,disabled,unlimited);
+  return unit?`<div class="duration">${input}<span class="unit">${unit}</span></div>`:`<div class="number">${input}</div>`;
+};
+function summary(){
+  const rate=value=>{
+    const amount=Number(value);
+    if(!Number.isFinite(amount)||amount<0)return '—';
+    return amount===0?'Unlimited':`${new Intl.NumberFormat('en-US').format(amount)} KiB/s`;
+  };
+  const download=state.mode==='No limits'?'':state.mode==='Alternative limits'?state.alternativeDownload:state.download;
+  const upload=state.mode==='No limits'?'':state.mode==='Alternative limits'?state.alternativeUpload:state.upload;
+  const scheduled=state.mode==='Weekly schedule';
+  return `<div class="limits-identity">${icon('E1BF')}<div><h2>${scheduled?'Standard limits':state.mode}</h2>${scheduled?'<small>Weekly schedule · sample period</small>':''}</div></div><div class="limit-cap">${icon('E046')}<div><strong>Download limit</strong><span>${rate(download)}</span></div></div><div class="limit-cap">${icon('E04E')}<div><strong>Upload limit</strong><span>${rate(upload)}</span></div></div>`;
+}
+function speed(){
+  return `<div class="limits-summary" role="status" aria-label="Current limits">${summary()}</div>`+section('Speed limits','E29A',
+    row('Limits to use',choice('mode','Limits to use',Object.values(modes)))+
+    row('Configure limits',`<button class="connection" data-setup aria-label="Setup: configure speed and queue limits" title="Configure speed and queue limits from your connection capacity. Opens the Connection setup prototype.">${icon('E158')}Setup…</button>`))+
+  section('Standard limits','E1BF',
+    row('Download limit',quantity('download','Download limit','KiB/s',state.mode!=='Standard limits'&&state.mode!=='Weekly schedule'))+
+    row('Upload limit',quantity('upload','Upload limit','KiB/s',state.mode!=='Standard limits'&&state.mode!=='Weekly schedule')))+
+  section('Alternative limits','E24A',
+    row('Download limit',quantity('alternativeDownload','Alternative download limit','KiB/s',state.mode!=='Alternative limits'&&state.mode!=='Weekly schedule'))+
+    row('Upload limit',quantity('alternativeUpload','Alternative upload limit','KiB/s',state.mode!=='Alternative limits'&&state.mode!=='Weekly schedule')))+
+  section('Queue','E1D1',
+    row('Maximum active downloads',quantity('activeDownloads','Maximum active downloads'))+
+    row('Maximum active seeds',quantity('activeSeeds','Maximum active seeds'))+
+    row('Maximum active torrents',quantity('activeTotal','Maximum active torrents'))+
+    (state.advanced?
+      row('Exclude slow torrents from queue limits',toggle('ignoreSlow','Exclude slow torrents from queue limits'))+
+      row('Slow download threshold',quantity('slowDownload','Slow download threshold','KiB/s',!state.ignoreSlow,false))+
+      row('Slow upload threshold',quantity('slowUpload','Slow upload threshold','KiB/s',!state.ignoreSlow,false))+
+      row('Wait before treating a torrent as slow',quantity('slowWait','Wait before treating a torrent as slow','seconds',!state.ignoreSlow,false)):''))+
+  (state.advanced?section('Connections','E129',
+    row('Maximum connections',quantity('connections','Maximum connections'))+
+    row('Maximum connections per torrent',quantity('torrentConnections','Maximum connections per torrent')))+
+  section('Bandwidth accounting','E1BC',
+    row('Include protocol overhead',toggle('overhead','Include protocol overhead'))+
+    row('Apply limits to local network peers',toggle('lan','Apply limits to local network peers'))):'');
+}
+function render(){
+  document.getElementById('advanced').setAttribute('aria-checked',state.advanced);
+  document.querySelector('#advanced .state').textContent=state.advanced?'On':'Off';
+  document.getElementById('advanced-tab').hidden=!state.advanced;
+  const page=location.hash==='#speed'?'speed':'transfers';
+  content.classList.toggle('speed',page==='speed');
+  for(const tab of document.querySelectorAll('[data-page]')){
+    const selected=tab.dataset.page===page;
+    tab.classList.toggle('active',selected);
+    if(selected)tab.setAttribute('aria-current','page');else tab.removeAttribute('aria-current');
+  }
+  if(page==='speed'){content.innerHTML=speed();return}
+  content.innerHTML=section('Files','E336',
+    row('Download location',choice('location','Download location',['Default folder','Last used folder']))+
+    row('Default download folder',field('destination','Default download folder',state.location==='Last used folder'))+
+    row('Use a separate folder for incomplete downloads',toggle('incomplete','Use a separate folder for incomplete downloads'))+
+    row('Incomplete downloads folder',field('incompletePath','Incomplete downloads folder',!state.incomplete))+
+    row('When deleting downloaded files',choice('deletion','When deleting downloaded files',['Move to Recycle Bin','Delete permanently']))+
+    (state.advanced?row('Add .!tt to incomplete filenames',toggle('suffix','Add .!tt to incomplete filenames'))+row('Preallocate disk space',toggle('preallocate','Preallocate disk space')):''))+
+  section('Adding torrents','E141',
+    row('Start downloading added torrents',toggle('start','Start downloading added torrents'))+
+    row('Add new torrents to the top of the queue',toggle('queue','Add new torrents to the top of the queue'))+
+    row('Folder layout',choice('layout','Folder layout',['Keep folder structure','Create a subfolder',"Don't create a subfolder"]))+
+    row('When a torrent is already added',choice('duplicate','When a torrent is already added',['Keep existing trackers','Merge trackers'])))+
+  (state.advanced?section('File selection','E1D0',
+    row('Skip files with matching names',toggle('exclude','Skip files with matching names'))+
+    `<div class="patterns"><label for="patterns">File name patterns</label><textarea id="patterns" data-key="patterns" ${state.exclude?'':'disabled'}>${escape(state.patterns)}</textarea></div>`):'')+
+  section('Seeding limits','E1EB',
+    row('Seed until share ratio',`<div class="number">${number('ratio','Seed until share ratio')}</div>`)+
+    row('Seeding time limit',duration('time','timeUnit','Seeding time limit'))+
+    row('Pause after inactivity',duration('inactive','inactiveUnit','Pause after inactivity'))+
+    row('Pause when',choice('rule','Pause when',['Any limit is reached','All limits are reached'])))+
+  section('Watched folder','E338',
+    row('Watch a folder',toggle('watch','Watch a folder'))+
+    row('Folder to watch',field('watchPath','Folder to watch')+'<div class="error" id="watch-error" role="status"></div>')+
+    row('Include subfolders',toggle('recursive','Include subfolders',!state.watch))+
+    row('Download folder',field('watchDestination','Download folder',!state.watch)));
+}
+document.getElementById('advanced').onclick=()=>{state.advanced=!state.advanced;render()};
+document.getElementById('theme').onclick=event=>{const light=document.body.classList.toggle('light');event.target.textContent=light?'Dark theme':'Light theme'};
+content.addEventListener('input',event=>{const key=event.target.dataset.key;if(key){state[key]=event.target.value;if(event.target.tagName==='INPUT')event.target.title=event.target.value;const header=document.querySelector('.limits-summary');if(header)header.innerHTML=summary()}});
+content.addEventListener('change',event=>{const key=event.target.dataset.key;if(key==='location'||key==='mode'){render();document.getElementById(key).focus()}});
+document.querySelector('.tabs').addEventListener('click',event=>{const tab=event.target.closest('[data-page]');if(tab)location.hash=tab.dataset.page});
+window.addEventListener('hashchange',()=>{render();document.querySelector('.scroll').scrollTop=0});
+let folder;
+content.addEventListener('click',event=>{
+  const button=event.target.closest('button');if(!button)return;
+  if(button.hasAttribute('data-setup')){document.querySelector('#setup iframe').src='connection-limits-prototype.html?embedded';document.querySelector('.page').hidden=true;document.getElementById('setup').hidden=false;document.querySelector('#setup iframe').focus();return}
+  if(button.dataset.folder){folder=button.dataset.folder;document.getElementById('folder').value=state[folder];document.getElementById('picker').showModal();return}
+  const key=button.dataset.key;if(!key)return;
+  if(key==='watch'&&!state.watch&&!state.watchPath.trim()){document.getElementById('watch-error').textContent='Choose a folder to watch first.';document.getElementById('watchPath').focus();return}
+  state[key]=!state[key];render();document.getElementById(key).focus();
+});
+document.getElementById('cancel').onclick=()=>document.getElementById('picker').close();
+document.getElementById('folder-form').onsubmit=event=>{event.preventDefault();state[folder]=document.getElementById('folder').value;document.getElementById('picker').close();render();document.querySelector(`[data-folder="${folder}"]`).focus()};
+window.addEventListener('message',event=>{
+  const frame=document.querySelector('#setup iframe'),page=document.getElementById('setup');
+  if(event.source!==frame.contentWindow||page.hidden)return;
+  if(event.data?.action==='ready'){
+    frame.contentWindow.postMessage({action:'open',light:document.body.classList.contains('light'),current:{capacity,standard:{download:Number(state.download)*1024,upload:Number(state.upload)*1024},alternative:{download:Number(state.alternativeDownload)*1024,upload:Number(state.alternativeUpload)*1024},queue:[state.activeDownloads,state.activeSeeds,state.activeTotal].map(Number),mode:Object.keys(modes).find(key=>modes[key]===state.mode)}},'*');
+  }else if(event.data?.action==='apply'||event.data?.action==='cancel'){
+    if(event.data.action==='apply'){
+      const result=event.data.current;capacity=result.capacity;
+      Object.assign(state,{download:String(result.standard.download/1024||''),upload:String(result.standard.upload/1024||''),alternativeDownload:String(result.alternative.download/1024||''),alternativeUpload:String(result.alternative.upload/1024||''),activeDownloads:String(result.queue[0]||''),activeSeeds:String(result.queue[1]||''),activeTotal:String(result.queue[2]||''),mode:modes[result.mode]});
+    }
+    page.hidden=true;frame.src='about:blank';document.querySelector('.page').hidden=false;render();document.querySelector('[data-setup]').focus();
+  }
+});
+render();
+</script>
+</html>

@@ -17,10 +17,17 @@ internal static class ShellAssociation
             return string.Empty;
         var value = new StringBuilder(checked((int)length));
         return AssocQueryStringW(0, kind, association, "open", value, ref length) == 0
-            ? value.ToString() : string.Empty;
+            ? value.ToString()
+            : string.Empty;
     }
 
     [DllImport("shlwapi.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
-    private static extern int AssocQueryStringW(uint flags, uint kind, string association,
-        string extra, StringBuilder? value, ref uint length);
+    private static extern int AssocQueryStringW(
+        uint flags,
+        uint kind,
+        string association,
+        string extra,
+        StringBuilder? value,
+        ref uint length
+    );
 }

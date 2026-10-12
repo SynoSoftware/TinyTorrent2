@@ -398,7 +398,7 @@ const STR = {
     any:'Any', all:'All', movies:'Movies', episodes:'TV episodes', unid:'Unidentified video',
     cName:'Name', cTitle:'Title', cType:'Type', cYear:'Released', cSize:'Size', cLoc:'Folder', cArtist:'Artist', cAlbum:'Album',
     cfgVideos:'Videos', cfgMusic:'Music', cfgFiles:'Files', notId:'Not identified', cTrack:'Track', cDuration:'Duration', gMusic:'Music information', nVideos:'videos', nMusic:'audio files', nFiles:'files',
-    open:'Open', openFolder:'Open folder', properties:'Properties', close:'Close', minimizeFilters:'Minimize filters', inspector:'Inspector', minimizeInspector:'Minimize Inspector', noTorrent:'No torrent selected', edit:'Edit metadata', save:'Save', identify:'Edit metadata', eraseMetadata:'Erase metadata', showT:'Show in Torrents', more:'More',
+    open:'Open', openFolder:'Open folder', properties:'Properties', close:'Close', minimizeFilters:'Minimize filters', inspector:'Inspector', minimizeInspector:'Minimize Inspector', noTorrent:'No torrent selected', edit:'Fetch metadata', save:'Save', identify:'Fetch metadata', eraseMetadata:'Erase metadata', showT:'Show in Torrents', more:'More',
     complete:'Complete', downloading:'Downloading', seeding:'Seeding', paused:'Paused', queued:'Queued', errors:'Errors', missing:'Missing', unavailable:'Unavailable', noapp:"Couldn't open",
     movie:'Movie', episode:'TV episode', video:'Video', audio:'Audio',
     gFile:'File', propertiesH:'Properties', folderL:'Folder', kind:'Kind', date:'Date modified', size:'Size', createdL:'Created', modifiedL:'Modified', typeOfFile:'Type of file', opensWith:'Opens with', noApp:'None',
@@ -736,7 +736,7 @@ function idStatus(e) {
 }
 const moreBtn = e => `<button class="btn icon subtle" data-act="fly" data-fly="more" id="more-btn" aria-label="${T('more')}" title="${T('more')}" aria-haspopup="menu">${ic('more')}</button>`;
 const words = {
-  en:{ refresh:'Refresh', refresh_tip:'Refresh video information', fetch:'Fetch', fetch_tip:'Fetch video information', filter:'Filter by', metadata:'Metadata', enable:'Enable…', identify:'Edit metadata', off:'Video information off', provider:'Provider unavailable',
+  en:{ refresh:'Refresh', refresh_tip:'Refresh video information', fetch:'Fetch', fetch_tip:'Fetch video information', filter:'Filter by', metadata:'Metadata', enable:'Enable…', identify:'Fetch metadata', off:'Video information off', provider:'Provider unavailable',
     unidentified:'Not identified', noTags:'No tags', tags:'Tags', year:'Year', duration:'Duration', track:'Track',
     movie:'Movie', episode:'TV episode', series:'Series', season:'Season', music:'Audio', artist:'Artist', album:'Album', genres:'Genres', cast:'Cast',
     synopsis:'Synopsis', properties:'Properties', name:'Name', folder:'Folder', torrent:'Torrent',

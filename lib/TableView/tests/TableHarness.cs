@@ -108,7 +108,8 @@ internal static class TableHarness
 
     /// <summary>Effective width of one column by id, whether it is visible or not.</summary>
     internal static void SetWidth(Table table, string id, double width) =>
-        typeof(Table).GetMethod("SetColumnWidth", BindingFlags.Instance | BindingFlags.NonPublic)!
+        typeof(Table)
+            .GetMethod("SetColumnWidth", BindingFlags.Instance | BindingFlags.NonPublic)!
             .Invoke(table, new[] { EffectiveColumn(table, id), (object)width });
 
     internal static double EffectiveWidth(Table table, string id) =>

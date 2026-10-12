@@ -11,6 +11,7 @@ internal sealed class TorrentSource : IAsyncDisposable
     private JsonElement? _latest;
     private Task? _work;
     private bool _invalidated;
+    private bool _reread;
     private bool _connected;
     private bool _failureReported;
     private string? _session;
@@ -19,6 +20,7 @@ internal sealed class TorrentSource : IAsyncDisposable
 
     internal event EventHandler? Changed;
     internal event EventHandler<Exception>? Failed;
+    internal bool IsCurrent { get; private set; }
     internal bool IsReady { get; private set; }
 
     internal TorrentSource(PipeClient client, FileSources sources)
@@ -27,12 +29,15 @@ internal sealed class TorrentSource : IAsyncDisposable
         _sources = sources;
         client.Snapshot += Observe;
         client.Disconnected += Disconnect;
-        client.FilesChanged += Invalidate;
+        client.FilesChanged += Reread;
     }
 
     internal void Observe(JsonElement snapshot)
     {
-        if (snapshot.GetProperty("loading").GetBoolean() || snapshot.GetProperty("storage_failed").GetBoolean())
+        if (
+            snapshot.GetProperty("loading").GetBoolean()
+            || snapshot.GetProperty("storage_failed").GetBoolean()
+        )
         {
             Disconnect(string.Empty);
             return;
@@ -45,11 +50,9 @@ internal sealed class TorrentSource : IAsyncDisposable
             var session = snapshot.GetProperty("session_id").GetString();
             if (!_connected || _session != session)
             {
-                _generation.Cancel();
-                _generation.Dispose();
-                _generation = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
-                _revision++;
+                Restart();
                 _invalidated = true;
+                IsCurrent = false;
                 IsReady = false;
                 invalidated = true;
             }
@@ -64,22 +67,32 @@ internal sealed class TorrentSource : IAsyncDisposable
                 _work = Task.Run(Run);
     }
 
-    private void Invalidate()
+    // A successful torrent command can change the files of any torrent. The
+    // listed files stay while every torrent is read again from a snapshot
+    // taken after the command. Changed lets Library show what the read that
+    // Restart ended saved but did not report.
+    private void Reread()
     {
         lock (_gate)
         {
             if (_lifetime.IsCancellationRequested)
                 return;
-            _revision++;
-            _invalidated = true;
-            _latest = null;
-            IsReady = false;
-            _generation.Cancel();
-            _generation.Dispose();
-            _generation = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
+            Restart();
+            _reread = true;
         }
         Changed?.Invoke(this, EventArgs.Empty);
         _ = _client.RefreshSnapshot();
+    }
+
+    // Ends the current read, which then saves nothing more. The next read
+    // starts from a newer snapshot. The caller holds _gate.
+    private void Restart()
+    {
+        _revision++;
+        _latest = null;
+        _generation.Cancel();
+        _generation.Dispose();
+        _generation = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
     }
 
     private void Disconnect(string reason)
@@ -91,6 +104,7 @@ internal sealed class TorrentSource : IAsyncDisposable
             _revision++;
             _connected = false;
             _latest = null;
+            IsCurrent = false;
             IsReady = false;
             _generation.Cancel();
         }
@@ -109,26 +123,50 @@ internal sealed class TorrentSource : IAsyncDisposable
             {
                 JsonElement? snapshot;
                 bool invalidated;
+                bool reread;
                 long revision;
                 lock (_gate)
                 {
                     snapshot = _latest;
                     _latest = null;
                     invalidated = _invalidated;
-                    if (snapshot is not null)
-                        _invalidated = false;
+                    reread = _reread;
                     revision = _revision;
-                    if (!_connected || (invalidated && snapshot is null))
+                    if (!_connected || ((invalidated || reread) && snapshot is null))
                     {
                         return;
                     }
                 }
                 if (snapshot is { } current)
                 {
-                    var contributions = current.GetProperty("torrents").EnumerateArray().Select(Read).ToArray();
-                    changed |= await _sources.Reconcile(contributions, cancellation).ConfigureAwait(false);
+                    var contributions = current
+                        .GetProperty("torrents")
+                        .EnumerateArray()
+                        .Select(Read)
+                        .ToArray();
+                    changed |= await _sources
+                        .Reconcile(contributions, cancellation)
+                        .ConfigureAwait(false);
                     if (invalidated)
                         await _sources.Invalidate(cancellation).ConfigureAwait(false);
+                    else if (reread)
+                        await _sources.Reread(cancellation).ConfigureAwait(false);
+                    bool synchronized;
+                    lock (_gate)
+                    {
+                        if (
+                            !_connected
+                            || revision != _revision
+                            || cancellation.IsCancellationRequested
+                        )
+                            continue;
+                        _invalidated = false;
+                        _reread = false;
+                        synchronized = !IsCurrent;
+                        IsCurrent = true;
+                    }
+                    if (synchronized)
+                        Changed?.Invoke(this, EventArgs.Empty);
                 }
 
                 var next = await _sources.Next(cancellation).ConfigureAwait(false);
@@ -137,9 +175,11 @@ internal sealed class TorrentSource : IAsyncDisposable
                     var ready = await _sources.IsReady(cancellation).ConfigureAwait(false);
                     lock (_gate)
                     {
-                        if (_latest is not null)
+                        // A read that Restart ended leaves readiness to the
+                        // next read, because Reread keeps it.
+                        if (_latest is not null || revision != _revision)
                             continue;
-                        ready = ready && _connected && revision == _revision && !cancellation.IsCancellationRequested;
+                        ready = ready && _connected && !cancellation.IsCancellationRequested;
                         changed |= IsReady != ready;
                         IsReady = ready;
                         if (ready)
@@ -151,7 +191,9 @@ internal sealed class TorrentSource : IAsyncDisposable
                 }
                 try
                 {
-                    var detail = await _client.ReadFiles(next.Origin, cancellation).ConfigureAwait(false);
+                    var detail = await _client
+                        .ReadFiles(next.Origin, cancellation)
+                        .ConfigureAwait(false);
                     lock (_gate)
                     {
                         if (!_connected || revision != _revision)
@@ -160,13 +202,23 @@ internal sealed class TorrentSource : IAsyncDisposable
                         _latest = null;
                     }
                     if (snapshot is { } latest)
-                        changed |= await _sources.Reconcile(latest.GetProperty("torrents")
-                            .EnumerateArray().Select(Read).ToArray(), cancellation).ConfigureAwait(false);
+                        changed |= await _sources
+                            .Reconcile(
+                                latest
+                                    .GetProperty("torrents")
+                                    .EnumerateArray()
+                                    .Select(Read)
+                                    .ToArray(),
+                                cancellation
+                            )
+                            .ConfigureAwait(false);
                     if (Files(next, detail) is { } files)
-                        changed |= await _sources.Replace(next, files, cancellation).ConfigureAwait(false);
+                        changed |= await _sources
+                            .Replace(next, files, cancellation)
+                            .ConfigureAwait(false);
                     else
                         await _sources.MarkChecked(next, cancellation).ConfigureAwait(false);
-                    if (IsReady && changed)
+                    if (changed)
                     {
                         Changed?.Invoke(this, EventArgs.Empty);
                         changed = false;
@@ -191,7 +243,11 @@ internal sealed class TorrentSource : IAsyncDisposable
             Changed?.Invoke(this, EventArgs.Empty);
             lock (_gate)
             {
-                if (!_lifetime.IsCancellationRequested && !cancellation.IsCancellationRequested && !_failureReported)
+                if (
+                    !_lifetime.IsCancellationRequested
+                    && !cancellation.IsCancellationRequested
+                    && !_failureReported
+                )
                 {
                     _failureReported = true;
                     Failed?.Invoke(this, error);
@@ -211,37 +267,56 @@ internal sealed class TorrentSource : IAsyncDisposable
 
     private static Contribution Read(JsonElement row)
     {
-        var settled = !row.GetProperty("moving").GetBoolean() &&
-            row.GetProperty("move_destination").GetString() is not { Length: > 0 } &&
-            row.GetProperty("status").GetString() != "checking";
+        var settled =
+            !row.GetProperty("moving").GetBoolean()
+            && row.GetProperty("move_destination").GetString() is not { Length: > 0 }
+            && row.GetProperty("status").GetString() != "checking";
         var path = row.GetProperty("save_path").GetString()!;
         var complete = row.GetProperty("complete").GetBoolean();
-        return new Contribution(row.GetProperty("torrent_id").GetString()!,
-            row.GetProperty("name").GetString()!, complete, settled)
+        return new Contribution(
+            row.GetProperty("torrent_id").GetString()!,
+            row.GetProperty("name").GetString()!,
+            complete,
+            settled
+        )
         {
             SavePath = path,
-            Stamp = JsonSerializer.Serialize(new
-            {
-                path, complete, settled,
-                size = row.GetProperty("size").GetInt64(),
-            }),
+            Stamp = JsonSerializer.Serialize(
+                new
+                {
+                    path,
+                    complete,
+                    settled,
+                    size = row.GetProperty("size").GetInt64(),
+                }
+            ),
         };
     }
 
     private static IReadOnlyList<SourceFile>? Files(Contribution contribution, FileDetail detail)
     {
+        // A torrent without metadata has no files yet, so its empty list is
+        // complete and does not hold back cleanup that waits for unread lists.
         if (!detail.Files.GetProperty("metadata_ready").GetBoolean())
-            return null;
+            return [];
         var verified = new HashSet<string>(StringComparer.Ordinal);
         if (detail.Pieces is { } pieces)
         {
-            var bits = pieces.GetProperty("verified").EnumerateArray().Select(bit => bit.GetBoolean()).ToArray();
+            var bits = pieces
+                .GetProperty("verified")
+                .EnumerateArray()
+                .Select(bit => bit.GetBoolean())
+                .ToArray();
             foreach (var file in pieces.GetProperty("files").EnumerateArray())
             {
                 var first = file.GetProperty("first_piece").GetInt32();
                 var end = file.GetProperty("end_piece").GetInt32();
-                if (first >= 0 && end <= bits.Length && end >= first &&
-                    Enumerable.Range(first, end - first).All(index => bits[index]))
+                if (
+                    first >= 0
+                    && end <= bits.Length
+                    && end >= first
+                    && Enumerable.Range(first, end - first).All(index => bits[index])
+                )
                     verified.Add(file.GetProperty("path").GetString()!);
             }
         }
@@ -253,14 +328,18 @@ internal sealed class TorrentSource : IAsyncDisposable
             if (file.GetProperty("disk_path").GetString() is not { } disk)
                 return null;
             var path = file.GetProperty("path").GetString()!;
-            files.Add(new SourceFile(file.GetProperty("index").GetInt32(),
-                Path.GetFullPath(Path.Combine(contribution.SavePath, disk)),
-                Path.GetFullPath(Path.Combine(contribution.SavePath, path)),
-                file.GetProperty("size").GetInt64())
-            {
-                Complete = verified.Contains(path),
-                Wanted = file.GetProperty("priority").GetInt32() > 0,
-            });
+            files.Add(
+                new SourceFile(
+                    file.GetProperty("index").GetInt32(),
+                    Path.GetFullPath(Path.Combine(contribution.SavePath, disk)),
+                    Path.GetFullPath(Path.Combine(contribution.SavePath, path)),
+                    file.GetProperty("size").GetInt64()
+                )
+                {
+                    Complete = verified.Contains(path),
+                    Wanted = file.GetProperty("priority").GetInt32() > 0,
+                }
+            );
         }
         return files;
     }
@@ -269,7 +348,7 @@ internal sealed class TorrentSource : IAsyncDisposable
     {
         _client.Snapshot -= Observe;
         _client.Disconnected -= Disconnect;
-        _client.FilesChanged -= Invalidate;
+        _client.FilesChanged -= Reread;
         Task? work;
         lock (_gate)
         {

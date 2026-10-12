@@ -64,6 +64,8 @@ public sealed partial class Table
                 _pendingSelection = value;
                 return;
             }
+            if (SameSelection(_publishedSelection, value))
+                return;
             SyncSelectionPolicy();
             CancelGesture();
             _selection.SetSelection(value.Items, value.Current, View);

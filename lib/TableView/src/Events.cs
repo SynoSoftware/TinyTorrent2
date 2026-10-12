@@ -64,14 +64,13 @@ public sealed class ReorderRequestedEventArgs : EventArgs
     }
 
     /// <summary>
-    /// The rows to move, in row order: the current visual order, or its reverse under the column
-    /// that <see cref="Column.DefinesRowOrder"/> sorted downward.
+    /// The participating items in ascending numbered order, independent of the view sort.
     /// </summary>
     public IReadOnlyList<object> Items { get; }
 
     /// <summary>
-    /// The row the packet goes immediately before, in row order, once the packet itself has been
-    /// taken out, or null to append. It is never one of <see cref="Items"/>.
+    /// The remaining item to insert before, or null to append. The destination can be outside
+    /// the filtered table source, but never belongs to Items.
     /// </summary>
     public object? Before { get; }
 }

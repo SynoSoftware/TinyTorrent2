@@ -367,17 +367,7 @@ try {
                 $identities += $reply.data.torrent_id
             }
             $reply = Send-Command @{ command = 'move'; torrent_ids = $identities; destination = $payload }
-            Assert $reply.ok 'The final-name collision preflight was not accepted'
-            $until = [DateTime]::UtcNow.AddSeconds(15)
-            do {
-                $rows = (Send-Command @{ command = 'snapshot' }).data.torrents
-                if (@($rows | Where-Object { $_.moving -or $_.error -ne 'destination_exists' }).Count -eq 0) { break }
-                Start-Sleep -Milliseconds 100
-            } while ([DateTime]::UtcNow -lt $until)
-            Assert (@($rows | Where-Object { $_.moving -or $_.error -ne 'destination_exists' -or $_.save_path -ne $empty }).Count -eq 0) 'An unfinished suffix concealed a collision with the final filename'
-            Assert ((Payload-Hash $finished) -eq $originalHash) 'Collision preflight changed the existing completed bytes'
-            $reply = Send-Command @{ command = 'move'; torrent_ids = $identities; destination = $payload; use_existing = $true }
-            Assert $reply.ok 'Explicit use of existing completed files was refused'
+            Assert $reply.ok 'The move could not discover the existing completed files'
             $until = [DateTime]::UtcNow.AddSeconds(15)
             do {
                 $files = @($identities | ForEach-Object {
@@ -472,9 +462,7 @@ try {
             $snapshot = Start-Engine
             Assert (@($snapshot.torrents | Where-Object error -ne 'move_interrupted').Count -eq 0) 'An interrupted move resumed as ordinary transfer state'
             $reply = Send-Command @{ command = 'move'; torrent_ids = $identities; destination = $destination }
-            Assert (-not $reply.ok -and $reply.error.code -eq 'move_interrupted') 'An ordinary retry erased the unresolved move destination'
-            $reply = Send-Command @{ command = 'move'; torrent_ids = $identities; destination = $destination; use_existing = $true }
-            Assert $reply.ok 'Explicit recovery could not use the files at their known folder'
+            Assert $reply.ok 'Move could not recover the files at their known folder'
             $until = [DateTime]::UtcNow.AddSeconds(15)
             do {
                 Start-Sleep -Milliseconds 100
@@ -722,14 +710,14 @@ try {
                 ConvertTo-Json | Tee-Object -FilePath (Join-Path $directory 'rates.json')
             $reply = Send-Command @{ command = 'settings'; changes = @{ limit_mode = 'none' } }
             Assert $reply.ok 'Unlimited transfer could not resume'
+            $wanted = Join-Path $payload 'selection/wanted.bin'
             $until = [DateTime]::UtcNow.AddSeconds(60)
             do {
                 $snapshot = Send-Command @{ command = 'snapshot' }
-                if ($snapshot.data.torrents[0].complete) { break }
+                if ($snapshot.data.torrents[0].complete -and (Test-Path -LiteralPath $wanted)) { break }
                 [Threading.Thread]::Sleep(100)
             } while ([DateTime]::UtcNow -lt $until)
-            Assert $snapshot.data.torrents[0].complete 'Wanted file never completed'
-            $wanted = Join-Path $payload 'selection/wanted.bin'
+            Assert ($snapshot.data.torrents[0].complete -and (Test-Path -LiteralPath $wanted)) 'Wanted file never completed at its final name'
             $skipped = Join-Path $payload 'selection/skip.bin'
             Assert (-not (Test-Path -LiteralPath $skipped) -or (Get-Item -LiteralPath $skipped).Length -eq 0) 'Unwanted aligned file received payload'
             $wantedHash = Payload-Hash $wanted
@@ -917,6 +905,8 @@ try {
             Assert (@($snapshot.torrents).Count -eq 0) 'Cancelled preview became membership after restart'
         }
         'RemoveKeepFiles' {
+            $reply = Send-Command @{ command = 'settings'; changes = @{ append_suffix = $false } }
+            Assert $reply.ok 'Removal fixture could not disable incomplete-file suffixes'
             $peer = Start-Process -FilePath $peerExecutable `
                 -ArgumentList @(('"' + $peerDirectory + '"'), '6881') -WindowStyle Hidden -PassThru `
                 -RedirectStandardOutput (Join-Path $directory 'peer.log') -RedirectStandardError (Join-Path $directory 'peer-error.log')

@@ -39,86 +39,124 @@
       </VisualStateGroup>
     </VisualStateManager.VisualStateGroups>
     <controls:Pane.Header>
-        <!-- Left-aligned, so the size follows a short name and a long name trims before it. -->
-        <Grid HorizontalAlignment="Left" ColumnSpacing="12">
-          <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="Auto" />
-            <ColumnDefinition Width="*" />
-            <ColumnDefinition Width="Auto" />
-          </Grid.ColumnDefinitions>
-          <FontIcon
-            x:Name="HeadingGlyph"
-            Style="{StaticResource TinyTorrentGroupIconStyle}"
-            FontFamily="{x:Bind icons:Lucide.Font}"
-            Glyph="{x:Bind Model.Target.StatusGlyph, Mode=OneWay, FallbackValue=''}"
-          />
-          <TextBlock
-            x:Name="HeadingName"
-            Grid.Column="1"
-            Text="{x:Bind Model.Name, Mode=OneWay}"
-            Style="{StaticResource TinyTorrentGroupTitleTextStyle}"
-            ToolTipService.ToolTip="{x:Bind Model.Name, Mode=OneWay}"
-            AutomationProperties.HeadingLevel="Level1"
-          />
-          <TextBlock
-            x:Name="HeadingSize"
-            Grid.Column="2"
-            Text="{x:Bind Model.Target.SizeText, Mode=OneWay, FallbackValue=''}"
-            Style="{StaticResource TinyTorrentTitleDetailTextStyle}"
-          />
-        </Grid>
+      <!-- Left-aligned, so the size follows a short name and a long name trims before it. -->
+      <Grid HorizontalAlignment="Left" ColumnSpacing="12">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+        <FontIcon
+          x:Name="HeadingGlyph"
+          Style="{StaticResource TinyTorrentGroupIconStyle}"
+          FontFamily="{x:Bind icons:Lucide.Font}"
+          Glyph="{x:Bind Model.Target.StatusGlyph, Mode=OneWay, FallbackValue=''}"
+        />
+        <TextBlock
+          x:Name="HeadingName"
+          Grid.Column="1"
+          Text="{x:Bind Model.Name, Mode=OneWay}"
+          Style="{StaticResource TinyTorrentGroupTitleTextStyle}"
+          ToolTipService.ToolTip="{x:Bind Model.Name, Mode=OneWay}"
+          AutomationProperties.HeadingLevel="Level1"
+        />
+        <TextBlock
+          x:Name="HeadingSize"
+          Grid.Column="2"
+          Text="{x:Bind Model.Target.SizeText, Mode=OneWay, FallbackValue=''}"
+          Style="{StaticResource TinyTorrentTitleDetailTextStyle}"
+        />
+      </Grid>
     </controls:Pane.Header>
     <controls:Pane.Navigation>
-        <SelectorBar
-          x:Name="Sections"
-          Padding="0"
-          SelectionChanged="OnSection"
-          AutomationProperties.AutomationId="InspectorSections"
-        >
-          <SelectorBarItem
-            x:Name="GeneralSection"
-            AutomationProperties.AutomationId="InspectorGeneral"
-          />
-          <SelectorBarItem x:Name="FilesSection" AutomationProperties.AutomationId="InspectorFiles" />
-          <SelectorBarItem x:Name="PeersSection" AutomationProperties.AutomationId="InspectorPeers" />
-          <SelectorBarItem
-            x:Name="TrackersSection"
-            AutomationProperties.AutomationId="InspectorTrackers"
-          />
-          <SelectorBarItem x:Name="SpeedSection" AutomationProperties.AutomationId="InspectorSpeed" />
-          <SelectorBarItem
-            x:Name="PiecesSection"
-            AutomationProperties.AutomationId="InspectorPieces"
-          />
-        </SelectorBar>
+      <SelectorBar
+        x:Name="Sections"
+        Padding="0"
+        SelectionChanged="OnSection"
+        AutomationProperties.AutomationId="InspectorSections"
+      >
+        <SelectorBarItem
+          x:Name="GeneralSection"
+          AutomationProperties.AutomationId="InspectorGeneral"
+        />
+        <SelectorBarItem x:Name="FilesSection" AutomationProperties.AutomationId="InspectorFiles" />
+        <SelectorBarItem x:Name="PeersSection" AutomationProperties.AutomationId="InspectorPeers" />
+        <SelectorBarItem
+          x:Name="TrackersSection"
+          AutomationProperties.AutomationId="InspectorTrackers"
+        />
+        <SelectorBarItem x:Name="SpeedSection" AutomationProperties.AutomationId="InspectorSpeed" />
+        <SelectorBarItem
+          x:Name="PiecesSection"
+          AutomationProperties.AutomationId="InspectorPieces"
+        />
+      </SelectorBar>
     </controls:Pane.Navigation>
     <controls:Pane.Actions>
       <StackPanel Orientation="Horizontal" Spacing="12">
-        <StackPanel x:Name="LibraryActions" Orientation="Horizontal"
-                    HorizontalAlignment="Right" VerticalAlignment="Center" Spacing="4" Visibility="Collapsed">
+        <StackPanel
+          x:Name="LibraryActions"
+          Orientation="Horizontal"
+          HorizontalAlignment="Right"
+          VerticalAlignment="Center"
+          Spacing="4"
+          Visibility="Collapsed"
+        >
           <StackPanel x:Name="LibraryPrimaryActions" Orientation="Horizontal" Spacing="4">
-            <Button x:Name="LibraryOpen" Style="{StaticResource TinyTorrentSubtleButtonStyle}" AutomationProperties.AutomationId="LibraryOpen">
-              <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Play}"
-                Style="{StaticResource TinyTorrentStatusIconStyle}" />
+            <Button
+              x:Name="LibraryOpen"
+              Style="{StaticResource TinyTorrentSubtleButtonStyle}"
+              AutomationProperties.AutomationId="LibraryOpen"
+            >
+              <FontIcon
+                FontFamily="{x:Bind icons:Lucide.Font}"
+                Glyph="{x:Bind icons:Lucide.Play}"
+                Style="{StaticResource TinyTorrentStatusIconStyle}"
+              />
             </Button>
-            <Button x:Name="LibraryTorrents" Style="{StaticResource TinyTorrentSubtleButtonStyle}" AutomationProperties.AutomationId="LibraryTorrents">
-              <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.LocateFixed}"
-                Style="{StaticResource TinyTorrentStatusIconStyle}" />
+            <Button
+              x:Name="LibraryTorrents"
+              Style="{StaticResource TinyTorrentSubtleButtonStyle}"
+              AutomationProperties.AutomationId="LibraryTorrents"
+            >
+              <FontIcon
+                FontFamily="{x:Bind icons:Lucide.Font}"
+                Glyph="{x:Bind icons:Lucide.LocateFixed}"
+                Style="{StaticResource TinyTorrentStatusIconStyle}"
+              />
             </Button>
           </StackPanel>
-          <Button x:Name="LibraryMore" Style="{StaticResource TinyTorrentSubtleButtonStyle}" AutomationProperties.AutomationId="LibraryMore">
-            <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Ellipsis}" />
+          <Button
+            x:Name="LibraryMore"
+            Style="{StaticResource TinyTorrentSubtleButtonStyle}"
+            AutomationProperties.AutomationId="LibraryMore"
+          >
+            <FontIcon
+              FontFamily="{x:Bind icons:Lucide.Font}"
+              Glyph="{x:Bind icons:Lucide.Ellipsis}"
+            />
           </Button>
-          <Border Width="1" Height="16" Margin="8,0,0,0" VerticalAlignment="Center"
+          <Border
+            Width="1"
+            Height="16"
+            Margin="8,0,0,0"
+            VerticalAlignment="Center"
             Background="{ThemeResource DividerStrokeColorDefaultBrush}"
-            AutomationProperties.AccessibilityView="Raw" />
+            AutomationProperties.AccessibilityView="Raw"
+          />
         </StackPanel>
         <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Spacing="4">
-          <Button x:Name="Minimize" x:FieldModifier="internal"
+          <Button
+            x:Name="Minimize"
+            x:FieldModifier="internal"
             Style="{StaticResource TinyTorrentSubtleButtonStyle}"
-            AutomationProperties.AutomationId="InspectorMinimize">
-            <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Pin}"
-              Style="{StaticResource TinyTorrentStatusIconStyle}" />
+            AutomationProperties.AutomationId="InspectorMinimize"
+          >
+            <FontIcon
+              FontFamily="{x:Bind icons:Lucide.Font}"
+              Glyph="{x:Bind icons:Lucide.Pin}"
+              Style="{StaticResource TinyTorrentStatusIconStyle}"
+            />
           </Button>
           <Button
             x:Name="Close"
@@ -144,176 +182,174 @@
           HorizontalScrollMode="Disabled"
           HorizontalScrollBarVisibility="Disabled"
         >
-          <StackPanel
-            x:Name="GeneralContent"
-            Spacing="16"
-            SizeChanged="OnGeneralSize"
-          >
+          <StackPanel x:Name="GeneralContent" Spacing="16" SizeChanged="OnGeneralSize">
             <controls:Section
               Header="{x:Bind Model.Text.Get('inspector', 'transfer'), Mode=OneWay}"
-              Glyph="{x:Bind icons:Lucide.ArrowDownUp}">
-            <StackPanel>
-              <Grid ColumnSpacing="16">
-                <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="*" />
-                  <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-                <TextBlock
-                  Text="{x:Bind Model.Target.Status, Mode=OneWay}"
-                  Style="{StaticResource TinyTorrentSurfaceTitleTextStyle}"
-                  IsTextSelectionEnabled="True"
-                  ToolTipService.ToolTip="{x:Bind Model.Target.Status, Mode=OneWay}"
-                />
-                <TextBlock
-                  Grid.Column="1"
-                  Text="{x:Bind Model.ProgressText, Mode=OneWay}"
-                  Style="{StaticResource TinyTorrentSurfaceTitleTextStyle}"
-                />
-              </Grid>
-              <ProgressBar
-                x:Name="Progress"
-                Minimum="0"
-                Maximum="1"
-                Margin="0,8,0,8"
-                Value="{x:Bind Model.Target.Progress, Mode=OneWay}"
-                IsIndeterminate="{x:Bind Model.IsIndeterminate, Mode=OneWay}"
-                ShowError="{x:Bind Model.Target.IsError, Mode=OneWay}"
-                AutomationProperties.Name="{x:Bind Model.Text.Get('columns', 'progress'), Mode=OneWay}"
-              />
-              <Grid ColumnSpacing="24">
-                <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="*" />
-                  <ColumnDefinition Width="Auto" MinWidth="112" />
-                  <ColumnDefinition Width="Auto" MinWidth="112" />
-                </Grid.ColumnDefinitions>
-                <TextBlock
-                  x:Name="Summary"
-                  Text="{x:Bind Model.Summary, Mode=OneWay}"
-                  Style="{StaticResource InspectorValueStyle}"
-                  ToolTipService.ToolTip="{x:Bind Model.Summary, Mode=OneWay}"
-                />
-                <StackPanel
-                  x:Name="DownloadRate"
-                  Grid.Column="1"
-                  Orientation="Horizontal"
-                  Spacing="4"
-                  HorizontalAlignment="Right"
-                  Background="Transparent"
-                  ToolTipService.ToolTip="{x:Bind Model.Text.Get('columns', 'down'), Mode=OneWay}"
-                >
-                  <FontIcon
-                    Style="{StaticResource TinyTorrentStatusIconStyle}"
-                    FontFamily="{x:Bind icons:Lucide.Font}"
-                    Glyph="{x:Bind icons:Lucide.ArrowDown}"
-                    AutomationProperties.AccessibilityView="Raw"
+              Glyph="{x:Bind icons:Lucide.ArrowDownUp}"
+            >
+              <StackPanel>
+                <Grid ColumnSpacing="16">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                  </Grid.ColumnDefinitions>
+                  <TextBlock
+                    Text="{x:Bind Model.Target.Status, Mode=OneWay}"
+                    Style="{StaticResource TinyTorrentSurfaceTitleTextStyle}"
+                    IsTextSelectionEnabled="True"
+                    ToolTipService.ToolTip="{x:Bind Model.Target.Status, Mode=OneWay}"
                   />
                   <TextBlock
-                    Text="{x:Bind Model.Target.DownloadText, Mode=OneWay}"
+                    Grid.Column="1"
+                    Text="{x:Bind Model.ProgressText, Mode=OneWay}"
+                    Style="{StaticResource TinyTorrentSurfaceTitleTextStyle}"
+                  />
+                </Grid>
+                <ProgressBar
+                  x:Name="Progress"
+                  Minimum="0"
+                  Maximum="1"
+                  Margin="0,8,0,8"
+                  Value="{x:Bind Model.Target.Progress, Mode=OneWay}"
+                  IsIndeterminate="{x:Bind Model.IsIndeterminate, Mode=OneWay}"
+                  ShowError="{x:Bind Model.Target.IsError, Mode=OneWay}"
+                  AutomationProperties.Name="{x:Bind Model.Text.Get('columns', 'progress'), Mode=OneWay}"
+                />
+                <Grid ColumnSpacing="24">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" MinWidth="112" />
+                    <ColumnDefinition Width="Auto" MinWidth="112" />
+                  </Grid.ColumnDefinitions>
+                  <TextBlock
+                    x:Name="Summary"
+                    Text="{x:Bind Model.Summary, Mode=OneWay}"
                     Style="{StaticResource InspectorValueStyle}"
-                    AutomationProperties.Name="{x:Bind Model.Target.DownloadName, Mode=OneWay}"
-                    ToolTipService.ToolTip="{x:Bind Model.Target.DownloadText, Mode=OneWay}"
+                    ToolTipService.ToolTip="{x:Bind Model.Summary, Mode=OneWay}"
                   />
-                </StackPanel>
-                <StackPanel
-                  x:Name="UploadRate"
-                  Grid.Column="2"
-                  Orientation="Horizontal"
-                  Spacing="4"
-                  HorizontalAlignment="Right"
-                  Background="Transparent"
-                  ToolTipService.ToolTip="{x:Bind Model.Text.Get('columns', 'up'), Mode=OneWay}"
-                >
-                  <FontIcon
-                    Style="{StaticResource TinyTorrentStatusIconStyle}"
-                    FontFamily="{x:Bind icons:Lucide.Font}"
-                    Glyph="{x:Bind icons:Lucide.ArrowUp}"
-                    AutomationProperties.AccessibilityView="Raw"
-                  />
-                  <TextBlock
-                    Text="{x:Bind Model.Target.UploadText, Mode=OneWay}"
-                    Style="{StaticResource InspectorValueStyle}"
-                    AutomationProperties.Name="{x:Bind Model.Target.UploadName, Mode=OneWay}"
-                    ToolTipService.ToolTip="{x:Bind Model.Target.UploadText, Mode=OneWay}"
-                  />
-                </StackPanel>
-              </Grid>
-              <controls:Strip Margin="0,16,0,0" ColumnSpacing="32" RowSpacing="12">
-                <controls:Field
-                  Style="{StaticResource InspectorStatisticStyle}"
-                  Glyph="{x:Bind icons:Lucide.Download}"
-                  Label="{x:Bind Model.Text.Get('inspector', 'downloaded'), Mode=OneWay}"
-                >
-                  <TextBlock
-                    Text="{x:Bind Model.Target.DownloadedText, Mode=OneWay}"
-                    Style="{StaticResource InspectorStatisticValueStyle}"
-                  />
-                </controls:Field>
-                <controls:Field
-                  Style="{StaticResource InspectorStatisticStyle}"
-                  Glyph="{x:Bind icons:Lucide.Upload}"
-                  Label="{x:Bind Model.Text.Get('peers', 'uploaded'), Mode=OneWay}"
-                >
-                  <TextBlock
-                    Text="{x:Bind Model.Target.UploadedText, Mode=OneWay}"
-                    Style="{StaticResource InspectorStatisticValueStyle}"
-                  />
-                </controls:Field>
-                <controls:Field
-                  x:Name="Ratio"
-                  Style="{StaticResource InspectorStatisticStyle}"
-                  Glyph="{x:Bind icons:Lucide.Scale}"
-                  Label="{x:Bind Model.Text.Get('columns', 'ratio'), Mode=OneWay}"
-                >
-                  <TextBlock
-                    Text="{x:Bind Model.Target.RatioText, Mode=OneWay}"
-                    Style="{StaticResource InspectorStatisticValueStyle}"
-                  />
-                </controls:Field>
-                <controls:Field
-                  x:Name="SeedCount"
-                  Style="{StaticResource InspectorStatisticStyle}"
-                  Glyph="{x:Bind icons:Lucide.Sprout}"
-                  Label="{x:Bind Model.Text.Get('columns', 'seeds'), Mode=OneWay}"
-                >
-                  <TextBlock
-                    Text="{x:Bind Model.Target.SeedsText, Mode=OneWay}"
-                    Style="{StaticResource InspectorStatisticValueStyle}"
-                    ToolTipService.ToolTip="{x:Bind Model.Target.SeedsName, Mode=OneWay}"
-                    AutomationProperties.Name="{x:Bind Model.Target.SeedsName, Mode=OneWay}"
-                  />
-                </controls:Field>
-                <controls:Field
-                  x:Name="PeerCount"
-                  Style="{StaticResource InspectorStatisticStyle}"
-                  Glyph="{x:Bind icons:Lucide.Users}"
-                  Label="{x:Bind Model.Text.Get('columns', 'peers'), Mode=OneWay}"
-                >
-                  <TextBlock
-                    Text="{x:Bind Model.Target.PeersText, Mode=OneWay}"
-                    Style="{StaticResource InspectorStatisticValueStyle}"
-                    ToolTipService.ToolTip="{x:Bind Model.Target.PeersName, Mode=OneWay}"
-                    AutomationProperties.Name="{x:Bind Model.Target.PeersName, Mode=OneWay}"
-                  />
-                </controls:Field>
-                <controls:Field
-                  x:Name="Limit"
-                  Style="{StaticResource InspectorStatisticStyle}"
-                  Glyph="{x:Bind icons:Lucide.Gauge}"
-                  Label="{x:Bind Model.Text.Get('columns', 'limit'), Mode=OneWay}"
-                >
-                  <TextBlock
-                    Text="{x:Bind Model.LimitText, Mode=OneWay}"
-                    Style="{StaticResource InspectorStatisticValueStyle}"
-                    AutomationProperties.Name="{x:Bind Model.LimitName, Mode=OneWay}"
-                  />
-                </controls:Field>
-              </controls:Strip>
-            </StackPanel>
+                  <StackPanel
+                    x:Name="DownloadRate"
+                    Grid.Column="1"
+                    Orientation="Horizontal"
+                    Spacing="4"
+                    HorizontalAlignment="Right"
+                    Background="Transparent"
+                    ToolTipService.ToolTip="{x:Bind Model.Text.Get('columns', 'down'), Mode=OneWay}"
+                  >
+                    <FontIcon
+                      Style="{StaticResource TinyTorrentStatusIconStyle}"
+                      FontFamily="{x:Bind icons:Lucide.Font}"
+                      Glyph="{x:Bind icons:Lucide.ArrowDown}"
+                      AutomationProperties.AccessibilityView="Raw"
+                    />
+                    <TextBlock
+                      Text="{x:Bind Model.Target.DownloadText, Mode=OneWay}"
+                      Style="{StaticResource InspectorValueStyle}"
+                      AutomationProperties.Name="{x:Bind Model.Target.DownloadName, Mode=OneWay}"
+                      ToolTipService.ToolTip="{x:Bind Model.Target.DownloadText, Mode=OneWay}"
+                    />
+                  </StackPanel>
+                  <StackPanel
+                    x:Name="UploadRate"
+                    Grid.Column="2"
+                    Orientation="Horizontal"
+                    Spacing="4"
+                    HorizontalAlignment="Right"
+                    Background="Transparent"
+                    ToolTipService.ToolTip="{x:Bind Model.Text.Get('columns', 'up'), Mode=OneWay}"
+                  >
+                    <FontIcon
+                      Style="{StaticResource TinyTorrentStatusIconStyle}"
+                      FontFamily="{x:Bind icons:Lucide.Font}"
+                      Glyph="{x:Bind icons:Lucide.ArrowUp}"
+                      AutomationProperties.AccessibilityView="Raw"
+                    />
+                    <TextBlock
+                      Text="{x:Bind Model.Target.UploadText, Mode=OneWay}"
+                      Style="{StaticResource InspectorValueStyle}"
+                      AutomationProperties.Name="{x:Bind Model.Target.UploadName, Mode=OneWay}"
+                      ToolTipService.ToolTip="{x:Bind Model.Target.UploadText, Mode=OneWay}"
+                    />
+                  </StackPanel>
+                </Grid>
+                <controls:Strip Margin="0,16,0,0" ColumnSpacing="32" RowSpacing="12">
+                  <controls:Field
+                    Style="{StaticResource InspectorStatisticStyle}"
+                    Glyph="{x:Bind icons:Lucide.Download}"
+                    Label="{x:Bind Model.Text.Get('inspector', 'downloaded'), Mode=OneWay}"
+                  >
+                    <TextBlock
+                      Text="{x:Bind Model.Target.DownloadedText, Mode=OneWay}"
+                      Style="{StaticResource InspectorStatisticValueStyle}"
+                    />
+                  </controls:Field>
+                  <controls:Field
+                    Style="{StaticResource InspectorStatisticStyle}"
+                    Glyph="{x:Bind icons:Lucide.Upload}"
+                    Label="{x:Bind Model.Text.Get('peers', 'uploaded'), Mode=OneWay}"
+                  >
+                    <TextBlock
+                      Text="{x:Bind Model.Target.UploadedText, Mode=OneWay}"
+                      Style="{StaticResource InspectorStatisticValueStyle}"
+                    />
+                  </controls:Field>
+                  <controls:Field
+                    x:Name="Ratio"
+                    Style="{StaticResource InspectorStatisticStyle}"
+                    Glyph="{x:Bind icons:Lucide.Scale}"
+                    Label="{x:Bind Model.Text.Get('columns', 'ratio'), Mode=OneWay}"
+                  >
+                    <TextBlock
+                      Text="{x:Bind Model.Target.RatioText, Mode=OneWay}"
+                      Style="{StaticResource InspectorStatisticValueStyle}"
+                    />
+                  </controls:Field>
+                  <controls:Field
+                    x:Name="SeedCount"
+                    Style="{StaticResource InspectorStatisticStyle}"
+                    Glyph="{x:Bind icons:Lucide.Sprout}"
+                    Label="{x:Bind Model.Text.Get('columns', 'seeds'), Mode=OneWay}"
+                  >
+                    <TextBlock
+                      Text="{x:Bind Model.Target.SeedsText, Mode=OneWay}"
+                      Style="{StaticResource InspectorStatisticValueStyle}"
+                      ToolTipService.ToolTip="{x:Bind Model.Target.SeedsName, Mode=OneWay}"
+                      AutomationProperties.Name="{x:Bind Model.Target.SeedsName, Mode=OneWay}"
+                    />
+                  </controls:Field>
+                  <controls:Field
+                    x:Name="PeerCount"
+                    Style="{StaticResource InspectorStatisticStyle}"
+                    Glyph="{x:Bind icons:Lucide.Users}"
+                    Label="{x:Bind Model.Text.Get('columns', 'peers'), Mode=OneWay}"
+                  >
+                    <TextBlock
+                      Text="{x:Bind Model.Target.PeersText, Mode=OneWay}"
+                      Style="{StaticResource InspectorStatisticValueStyle}"
+                      ToolTipService.ToolTip="{x:Bind Model.Target.PeersName, Mode=OneWay}"
+                      AutomationProperties.Name="{x:Bind Model.Target.PeersName, Mode=OneWay}"
+                    />
+                  </controls:Field>
+                  <controls:Field
+                    x:Name="Limit"
+                    Style="{StaticResource InspectorStatisticStyle}"
+                    Glyph="{x:Bind icons:Lucide.Gauge}"
+                    Label="{x:Bind Model.Text.Get('columns', 'limit'), Mode=OneWay}"
+                  >
+                    <TextBlock
+                      Text="{x:Bind Model.LimitText, Mode=OneWay}"
+                      Style="{StaticResource InspectorStatisticValueStyle}"
+                      AutomationProperties.Name="{x:Bind Model.LimitName, Mode=OneWay}"
+                    />
+                  </controls:Field>
+                </controls:Strip>
+              </StackPanel>
             </controls:Section>
             <Border Style="{StaticResource InspectorDividerStyle}" />
             <controls:Section
               Header="{x:Bind Model.Text.Get('inspector', 'properties'), Mode=OneWay}"
-              Glyph="{x:Bind icons:Lucide.Info}">
+              Glyph="{x:Bind icons:Lucide.Info}"
+            >
               <controls:FieldColumns>
                 <controls:FieldColumns.Primary>
                   <StackPanel>

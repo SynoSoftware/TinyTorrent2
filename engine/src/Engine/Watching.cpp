@@ -7,11 +7,11 @@ namespace tt
 void Engine::State::WatchFolder()
 {
     auto now = std::chrono::steady_clock::now();
-    if (!settings.watches || scanningWatch || addingWatch ||
+    if (!settings.watches || watchPhase != WatchPhase::Idle ||
         now - watchAt < std::chrono::seconds(5))
         return;
     watchAt = now;
-    scanningWatch = true;
+    watchPhase = WatchPhase::Scanning;
     auto found = std::make_shared<std::map<std::string, std::string, PathLess>>();
     auto folder = settings.watchPath;
     auto recursive = settings.watchesRecursively;
@@ -47,8 +47,8 @@ void Engine::State::WatchFolder()
         }
     }, [this, found, folder, recursive](StorageOutcome outcome)
     {
-        scanningWatch = false;
-        if (shuttingDown || !settings.watches || settings.watchPath != folder || settings.watchesRecursively != recursive)
+        watchPhase = WatchPhase::Idle;
+        if (IsShuttingDown() || !settings.watches || settings.watchPath != folder || settings.watchesRecursively != recursive)
             return;
         if (!outcome.succeeded || found->size() > torrentLimit)
         {
@@ -62,21 +62,21 @@ void Engine::State::WatchFolder()
         auto absent = [found](auto const& file) { return !found->contains(file.first); };
         if (std::any_of(watchedSources.begin(), watchedSources.end(), absent))
         {
-            scanningWatch = true;
+            watchPhase = WatchPhase::Scanning;
             if (!changes.Queue([this, absent, folder]
             {
                 auto document = Saved();
                 std::erase_if(document.watchedSources, absent);
                 changes.Commit(document.ToJson(), [this, folder, retained = document.watchedSources](StorageOutcome outcome)
                 {
-                    scanningWatch = false;
+                    watchPhase = WatchPhase::Idle;
                     if (outcome.succeeded)
                         watchedSources = retained;
                     else
                         Notify(NoticeKind::AddFailed, folder, outcome.detail);
                 });
             }))
-                scanningWatch = false;
+                watchPhase = WatchPhase::Idle;
             return;
         }
         auto now = std::chrono::steady_clock::now();
@@ -89,21 +89,23 @@ void Engine::State::WatchFolder()
             auto [candidate, fresh] = watchedFiles.try_emplace(source, WatchedFile{stamp, now + std::chrono::seconds(5)});
             if (!fresh && candidate->second.stamp != stamp)
                 candidate->second = {stamp, now + std::chrono::seconds(5)};
-            if (now < candidate->second.readyAt || addingWatch || FilesBusy())
+            if (now < candidate->second.readyAt || FilesBusy())
                 continue;
-            addingWatch = true;
+            watchPhase = WatchPhase::Adding;
             AddSource(source, [this, source, stamp](Outcome outcome, Added added)
             {
-                addingWatch = false;
+                watchPhase = WatchPhase::Idle;
                 if (outcome.error)
                 {
                     auto file = watchedFiles.find(source);
                     if (file != watchedFiles.end() && file->second.stamp == stamp)
                     {
                         file->second.readyAt = std::chrono::steady_clock::now() + std::chrono::seconds(30);
-                        if (!file->second.reported)
+                        if (*outcome.error != ErrorCode::FilesBusy && !file->second.reported)
+                        {
                             Notify(NoticeKind::AddFailed, source, outcome.detail);
-                        file->second.reported = true;
+                            file->second.reported = true;
+                        }
                     }
                     return;
                 }

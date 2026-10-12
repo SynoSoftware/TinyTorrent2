@@ -7,169 +7,183 @@ namespace Syno.TinyTorrent.Library;
 public sealed partial class Browser
 {
     private CancellationTokenSource? _informationRequest;
-    private bool _informationVisible;
-    private bool _windowActive;
-    private bool _hasDialog;
+    private bool _inspectorVisible;
     private bool _noVideoMatch;
     private VideoException? _fetchFailure;
     private IProvider? _viewProvider;
     private bool _viewEnabled;
+    private string? _viewWaiting;
 
-    public bool IsOnDemand => Provider?.Schedule is not (null or VideoSchedule.Background);
     public bool IsFetching { get; private set; }
     internal IReadOnlyList<ProviderOption> Providers => _videos?.Options ?? [];
     internal ProviderOption? Option => _videos?.Option;
+    internal int LookupLimit => _videos?.LookupLimit ?? Store.DefaultLookupLimit;
     internal IProvider? Provider => _videos?.Provider;
-    public int ProviderIndex
-    {
-        get
-        {
-            for (var index = 0; index < Providers.Count; index++)
-                if (Providers[index] == Option)
-                    return index;
-            return -1;
-        }
-    }
-    public bool CanConfigure => IsAvailable && Provider is IConfigurable;
-    public string ProviderLabel => Text.Get("library", "source");
-    public string FetchLabel => Text.Get("library", IsFetching ? "fetching" : _selected?.Entry.Type.Length > 0 ? "refresh" : "fetch");
-    public string FetchTip => Text.Get("library", _selected?.Entry.Type.Length > 0 ? "refresh_tip" : "fetch_tip");
-    public string FetchMessage => _noVideoMatch ? Text.Get("library", "no_video_match") : string.Empty;
+    public string FetchMessage =>
+        IsFetching ? Text.Get("library", "fetching")
+        : _noVideoMatch ? Text.Get("library", "no_video_match")
+        : string.Empty;
     public ICommand FetchDetails { get; private set; } = null!;
-    public ICommand ConfigureProvider { get; private set; } = null!;
-    internal event EventHandler? ConfigureRequested;
 
-    private bool CanFetch => IsAvailable && IsEnrichmentEnabled && IsOnDemand && !IsFetching && _selected?.Entry.Kind == FileKind.Video;
+    // VideoLookup serves requests only once the source is ready, so the
+    // commands that ask it wait for the same readiness. Fetch metadata names
+    // its provider, so it works while downloading is Off; refreshing uses the
+    // provider in Settings, so it needs downloading on.
+    private bool CanLookup => IsAvailable && _ready;
+    private bool CanFetch =>
+        CanLookup && IsEnrichmentEnabled && !IsFetching && Selected?.Entry.Kind == FileKind.Video;
+
+    private VideoBatch? Batch => _videos?.Batch;
+    public bool HasBatch => Batch is not null;
+
+    // The status counts the file in progress; the tooltip counts finished files.
+    public string BatchStatus =>
+        Batch is { } batch
+            ? Text.Format("library", "batch_status", batch.Done + 1, batch.Total)
+            : string.Empty;
+    public string BatchTip =>
+        Batch is { } batch
+            ? Text.Format("library", "batch_tip", batch.Done, batch.Total, batch.Source.Label(Text))
+            : string.Empty;
+
+    /// <summary>
+    /// Fetches metadata for the selection from <paramref name="source"/>: one
+    /// file opens the Fetch metadata dialog; the files of a larger selection
+    /// that have no metadata join the batch.
+    /// </summary>
+    internal void Fetch(ProviderOption source)
+    {
+        if (!FetchMetadata.CanExecute(null) || _videos is null)
+            return;
+        if (Selection.Items.Count == 1)
+            FetchMetadataRequested?.Invoke(this, source);
+        else
+            _videos.Fetch(
+                Selection
+                    .Items.Cast<LibraryRow>()
+                    .Select(row => row.Entry)
+                    .Where(entry => entry.Kind == FileKind.Video && !entry.HasMetadata)
+                    .ToArray(),
+                source
+            );
+    }
+
+    internal void StopBatch() => _videos?.StopBatch();
 
     private void ConfigureInformation()
     {
-        FetchDetails = new RelayCommand(async () =>
-        {
-            if (!CanFetch)
-                return;
-            CancelInformation();
-            await RequestInformation(false);
-        }, () => CanFetch);
-        ConfigureProvider = new RelayCommand(() =>
-        {
-            ConfigureRequested?.Invoke(this, EventArgs.Empty);
-            return Task.CompletedTask;
-        }, () => CanConfigure);
+        FetchDetails = new RelayCommand(
+            async () =>
+            {
+                if (!CanFetch)
+                    return;
+                CancelInformation();
+                await RequestInformation();
+            },
+            () => CanFetch
+        );
     }
 
-    internal async Task SelectProvider(string providerId)
+    internal async Task Enable(string providerId)
     {
         CancelInformation();
         if (_videos is null)
             return;
-        await _videos.Select(providerId);
-        RefreshProviders();
+        await _videos.Enable(providerId);
     }
 
-    internal async Task Configure(IProvider provider, IReadOnlyDictionary<string, string> settings)
+    internal async Task SaveLookupLimit(int limit)
+    {
+        if (_videos is null)
+            return;
+        await _videos.SaveLookupLimit(limit);
+    }
+
+    internal async Task Disable()
     {
         CancelInformation();
         if (_videos is null)
             return;
-        await _videos.Configure(provider, settings);
-        RefreshProviders();
+        await _videos.Disable();
     }
 
-    internal VideoEditor? CreateEditor() => Provider is IConfigurable provider
-        ? provider.Edit(Text, settings => Configure(provider, settings)) : null;
-
-    internal void WatchInformation(bool visible)
+    /// <summary>Applies a new network route through <paramref name="configure"/>, as <see cref="VideoLookup.ChangeRoute"/> describes.</summary>
+    internal void ChangeRoute(Action configure)
     {
-        if (_informationVisible == visible)
+        if (_videos is null)
+            configure();
+        else
+            _videos.ChangeRoute(configure);
+    }
+
+    internal void WatchInspector(bool visible)
+    {
+        if (_inspectorVisible == visible)
             return;
-        _informationVisible = visible;
+        _inspectorVisible = visible;
         if (!visible)
             CancelInformation();
         else
-            ScheduleInformation();
+            _ = ReadDetail();
     }
 
-    internal void ActivateInformation(bool active)
+    private void RefreshInformation()
     {
-        _windowActive = active;
-        if (!active)
-            CancelInformation();
-        else
-            ScheduleInformation();
-    }
-
-    internal void SetDialog(bool visible)
-    {
-        _hasDialog = visible;
-        if (visible)
-            CancelInformation();
-        else
-            ScheduleInformation();
-    }
-
-    private void RefreshProviders()
-    {
-        if (_viewProvider != Provider)
+        if (_disposed)
+            return;
+        if (_viewProvider != Provider || _viewEnabled != IsEnrichmentEnabled)
         {
-            CancelInformation();
-            _viewProvider = Provider;
-            _noVideoMatch = false;
-            _fetchFailure = null;
-            Changed(nameof(IsOnDemand));
-        }
-        if (_viewEnabled != IsEnrichmentEnabled)
-        {
+            if (_viewProvider != Provider)
+            {
+                CancelInformation();
+                _viewProvider = Provider;
+                _noVideoMatch = false;
+                _fetchFailure = null;
+            }
             _viewEnabled = IsEnrichmentEnabled;
             Changed(nameof(IsEnrichmentEnabled));
+            Changed(nameof(Providers));
+            Changed(nameof(Provider));
+            Refresh();
         }
-        Changed(nameof(Providers));
-        Changed(nameof(Provider));
-        Changed(nameof(ProviderIndex));
-        Changed(nameof(CanConfigure));
-        Changed(nameof(FetchLabel));
-        Changed(nameof(FetchTip));
+        if (_viewWaiting != Waiting)
+        {
+            _viewWaiting = Waiting;
+            Changed(nameof(Waiting));
+        }
         Changed(nameof(FetchMessage));
+        Changed(nameof(LookupLimit));
+        Changed(nameof(Status));
         Changed(nameof(Message));
+        ChangedBatch();
         RefreshCommands();
-        ScheduleInformation();
     }
 
-    private void ScheduleInformation()
+    private void ChangedBatch()
     {
-        if (_informationRequest is not null || !CanFetch || !_visible || !IsOpen || !_informationVisible ||
-            !_windowActive || _hasDialog || _loadedDetail is null || _selected?.Entry.Type.Length != 0 ||
-            Provider?.Schedule is not VideoSchedule.Selection || _videos?.Failure is not null)
-            return;
-        _ = RequestInformation(true);
+        Changed(nameof(HasBatch));
+        Changed(nameof(BatchStatus));
+        Changed(nameof(BatchTip));
     }
 
-    private async Task RequestInformation(bool delayed)
+    private async Task RequestInformation()
     {
-        if (_videos is null || _selected is not { } row || Provider is not { } provider)
+        if (_videos is not { } videos || Selected is not { } row)
             return;
         var entry = row.Entry;
         using var cancellation = new CancellationTokenSource();
         _informationRequest = cancellation;
         try
         {
-            if (delayed)
-            {
-                if (provider.Schedule is not VideoSchedule.Selection selection)
-                    return;
-                await Task.Delay(selection.Delay, cancellation.Token);
-                if (!await _videos.CanLookup(entry, cancellation.Token))
-                    return;
-            }
             cancellation.Token.ThrowIfCancellationRequested();
             IsFetching = true;
             _noVideoMatch = false;
             _fetchFailure = null;
             Changed(nameof(IsFetching));
-            Changed(nameof(FetchLabel));
             Changed(nameof(FetchMessage));
             Changed(nameof(Message));
             RefreshCommands();
-            var found = await _videos.Lookup(entry, !delayed, cancellation.Token);
+            var found = await videos.Lookup(entry, cancellation.Token);
             if (!cancellation.IsCancellationRequested)
                 _noVideoMatch = !found;
         }
@@ -183,7 +197,11 @@ public sealed partial class Browser
                 Changed(nameof(Message));
             }
         }
-        catch (Exception error) { Report(error); }
+        catch (Exception error)
+        {
+            if (!cancellation.IsCancellationRequested && ReferenceEquals(videos, _videos))
+                Report(error);
+        }
         finally
         {
             if (ReferenceEquals(_informationRequest, cancellation))
@@ -191,14 +209,13 @@ public sealed partial class Browser
                 _informationRequest = null;
                 IsFetching = false;
                 Changed(nameof(IsFetching));
-                Changed(nameof(FetchLabel));
                 Changed(nameof(FetchMessage));
                 RefreshCommands();
             }
         }
     }
 
-    private void CancelInformation()
+    internal void CancelInformation()
     {
         if (_informationRequest is null)
             return;
@@ -206,7 +223,7 @@ public sealed partial class Browser
         _informationRequest = null;
         IsFetching = false;
         Changed(nameof(IsFetching));
-        Changed(nameof(FetchLabel));
+        Changed(nameof(FetchMessage));
         RefreshCommands();
     }
 }

@@ -29,15 +29,17 @@ public sealed class SpeedLimit : IDraft
     public string DownloadHint => Hint(_download);
     public string UploadHint => Hint(_upload);
     public string Global => _owner.FormatCaps("speed_limit", "global");
-    public string DownloadError => _invalid && !TryLimit(_downloadInput, _download, out _)
-        ? _owner.Text.Get("errors", "invalid_limits") : string.Empty;
-    public string UploadError => _invalid && !TryLimit(_uploadInput, _upload, out _)
-        ? _owner.Text.Get("errors", "invalid_limits") : string.Empty;
+    public string DownloadError =>
+        _invalid && !TryLimit(_downloadInput, _download, out _)
+            ? _owner.Text.Get("errors", "invalid_limits")
+            : string.Empty;
+    public string UploadError =>
+        _invalid && !TryLimit(_uploadInput, _upload, out _)
+            ? _owner.Text.Get("errors", "invalid_limits")
+            : string.Empty;
     public string DownloadHelp => DownloadError.Length > 0 ? DownloadError : Global;
     public string UploadHelp => UploadError.Length > 0 ? UploadError : Global;
-    public string Message =>
-        _failure is null ? string.Empty
-        : _owner.Text.Error(_failure);
+    public string Message => _failure is null ? string.Empty : _owner.Text.Error(_failure);
     public bool HasError => Message.Length > 0;
     public string Download
     {
@@ -182,8 +184,13 @@ public sealed partial class SpeedLimitDialog : UserControl
         InitializeComponent();
     }
 
-    private string Label(string name) => Model.Text.Format("speed_limit", "label",
-        Model.Text.Get("limits", name), Model.Text.Get("units", "kib_per_second"));
+    private string Label(string name) =>
+        Model.Text.Format(
+            "speed_limit",
+            "label",
+            Model.Text.Get("limits", name),
+            Model.Text.Get("units", "kib_per_second")
+        );
 
     internal void RefreshText() => Bindings.Update();
 }

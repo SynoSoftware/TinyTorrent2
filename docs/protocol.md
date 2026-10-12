@@ -191,13 +191,14 @@ recheck their scope when they execute.
 If physical names are still being observed, the reply describes the known
 scope and `kept_files` is null. Unknown names cannot authorize payload deletion.
 
-`move` reads `torrent_ids`, the destination parent folder, and the optional
-explicit `use_existing` choice. It replies after the recovery marker commits,
-without occupying the pipe while files move. Rows carry `moving` and
+`move` reads `torrent_ids` and the destination parent folder. Its engine preflight
+detects files already at the destination. It replies after the recovery marker
+commits, without occupying the pipe while files move. Rows carry `moving` and
 `move_destination`; completion clears the group markers and failures remain
 visible on the torrents. Source sharing and destination use by an outside
 torrent have distinct refusals, so each offers an action that can resolve it.
-An interrupted saved move refuses an ordinary move with `move_interrupted`.
+An interrupted saved move stays stopped until the person chooses its location
+through Move; the engine checks that location before resuming.
 `recovery_required` remains the general unconfirmed-operation code for other
 commands, so file-specific instructions cannot misdirect an Add or priority
 edit.

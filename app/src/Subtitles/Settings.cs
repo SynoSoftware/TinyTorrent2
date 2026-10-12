@@ -1,92 +1,166 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Media;
 using Syno.TinyTorrent.Controls;
 using Syno.TinyTorrent.Models;
 using Syno.TinyTorrent.Services;
 
 namespace Syno.TinyTorrent.Subtitles;
 
-internal sealed partial class Settings : UserControl
+internal sealed class Settings : UserControl
 {
     private Acquisition? _model;
     private readonly Func<Task> _retry;
     private readonly ToggleSwitch _enabled = new();
-    private readonly ActionButton _find = new() { Glyph = Lucide.Search };
-    private readonly ActionButton _recheck = new() { Glyph = Lucide.RefreshCw };
+    private readonly ComboBox _extras = new()
+    {
+        MinWidth = 80,
+        ItemsSource = Enumerable.Range(0, Acquisition.MaximumExtras + 1).ToArray(),
+    };
+    private readonly Batch _batch;
+    private readonly ActionButton _find = new();
+    private readonly ActionButton _scan = new() { Glyph = Lucide.FolderSearch };
+    private readonly CheckStatus _scanStatus = new();
+    private readonly SettingsRow _scanRow;
+    private bool _scanning;
+    private ScanResult? _scanned;
     private readonly ActionButton _check = new() { Glyph = Lucide.Plug };
     private readonly ActionButton _edit = new() { Glyph = Lucide.Pencil };
     private readonly ActionButton _add = new() { Glyph = Lucide.Plus };
-    private readonly ActionButton _reset = new() { Glyph = Lucide.RotateCcw };
-    private readonly ActionButton _supplier = new() { Glyph = Lucide.Info };
-    private readonly AutoSuggestBox _language = new() { MinWidth = 180, MaxWidth = 320, HorizontalAlignment = HorizontalAlignment.Right };
+    private readonly Button _information = new()
+    {
+        Content = new FontIcon
+        {
+            FontFamily = Lucide.Font,
+            Glyph = Lucide.Info,
+            FontSize = 16,
+        },
+        Style = (Style)Application.Current.Resources["TinyTorrentSubtleButtonStyle"],
+    };
+    private readonly ComboBox _supplier = new() { Width = 280 };
+    private readonly AutoSuggestBox _language = new()
+    {
+        HorizontalAlignment = HorizontalAlignment.Stretch,
+    };
     private readonly StackPanel _languages = new() { Spacing = 8, MinWidth = 280 };
-    private readonly TextBlock _missing = new() { TextTrimming = TextTrimming.CharacterEllipsis };
-    private readonly TextBlock _checked = new() { TextTrimming = TextTrimming.CharacterEllipsis };
-    private readonly TextBlock _status = new() { Style = (Style)Application.Current.Resources["TinyTorrentBodyTextStyle"], MaxLines = 1 };
-    private readonly TextBlock _failures = new() { Style = (Style)Application.Current.Resources["TinyTorrentBodyTextStyle"] };
-    private readonly SettingsSection _automatic;
-    private readonly SettingsSection _access;
-    private readonly SettingsSection _wanted;
-    private readonly SettingsSection _existing;
+    private readonly TextBlock _status = new()
+    {
+        Style = (Style)Application.Current.Resources["TinyTorrentBodyTextStyle"],
+        MaxLines = 1,
+    };
+    private readonly SettingsSection _section;
     private readonly SettingsRow _automaticRow;
-    private readonly SettingsRow _finishedRow;
-    private readonly SettingsRow _filesRow;
+    private readonly SettingsRow _extrasRow;
+    private readonly SettingsRow _accessRow;
+    private readonly SettingsRow _batchRow;
     private readonly SettingsRow _supplierRow;
     private readonly SettingsRow _languagesRow;
-    private Task _saving = Task.CompletedTask;
-    private bool _refreshing;
-    private bool _busy;
-    private string _errorKey = string.Empty;
-    private Exception? _failure;
-    private Strings Text { get; }
-    internal event EventHandler? SupplierRequested;
-    internal event EventHandler? ProblemChanged;
-    private SubtitleFailure? PersistentFailure => _model is
-        { Failure: not SubtitleFailure.None and not SubtitleFailure.Quota and not SubtitleFailure.Network and not SubtitleFailure.Database } failed
-        ? failed.Failure : null;
-    internal string Problem => _failures.Text.Length > 0 ? _failures.Text :
-        _model?.RetryAt > DateTimeOffset.UtcNow || PersistentFailure is not null
-            ? _status.Text : string.Empty;
-    internal IEnumerable<ActionButton> Actions => [_find, _recheck, _check, _edit, _add, _reset];
-
-    internal Control? Field(string name) => name switch
+    private readonly SettingsRow _languageInputRow;
+    private readonly ProgressRing _progress = new()
     {
-        "subtitle_automatic" => _enabled,
-        "subtitle_supplier" => _edit,
-        "subtitle_languages" => _language,
-        "subtitle_finished" => _find,
-        "subtitle_files" => _recheck,
-        _ => null,
+        Width = 16,
+        Height = 16,
+        IsActive = false,
     };
+    private bool _checking;
 
-    internal Settings(Strings text, Func<Task> retry)
+    // Reports a failed action to the window's notifications, with the
+    // notification title key that names the action.
+    private readonly Action<Exception, string> _report;
+    private Task _saving = Task.CompletedTask;
+    internal Task Saving => _saving;
+    private bool _refreshing;
+    private bool _unknownLanguage;
+    private Strings Text { get; }
+    internal event EventHandler<SubtitleSupplier>? SupplierRequested;
+
+    internal Control? Field(string name) =>
+        name switch
+        {
+            "subtitle_automatic" => _enabled,
+            "subtitle_extras" => _extras,
+            "subtitle_supplier" => _supplier,
+            "subtitle_languages" => _language,
+            "subtitle_batch" => _find,
+            "subtitle_scan" => _scan,
+            _ => null,
+        };
+
+    internal Settings(Strings text, Func<Task> retry, Action<Exception, string> report)
     {
         Text = text;
         _retry = retry;
+        _report = report;
         AutomationProperties.SetAutomationId(_enabled, "SubtitleAutomatic");
+        AutomationProperties.SetAutomationId(_extras, "SubtitleExtras");
+        _batch = new Batch(text, report);
         AutomationProperties.SetAutomationId(_find, "SubtitleFind");
-        AutomationProperties.SetAutomationId(_recheck, "SubtitleRecheck");
+        AutomationProperties.SetAutomationId(_scan, "SubtitleScan");
+        _batch.PropertyChanged += (_, _) =>
+        {
+            _find.IsEnabled = _batch.CanAct;
+            _find.Glyph = _batch.ActionGlyph;
+            _find.Text = _batch.ActionText;
+            ToolTipService.SetToolTip(_find, _batch.ActionHint);
+        };
+        _find.Click += async (_, _) => await _batch.Act();
+        _scan.Click += async (_, _) => await Scan();
         AutomationProperties.SetAutomationId(_check, "SubtitleCheck");
         AutomationProperties.SetAutomationId(_edit, "SubtitleEdit");
         AutomationProperties.SetAutomationId(_add, "SubtitleAddLanguage");
-        AutomationProperties.SetAutomationId(_reset, "SubtitleResetLanguages");
-        AutomationProperties.SetAutomationId(_supplier, "SubtitleSupplierInformation");
+        AutomationProperties.SetAutomationId(_information, "SubtitleSupplierInformation");
+        AutomationProperties.SetAutomationId(_supplier, "SubtitleSupplier");
         AutomationProperties.SetAutomationId(_language, "SubtitleLanguage");
         _automaticRow = new SettingsRow { Content = _enabled };
-        _finishedRow = new SettingsRow { Content = Pair(_missing, _find) };
-        _filesRow = new SettingsRow { Content = Pair(_checked, _recheck) };
-        _supplierRow = new SettingsRow { Content = Pair(_supplier, _edit) };
-        _automatic = Section(Lucide.Captions, _automaticRow);
-        _access = Section(Lucide.Network, _supplierRow, Pair(_status, _check), _failures);
-        var languageInput = Pair(_language, _add);
-        languageInput.SizeChanged += (_, args) => _languages.Width = args.NewSize.Width;
-        _languagesRow = new SettingsRow { Content = _languages };
-        _wanted = Section(Lucide.Languages, new SettingsRow { Content = languageInput }, _languagesRow, _reset);
-        _existing = Section(Lucide.FolderSearch, _finishedRow, _filesRow);
-        _reset.HorizontalAlignment = HorizontalAlignment.Right;
-        Content = new StackPanel { Spacing = 16, Children = { _automatic, _access, _wanted, _existing } };
+        _extrasRow = new SettingsRow { Content = _extras };
+        _supplierRow = new SettingsRow
+        {
+            Content = Pair(
+                new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    Spacing = 8,
+                    Children = { _supplier, _information },
+                },
+                _edit
+            ),
+        };
+        var status = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+            VerticalAlignment = VerticalAlignment.Center,
+            Children = { _status, _progress },
+        };
+        _accessRow = new SettingsRow { Content = Pair(status, _check) };
+        _languageInputRow = new SettingsRow { Content = Pair(_language, _add) };
+        _languagesRow = new SettingsRow
+        {
+            Content = _languages,
+            VerticalContentAlignment = VerticalAlignment.Top,
+        };
+        _batchRow = new SettingsRow { Content = Pair(_batch, _find) };
+        _scanStatus.Check.Visibility = Visibility.Collapsed;
+        _scanRow = new SettingsRow { Content = Pair(_scanStatus, _scan) };
+        _section = new SettingsSection
+        {
+            Glyph = Lucide.Captions,
+            Content = new StackPanel
+            {
+                Spacing = 16,
+                Children =
+                {
+                    new StackPanel { Children = { _supplierRow, _accessRow } },
+                    new StackPanel { Children = { _languageInputRow, _languagesRow } },
+                    new StackPanel { Children = { _automaticRow, _extrasRow } },
+                    Divider(),
+                    _batchRow,
+                    Divider(),
+                    _scanRow,
+                },
+            },
+        };
+        Content = _section;
         _enabled.Toggled += async (_, _) =>
         {
             if (!_refreshing && _model is { } model)
@@ -95,37 +169,52 @@ internal sealed partial class Settings : UserControl
                 await Save(() => model.SetEnabled(enabled));
             }
         };
-        _find.Click += async (_, _) => { if (_model is { } model) await Run(model.Find); };
-        _recheck.Click += async (_, _) => { if (_model is { } model) await Run(model.Recheck); };
-        _check.Click += async (_, _) =>
+        _check.Click += async (_, _) => await Check();
+        _extras.SelectionChanged += async (_, _) =>
+        {
+            if (!_refreshing && _model is { } model && _extras.SelectedItem is int extras)
+                await Save(() => model.SetExtras(extras));
+        };
+        _edit.Click += (_, _) =>
         {
             if (_model is { } model)
-                await Run(async () =>
-                {
-                    await _retry();
-                    await model.Check();
-                });
+                SupplierRequested?.Invoke(this, model.SupplierId);
         };
-        _edit.Click += (_, _) => SupplierRequested?.Invoke(this, EventArgs.Empty);
-        _reset.Click += async (_, _) => { if (_model is { } model) await Save(() => model.SetLanguages([])); };
+        _supplier.SelectionChanged += async (_, _) =>
+        {
+            if (
+                _refreshing
+                || _model is not { } model
+                || _supplier.SelectedItem is not SubtitleSupplier chosen
+                || chosen == model.SupplierId
+            )
+                return;
+            await Save(() => model.SelectSupplier(chosen));
+        };
         _add.Click += async (_, _) => await AddLanguage();
-        _language.QuerySubmitted += async (_, args) => await AddLanguage(args.ChosenSuggestion as LanguageChoice);
+        _language.QuerySubmitted += async (_, args) =>
+            await AddLanguage(args.ChosenSuggestion as LanguageChoice);
         _language.TextChanged += (_, args) =>
         {
             if (args.Reason == AutoSuggestionBoxTextChangeReason.UserInput && _model is { } model)
-                _language.ItemsSource = (model.Supplier?.Languages ?? []).Select(Choice)
-                    .Where(choice => choice.Name.Contains(_language.Text, StringComparison.CurrentCultureIgnoreCase) ||
-                        choice.Tag.StartsWith(_language.Text, StringComparison.OrdinalIgnoreCase)).ToArray();
+                _language.ItemsSource = (model.Supplier?.Languages ?? [])
+                    .Select(Choice)
+                    .Where(choice =>
+                        choice.Name.Contains(
+                            _language.Text,
+                            StringComparison.CurrentCultureIgnoreCase
+                        )
+                        || choice.Tag.StartsWith(_language.Text, StringComparison.OrdinalIgnoreCase)
+                    )
+                    .ToArray();
         };
-        _supplier.Click += (_, _) => { if (_model?.Supplier is { } supplier) SupplierDialog.Information(Text, supplier).ShowAt(_supplier); };
-        ActualThemeChanged += (_, _) => Refresh();
-        Unloaded += (_, _) =>
+        _information.Click += (_, _) =>
         {
-            if (_model is not null)
-                _model.Changed -= OnChanged;
-            _model = null;
+            if (_model?.Supplier is { } supplier)
+                SupplierDialog.Information(Text, supplier).ShowAt(_information);
         };
-        Refresh();
+        Unloaded += (_, _) => Attach(null);
+        RefreshText();
     }
 
     internal void Attach(Acquisition? model)
@@ -135,89 +224,117 @@ internal sealed partial class Settings : UserControl
         if (_model is not null)
             _model.Changed -= OnChanged;
         _model = model;
+        _scanned = null;
+        _batch.Attach(model);
         if (_model is not null)
             _model.Changed += OnChanged;
         Refresh();
     }
 
     private void OnChanged(object? sender, EventArgs args) => DispatcherQueue.TryEnqueue(Refresh);
+
     private string T(string key) => Text.Get("subtitles", key);
+
     private string F(string key, params object[] values) => Text.Format("subtitles", key, values);
 
-    private void RefreshText()
+    internal void RefreshText()
     {
-        _automatic.Header = T("automatic");
-        _access.Header = T("supplier");
-        _wanted.Header = T("languages");
-        _existing.Header = T("existing");
+        _section.Header = Text.Get("settings", "subtitles");
         _automaticRow.Header = T("automatic");
         _automaticRow.Description = T("automatic_hint");
-        _finishedRow.Header = T("finished");
-        _filesRow.Header = T("files");
-        _filesRow.Description = T("recheck_hint");
+        _extrasRow.Header = T("extras");
+        _extrasRow.Description = T("extras_hint");
         _supplierRow.Header = T("supplier");
+        _accessRow.Header = T("access");
+        _languageInputRow.Header = T("add_language");
         _languagesRow.Header = T("language_selection");
-        Label(_find, "find"); Label(_recheck, "recheck"); Label(_check, "check");
-        Label(_edit, "edit"); Label(_add, "add"); Label(_reset, "reset");
+        _batchRow.Header = T("batch");
+        _scanRow.Header = T("files");
+        _scan.Text = T("scan");
+        ToolTipService.SetToolTip(_scan, T("scan_hint"));
+        _batch.Refresh();
+        _check.Text = T("check");
+        _edit.Text = T("edit");
+        _add.Text = T("add");
+        ToolTipService.SetToolTip(_check, T("check_hint"));
+        ToolTipService.SetToolTip(_edit, T("edit_hint"));
+        ToolTipService.SetToolTip(_add, T("add_language"));
         AutomationProperties.SetName(_language, T("languages"));
         AutomationProperties.SetName(_enabled, T("automatic"));
-        ToolTipService.SetToolTip(_reset, T("reset_hint"));
+        AutomationProperties.SetName(_extras, T("extras"));
+        AutomationProperties.SetHelpText(_extras, T("extras_hint"));
+        AutomationProperties.SetName(_supplier, T("supplier"));
+        ToolTipService.SetToolTip(_supplier, T("supplier_hint"));
+        AutomationProperties.SetName(_information, T("supplier_information"));
+        ToolTipService.SetToolTip(_information, T("supplier_information"));
         _language.PlaceholderText = T("language_hint");
+        Refresh();
     }
 
-    internal void Refresh()
+    private void Refresh()
     {
         _refreshing = true;
-        RefreshText();
         if (_saving.IsCompleted)
+        {
             _enabled.IsOn = _model?.Enabled == true;
-        _automaticRow.StateText = SettingsRow.State(_enabled.IsOn, Text.Get("settings", "on"), Text.Get("settings", "off"));
-        _enabled.IsEnabled = _model?.Enabled == true || _model?.Ready == true;
-        ToolTipService.SetToolTip(_enabled, _model is { Ready: false }
-            ? T(_model.Supplier?.Available == true ? "failure_unconfigured" : "failure_unavailable") : T("automatic_hint"));
-        _find.IsEnabled = !_busy && _model is { Enabled: true, Ready: true, Rechecking: false } model && model.Missing.Values.Sum() > 0;
-        _recheck.IsEnabled = !_busy && _model is { Rechecking: false, Finding: false };
-        _check.IsEnabled = _edit.IsEnabled = _model is not null && !_busy;
-        _wanted.IsEnabled = _model is not null;
-        _reset.IsEnabled = _model?.Languages.Length > 0;
-        _supplier.Text = _model?.SupplierId.ToString() ?? SubtitleSupplier.OpenSubtitles.ToString();
-        _missing.Text = _model is { Pending: > 0 } running ? F("left", running.Pending) :
-            _model is { Found: { } found } completed ? F("found", found, completed.FindTotal) :
-            F("missing", _model?.Missing.Values.Sum() ?? 0);
-        _checked.Text = _model is { Rechecking: true } checking ? F("checking", checking.Rechecked, checking.RecheckTotal) :
-            _model?.LastRecheck is { } date ? F("last_checked", Text.Time(date)) : T("not_checked");
-        _status.Text = _errorKey.Length > 0 ? T(_errorKey) : _failure is { } operationFailure ? Text.Error(operationFailure) :
-            _model?.RetryAt is { } reset && reset > DateTimeOffset.UtcNow
-            ? F("retry_at", Text.Time(reset)) :
-            PersistentFailure is { } failure
-                ? T("failure_" + failure.ToString().ToLowerInvariant()) : _model?.Checked == true ? T("connected") : T("not_checked");
-        _status.Foreground = (Brush)Application.Current.Resources[
-            _errorKey.Length > 0 || _failure is not null || _model?.RetryAt > DateTimeOffset.UtcNow || PersistentFailure is not null
-                ? "SystemFillColorCriticalBrush" : "TextFillColorSecondaryBrush"];
-        _failures.Text = _model is { } failures ? string.Join(Environment.NewLine, failures.FileFailures.Select(failure =>
-            F("file_failure", failure.Key, T("failure_" + failure.Value.ToString().ToLowerInvariant())))) : string.Empty;
-        _failures.Visibility = _failures.Text.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
-        _failures.Foreground = (Brush)Application.Current.Resources["SystemFillColorCriticalBrush"];
+            _extras.SelectedItem = _model?.Extras;
+        }
+        _automaticRow.StateText = SettingsRow.State(
+            _enabled.IsOn,
+            Text.Get("settings", "on"),
+            Text.Get("settings", "off")
+        );
+        _enabled.IsEnabled = _model is not null;
+        _extras.IsEnabled = _model is not null;
+        _scan.IsEnabled = _model is not null;
+        var scanned =
+            _scanning ? T("scanning")
+            : _scanned is { } result ? F("scanned", result.Found, result.Unreadable)
+            : string.Empty;
+        _scanStatus.Visibility =
+            _scanning || _scanned is not null ? Visibility.Visible : Visibility.Collapsed;
+        _scanStatus.Refresh(
+            _scanning,
+            _scanned is { } scan ? scan.Unreadable == 0 : null,
+            scanned,
+            scanned
+        );
+        _check.IsEnabled = _model?.CanCheck == true;
+        _edit.IsEnabled = _model is not null && !_checking;
+        _language.IsEnabled = _add.IsEnabled = _model is not null;
+        _supplier.ItemsSource ??= _model
+            ?.Suppliers.Select(supplier => supplier.SupplierId)
+            .ToArray();
+        _supplier.SelectedItem = _model?.SupplierId;
+        _supplier.IsEnabled = _model is not null && !_checking;
+        _progress.IsActive = _checking;
+        _progress.Visibility = _checking ? Visibility.Visible : Visibility.Collapsed;
+        // Problems go to the window's message bar and notifications; this line
+        // states only the supplier's access and allowance.
+        _status.Text =
+            _checking ? Text.Get("settings", "proxy_checking")
+            : _model?.RetryAt is { } reset && reset > DateTimeOffset.UtcNow
+                ? F("retry_at", Text.Time(reset))
+            : _model?.Checked == true ? T("connected")
+            : T("not_checked");
         ToolTipService.SetToolTip(_status, _status.Text);
         AutomationProperties.SetHelpText(_status, _status.Text);
-        ToolTipService.SetToolTip(_failures, _failures.Text);
-        AutomationProperties.SetHelpText(_failures, _failures.Text);
-        if (_model is { } current)
-        {
-            var breakdown = string.Join(", ", current.Missing.Select(pair => Text.LanguageName(pair.Key) + " " + pair.Value));
-            var hint = current.Enabled ? F("find_hint", current.Missing.Values.Sum(), breakdown) : T("enable_hint");
-            ToolTipService.SetToolTip(_find, hint);
-            ToolTipService.SetToolTip(_missing, hint);
-        }
+        _languageInputRow.Error = _unknownLanguage ? T("choose_language") : string.Empty;
         RefreshLanguages();
         _refreshing = false;
-        ProblemChanged?.Invoke(this, EventArgs.Empty);
     }
 
     private void RefreshLanguages()
     {
         var tags = _model?.EffectiveLanguages ?? [];
-        var signature = string.Join(",", tags) + ":" + _model?.SupplierId + ":" + Text.Language + ":" + (_model?.Languages.Length == 0);
+        var signature =
+            string.Join(",", tags)
+            + ":"
+            + _model?.SupplierId
+            + ":"
+            + Text.Language
+            + ":"
+            + (_model?.Languages.Length == 0);
         if (Equals(_languages.Tag, signature))
             return;
         _languages.Tag = signature;
@@ -225,22 +342,45 @@ internal sealed partial class Settings : UserControl
         foreach (var tag in tags)
         {
             var name = Text.LanguageName(tag);
-            if (_model?.Languages.Length == 0)
-                name += " · " + T("interface_language");
             if (_model is { } model && model.Supplier?.Supports(tag) != true)
                 name += " · " + F("unsupported", model.SupplierId);
-            var remove = new Button { Content = new FontIcon { FontFamily = Lucide.Font, Glyph = Lucide.X },
-                Style = (Style)Application.Current.Resources["TinyTorrentSubtleButtonStyle"] };
+            var remove = new Button
+            {
+                Content = new FontIcon { FontFamily = Lucide.Font, Glyph = Lucide.X },
+                Style = (Style)Application.Current.Resources["TinyTorrentSubtleButtonStyle"],
+            };
             AutomationProperties.SetName(remove, F("remove", Text.LanguageName(tag)));
             AutomationProperties.SetAutomationId(remove, "SubtitleRemoveLanguage-" + tag);
             ToolTipService.SetToolTip(remove, F("remove", Text.LanguageName(tag)));
             remove.IsEnabled = _model?.Languages.Length > 0;
+            var index = _languages.Children.Count;
+            // The removed row leaves the page with its button, so focus moves
+            // to the row that takes its place, or to Add, never to a text box.
             remove.Click += async (_, _) =>
             {
-                if (_model is { } saved)
-                    await Save(() => saved.SetLanguages(saved.Languages.Where(value => value != tag)));
+                if (
+                    _model is not { } saved
+                    || !await Save(() =>
+                        saved.SetLanguages(saved.Languages.Where(value => value != tag))
+                    )
+                )
+                    return;
+                var buttons = _languages
+                    .Children.OfType<Grid>()
+                    .Select(row => row.Children[1])
+                    .OfType<Button>()
+                    .Where(button => button.IsEnabled)
+                    .ToArray();
+                Control next =
+                    buttons.Length > 0 ? buttons[Math.Min(index, buttons.Length - 1)] : _add;
+                next.Focus(FocusState.Programmatic);
             };
-            _languages.Children.Add(Pair(new TextBlock { Text = name, TextTrimming = TextTrimming.CharacterEllipsis }, remove));
+            _languages.Children.Add(
+                Pair(
+                    new TextBlock { Text = name, TextTrimming = TextTrimming.CharacterEllipsis },
+                    remove
+                )
+            );
         }
     }
 
@@ -249,35 +389,59 @@ internal sealed partial class Settings : UserControl
         if (_model is not { } model)
             return;
         var input = _language.Text;
-        selected ??= (model.Supplier?.Languages ?? []).Select(Choice).FirstOrDefault(choice =>
-            string.Equals(choice.Tag, _language.Text.Trim(), StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(choice.Name, _language.Text.Trim(), StringComparison.CurrentCultureIgnoreCase));
+        selected ??= (model.Supplier?.Languages ?? [])
+            .Select(Choice)
+            .FirstOrDefault(choice =>
+                string.Equals(choice.Tag, _language.Text.Trim(), StringComparison.OrdinalIgnoreCase)
+                || string.Equals(
+                    choice.Name,
+                    _language.Text.Trim(),
+                    StringComparison.CurrentCultureIgnoreCase
+                )
+            );
         if (selected is null)
         {
-            _errorKey = "choose_language";
-            _failure = null;
+            _unknownLanguage = true;
             Refresh();
+            _language.Focus(FocusState.Programmatic);
             return;
         }
-        if (await Save(() => model.SetLanguages(model.Languages.Append(selected.Tag))) && _language.Text == input)
+        // Adding to the interface-language default keeps that language, which
+        // the person sees in the list.
+        if (
+            await Save(() => model.SetLanguages(model.EffectiveLanguages.Append(selected.Tag)))
+            && _language.Text == input
+        )
             _language.Text = string.Empty;
     }
 
     private async Task<bool> Save(Func<Task> action)
     {
+        var model = _model;
         var previous = _saving;
-        var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var completion = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
         _saving = completion.Task;
         await previous;
-        _failure = null;
-        _errorKey = string.Empty;
+        _unknownLanguage = false;
         try
         {
+            if (model is null || model.IsDisposed)
+                return false;
             await action();
             return true;
         }
-        catch (OperationCanceledException) { return false; }
-        catch (Exception error) { _failure = error; return false; }
+        catch (OperationCanceledException)
+        {
+            return false;
+        }
+        catch (Exception error)
+        {
+            if (CanReport(model))
+                _report(error, "failed_settings");
+            return false;
+        }
         finally
         {
             completion.SetResult(true);
@@ -285,31 +449,77 @@ internal sealed partial class Settings : UserControl
         }
     }
 
-    private async Task Run(Func<Task> action)
+    private async Task Check()
     {
-        if (_busy)
+        if (_checking || _model is not { CanCheck: true } model)
             return;
-        _busy = true;
-        _errorKey = string.Empty;
-        _failure = null;
+        _checking = true;
         Refresh();
-        try { await action(); }
-        catch (OperationCanceledException) { }
-        catch (SubtitleException error)
+        try
         {
-            _failure = error.Reason == SubtitleFailure.Quota && _model?.RetryAt > DateTimeOffset.UtcNow
-                ? null : error;
+            await _retry();
+            if (_model is not { CanCheck: true } current)
+                return;
+            model = current;
+            await model.Check();
         }
-        catch (Exception error) { _failure = error; }
-        finally { _busy = false; Refresh(); }
+        catch (OperationCanceledException) { }
+        // The status line already says when a used-up allowance returns.
+        catch (SubtitleException error)
+            when (error.Reason == SubtitleFailure.Quota && _model?.RetryAt > DateTimeOffset.UtcNow)
+        { }
+        catch (Exception error)
+        {
+            if (CanReport(model))
+                _report(error, "failed_subtitle_check");
+        }
+        finally
+        {
+            _checking = false;
+            Refresh();
+        }
     }
 
-    private void Label(ActionButton button, string key) => button.Text = T(key);
-
-    internal static Grid Pair(FrameworkElement value, FrameworkElement action)
+    private async Task Scan()
     {
-        var grid = new Grid { ColumnSpacing = 12, MinWidth = 280, HorizontalAlignment = HorizontalAlignment.Stretch };
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        if (_scanning || _model is not { } model)
+            return;
+        _scanning = true;
+        _scanned = null;
+        Refresh();
+        try
+        {
+            var result = await model.Rescan();
+            if (ReferenceEquals(model, _model))
+                _scanned = result;
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception error)
+        {
+            if (CanReport(model))
+                _report(error, "failed_subtitle_scan");
+        }
+        finally
+        {
+            _scanning = false;
+            Refresh();
+        }
+    }
+
+    private bool CanReport(Acquisition? model) =>
+        model is { IsDisposed: false } && (_model is null || ReferenceEquals(model, _model));
+
+    private static Grid Pair(FrameworkElement value, FrameworkElement action)
+    {
+        var grid = new Grid
+        {
+            ColumnSpacing = 12,
+            MinWidth = 280,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+        };
+        grid.ColumnDefinitions.Add(
+            new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }
+        );
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         value.VerticalAlignment = action.VerticalAlignment = VerticalAlignment.Center;
         Grid.SetColumn(action, 1);
@@ -318,15 +528,35 @@ internal sealed partial class Settings : UserControl
         return grid;
     }
 
-    private static SettingsSection Section(string glyph, params UIElement[] children)
+    internal void Align(double width)
     {
-        var panel = new StackPanel { Spacing = 8 };
-        foreach (var child in children)
-            panel.Children.Add(child);
-        return new SettingsSection { Glyph = glyph, Content = panel };
+        ActionButton.Align([_find, _check, _edit, _add, _scan]);
+        foreach (
+            var row in new[]
+            {
+                _automaticRow,
+                _extrasRow,
+                _supplierRow,
+                _accessRow,
+                _languageInputRow,
+                _languagesRow,
+                _batchRow,
+                _scanRow,
+            }
+        )
+            row.Align(0, width);
+        _languages.Width = width;
+        foreach (
+            var row in new[] { _supplierRow, _accessRow, _languageInputRow, _batchRow, _scanRow }
+        )
+            ((FrameworkElement)row.Content).Width = width;
     }
 
+    private static Border Divider() =>
+        new() { Style = (Style)Application.Current.Resources["InspectorDividerStyle"] };
+
     private LanguageChoice Choice(string tag) => new(tag, Text.LanguageName(tag));
+
     private sealed record LanguageChoice(string Tag, string Name)
     {
         public override string ToString() => Name;

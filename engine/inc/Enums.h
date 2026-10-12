@@ -80,9 +80,7 @@ enum class RegistrationAction
     RegisterHandlers,
     UnregisterHandlers,
     EnableStartup,
-    DisableStartup,
-    OpenDefaults,
-    OpenStartup
+    DisableStartup
 };
 
 // The executable a registration starts, compared with this copy.
@@ -175,9 +173,17 @@ enum class CheckpointPhase
 
 enum class ShutdownPhase
 {
+    Idle,
     Draining,
     Pausing,
     Saving
+};
+
+enum class WatchPhase
+{
+    Idle,
+    Scanning,
+    Adding
 };
 
 // Startup reads the settings before the transfers, so the splash and the
@@ -354,8 +360,17 @@ enum class NoticeKind
     Background,
     // A torrent or magnet handler starts a program that is missing.
     MissingProgram,
-    // Several notices that arrived together, shown as one balloon.
+    // Several notices that arrived together, shown as one popup.
     Aggregate
+};
+
+// The Settings switches that each turn off one kind of notice.
+enum class NoticeSwitch
+{
+    Finished,
+    Added,
+    Problems,
+    Background
 };
 
 // Tray menu item IDs. TrackPopupMenu returns 0 when the person chooses
@@ -393,6 +408,14 @@ enum class TrayClick
     Idle,
     Waiting,
     Double
+};
+
+// The parts of a notice popup that the person can select.
+enum class PopupPart
+{
+    Body,
+    Button,
+    Close
 };
 
 enum class CloseState

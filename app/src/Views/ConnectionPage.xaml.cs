@@ -33,22 +33,23 @@ public sealed partial class ConnectionPage : UserControl
         Unloaded += (_, _) => _display.TextScaleFactorChanged -= OnTextScale;
     }
 
-    public static FontWeight Weight(bool changed) => changed
-        ? Microsoft.UI.Text.FontWeights.SemiBold
-        : Microsoft.UI.Text.FontWeights.Normal;
+    public static FontWeight Weight(bool changed) =>
+        changed ? Microsoft.UI.Text.FontWeights.SemiBold : Microsoft.UI.Text.FontWeights.Normal;
 
-    public static Visibility Hidden(bool visible) => visible
-        ? Visibility.Collapsed : Visibility.Visible;
+    public static Visibility Hidden(bool visible) =>
+        visible ? Visibility.Collapsed : Visibility.Visible;
 
     internal void FocusInput() => Download.Focus(FocusState.Programmatic);
 
     private async void OnTest(object sender, RoutedEventArgs args) => await Model.Test();
 
-    private async void OnCancelTest(object sender, RoutedEventArgs args) => await Model.CancelTest();
+    private async void OnCancelTest(object sender, RoutedEventArgs args) =>
+        await Model.CancelTest();
 
     private void OnBodySize(object sender, SizeChangedEventArgs args) => UpdateColumns();
 
-    private void OnTextScale(UISettings sender, object args) => DispatcherQueue.TryEnqueue(UpdateColumns);
+    private void OnTextScale(UISettings sender, object args) =>
+        DispatcherQueue.TryEnqueue(UpdateColumns);
 
     private void UpdateColumns()
     {
@@ -56,7 +57,9 @@ public sealed partial class ConnectionPage : UserControl
         TestActions.Width = 120 * scale;
         StatusArea.Height = 44 * scale;
         var stacked = Body.ActualWidth < 880 * scale;
-        InputColumn.Width = stacked ? new GridLength(1, GridUnitType.Star) : new GridLength(320 * scale);
+        InputColumn.Width = stacked
+            ? new GridLength(1, GridUnitType.Star)
+            : new GridLength(320 * scale);
         PreviewColumn.Width = stacked ? new GridLength(0) : new GridLength(1, GridUnitType.Star);
         Body.ColumnSpacing = stacked ? 0 : 24;
         Grid.SetColumn(Preview, stacked ? 0 : 1);

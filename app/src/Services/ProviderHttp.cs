@@ -39,19 +39,31 @@ internal sealed partial class ProviderHttp : IDisposable
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
             cancellation.ThrowIfCancellationRequested();
-            if (_route is null || _lifetime is null || _route.Type != ProxyType.None || _route.Adapter.Length > 0)
-                throw new HttpRouteException("The confirmed network route does not allow a direct browser request.");
+            if (
+                _route is null
+                || _lifetime is null
+                || _route.Type != ProxyType.None
+                || _route.Adapter.Length > 0
+            )
+                throw new HttpRouteException(
+                    "The confirmed network route does not allow a direct browser request."
+                );
             return CancellationTokenSource.CreateLinkedTokenSource(cancellation, _lifetime.Token);
         }
     }
 
     // Redirects return to the supplier, which authorizes the next origin and
     // creates fresh headers; credentials never follow a redirect implicitly.
-    internal async Task<ProviderReply> Send(HttpRequestMessage request, int maximum,
-        CancellationToken cancellation)
+    internal async Task<ProviderReply> Send(
+        HttpRequestMessage request,
+        int maximum,
+        CancellationToken cancellation
+    )
     {
         if (request.RequestUri is not { IsAbsoluteUri: true, Scheme: "https", UserInfo: "" })
-            throw new InvalidOperationException("Provider requests require HTTPS without URL credentials.");
+            throw new InvalidOperationException(
+                "Provider requests require HTTPS without URL credentials."
+            );
         if (maximum <= 0 || maximum > FileLimit)
             throw new ArgumentOutOfRangeException(nameof(maximum));
 
@@ -65,11 +77,18 @@ internal sealed partial class ProviderHttp : IDisposable
                 if (_route is null || _lifetime is null)
                     throw new HttpRouteException("The confirmed network route is not available.");
                 _client ??= Create(_route);
-                deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellation, _lifetime.Token);
+                deadline = CancellationTokenSource.CreateLinkedTokenSource(
+                    cancellation,
+                    _lifetime.Token
+                );
                 deadline.CancelAfter(TimeSpan.FromSeconds(60));
                 try
                 {
-                    pending = _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, deadline.Token);
+                    pending = _client.SendAsync(
+                        request,
+                        HttpCompletionOption.ResponseHeadersRead,
+                        deadline.Token
+                    );
                 }
                 catch
                 {
@@ -82,10 +101,17 @@ internal sealed partial class ProviderHttp : IDisposable
             {
                 if (response.Content.Headers.ContentLength > maximum)
                     throw new InvalidDataException("Provider response exceeds its size limit.");
-                await using var stream = await response.Content.ReadAsStreamAsync(deadline.Token).ConfigureAwait(false);
+                await using var stream = await response
+                    .Content.ReadAsStreamAsync(deadline.Token)
+                    .ConfigureAwait(false);
                 var bytes = await Read(stream, maximum, deadline.Token).ConfigureAwait(false);
-                var headers = response.Headers.Concat(response.Content.Headers)
-                    .ToDictionary(pair => pair.Key, pair => string.Join(", ", pair.Value), StringComparer.OrdinalIgnoreCase);
+                var headers = response
+                    .Headers.Concat(response.Content.Headers)
+                    .ToDictionary(
+                        pair => pair.Key,
+                        pair => string.Join(", ", pair.Value),
+                        StringComparer.OrdinalIgnoreCase
+                    );
                 return new ProviderReply(response.StatusCode, bytes, headers);
             }
         }
@@ -99,14 +125,22 @@ internal sealed partial class ProviderHttp : IDisposable
         }
     }
 
-    internal static async Task<byte[]> Read(Stream stream, int maximum, CancellationToken cancellation)
+    internal static async Task<byte[]> Read(
+        Stream stream,
+        int maximum,
+        CancellationToken cancellation
+    )
     {
         using var output = new MemoryStream();
         var buffer = new byte[16384];
         while (true)
         {
-            var count = await stream.ReadAsync(buffer.AsMemory(0, Math.Min(buffer.Length, maximum - (int)output.Length + 1)),
-                cancellation).ConfigureAwait(false);
+            var count = await stream
+                .ReadAsync(
+                    buffer.AsMemory(0, Math.Min(buffer.Length, maximum - (int)output.Length + 1)),
+                    cancellation
+                )
+                .ConfigureAwait(false);
             if (count == 0)
                 return output.ToArray();
             if (output.Length + count > maximum)
@@ -140,62 +174,100 @@ internal sealed partial class ProviderHttp : IDisposable
                 throw new HttpRouteException("The confirmed proxy is incomplete.");
             handler.Proxy = new WebProxy(new UriBuilder(scheme, route.Host, route.Port).Uri)
             {
-                Credentials = route.Username.Length == 0 ? null : new NetworkCredential(route.Username, route.Password),
+                Credentials =
+                    route.Username.Length == 0
+                        ? null
+                        : new NetworkCredential(route.Username, route.Password),
                 BypassProxyOnLocal = false,
             };
         }
         if (route.Adapter.Length > 0)
-            handler.ConnectCallback = (context, cancellation) => Connect(context.DnsEndPoint, route.Adapter, cancellation);
+            handler.ConnectCallback = (context, cancellation) =>
+                Connect(context.DnsEndPoint, route.Adapter, cancellation);
         var client = new HttpClient(handler) { Timeout = Timeout.InfiniteTimeSpan };
         client.DefaultRequestHeaders.UserAgent.ParseAdd(App.UserAgent);
         return client;
     }
 
-    private static async ValueTask<Stream> Connect(DnsEndPoint endpoint, string adapterId,
-        CancellationToken cancellation)
+    private static async ValueTask<Stream> Connect(
+        DnsEndPoint endpoint,
+        string adapterId,
+        CancellationToken cancellation
+    )
     {
-        try { return await ConnectAdapter(endpoint, adapterId, cancellation).ConfigureAwait(false); }
-        catch (Exception error) when (error is not HttpRouteException &&
-            error is IOException or System.ComponentModel.Win32Exception)
+        try
         {
-            throw new HttpRouteException("The selected network adapter cannot reach the provider route.", error);
+            return await ConnectAdapter(endpoint, adapterId, cancellation).ConfigureAwait(false);
+        }
+        catch (Exception error)
+            when (error is not HttpRouteException
+                && error is IOException or System.ComponentModel.Win32Exception
+            )
+        {
+            throw new HttpRouteException(
+                "The selected network adapter cannot reach the provider route.",
+                error
+            );
         }
     }
 
-    private static async ValueTask<Stream> ConnectAdapter(DnsEndPoint endpoint, string adapterId,
-        CancellationToken cancellation)
+    private static async ValueTask<Stream> ConnectAdapter(
+        DnsEndPoint endpoint,
+        string adapterId,
+        CancellationToken cancellation
+    )
     {
-        var adapter = NetworkInterface.GetAllNetworkInterfaces().FirstOrDefault(candidate =>
-            string.Equals(candidate.Id, adapterId, StringComparison.OrdinalIgnoreCase));
+        var adapter = NetworkInterface
+            .GetAllNetworkInterfaces()
+            .FirstOrDefault(candidate =>
+                string.Equals(candidate.Id, adapterId, StringComparison.OrdinalIgnoreCase)
+            );
         if (adapter is null || adapter.OperationalStatus != OperationalStatus.Up)
             throw new HttpRouteException("The selected network adapter is unavailable.");
         var properties = adapter.GetIPProperties();
         var local = properties.UnicastAddresses.Select(address => address.Address).ToArray();
         var index = adapter.Supports(NetworkInterfaceComponent.IPv4)
-            ? properties.GetIPv4Properties().Index : properties.GetIPv6Properties().Index;
+            ? properties.GetIPv4Properties().Index
+            : properties.GetIPv6Properties().Index;
         var addresses = IPAddress.TryParse(endpoint.Host, out var literal)
-            ? [literal] : await Resolve(endpoint.Host, (uint)index, cancellation).ConfigureAwait(false);
+            ? [literal]
+            : await Resolve(endpoint.Host, (uint)index, cancellation).ConfigureAwait(false);
         Exception? failure = null;
         foreach (var address in addresses)
         {
-            foreach (var source in local.Where(value => value.AddressFamily == address.AddressFamily &&
-                (address.AddressFamily != AddressFamily.InterNetworkV6 || value.IsIPv6LinkLocal == address.IsIPv6LinkLocal)))
+            foreach (
+                var source in local.Where(value =>
+                    value.AddressFamily == address.AddressFamily
+                    && (
+                        address.AddressFamily != AddressFamily.InterNetworkV6
+                        || value.IsIPv6LinkLocal == address.IsIPv6LinkLocal
+                    )
+                )
+            )
             {
                 var socket = new Socket(address.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
                 try
                 {
                     // A source address alone can still route through another adapter.
                     var family = address.AddressFamily == AddressFamily.InterNetwork;
-                    var routeIndex = family ? properties.GetIPv4Properties().Index : properties.GetIPv6Properties().Index;
+                    var routeIndex = family
+                        ? properties.GetIPv4Properties().Index
+                        : properties.GetIPv6Properties().Index;
                     // Winsock's IP_UNICAST_IF and IPV6_UNICAST_IF share option 31,
                     // which SocketOptionName does not expose.
-                    socket.SetSocketOption(family ? SocketOptionLevel.IP : SocketOptionLevel.IPv6,
-                        (SocketOptionName)31, family ? IPAddress.HostToNetworkOrder(routeIndex) : routeIndex);
+                    socket.SetSocketOption(
+                        family ? SocketOptionLevel.IP : SocketOptionLevel.IPv6,
+                        (SocketOptionName)31,
+                        family ? IPAddress.HostToNetworkOrder(routeIndex) : routeIndex
+                    );
                     socket.Bind(new IPEndPoint(source, 0));
-                    await socket.ConnectAsync(new IPEndPoint(address, endpoint.Port), cancellation).ConfigureAwait(false);
+                    await socket
+                        .ConnectAsync(new IPEndPoint(address, endpoint.Port), cancellation)
+                        .ConfigureAwait(false);
                     return new NetworkStream(socket, ownsSocket: true);
                 }
-                catch (Exception error) when (error is SocketException or OperationCanceledException)
+                catch (Exception error)
+                    when (error is SocketException or OperationCanceledException)
                 {
                     socket.Dispose();
                     cancellation.ThrowIfCancellationRequested();
@@ -203,7 +275,10 @@ internal sealed partial class ProviderHttp : IDisposable
                 }
             }
         }
-        throw new IOException("The selected network adapter cannot reach the provider route.", failure);
+        throw new IOException(
+            "The selected network adapter cannot reach the provider route.",
+            failure
+        );
     }
 
     public void Dispose()
@@ -228,12 +303,18 @@ internal sealed record HttpRoute
     internal string Username { get; init; } = string.Empty;
     internal string Password { get; init; } = string.Empty;
     internal string Adapter { get; init; } = string.Empty;
+
     public override string ToString() => nameof(HttpRoute);
 }
 
-internal sealed class HttpRouteException(string message, Exception? inner = null) : IOException(message, inner);
+internal sealed class HttpRouteException(string message, Exception? inner = null)
+    : IOException(message, inner);
 
-internal sealed record ProviderReply(HttpStatusCode Status, byte[] Bytes, IReadOnlyDictionary<string, string> Headers)
+internal sealed record ProviderReply(
+    HttpStatusCode Status,
+    byte[] Bytes,
+    IReadOnlyDictionary<string, string> Headers
+)
 {
     internal string? Header(string name) => Headers.GetValueOrDefault(name);
 
@@ -243,11 +324,29 @@ internal sealed record ProviderReply(HttpStatusCode Status, byte[] Bytes, IReadO
         {
             var now = DateTimeOffset.UtcNow;
             var value = Header("Retry-After");
-            if (long.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var seconds))
-                return seconds > 0 && seconds <= (DateTimeOffset.MaxValue - now).Ticks / TimeSpan.TicksPerSecond
-                    ? now.AddSeconds(seconds) : null;
-            return DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var date)
-                && date > now ? date : null;
+            if (
+                long.TryParse(
+                    value,
+                    NumberStyles.None,
+                    CultureInfo.InvariantCulture,
+                    out var seconds
+                )
+            )
+                return
+                    seconds > 0
+                    && seconds <= (DateTimeOffset.MaxValue - now).Ticks / TimeSpan.TicksPerSecond
+                    ? now.AddSeconds(seconds)
+                    : null;
+            return
+                DateTimeOffset.TryParse(
+                    value,
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.AssumeUniversal,
+                    out var date
+                )
+                && date > now
+                ? date
+                : null;
         }
     }
 }

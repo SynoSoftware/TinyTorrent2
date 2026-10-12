@@ -52,9 +52,13 @@ public sealed partial class PiecesMap : UserControl
         foreach (var entry in Legend.Children.OfType<Grid>())
         {
             Grid.SetColumn(entry, Legend.ColumnDefinitions.Count);
-            Legend.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            Legend.ColumnDefinitions.Add(
+                new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }
+            );
             entry.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            entry.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            entry.ColumnDefinitions.Add(
+                new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }
+            );
             entry.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         }
         Loaded += OnLoaded;
@@ -140,8 +144,9 @@ public sealed partial class PiecesMap : UserControl
             foreach (var kind in Enum.GetValues<PieceKind>())
             {
                 labels[(int)kind].Text = Pieces.Name(text, kind);
-                totals[(int)kind].Text = counts is null ? "—" :
-                    counts[(int)kind].ToString("N0", CultureInfo.CurrentCulture);
+                totals[(int)kind].Text = counts is null
+                    ? "—"
+                    : counts[(int)kind].ToString("N0", CultureInfo.CurrentCulture);
             }
             RefreshLegend();
             AutomationProperties.SetName(this, text.Get("inspector", "pieces"));
@@ -168,8 +173,10 @@ public sealed partial class PiecesMap : UserControl
             var label = (TextBlock)entry.Children[1];
             ToolTipService.SetToolTip(label, ((Run)label.Inlines[0]).Text);
             entry.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-            Legend.ColumnDefinitions[index].MinWidth = entry.Children[0].DesiredSize.Width +
-                entry.Children[2].DesiredSize.Width + 2 * entry.ColumnSpacing;
+            Legend.ColumnDefinitions[index].MinWidth =
+                entry.Children[0].DesiredSize.Width
+                + entry.Children[2].DesiredSize.Width
+                + 2 * entry.ColumnSpacing;
             Legend.ColumnDefinitions[index].MaxWidth = entry.DesiredSize.Width;
         }
     }
@@ -187,7 +194,8 @@ public sealed partial class PiecesMap : UserControl
 
     private void OnRoot(XamlRoot sender, XamlRootChangedEventArgs args) => QueueDraw();
 
-    private void OnTextScale(UISettings sender, object args) => DispatcherQueue.TryEnqueue(RefreshLegend);
+    private void OnTextScale(UISettings sender, object args) =>
+        DispatcherQueue.TryEnqueue(RefreshLegend);
 
     private void OnSize(object sender, SizeChangedEventArgs args) => QueueDraw();
 
@@ -316,8 +324,7 @@ public sealed partial class PiecesMap : UserControl
         var spareWidth =
             count >= maxColumns && columnGutters > 0 ? (int)width - Extent(columns, side) : 0;
         var rowGutters = (rows - 1) / Band;
-        var spareHeight =
-            rows == maxRows && rowGutters > 0 ? (int)height - Extent(rows, side) : 0;
+        var spareHeight = rows == maxRows && rowGutters > 0 ? (int)height - Extent(rows, side) : 0;
         int Spread(int position, int spare, int gutters) =>
             Start(position, side) + (spare == 0 ? 0 : spare * (position / Band) / gutters);
         var mapWidth = Spread(columns - 1, spareWidth, columnGutters) + side;
@@ -599,9 +606,13 @@ public sealed partial class PiecesMap : UserControl
             ? -1
             : Array.FindIndex(layout.Blocks, block => block.End > _selectedPiece);
 
-    private Conclusion Conclude(Strings text) => _data?.Conclude(text) ?? new(
-        text.Get("pieces", "loading"), text.Get("pieces", "loading_reason"),
-        InfoBarSeverity.Informational);
+    private Conclusion Conclude(Strings text) =>
+        _data?.Conclude(text)
+        ?? new(
+            text.Get("pieces", "loading"),
+            text.Get("pieces", "loading_reason"),
+            InfoBarSeverity.Informational
+        );
 
     // Clear drops the layout whenever Show drops the data.
     private PieceDetail Describe(Block block, Strings text) =>

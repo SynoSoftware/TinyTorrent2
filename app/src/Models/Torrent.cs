@@ -23,8 +23,11 @@ public sealed class Torrent(string torrentId, Strings strings) : INotifyProperty
     public int LeecherCount => PeerCount - SeedCount;
     public int SwarmSeedCount { get; private set; }
     public int SwarmLeecherCount { get; private set; }
+
+    // The engine uses -1 for torrents outside the download queue.
     public int Queue { get; private set; }
-    public int QueueOrder => Queue < 0 ? int.MaxValue : Queue;
+    public bool IsQueued => Queue >= 0;
+    public int QueueOrder => IsQueued ? Queue : int.MaxValue;
     public long Added { get; private set; }
     public string[] Hashes { get; private set; } = [];
     public bool Sequential { get; private set; }
@@ -54,7 +57,8 @@ public sealed class Torrent(string torrentId, Strings strings) : INotifyProperty
         {
             "downloading" => Syno.Lucide.ArrowDownToLine,
             "seeding" => Syno.Lucide.ArrowUpFromLine,
-            "paused" or "all_paused" => Syno.Lucide.Pause,
+            "paused" => Syno.Lucide.Square,
+            "all_paused" => Syno.Lucide.Pause,
             "completed" => Syno.Lucide.CircleCheck,
             "checking" => Syno.Lucide.RefreshCw,
             "moving" => Syno.Lucide.Folder,
@@ -96,7 +100,7 @@ public sealed class Torrent(string torrentId, Strings strings) : INotifyProperty
         Added <= 0 ? "—" : strings.Ago(DateTimeOffset.FromUnixTimeSeconds(Added));
     public string? AddedTip =>
         Added <= 0 ? null : strings.Time(DateTimeOffset.FromUnixTimeSeconds(Added));
-    public string QueueText => Queue < 0 ? "—" : (Queue + 1).ToString(CultureInfo.CurrentCulture);
+    public string QueueText => IsQueued ? (Queue + 1).ToString(CultureInfo.CurrentCulture) : "—";
 
     // The limits that are set, such as "↓ 500 KiB/s"; empty without one.
     public string LimitText => Limits(string.Empty);

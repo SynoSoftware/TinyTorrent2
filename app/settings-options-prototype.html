@@ -37,6 +37,36 @@ body.compact .section{padding:14px 20px 8px;margin-bottom:12px}body.compact .sec
 @media(forced-colors:active){.week-block.alt,.week-block.pause{background:Canvas;color:CanvasText;border-color:CanvasText}.week-block.alt{border-width:2px}.week-block.pause{border-style:dashed}.now-line,.swatch.alt{background:Highlight}.swatch.pause{background:Canvas;border:2px dashed CanvasText}}
 .schedule-limits .row{min-height:44px;padding:4px 0}.schedule-limits .speed-pair{gap:12px}.section-head>.action{margin-left:auto;flex:none}.section-head>.action .lucide{color:inherit}.schedule-header .schedule-feedback{flex:1}.week-block.fixed{align-items:center}
 @media(max-width:620px){.schedule-limits .speed-pair{flex-wrap:wrap;justify-content:flex-end}}
+.integration-card .integration-row{display:flex;align-items:center;gap:12px;min-height:48px}
+.integration-card .integration-label{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.integration-card .integration-controls{display:flex;align-items:center;gap:12px;flex:none}
+.integration-card .integration-apps{margin:0 0 8px;padding:4px 14px;background:var(--inner);border-radius:5px}
+.integration-card .integration-app{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:center;min-height:36px}
+.integration-card .integration-app>span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.integration-card .integration-app>span:first-child{color:var(--muted)}
+.integration-card .integration-app>span:last-child{text-align:right}
+.integration-card .integration-caution{color:var(--muted);width:32px;height:32px;padding:0}
+.integration-card .integration-caution svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.integration-card .integration-group{margin-top:12px}
+.integration-card .integration-group h3{margin:0 0 6px}
+.integration-card[data-layout=B] .integration-apps{background:none;padding:0;margin:0}
+.integration-card[data-layout=B] .integration-app{min-height:40px;grid-template-columns:180px minmax(0,1fr)}
+.integration-card[data-layout=B] .integration-app>span:last-child{text-align:left}
+.integration-card[data-layout=C] .integration-apps{margin:0 0 8px 0;padding:0 0 0 14px;background:none;border-left:2px solid var(--line);border-radius:0}
+.integration-card[data-layout=C] .integration-app{min-height:28px;grid-template-columns:140px minmax(0,1fr)}
+.integration-card[data-layout=C] .integration-app>span:last-child{text-align:left}
+.integration-card[data-layout=C] .integration-row{min-height:40px}
+.integration-preview .prototype{display:none}
+.integration-lab{position:fixed;left:50%;bottom:10px;transform:translateX(-50%);z-index:10;max-width:calc(100vw - 24px);width:max-content;border:1px solid #46515f;border-radius:9px;background:#161c24;color:#f5f6f8;box-shadow:0 4px 16px #0003;padding:8px 12px}
+.integration-lab>div{display:flex;align-items:center;justify-content:center;gap:8px}
+.integration-lab button,.integration-lab select{background:#ffffff09;color:inherit;border-color:#ffffff20;min-height:28px}
+.integration-lab option{background:#161c24;color:#f5f6f8}
+.integration-lab strong{min-width:150px;text-align:center;font-size:12px}
+.integration-lab small{display:block;text-align:center;font-size:11px;color:#aebdce;margin-top:5px}
+#integration-info{position:fixed;inset:auto;margin:0;max-width:calc(100vw - 24px);width:460px;padding:16px;border:1px solid var(--line);border-radius:8px;background:var(--page);color:var(--text);box-shadow:0 8px 24px var(--shadow)}
+#integration-info p{margin:8px 0;line-height:22px}#integration-info code{display:block;overflow:auto;white-space:nowrap;user-select:text;font-size:13px}
+@media(max-width:700px){.integration-card .integration-row{gap:8px}.integration-card .integration-controls{gap:6px}.integration-card[data-layout=B] .integration-app{grid-template-columns:140px minmax(0,1fr)}.integration-lab>div{flex-wrap:wrap}.integration-lab{width:calc(100vw - 24px)}.integration-lab small{max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}
+@media(forced-colors:active){.integration-lab,#integration-info{background:Canvas;color:CanvasText;border-color:CanvasText}.integration-lab :is(button,select,small){color:CanvasText}.integration-card .integration-apps{border:1px solid CanvasText}}
 </style>
 <style>
 .action{display:inline-flex;align-items:center;justify-content:center;gap:8px;line-height:20px;white-space:nowrap}.action .lucide{width:20px;height:20px;font-size:20px}
@@ -243,7 +273,7 @@ const sections=[
     field('use_incomplete','Use a separate folder for incomplete downloads','','toggle',false),
     field('incomplete','Incomplete download folder','Files move to the download folder when the download finishes.','path','C:\\Users\\user\\Downloads\\Incomplete',false,{depends:'use_incomplete'}),
     field('deletion','When deleting downloaded files','Locations without a Recycle Bin require permanent deletion.','select','Move to Recycle Bin',false,{options:['Move to Recycle Bin','Delete permanently']}),
-    field('suffix','Append .!tt to incomplete files','TinyTorrent removes the extension when each file finishes downloading.','toggle',true,true),
+    field('suffix','Append .!tt to incomplete files','TinyTorrent removes the extension when each file finishes downloading.','toggle',true),
     field('preallocate','Reserve disk space before downloading','Reserving space can delay the start of a download.','toggle',false,true)
   ]},
   {category:'Transfers',title:'Adding torrents',description:'Choose what happens when you open torrent files and magnet links.',icon:'plus',rows:[
@@ -370,6 +400,10 @@ const defaults=Object.fromEntries(fields.map(field=>[field.id,field.value]));
 const initialVariant=new URLSearchParams(location.search).get('variant');
 const state={variant:variants[initialVariant]?initialVariant:'C',surface:'settings',inspector:'General',category:'Speed limits',advanced:false,query:'',index:false,units:{seed_time:'minutes',inactive_time:'minutes'},values:{...defaults},bandwidth:{download:'',upload:''},supplier:{name:'OpenSubtitles.com',username:'',password:''},proxy:{type:'None',host:'',port:1080,username:'',password:''}};
 const sample={name:'Ubuntu 24.04.1 desktop',path:'C:\\Downloads\\ubuntu-24.04.1-desktop-amd64.iso',hash:'0123456789abcdef0123456789abcdef01234567',tracker:'https://tracker.example.org/announce',peer:'203.0.113.18:51413',download:'12.4 MB/s',upload:'820 KB/s',lastFolder:'D:\\Downloads',defaultApps:{torrent:'TinyTorrent',magnet:'Another app'},canRecycle:true};
+// These variants replace only Windows integration; registry changes are simulated.
+const integrationVariants={A:'Grouped details',B:'Current apps first',C:'Compact rows'};
+const integrationKey=new URLSearchParams(location.search).get('integration');
+const integration=integrationKey?{variant:integrationVariants[integrationKey]?integrationKey:'A',startupPath:''}:null;
 state.subtitleHelp='new';
 state.subtitleDownloads={};
 state.subtitleExisting={};
@@ -695,7 +729,63 @@ function control(field){
   }
   return `<input type="${field.type}" ${attrs} required value="${escape(value)}" ${field.min!==undefined?`min="${field.min}" max="${field.max}" step="${field.step||1}"`:''}>${field.unit?`<span class="unit" id="unit-${field.id}">${field.unit}</span>`:''}`;
 }
+function integrationCaution(kind){
+  return `<button class="icon-button integration-caution" id="integration-${kind}-info" data-integration="${kind}-info" aria-label="${kind==='startup'?'Another copy starts at sign-in':'Registration needs attention'}" data-tip="${kind==='startup'?'Another TinyTorrent copy starts at sign-in':'Show registration details'}" aria-haspopup="dialog"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10.3 3.9-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3.1l-8-14a2 2 0 0 0-3.4 0ZM12 9v4m0 4h.01"/></svg></button>`;
+}
+function renderIntegration(){
+  const apps=Object.values(sample.defaultApps);
+  const on=apps.every(app=>app.startsWith('TinyTorrent'));
+  const missing=apps.includes('Missing program');
+  const other=apps.includes('TinyTorrent (other copy)');
+  const repair=missing?action('Repair','wrench','Repair missing handlers and open torrent files and magnet links with this copy','id="integration-repair" data-integration="handlers-use"'):other?action('Use','arrow-left-right','Open torrent files and magnet links with this copy','id="integration-use" data-integration="handlers-use"'):'';
+  const handlers=`<div class="integration-row"><span class="integration-label" id="label-integration-handlers">Open torrents with TinyTorrent</span><div class="integration-controls">${missing||other?integrationCaution('handlers'):''}${repair}${toggle('integration-handlers',on,'Open torrent files and magnet links with TinyTorrent')}</div></div>`;
+  const facts=`<div class="integration-apps">${[['torrent','Torrent files'],['magnet','Magnet links']].map(([key,label])=>`<div class="integration-app"><span>${label}</span><span tabindex="0" data-tip="${escape(sample.defaultApps[key])}">${escape(sample.defaultApps[key])}</span></div>`).join('')}</div>`;
+  const startup=`<div class="integration-row"><span class="integration-label">Start when I sign in</span><div class="integration-controls">${integration.startupPath?integrationCaution('startup')+action('Use','arrow-left-right','Start this TinyTorrent copy when you sign in','id="integration-startup-use" data-integration="startup-use"'):''}${toggle('integration-startup',state.values.startup,'Start when I sign in')}</div></div>`;
+  let body;
+  if(integration.variant==='B')body=`<div class="integration-group"><h3>Default apps</h3>${facts}${handlers}</div><div class="integration-group"><h3>Startup</h3>${startup}</div>`;
+  else body=handlers+facts+startup;
+  return `<section class="section integration-card" data-layout="${integration.variant}" aria-label="Windows integration"><header class="section-head">${icon('app-window')}<h2>Windows integration</h2></header>${body}<span hidden id="help-integration-handlers">Open torrent files and magnet links with this copy. Applies immediately.</span><span hidden id="help-integration-startup">Start this copy when you sign in. Applies immediately.</span></section>`;
+}
+function cycleIntegration(delta){
+  const keys=Object.keys(integrationVariants);
+  integration.variant=keys[(keys.indexOf(integration.variant)+delta+keys.length)%keys.length];
+  const url=new URL(location.href);url.searchParams.set('integration',integration.variant);history.replaceState(null,'',url);
+  document.getElementById('integration-variant').textContent=`${integration.variant} · ${integrationVariants[integration.variant]}`;
+  render();
+}
+function integrationScenario(value){
+  sample.defaultApps=value==='mixed'?{torrent:'TinyTorrent',magnet:'qBittorrent'}
+    :value==='missing'?{torrent:'Missing program',magnet:'TinyTorrent'}
+    :value==='other'?{torrent:'TinyTorrent (other copy)',magnet:'TinyTorrent (other copy)'}
+    :{torrent:'TinyTorrent',magnet:'TinyTorrent'};
+  state.values.startup=value==='current'||value==='other';
+  integration.startupPath=value==='other'?'D:\\Portable\\TinyTorrent\\TinyTorrent.exe':'';
+  document.getElementById('integration-info').hidePopover();render();
+}
+function integrationAction(button){
+  const command=button.dataset.integration||button.dataset.toggle;
+  if(command.endsWith('-info')){
+    const startup=command==='startup-info',missing=Object.values(sample.defaultApps).includes('Missing program');
+    const popup=document.getElementById('integration-info');
+    popup.innerHTML=`<h2>${startup?'Startup':missing?'Missing program':'Another TinyTorrent copy'}</h2><p>${startup?'Another TinyTorrent copy starts when you sign in.':missing?'Torrent files are set to open with a program that is no longer installed.':'Torrent files and magnet links open with another TinyTorrent copy.'}</p><code tabindex="0">${escape(startup?integration.startupPath:missing?'C:\\Old apps\\TorrentClient\\client.exe':'D:\\Portable\\TinyTorrent\\TinyTorrent.exe')}</code>${missing?'<p>Repair may ask Windows for administrator permission.</p>':''}`;
+    popup.showPopover();const rect=button.getBoundingClientRect();
+    popup.style.left=Math.max(12,Math.min(innerWidth-popup.offsetWidth-12,rect.right-popup.offsetWidth))+'px';
+    popup.style.top=Math.max(12,Math.min(innerHeight-popup.offsetHeight-12,rect.bottom+4))+'px';return;
+  }
+  if(command==='integration-handlers'){
+    const on=Object.values(sample.defaultApps).every(app=>app.startsWith('TinyTorrent'));
+    const app=on?'No default app set':'TinyTorrent';
+    sample.defaultApps={torrent:app,magnet:app};
+  }
+  if(command==='handlers-use')sample.defaultApps={torrent:'TinyTorrent',magnet:'TinyTorrent'};
+  if(command==='integration-startup'){state.values.startup=!state.values.startup;integration.startupPath=''}
+  if(command==='startup-use'){state.values.startup=true;integration.startupPath=''}
+  render();
+  if(command==='handlers-use')document.getElementById('integration-handlers')?.focus();
+  if(command==='startup-use')document.getElementById('integration-startup')?.focus();
+}
 function renderSection(section){
+  if(integration&&section.title==='Windows integration')return renderIntegration();
   const rows=section.schedule?[fields.find(field=>field.id==='limit_mode')]:section.rows.filter(visible);if(!rows.length)return '';
   const fixed=section.title==='Startup and closing'?'<div class="fixed-setting"><span>When the window closes</span><span>Keep transfers running</span></div>':'';
   const description=section.description;
@@ -757,6 +847,7 @@ function render(){
   if(usesTabs)content.setAttribute('aria-labelledby',`tab-${state.category.replaceAll(' ','-')}`);
   else content.setAttribute('aria-label',state.query?'Settings search results':'All settings');
   renderContent();
+  if(integration)document.getElementById('integration-state').textContent=`Sample only · Torrent files: ${sample.defaultApps.torrent} · Magnet links: ${sample.defaultApps.magnet} · Sign-in: ${state.values.startup?'On':'Off'}`;
   if(focused&&document.activeElement===document.body)document.getElementById(focused)?.focus({preventScroll:true});
 }
 function renderContent(){
@@ -817,7 +908,7 @@ function setVariant(key){
   state.variant=key;state.index=true;state.query='';document.querySelector('#search').value='';
   const url=new URL(location.href);url.searchParams.set('variant',key);history.replaceState(null,'',url);render();scroll.scrollTop=0;
 }
-function cycle(delta){const keys=Object.keys(variants);setVariant(keys[(keys.indexOf(state.variant)+delta+keys.length)%keys.length])}
+function cycle(delta){if(integration){cycleIntegration(delta);return}const keys=Object.keys(variants);setVariant(keys[(keys.indexOf(state.variant)+delta+keys.length)%keys.length])}
 function applyTheme(value){document.body.classList.toggle('dark',value==='Dark'||value==='Use system setting'&&systemTheme.matches);document.querySelector('#preview-theme').textContent=document.body.classList.contains('dark')?'Use light theme':'Use dark theme'}
 function openDialog(){hideTooltip();dialogReturn=document.activeElement.id;const hint=dialog.querySelector(':scope>p.hint'),heading=dialog.querySelector('h2');if(hint){heading.dataset.tip=hint.textContent;heading.tabIndex=0}dialog.showModal();const input=dialog.querySelector('input:not(:disabled):not([type=password]),select:not(:disabled),textarea:not(:disabled)');if(input)input.focus();else dialog.querySelector('[autofocus],.actions button')?.focus()}
 dialog.addEventListener('close',()=>{hideTooltip();const flyout=document.getElementById('supplier-info');if(flyout.matches(':popover-open'))flyout.hidePopover();document.body.append(flyout);document.getElementById(dialogReturn)?.focus({preventScroll:true})});
@@ -1032,6 +1123,7 @@ function showConnection(kind){
 }
 document.addEventListener('click',async event=>{
   const button=event.target.closest('button,a[data-action]');if(!button||button.disabled)return;
+  if(integration&&(button.dataset.integration||button.dataset.toggle?.startsWith('integration-'))){integrationAction(button);return}
   if(button.dataset.languageRemove||button.hasAttribute('data-language-reset')){const selected=button.dataset.languageRemove?subtitleSelection().filter(id=>id!==button.dataset.languageRemove):[];setSubtitleLanguages(selected);render();document.getElementById('subtitle_query').focus({preventScroll:true});return}
   if(button.hasAttribute('data-restore-subtitles')){closeMenu();setSurface('settings');state.subtitleHelp='new';state.index=true;render();scroll.scrollTop=0;document.querySelector('.index-entry .index-card')?.focus({preventScroll:true});return}
   if(button.hasAttribute('data-dismiss-subtitles')){
@@ -1193,6 +1285,16 @@ document.querySelector('#clear').innerHTML=icon('close');document.querySelector(
 document.querySelector('#search-icon').innerHTML=icon('search');
 document.querySelector('#gears').innerHTML=icon('settings').replace('class="lucide"','class="lucide gear first"')+icon('settings').replace('class="lucide"','class="lucide gear last"');
 if(state.variant==='C')state.index=true;
+if(integration){
+  state.variant='C';state.category='General';state.index=false;
+  document.body.classList.add('integration-preview');
+  document.body.insertAdjacentHTML('beforeend',`<aside class="integration-lab" aria-label="Windows integration prototype"><div><button id="integration-previous" aria-label="Previous card">←</button><strong id="integration-variant">${integration.variant} · ${integrationVariants[integration.variant]}</strong><button id="integration-next" aria-label="Next card">→</button><select id="integration-scenario" aria-label="Registration scenario"><option value="mixed">Mixed defaults</option><option value="current">This copy</option><option value="other">Another copy</option><option value="missing">Missing program</option></select><button id="integration-theme">Light / dark</button></div><small id="integration-state" role="status"></small></aside><div id="integration-info" popover="auto" role="dialog" aria-label="Registration details"></div>`);
+  document.getElementById('integration-previous').onclick=()=>cycleIntegration(-1);
+  document.getElementById('integration-next').onclick=()=>cycleIntegration(1);
+  document.getElementById('integration-scenario').onchange=event=>integrationScenario(event.target.value);
+  document.getElementById('integration-theme').onclick=()=>document.getElementById('preview-theme').click();
+  sample.defaultApps={torrent:'TinyTorrent',magnet:'qBittorrent'};
+}
 applyTheme(state.values.theme);render();
 </script>
 </body>

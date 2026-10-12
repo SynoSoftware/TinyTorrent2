@@ -141,7 +141,7 @@ integrate.
    does not require a data-grid, drag, or command-adapter package.
 7. **Pay only for enabled behavior.** Marquee selection and row reordering do
    no work when disabled or idle. Fit measurement happens only for a fit
-   command (section 10); the first fill measures nothing.
+   command or a fill after showing or resizing the table (section 10).
 8. **One local view projection.** Header sort operates on one private view, so
    selection, layout, and visible order have a single authority.
 9. **Be a Windows control, not a visual subsystem.** The control uses the
@@ -244,6 +244,7 @@ public sealed class Table : Control
     public void RefreshView();
     public void Release(IEnumerable<object> items);
     public void ScrollIntoView(object item);
+    public void ScrollIntoView(object item, IEnumerable<object> arrivals);
     public double VerticalOffset { get; }
     public void ScrollTo(double verticalOffset);
     public void Fit(Column column);
@@ -262,7 +263,8 @@ public sealed class Schema<TRow> where TRow : class
 {
     public Schema<TRow> Key<TKey>(Func<TRow, TKey> key) where TKey : notnull;
     public Schema<TRow> CanInteract(Func<TRow, bool> predicate);
-    public Schema<TRow> CanReorder(Func<TRow, bool> predicate);
+    public Schema<TRow> Order(Column column, Func<TRow, int?> position,
+        Func<IEnumerable<TRow>> items);
     public Schema<TRow> SortKey<TKey>(Column column, Func<TRow, TKey> key,
         IComparer<TKey>? comparer = null);
 }
@@ -294,16 +296,13 @@ domain request and is meaningful only where the host owns an order. A press in
 the table body that nothing else competes for must do something, so the marquee
 is on; most tables have no domain order, so the reorder is off.
 
-`CanReorder` is the only owner of that capability. A gesture is
-offered when the flag is true, the view shows the row order, and the row is
-eligible for dragging; having a `ReorderRequested` handler is not part of the test,
-because two owners of one capability eventually disagree. The view shows
-the row order when it is unsorted, which is the source order, or sorted either
-way by the column whose `DefinesRowOrder` is true (section 6); under any other
-sort the table withholds the drag itself, and a drag from a row is section 14's
-marquee. A host binds or sets the flag to false whenever its current external
-filter/order, pending domain operation, or ordering model cannot map a visual
-placement to a domain insertion.
+The host registers a numbered order with `Schema.Order(column, position, items)`
+and sets `CanReorder` when domain moves are available. A null position excludes
+an item from moves, while keeping it selectable and able to open the wheel.
+The item supplier returns the complete order, including filtered-out items.
+Positions and identities are unique. The column supplies the wheel's title and
+identifies the sort that follows domain moves immediately; sorting still needs
+its own sort key. Event subscription does not enable dragging.
 
 `ItemsSource` may be any `IEnumerable`. It is the host's already filtered
 projection. When that projection is empty, the host sets `Placeholder` as
@@ -367,13 +366,6 @@ effective layout, declared by this table, and carry a sort key from
 impossible, so it throws. A saved sort arriving from storage is the other case
 entirely and belongs in `Layout`, which recovers defensively (section 18).
 
-`Schema<TRow>().CanReorder` defaults to every interactive row being draggable.
-Its setup-only predicate restricts dragging without restricting selection,
-invocation, or context commands. A selected packet containing a refused row
-cannot be dragged; an unselected permitted row still moves alone. After a
-predicate input changes, the host calls `RefreshView`, as for `CanInteract`.
-This allows display rows outside a domain order to retain their ordinary actions.
-
 `Schema<TRow>().CanInteract` defaults to every row being interactive. When the
 predicate returns false, the item still renders but cannot be selected, invoked,
 context-clicked, or included in a row drag packet. Keyboard navigation skips it.
@@ -428,7 +420,7 @@ changes. They fire only after the table has completed its own mechanics.
 `SelectionChanged` can also result from assigning `Selection` or from
 source/interactivity reconciliation. Its immutable payload is the updated
 `Selection`, including when only the current row changes.
-Every selected-item packet below is in current visual row order. Event payloads
+Selection packets use current visual order; reorder packets use ascending numbered order. Event payloads
 are immutable snapshots:
 
 | Event | Event args contract |
@@ -436,26 +428,21 @@ are immutable snapshots:
 | `SelectionChanged` | the `Selection` itself: current visual-order `Items` and `Current` |
 | `ItemInvoked` | `Item`, ordered `SelectedItems` after normal input selection processing |
 | `ItemContextRequested` | `Item`, ordered `SelectedItems`, realized row `FrameworkElement Target`, nullable `Point Position` relative to it (`null` for a keyboard invocation) |
-| `ReorderRequested` | row-order `Items`, nullable `Before` item, never one of `Items` |
+| `ReorderRequested` | ascending numbered-order `Items`, nullable `Before` item, never one of `Items` |
 | `LayoutChanged` | one `LayoutChange`: `Sort`, `Move`, `Resize`, `Fit`, `Visibility`, or `Reset` |
 
 `LayoutChanged` carries the change kind and nothing else. A host that wants the
 snapshot reads `Layout`, which is the same independent snapshot the event used
 to carry, so there is one way to obtain it rather than two.
 
-Assigning `Layout` is silent. `Before` describes a position in the
-row order *after* `Items` have been removed: insert the complete packet
-immediately before that remaining item; `null` means append at the end. The
-row order is the current visual sequence, read from the bottom up when the
-`DefinesRowOrder` column is sorted descending, and `Items` is in that
-order too, so the request names the placement the user pointed at whichever
-way the view runs. The first remaining item therefore expresses the start of
-the order, and `null` expresses its end without a synthetic target or a
-two-direction ambiguity. A request is emitted only for a legal placement that
-would change visual order. A drop outside a legal boundary, onto the dragged
-packet, or back to the same resulting order is a no-op and does not raise a
-reorder event. When the packet is the complete view, there is no distinct
-remaining insertion position and no reorder request.
+Assigning `Layout` is silent.
+
+For `ReorderRequested`, `Items` contains participating items in ascending
+numbered order, independently of the display sort. `Before` identifies a
+remaining item from the complete order, or null to append. It may be outside
+the table's filtered source, but never inside the moving packet. The host
+inserts the packet there and owns any renumbering. Outside drops and placements
+that leave the order unchanged raise no event.
 
 Events are raised synchronously on the UI thread. A host may start or forward
 async work from an event handler, but the table does not await it and never
@@ -546,7 +533,7 @@ moving while they work.
 - A held row cannot be selected, invoked, context-clicked, or dragged, and
   keyboard navigation skips it, as for a non-interactive item. Selection
   pruning follows the rule below, so the selected packet never names a held
-  row, and a reorder request never names one as `Before`.
+  row. Reorder destinations come from the separately supplied complete order.
 - A change the person caused applies at once, even with the pointer over the
   rows, because the rule is that nothing moves unless the person caused it. The
   table cannot tell who caused an update, so the host names the rows whose
@@ -577,6 +564,11 @@ held update applies before scrolling: explicit navigation must show its target.
 Hosts use it after a confirmed operation whose result should be visible, before
 selecting a waiting arrival and without accessing the control's template parts.
 
+`ScrollIntoView(item, arrivals)` releases the supplied batch's waiting arrivals
+together before scrolling to `item`. Items already displayed do not release a
+future membership change. This lets a host reveal and then select a completed
+batch even when its final target was already visible, with one scroll destination.
+
 `VerticalOffset` reports how far the rows are scrolled, in DIPs. `ScrollTo`
 moves the rows, clamped to the scrollable range, without changing selection or
 keyboard focus; a non-finite offset makes the call do nothing. It lays out the
@@ -603,15 +595,14 @@ order becomes current; otherwise current becomes `null`. The table raises at
 most one `SelectionChanged` event. Source reordering and header sorting do
 not raise that event when the exposed selected/current packet is unchanged.
 
-A source update, `RefreshView()`, or sort change during a
-row drag cancels the drag without raising
-`ReorderRequested`. A marquee gesture survives all three: the rectangle
-stays where it is on screen, the rows move through it, and its coverage is
-re-asked of the new view (section 14).
+A source update, `RefreshView()`, or sort change keeps a row drag when its
+captured numbered order remains current; changing that order cancels without
+`ReorderRequested`. A marquee also survives view changes: its rectangle stays
+where it is on screen and its coverage is re-asked of the new view (section 14).
 Header resize and
 column-drag gestures are data-independent and remain active.
 
-An explicit `Selection` assignment, or turning off
+Assigning a different `Selection`, or turning off
 `IsMarqueeEnabled`/`CanReorder` during its corresponding
 gesture, cancels that gesture before applying the new state. It never produces a
 reorder request.
@@ -682,7 +673,7 @@ public sealed class Column : DependencyObject
     public bool IsVisible { get; set; } = true;
     public bool CanHide { get; set; } = true;
     public bool CanResize { get; set; } = true;
-    public bool DefinesRowOrder { get; set; }
+
 
     public HorizontalAlignment CellAlignment { get; set; } =
         HorizontalAlignment.Left;
@@ -729,9 +720,7 @@ Required invariants:
 - `CanHide == false` prevents hiding that column;
 - a column is sortable exactly when the schema gave it a sort key, and that key
   is pure and defines a consistent total ordering for the host's rows;
-- at most one column has `DefinesRowOrder`; its ascending values are the host's
-  row order, the order the unsorted view shows and a row drag changes (section
-  16);
+- at most one numbered order is configured, and its column belongs to the table;
 - hidden columns retain their effective position and most recent width;
 - the declaration order, `Width`, `IsVisible`, and the control's documented
   width defaults form the reset baseline; runtime layout lives only in
@@ -948,7 +937,7 @@ Sorting requirements:
   the rows are pointed at; otherwise a row that arrives appears at once and a
   row that leaves goes at once, while existing rows trade places on the
   settling interval. `SortInterval` sets that interval, and `TimeSpan.Zero`
-  restores immediate re-sorting. A sort by the column that `DefinesRowOrder`
+  restores immediate re-sorting. A sort by the column registered with `Schema.Order`
   never settles: that order changes only when the host reorders, usually on
   the person's own command, so holding it would delay that command.
 
@@ -962,7 +951,7 @@ the frozen one from then on; nothing re-sorts merely because the pointer moved.
 Rows section 5.3 holds keep their positions the same way. The owner chose this
 over freezing the whole table, so the table stays useful while the pointed
 target stays still. It applies under a sort that reorders: natural order and
-the column that `DefinesRowOrder` show the host's own order, and a hierarchical
+the column registered with `Schema.Order` show the host's own order, and a hierarchical
 table freezes nothing, because a frozen row could be separated from its parent.
 
 Avoiding automatic re-sorts on every property notification is important for
@@ -1033,13 +1022,10 @@ a real host requires it.
 
 ## 10. Column widths, resizing, and fit commands
 
-`Table` uses fixed device-independent-pixel (DIP) column widths. Version 1
-has no star, fill, percentage, or viewport-responsive width mode. Extra space at
-the right remains table surface, and columns that do not fit are cut off
-(section 8). Resizing the host window never redistributes or re-measures column
-widths. There are two exceptions, each applied once and leaving fixed widths
-behind: the first fill below, and the explicit command `FillWidth()`, which
-fits the columns to the table's width when the person asks.
+`Table` uses device-independent-pixel (DIP) column widths. Columns that cannot
+fit at their minimum widths are cut off (section 8). The explicit command
+`FillWidth()` fits and scales the visible resizable columns to the available
+width; automatic fills use the same operation.
 
 Every column has a deterministic baseline width. A declared `Width` is
 used exactly after it is raised to its `MinWidth`. When a host
@@ -1047,29 +1033,22 @@ does not declare one, the control's 150-DIP default is used. The baseline is
 the width a column has before the first fill.
 
 **Owner ruling: widths belong to the live table, never to saved settings.**
-At its first usable visible layout, a new table scales its declared widths by
-the scaling step of `FillWidth()`, so the visible resizable columns end at its
-right edge. Resizing, fitting and filling then change only that instance's widths.
-Destroying it discards those widths; another instance starts with a fresh fill.
-Hiding and showing the same instance preserves them, so switching tabs does not
-move columns under the person's pointer.
-The first fill waits for a completed visible layout, including visible ancestors;
-a hidden tab's preliminary header width does not complete initialization.
-Assigning `Layout` and ordinary window resizing never repeat the fill. The declared widths
-alone would cut off or waste space on first use. Filling depends only on the
-width, so it runs before or regardless of rows, and data that arrives later
-never resizes a column; a fit to the first rows resized the columns in front
-of the person whenever data arrived after the table was on screen. The first
-fill does not run `FillWidth()`'s fit, because that fit would measure whichever
-rows happen to be realized at that moment and replace the host's declared
-proportions with them. It is part of the table's initial layout, so like the
-rest of that layout it raises no `LayoutChanged`.
-After that one fill, later data, property updates, sorting, filtering,
-scrolling, window resizing, and visibility changes MUST NOT silently widen or
-narrow a column.
+Resizing, fitting and filling change only that instance's widths. Destroying it
+discards those widths; another instance starts with a fresh fill.
+
+**Owner ruling: every table fills its width when shown and when its available
+width changes.** This includes opening a previously hidden tab, resizing the
+window, and moving a splitter, so every table uses the space it actually has.
+The table owns these triggers; hosts do not duplicate the calls. It waits for
+a completed visible layout, including visible ancestors, then runs the same
+bounded fit and scale as `FillWidth()`. Hidden tables defer this work until shown.
+Several size or visibility notifications before that layout produce one fill.
+Automatic fills raise no `LayoutChanged`, because width changes must not trigger
+saved-layout writes. Assigning `Layout`, data arrival, property updates, sorting,
+filtering, and scrolling do not trigger a fill.
 
 A completed direct resize or an explicit fit creates a live width override.
-It wins over the baseline until another override or `ResetLayout()`
+It wins over the baseline until another override, automatic fill, or `ResetLayout()`
 replaces it. A user may resize down to the declared `MinWidth` even when cell
 content clips or truncates; observed content never becomes a new hard minimum.
 Cell templates own their overflow policy.
@@ -1140,8 +1119,8 @@ convenience action, not a promise to discover the widest value in the source.
 Hiding or showing a column does not discard, recompute, or fit its width.
 `ResetLayout()` discards width overrides and restores the captured
 baseline widths; it neither fits the current data nor fills the width again.
-The first fill creates width overrides as a fill does, so a reset discards
-them too.
+Automatic fills create width overrides too, so a reset discards them until the
+next show or available-width change.
 
 ## 11. Column drag reordering
 
@@ -1348,10 +1327,9 @@ action; an equal logical request is a no-op.
 When `IsMarqueeEnabled` is true and `SelectionMode` is `Multiple` or
 `Extended`, dragging from empty row-surface space with a mouse or pen creates a
 selection rectangle, and so does dragging from a row the table would not drag:
-one it withholds section 16's drag from because reordering is off, the host has
-no handler, the view is sorted by a column that is not the row order, or the
-row is not interactive. Dragging from a row the table would drag is section
-16's row drag. Which of the two a press becomes depends only on what it landed
+one it withholds section 16's drag from because reordering is disabled, no
+numbered order is configured, or the row is non-interactive. Dragging from a
+row the table would drag is section 16's row drag. Which of the two a press becomes depends only on what it landed
 on, never on the direction of the first movement. The reference implementation
 draws the same line between its rows and the canvas beside them; a row it would
 not drag starts the rectangle here as well, because nothing competes for the
@@ -1483,68 +1461,50 @@ domain without giving the generic table a domain menu model.
 
 ## 16. Row drag reordering
 
-Row reordering is disabled by default as described in section 5. When enabled,
-it supports multi-row movement without embedding domain ordering policy.
+The host registers one numbered order with `Schema.Order` and enables it with
+`CanReorder`. TableView owns the gesture and wheel; the host owns mutation,
+renumbering, persistence, remote calls, and failure presentation.
 
-The host MUST set `CanReorder` to false whenever its external
-filter/order cannot map a visual placement to domain ordering. The active table
-sort is the table's own to judge: it offers the drag only while the view shows
-the row order — unsorted, or sorted either way by the column whose
-`DefinesRowOrder` is true — and withholds it under any other sort, where a drag
-from a row is section 14's marquee instead. If `CanReorder` becomes
-false during a drag, or the sort stops showing the row order during one, the
-table cancels the drag, whether or not the rows moved. For a race or command
-failure, the host simply does not change (or reconciles) its projection;
-there is no post-drop accept/reject protocol.
+A passive mouse/pen row press follows normal selection behavior until it
+crosses the drag threshold. Dragging a selected row captures the participating
+selection in ascending numbered order; dragging an unselected row captures
+only that item and preserves the selection. Non-interactive rows cannot start
+or join a drag. A null position excludes only that item's participation.
 
-- a mouse/pen passive row press that ends before the normal drag threshold
-  follows normal selection behavior; a press that crosses it becomes a row drag;
-- dragging an unselected row creates a one-item packet without disturbing the
-  existing selected packet;
-- dragging a selected row moves the complete selected packet;
-- non-interactive display rows and rows refused by the reorder predicate cannot
-  start or join a drag packet;
-- packet order follows the current visual order;
-- an immediate, theme-aware insertion indicator identifies the legal boundary;
-- the event supplies `Items` and `Before` as defined in section
-  5.1, both in row order: the visual order, or its reverse when the
-  `DefinesRowOrder` column is sorted descending; it never uses a target inside
-  the moving packet;
-- top, between-row, and append-after-last placements are valid. Invalid,
-  packet-internal, and no-change placements are cancelled without an event;
-- `Table` does not mutate the collection; after the event, the host may
-  update its own source;
-- the table returns to idle immediately after the event; the host may begin
-  asynchronous domain work and reconcile its own projection;
-- a selected moving packet remains selected. An unselected-row drag preserves
-  the prior selection and current item;
-- Escape cancels the drag;
-- cell controls that handle manipulation do not start row dragging.
+The wheel opens beside the press, initially centered at the participating
+packet's average position. Its numbers describe the remaining order; the
+mouse wheel scrolls through it while the button stays pressed, bounded by its
+first and last insertion gaps. Dropping into a gap requests insertion before
+the next remaining item; the last gap appends. The packet is never reversed
+by the table's display sort.
 
-During a valid drag, the pointer feedback, insertion cue, and realized-neighbor
-movement use normal WinUI drag/list layout behavior. Escape, source/view
-invalidation, and invalid drops remove that feedback and leave data/layout
-unchanged. When the host later publishes a changed source, its normal
-repositioning supplies the resulting visual continuity; when it publishes no
-change, rows settle in their original order. The table does not create a
-speculative second order, await a remote result, or require host animation
-coordination.
+An entirely excluded selection opens the same scrollable wheel with
+“Nothing to move” and produces no request. A packet containing the complete
+order likewise cannot change that order. The wheel shows the moving count in
+its heading, item labels from `ToString` beside their positions, and an accented
+insertion marker. Its footer holds destination feedback and a brief gesture hint,
+with no implementation-detail subtitle or warning. An empty order keeps the same
+flyout shape and shows an ellipsis in place of the rail.
 
-Direct row reordering is a mouse/pen gesture in version one. On touch,
-native panning, selection, and press-and-hold row context input retain
-precedence; the table installs no competing touch-reorder recognizer. The drag
-affordance and destination status must be exposed accessibly while a drag is
-active, but the control MUST NOT claim UI Automation Drag/Drop patterns unless
-it genuinely implements and verifies them. Because domain ordering remains host
-policy, a host that enables row dragging MUST also offer equivalent domain move
-commands in its row context menu or another keyboard-accessible command
-surface; those commands are also the touch path and may operate directly on the
-domain rather than fake a pointer drop.
+The table changes no source data. It returns to idle before raising
+`ReorderRequested`. Outside drops, unchanged placements, Escape, capture
+loss, unloading, and withdrawing `CanReorder` close the wheel without an
+event. Ordinary view sorting and refreshes retain it; changing captured order
+membership, instances, or positions cancels it, because its destinations would
+otherwise be stale. Hosts call `RefreshView` after a batch changes that order.
+Keyboard actions end the drag before changing selection or focus, so a drop
+cannot move a packet that no longer matches the user's selection. Modifier
+keys alone leave it active.
 
-The host decides whether reordering is valid under its current filter and how
-a place in the row order maps to domain ordering; the table decides it under
-the sort. Optimistic updates, remote calls, failure handling, and
-reconciliation remain outside `Table`.
+The wheel works under every display sort and uses the complete destination set
+provided by the host, including items hidden by a filter. It does not depend on
+row realization or the visible list's insertion boundaries. Hierarchical tables
+do not offer this flat-order gesture.
+
+Touch retains native panning, selection, and row context input. A host enabling
+dragging also offers keyboard-accessible domain move commands. The wheel's
+destination is exposed as an automation notification; TableView does not claim
+UI Automation Drag/Drop patterns.
 
 ## 17. Loading and empty states
 
@@ -1646,7 +1606,7 @@ Each read of `Layout` is an independent snapshot that the table does not mutate
 afterwards. `LayoutChanged` is raised once after each completed effective sort,
 column move, resize, fit, visibility, or reset operation, including public
 fit/reset calls, and carries only which of those it was. It is not raised by
-initial setup or by assigning `Layout`; this prevents restore-and-persist loops.
+initial setup, automatic fills, or assigning `Layout`; this prevents restore-and-persist loops.
 Initial baseline widths never force persistence. A host that persists layout
 reads `Layout` from its `LayoutChanged` handler, debounces, and writes that
 snapshot to its settings store.
@@ -1773,8 +1733,9 @@ throughput target.
   would tell them it was measured and found unnecessary. The diagnostics carry
   that measurement.
 - Column layout changes affect only headers and realized rows.
-- Source updates, property updates, sorting, scrolling, visibility changes, and
-  host-window resizing MUST NOT measure content or change widths.
+- Source updates, property updates, sorting, and scrolling MUST NOT measure
+  content or change widths. Showing a table or changing its available width
+  schedules one bounded fill after layout, never off-screen measurement.
 - Active sorting is `O(n log n)` and occurs only on source, sort, or explicit
   `RefreshView()` changes.
 - Explicit fit commands measure only the header and currently realized cells;
@@ -1806,8 +1767,8 @@ host integration, with validation scope set by [testing](../../../docs/testing.m
 5. Mouse/pen column drag and touch/keyboard header commands produce the same
    order; the header menu respects hide, visibility, fit, resize, and move
    eligibility and never leaves zero visible columns.
-6. Restored widths, and declared widths after the first fill, remain stable
-   across data and layout changes.
+6. Widths remain stable across data updates and scrolling; showing the table or
+   changing its available width fills it after visible layout.
    Direct resize, bounded fit, hide/show, reset, and save/reload preserve their
    specified baseline/override behavior without off-screen measurement.
 7. `None`, `Single`, `Multiple`, and `Extended` selection limits work with
@@ -1819,10 +1780,9 @@ host integration, with validation scope set by [testing](../../../docs/testing.m
 9. Invocation and row-context requests provide the expected selected/current
    state and a valid transient placement context; host menus retain their own
    commands and accessibility.
-10. In an eligible view, mouse/pen row drag sends the current-visual-order
-    packet and a valid post-removal `Before` item without mutating
-    the source. Invalid/no-change drops emit nothing, and the host exposes an
-    equivalent keyboard/touch domain move command.
+10. With a numbered order enabled, mouse/pen row drag works under every sort,
+    preserves the packet's numbered order, and supplies a remaining `Before`
+    item or null to append. Null-position selections can browse without moving.
 11. Loading, empty, no-results, and refresh-with-existing-rows follow
     the stated precedence.
 12. Saved layout restores valid order, visibility, and sort; obsolete

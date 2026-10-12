@@ -16,10 +16,9 @@ void Engine::State::Shutdown(std::function<void(std::optional<std::string> failu
         return;
     }
     // Exit after a failed final save starts its phases again.
-    if (shuttingDown && session)
+    if (IsShuttingDown() && session)
     {
         saveFailure.reset();
-        shutdownPhase = ShutdownPhase::Draining;
         pausing.clear();
     }
     for (auto& [id, torrent] : torrents)
@@ -31,7 +30,7 @@ void Engine::State::Shutdown(std::function<void(std::optional<std::string> failu
     }
     if (connectionTest)
         ReleaseConnectionTest(connectionTest->connectionId, ConnectionPhase::Cancelled);
-    shuttingDown = true;
+    shutdownPhase = ShutdownPhase::Draining;
     phaseStarted.reset();
     FailReading(Failure(ErrorCode::ShuttingDown));
     Discard([](Preview const&) { return true; });

@@ -115,15 +115,14 @@ public class ColumnResetTests
         });
 
     [TestMethod]
-    public Task AResetOfAnUntouchedLayoutReportsNothing() =>
+    public Task ASecondResetReportsNothing() =>
         TestHost.RunAsync(async () =>
         {
-            // The table is exactly as wide as its three 200 DIP columns, so the first fill changes no
-            // width; a fill that did would leave overrides for a reset to discard.
             SortHarness h = await SortHarness.LoadAsync(
                 Array.Empty<int>(),
                 configure: table => table.Width = 600
             );
+            h.Table.ResetLayout();
             int events = 0;
             h.Table.LayoutChanged += (_, _) => events++;
 

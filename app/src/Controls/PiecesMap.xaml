@@ -144,22 +144,25 @@
           IsTextSelectionEnabled="True"
         />
       </StackPanel>
-      <Grid
-        x:Name="Legend"
-        Grid.Column="1"
-        HorizontalAlignment="Right"
-        ColumnSpacing="24"
-      >
+      <Grid x:Name="Legend" Grid.Column="1" HorizontalAlignment="Right" ColumnSpacing="24">
         <Grid Style="{StaticResource PiecesMapEntryStyle}">
           <Border
             x:Name="VerifiedSwatch"
             Style="{StaticResource PiecesMapSwatchStyle}"
             Background="{ThemeResource AccentFillColorDefaultBrush}"
           />
-          <TextBlock Grid.Column="1" TextTrimming="CharacterEllipsis" Style="{StaticResource TinyTorrentBodyTextStyle}">
+          <TextBlock
+            Grid.Column="1"
+            TextTrimming="CharacterEllipsis"
+            Style="{StaticResource TinyTorrentBodyTextStyle}"
+          >
             <Run x:Name="VerifiedLabel" />
           </TextBlock>
-          <TextBlock Grid.Column="2" Style="{StaticResource TinyTorrentBodyTextStyle}" TextTrimming="None">
+          <TextBlock
+            Grid.Column="2"
+            Style="{StaticResource TinyTorrentBodyTextStyle}"
+            TextTrimming="None"
+          >
             <Run x:Name="VerifiedCount" FontWeight="SemiBold" />
           </TextBlock>
         </Grid>
@@ -177,10 +180,18 @@
               Background="{ThemeResource PiecesMapReceivedBrush}"
             />
           </Border>
-          <TextBlock Grid.Column="1" TextTrimming="CharacterEllipsis" Style="{StaticResource TinyTorrentBodyTextStyle}">
+          <TextBlock
+            Grid.Column="1"
+            TextTrimming="CharacterEllipsis"
+            Style="{StaticResource TinyTorrentBodyTextStyle}"
+          >
             <Run x:Name="DownloadingLabel" />
           </TextBlock>
-          <TextBlock Grid.Column="2" Style="{StaticResource TinyTorrentBodyTextStyle}" TextTrimming="None">
+          <TextBlock
+            Grid.Column="2"
+            Style="{StaticResource TinyTorrentBodyTextStyle}"
+            TextTrimming="None"
+          >
             <Run x:Name="DownloadingCount" FontWeight="SemiBold" />
           </TextBlock>
         </Grid>
@@ -190,10 +201,18 @@
             Style="{StaticResource PiecesMapSwatchStyle}"
             Background="{ThemeResource PiecesMapMissingBrush}"
           />
-          <TextBlock Grid.Column="1" TextTrimming="CharacterEllipsis" Style="{StaticResource TinyTorrentBodyTextStyle}">
+          <TextBlock
+            Grid.Column="1"
+            TextTrimming="CharacterEllipsis"
+            Style="{StaticResource TinyTorrentBodyTextStyle}"
+          >
             <Run x:Name="MissingLabel" />
           </TextBlock>
-          <TextBlock Grid.Column="2" Style="{StaticResource TinyTorrentBodyTextStyle}" TextTrimming="None">
+          <TextBlock
+            Grid.Column="2"
+            Style="{StaticResource TinyTorrentBodyTextStyle}"
+            TextTrimming="None"
+          >
             <Run x:Name="MissingCount" FontWeight="SemiBold" />
           </TextBlock>
         </Grid>
@@ -203,10 +222,18 @@
             Style="{StaticResource PiecesMapSwatchStyle}"
             Background="{ThemeResource PiecesMapCommonBrush}"
           />
-          <TextBlock Grid.Column="1" TextTrimming="CharacterEllipsis" Style="{StaticResource TinyTorrentBodyTextStyle}">
+          <TextBlock
+            Grid.Column="1"
+            TextTrimming="CharacterEllipsis"
+            Style="{StaticResource TinyTorrentBodyTextStyle}"
+          >
             <Run x:Name="CommonLabel" />
           </TextBlock>
-          <TextBlock Grid.Column="2" Style="{StaticResource TinyTorrentBodyTextStyle}" TextTrimming="None">
+          <TextBlock
+            Grid.Column="2"
+            Style="{StaticResource TinyTorrentBodyTextStyle}"
+            TextTrimming="None"
+          >
             <Run x:Name="CommonCount" FontWeight="SemiBold" />
           </TextBlock>
         </Grid>
@@ -224,10 +251,18 @@
               StrokeThickness="1.5"
             />
           </Grid>
-          <TextBlock Grid.Column="1" TextTrimming="CharacterEllipsis" Style="{StaticResource TinyTorrentBodyTextStyle}">
+          <TextBlock
+            Grid.Column="1"
+            TextTrimming="CharacterEllipsis"
+            Style="{StaticResource TinyTorrentBodyTextStyle}"
+          >
             <Run x:Name="RareLabel" />
           </TextBlock>
-          <TextBlock Grid.Column="2" Style="{StaticResource TinyTorrentBodyTextStyle}" TextTrimming="None">
+          <TextBlock
+            Grid.Column="2"
+            Style="{StaticResource TinyTorrentBodyTextStyle}"
+            TextTrimming="None"
+          >
             <Run x:Name="RareCount" FontWeight="SemiBold" />
           </TextBlock>
         </Grid>
@@ -247,10 +282,18 @@
               StrokeEndLineCap="Round"
             />
           </Grid>
-          <TextBlock Grid.Column="1" TextTrimming="CharacterEllipsis" Style="{StaticResource TinyTorrentBodyTextStyle}">
+          <TextBlock
+            Grid.Column="1"
+            TextTrimming="CharacterEllipsis"
+            Style="{StaticResource TinyTorrentBodyTextStyle}"
+          >
             <Run x:Name="UnavailableLabel" />
           </TextBlock>
-          <TextBlock Grid.Column="2" Style="{StaticResource TinyTorrentBodyTextStyle}" TextTrimming="None">
+          <TextBlock
+            Grid.Column="2"
+            Style="{StaticResource TinyTorrentBodyTextStyle}"
+            TextTrimming="None"
+          >
             <Run x:Name="UnavailableCount" FontWeight="SemiBold" />
           </TextBlock>
         </Grid>

@@ -16,6 +16,7 @@ public enum WindowPage
     Settings,
     About,
     Library,
+    Connection,
 }
 
 public enum LibraryConfiguration
@@ -60,6 +61,13 @@ public enum FileAction
     Delete,
 }
 
+internal enum AdditionPhase
+{
+    Idle,
+    Preparing,
+    Submitting,
+}
+
 public enum DeletionMode
 {
     Recycle,
@@ -95,7 +103,14 @@ public enum SettingsCategory
     Appearance,
     Advanced,
     Schedule,
-    Subtitles,
+    Plugins,
+}
+
+internal enum SubtitleScope
+{
+    New,
+    NoExactMatch,
+    All,
 }
 
 internal enum SubtitleSupplier
@@ -117,6 +132,15 @@ internal enum SubtitleOutcome
     NoMatch,
     Unavailable,
     Failed,
+    Complete,
+    Cancelled,
+}
+
+internal enum SubtitleMatch
+{
+    None,
+    Exact,
+    Likely,
 }
 
 internal enum SubtitleFailure
@@ -131,6 +155,10 @@ internal enum SubtitleFailure
     Database,
     Save,
     Format,
+    Exists,
+    Missing,
+    Delete,
+    Changed,
 }
 
 internal enum SubtitlePathAccess
@@ -197,6 +225,7 @@ internal enum ExitAnswer
 {
     Confirmed,
     Cancelled,
+
     // The window cannot show the prompt now, so the engine asks natively.
     Unavailable,
 }
@@ -215,6 +244,21 @@ internal enum PauseReason
     Manual,
     Schedule,
     ConnectionTest,
+}
+
+internal enum NoticeKind
+{
+    Status,
+    Resume,
+    CommandError,
+    Completion,
+    SubtitleError,
+    Outcome,
+#if CAPTURE
+    // A notice a capture journey shows without the state behind it; the
+    // model neither describes nor removes it.
+    Presentation,
+#endif
 }
 
 internal enum RefusalReason

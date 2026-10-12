@@ -421,11 +421,16 @@ at the destination is reported as a collision instead of replaced; the default
 replaces it. The flag's documented race, another program creating a destination
 file during the move, is rare and needs no further mechanism.
 
-A collision offers Use the files there. It points the torrent at the
-destination with the `reset_save_path` move flag, which verifies the files
-instead of moving them, so a person who moved the files or whose drive letter
-changed gets the torrent back without downloading it again. Pieces that do not
-match are downloaded again over those files.
+The move preflight checks both physical and final names at source and destination.
+When the source is absent or an empty placeholder and the destination exists,
+it counts that file as already moved. A source containing data and an existing
+destination remain a collision; choosing the current save folder is allowed.
+An empty unfinished placeholder is removed after preflight so it cannot mask a
+completed destination file. The existing group move chooses `reset_save_path` when
+all files are already there and `dont_replace` for a mix of present and unmoved
+files. Verification checks the destination before transfer resumes, so a person
+who moved files or whose drive letter changed needs only to choose their folder.
+Pieces that do not match are downloaded again over those files.
 
 One payload operation runs at a time. Its source and destination paths stay held
 until disk work has a known outcome. Add confirmations wait by reporting Files
@@ -473,8 +478,8 @@ Before a move starts, save its destination with the torrent and clear it when
 the entire selected group's move ends. Reserve its paths before that commit,
 so an addition cannot enter while the write is pending. If no disk move began,
 a failed destination preflight clears the newly staged markers through the
-same writer. An existing interrupted marker requires explicit Use the files
-there; an ordinary retry cannot replace or clear that unresolved choice. Delete
+same writer. Choosing a location through Move also resolves an interrupted move;
+a failed preflight retains its recovery marker. Delete
 files deletes only in the save folder, never at an interrupted destination,
 because a held destination is not proof that existing files there belong to
 the torrent.
@@ -583,7 +588,9 @@ owns launch policy.
 
 Activation follows the interface's [Add policy](interface.md#add). Several
 sources are added directly; a single source opens or activates the Add dialog
-when Show dialog when adding torrents is on. Direct additions use the same
+when its torrent-file or magnet dialog preference is on. The two choices are
+saved independently; an older shared preference initializes both on upgrade.
+Direct additions use the same
 guarded workflow at the default destination without opening or raising the
 window, even if it is already running. Duplicate sources report the existing
 torrent instead of opening a tracker-merge prompt. Queue and pause policy still
@@ -693,15 +700,29 @@ failed changes truthfully.
 - Start at sign-in uses one per-user
   [Run entry](https://learn.microsoft.com/en-us/windows/win32/setupapi/run-and-runonce-registry-keys),
   which starts the engine with WinUI closed. Windows may delay or disable it.
-  Never edit undocumented StartupApproved data or override Windows policy.
 
-For a request to open torrents with TinyTorrent, register its handlers, query
-the current defaults through the supported
-[Windows defaults platform](https://learn.microsoft.com/en-us/windows/apps/develop/windows-integration/default-apps-platform),
-and direct the person to Windows' default-app choice only where needed. Refresh
-the observed defaults when they return. Keep this small query at the registration
-owner; do not modify UserChoice or build an application chooser. Cancelling
-Windows' choice leaves the existing defaults intact.
+**Owner ruling: turning a registration switch on works at once.** The person
+never finishes it in Windows Settings, because a switch that shows on while
+Windows still opens another app, or still skips startup, leaves the person to
+find and repeat the step elsewhere.
+
+For a request to open torrents with TinyTorrent, register its handlers and write
+the per-user `.torrent` association and `magnet` protocol open command to the
+running engine. Both use the same quoted activation command as the registered
+classes. Then delete the person's saved choice (`UserChoice`) for each kind
+whose choice names another app. Windows refuses to let an app write that choice
+but lets the person's account delete it, and without one Windows opens the
+per-user association just written. Registration also records each TinyTorrent
+class in `ApplicationAssociationToasts`, because without that record Windows
+asks which app to use at the next open even while TinyTorrent is the default.
+The direct associations and the deletion happen only on an explicit
+registration request, because startup repair must not reclaim associations from
+another app. A deletion Windows refuses fails the request and reports the
+observed defaults. Query the effective defaults through the supported
+[Windows defaults platform](https://learn.microsoft.com/en-us/windows/apps/develop/windows-integration/default-apps-platform)
+and report the name of each kind's app. A remembered class without an open
+command is not a default. Keep this small query at the registration owner, and
+build no application chooser.
 
 Observation also reports every `.torrent` or `magnet:` handler that starts a
 missing executable, whichever application registered it, because choosing it
@@ -716,10 +737,7 @@ types or hold shell extensions that still work, and a registered application
 keeps its other associations; only an `Applications` key, which describes the
 one missing program, goes whole. References stay while an all-users command of
 the same class still works, because Windows then uses it. A removal Windows
-refuses leaves that class reported and does not stop the others. It opens
-Windows' choice only while another working app is the default for either kind,
-because only the person can change that; a broken or removed default makes
-Windows ask at the next open instead. Broken classes registered for all users
+refuses leaves that class reported and does not stop the others. Broken classes registered for all users
 need an administrator, so the window's Repair then starts the engine with one
 `--repair-class` option per reported class through Windows' administrator
 prompt. The window names the classes because the administrator can be another
@@ -753,11 +771,12 @@ because the window sets its pins to start whichever copy was running. Shortcut
 folders on a network share are skipped, because an unreachable share would
 hold the start.
 
-The sign-in switch adds or removes the Run entry through this same owner. It
-expresses TinyTorrent's startup setting; Windows can independently disable
-startup. Provide access to Windows Startup settings without trying to reverse
-its override through undocumented keys. Neither registration nor observation
-creates a second saved setting.
+The sign-in switch adds or removes the Run entry through this same owner.
+Windows Settings and Task Manager disable a Run entry without removing it: they
+record an odd first byte in the entry's `StartupApproved` value. Observation
+reports such an entry as disabled, and turning startup on or off removes that
+value, so startup runs again once the person turns it on. Neither registration
+nor observation creates a second saved setting.
 
 **Owner ruling:** registrations stay with the registered copy while its
 executable exists. Every start of an engine on the default store moves
@@ -1038,13 +1057,24 @@ something the person just asked for, such as the final save on Exit, opening a
 source or starting the window, is not one of these notifications and always
 shows, because staying silent would leave the person believing it worked.
 
-A Windows notification uses the existing tray's
-[`Shell_NotifyIcon`](https://learn.microsoft.com/en-us/windows/win32/shell/notification-area)
-path, except the notice when the window closes, described below. Respect
-Windows notification suppression and quiet time; delivery is best effort and
-needs no WinUI process or added library. Send one only
-when its switch is on. Problems and completions use the open window when one
-exists; background additions still use the tray so they do not raise that window:
+A notice is a popup that the engine draws itself, with the splash's acrylic
+look, in the corner of the taskbar's monitor where Windows shows its own
+notifications. It does not use Windows notifications, toasts or balloons,
+because Windows lets a person turn those off for every app at once, and a
+notice the person turned on in Settings must still appear. It slides in from
+the screen's edge and back out, unless Windows animation effects are off or
+another monitor lies beyond that edge, never takes focus,
+stays for Windows' notification duration and stays while the pointer is over
+it. A failure of something the person just asked for stays until dismissed,
+without a timeout or replacement by later notices, so the repair instructions
+remain available. It does not appear over a full-screen app or a presentation.
+Each popup carries a Don't show again button that turns off the switch for its kind of
+notice; a failure of something the person just asked for has no button,
+because it always shows. Selecting the rest of the popup acts on the notice,
+as each kind below says, and the close button only dismisses it. Show a notice
+only when its switch is on. Problems and completions use the open window when
+one exists; background additions still use the tray so they do not raise that
+window:
 
 - **Finished.** Clicking a single notification opens the torrent's current
   folder; a combined one opens the application.
@@ -1072,12 +1102,9 @@ Each time the window closes while the engine keeps running, show a
 notification that TinyTorrent is still running in the notification area and
 that Exit is in its menu. Windows 11 places new tray icons in the hidden
 overflow, so without it the person cannot tell that transfers continue. Notify
-when the window closes and transfers continue starts on. This notification is a Windows
-[toast](https://learn.microsoft.com/en-us/windows/apps/design/shell/tiles-and-notifications/send-local-toast)
-with a Don't show again button that turns that switch off, because a balloon
-cannot carry a button and opening the window the person just closed would undo
-their action. Selecting the rest of the toast only dismisses it. When Windows
-refuses the toast, the same text shows as a balloon.
+when the window closes and transfers continue starts on. Selecting the rest of
+this popup only dismisses it, because opening the window the person just closed
+would undo their action.
 
 The idle-sleep setting starts enabled for active payload downloads on mains
 power. A second setting, also while seeding, starts disabled; it keeps the PC

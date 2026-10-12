@@ -10,22 +10,30 @@ public sealed partial class MainWindow
 {
     private async Task CaptureSettings(List<object> outcomes, List<string> completed)
     {
-        foreach (var (language, theme, width, height) in new[]
-        {
-            ("en", "dark", 1280, 800),
-            ("es", "light", 720, 560),
-        })
+        foreach (
+            var (language, theme, width, height) in new[]
+            {
+                ("en", "dark", 1280, 800),
+                ("es", "light", 720, 560),
+            }
+        )
         {
             Model.SelectLanguage(language);
             await CaptureReady(Model, () => Model.CanClose && Model.Text.Language == language);
             await Model.Settings.SelectTheme(theme);
             await CaptureReady(Model, () => Model.CanClose && Model.Theme == theme);
             var scale = Root.XamlRoot.RasterizationScale;
-            var minimum = ((Microsoft.UI.Windowing.OverlappedPresenter)AppWindow.Presenter)
-                .PreferredMinimumWidth ?? 0;
-            AppWindow.Resize(new SizeInt32(Math.Max((int)(width * scale), minimum), (int)(height * scale)));
+            var minimum =
+                (
+                    (Microsoft.UI.Windowing.OverlappedPresenter)AppWindow.Presenter
+                ).PreferredMinimumWidth
+                ?? 0;
+            AppWindow.Resize(
+                new SizeInt32(Math.Max((int)(width * scale), minimum), (int)(height * scale))
+            );
             await ShowSettings(new());
-            var page = _settingsPage ?? throw new InvalidOperationException("Settings did not open.");
+            var page =
+                _settingsPage ?? throw new InvalidOperationException("Settings did not open.");
             var advanced = (ToggleSwitch)page.FindName("AdvancedSwitch");
             var prefix = $"settings-{language}-{theme}-{width}";
             foreach (var expanded in new[] { false, true })
@@ -41,52 +49,110 @@ public sealed partial class MainWindow
                         continue;
                     await ShowSettings(new(category));
                     await CapturePage(prefix + "-" + category + "-" + state, page);
+                    if (category == SettingsCategory.Plugins)
+                    {
+                        var database = (Button)page.FindName("DatabaseSummary");
+                        if ((database.Visibility == Visibility.Visible) != expanded)
+                            throw new InvalidOperationException(
+                                "Database summary did not follow advanced settings."
+                            );
+                        if (expanded)
+                        {
+                            ((ScrollViewer)page.FindName("Body")).ChangeView(null, 0, null, true);
+                            await CaptureLayout();
+                            database.Flyout.AreOpenCloseAnimationsEnabled = false;
+                            database.Flyout.ShowAt(database);
+                            await CaptureLayout();
+                            var details = (FrameworkElement)((Flyout)database.Flyout).Content;
+                            if (
+                                !details.IsLoaded
+                                || details.ActualWidth <= 0
+                                || details.ActualHeight <= 0
+                                || details.ActualWidth > Root.ActualWidth
+                                || details.ActualHeight > Root.ActualHeight
+                            )
+                                throw new InvalidOperationException(
+                                    "Database details did not fit the window."
+                                );
+                            database.Flyout.Hide();
+                            await CaptureLayout();
+                        }
+                    }
                 }
             }
 
             await ShowSettings(new(SettingsCategory.Limits));
             await ShowConnection();
             if (_settings.Current is not Views.ConnectionPage)
-                throw new InvalidOperationException("Connection setup did not open. " + string.Join("; ",
-                    Model.Settings.All.Where(setting => setting.HasDraft || setting.Message.Length > 0)
-                        .Select(setting => setting.Name + ": " + setting.Message))
-                    + " Schedule: " + Model.Settings.Schedule.Message);
+                throw new InvalidOperationException(
+                    "Connection setup did not open. "
+                        + string.Join(
+                            "; ",
+                            Model
+                                .Settings.All.Where(setting =>
+                                    setting.HasDraft || setting.Message.Length > 0
+                                )
+                                .Select(setting => setting.Name + ": " + setting.Message)
+                        )
+                        + " Schedule: "
+                        + Model.Settings.Schedule.Message
+                );
             var connection = Model.Settings.Connection;
             await CapturePage(prefix + "-connection-empty", _connectionPage);
             connection.Download = "200";
             connection.Upload = "40";
-            connection.PresetIndex = (int)TransferPreset.Balanced;
+            connection.StandardShare = 50;
+            connection.StandardShare = 85;
+            connection.AlternativeShare = 25;
             await CapturePage(prefix + "-connection-balanced", _connectionPage);
             if (language == "en")
             {
                 if (!await connection.Apply())
-                    throw new InvalidOperationException("Connection proposal was not applied: " + connection.Message);
+                    throw new InvalidOperationException(
+                        "Connection proposal was not applied: " + connection.Message
+                    );
                 await CaptureReady(connection, () => !connection.CanApply);
                 await CapturePage(prefix + "-connection-applied", _connectionPage);
-                if (Model.Settings.ActiveTotal.ConfirmedNumber != 8
+                if (
+                    Model.Settings.ActiveTotal.ConfirmedNumber != 8
                     || Model.Settings.Download.ConfirmedNumber != 21250000
-                    || Model.Settings.Upload.ConfirmedNumber != 4250000)
-                    throw new InvalidOperationException("Connection proposal did not reach confirmed settings.");
+                    || Model.Settings.Upload.ConfirmedNumber != 4250000
+                    || Model.Settings.AlternativeDownload.ConfirmedNumber != 6250000
+                    || Model.Settings.AlternativeUpload.ConfirmedNumber != 1250000
+                )
+                    throw new InvalidOperationException(
+                        "Connection proposal did not reach confirmed settings."
+                    );
                 outcomes.Add(new { journey = "connection settings submission", applied = true });
             }
             await ReturnToSettings();
             await CaptureLayout();
             var drafts = Model.Settings.All.Where(setting => setting.HasDraft).ToArray();
             if (drafts.Length > 0)
-                throw new InvalidOperationException("Reading settings created drafts: " + string.Join("; ",
-                    drafts.Select(setting => setting.Name + "=" + setting.Input + ": " + setting.Message)));
+                throw new InvalidOperationException(
+                    "Reading settings created drafts: "
+                        + string.Join(
+                            "; ",
+                            drafts.Select(setting =>
+                                setting.Name + "=" + setting.Input + ": " + setting.Message
+                            )
+                        )
+                );
 
             await ShowSettings(new());
             advanced.IsOn = false;
             var search = Search;
             await CaptureLayout();
-            var editor = TextEditor.Find(search)
+            var editor =
+                TextEditor.Find(search)
                 ?? throw new InvalidOperationException("Settings search has no native editor.");
             editor.Focus(FocusState.Keyboard);
             editor.Text = Model.Settings.RefreshInterval.Label;
             var matches = Model.FindSuggestions(editor.Text);
             if (matches.Count == 0)
-                throw new InvalidOperationException("Settings search did not find an advanced setting.");
+                throw new InvalidOperationException(
+                    "Settings search did not find an advanced setting."
+                );
             search.ItemsSource = matches;
             search.IsSuggestionListOpen = true;
             await CaptureLayout();
@@ -96,6 +162,8 @@ public sealed partial class MainWindow
             completed.Add(prefix);
         }
         if (!await Model.Settings.PrepareLeave())
-            throw new InvalidOperationException("Settings refused departure after the capture journey.");
+            throw new InvalidOperationException(
+                "Settings refused departure after the capture journey."
+            );
     }
 }

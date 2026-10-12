@@ -26,24 +26,12 @@ public sealed partial class Table
 
     private Microsoft.UI.Dispatching.DispatcherQueueTimer? _settleDue;
 
-    /// <summary>
-    /// Section 16: whether a row's place on screen is its place in the host's row order, so that
-    /// the boundary a drop names is a place in that order. True unsorted, where the view is the
-    /// source order, and under a sort by the column that <see cref="Column.DefinesRowOrder"/>;
-    /// under any other sort a boundary is a place in that sort, and the table withholds the drag.
-    /// </summary>
-    private bool ShowsRowOrder => _sortColumn is null || _sortColumn.Column.DefinesRowOrder;
-
-    /// <summary>The row-order column sorted downward: the view runs opposite to the row order.</summary>
-    private bool RowOrderIsReversed =>
-        _sortColumn is not null
-        && _sortColumn.Column.DefinesRowOrder
-        && _sortDirection == SortDirection.Descending;
+    private bool SortsOrder => _sortColumn is not null && _sortColumn.Column == _order?.Column;
 
     /// <summary>
     /// How long rows already on screen keep their places while a sort is applied over values the
     /// source keeps changing. <see cref="TimeSpan.Zero"/> re-sorts on every update. A sort by the
-    /// column that <see cref="Column.DefinesRowOrder"/> never waits.
+    /// column registered with Schema.Order never waits.
     /// </summary>
     /// <remarks>
     /// Only relative position waits for the interval. Membership does not: a row that arrives
@@ -260,12 +248,7 @@ public sealed partial class Table
         // column shows that same order, so holding it would delay the person's own reorder; an
         // empty view has no established order to preserve; and a zero interval is the host asking
         // for none of this.
-        if (
-            _sortColumn is null
-            || _sortColumn.Column.DefinesRowOrder
-            || _view.Count == 0
-            || _sortInterval == TimeSpan.Zero
-        )
+        if (_sortColumn is null || SortsOrder || _view.Count == 0 || _sortInterval == TimeSpan.Zero)
         {
             IReadOnlyList<object> order = SortedSnapshot(shown, _sortColumn, _sortDirection);
             _orderSettledAt = DateTimeOffset.UtcNow;
@@ -327,8 +310,8 @@ public sealed partial class Table
                 }
 
                 // Only a reordering sort schedules a settle. A tick left over from one after the
-                // sort changed has nothing to settle, and its rebuild would cancel a live row drag.
-                if (ShowsRowOrder)
+                // sort changed has nothing to settle.
+                if (_sortColumn is null || SortsOrder)
                 {
                     return;
                 }
@@ -412,18 +395,13 @@ public sealed partial class Table
     )
     {
         if (_hierarchy is not null && (_preparedHierarchy ?? _hierarchy.Captured) is { } hierarchy)
-            return _hierarchy.Project(hierarchy, column?.Column.Comparer, direction);
+            return _hierarchy.Project(hierarchy, column?.Column.Sort, direction);
         if (column is null)
         {
             return snapshot;
         }
 
-        // A column becomes the sorted one only by carrying a comparer, so this cannot be null.
-        IComparer<object> comparer = column.Column.Comparer!;
-
-        return direction == SortDirection.Ascending
-            ? snapshot.OrderBy(item => item, comparer).ToList()
-            : snapshot.OrderByDescending(item => item, comparer).ToList();
+        return column.Column.Sort!(snapshot, direction).ToList();
     }
 
     /// <summary>

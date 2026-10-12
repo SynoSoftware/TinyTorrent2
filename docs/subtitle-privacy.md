@@ -42,7 +42,9 @@ after interruption, and follow known movie moves while the window is open or
 when it next reconciles still-managed torrents. C# manages these records and
 files; no subtitle work runs while the window is closed. Removing a torrent deletes
 its subtitle records when the window observes removal or next reconciles with
-the engine. Remove leaves subtitle files on disk. Delete files from the window
+the engine. To limit repeated searches, TinyTorrent also keeps how often it
+searched each supplier for a movie title, year and language; these counts stay
+after the torrent is removed. Remove leaves subtitle files on disk. Delete files from the window
 also tries to delete subtitles TinyTorrent created when no other managed file
 uses them; subtitles found on disk remain untouched. Downloaded subtitles are
 ordinary local files. TinyTorrent does not operate a subtitle mirror or upload

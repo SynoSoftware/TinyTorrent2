@@ -6,8 +6,52 @@
   xmlns:controls="using:Syno.TinyTorrent.Controls"
   xmlns:icons="using:Syno"
 >
-  <Grid Margin="32,24" RowSpacing="24" MaxWidth="{StaticResource TinyTorrentSettingsWidth}"
-    VerticalAlignment="Top">
+  <UserControl.Resources>
+    <DataTemplate x:Key="ChangeRow" x:DataType="views:ConnectionChange">
+      <Grid
+        MinHeight="40"
+        ColumnSpacing="12"
+        BorderThickness="0,0,0,1"
+        BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
+      >
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="2*" />
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+        <TextBlock
+          Text="{x:Bind Label}"
+          VerticalAlignment="Center"
+          TextTrimming="CharacterEllipsis"
+          ToolTipService.ToolTip="{x:Bind Label}"
+        />
+        <TextBlock
+          Grid.Column="1"
+          Text="{x:Bind Current}"
+          HorizontalAlignment="Right"
+          VerticalAlignment="Center"
+          TextTrimming="CharacterEllipsis"
+          ToolTipService.ToolTip="{x:Bind Current}"
+          Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+        />
+        <TextBlock
+          Grid.Column="2"
+          Text="{x:Bind Proposed}"
+          HorizontalAlignment="Right"
+          VerticalAlignment="Center"
+          TextTrimming="CharacterEllipsis"
+          ToolTipService.ToolTip="{x:Bind Proposed}"
+          FontWeight="{x:Bind views:ConnectionPage.Weight(IsChanged)}"
+        />
+      </Grid>
+    </DataTemplate>
+  </UserControl.Resources>
+  <Grid
+    Margin="32,24"
+    RowSpacing="24"
+    MaxWidth="{StaticResource TinyTorrentSettingsWidth}"
+    VerticalAlignment="Top"
+  >
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto" />
       <RowDefinition Height="*" />
@@ -36,52 +80,90 @@
             </Grid.ColumnDefinitions>
             <TextBlock
               Text="{x:Bind Model.Text.Get('connection_setup', 'capacity'), Mode=OneWay}"
-              Style="{StaticResource TinyTorrentGroupTitleTextStyle}" TextWrapping="Wrap" />
-            <Button Grid.Column="1" Style="{StaticResource TinyTorrentSubtleButtonStyle}"
+              Style="{StaticResource TinyTorrentGroupTitleTextStyle}"
+              TextWrapping="Wrap"
+            />
+            <Button
+              Grid.Column="1"
+              Style="{StaticResource TinyTorrentSubtleButtonStyle}"
               VerticalAlignment="Center"
               AutomationProperties.Name="{x:Bind Model.Text.Get('connection_setup', 'about_test'), Mode=OneWay}"
               AutomationProperties.AutomationId="ConnectionTestInfo"
-              ToolTipService.ToolTip="{x:Bind Model.Text.Get('connection_setup', 'about_test'), Mode=OneWay}">
-              <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Info}" FontSize="16" />
+              ToolTipService.ToolTip="{x:Bind Model.Text.Get('connection_setup', 'about_test'), Mode=OneWay}"
+            >
+              <FontIcon
+                FontFamily="{x:Bind icons:Lucide.Font}"
+                Glyph="{x:Bind icons:Lucide.Info}"
+                FontSize="16"
+              />
               <Button.Flyout>
                 <Flyout Placement="Bottom">
                   <StackPanel MaxWidth="320" Spacing="12">
-                    <TextBlock Text="{x:Bind Model.Text.Get('connection_setup', 'about_test'), Mode=OneWay}"
-                      Style="{StaticResource TinyTorrentGroupTitleTextStyle}" TextWrapping="Wrap" />
-                    <TextBlock Text="{x:Bind Model.Text.Get('connection_setup', 'test_data'), Mode=OneWay}"
-                      TextWrapping="Wrap" />
-                    <TextBlock Text="{x:Bind Model.Text.Get('connection_setup', 'test_data_use'), Mode=OneWay}"
-                      TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                    <HyperlinkButton Content="{x:Bind Model.Text.Get('connection_setup', 'test_privacy'), Mode=OneWay}"
-                      NavigateUri="https://www.cloudflare.com/privacypolicy/" HorizontalAlignment="Left" Padding="0" />
+                    <TextBlock
+                      Text="{x:Bind Model.Text.Get('connection_setup', 'about_test'), Mode=OneWay}"
+                      Style="{StaticResource TinyTorrentGroupTitleTextStyle}"
+                      TextWrapping="Wrap"
+                    />
+                    <TextBlock
+                      Text="{x:Bind Model.Text.Get('connection_setup', 'test_data'), Mode=OneWay}"
+                      TextWrapping="Wrap"
+                    />
+                    <TextBlock
+                      Text="{x:Bind Model.Text.Get('connection_setup', 'test_data_use'), Mode=OneWay}"
+                      TextWrapping="Wrap"
+                      Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    />
+                    <HyperlinkButton
+                      Content="{x:Bind Model.Text.Get('connection_setup', 'test_privacy'), Mode=OneWay}"
+                      NavigateUri="https://www.cloudflare.com/privacypolicy/"
+                      HorizontalAlignment="Left"
+                      Padding="0"
+                    />
                   </StackPanel>
                 </Flyout>
               </Button.Flyout>
             </Button>
             <Grid x:Name="TestActions" Grid.Column="2" VerticalAlignment="Center">
-              <controls:ActionButton Text="{x:Bind Model.TestLabel, Mode=OneWay}" HorizontalAlignment="Stretch"
+              <controls:ActionButton
+                Text="{x:Bind Model.TestLabel, Mode=OneWay}"
+                HorizontalAlignment="Stretch"
                 Glyph="{x:Bind icons:Lucide.Gauge}"
                 ToolTipService.ToolTip="{x:Bind Model.Text.Get('connection_setup', 'test_hint'), Mode=OneWay}"
                 Visibility="{x:Bind views:ConnectionPage.Hidden(Model.IsTesting), Mode=OneWay}"
-                IsEnabled="{x:Bind Model.CanTest, Mode=OneWay}" Click="OnTest"
-                AutomationProperties.AutomationId="ConnectionTest" />
-              <controls:ActionButton Text="{x:Bind Model.Text.Get('connection_setup', 'cancel_test'), Mode=OneWay}" HorizontalAlignment="Stretch"
+                IsEnabled="{x:Bind Model.CanTest, Mode=OneWay}"
+                Click="OnTest"
+                AutomationProperties.AutomationId="ConnectionTest"
+              />
+              <controls:ActionButton
+                Text="{x:Bind Model.Text.Get('connection_setup', 'cancel_test'), Mode=OneWay}"
+                HorizontalAlignment="Stretch"
                 Glyph="{x:Bind icons:Lucide.X}"
                 ToolTipService.ToolTip="{x:Bind Model.Text.Get('connection_setup', 'cancel_test_hint'), Mode=OneWay}"
                 Visibility="{x:Bind Model.IsTesting, Mode=OneWay}"
-                IsEnabled="{x:Bind Model.CanCancelTest, Mode=OneWay}" Click="OnCancelTest"
-                AutomationProperties.AutomationId="ConnectionCancelTest" />
+                IsEnabled="{x:Bind Model.CanCancelTest, Mode=OneWay}"
+                Click="OnCancelTest"
+                AutomationProperties.AutomationId="ConnectionCancelTest"
+              />
             </Grid>
           </Grid>
           <Grid x:Name="StatusArea">
-            <TextBlock Text="{x:Bind Model.TestStatus, Mode=OneWay}" TextWrapping="Wrap"
-              MaxLines="2" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Margin="0,0,0,4"
+            <TextBlock
+              Text="{x:Bind Model.TestStatus, Mode=OneWay}"
+              TextWrapping="Wrap"
+              MaxLines="2"
+              TextTrimming="CharacterEllipsis"
+              VerticalAlignment="Center"
+              Margin="0,0,0,4"
               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-              ToolTipService.ToolTip="{x:Bind Model.TestStatus, Mode=OneWay}" />
-            <ProgressBar Height="3" VerticalAlignment="Bottom"
+              ToolTipService.ToolTip="{x:Bind Model.TestStatus, Mode=OneWay}"
+            />
+            <ProgressBar
+              Height="3"
+              VerticalAlignment="Bottom"
               IsIndeterminate="{x:Bind Model.IsTesting, Mode=OneWay}"
               Visibility="{x:Bind Model.IsTesting, Mode=OneWay}"
-              AutomationProperties.AccessibilityView="Raw" />
+              AutomationProperties.AccessibilityView="Raw"
+            />
           </Grid>
           <TextBox
             x:Name="Download"
@@ -94,8 +176,10 @@
             AutomationProperties.AutomationId="ConnectionDownload"
           >
             <TextBox.Header>
-              <controls:FieldHeader Label="{x:Bind Model.Text.Get('connection_setup', 'download'), Mode=OneWay}"
-                Error="{x:Bind Model.DownloadError, Mode=OneWay}" />
+              <controls:FieldHeader
+                Label="{x:Bind Model.Text.Get('connection_setup', 'download'), Mode=OneWay}"
+                Error="{x:Bind Model.DownloadError, Mode=OneWay}"
+              />
             </TextBox.Header>
           </TextBox>
           <TextBox
@@ -109,31 +193,84 @@
             AutomationProperties.AutomationId="ConnectionUpload"
           >
             <TextBox.Header>
-              <controls:FieldHeader Label="{x:Bind Model.Text.Get('connection_setup', 'upload'), Mode=OneWay}"
-                Error="{x:Bind Model.UploadError, Mode=OneWay}" />
+              <controls:FieldHeader
+                Label="{x:Bind Model.Text.Get('connection_setup', 'upload'), Mode=OneWay}"
+                Error="{x:Bind Model.UploadError, Mode=OneWay}"
+              />
             </TextBox.Header>
           </TextBox>
-          <RadioButtons
-            Header="{x:Bind Model.Text.Get('connection_setup', 'preset'), Mode=OneWay}"
-            ToolTipService.ToolTip="{x:Bind Model.Text.Get('connection_setup', 'policy_hint'), Mode=OneWay}"
-            AutomationProperties.HelpText="{x:Bind Model.Text.Get('connection_setup', 'policy_hint'), Mode=OneWay}"
-            SelectedIndex="{x:Bind Model.PresetIndex, Mode=TwoWay}"
-            IsEnabled="{x:Bind Model.CanEdit, Mode=OneWay}"
-            MaxColumns="1"
-          >
-            <RadioButton ToolTipService.ToolTip="{x:Bind Model.Text.Get('connection_setup', 'choice_reduced'), Mode=OneWay}">
-              <TextBlock Text="{x:Bind Model.Text.Get('connection_setup', 'choice_reduced'), Mode=OneWay}"
-                TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
-            </RadioButton>
-            <RadioButton ToolTipService.ToolTip="{x:Bind Model.Text.Get('connection_setup', 'choice_balanced'), Mode=OneWay}">
-              <TextBlock Text="{x:Bind Model.Text.Get('connection_setup', 'choice_balanced'), Mode=OneWay}"
-                TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
-            </RadioButton>
-            <RadioButton ToolTipService.ToolTip="{x:Bind Model.Text.Get('connection_setup', 'choice_full'), Mode=OneWay}">
-              <TextBlock Text="{x:Bind Model.Text.Get('connection_setup', 'choice_full'), Mode=OneWay}"
-                TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
-            </RadioButton>
-          </RadioButtons>
+          <StackPanel ToolTipService.ToolTip="{x:Bind Model.Text.Get('connection_setup', 'standard_hint'), Mode=OneWay}">
+            <Grid ColumnSpacing="8">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+              </Grid.ColumnDefinitions>
+              <TextBlock
+                Text="{x:Bind Model.Text.Get('settings', 'standard_caps'), Mode=OneWay}"
+                TextTrimming="CharacterEllipsis"
+              />
+              <TextBlock
+                Grid.Column="1"
+                Text="{x:Bind Model.StandardText, Mode=OneWay}"
+                FontWeight="SemiBold"
+              />
+            </Grid>
+            <Slider
+              Minimum="5"
+              Maximum="100"
+              StepFrequency="5"
+              SmallChange="5"
+              SnapsTo="StepValues"
+              IsThumbToolTipEnabled="False"
+              Value="{x:Bind Model.StandardShare, Mode=TwoWay}"
+              IsEnabled="{x:Bind Model.CanEdit, Mode=OneWay}"
+              AutomationProperties.Name="{x:Bind Model.Text.Get('settings', 'standard_caps'), Mode=OneWay}"
+              AutomationProperties.HelpText="{x:Bind Model.StandardRates, Mode=OneWay}"
+              AutomationProperties.AutomationId="ConnectionStandard"
+            />
+            <TextBlock
+              Text="{x:Bind Model.StandardRates, Mode=OneWay}"
+              Style="{StaticResource CaptionTextBlockStyle}"
+              Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+              TextTrimming="CharacterEllipsis"
+            />
+          </StackPanel>
+          <StackPanel ToolTipService.ToolTip="{x:Bind Model.Text.Get('connection_setup', 'alternative_hint'), Mode=OneWay}">
+            <Grid ColumnSpacing="8">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+              </Grid.ColumnDefinitions>
+              <TextBlock
+                Text="{x:Bind Model.Text.Get('settings', 'alternative_caps'), Mode=OneWay}"
+                TextTrimming="CharacterEllipsis"
+              />
+              <TextBlock
+                Grid.Column="1"
+                Text="{x:Bind Model.AlternativeText, Mode=OneWay}"
+                FontWeight="SemiBold"
+              />
+            </Grid>
+            <Slider
+              Minimum="5"
+              Maximum="100"
+              StepFrequency="5"
+              SmallChange="5"
+              SnapsTo="StepValues"
+              IsThumbToolTipEnabled="False"
+              Value="{x:Bind Model.AlternativeShare, Mode=TwoWay}"
+              IsEnabled="{x:Bind Model.CanEdit, Mode=OneWay}"
+              AutomationProperties.Name="{x:Bind Model.Text.Get('settings', 'alternative_caps'), Mode=OneWay}"
+              AutomationProperties.HelpText="{x:Bind Model.AlternativeRates, Mode=OneWay}"
+              AutomationProperties.AutomationId="ConnectionAlternative"
+            />
+            <TextBlock
+              Text="{x:Bind Model.AlternativeRates, Mode=OneWay}"
+              Style="{StaticResource CaptionTextBlockStyle}"
+              Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+              TextTrimming="CharacterEllipsis"
+            />
+          </StackPanel>
         </StackPanel>
         <StackPanel x:Name="Preview" Grid.Column="1" Spacing="12">
           <TextBlock
@@ -141,68 +278,156 @@
             Style="{StaticResource TinyTorrentGroupTitleTextStyle}"
             MinHeight="32"
           />
-          <Grid ColumnSpacing="12" MinHeight="32">
-            <Grid.ColumnDefinitions>
-              <ColumnDefinition Width="2*" />
-              <ColumnDefinition Width="*" />
-              <ColumnDefinition Width="*" />
-            </Grid.ColumnDefinitions>
-            <TextBlock Text="{x:Bind Model.Text.Get('connection_setup', 'setting'), Mode=OneWay}"
-              Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-            <TextBlock Grid.Column="1" HorizontalAlignment="Right"
-              Text="{x:Bind Model.Text.Get('connection_setup', 'current'), Mode=OneWay}"
-              Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-            <TextBlock Grid.Column="2" HorizontalAlignment="Right"
-              Text="{x:Bind Model.Text.Get('connection_setup', 'proposed'), Mode=OneWay}"
-              Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-          </Grid>
-          <ItemsControl ItemsSource="{x:Bind Model.Rows, Mode=OneWay}">
-            <ItemsControl.ItemTemplate>
-              <DataTemplate x:DataType="views:ConnectionChange">
-                <Grid MinHeight="40" ColumnSpacing="12" BorderThickness="0,0,0,1"
-                  BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}">
-                  <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="2*" />
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="*" />
-                  </Grid.ColumnDefinitions>
-                  <TextBlock Text="{x:Bind Label}" VerticalAlignment="Center"
-                    TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{x:Bind Label}" />
-                  <TextBlock Grid.Column="1" Text="{x:Bind Current}" HorizontalAlignment="Right"
-                    VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
-                    ToolTipService.ToolTip="{x:Bind Current}"
-                    Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                  <TextBlock Grid.Column="2" Text="{x:Bind Proposed}" HorizontalAlignment="Right"
-                    VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
-                    ToolTipService.ToolTip="{x:Bind Proposed}"
-                    FontWeight="{x:Bind views:ConnectionPage.Weight(IsChanged)}" />
-                </Grid>
-              </DataTemplate>
-            </ItemsControl.ItemTemplate>
-          </ItemsControl>
+          <StackPanel>
+            <Grid ColumnSpacing="12" MinHeight="32">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="2*" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+              </Grid.ColumnDefinitions>
+              <TextBlock
+                Text="{x:Bind Model.Text.Get('connection_setup', 'setting'), Mode=OneWay}"
+                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+              />
+              <TextBlock
+                Grid.Column="1"
+                HorizontalAlignment="Right"
+                Text="{x:Bind Model.Text.Get('connection_setup', 'current'), Mode=OneWay}"
+                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+              />
+              <TextBlock
+                Grid.Column="2"
+                HorizontalAlignment="Right"
+                Text="{x:Bind Model.Text.Get('connection_setup', 'proposed'), Mode=OneWay}"
+                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+              />
+            </Grid>
+            <ItemsControl
+              ItemsSource="{x:Bind Model.ModeRows, Mode=OneWay}"
+              ItemTemplate="{StaticResource ChangeRow}"
+            />
+            <Grid MinHeight="40" Padding="0,12,0,0" ColumnSpacing="8">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+              </Grid.ColumnDefinitions>
+              <FontIcon
+                FontFamily="{x:Bind icons:Lucide.Font}"
+                Glyph="{x:Bind icons:Lucide.Gauge}"
+                FontSize="16"
+                AutomationProperties.AccessibilityView="Raw"
+              />
+              <TextBlock
+                Grid.Column="1"
+                VerticalAlignment="Center"
+                TextTrimming="CharacterEllipsis"
+              >
+                <Run
+                  Text="{x:Bind Model.Text.Get('settings', 'standard_caps'), Mode=OneWay}"
+                  FontWeight="SemiBold"
+                />
+                <Run
+                  Text="{x:Bind Model.StandardUse, Mode=OneWay}"
+                  Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                />
+              </TextBlock>
+            </Grid>
+            <ItemsControl
+              ItemsSource="{x:Bind Model.StandardRows, Mode=OneWay}"
+              ItemTemplate="{StaticResource ChangeRow}"
+            />
+            <Grid MinHeight="40" Padding="0,12,0,0" ColumnSpacing="8">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+              </Grid.ColumnDefinitions>
+              <FontIcon
+                FontFamily="{x:Bind icons:Lucide.Font}"
+                Glyph="{x:Bind icons:Lucide.ArrowLeftRight}"
+                FontSize="16"
+                AutomationProperties.AccessibilityView="Raw"
+              />
+              <TextBlock
+                Grid.Column="1"
+                VerticalAlignment="Center"
+                TextTrimming="CharacterEllipsis"
+              >
+                <Run
+                  Text="{x:Bind Model.Text.Get('settings', 'alternative_caps'), Mode=OneWay}"
+                  FontWeight="SemiBold"
+                />
+                <Run
+                  Text="{x:Bind Model.AlternativeUse, Mode=OneWay}"
+                  Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                />
+              </TextBlock>
+            </Grid>
+            <ItemsControl
+              ItemsSource="{x:Bind Model.AlternativeRows, Mode=OneWay}"
+              ItemTemplate="{StaticResource ChangeRow}"
+            />
+            <Grid MinHeight="40" Padding="0,12,0,0" ColumnSpacing="8">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+              </Grid.ColumnDefinitions>
+              <FontIcon
+                FontFamily="{x:Bind icons:Lucide.Font}"
+                Glyph="{x:Bind icons:Lucide.ListOrdered}"
+                FontSize="16"
+                AutomationProperties.AccessibilityView="Raw"
+              />
+              <TextBlock
+                Grid.Column="1"
+                VerticalAlignment="Center"
+                TextTrimming="CharacterEllipsis"
+                Text="{x:Bind Model.Text.Get('settings', 'queue'), Mode=OneWay}"
+                FontWeight="SemiBold"
+              />
+            </Grid>
+            <ItemsControl
+              ItemsSource="{x:Bind Model.QueueRows, Mode=OneWay}"
+              ItemTemplate="{StaticResource ChangeRow}"
+            />
+          </StackPanel>
         </StackPanel>
       </Grid>
     </ScrollViewer>
-    <Grid Grid.Row="2" ColumnSpacing="24" Padding="0,20,0,0" BorderThickness="0,1,0,0"
-      BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}">
+    <Grid
+      Grid.Row="2"
+      ColumnSpacing="24"
+      Padding="0,20,0,0"
+      BorderThickness="0,1,0,0"
+      BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
+    >
       <Grid.ColumnDefinitions>
         <ColumnDefinition Width="*" />
         <ColumnDefinition Width="Auto" />
       </Grid.ColumnDefinitions>
-      <TextBlock Text="{x:Bind Model.Message, Mode=OneWay}" TextTrimming="CharacterEllipsis"
+      <TextBlock
+        Text="{x:Bind Model.Message, Mode=OneWay}"
+        TextTrimming="CharacterEllipsis"
         ToolTipService.ToolTip="{x:Bind Model.Message, Mode=OneWay}"
-        VerticalAlignment="Center" MinHeight="40" />
+        VerticalAlignment="Center"
+        MinHeight="40"
+      />
       <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-        <controls:ActionButton Text="{x:Bind Model.Text.Get('connection_setup', 'apply'), Mode=OneWay}"
+        <controls:ActionButton
+          Text="{x:Bind Model.Text.Get('connection_setup', 'apply'), Mode=OneWay}"
           Glyph="{x:Bind icons:Lucide.Check}"
           Style="{StaticResource AccentButtonStyle}"
-          IsEnabled="{x:Bind Model.CanApply, Mode=OneWay}" Click="OnApply"
+          IsEnabled="{x:Bind Model.CanApply, Mode=OneWay}"
+          Click="OnApply"
           AutomationProperties.AutomationId="ConnectionApply"
-          ToolTipService.ToolTip="{x:Bind Model.Text.Get('connection_setup', 'apply_hint'), Mode=OneWay}" />
-        <controls:ActionButton Text="{x:Bind Model.Text.Get('dialog', 'cancel'), Mode=OneWay}"
+          ToolTipService.ToolTip="{x:Bind Model.Text.Get('connection_setup', 'apply_hint'), Mode=OneWay}"
+        />
+        <controls:ActionButton
+          Text="{x:Bind Model.Text.Get('dialog', 'cancel'), Mode=OneWay}"
           Glyph="{x:Bind icons:Lucide.X}"
           ToolTipService.ToolTip="{x:Bind Model.Text.Get('connection_setup', 'cancel_hint'), Mode=OneWay}"
-          IsEnabled="{x:Bind Model.CanLeave, Mode=OneWay}" Click="OnCancel" />
+          IsEnabled="{x:Bind Model.CanLeave, Mode=OneWay}"
+          Click="OnCancel"
+        />
       </StackPanel>
     </Grid>
   </Grid>

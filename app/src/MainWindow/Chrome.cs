@@ -30,6 +30,15 @@ public sealed partial class MainWindow
     private void OnUpdateAvailable(object sender, DoubleTappedRoutedEventArgs args) =>
         Run(Model.OpenUpdate);
 
+    // Stopping hides the X with its status item, so its focus moves to the
+    // page first instead of being lost.
+    private void OnStopBatch(object sender, RoutedEventArgs args)
+    {
+        if (sender is Button { FocusState: not FocusState.Unfocused })
+            FocusPage();
+        Model.Library.StopBatch();
+    }
+
     // Resume all is a command, which a double-click on status must not run, so
     // the person's own pause opens nothing.
     private void OnRestriction(object sender, DoubleTappedRoutedEventArgs args)
@@ -85,6 +94,7 @@ public sealed partial class MainWindow
             ExternalIpLabel,
             IncomingLabel,
             RestrictionLabel,
+            BatchLabel,
             CountLabel,
         ];
         foreach (var label in labels)
@@ -158,7 +168,8 @@ public sealed partial class MainWindow
         UpdateMinimum(scale);
         TitleDownload.Width = TitleUpload.Width = 128 * _uiSettings.TextScaleFactor;
         var speedWidth = TitleDownload.Width + TitleUpload.Width + TitleSpeeds.Spacing;
-        var available = Caption.ActualWidth
+        var available =
+            Caption.ActualWidth
             - left
             - right
             - CaptionStart.ActualWidth
@@ -172,14 +183,16 @@ public sealed partial class MainWindow
             && available >= Search.MinWidth + speedWidth + TitleSpeeds.Margin.Left
                 ? Visibility.Visible
                 : Visibility.Collapsed;
-        var searchSpace = available
-            - (TitleSpeeds.Visibility == Visibility.Visible ? speedWidth + TitleSpeeds.Margin.Left : 0);
-        Search.Width = Math.Clamp(
-            searchSpace,
-            Search.MinWidth,
-            Search.MaxWidth
-        );
-        var searchStart = left + CaptionStart.ActualWidth + Menus.ActualWidth + SearchArea.Margin.Left;
+        var searchSpace =
+            available
+            - (
+                TitleSpeeds.Visibility == Visibility.Visible
+                    ? speedWidth + TitleSpeeds.Margin.Left
+                    : 0
+            );
+        Search.Width = Math.Clamp(searchSpace, Search.MinWidth, Search.MaxWidth);
+        var searchStart =
+            left + CaptionStart.ActualWidth + Menus.ActualWidth + SearchArea.Margin.Left;
         var offset = Math.Clamp(
             (Caption.ActualWidth - Search.Width) / 2 - searchStart,
             0,
@@ -188,7 +201,10 @@ public sealed partial class MainWindow
         if (Search.Margin.Left != offset)
         {
             Search.Margin = new Thickness(offset, 0, 0, 0);
-            DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, UpdateChrome);
+            DispatcherQueue.TryEnqueue(
+                Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,
+                UpdateChrome
+            );
         }
         if (Caption.ActualHeight <= 0)
             return;
@@ -253,13 +269,15 @@ public sealed partial class MainWindow
             + SettingsButton.Width
             + ThemeButton.Width;
         var frame = AppWindow.Size.Width - AppWindow.ClientSize.Width;
-        var minimum = Model.Page == WindowPage.Settings && _settingsPage is { } settings
-            ? settings.MeasureWidth()
-            : 720;
+        var minimum =
+            Model.Page == WindowPage.Settings && _settingsPage is { } settings
+                ? settings.MeasureWidth()
+                : 720;
         var width =
             (int)
                 Math.Ceiling(
-                    Math.Max(minimum, content + LeftInset.Width.Value + RightInset.Width.Value) * scale
+                    Math.Max(minimum, content + LeftInset.Width.Value + RightInset.Width.Value)
+                        * scale
                 ) + frame;
         var height = (int)Math.Ceiling(560 * scale);
         if (presenter.PreferredMinimumWidth != width)
@@ -342,8 +360,10 @@ public sealed partial class MainWindow
         SeedsColumn.DisplayName = Model.Text.Get("columns", "seeds");
         PeersColumn.DisplayName = Model.Text.Get("columns", "peers");
         AddedColumn.DisplayName = Model.Text.Get("columns", "added");
-        Search.PlaceholderText = Model.Text.Get(Model.Page == WindowPage.Library ? "library" : "finding",
-            Model.Page == WindowPage.Library ? "search" : "placeholder");
+        Search.PlaceholderText = Model.Text.Get(
+            Model.Page == WindowPage.Library ? "library" : "finding",
+            Model.Page == WindowPage.Library ? "search" : "placeholder"
+        );
         AutomationProperties.SetName(Search, Model.Text.Get("finding", "search"));
         Search.ItemsSource = Model.FindSuggestions(Search.Text);
         FiltersTitle.Text = Model.Text.Get("filters", "title");
@@ -357,19 +377,22 @@ public sealed partial class MainWindow
         Root.FlowDirection = Model.Text.IsRightToLeft
             ? FlowDirection.RightToLeft
             : FlowDirection.LeftToRight;
-        RefreshDialogs();
+        RefreshPopups();
         _interaction?.RefreshText?.Invoke();
         Torrents.RefreshView();
         RefreshNavigation();
         UpdateChrome();
     }
 
-    private void RefreshDialogs()
+    // A popup takes the app theme and reading direction, not the window's.
+    private void RefreshPopups()
     {
         if (_interaction?.Dialog is { } dialog)
         {
             dialog.RequestedTheme = Root.ActualTheme;
             dialog.FlowDirection = Root.FlowDirection;
         }
+        NoticeStack.RequestedTheme = Root.ActualTheme;
+        NoticeStack.FlowDirection = Root.FlowDirection;
     }
 }

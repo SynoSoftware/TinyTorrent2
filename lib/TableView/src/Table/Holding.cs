@@ -270,8 +270,7 @@ public sealed partial class Table
         IReadOnlyList<object> order
     )
     {
-        bool reorders =
-            _hierarchy is null && _sortColumn is not null && !_sortColumn.Column.DefinesRowOrder;
+        bool reorders = _hierarchy is null && _sortColumn is not null && !SortsOrder;
         object? menu = reorders ? _menuRow : null;
         object? pointed = reorders ? _pointedRow : null;
         if (_held.Count == 0 && menu is null && pointed is null)

@@ -488,27 +488,6 @@ public class SelectionTests
             );
         });
 
-    /// <summary>
-    /// A drop beside a held row names the next row the host still has. The host removed the held
-    /// row, so it could not place anything before it.
-    /// </summary>
-    [TestMethod]
-    public Task AReorderRequestNeverNamesAHeldRow() =>
-        TestHost.RunAsync(async () =>
-        {
-            SelectionHarness h = await SelectionHarness.LoadAsync(6, t => t.CanReorder = true);
-            List<ReorderRequestedEventArgs> requests = new();
-            h.Table.ReorderRequested += (_, e) => requests.Add(e);
-            Row next = h[4];
-            Proof.Call(h.Table, "PointAt", h[1]);
-            h.Rows.RemoveAt(3);
-
-            // The boundary before view index 3, where the held k3 stands.
-            Proof.Call(h.Table, "RequestReorder", new object[] { h[0] }, 3);
-
-            Assert.AreSame(next, requests.Single().Before);
-        });
-
     private static string[] ViewKeys(SelectionHarness h) =>
         h.Surface().Items.Cast<Row>().Select(row => row.Key).ToArray();
 

@@ -26,7 +26,8 @@ public sealed partial class Field : ContentControl
         set => SetValue(LabelProperty, value);
     }
 
-    // A button that follows the value and acts on it.
+    // A button that follows the value and acts on it. A stretched
+    // HorizontalContentAlignment puts it at the field's right end instead.
     public object? Action
     {
         get => GetValue(ActionProperty);

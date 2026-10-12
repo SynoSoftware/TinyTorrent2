@@ -172,7 +172,7 @@ internal sealed class Hierarchy(
 
     internal IReadOnlyList<object> Project(
         Snapshot snapshot,
-        IComparer<object>? comparer,
+        Func<IEnumerable<object>, SortDirection, IOrderedEnumerable<object>>? sort,
         SortDirection direction
     )
     {
@@ -204,11 +204,9 @@ internal sealed class Hierarchy(
 
         IEnumerable<object> Order(IReadOnlyList<object> siblings)
         {
-            if (comparer is null)
+            if (sort is null)
                 return siblings;
-            if (direction == SortDirection.Ascending)
-                return siblings.OrderBy(item => item, comparer);
-            return siblings.OrderByDescending(item => item, comparer);
+            return sort(siblings, direction);
         }
     }
 }

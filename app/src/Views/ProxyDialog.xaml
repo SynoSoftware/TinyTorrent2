@@ -29,8 +29,10 @@
         AutomationProperties.AutomationId="ProxyHost"
       >
         <TextBox.Header>
-          <controls:FieldHeader Label="{x:Bind Model.Text.Get('settings', 'proxy_host'), Mode=OneWay}"
-            Error="{x:Bind Proxy.HostError, Mode=OneWay}" />
+          <controls:FieldHeader
+            Label="{x:Bind Model.Text.Get('settings', 'proxy_host'), Mode=OneWay}"
+            Error="{x:Bind Proxy.HostError, Mode=OneWay}"
+          />
         </TextBox.Header>
       </TextBox>
       <NumberBox
@@ -44,8 +46,10 @@
         AutomationProperties.AutomationId="ProxyPort"
       >
         <NumberBox.Header>
-          <controls:FieldHeader Label="{x:Bind Model.Text.Get('settings', 'proxy_port'), Mode=OneWay}"
-            Error="{x:Bind Proxy.PortError, Mode=OneWay}" />
+          <controls:FieldHeader
+            Label="{x:Bind Model.Text.Get('settings', 'proxy_port'), Mode=OneWay}"
+            Error="{x:Bind Proxy.PortError, Mode=OneWay}"
+          />
         </NumberBox.Header>
       </NumberBox>
       <!-- A disabled field shows no tooltip and passes the pointer to its

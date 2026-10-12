@@ -10,8 +10,7 @@
     "open": "Mostrar ventana",
     "missing_adapter": "Adaptador de red no disponible: {0}",
     "exit": "Salir",
-    "background": "Las transferencias continúan en el área de notificación. Selecciona Salir en el menú de TinyTorrent para detenerlas.",
-    "background_off": "No volver a mostrar"
+    "background": "Las transferencias continúan en el área de notificación. Selecciona Salir en el menú de TinyTorrent para detenerlas."
   },
   "exit": {
     "title": "¿Salir de TinyTorrent?",
@@ -28,17 +27,22 @@
     "gib": "{0} GiB/s"
   },
   "notification": {
-    "completed": "{0} terminó de descargarse.",
-    "added": "Se añadió {0}.",
-    "duplicate": "{0} ya está en la lista.",
+    "completed": "Descarga terminada",
+    "added": "Torrent añadido",
+    "duplicate": "Torrent ya añadido",
     "magnet": "Enlace magnet",
-    "error": "{0} necesita atención.",
+    "error": "La transferencia necesita atención",
     "aggregate": "{0} actualizaciones de transferencias.",
-    "add_failed": "No se pudo añadir {0}.",
-    "delete_failed": "No se pudieron eliminar todos los archivos de {0}.",
-    "failures": "Errores de transferencias: {0}. {1}: {2}",
+    "add_failed": "No se pudo añadir el torrent",
+    "delete_failed": "No se pudieron eliminar todos los archivos",
+    "failure": "TinyTorrent necesita atención",
+    "failures": "{0} errores necesitan atención",
+    "background": "Las transferencias continúan",
+    "windows_error": "Error de Windows: {0}",
+    "missing_title": "Programa no encontrado",
     "missing_program": "Los torrents están configurados para abrirse con un programa que ya no está: {0}. Selecciona este aviso para repararlo en Ajustes.",
-    "missing_programs": "Los torrents están configurados para abrirse con programas que ya no están: {0} y {1} más. Selecciona este aviso para repararlos en Ajustes."
+    "missing_programs": "Los torrents están configurados para abrirse con programas que ya no están: {0} y {1} más. Selecciona este aviso para repararlos en Ajustes.",
+    "off": "No volver a mostrar"
   },
   "power": {
     "transfers": "TinyTorrent está transfiriendo archivos."
@@ -60,9 +64,9 @@
     "shared_files": "Otros torrents usan estos archivos. Actualiza la lista e inclúyelos en el traslado.",
     "destination_conflict": "Distintos archivos de origen ocuparían el mismo destino. Elige otra carpeta o mueve estos torrents por separado.",
     "destination_in_use": "Otro torrent usa archivos en este destino. Elige otra carpeta para conservar sus archivos.",
-    "move_interrupted": "El traslado se interrumpió. Abre Mover archivos, elige la carpeta que contiene ahora los archivos y elige Usar los archivos de allí.",
-    "move_failed": "No se pudieron mover los archivos. Abre Mover archivos, elige la carpeta que contiene ahora los archivos y elige Usar los archivos de allí.",
-    "destination_exists": "Ya hay archivos en el destino. Abre Mover archivos y elige Usar los archivos de allí para verificarlos y usarlos.",
+    "move_interrupted": "El traslado se interrumpió. Elige la carpeta que contiene ahora los archivos y vuelve a pulsar Mover.",
+    "move_failed": "No se pudieron mover los archivos. Elige la carpeta que los contiene ahora y vuelve a pulsar Mover.",
+    "destination_exists": "Hay archivos en ambas ubicaciones. Elige otro destino para conservar ambas copias.",
     "alias_conflict": "Otros torrents usan estos archivos con nombres diferentes. Resuelve los nombres de archivo antes de continuar.",
     "torrent_error": "El torrent se detuvo debido a un error.",
     "storage_failed": "No se pudo leer o guardar el estado de las descargas. Comprueba la carpeta de datos del motor y vuelve a intentarlo.",
@@ -73,7 +77,11 @@
     "version": "Ya se está ejecutando otra versión de TinyTorrent. Selecciona Salir en la bandeja y vuelve a iniciar TinyTorrent.",
     "source": "No se pudo añadir el torrent.",
     "ownership": "TinyTorrent no puede abrir sus datos guardados. Otra sesión de Windows puede estar utilizando esta carpeta:",
-    "launch": "No se pudo abrir la ventana. Las descargas continúan. Selecciona Mostrar ventana en la bandeja para reintentar.",
+    "launch": "Windows no pudo iniciar la ventana. Las transferencias continúan. El error de Windows que aparece debajo explica el motivo.",
+    "window_missing": "El programa de la ventana de TinyTorrent no está en esta carpeta. Las transferencias continúan.\n\nReinstala TinyTorrent para restaurarlo.",
+    "window_denied": "Windows denegó el permiso para iniciar la ventana. Las transferencias continúan.\n\nComprueba los permisos del archivo del programa de la ventana antes de reintentar.",
+    "window_invalid": "Windows no puede ejecutar el programa de la ventana en este PC. Las transferencias continúan.\n\nReinstala la versión de TinyTorrent compatible con tu PC.",
+    "window_dependency": "Falta un archivo necesario para el programa de la ventana. Las transferencias continúan.\n\nReinstala TinyTorrent para restaurar los archivos necesarios.",
     "startup": "La ventana no se abrió. Las descargas continúan. Selecciona Mostrar ventana en la bandeja para reintentar.",
     "save": "TinyTorrent no pudo guardar y sigue abierto. Selecciona Salir en la bandeja para reintentar.",
     "pause": "No se pudo guardar el ajuste de pausa de las transferencias.",

@@ -180,7 +180,7 @@ void Engine::State::Inspect(std::string source, std::string connectionId,
         {
             return;
         }
-        if (shuttingDown)
+        if (IsShuttingDown())
         {
             completion({ErrorCode::ShuttingDown}, nullptr);
             return;
@@ -222,7 +222,7 @@ void Engine::State::Inspect(std::string source, std::string connectionId,
             }, [this, preview, completion, merge](StorageOutcome outcome)
             {
                 std::erase(parsing, preview);
-                if (preview->cancelled || shuttingDown)
+                if (preview->cancelled || IsShuttingDown())
                 {
                     if (preview->handle.is_valid())
                         session->remove_torrent(preview->handle);

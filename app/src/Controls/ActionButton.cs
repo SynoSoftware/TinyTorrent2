@@ -23,6 +23,15 @@ public sealed partial class ActionButton : Button
         TextLineBounds = TextLineBounds.Tight,
         VerticalAlignment = VerticalAlignment.Center,
     };
+    // Marks a button that opens a menu, as DropDownButton's chevron does.
+    private readonly FontIcon _chevron = new()
+    {
+        FontFamily = Lucide.Font,
+        FontSize = 12,
+        Glyph = Lucide.ChevronDown,
+        VerticalAlignment = VerticalAlignment.Center,
+        Visibility = Visibility.Collapsed,
+    };
 
     public string Glyph
     {
@@ -41,12 +50,21 @@ public sealed partial class ActionButton : Button
             _icon,
             Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw
         );
+        AutomationProperties.SetAccessibilityView(
+            _chevron,
+            Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw
+        );
         Content = new StackPanel
         {
             Orientation = Orientation.Horizontal,
             Spacing = 8,
-            Children = { _icon, _text },
+            Children = { _icon, _text, _chevron },
         };
+        RegisterPropertyChangedCallback(
+            FlyoutProperty,
+            (_, _) =>
+                _chevron.Visibility = Flyout is null ? Visibility.Collapsed : Visibility.Visible
+        );
     }
 
     internal static void Align(IEnumerable<ActionButton> actions)
@@ -57,7 +75,9 @@ public sealed partial class ActionButton : Button
         foreach (var button in buttons)
             button.Width = double.NaN;
         foreach (var button in buttons)
-            button.Measure(new Windows.Foundation.Size(double.PositiveInfinity, double.PositiveInfinity));
+            button.Measure(
+                new Windows.Foundation.Size(double.PositiveInfinity, double.PositiveInfinity)
+            );
         var width = buttons.Max(button => button.DesiredSize.Width);
         foreach (var button in buttons)
             button.Width = width;

@@ -18,7 +18,9 @@ public sealed partial class MainWindow
     private Task<Exception?> OpenPath(string path, string? extension = null)
     {
         var window = WinRT.Interop.WindowNative.GetWindowHandle(this);
-        var completion = new TaskCompletionSource<Exception?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var completion = new TaskCompletionSource<Exception?>(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
         var thread = new Thread(() =>
         {
             var apartment = CoInitializeEx(0, 0x6);
@@ -29,7 +31,9 @@ public sealed partial class MainWindow
                 {
                     cbSize = (uint)Marshal.SizeOf<ShellExecuteInfo>(),
                     // This STA has no message loop; finish the shell conversation before it exits.
-                    fMask = SEE_MASK_NOASYNC | (string.IsNullOrEmpty(extension) ? 0 : SEE_MASK_CLASSNAME),
+                    fMask =
+                        SEE_MASK_NOASYNC
+                        | (string.IsNullOrEmpty(extension) ? 0 : SEE_MASK_CLASSNAME),
                     hwnd = window,
                     lpFile = path,
                     lpClass = extension,
@@ -39,13 +43,19 @@ public sealed partial class MainWindow
                     throw new Win32Exception(Marshal.GetLastWin32Error());
                 completion.SetResult(null);
             }
-            catch (Exception error) { completion.SetResult(error); }
+            catch (Exception error)
+            {
+                completion.SetResult(error);
+            }
             finally
             {
                 if (apartment >= 0)
                     CoUninitialize();
             }
-        }) { IsBackground = true };
+        })
+        {
+            IsBackground = true,
+        };
         thread.SetApartmentState(ApartmentState.STA);
         thread.Start();
         return completion.Task;

@@ -48,7 +48,7 @@ void Engine::State::CheckpointUnsaved()
         ++entry;
         if (torrent.unsaved && torrent.checkpointPhase == CheckpointPhase::Idle && now >= torrent.retryAt)
         {
-            torrent.Checkpoint(shuttingDown);
+            torrent.Checkpoint(IsShuttingDown());
             ++outstanding;
             checkpointCursor = id;
         }
@@ -62,7 +62,7 @@ void Engine::State::FailCheckpoint(Torrent& torrent, Problem problem)
     {
         log.Write("checkpoint", torrent.torrentId, ToString(problem.kind));
     }
-    if (shuttingDown)
+    if (IsShuttingDown())
     {
         saveFailure = problem.detail;
     }
@@ -200,9 +200,8 @@ void Engine::State::On(lt::save_resume_data_failed_alert const& alert)
     {
         return;
     }
-    // During a write this answers a request that dropped-alert recovery gave
-    // up on. That recovery marked the torrent unsaved, so it checkpoints again
-    // after the write.
+    // A late failure from a request retried after dropped alerts must not end
+    // the resume-file write that already owns this checkpoint.
     if (torrent->checkpointPhase == CheckpointPhase::Writing)
     {
         return;

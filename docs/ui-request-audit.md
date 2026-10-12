@@ -66,7 +66,7 @@ outside the permitted artifacts/dependency locations; `git diff --check` passed.
 ## Incomplete work and verification
 
 - **Prototype browser review remains pending.** Torrent sections, shared headers, spacing, Tracker actions and metadata messages are synchronized in source; JavaScript syntax validation passed.
-- **Resize performance remains unmeasured.** [Details.cs:278](C:/SynoSoftware/TinyTorrent2/app/src/Library/Details.cs:278) caches column height by width and text scale. That helps repeated layout at the same width, but changing width still measures the column arrangement and may also measure its wrapping fallback. Shared pane materials simplify rendering, but source review does not establish responsive resizing.
+- **Width resizing remains slow in the native diagnostic.** The measurement below reproduces the cost with the Inspector closed as well as with Info/File open. It does not isolate the exact cause in the shared resize path. Inspector height changes, including Cast column/wrap transitions, were much cheaper.
 - **Remaining native checks:** physical drag/release/cancel, High Contrast, desktop translucency and enlarged text scaling. Header checkbox sizing, common header height, Pane layout and Tracker initial fill were observed in the final native captures. Remaining gaps are not additional established defects.
 
 ## Full request checklist
@@ -81,7 +81,7 @@ outside the permitted artifacts/dependency locations; `git diff --check` passed.
 | Filters and its compact handle | Accepted; unchanged in follow-up | Owner withdrew the side-gap concern |
 | Bottom compact handle needs gap above | Present | InspectorToggle `Margin="0,2,0,0"` |
 | Double-click unhides and expands Inspector | Present for Torrents and Library | ItemInvoked reaches Properties owners, which clear compact state |
-| Improve slow card/window resizing | Partial; unmeasured | Shared surface and Details cache; verification gap above |
+| Improve slow card/window resizing | Measured; window-width cost remains | Native measurement below; pane height work is inexpensive, width resizing remains slow with the pane closed |
 | Separate Cast column only if it fits vertically; otherwise wrap below Synopsis | Present | Details.MeasureOverride compares measured column height with viewport space |
 | Clear identification → Erase metadata; Edit identification → Edit metadata | Present in production | English/Spanish resources, Browser commands, MetadataDialog |
 | Metadata terminology in code/design vocabulary | Present in product vocabulary and UI-facing names | CONTEXT.md records Library metadata; automatic identification remains a distinct internal operation. The generic codebase-design skill file itself was not changed |
@@ -116,3 +116,34 @@ outside the permitted artifacts/dependency locations; `git diff --check` passed.
 No additional concrete ownership defect was established in the reviewed changes. Pane owns pane chrome and selector placement; TableView owns header appearance and initial fill; Splitter owns gesture completion; MainWindow owns the Inspector collapse decision. Equal-width tracker actions reuse the established helper.
 
 Unrelated database/provider/subtitle edits in the dirty working tree were excluded: they were not requests in the visible UI conversation.
+
+## Library resize measurement
+
+The owner authorized the pending resize check after commit `60df67e`. A native
+Debug capture measured 545 samples: 60 idle frames, three 101-step window-width
+sweeps (1600–800–1600px), and two 91-step Inspector-height sweeps (480–120–480px).
+The fixture has 16 cast members. Observed dimensions reached the requested ranges;
+Cast used both columns and wrapping in both Info sweeps. No sample needed more
+than two observed layout notifications. The complete capture review passed.
+
+| Surface / change | Synchronous work median / p95 | Next rendering callback median / p95 |
+|---|---:|---:|
+| Idle | 0.00 / 0.00ms | 31.15 / 32.31ms |
+| Info / window width | 43.19 / 57.51ms | 142.34 / 194.17ms |
+| File / window width | 43.82 / 59.48ms | 134.79 / 184.05ms |
+| Inspector closed / window width | 43.05 / 58.24ms | 121.48 / 176.68ms |
+| Info / pane height | 3.27 / 5.28ms | 30.93 / 50.00ms |
+| File / pane height | 2.04 / 3.34ms | 30.64 / 48.99ms |
+
+Synchronous work includes the resize API and currently pending forced XAML layout;
+native resize processing can follow the API call. Rendering latency includes
+scheduling, as the 31ms idle baseline demonstrates. This is off-screen Debug
+evidence, not a Release benchmark, physical drag, GPU presentation or desktop
+acrylic measurement. There is no pre-change timing baseline, so it does not
+quantify improvement from the earlier layout changes. The result points beyond
+the Library metadata arrangement: closing the Inspector preserves most of the
+window-width cost.
+
+Run `app/tests/Capture.ps1 -Review library-files` with an up-to-date capture build
+to repeat the measurement. Raw samples and screenshots are preserved under
+`artifacts/evidence/Capture-library-files-fcdebd4e-1284-48db-97f2-4042fc300980/captures/`.

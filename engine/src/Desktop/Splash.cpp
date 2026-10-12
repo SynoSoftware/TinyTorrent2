@@ -3,8 +3,6 @@
 #include <algorithm>
 #include <numeric>
 #include <utility>
-#include <dwmapi.h>
-#include <uxtheme.h>
 
 namespace tt::desktop
 {
@@ -15,10 +13,6 @@ constexpr UINT_PTR dwellTimer = 1;
 constexpr UINT minimumDwell = 1000;
 // The recent warm launches whose average predicts the next one.
 constexpr std::size_t launchSamples = 5;
-// The blur shows through a layer of the theme's background at this opacity, so
-// the text keeps its contrast in either theme.
-constexpr BYTE tintOpacity = 0x99;
-
 // Layout in effective pixels.
 constexpr SIZE openingSize{350, 170};
 constexpr int iconSize = 48;
@@ -28,56 +22,6 @@ constexpr int textInset = 16;
 int Scale(int value, UINT dpi)
 {
     return MulDiv(value, dpi, USER_DEFAULT_SCREEN_DPI);
-}
-
-bool IsEnabled(wchar_t const* name)
-{
-    DWORD value = 1;
-    DWORD size = sizeof(value);
-    auto status = RegGetValueW(HKEY_CURRENT_USER,
-        L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize", name,
-        RRF_RT_REG_DWORD, nullptr, &value, &size);
-    return status != ERROR_SUCCESS || value != 0;
-}
-
-// The blur of the original TinyTorrent splash. User32 exports
-// SetWindowCompositionAttribute without documenting it; the documented DWM
-// system backdrop left this inactive splash a flat fill.
-struct AccentPolicy
-{
-    DWORD state;
-    DWORD flags;
-    DWORD color;
-    DWORD animation;
-};
-
-struct CompositionData
-{
-    int attribute;
-    void* data;
-    SIZE_T size;
-};
-
-constexpr DWORD accentDisabled = 0;
-constexpr DWORD accentBlur = 3;
-constexpr int accentAttribute = 19;
-
-bool SetBlur(HWND window, bool enabled)
-{
-    using Setter = BOOL(WINAPI*)(HWND, CompositionData*);
-    auto user32 = GetModuleHandleW(L"user32.dll");
-    if (!user32)
-    {
-        return false;
-    }
-    auto set = reinterpret_cast<Setter>(GetProcAddress(user32, "SetWindowCompositionAttribute"));
-    if (!set)
-    {
-        return false;
-    }
-    AccentPolicy policy{enabled ? accentBlur : accentDisabled, 0, 0xCCFFFFFF, 0};
-    CompositionData data{accentAttribute, &policy, sizeof(policy)};
-    return set(window, &data) != FALSE;
 }
 }
 
@@ -134,8 +78,7 @@ void Splash::Show(Launch launch)
         work.top + (work.bottom - work.top - height) / 2, width, height,
         SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
     ApplyDpi(dpi, nullptr);
-    buffered_ = SUCCEEDED(BufferedPaintInit());
-    ApplyTheme();
+    acrylic_.Apply(window_, theme_);
     Translate();
     shownAt_ = GetTickCount64();
     ShowWindow(window_, SW_SHOW);
@@ -188,11 +131,6 @@ void Splash::Close()
         DeleteObject(font_);
         font_ = nullptr;
     }
-    if (buffered_)
-    {
-        BufferedPaintUnInit();
-        buffered_ = false;
-    }
     shownAt_ = 0;
     if (auto show = std::exchange(show_, nullptr))
     {
@@ -220,32 +158,8 @@ void Splash::SetTheme(std::string theme)
     theme_ = std::move(theme);
     if (shownAt_)
     {
-        ApplyTheme();
+        acrylic_.Apply(window_, theme_);
     }
-}
-
-void Splash::ApplyTheme()
-{
-    HIGHCONTRASTW contrast{sizeof(contrast)};
-    SystemParametersInfoW(SPI_GETHIGHCONTRAST, sizeof(contrast), &contrast, 0);
-    bool highContrast = (contrast.dwFlags & HCF_HIGHCONTRASTON) != 0;
-    foreground_ = GetSysColor(COLOR_WINDOWTEXT);
-    background_ = GetSysColor(COLOR_WINDOW);
-    BOOL dark = !highContrast &&
-        (theme_ == "dark" || (theme_ != "light" && !IsEnabled(L"AppsUseLightTheme")));
-    if (!highContrast)
-    {
-        foreground_ = dark ? RGB(255, 255, 255) : RGB(0, 0, 0);
-        background_ = dark ? RGB(32, 32, 32) : RGB(243, 243, 243);
-    }
-    DwmSetWindowAttribute(window_, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark, sizeof(dark));
-    auto corners = DWMWCP_ROUND;
-    DwmSetWindowAttribute(window_, DWMWA_WINDOW_CORNER_PREFERENCE, &corners, sizeof(corners));
-    auto backdrop = DWMSBT_NONE;
-    DwmSetWindowAttribute(window_, DWMWA_SYSTEMBACKDROP_TYPE, &backdrop, sizeof(backdrop));
-    auto blur = !highContrast && buffered_ && IsEnabled(L"EnableTransparency");
-    acrylic_ = SetBlur(window_, blur) && blur;
-    InvalidateRect(window_, nullptr, FALSE);
 }
 
 void Splash::ApplyDpi(UINT dpi, RECT const* bounds)
@@ -267,39 +181,15 @@ void Splash::ApplyDpi(UINT dpi, RECT const* bounds)
 
 void Splash::Paint(HWND window)
 {
-    PAINTSTRUCT paint{};
-    auto device = BeginPaint(window, &paint);
-    RECT bounds{};
-    GetClientRect(window, &bounds);
-    BP_PAINTPARAMS parameters{sizeof(parameters)};
-    parameters.dwFlags = BPPF_ERASE;
-    HDC bufferDevice = nullptr;
-    auto buffer = BeginBufferedPaint(device, &bounds, BPBF_TOPDOWNDIB, &parameters, &bufferDevice);
-    auto target = buffer ? bufferDevice : device;
-    auto theme = OpenThemeData(window, L"CompositedWindow::Window");
-    if (!acrylic_ || !buffer || !theme)
-    {
-        SetDCBrushColor(target, background_);
-        FillRect(target, &bounds, static_cast<HBRUSH>(GetStockObject(DC_BRUSH)));
-        if (buffer)
-        {
-            BufferedPaintSetAlpha(buffer, nullptr, 255);
-        }
-    }
-    else
-    {
-        // The window surface holds premultiplied colour.
-        auto scale = [](BYTE channel) { return static_cast<BYTE>(channel * tintOpacity / 255); };
-        SetDCBrushColor(target, RGB(scale(GetRValue(background_)), scale(GetGValue(background_)),
-            scale(GetBValue(background_))));
-        FillRect(target, &bounds, static_cast<HBRUSH>(GetStockObject(DC_BRUSH)));
-        BufferedPaintSetAlpha(buffer, nullptr, tintOpacity);
-    }
-    auto previous = SelectObject(target, font_);
+    Acrylic::Canvas canvas(acrylic_, window);
+    auto const& bounds = canvas.Bounds();
+    auto target = canvas.Device();
     auto dpi = GetDpiForWindow(window);
     auto text = strings_.Text("startup", "opening");
     RECT measured{0, 0, bounds.right - Scale(2 * textInset, dpi), 0};
+    auto previous = SelectObject(target, font_);
     DrawTextW(target, text.c_str(), -1, &measured, DT_CALCRECT | DT_WORDBREAK | DT_NOPREFIX);
+    SelectObject(target, previous);
     auto size = Scale(iconSize, dpi);
     auto gap = Scale(iconGap, dpi);
     auto top = std::max<LONG>(0, (bounds.bottom - size - gap - measured.bottom) / 2);
@@ -309,30 +199,7 @@ void Splash::Paint(HWND window)
         size, size, 0, nullptr, DI_NORMAL);
     RECT textBounds{Scale(textInset, dpi), top + size + gap,
         bounds.right - Scale(textInset, dpi), bounds.bottom};
-    if (theme && buffer)
-    {
-        DTTOPTS options{sizeof(options)};
-        options.dwFlags = DTT_COMPOSITED | DTT_TEXTCOLOR;
-        options.crText = foreground_;
-        DrawThemeTextEx(theme, target, 0, 0, text.c_str(), -1,
-            DT_CENTER | DT_WORDBREAK | DT_NOPREFIX, &textBounds, &options);
-    }
-    else
-    {
-        SetTextColor(target, foreground_);
-        SetBkMode(target, TRANSPARENT);
-        DrawTextW(target, text.c_str(), -1, &textBounds, DT_CENTER | DT_WORDBREAK | DT_NOPREFIX);
-    }
-    SelectObject(target, previous);
-    if (theme)
-    {
-        CloseThemeData(theme);
-    }
-    if (buffer)
-    {
-        EndBufferedPaint(buffer, TRUE);
-    }
-    EndPaint(window, &paint);
+    canvas.Text(text, textBounds, DT_CENTER | DT_WORDBREAK | DT_NOPREFIX, font_);
 }
 
 LRESULT CALLBACK Splash::Procedure(HWND window, UINT message, WPARAM first, LPARAM second)
@@ -376,7 +243,7 @@ LRESULT Splash::Handle(HWND window, UINT message, WPARAM first, LPARAM second)
     case WM_SYSCOLORCHANGE:
     case WM_THEMECHANGED:
     case WM_DWMCOMPOSITIONCHANGED:
-        ApplyTheme();
+        acrylic_.Apply(window, theme_);
         return 0;
     case WM_NCDESTROY:
         window_ = nullptr;

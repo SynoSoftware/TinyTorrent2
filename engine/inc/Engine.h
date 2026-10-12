@@ -111,6 +111,8 @@ struct Activity
     std::vector<std::string> reportedPrograms;
     bool filesBusy = false;
     bool confirmsExit = true;
+    // The app's "light", "dark" or "system" choice.
+    std::string theme;
 };
 
 class Engine
@@ -131,7 +133,8 @@ public:
     // otherwise its cause, which is empty when the cause is unknown.
     void Shutdown(std::function<void(std::optional<std::string> failure)> completion);
     void PauseSession(bool paused, std::function<void(Outcome)> completion);
-    void SetBackgroundNotification(bool enabled, std::function<void(Outcome)> completion);
+    // Saves the switch that turns `notices` off.
+    void TurnOff(NoticeSwitch notices, std::function<void(Outcome)> completion);
     // Saves the missing programs that torrent handlers start, once reported.
     void RecordPrograms(std::vector<std::string> programs, std::function<void(Outcome)> completion);
     // Adds a source to the default destination with the default file choices.
@@ -142,13 +145,12 @@ public:
     std::string Name(std::string const& torrentId) const;
     std::string Folder(std::string const& torrentId) const;
     std::string Language() const;
-    std::string Theme() const;
     bool IsShuttingDown() const;
     bool IsLoading() const;
     bool HasStorageFailure() const;
     std::string StartupError() const;
     std::string SessionId() const;
-    bool ShowsAdd() const;
+    bool ShowsAdd(std::string const& source) const;
     bool RaisesAdd() const;
     bool HasSettings() const;
     bool ShowsSplash() const;

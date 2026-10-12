@@ -16,7 +16,7 @@ namespace
 constexpr UINT dispatch = WM_APP + 1;
 constexpr UINT tray = WM_APP + 2;
 constexpr UINT wake = WM_APP + 3;
-constexpr UINT backgroundOff = WM_APP + 4;
+constexpr UINT notice = WM_APP + 4;
 constexpr UINT_PTR tickTimer = 1;
 constexpr UINT_PTR trayTimer = 2;
 
@@ -207,7 +207,7 @@ Application::Application(std::filesystem::path directory, std::wstring sid, bool
     {
         throw std::runtime_error("Cannot create the broadcast window.");
     }
-    tray_ = std::make_unique<Tray>(owner_.get(), tray, backgroundOff, broadcast_.get(), strings_, headless_);
+    tray_ = std::make_unique<Tray>(owner_.get(), tray, notice, broadcast_.get(), strings_, headless_);
     auto data = directory.wstring();
     engine_ = std::make_unique<Engine>(std::move(directory),
         [this] { PostMessageW(owner_.get(), wake, 0, 0); });
@@ -298,16 +298,8 @@ LRESULT Application::Handle(UINT message, WPARAM first, LPARAM second)
     case tray:
         OnTray(first, second);
         return 0;
-    case backgroundOff:
-        engine_->SetBackgroundNotification(false, [this](Outcome outcome)
-        {
-            if (outcome.error)
-            {
-                auto detail = Utf8(strings_.Text("error", "notification")) + " " + outcome.detail;
-                Notify({.kind = NoticeKind::Failure, .name = Utf8(productName), .detail = detail});
-            }
-            Refresh();
-        });
+    case notice:
+        OnNotice(static_cast<PopupPart>(first));
         return 0;
     case WM_TIMER:
         if (first == tickTimer)
@@ -388,38 +380,53 @@ void Application::OnTray(WPARAM first, LPARAM second)
         POINT point{static_cast<short>(LOWORD(first)), static_cast<short>(HIWORD(first))};
         ShowMenu(point);
     }
-    else if (notification == NIN_BALLOONUSERCLICK)
+}
+
+void Application::OnNotice(PopupPart part)
+{
+    if (part == PopupPart::Button)
     {
-        auto shown = tray_->TakeNotice();
-        if (!shown)
+        auto notices = tray_->TakeSwitch();
+        if (!notices)
         {
             return;
         }
-        if (shown->kind == NoticeKind::MissingProgram)
+        engine_->TurnOff(*notices, [this](Outcome outcome)
         {
-            // Set first, so a launch failure inside Open can clear it.
-            showsSettings_ = true;
-            if (!Open())
+            if (outcome.error)
             {
-                showsSettings_ = false;
+                Notify({.kind = NoticeKind::Failure, .name = Utf8(productName),
+                    .detail = outcome.detail, .code = "notification"});
             }
-            ShowSettings();
-            return;
-        }
-        // A completed torrent opens its folder; any other notice opens the window.
-        auto folder = shown->kind == NoticeKind::Completed ? engine_->Folder(shown->torrentId) : std::string();
-        if (folder.empty())
-        {
-            Open();
-        }
-        else
-        {
-            ShellExecuteW(nullptr, L"open", Wide(folder).c_str(), nullptr, nullptr, SW_SHOWNORMAL);
-        }
+            Refresh();
+        });
+        return;
     }
-    else if (notification == NIN_BALLOONTIMEOUT)
+    auto shown = tray_->TakeNotice();
+    if (!shown)
     {
-        tray_->TakeNotice();
+        return;
+    }
+    if (shown->kind == NoticeKind::MissingProgram)
+    {
+        // Set first, so a launch failure inside Open can clear it.
+        showsSettings_ = true;
+        if (!Open())
+        {
+            showsSettings_ = false;
+        }
+        ShowSettings();
+        return;
+    }
+    // A completed torrent opens its folder; any other notice opens the window.
+    auto folder = shown->kind == NoticeKind::Completed ? engine_->Folder(shown->torrentId) : std::string();
+    if (folder.empty())
+    {
+        Open();
+    }
+    else
+    {
+        ShellExecuteW(nullptr, L"open", Wide(folder).c_str(), nullptr, nullptr, SW_SHOWNORMAL);
     }
 }
 
@@ -846,7 +853,39 @@ bool Application::Open()
         waitingSince_ = 0;
         showsSettings_ = false;
         splash_.Close();
-        ShowError("launch", executable.wstring() + L"\n" + std::to_wstring(error));
+        auto key = "launch";
+        switch (error)
+        {
+        case ERROR_FILE_NOT_FOUND:
+        case ERROR_PATH_NOT_FOUND:
+            key = "window_missing";
+            break;
+        case ERROR_ACCESS_DENIED:
+            key = "window_denied";
+            break;
+        case ERROR_BAD_EXE_FORMAT:
+        case ERROR_EXE_MACHINE_TYPE_MISMATCH:
+            key = "window_invalid";
+            break;
+        case ERROR_MOD_NOT_FOUND:
+        case ERROR_DLL_NOT_FOUND:
+            key = "window_dependency";
+            break;
+        }
+        wchar_t reason[2048]{};
+        auto name = executable.filename().wstring();
+        DWORD_PTR inserts[]{reinterpret_cast<DWORD_PTR>(name.c_str())};
+        auto format = FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_MAX_WIDTH_MASK;
+        format |= error == ERROR_BAD_EXE_FORMAT || error == ERROR_EXE_MACHINE_TYPE_MISMATCH ?
+            FORMAT_MESSAGE_ARGUMENT_ARRAY : FORMAT_MESSAGE_IGNORE_INSERTS;
+        FormatMessageW(format, nullptr, error, 0, reason, static_cast<DWORD>(std::size(reason)),
+            reinterpret_cast<va_list*>(inserts));
+        auto detail = strings_.Format("notification", "windows_error", {std::to_wstring(error)});
+        if (*reason)
+        {
+            detail += L" \u00B7 " + std::wstring(reason);
+        }
+        ShowError(key, executable.wstring() + L"\n" + detail);
         return true;
     }
     CloseHandle(process.hThread);
@@ -915,6 +954,23 @@ bool Application::ConfirmExit()
     dialog.cButtons = 1;
     dialog.pButtons = &button;
     dialog.nDefaultButton = IDOK;
+    // A task dialog has no field for its title bar icon, so it would show the
+    // generic one.
+    dialog.pfCallback = [](HWND window, UINT notification, WPARAM, LPARAM, LONG_PTR) -> HRESULT
+    {
+        if (notification == TDN_CREATED)
+        {
+            auto set = [window](WPARAM kind, int width, int height)
+            {
+                auto icon = LoadImageW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDI_TINYTORRENT), IMAGE_ICON,
+                    GetSystemMetrics(width), GetSystemMetrics(height), LR_SHARED);
+                SendMessageW(window, WM_SETICON, kind, reinterpret_cast<LPARAM>(icon));
+            };
+            set(ICON_SMALL, SM_CXSMICON, SM_CYSMICON);
+            set(ICON_BIG, SM_CXICON, SM_CYICON);
+        }
+        return S_OK;
+    };
     int chosen = IDCANCEL;
     exit_ = ExitPhase::Confirming;
     auto outcome = TaskDialogIndirect(&dialog, &chosen, nullptr, nullptr);
@@ -1058,7 +1114,7 @@ bool Application::IsExiting() const
 // Windows ending the session cannot be cancelled.
 void Application::CancelExit()
 {
-    if (exit_ == ExitPhase::Exiting)
+    if (exit_ == ExitPhase::Exiting || exit_ == ExitPhase::WindowConfirming)
     {
         exit_ = ExitPhase::Idle;
     }
@@ -1074,7 +1130,7 @@ void Application::Refresh()
     bool loading = engine_->IsLoading();
     tray_->Update(activity_, loading, !loading && !engine_->HasStorageFailure() && !IsExiting());
     power_.Update(activity_, IsExiting() || engine_->IsShuttingDown());
-    splash_.SetTheme(engine_->Theme());
+    splash_.SetTheme(activity_.theme);
     ShowSplash();
     auto language = engine_->Language();
     if (language == strings_.Language())
@@ -1106,8 +1162,8 @@ void Application::Pause()
     {
         if (outcome.error)
         {
-            auto detail = Utf8(strings_.Text("error", "pause")) + " " + outcome.detail;
-            Notify({.kind = NoticeKind::Failure, .name = Utf8(productName), .detail = detail});
+            Notify({.kind = NoticeKind::Failure, .name = Utf8(productName),
+                .detail = outcome.detail, .code = "pause"});
         }
         Refresh();
     });
@@ -1141,7 +1197,7 @@ Json Application::Activate(std::vector<std::string> sources)
         return Failure(ErrorCode::Unavailable);
     }
     auto id = std::to_string(++sequence_);
-    incoming_.push_back({id, std::move(sources)});
+    incoming_.push_back({id, sources.size() > 1, std::move(sources)});
     PostMessageW(owner_.get(), wake, 0, 0);
     return Success({{"activation_id", id}});
 }
@@ -1167,13 +1223,10 @@ void Application::AddSources()
         incoming_.clear();
         return;
     }
-    if (engine_->ShowsAdd())
+    if (!incoming_.front().batch && engine_->ShowsAdd(incoming_.front().sources.front()))
     {
-        while (!incoming_.empty())
-        {
-            offered_.push_back(std::move(incoming_.front()));
-            incoming_.pop_front();
-        }
+        offered_.push_back(std::move(incoming_.front()));
+        incoming_.pop_front();
         if (windowClient_)
         {
             windowClient_->Send(Json{{"type", "activations"}});
@@ -1281,17 +1334,18 @@ void Application::Notify(Notice notice)
 
 void Application::ShowError(std::string const& key, std::wstring detail)
 {
-    auto message = strings_.Text("error", key);
-    if (!detail.empty())
-    {
-        message += L"\n\n" + detail;
-    }
     if (headless_)
     {
+        auto message = strings_.Text("error", key);
+        if (!detail.empty())
+        {
+            message += L"\n\n" + detail;
+        }
         OutputDebugStringW(message.c_str());
         return;
     }
     // The window may be the one that stopped responding.
-    tray_->Queue({.kind = NoticeKind::Failure, .name = Utf8(productName), .detail = Utf8(message)});
+    tray_->Queue({.kind = NoticeKind::Failure, .name = Utf8(productName),
+        .detail = Utf8(detail), .code = key});
 }
 }

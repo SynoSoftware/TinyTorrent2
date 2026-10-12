@@ -55,9 +55,8 @@ public sealed partial class MainViewModel
                 _selected.Length
             );
     public bool HasSelection => _selected.Length > 0;
-    public bool CanReorder => CanEdit && VisibleTorrents.Count(torrent => torrent.Queue >= 0) > 1;
-    private bool CanMove =>
-        CanEdit && _selected.Length > 0 && _selected.All(torrent => torrent.Queue >= 0);
+    public bool CanReorder => CanEdit;
+    private bool CanMove => CanEdit && _selected.Any(torrent => torrent.IsQueued);
     public string EmptyTitle =>
         Text.Get("window", Torrents.Count > 0 ? "no_matches" : "empty_title");
     public string EmptyInstruction =>
@@ -70,7 +69,6 @@ public sealed partial class MainViewModel
         Text.Get("window", Torrents.Count > 0 ? "clear_filters_tip" : "add_tip");
     public ICommand EmptyAction => Torrents.Count > 0 ? ClearFilters : Add;
     public ICommand ClearFilters { get; }
-    public bool ShowsAdd => Settings.ShowAdd.ConfirmedOn;
     public bool CanEditSelection => CanEdit && _selected.Length > 0;
 
     // Null when the selected torrents differ. Switching a mixed selection
@@ -83,7 +81,19 @@ public sealed partial class MainViewModel
     public ICommand LimitSpeed { get; }
     public SpeedLimit SpeedLimit { get; }
     public Inspector Inspector { get; }
-    public bool HasInspector => Page == WindowPage.Library ? Library.IsOpen : Inspector.IsOpen;
+    private bool _inspectorOpen;
+    public bool HasInspector
+    {
+        get => _inspectorOpen;
+        private set
+        {
+            if (_inspectorOpen == value)
+                return;
+            _inspectorOpen = value;
+            RefreshInspector();
+            Changed(nameof(HasInspector));
+        }
+    }
     private bool _inspectorCompact;
     public bool IsInspectorCompact
     {
@@ -176,7 +186,7 @@ public sealed partial class MainViewModel
             await previous;
             AddDraft.Own(sources);
             if (picked)
-                await AddOwnedSources();
+                await AddOwnedSources(true);
             else
                 await AddArrived();
         }
@@ -204,17 +214,33 @@ public sealed partial class MainViewModel
         await AddDraft.PrepareAll();
         if (!AddDraft.CanEdit || IsAddOpen)
             return;
-        if (await AddDraft.Submit() || AddDraft.Failure is not { } failure)
-            return;
-        Report(failure);
-        await AddDraft.Cancel(
-            AddDraft
-                .Sources.Where(source => source.Failure is not null && !source.Uncertain)
-                .ToArray()
-        );
+        Exception? failure = null;
+        var rejected = AddDraft.Sources.Where(source => source.NeedsFiles).ToArray();
+        if (rejected.Length > 0)
+        {
+            failure = new CommandException("invalid_priorities", null, Text, "add");
+            await AddDraft.Cancel(rejected);
+        }
+        if (
+            AddDraft.CanEdit
+            && !IsAddOpen
+            && AddDraft.HasDraft
+            && !await AddDraft.Submit()
+            && AddDraft.Failure is { } error
+        )
+        {
+            failure = error;
+            await AddDraft.Cancel(
+                AddDraft
+                    .Sources.Where(source => source.Failure is not null && !source.Uncertain)
+                    .ToArray()
+            );
+        }
+        if (failure is not null)
+            Report(failure);
     }
 
-    private async Task AddOwnedSources()
+    private async Task AddOwnedSources(bool showDialog = false)
     {
         if (AddDraft.Sources.Count == 0)
             return;
@@ -236,7 +262,10 @@ public sealed partial class MainViewModel
                 Announce(Text.Get("errors", "duplicate"));
             return;
         }
-        if (ShowsAdd)
+        if (
+            showDialog
+            || AddDraft.Sources.Any(source => Settings.AddPreference(source.Source).ConfirmedOn)
+        )
         {
             AddRequested?.Invoke(this, EventArgs.Empty);
             return;
@@ -307,12 +336,15 @@ public sealed partial class MainViewModel
         Queue(
             new
             {
-                torrent_ids = _selected.Select(torrent => torrent.TorrentId).ToArray(),
+                torrent_ids = _selected
+                    .Where(torrent => torrent.IsQueued)
+                    .Select(torrent => torrent.TorrentId)
+                    .ToArray(),
                 direction,
             }
         );
 
-    public Task Reorder(IEnumerable<Torrent> torrents, Torrent? before) =>
+    public Task Reorder(IReadOnlyList<Torrent> torrents, Torrent? before) =>
         Queue(
             new
             {
@@ -490,6 +522,7 @@ public sealed partial class MainViewModel
             return;
         if (Inspector.Show(_selected[0], section))
         {
+            HasInspector = true;
             IsInspectorCompact = false;
             await Inspector.Navigate(section);
         }
@@ -498,11 +531,29 @@ public sealed partial class MainViewModel
 
     public void OpenInspector(bool expand = true)
     {
-        if (Inspector.Show(_selected.Length == 1 ? _selected[0] : null) && expand)
+        if (
+            Page != WindowPage.Library
+            && !Inspector.Show(_selected.Length == 1 ? _selected[0] : null)
+        )
+            return;
+        HasInspector = true;
+        if (expand)
             IsInspectorCompact = false;
     }
 
-    public bool CloseInspector() => Inspector.Close();
+    public bool CloseInspector()
+    {
+        if (Inspector.HasDraft || Inspector.IsPending || !Inspector.Show(null))
+            return false;
+        HasInspector = false;
+        return true;
+    }
+
+    private void RefreshInspector()
+    {
+        Inspector.SetVisible(HasInspector && Page == WindowPage.Torrents);
+        Library.WatchInspector(HasInspector && Page == WindowPage.Library);
+    }
 }
 
 public sealed class OpenRequestedEventArgs(string path, string? extension = null) : EventArgs

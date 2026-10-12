@@ -47,9 +47,9 @@ read of its dates and, for audio, its tags, described in
 
 **Owner ruling: all Library work lives in C#, in the product window process.**
 Library owns local search, identification and file facts. Application wiring
-supplies shared source synchronization and each feature's schema and cleanup
-SQL. The C# database owner creates SQLite, checks its schema version and
-serializes every query, write and cleanup through one transaction path.
+supplies shared source synchronization and one database service. The
+[database owner](database.md) defines the complete schema, initializes its
+version, and serializes every query, write and cleanup through one transaction path.
 Its work ends when the window closes, so the resident engine
 keeps no Library projection, database connection or enrichment worker. WinUI
 owns presentation, navigation, selection and scroll position; blocking Library
@@ -86,7 +86,7 @@ internals of the others:
 | --- | --- | --- |
 | Data source (the torrent adapter now) | Seeding and synchronizing current contributions and file facts in SQLite, including unfinished targets, confirmed withdrawal and shared filename interpretation: kind, title and normalized filename text | Provider behavior, Library queries and feature eligibility |
 | Library | Finished-entry eligibility, effective identification decisions, fact lifetime and its SQL text/filter queries | Torrent internals, provider transport, how a source finds files |
-| C# database owner (`library.db`) | Connection, schema version check and transaction mechanics for supplied current-source and feature SQL | Feature schemas, provider behavior, presentation and feature decisions |
+| C# database owner (`library.db`) | Connection, authoritative schema, initialization and versioning, transactions and shared consistency rules | Provider behavior, presentation and feature decisions |
 | TMDB lookup and file facts reader | Returning video information or local file facts for Library to validate and save | Source membership, search, presentation |
 
 Library and subtitles are sibling modules supplied with these shared resources
@@ -97,8 +97,8 @@ behavior instead of accumulating in a general database class. Sharing the
 connection does not require sharing provider scheduling or job states.
 
 Stored facts belong to the contribution of their entry. Source synchronization
-applies confirmed withdrawal and cleanup in one SQLite transaction, using each
-feature's own SQL to remove its associations and unreferenced facts. This runs
+applies confirmed withdrawal and cleanup in one SQLite transaction, using the
+database owner's shared rules to remove associations and unreferenced facts. This runs
 even when Library enrichment and subtitles are off, so disabling either cannot
 leave obsolete membership behind. A contribution can have no finished
 files: an early identification waits for its file while the torrent remains
@@ -123,6 +123,10 @@ torrents. It never discovers them by enumerating the filesystem.
 
 An accepted torrent seeds its known files into SQLite. Library's query includes
 each file once synchronized facts show it finished and under its final name.
+Show those files as their torrent facts arrive, so a pending torrent does not
+hold back the files already collected. The torrent source reads a torrent's
+files again whenever the engine reports a change and at most a minute after
+its last read, so Library needs no refresh command.
 A finished file stays even when the person later
 marks it unwanted, because changing its priority must not hide a file the
 person already has. No disk probe is added to decide this.
@@ -276,6 +280,13 @@ and database worker, through the Windows property system that Explorer uses:
 
 - For every file: its created and modified dates.
 - For an audio file: Title, Artist, Album, Track, Year, Genre and Duration.
+- For a video file: Duration, total Bitrate and frame Width and Height.
+- For an audio file: Bitrate alongside its tags.
+
+The saved file-facts row records a successful read, even when Windows returns
+no media values. Browsing, sorting, inspector access and restarting never
+repeat a successful read. The first-version schema includes
+all media-property columns; no earlier database format needs an upgrade.
 
 The store saves these facts with the entry, and they go with the torrent like
 every other stored fact. They are not read again: a file is finished, and
@@ -368,45 +379,74 @@ not match strings shorter than three characters, as documented in the
 
 ## Identification and early enrichment
 
-Choose one provider: TMDB or **Public websites**. Provider selection is
+Choose one provider: TMDB, IMDb or Rotten Tomatoes. Provider selection is
 exclusive, so changing it cancels work belonging to the previous provider.
-For Public websites configuration, request triggers, cache rules and browser
+For the IMDb and Rotten Tomatoes request triggers, cache rules and browser
 access, read the [website provider contract](movie-websites.md). That plugin
-supports movies from the selected website and refuses Library-wide population.
-The shared identification rules below apply to both providers; early and
-background enrichment applies only to TMDB.
+supports movies from the selected website. Each enabled provider uses the same
+background identification workflow; TMDB also supports series and episodes.
 
 Use names and structured clues such as title, year, season and episode numbers
 without reading video contents.
 
 Associate automatically only when the available evidence supports an
-unambiguous match. A first search result is not sufficient evidence by itself.
-Unmatched and ambiguous files remain usable under their original filenames.
-Provide Edit metadata and Erase metadata actions without prompting
+unambiguous match with title similarity greater than 80%, consistent sequel
+numbers and no conflicting known year. More than one qualifying candidate
+remains ambiguous. A first search result is not sufficient evidence by itself.
+Unmatched and ambiguous files remain usable under their original filenames,
+with the type and year their names give
+([identification](../CONTEXT.md)): a name with a season is a TV episode, and
+every other video is a movie.
+Provide Fetch metadata and Erase metadata actions without prompting
 for every file. Erasing an incorrect association preserves the user's decision
 instead of immediately recreating the same automatic match.
 
 Manual decisions survive restart and take precedence over automatic work.
-Edit metadata and Erase metadata apply to all current source entries at the selected
+Fetch metadata and Erase metadata apply to all current source entries at the selected
 location in one SQLite transaction, so cross-seeded files do not show competing
 identifications. When locations meet, the most recently saved explicit choice,
 including Clear, applies to all contributors. It remains with each if their
 locations later separate. Resolve that effective choice once for search, rows
 and details; removing one contributor must not undo a surviving entry's choice.
 A late reply cannot overwrite a newer correction or recreate an entry removed
-from its data source. Returned video information is saved only while a current
-entry uses it, so a late reply does not leave unreferenced provider records.
+from its data source. A file's video information stays only while a current
+entry uses it. Everything else a provider returned, its raw pages and every
+movie its pages listed, stays saved, so a later lookup of the same movie needs
+no request ([keep everything a provider returns](library-implementation.md#replaceable-movie-providers)).
+
+With multiple movies selected, Fetch metadata processes only missing
+identifications using the automatic matching policy and opens no dialogs.
+It works in the background: the status bar shows "Fetching metadata 3 of 7"
+until it finishes, on every page, with an X that stops it and cancels the
+request in progress. Fetching more files while it runs adds them to the same
+count, and a file already waiting is not added twice. Automatic lookups wait
+until the batch ends. A provider failure ends the rest of the batch and reports
+the failure as other Library commands do.
+Library remembers each automatic search for the session, so files of one movie
+search the provider once.
+Library retains the complete selection across result refreshes and remembers
+it separately for each configuration.
+
+The Subtitles column reads the [subtitle inventory](subtitles.md#subtitle-inventory-and-lookup-counts)
+from SQLite: one language is shown by name and multiple languages by code.
+Browsing Library never inspects folders.
 
 Share movie and series information across associated files rather than fetching
 and storing a separate copy per file. Bound background work, honor provider
 throttling, and prioritize explicit identification over routine enrichment.
-Persist enough identification outcome to avoid repeating unsuccessful automatic
-lookups on every restart without new evidence. Provider failure must not block
-local search, torrent operations or shutdown.
+Try an unidentified video once per session, with the persistent per-provider
+search allowance limiting requests across restarts. **Owner ruling: a
+provider's no-match answer is remembered.** Background lookups never ask that
+provider about the file again while its name is unchanged, because the answer
+will not change and each request costs the person's provider allowance. Fetch
+metadata and the Fetch metadata dialog still search, because the person asked.
+The table shows an em dash in that file's empty provider cells, so a file the
+provider does not have differs from one not looked up yet. Provider failure must not
+block local search, torrent operations or shutdown.
 
 ### TMDB early and background enrichment
 
-With TMDB selected and enrichment enabled, identification begins when an accepted
+With TMDB selected and enrichment enabled, identification begins when a new
 torrent supplies enough filename information; video completion is not a
 prerequisite. Process only recognizable video candidates for movie/TV identification; other
 files retain ordinary filename search without provider requests. Reuse common
@@ -417,9 +457,9 @@ pane opens, so an actor or subject search can find an unselected file. Do not
 retrieve artwork, trailers, recommendations or unrelated credits as part of it.
 
 Enrichment runs in C# only while the product window is open and the feature is
-enabled. Closing the window cancels optional work; the next window resumes from
-saved outcomes and current source facts. There is no hidden managed process or
-native fallback. Start with one provider request in flight; concurrency increases only if measured
+enabled, within the [per-movie limit](architecture.md#third-party-provider-access).
+Closing the window cancels optional work; the next window tries the files
+without a match again. There is no hidden managed process or native fallback. Start with one provider request in flight; concurrency increases only if measured
 enrichment delay warrants it without harming interactive work. A provider
 request must not occupy the worker that serves interactive Library queries.
 Save completed provider information once per coherent result, not as one durable
@@ -477,7 +517,7 @@ implementation that drifts from the first. A label is new only where the noun
 is new.
 
 Help text follows the [interface contract](interface.md#text-icons-and-typography).
-The enabling dialog also includes the disclosure required by
+Each provider's information flyout carries the disclosure required by
 [privacy requirements](#privacy-and-provider-release-requirements).
 
 ### Prototype implementation review
@@ -519,9 +559,12 @@ items forward rather than asking the owner to rediscover them.
   Cast uses its own column only when the side-by-side content fits the inspector's
   available height. Otherwise it stays below Synopsis with names wrapping across
   rows, even in a wide window, so the column does not introduce avoidable scrolling.
-- [ ] Use one full-width heading above content and metadata. Refresh or Fetch
-  sits at the far right, not stranded at the edge of the left content column,
-  and retains its established command and availability rules.
+- [ ] Use one full-width heading above content and metadata. **Refresh metadata**
+  sits in the card's More menu beside Fetch and Erase metadata, and retains its
+  established command and availability rules. A file without information gets
+  a Fetch button at the heading's far right, not stranded at the edge of the
+  left content column. It opens the same provider list as Fetch metadata, then
+  Settings.
 - [ ] Place the media type beside the title, using the latest shared text
   baseline alignment and clear separation. Movie, TV episode and Audio use the
   same composition; do not restore a whole subtitle row merely for type or Year.
@@ -541,7 +584,7 @@ items forward rather than asking the owner to rediscover them.
   behavior and the existing information/provider states rather than inventing
   scores or new provider requests to fill the layout.
 - [ ] Match the app's action glyphs and button treatment: Play, Show in Torrents,
-  More and Close. Edit metadata belongs in More at every width. A vertical divider
+  More and Close. Fetch metadata belongs in More at every width. A vertical divider
   separates these item actions from the inspector's Pin and Close controls. Show in
   Torrents uses LocateFixed, never the software logo or a download action glyph.
   The prototype must not replace Play with an external-window glyph.
@@ -678,7 +721,7 @@ Library, the menus are:
 | Menu | Items |
 | --- | --- |
 | File | Unchanged. |
-| Library | Open, Open folder, Properties; Edit metadata, Erase metadata; Show in Torrents. The row context menu has the same items. |
+| Library | Open, Open folder, Properties, Show in Torrents; Fetch metadata, Download Subtitle; Erase metadata. The row context menu has the same groups and a selection heading. Download Subtitle is a direct action; multiple selections use Download subtitles. Single and multiple selections use the same command owners and Lucide icons. |
 | View | Filters first; then Videos, Music, Files as choices. Library has no toolbar, so View has no Toolbar item there. |
 | Help | Unchanged. |
 
@@ -697,9 +740,9 @@ Videos is the default, and the window remembers the last choice.
 
 | Configuration | Rows | Default columns and sort | Hidden columns, available from the column menu |
 | --- | --- | --- | --- |
-| Videos | Video files | Title, Type, Released, IMDb, TMDB, Genres; sorted by Title | Cast, Size, Name, Folder, Date modified |
-| Music | Audio files | Title, Artist, Album, Track, Duration, Year; sorted by Artist, then Album, then Track | Genre, Name, Folder, Size, Date modified |
-| Files | Every file | Name, Folder, Size, Date modified; sorted by Name | Kind, Title |
+| Videos | Video files | Title, Type, Released, Duration, Resolution, Bitrate, Subtitles, IMDb, TMDB, Genres; sorted by Title | Cast, Size, Name, Folder, Date modified |
+| Music | Audio files | Title, Artist, Album, Track, Duration, Year; sorted by Artist, then Album, then Track | Bitrate, Genre, Name, Folder, Size, Date modified |
+| Files | Every file | Name, Folder, Size, Date modified; sorted by Name | Kind, Title, Duration, Resolution, Bitrate |
 
 **Owner ruling: the table leads with what the person remembers.** In Videos and
 Music, that is the title, not the file name or location, so Name and Folder
@@ -707,9 +750,10 @@ are hidden by default and appear at the end when the person adds them.
 
 - Title is never blank. A file without video information or tags shows its
   cleaned file name. An episode's title includes SxxEyy and the episode name.
-- Type, in Videos, is Movie, TV episode or the reason the file is not
-  identified yet, such as "Waiting for TMDB".
-- Released is a movie's release year or an episode's air year.
+- Type, in Videos, is Movie or TV episode, from the provider match or else
+  the file name.
+- Released is a movie's release year or an episode's air year, or else the
+  year in the file name.
 - **Owner ruling: IMDb and TMDB have separate columns in Videos and both
   available scores appear in the Info details.** Each column holds only the
   number; the header identifies its source. Details group the scores with
@@ -738,7 +782,7 @@ cleared. Clear resets every section.
 
 | Configuration | Sections |
 | --- | --- |
-| Videos | Type: All, Movies, TV episodes, Not identified. Genre: the genres present. Year: the years present, newest first. |
+| Videos | Type: All, Movies, TV episodes. Genre: the genres present. Year: the years present, newest first. |
 | Music | Genre and Year, from the tags. |
 | Files | Kind: the kinds present. Date modified: Today, Yesterday, This week, Last week, This month, Last month, This year, Older. Size: Explorer's ranges, Empty (0 KB) to Gigantic (> 4 GB). |
 
@@ -757,7 +801,7 @@ the error InfoBar with Retry. Library adds no second card.
   SelectorBar offers "Info" and "File" for both video and audio. A file that is
   neither opens on File, with the first item disabled.
   Play, Show in Torrents and More follow, then Close. In the Narrow state, Play
-  and Show in Torrents move into More. Edit metadata stays in More at every
+  and Show in Torrents move into More. Fetch metadata stays in More at every
   width.
 - The approved C — Sections Info composition is recorded in the
   [prototype implementation review](#prototype-implementation-review).
@@ -791,8 +835,22 @@ selects and scrolls to the file, so a large torrent does not leave the person
 searching for it. Back then returns to Library with the
 same row selected.
 
-**Metadata.** Edit metadata opens the same dialog for a file with or without
-an existing match. It is titled "Edit metadata", with Save and Cancel.
+**Metadata.** In the Library menu, the row context menu and the card's More
+menu, Fetch metadata is a submenu that lists every provider, so the person
+chooses the provider for this request; the card's Fetch button uses the one
+saved in Settings. Fetch metadata opens the same dialog for one file with or without
+an existing match, starting at the chosen provider. It is titled "Fetch metadata", with Save and Cancel.
+With multiple movies selected, the command silently fetches confident missing
+identifications from the chosen provider and leaves existing matches and
+ambiguous results unchanged.
+While it searches or saves, an indeterminate progress bar under the search box
+shows that the provider request is running.
+A Provider choice above the search box lists every provider and starts at the
+one saved in Settings. Choosing another searches it again; the search and the
+saved match use that provider for this file only, and Settings stays unchanged.
+When a provider cannot use the saved network route, the error offers a Settings
+link that closes the dialog and opens Network settings. Other provider errors
+offer no link, because Settings cannot fix them.
 More holds Erase metadata. The Library menu and row context menu use these
 same commands and labels.
 
@@ -805,10 +863,10 @@ The page has no loading state; see the owner ruling under
 | --- | --- |
 | No files | "No files yet", with a button that opens Torrents. |
 | No matches | "No videos match" and the query (or music, or files), with one button for each other configuration that has matches, and its count, plus Clear search. The action buttons share the widest button's natural width through the shared ActionButton alignment. |
-| Engine disconnected | The window's existing connection InfoBar. Open and Identify are disabled. |
-| Database unavailable | The existing persistent workspace InfoBar reports the storage failure and offers Retry. Any last view stays non-actionable; normal torrent work remains available. |
-| Video information off | The status bar and the card's Video information page offer "Turn on…", which opens the consent dialog. There is no notice above the table. |
-| Provider failure | "Waiting for TMDB" in the Type cell, the card and the status bar. No dialog. |
+| Engine disconnected | The window's [message bar](interface.md#message-bar). Open and Identify are disabled. |
+| Database unavailable | The window's [message bar](interface.md#message-bar) reports the failure and offers Retry. Any last view stays non-actionable; normal torrent work remains available. |
+| Download off | Saved video information stays visible and can be erased. Fetch metadata names its provider, so it works; Refresh metadata uses the provider in Settings, so it is unavailable. A file without information shows "Download off" in its Metadata field. Its Fetch button lists every provider, then Settings, which opens Settings with focus on Download video information. The status bar names the state. There is no notice above the table. |
+| Provider failure | "Waiting for TMDB" in the card and the status bar. No dialog. |
 | Failed Open | The title-cell and card glyph show the failure, and the card shows an error InfoBar with Missing, Unavailable or Couldn't open, the time it was checked, and Retry. |
 
 TMDB's attribution is under Credits on the About page, not on the Library page.
@@ -831,16 +889,22 @@ files; reconcile with current engine state on reconnect.
 
 ## Privacy and provider release requirements
 
-Normal browsing and typing stay local. Online enrichment starts disabled and
-uses one explicit enablement with an accurate disclosure, not per-file consent
-dialogs. Disabling it stops further provider work and cancels pending requests
-where possible. Cached information remains usable only as permitted by the
-applicable terms; source entries and filename search remain usable regardless.
+Normal browsing and typing stay local. Online enrichment starts Off. Choosing a
+provider in Settings is the one explicit enablement; there is no confirmation
+dialog and no per-file consent, because the choice is already the person's
+decision, as with Windows' own online settings. Choosing another provider in
+Fetch metadata is the person's explicit request for that one file and needs no
+further consent. Choosing Off stops further
+provider work and cancels pending requests where possible. Cached information
+remains usable only as permitted by the applicable terms; source entries and
+filename search remain usable regardless.
 
-Settings presents Video information with the same ToggleSwitch and state label
-as its other on/off preferences. It invokes the existing enablement command,
-including the disclosure when turning on, and reflects accepted state so a
-cancelled disclosure never leaves the switch showing On.
+Settings presents Download video information as one choice: Off, TMDB, IMDb
+or Rotten Tomatoes. Off stops downloading only; saved information stays. Its information button opens the selected provider's disclosure, the
+inputs it receives, and links to its privacy policy and terms, in the same
+flyout as the subtitle supplier's. A provider that is unavailable when chosen
+changes nothing and shows its error in the row. Library's Settings button opens
+this row.
 
 Send only the matching inputs a request needs. Do not upload a Library
 inventory, absolute paths, torrent info hashes, trackers, peers or movie bytes.
@@ -848,7 +912,7 @@ Use HTTPS and keep credentials and search contents out of routine logs. State
 the actual network route before enablement. The shared
 [network-route rule](architecture.md#network-route) governs every provider;
 disclosure never permits a direct fallback. A provider that cannot honor the
-configured route remains unavailable. The current Public websites reader runs
+configured route remains unavailable. The current website reader runs
 only with confirmed unrestricted direct access and stops when that route changes.
 
 Follow [third-party provider access](architecture.md#third-party-provider-access).
@@ -856,8 +920,8 @@ TMDB uses the free application credential supplied with the build; the person
 does not need a TMDB account or key. No paid access is part of this feature.
 Without an application credential, local Library search and saved information
 remain usable, but no TMDB requests run. TMDB limits use the existing wait
-and retry behavior rather than a paid fallback. Public websites availability is
-independent of that credential; its [request policy](movie-websites.md#requests-and-saved-information)
+and retry behavior rather than a paid fallback. IMDb and Rotten Tomatoes
+availability is independent of that credential; its [request policy](movie-websites.md#requests-and-saved-information)
 owns retries and saved data.
 
 Verify applicable API/content permission, attribution, credential distribution,
@@ -938,7 +1002,7 @@ removed; installed dependencies in `3rdParty/` remain untouched. This work
 neither adds a managed runtime to the engine nor shares a database across
 processes.
 
-One connection, schema and migration owner serves Library and subtitles because
+One connection, schema and transaction owner serves Library and subtitles because
 both use this C# database. Keep their domain decisions with their respective
 owners. No ORM, generic repository, second index service, pooled connection per
 query or automatic WAL requirement is needed. Add derived indexes only for

@@ -536,13 +536,12 @@ public sealed partial class Week : UserControl
 
     private void UpdateTip(string? description)
     {
-        var tooltip =
-            _drag is null
-                ? string.Join(
-                    " ",
-                    new[] { description, Hint }.Where(text => !string.IsNullOrEmpty(text))
-                )
-                : null;
+        var tooltip = _drag is null
+            ? string.Join(
+                " ",
+                new[] { description, Hint }.Where(text => !string.IsNullOrEmpty(text))
+            )
+            : null;
         if (!Equals(HoverTip.Content, tooltip))
         {
             HoverTip.IsOpen = false;

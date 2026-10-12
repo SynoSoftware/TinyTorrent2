@@ -11,27 +11,22 @@ public sealed partial class MainViewModel
     private TorrentFilter _filter;
     private bool _showsFilters;
     private bool _filtersCollapsed;
-    private WindowPage _page;
+    internal Navigation Navigation { get; }
+    public WindowPage Page => Navigation.Page;
 
-    public WindowPage Page
+    private void RefreshNavigation()
     {
-        get => _page;
-        internal set
-        {
-            if (_page == value)
-                return;
-            _page = value;
-            Inspector.SetVisible(value == WindowPage.Torrents);
-            Library.SetVisible(value == WindowPage.Library);
-            Changed(nameof(Page));
-            Changed(nameof(Query));
-            Changed(nameof(HasInspector));
-            Changed(nameof(FilterStatus));
-            Changed(nameof(HasFilter));
-            Changed(nameof(CountStatus));
-            Changed(nameof(ShowsToolbar));
-            ((RelayCommand)ClearFilters).Refresh();
-        }
+        if (HasInspector && Page == WindowPage.Torrents && Inspector.Target is null)
+            Inspector.Show(_selected.Length == 1 ? _selected[0] : null);
+        RefreshInspector();
+        Library.SetVisible(Page == WindowPage.Library);
+        Changed(nameof(Page));
+        Changed(nameof(Query));
+        Changed(nameof(FilterStatus));
+        Changed(nameof(HasFilter));
+        Changed(nameof(CountStatus));
+        Changed(nameof(ShowsToolbar));
+        ((RelayCommand)ClearFilters).Refresh();
     }
 
     public string AboutTitle => Text.Get("window", "title");
@@ -78,8 +73,10 @@ public sealed partial class MainViewModel
     }
     public FilterPane FilterPane
     {
-        get => !_showsFilters ? FilterPane.Hidden
-            : _filtersCollapsed ? FilterPane.Compact : FilterPane.Open;
+        get =>
+            !_showsFilters ? FilterPane.Hidden
+            : _filtersCollapsed ? FilterPane.Compact
+            : FilterPane.Open;
         set
         {
             if (FilterPane == value)
@@ -100,8 +97,11 @@ public sealed partial class MainViewModel
     public bool ShowsFilters
     {
         get => _showsFilters;
-        set => FilterPane = !value ? FilterPane.Hidden
-            : _filtersCollapsed ? FilterPane.Compact : FilterPane.Open;
+        set =>
+            FilterPane =
+                !value ? FilterPane.Hidden
+                : _filtersCollapsed ? FilterPane.Compact
+                : FilterPane.Open;
     }
     public ICommand SwitchFilters { get; }
     public IReadOnlyList<FilterChoice> Filters { get; }
@@ -132,7 +132,7 @@ public sealed partial class MainViewModel
             TorrentFilter.All => true,
             TorrentFilter.Downloading => torrent.StatusCode is "downloading" or "metadata",
             TorrentFilter.Seeding => torrent.StatusCode is "seeding" or "completed",
-            TorrentFilter.Paused => torrent.StatusCode is "paused" or "all_paused",
+            TorrentFilter.Paused => torrent.StatusCode == "paused",
             TorrentFilter.Queued => torrent.StatusCode == "queued",
             TorrentFilter.Errors => torrent.IsError,
             _ => false,
@@ -155,7 +155,7 @@ public sealed partial class MainViewModel
         return false;
     }
 
-    private Task ClearFinding()
+    internal Task ClearFinding()
     {
         Filter = TorrentFilter.All;
         return Task.CompletedTask;
@@ -183,7 +183,9 @@ public sealed partial class MainViewModel
 
     public IReadOnlyList<Suggestion> FindSuggestions(string query)
     {
-        var words = FileName.Normalize(query).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+        var words = FileName
+            .Normalize(query)
+            .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
         var commands = CommandSuggestions().Where(suggestion => suggestion.IsEnabled);
         if (words.Length == 0)
             return commands
@@ -234,7 +236,12 @@ public sealed partial class MainViewModel
             SuggestionScope.Command,
             ShowTorrents
         );
-        yield return new(Text.Get("library", "title"), string.Empty, SuggestionScope.Command, ShowLibrary);
+        yield return new(
+            Text.Get("library", "title"),
+            string.Empty,
+            SuggestionScope.Command,
+            ShowLibrary
+        );
         yield return new(
             Text.Get("about", "title"),
             string.Empty,
@@ -365,13 +372,18 @@ public sealed partial class MainViewModel
     }
 
     private static bool MatchesQuery(Suggestion suggestion, string[] words) =>
-        MatchesQuery(suggestion.Label + " " + suggestion.Detail + " " + suggestion.SearchTerms, words);
+        MatchesQuery(
+            suggestion.Label + " " + suggestion.Detail + " " + suggestion.SearchTerms,
+            words
+        );
 
     private IEnumerable<Suggestion> SettingSuggestions()
     {
         foreach (var category in Enum.GetValues<SettingsCategory>())
-            yield return SettingSuggestion(new(category),
-                Text.Get("settings", category.ToString().ToLowerInvariant()));
+            yield return SettingSuggestion(
+                new(category),
+                Text.Get("settings", category.ToString().ToLowerInvariant())
+            );
         foreach (var setting in Settings.All)
         {
             if (setting == Settings.CapacityDownload || setting == Settings.CapacityUpload)
@@ -382,7 +394,7 @@ public sealed partial class MainViewModel
             new(SettingsCategory.Limits, "connection_setup"),
             Text.Get("settings", "connection_setup")
         );
-        foreach (var key in new[] { "start_signin", "startup_settings", "open_defaults" })
+        foreach (var key in new[] { "start_signin", "open_defaults", "settings_index" })
             yield return SettingSuggestion(
                 new(SettingsCategory.General, key),
                 Text.Get("settings", key)
@@ -395,11 +407,19 @@ public sealed partial class MainViewModel
             new(SettingsCategory.Network, "proxy"),
             Text.Get("settings", "proxy")
         );
-        yield return SettingSuggestion(new(SettingsCategory.General, "library_provider"), Library.ProviderLabel);
-        yield return SettingSuggestion(new(SettingsCategory.General, "video_information"), Library.InformationLabel);
-        foreach (var name in new[] { "automatic", "supplier", "languages", "finished", "files" })
-            yield return SettingSuggestion(new(SettingsCategory.Subtitles, "subtitle_" + name),
-                Text.Get("subtitles", name));
+        yield return SettingSuggestion(
+            new(SettingsCategory.Plugins, "video_information"),
+            Library.DownloadLabel
+        );
+        yield return SettingSuggestion(
+            new(SettingsCategory.Plugins, "lookup_limit"),
+            Text.Get("plugins", "lookups")
+        );
+        foreach (var name in new[] { "automatic", "extras", "supplier", "languages", "batch", "scan" })
+            yield return SettingSuggestion(
+                new(SettingsCategory.Plugins, "subtitle_" + name),
+                Text.Get("subtitles", name)
+            );
     }
 
     private Suggestion SettingSuggestion(SettingTarget target, string label) =>
@@ -414,7 +434,10 @@ public sealed partial class MainViewModel
                 ),
             SuggestionScope.Settings,
             new RelayCommand(() => RequestSettings(target), () => true),
-            Text.Find("search_terms", target.Name ?? target.Category?.ToString().ToLowerInvariant() ?? string.Empty) ?? string.Empty
+            Text.Find(
+                "search_terms",
+                target.Name ?? target.Category?.ToString().ToLowerInvariant() ?? string.Empty
+            ) ?? string.Empty
         );
 }
 

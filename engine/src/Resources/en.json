@@ -10,8 +10,7 @@
     "open": "Show window",
     "missing_adapter": "Network adapter unavailable: {0}",
     "exit": "Exit",
-    "background": "Transfers continue in the notification area. Choose Exit from the TinyTorrent menu to stop.",
-    "background_off": "Don't show again"
+    "background": "Transfers continue in the notification area. Choose Exit from the TinyTorrent menu to stop."
   },
   "exit": {
     "title": "Exit TinyTorrent?",
@@ -28,17 +27,22 @@
     "gib": "{0} GiB/s"
   },
   "notification": {
-    "completed": "{0} finished downloading.",
-    "added": "Added {0}.",
-    "duplicate": "{0} is already in the list.",
+    "completed": "Download finished",
+    "added": "Torrent added",
+    "duplicate": "Torrent already added",
     "magnet": "Magnet link",
-    "error": "{0} needs attention.",
+    "error": "Transfer needs attention",
     "aggregate": "{0} transfer updates.",
-    "add_failed": "{0} could not be added.",
-    "delete_failed": "Files for {0} could not be fully deleted.",
-    "failures": "Transfer errors: {0}. {1}: {2}",
+    "add_failed": "Could not add torrent",
+    "delete_failed": "Could not delete all files",
+    "failure": "TinyTorrent needs attention",
+    "failures": "{0} errors need attention",
+    "background": "Transfers continue",
+    "windows_error": "Windows error: {0}",
+    "missing_title": "Program not found",
     "missing_program": "Torrents are set to open with a program that is missing: {0}. Select this to repair it in Settings.",
-    "missing_programs": "Torrents are set to open with programs that are missing: {0} and {1} more. Select this to repair them in Settings."
+    "missing_programs": "Torrents are set to open with programs that are missing: {0} and {1} more. Select this to repair them in Settings.",
+    "off": "Don't show again"
   },
   "power": {
     "transfers": "TinyTorrent is transferring files."
@@ -60,9 +64,9 @@
     "shared_files": "Other torrents use these files. Refresh the list and include them in the move.",
     "destination_conflict": "Different source files would occupy the same destination. Choose another folder or move these torrents separately.",
     "destination_in_use": "Another torrent uses files at this destination. Choose another folder to keep its files unchanged.",
-    "move_interrupted": "The move was interrupted. Open Move files, choose the folder that now holds the files, and choose Use files there.",
-    "move_failed": "The files could not be moved. Open Move files, choose the folder that now holds the files, and choose Use files there.",
-    "destination_exists": "Files already exist at the destination. Open Move files and choose Use files there to verify and use them.",
+    "move_interrupted": "The move was interrupted. Choose the folder that now holds the files and try Move again.",
+    "move_failed": "The files could not be moved. Choose the folder that now holds them and try Move again.",
+    "destination_exists": "Files exist at both locations. Choose another destination to keep both copies.",
     "alias_conflict": "Other torrents use these files with different names. Resolve the file names before continuing.",
     "torrent_error": "The torrent stopped because of an error.",
     "storage_failed": "Saved download state could not be read or written. Check the engine data folder and try again.",
@@ -73,7 +77,11 @@
     "version": "A different version of TinyTorrent is already running. Choose Exit in the tray, then start TinyTorrent again.",
     "source": "The torrent could not be added.",
     "ownership": "TinyTorrent cannot open its saved data. Another Windows logon may already be using this folder:",
-    "launch": "The window could not start. Downloads continue. Choose Show window in the tray to retry.",
+    "launch": "Windows could not start the window. Transfers continue. The Windows error below explains why.",
+    "window_missing": "TinyTorrent's window program is missing from this folder. Transfers continue.\n\nReinstall TinyTorrent to restore it.",
+    "window_denied": "Windows denied permission to start the window. Transfers continue.\n\nCheck the window program's file permissions before trying again.",
+    "window_invalid": "Windows cannot run the window program on this PC. Transfers continue.\n\nReinstall the version of TinyTorrent that matches your PC.",
+    "window_dependency": "A file required by the window program is missing. Transfers continue.\n\nReinstall TinyTorrent to restore the required files.",
     "startup": "The window did not open. Downloads continue. Choose Show window in the tray to try again.",
     "save": "TinyTorrent could not save and remains running. Choose Exit in the tray to retry.",
     "pause": "The transfer pause setting could not be saved.",

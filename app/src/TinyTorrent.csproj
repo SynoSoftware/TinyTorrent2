@@ -38,8 +38,10 @@
        which MSBuild would otherwise read as an argument delimiter. -->
   <PropertyGroup Condition="Exists('$(MSBuildThisFileDirectory)..\..\secrets\keys.json')">
     <SecretsJson>$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)..\..\secrets\keys.json'))</SecretsJson>
-    <TmdbToken Condition="'$(TmdbToken)' == ''">$([System.Text.RegularExpressions.Regex]::Replace('$(SecretsJson)', '(?s)^(?:.*\x22tmdb\x22\s*:\s*\{[^}]*\x22readAccessToken\x22\s*:\s*\x22([^\x22]*)\x22.*|.*)$', '$1'))</TmdbToken>
-    <OpenSubtitlesKey Condition="'$(OpenSubtitlesKey)' == ''">$([System.Text.RegularExpressions.Regex]::Replace('$(SecretsJson)', '(?s)^(?:.*\x22opensubtitles\x22\s*:\s*\{[^}]*\x22apiKey\x22\s*:\s*\x22([^\x22]*)\x22.*|.*)$', '$1'))</OpenSubtitlesKey>
+    <TmdbToken Condition="'$(TmdbToken)' == ''"
+      >$([System.Text.RegularExpressions.Regex]::Replace('$(SecretsJson)', '(?s)^(?:.*\x22tmdb\x22\s*:\s*\{[^}]*\x22readAccessToken\x22\s*:\s*\x22([^\x22]*)\x22.*|.*)$', '$1'))</TmdbToken>
+    <OpenSubtitlesKey Condition="'$(OpenSubtitlesKey)' == ''"
+      >$([System.Text.RegularExpressions.Regex]::Replace('$(SecretsJson)', '(?s)^(?:.*\x22opensubtitles\x22\s*:\s*\{[^}]*\x22apiKey\x22\s*:\s*\x22([^\x22]*)\x22.*|.*)$', '$1'))</OpenSubtitlesKey>
   </PropertyGroup>
   <PropertyGroup Condition="'$(EnableCapture)' == 'true'">
     <DefineConstants>$(DefineConstants);CAPTURE</DefineConstants>
@@ -72,11 +74,49 @@
     <None
       Include="$(ArtifactsPath)\bin\Engine\$(Configuration)\$(EngineTargetName).exe"
       Link="$(EngineTargetName).exe"
-      CopyToOutputDirectory="PreserveNewest"
+      CopyToOutputDirectory="Never"
+      CopyToPublishDirectory="PreserveNewest"
       Visible="false"
     />
+    <UpToDateCheckInput Include="$(ArtifactsPath)\bin\Engine\$(Configuration)\$(EngineTargetName).exe" />
+    <UpToDateCheckInput Include="..\CopyEngine.ps1" />
+    <UpToDateCheckOutput Include="$(TargetDir)$(EngineTargetName).exe" />
     <AssemblyMetadata Include="EngineFile" Value="$(EngineTargetName).exe" />
     <AssemblyMetadata Include="TmdbToken" Value="$(TmdbToken)" Condition="'$(TmdbToken)' != ''" />
-    <AssemblyMetadata Include="OpenSubtitlesKey" Value="$(OpenSubtitlesKey)" Condition="'$(OpenSubtitlesKey)' != ''" />
+    <AssemblyMetadata
+      Include="OpenSubtitlesKey"
+      Value="$(OpenSubtitlesKey)"
+      Condition="'$(OpenSubtitlesKey)' != ''"
+    />
   </ItemGroup>
+  <Target
+    Name="CopyEngine"
+    BeforeTargets="_CopyOutOfDateSourceItemsToOutputDirectory;CopyFilesToOutputDirectory"
+  >
+    <Exec Command="pwsh -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)..\CopyEngine.ps1&quot; -Source &quot;$(ArtifactsPath)\bin\Engine\$(Configuration)\$(EngineTargetName).exe&quot; -Destination &quot;$(TargetDir)$(EngineTargetName).exe&quot;" />
+    <ItemGroup>
+      <FileWrites Include="$(TargetDir)$(EngineTargetName).exe" />
+    </ItemGroup>
+  </Target>
+  <!-- WinUI adds generated resources to build output, but .NET Publish does
+       not collect the application's PRI or loose compiled XAML. -->
+  <Target
+    Name="PublishXamlResources"
+    AfterTargets="ComputeFilesToPublish"
+    DependsOnTargets="_GenerateProjectPriFile;CustomOutputGroupForPackaging"
+  >
+    <ItemGroup>
+      <ResolvedFileToPublish Include="$(ProjectPriFullPath)">
+        <RelativePath>$(ProjectPriFileName)</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
+      <ResolvedFileToPublish
+        Include="@(CustomOutputGroupForPackagingOutput)"
+        Condition="'$(DisableEmbeddedXbf)' == 'true'"
+      >
+        <RelativePath>%(CustomOutputGroupForPackagingOutput.TargetPath)</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
+    </ItemGroup>
+  </Target>
 </Project>

@@ -12,11 +12,23 @@ public sealed partial class Pane : ContentControl
     private ContentPresenter? _actions;
 
     public static readonly DependencyProperty HeaderProperty = DependencyProperty.Register(
-        nameof(Header), typeof(object), typeof(Pane), new PropertyMetadata(null));
+        nameof(Header),
+        typeof(object),
+        typeof(Pane),
+        new PropertyMetadata(null)
+    );
     public static readonly DependencyProperty NavigationProperty = DependencyProperty.Register(
-        nameof(Navigation), typeof(object), typeof(Pane), new PropertyMetadata(null));
+        nameof(Navigation),
+        typeof(object),
+        typeof(Pane),
+        new PropertyMetadata(null)
+    );
     public static readonly DependencyProperty ActionsProperty = DependencyProperty.Register(
-        nameof(Actions), typeof(object), typeof(Pane), new PropertyMetadata(null));
+        nameof(Actions),
+        typeof(object),
+        typeof(Pane),
+        new PropertyMetadata(null)
+    );
 
     public object? Header
     {
@@ -49,25 +61,17 @@ public sealed partial class Pane : ContentControl
 
     protected override Size MeasureOverride(Size availableSize)
     {
-        if (_heading is not null && _identity is not null && _navigation is not null && _actions is not null)
+        if (_identity is not null && _navigation is not null && _actions is not null)
         {
-            _heading.ColumnDefinitions[0].Width = Navigation is null
-                ? new GridLength(1, GridUnitType.Star) : GridLength.Auto;
-            _heading.ColumnDefinitions[1].Width = Navigation is null
-                ? GridLength.Auto : new GridLength(1, GridUnitType.Star);
-            _navigation.Margin = Navigation is null ? new Thickness(0) : new Thickness(12, 0, 0, 0);
+            // The tabs and actions sit in Auto columns, so the identity only gets the width they leave.
+            _identity.HorizontalAlignment = Navigation is null
+                ? HorizontalAlignment.Stretch
+                : HorizontalAlignment.Center;
+            _identity.Margin = Navigation is null ? new Thickness(0) : new Thickness(12, 0, 0, 0);
             _actions.Margin = Actions is null ? new Thickness(0) : new Thickness(12, 0, 0, 0);
             // An empty presenter can fall back to the templated parent's body content.
             _navigation.Visibility = Navigation is null ? Visibility.Collapsed : Visibility.Visible;
             _actions.Visibility = Actions is null ? Visibility.Collapsed : Visibility.Visible;
-            var size = base.MeasureOverride(availableSize);
-            // Reserve the tabs and actions before allowing the identity to grow.
-            var maximum = Navigation is null ? double.PositiveInfinity : Math.Max(0,
-                Math.Min(availableSize.Width / 2, availableSize.Width - 24 - BorderThickness.Left - BorderThickness.Right
-                    - _navigation.DesiredSize.Width - _actions.DesiredSize.Width));
-            if (_identity.MaxWidth == maximum)
-                return size;
-            _identity.MaxWidth = maximum;
         }
         return base.MeasureOverride(availableSize);
     }

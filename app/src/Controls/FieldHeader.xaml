@@ -2,11 +2,53 @@
   x:Class="Syno.TinyTorrent.Controls.FieldHeader"
   xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:icons="using:Syno"
 >
-  <TextBlock x:Name="Text" Style="{StaticResource TinyTorrentBodyTextStyle}"
-    IsTextSelectionEnabled="True" AutomationProperties.LiveSetting="Assertive">
-    <Run x:Name="LabelRun" />
-    <Run x:Name="ErrorRun" Foreground="{ThemeResource SystemFillColorCriticalBrush}" />
-    <Run x:Name="CautionRun" Foreground="{ThemeResource SystemFillColorCautionBrush}" />
-  </TextBlock>
+  <Grid HorizontalAlignment="Left">
+    <Grid.ColumnDefinitions>
+      <ColumnDefinition Width="*" />
+      <ColumnDefinition Width="Auto" />
+    </Grid.ColumnDefinitions>
+    <TextBlock
+      x:Name="Text"
+      Style="{StaticResource TinyTorrentBodyTextStyle}"
+      VerticalAlignment="Center"
+      IsTextSelectionEnabled="True"
+      AutomationProperties.LiveSetting="Assertive"
+    >
+      <Run x:Name="LabelRun" />
+      <Run x:Name="ErrorRun" Foreground="{ThemeResource SystemFillColorCriticalBrush}" />
+    </TextBlock>
+    <Button
+      x:Name="CautionButton"
+      x:Load="False"
+      Grid.Column="1"
+      Margin="8,0,0,0"
+      VerticalAlignment="Center"
+      Style="{StaticResource TinyTorrentSubtleButtonStyle}"
+    >
+      <FontIcon
+        FontFamily="{x:Bind icons:Lucide.Font}"
+        Glyph="{x:Bind icons:Lucide.TriangleAlert}"
+        FontSize="16"
+        Foreground="{ThemeResource SystemFillColorCautionBrush}"
+      />
+      <Button.Flyout>
+        <Flyout Placement="Bottom">
+          <ScrollViewer
+            MaxHeight="400"
+            HorizontalScrollBarVisibility="Disabled"
+            VerticalScrollBarVisibility="Auto"
+          >
+            <TextBlock
+              x:Name="CautionText"
+              MaxWidth="400"
+              TextWrapping="Wrap"
+              IsTextSelectionEnabled="True"
+            />
+          </ScrollViewer>
+        </Flyout>
+      </Button.Flyout>
+    </Button>
+  </Grid>
 </UserControl>

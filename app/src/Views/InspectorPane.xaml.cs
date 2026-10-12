@@ -40,13 +40,17 @@ public sealed partial class InspectorPane : UserControl
         Model = model;
         InitializeComponent();
         SectionContent.SizeChanged += Motion.Clip;
-        _files = new FileBrowser(model.Files) { ToolbarPadding = new Thickness(16,12,16,0) };
+        _files = new FileBrowser(model.Files) { ToolbarPadding = new Thickness(16, 12, 16, 0) };
         FileContent.Content = _files;
         TrackerInput.TextCompositionStarted += (_, _) => _composing = true;
         TrackerInput.TextCompositionEnded += (_, _) => _composing = false;
         TrackerInput.KeyDown += (_, args) =>
         {
-            if (args.Key != Windows.System.VirtualKey.Escape || _composing || !Model.CancelTrackers.CanExecute(null))
+            if (
+                args.Key != Windows.System.VirtualKey.Escape
+                || _composing
+                || !Model.CancelTrackers.CanExecute(null)
+            )
                 return;
             Model.CancelTrackers.Execute(null);
             DispatcherQueue.TryEnqueue(() => EditTrackers.Focus(FocusState.Programmatic));
@@ -150,7 +154,8 @@ public sealed partial class InspectorPane : UserControl
     // editor has collapsed under it and nothing holds focus.
     private bool HasTrackerEditorFocus()
     {
-        var element = Microsoft.UI.Xaml.Input.FocusManager.GetFocusedElement(XamlRoot) as DependencyObject;
+        var element =
+            Microsoft.UI.Xaml.Input.FocusManager.GetFocusedElement(XamlRoot) as DependencyObject;
         if (element is null)
             return true;
         while (element is not null)
@@ -178,7 +183,11 @@ public sealed partial class InspectorPane : UserControl
         text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
 
     private void OnGeneralSize(object sender, SizeChangedEventArgs args) =>
-        VisualStateManager.GoToState(this, args.NewSize.Width >= FieldColumns.WideMinimum ? "Wide" : "Narrow", false);
+        VisualStateManager.GoToState(
+            this,
+            args.NewSize.Width >= FieldColumns.WideMinimum ? "Wide" : "Narrow",
+            false
+        );
 
     private void OnRows(object? sender, InspectorSection section)
     {
@@ -217,8 +226,13 @@ public sealed partial class InspectorPane : UserControl
     {
         if (_fileReveal is not { } reveal)
             return;
-        if (Model.Target != reveal.Target || !Model.IsOpen || !Model.IsAvailable || Model.HasError ||
-            Model.Section != InspectorSection.Files)
+        if (
+            Model.Target != reveal.Target
+            || !Model.IsVisible
+            || !Model.IsAvailable
+            || Model.HasError
+            || Model.Section != InspectorSection.Files
+        )
         {
             CancelReveal();
             return;
@@ -233,8 +247,14 @@ public sealed partial class InspectorPane : UserControl
     {
         if (_library is not null && !_refreshing)
         {
+            var previous = _librarySection;
             _librarySection = sender.SelectedItem;
             RefreshLibrary();
+            if (_librarySection != previous && _libraryContent is not null)
+                _arrival.Play(
+                    _libraryContent,
+                    ReferenceEquals(_librarySection, _fileSection) ? 24 : -24
+                );
             return;
         }
         if (_refreshing || sender.SelectedItem is not { Tag: InspectorSection section })
@@ -243,7 +263,7 @@ public sealed partial class InspectorPane : UserControl
         await Model.Navigate(section);
     }
 
-    private void Refresh()
+    private void Refresh(bool workspace = false)
     {
         if (_library is not null)
         {
@@ -253,11 +273,17 @@ public sealed partial class InspectorPane : UserControl
         EmptyText.Text = Model.EmptyText;
         var inspecting = Model.Target is not null;
         FrameworkElement[] views = [General, Files, Peers, Trackers, Speed, Map];
-        _motion.Show(inspecting ? views[(int)Model.Section] : EmptyState,
-            Model.Section >= _section ? 1 : -1);
+        var content = inspecting ? views[(int)Model.Section] : EmptyState;
+        if (!workspace && inspecting && _section != Model.Section)
+            _motion.Show(content, Model.Section >= _section ? 1 : -1);
+        else
+            _motion.CrossFade(content);
         if (_target != Model.Target)
         {
-            _awaitingArrival = _target is not null && inspecting && _section == Model.Section
+            _awaitingArrival =
+                _target is not null
+                && inspecting
+                && _section == Model.Section
                 && Model.Section != InspectorSection.Pieces;
             _target = Model.Target;
         }
@@ -265,7 +291,7 @@ public sealed partial class InspectorPane : UserControl
             _awaitingArrival = false;
         if (_awaitingArrival && !Model.IsLoading)
         {
-            _arrival.Play(SectionViews);
+            _arrival.Fade(SectionViews, Math.Min(SectionViews.Opacity, 0.65), 1);
             _awaitingArrival = false;
         }
         _section = Model.Section;
@@ -307,10 +333,7 @@ public sealed partial class InspectorPane : UserControl
         {
             if (section.Tag is not InspectorSection kind)
                 continue;
-            section.Text = text.Get(
-                "inspector",
-                kind.ToString().ToLowerInvariant()
-            );
+            section.Text = text.Get("inspector", kind.ToString().ToLowerInvariant());
             AutomationProperties.SetName(section, section.Text);
         }
         AutomationProperties.SetName(Sections, text.Get("inspector", "sections"));

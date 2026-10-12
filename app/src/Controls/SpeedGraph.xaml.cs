@@ -54,6 +54,8 @@ public sealed partial class SpeedGraph : UserControl
     private string _value = string.Empty;
     private string _announced = string.Empty;
     private int _wheel;
+    private Average[] _averages = [];
+    private Extent? _extent;
 
     public SpeedGraph()
     {
@@ -168,16 +170,35 @@ public sealed partial class SpeedGraph : UserControl
             ? Ranges.Items.FirstOrDefault(item => (long)item.Tag == _length)
             : null;
         Live.Visibility = _end is null ? Visibility.Collapsed : Visibility.Visible;
+        var runs = Runs();
+        _averages = runs.SelectMany(run => run).ToArray();
+        var top = Ceiling(
+            _averages.Length == 0 ? 0
+                : _averages.Max(average => Math.Max(average.Download, average.Upload))
+        );
+        Maximum.Text = _averages.Length == 0 ? string.Empty : Rate(text, top);
+        NoHistory.Visibility =
+            Samples is not null && _averages.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
+        _extent = new Extent(Plot.ActualWidth, Plot.ActualHeight, Start, _length, top);
+        if (_extent.Width > 0 && _extent.Height > 0)
+        {
+            Draw(runs, _extent);
+            DrawTicks(_extent);
+        }
+        UpdateMarker();
+    }
+
+    private void UpdateMarker()
+    {
+        if (_text is not { } text || _extent is null)
+            return;
         // Averages shorter than a minute need seconds to tell them apart.
         var format = _length < 3600 ? "T" : "t";
-        var runs = Runs();
-        var averages = runs.SelectMany(run => run).ToArray();
-        var marked = Nearest(averages, _marker);
-        var shown = marked ?? averages.LastOrDefault();
+        var marked = Nearest(_averages, _marker);
+        var shown = marked ?? _averages.LastOrDefault();
         double? downloadPeak =
-            averages.Length == 0 ? null : averages.Max(average => average.Download);
-        double? uploadPeak = averages.Length == 0 ? null : averages.Max(average => average.Upload);
-        var top = Ceiling(Math.Max(downloadPeak ?? 0, uploadPeak ?? 0));
+            _averages.Length == 0 ? null : _averages.Max(average => average.Download);
+        double? uploadPeak = _averages.Length == 0 ? null : _averages.Max(average => average.Upload);
         // The legend names the time of any value that is not the present one.
         var at =
             shown is not null && (marked is not null || _end is not null)
@@ -195,9 +216,6 @@ public sealed partial class SpeedGraph : UserControl
             UploadLegend,
             $"{UploadLabel.Text} {UploadValue.Text} · {UploadDetail.Text}"
         );
-        Maximum.Text = averages.Length == 0 ? string.Empty : Rate(text, top);
-        NoHistory.Visibility =
-            Samples is not null && averages.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
         _value = marked is null
             ? string.Empty
             : text.Format(
@@ -207,14 +225,8 @@ public sealed partial class SpeedGraph : UserControl
                 Rate(text, marked.Download),
                 Rate(text, marked.Upload)
             );
-        var extent = new Extent(Plot.ActualWidth, Plot.ActualHeight, Start, _length, top);
-        if (extent.Width <= 0 || extent.Height <= 0)
-        {
-            return;
-        }
-        Draw(runs, extent);
-        DrawTicks(extent);
-        DrawMarker(extent, marked);
+        if (_extent.Width > 0 && _extent.Height > 0)
+            DrawMarker(_extent, marked);
     }
 
     private static string Rate(Strings text, double? value) =>
@@ -232,8 +244,6 @@ public sealed partial class SpeedGraph : UserControl
             : null;
 
     private List<List<Average>> Runs() => Bucket(Samples ?? [], Start, End, _length / 60);
-
-    private Average[] Averages() => Runs().SelectMany(run => run).ToArray();
 
     // Splits the samples at unknown time, then averages each run in buckets
     // aligned to clock time, so a new sample changes only the newest bucket.
@@ -501,13 +511,13 @@ public sealed partial class SpeedGraph : UserControl
 
     private void Mark(double? time)
     {
-        var snapped = Nearest(Averages(), time)?.Time;
+        var snapped = Nearest(_averages, time)?.Time;
         if (snapped == _marker)
         {
             return;
         }
         _marker = snapped;
-        Update();
+        UpdateMarker();
     }
 
     // Input and focus changes announce the value; incoming samples stay silent.
@@ -632,7 +642,7 @@ public sealed partial class SpeedGraph : UserControl
     {
         if (FocusState == FocusState.Keyboard && _marker is null)
         {
-            Mark(Averages().LastOrDefault()?.Time);
+            Mark(_averages.LastOrDefault()?.Time);
             Announce();
         }
     }
@@ -689,7 +699,7 @@ public sealed partial class SpeedGraph : UserControl
 
     private void Step(VirtualKey key)
     {
-        var averages = Averages();
+        var averages = _averages;
         if (averages.Length == 0)
         {
             return;

@@ -256,7 +256,7 @@ void Engine::State::QueryCompletion(Torrent& torrent)
 
 void Engine::State::QueryCompletions()
 {
-    if (shuttingDown)
+    if (IsShuttingDown())
         return;
     auto pending = std::count_if(torrents.begin(), torrents.end(), [](auto const& entry)
     {
@@ -403,7 +403,7 @@ void Engine::State::On(lt::file_error_alert const& alert)
 }
 
 // libtorrent dropped alerts, so the outcomes they carried are lost. Every
-// torrent saves again, a resume request whose answer was lost is given up, and
+// torrent saves again, a resume request whose answer was lost is forced again, and
 // each addition that waited for a lost alert continues or fails. A resume file
 // write already belongs to Store, which still completes it.
 void Engine::State::On(lt::alerts_dropped_alert const& alert)
@@ -414,7 +414,7 @@ void Engine::State::On(lt::alerts_dropped_alert const& alert)
     }
     RecoverDetail(alert);
     RecoverFiles();
-    if (shuttingDown && !pausing.empty())
+    if (IsShuttingDown() && !pausing.empty())
     {
         saveFailure.emplace();
         pausing.clear();
@@ -433,13 +433,13 @@ void Engine::State::On(lt::alerts_dropped_alert const& alert)
         QueryPriorities(torrent);
         if (torrent.checkpointPhase == CheckpointPhase::Requested)
         {
-            torrent.checkpointPhase = CheckpointPhase::Idle;
+            torrent.Checkpoint(true);
         }
         torrent.unsaved = true;
         QueryCompletion(torrent);
         // The latest status cannot establish the origin of queued file alerts.
         torrent.transferState.reset();
-        if (!shuttingDown)
+        if (!IsShuttingDown())
         {
             torrent.ApplyIntent();
         }

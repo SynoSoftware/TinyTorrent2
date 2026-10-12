@@ -52,7 +52,8 @@ public sealed partial class MainViewModel
     internal PauseReason PausedBy => _pause;
 
     // Resume all lifts the person's and the schedule's pause, not a missing adapter's.
-    internal bool IsPausedByChoice => IsPaused && _pause is not (PauseReason.Adapter or PauseReason.ConnectionTest);
+    internal bool IsPausedByChoice =>
+        IsPaused && _pause is not (PauseReason.Adapter or PauseReason.ConnectionTest);
 
     // What holds transfers back, which the status bar shows as one item: a
     // pause, or else the alternative limits, which change nothing while paused.
@@ -80,6 +81,17 @@ public sealed partial class MainViewModel
         );
     public string LimitsMessage =>
         _limitsError is not null ? Text.Error(_limitsError) : string.Empty;
+    public string LimitsHeading =>
+        !HasLimits
+            ? "—"
+            : _appliedLimits switch
+            {
+                LimitMode.Speed => Text.Get("settings", "speed"),
+                LimitMode.Alternative => Text.Get("settings", "alternative"),
+                _ => Text.Get("transfer_limits", "none"),
+            };
+    public string DownloadCap => Cap(_downloadCap);
+    public string UploadCap => Cap(_uploadCap);
     public string SpeedUse => InUse(HasLimits && _appliedLimits == LimitMode.Speed);
     public string AlternativeUse => InUse(HasAlternativeLimits);
     public string DownloadStatus => RateStatus(_downloadRate, _downloadCap);
@@ -104,11 +116,7 @@ public sealed partial class MainViewModel
             if (!HasLimits)
                 return string.Empty;
             if (FixedLimits is { } mode)
-                return Text.Format(
-                    "transfer_limits",
-                    "now_fixed",
-                    LimitLabel(mode)
-                );
+                return Text.Format("transfer_limits", "now_fixed", LimitLabel(mode));
             var state = Text.Get(
                 "transfer_limits",
                 "state_" + (_pause == PauseReason.Schedule ? "paused" : EngineName(_appliedLimits))

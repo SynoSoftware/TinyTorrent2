@@ -1,0 +1,59 @@
+<UserControl
+  x:Class="Syno.TinyTorrent.Library.EmptyState"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:controls="using:Syno.TinyTorrent.Controls"
+  xmlns:icons="using:Syno"
+  HorizontalAlignment="Center"
+  VerticalAlignment="Center"
+>
+  <StackPanel x:Name="Actions" Spacing="12" MaxWidth="420" Margin="24">
+    <TextBlock
+      x:Name="Message"
+      TextAlignment="Center"
+      Style="{StaticResource SubtitleTextBlockStyle}"
+    />
+    <TextBlock
+      x:Name="Query"
+      TextWrapping="Wrap"
+      TextAlignment="Center"
+      Style="{StaticResource TinyTorrentTitleDetailTextStyle}"
+    />
+    <controls:ActionButton
+      x:Name="Videos"
+      Glyph="{x:Bind icons:Lucide.Film}"
+      HorizontalAlignment="Center"
+      AutomationProperties.AutomationId="LibraryMatches-Videos"
+    />
+    <controls:ActionButton
+      x:Name="Music"
+      Glyph="{x:Bind icons:Lucide.Music}"
+      HorizontalAlignment="Center"
+      AutomationProperties.AutomationId="LibraryMatches-Music"
+    />
+    <controls:ActionButton
+      x:Name="Files"
+      Glyph="{x:Bind icons:Lucide.Files}"
+      HorizontalAlignment="Center"
+      AutomationProperties.AutomationId="LibraryMatches-Files"
+    />
+    <controls:ActionButton
+      x:Name="Torrents"
+      Glyph="{x:Bind icons:Lucide.Download}"
+      HorizontalAlignment="Center"
+      AutomationProperties.AutomationId="LibraryShowTorrents"
+    />
+    <controls:ActionButton
+      x:Name="ClearSearch"
+      Glyph="{x:Bind icons:Lucide.X}"
+      HorizontalAlignment="Center"
+      AutomationProperties.AutomationId="LibraryClearSearch"
+    />
+    <controls:ActionButton
+      x:Name="ClearFilters"
+      Glyph="{x:Bind icons:Lucide.X}"
+      HorizontalAlignment="Center"
+      AutomationProperties.AutomationId="LibraryClearFilters"
+    />
+  </StackPanel>
+</UserControl>

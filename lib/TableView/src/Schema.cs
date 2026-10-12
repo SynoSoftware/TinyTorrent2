@@ -79,15 +79,23 @@ public sealed class Schema<TRow>
     }
 
     /// <summary>
-    /// Restricts row dragging without restricting selection or other actions.
-    /// A selected packet containing a refused row cannot be dragged. After a
-    /// predicate input changes, call <see cref="Table.RefreshView"/>.
+    /// Defines the numbered order edited by the drag wheel, independently of the view's sort.
+    /// Positions must be unique; null excludes an item from moves, not from selection or dragging.
+    /// Items supplies the complete destination set, including any rows the host's filter hides.
+    /// Each item's ToString supplies its label beside the position.
+    /// Call RefreshView after a batch changes membership or positions. Column sorting is separate.
     /// </summary>
-    public Schema<TRow> CanReorder(Func<TRow, bool> predicate)
+    public Schema<TRow> Order(
+        Column column,
+        Func<TRow, int?> position,
+        Func<IEnumerable<TRow>> items
+    )
     {
-        ArgumentNullException.ThrowIfNull(predicate);
+        ArgumentNullException.ThrowIfNull(column);
+        ArgumentNullException.ThrowIfNull(position);
+        ArgumentNullException.ThrowIfNull(items);
         _table.RequireSetup();
-        _table.CanReorderItem = item => predicate((TRow)item);
+        _table.SetOrder(new Order(column, item => position((TRow)item), () => items()));
         return this;
     }
 
@@ -103,24 +111,11 @@ public sealed class Schema<TRow>
         ArgumentNullException.ThrowIfNull(column);
         ArgumentNullException.ThrowIfNull(key);
         _table.RequireSetup();
-        column.Comparer = new KeyOrder<TKey>(key, comparer ?? Comparer<TKey>.Default);
+        column.Sort = (items, direction) =>
+            direction == SortDirection.Ascending
+                ? items.OrderBy(item => key((TRow)item), comparer)
+                : items.OrderByDescending(item => key((TRow)item), comparer);
         return this;
-    }
-
-    private sealed class KeyOrder<TKey> : IComparer<object>
-    {
-        private readonly Func<TRow, TKey> _key;
-
-        private readonly IComparer<TKey> _comparer;
-
-        internal KeyOrder(Func<TRow, TKey> key, IComparer<TKey> comparer)
-        {
-            _key = key;
-            _comparer = comparer;
-        }
-
-        public int Compare(object? x, object? y) =>
-            _comparer.Compare(_key((TRow)x!), _key((TRow)y!));
     }
 
     private sealed class KeyEquality<TKey> : IEqualityComparer<object>

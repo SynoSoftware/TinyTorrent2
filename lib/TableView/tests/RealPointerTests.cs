@@ -78,33 +78,47 @@ public class RealPointerTests
             );
         });
 
-    /// <summary>
-    /// A real drag of the selected packet. It asserts the request the drop raises, not only that
-    /// the selection stood still: a drag that died at the threshold leaves the selection alone too,
-    /// and the earlier version of this test could not tell the two apart.
-    /// </summary>
     [TestMethod]
-    public Task DraggingTheSelectionRaisesOneReorderRequest() =>
+    [DataRow(FlowDirection.LeftToRight)]
+    [DataRow(FlowDirection.RightToLeft)]
+    public Task ScrollingDuringDragChangesTheDestinationWithoutScrollingTheTable(
+        FlowDirection direction
+    ) =>
         TestHost.RunAsync(async () =>
         {
             SelectionHarness h = await SelectionHarness.LoadAsync(
-                8,
-                configure: t => t.CanReorder = true,
+                20,
+                configure: t =>
+                {
+                    t.CanReorder = true;
+                    t.FlowDirection = direction;
+                },
                 height: 400
             );
             List<ReorderRequestedEventArgs> requests = new();
             h.Table.ReorderRequested += (_, e) => requests.Add(e);
             Mouse mouse = await Mouse.CreateAsync(h);
 
+            var scroller = (ScrollViewer)Proof.Call(h.Table, "InnerScrollViewer")!;
+            Assert.IsTrue(scroller.ScrollableHeight > 0);
+            double offset = scroller.VerticalOffset;
             h.Table.Selection = new(new object[] { h[1], h[2], h[3] }, h[1]);
             h.Events = 0;
-            double rowHeight = ((FrameworkElement)h.Surface().ContainerFromItem(h[0])).ActualHeight;
-
-            // Three rows down: a drop inside the packet's own block asks for no change and raises
-            // nothing, so the pointer has to leave the block before the request can exist.
-            await mouse.PressRowAsync(h, 2);
-            await mouse.MoveByAsync(0, 3 * rowHeight);
-            await mouse.ReleaseAsync();
+            try
+            {
+                await mouse.PressRowAsync(h, 2);
+                await mouse.MoveByAsync(8, 0);
+                await mouse.MoveToWheelAsync(h, 1);
+                mouse.Scroll(-240);
+                await TableHarness.WaitUntilAsync(
+                    () => Proof.Field<int?>(h.Table, "_gap") == 3,
+                    "the wheel destination to advance"
+                );
+            }
+            finally
+            {
+                await mouse.ReleaseAsync();
+            }
 
             CollectionAssert.AreEqual(
                 new[] { "k1", "k2", "k3" },
@@ -113,10 +127,56 @@ public class RealPointerTests
             );
             Assert.AreEqual(0, h.Events);
             Assert.AreEqual(1, requests.Count, "the drop raised exactly one request");
+            Assert.AreSame(h[6], requests[0].Before);
+            Assert.AreEqual(
+                offset,
+                scroller.VerticalOffset,
+                "wheel input belongs to the active drag"
+            );
             CollectionAssert.AreEqual(
                 new object[] { h[1], h[2], h[3] },
                 requests[0].Items.ToArray()
             );
+        });
+
+    [TestMethod]
+    [DataRow(Windows.System.VirtualKey.Down)]
+    [DataRow(Windows.System.VirtualKey.Tab)]
+    [DataRow(Windows.System.VirtualKey.Escape)]
+    public Task KeyboardActionsEndTheDragBeforeItsPacketCanBeDropped(
+        Windows.System.VirtualKey key
+    ) =>
+        TestHost.RunAsync(async () =>
+        {
+            SelectionHarness h = await SelectionHarness.LoadAsync(
+                8,
+                t => t.CanReorder = true,
+                height: 400
+            );
+            Mouse mouse = await Mouse.CreateAsync(h);
+            h.Table.Selection = new([h[1], h[2], h[3]], h[1]);
+            int requests = 0;
+            h.Table.ReorderRequested += (_, _) => requests++;
+            var scroller = (ScrollViewer)Proof.Call(h.Table, "InnerScrollViewer")!;
+            var mode = scroller.VerticalScrollMode;
+            try
+            {
+                await mouse.PressRowAsync(h, 2);
+                await mouse.MoveByAsync(8, 0);
+                await mouse.MoveToWheelAsync(h, 3);
+                Assert.AreEqual(3, Proof.Field<int?>(h.Table, "_gap"));
+                mouse.PressKey(key);
+                await TableHarness.WaitUntilAsync(
+                    () => Proof.Field<object?>(h.Table, "_wheel") is null,
+                    "keyboard input to close the wheel"
+                );
+            }
+            finally
+            {
+                await mouse.ReleaseAsync();
+            }
+            Assert.AreEqual(0, requests);
+            Assert.AreEqual(mode, scroller.VerticalScrollMode);
         });
 
     /// <summary>
@@ -328,15 +388,43 @@ public class RealPointerTests
             await Task.Delay(150);
         }
 
+        internal async Task MoveToWheelAsync(SelectionHarness h, int boundary)
+        {
+            MoveTo(ScreenPoint(h.WheelPoint(boundary)));
+            await Task.Delay(150);
+        }
+
         internal async Task ReleaseAsync()
         {
             Button(InjectedInputMouseOptions.LeftUp);
             await Task.Delay(200);
         }
 
-        private Point ScreenPointOf(FrameworkElement element, Point local)
+        internal void Scroll(int delta)
         {
-            Point inWindow = element.TransformToVisual(null).TransformPoint(local);
+            _injector.InjectMouseInput(
+                new[]
+                {
+                    new InjectedInputMouseInfo
+                    {
+                        MouseOptions = InjectedInputMouseOptions.Wheel,
+                        MouseData = unchecked((uint)delta),
+                    },
+                }
+            );
+        }
+
+        internal void PressKey(Windows.System.VirtualKey key)
+        {
+            Key(key, up: false);
+            Key(key, up: true);
+        }
+
+        private Point ScreenPointOf(FrameworkElement element, Point local) =>
+            ScreenPoint(element.TransformToVisual(null).TransformPoint(local));
+
+        private Point ScreenPoint(Point inWindow)
+        {
             POINT client = new() { X = (int)(inWindow.X * _scale), Y = (int)(inWindow.Y * _scale) };
             ClientToScreen(_hwnd, ref client);
             _ = _table;

@@ -1,34 +1,147 @@
 using Microsoft.Data.Sqlite;
+using SQLitePCL;
 
 namespace Syno.TinyTorrent.Services;
 
-internal sealed class Database : IAsyncDisposable
+internal sealed partial class Database : IAsyncDisposable
 {
+    internal const string FileName = "library.db";
+
     private readonly SemaphoreSlim _access = new(1);
     private readonly string _path;
-    private readonly IReadOnlyList<string> _schemas;
-    private readonly string _projection;
     private SqliteConnection? _connection;
     private bool _disposed;
+    private volatile bool _incompatible;
+    private volatile SqliteException? _reopenFailure;
+    internal bool IsIncompatible => _incompatible;
+    internal bool RequiresReopen => _reopenFailure is not null;
 
-    internal Database(string directory, IReadOnlyList<string> schemas, string projection)
+    internal Database(string directory)
     {
-        _path = Path.Combine(directory, "library.db");
-        _schemas = schemas;
-        _projection = projection;
+        _path = Path.Combine(directory, FileName);
     }
 
-    internal async Task<T> Run<T>(Func<SqliteConnection, T> action, CancellationToken cancellation = default)
+    internal Task<Statistics> ReadStatistics() =>
+        Run(connection =>
+        {
+            using var command = connection.CreateCommand();
+            command.CommandText = """
+                SELECT page_count*page_size,freelist_count*page_size,
+                    movies,series,episodes,
+                    (SELECT COUNT(*) FROM current_files WHERE complete=1),
+                    (SELECT COUNT(*) FROM video_records),
+                    subtitles,created,found,languages
+                FROM pragma_page_count(),pragma_page_size(),pragma_freelist_count(),
+                    (SELECT COUNT(CASE WHEN type='movie' THEN 1 END) AS movies,
+                        COUNT(CASE WHEN type='tv' THEN 1 END) AS series,
+                        COUNT(CASE WHEN type='episode' THEN 1 END) AS episodes FROM video_information),
+                    (SELECT COUNT(*) AS subtitles,COUNT(CASE WHEN created=1 THEN 1 END) AS created,
+                        COUNT(CASE WHEN created=0 THEN 1 END) AS found,
+                        COUNT(DISTINCT language COLLATE NOCASE) AS languages FROM subtitle_outputs);
+                """;
+            using var reader = command.ExecuteReader();
+            reader.Read();
+            return new Statistics
+            {
+                Size = reader.GetInt64(0),
+                Reusable = reader.GetInt64(1),
+                Movies = reader.GetInt64(2),
+                Series = reader.GetInt64(3),
+                Episodes = reader.GetInt64(4),
+                Files = reader.GetInt64(5),
+                Responses = reader.GetInt64(6),
+                Subtitles = reader.GetInt64(7),
+                Created = reader.GetInt64(8),
+                Found = reader.GetInt64(9),
+                Languages = reader.GetInt64(10),
+            };
+        });
+
+    internal async Task<T> Run<T>(
+        Func<SqliteConnection, T> action,
+        CancellationToken cancellation = default
+    )
     {
         await _access.WaitAsync(cancellation).ConfigureAwait(false);
         try
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
-            return await Task.Run(() =>
+            return await Task.Run(
+                    () =>
+                    {
+                        cancellation.ThrowIfCancellationRequested();
+                        if (_incompatible)
+                            throw new DatabaseVersionException();
+                        if (_reopenFailure is { } failure)
+                            throw failure;
+                        try
+                        {
+                            return Transact(Open(), action, cancellation);
+                        }
+                        catch (SqliteException error)
+                            when (error.SqliteErrorCode is raw.SQLITE_CORRUPT or raw.SQLITE_NOTADB)
+                        {
+                            _incompatible = true;
+                            throw new DatabaseVersionException();
+                        }
+                        catch (SqliteException error)
+                            when (error.SqliteErrorCode == raw.SQLITE_READONLY)
+                        {
+                            // Reopening loses every TEMP table, so recovery must
+                            // first stop the workers and rebuild their file view.
+                            _reopenFailure = error;
+                            throw;
+                        }
+                    },
+                    cancellation
+                )
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            _access.Release();
+        }
+    }
+
+    // The Read-only attribute is the one write protection TinyTorrent can
+    // remove without administrator rights.
+    internal bool IsReadOnlyFile
+    {
+        get
+        {
+            try
             {
-                cancellation.ThrowIfCancellationRequested();
-                return Transact(Open(), action, cancellation);
-            }, cancellation).ConfigureAwait(false);
+                return File.GetAttributes(_path).HasFlag(FileAttributes.ReadOnly);
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+            {
+                return false;
+            }
+        }
+    }
+
+    internal void ClearReadOnly() =>
+        File.SetAttributes(_path, File.GetAttributes(_path) & ~FileAttributes.ReadOnly);
+
+    internal async Task DeleteIncompatible()
+    {
+        await _access.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (!_incompatible)
+                return;
+            await Task.Run(() =>
+                {
+                    _connection?.Dispose();
+                    _connection = null;
+                    File.Delete(_path);
+                    // SQLite would roll a leftover journal back into the new file.
+                    File.Delete(_path + "-journal");
+                    _incompatible = false;
+                    _disposed = true;
+                })
+                .ConfigureAwait(false);
         }
         finally
         {
@@ -40,36 +153,55 @@ internal sealed class Database : IAsyncDisposable
     {
         if (_connection is not null)
             return _connection;
-        var connection = new SqliteConnection(new SqliteConnectionStringBuilder
-        {
-            DataSource = _path,
-            Mode = SqliteOpenMode.ReadWriteCreate,
-            Pooling = false,
-        }.ToString());
+        var connection = new SqliteConnection(
+            new SqliteConnectionStringBuilder
+            {
+                DataSource = _path,
+                Mode = SqliteOpenMode.ReadWriteCreate,
+                Pooling = false,
+                DefaultTimeout = 5,
+            }.ToString()
+        );
         try
         {
             connection.Open();
-            connection.CreateCollation("PATH", (left, right) =>
-                StringComparer.OrdinalIgnoreCase.Compare(left, right));
+            connection.CreateCollation(
+                "PATH",
+                (left, right) => StringComparer.OrdinalIgnoreCase.Compare(left, right)
+            );
             using var command = connection.CreateCommand();
             command.CommandText = "PRAGMA foreign_keys = ON; PRAGMA temp_store = MEMORY;";
             command.ExecuteNonQuery();
-            Transact(connection, current =>
-            {
-                command.CommandText = "PRAGMA user_version;";
-                var version = Convert.ToInt32(command.ExecuteScalar());
-                if (version > _schemas.Count)
-                    throw new DatabaseVersionException();
-                while (version < _schemas.Count)
+            Transact(
+                connection,
+                _ =>
                 {
-                    command.CommandText = _schemas[version] + $"PRAGMA user_version={version + 1};";
+                    command.CommandText = "PRAGMA user_version;";
+                    var version = Convert.ToInt32(command.ExecuteScalar());
+                    _incompatible = version is not (0 or 2 or Version);
+                    if (_incompatible)
+                        throw new DatabaseVersionException();
+                    if (version == 2)
+                    {
+                        command.CommandText = VideoMisses + $"PRAGMA user_version={Version};";
+                        command.ExecuteNonQuery();
+                    }
+                    if (version == 0)
+                    {
+                        command.CommandText =
+                            "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE name NOT GLOB 'sqlite_*');";
+                        _incompatible = Convert.ToInt64(command.ExecuteScalar()) != 0;
+                        if (_incompatible)
+                            throw new DatabaseVersionException();
+                        command.CommandText = Schema + $"PRAGMA user_version={Version};";
+                        command.ExecuteNonQuery();
+                    }
+                    command.CommandText = Projection;
                     command.ExecuteNonQuery();
-                    version++;
-                }
-                return true;
-            }, CancellationToken.None);
-            command.CommandText = _projection;
-            command.ExecuteNonQuery();
+                    return true;
+                },
+                CancellationToken.None
+            );
             _connection = connection;
             return connection;
         }
@@ -80,8 +212,11 @@ internal sealed class Database : IAsyncDisposable
         }
     }
 
-    private static T Transact<T>(SqliteConnection connection, Func<SqliteConnection, T> action,
-        CancellationToken cancellation)
+    private T Transact<T>(
+        SqliteConnection connection,
+        Func<SqliteConnection, T> action,
+        CancellationToken cancellation
+    )
     {
         // A SQL transaction includes every command on this connection without
         // requiring each feature command to carry an ADO.NET transaction object.
@@ -96,10 +231,23 @@ internal sealed class Database : IAsyncDisposable
             command.ExecuteNonQuery();
             return result;
         }
-        catch
+        catch (Exception error)
         {
-            command.CommandText = "ROLLBACK;";
-            command.ExecuteNonQuery();
+            // SQLite ends the transaction itself after some failures, such as
+            // a full disk; a ROLLBACK then fails and hides the original error.
+            if (raw.sqlite3_get_autocommit(connection.Handle!) == 0)
+            {
+                try
+                {
+                    command.CommandText = "ROLLBACK;";
+                    command.ExecuteNonQuery();
+                }
+                catch (SqliteException rollback)
+                {
+                    // An unfinished transaction cannot serve another operation.
+                    _reopenFailure = error as SqliteException ?? rollback;
+                }
+            }
             throw;
         }
     }
@@ -121,6 +269,26 @@ internal sealed class Database : IAsyncDisposable
     }
 }
 
-internal sealed class DatabaseVersionException : Exception
+// The file is from another schema version or is damaged. Both have one
+// recovery: the person deletes the file. Until then every database call
+// fails, and each feature handles it as any other SQLite failure.
+internal sealed class DatabaseVersionException : SqliteException
 {
+    internal DatabaseVersionException()
+        : base(null, raw.SQLITE_ERROR) { }
+}
+
+internal sealed record Statistics
+{
+    internal required long Size { get; init; }
+    internal required long Reusable { get; init; }
+    internal required long Movies { get; init; }
+    internal required long Series { get; init; }
+    internal required long Episodes { get; init; }
+    internal required long Files { get; init; }
+    internal required long Responses { get; init; }
+    internal required long Subtitles { get; init; }
+    internal required long Created { get; init; }
+    internal required long Found { get; init; }
+    internal required long Languages { get; init; }
 }

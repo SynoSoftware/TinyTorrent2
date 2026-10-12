@@ -21,7 +21,13 @@
     "hidden": "Hidden"
   },
   "row_drag": {
-    "before_row": "Drop destination: before row {0} of {1}",
-    "at_end": "Drop destination: end of list"
+    "before_row": "Insert before {0}",
+    "at_end": "Insert at the end",
+    "nothing_to_move": "Nothing to move",
+    "choose_position": "Choose where to insert",
+    "move_one": "Move {0} item",
+    "move_many": "Move {0} items",
+    "hint": "Hold + scroll · Drop in a gap · Esc cancels",
+    "browse": "Hold + scroll · Esc cancels"
   }
 }

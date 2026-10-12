@@ -389,7 +389,8 @@ void Engine::State::RecoverAdditions()
             if (!addition.renaming.empty())
                 lost.push_back(id);
         }
-        else if (addition.phase != AdditionPhase::Saving)
+        else if (addition.phase != AdditionPhase::Saving &&
+            (addition.phase != AdditionPhase::Adding || addition.params.userdata.get<Addition>()))
         {
             observations->push_back({id, addition.phase, &addition, addition.handle});
         }

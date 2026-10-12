@@ -26,9 +26,13 @@ the command checks all embedded icon images against `resources/TinyTorrent.ico`.
 Capture diagnostics are disabled explicitly, and the command rejects debug or
 capture compilation symbols and capture members in the published application.
 Debug symbols, test hosts and capture evidence are not installer inputs.
+The native Release build defines `NDEBUG` to exclude assertion diagnostics;
+the command also rejects native debug compilation symbols and debug runtime settings.
 The application references the WinUI components it uses rather than the whole
 Windows App SDK, avoiding unused AI, machine-learning, widgets and search files.
 The published executables must be `TinyTorrent.exe` and `TinyTorrentUI.exe`.
+The publish step includes the UI resource index with its embedded compiled XAML;
+the release command rejects missing application or library resource indexes.
 The command compresses the staged engine with UPX, preserves its resources
 (including properties and icons), and verifies the compressed data before
 signing and packaging. Build outputs stay uncompressed.
@@ -50,8 +54,8 @@ files remain under `artifacts/installer/` if something needs investigating.
 
 ## Signing
 
-Without a signing certificate the filename ends in `-unsigned.exe`, for local
-testing. To sign the application, installer, and uninstaller, supply the
+Signing is optional. Without a signing certificate the filename ends in
+`-unsigned.exe`. To sign the application, installer, and uninstaller, supply the
 thumbprint of a code signing certificate in your Windows Current User
 certificate store:
 

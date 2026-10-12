@@ -22,6 +22,7 @@ public sealed partial class Splitter : UserControl
     private double _startValue;
     public double Value => _value;
     public event EventHandler<double>? ValueChanged;
+
     // Carries the value before the gesture so the host can restore it after collapsing.
     public event EventHandler<double>? ValueCommitted;
 

@@ -148,6 +148,19 @@ Deleting a test because it is red is the failure mode, not this.
 
 ## Windows evidence
 
+`app/tests/AddSourceChecks.ps1 -BinaryDirectory <built-app-folder>` checks that
+duplicate recovery preserves file choices and that Add's opt-out queues a change
+only for the submitted source kind. It exercises the compiled preferences and
+command queue without connecting to an engine, so a magnet opt-out cannot silently
+disable torrent-file dialogs. It does not exercise native checkbox input.
+
+`app/tests/NavigationChecks.ps1 -BinaryDirectory <built-app-folder>` exercises
+the compiled window navigation owner without starting WinUI or the engine.
+It watches contextual returns through secondary pages, same-page workspace
+resets, nested Connection navigation, and refused or overlapping departures.
+These checks cover history and command availability, not native button input,
+focus, animation, or the editor guards themselves.
+
 Use this machine and the targeted checks below for the
 [architecture](architecture.md).
 Lifecycle behavior needs a real process check when it changes; a cache-policy
@@ -195,7 +208,7 @@ Use `TINYTORRENT_CAPTURE_REVIEW=smoke` to rerun the recovery journeys without
 repeating the Settings viewport or full themes-and-sizes batches.
 Use `TINYTORRENT_CAPTURE_REVIEW=add-layout` for the workspace headers and empty/long-link
 magnet Add dialog in English and Spanish, Light and Dark, at the three review sizes.
-It also captures the connection overlay with its action at the right and records
+It also captures the engine-stopped message bar with its Restart action and records
 workspace bounds before and after; this is presentation evidence with a connected
 engine, not a simulated connection failure.
 The Add cases invoke Preview with invalid input and retain that input for correction.
@@ -206,10 +219,10 @@ disposable store. These cases do not run unrelated journeys.
 The English 1040-wide case also captures the theme button's PointerOver
 state in Light and Dark through WinUI's state manager. This checks the
 custom template's appearance, not pointer input or OS High Contrast rendering.
-Use `TINYTORRENT_CAPTURE_REVIEW=footer` to capture filter, selected-torrent error
-and update presentation at fixed window sizes, including their combined state.
+Use `TINYTORRENT_CAPTURE_REVIEW=footer` to capture filter and update
+presentation at fixed window sizes, including their combined state.
 The Paused/All filter changes use the real owner with an idle disposable torrent;
-error and update states are presentation overrides retained through binding
+the update state is a presentation override retained through binding
 refresh. The report records their survival and workspace bounds for review,
 not layout assertions. It does not trigger an engine failure or open an update.
 It then resumes the paused fixture through the real Resume command while every

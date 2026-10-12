@@ -67,15 +67,17 @@ public class SchemaValidationTests
         });
 
     [TestMethod]
-    public Task Section6_1_ASecondRowOrderColumnIsRejected() =>
-        RejectedAsync(() =>
-            new[]
-            {
-                // "at most one column defines the row order".
-                Column(c => c.DefinesRowOrder = true),
-                Column(c => c.DefinesRowOrder = true, id: "b"),
-            }
-        );
+    public Task Section6_1_ASecondOrderIsRejected() =>
+        TestHost.RunAsync(() =>
+        {
+            Table table = TestData.Table(TestData.Column("a"), TestData.Column("b"));
+            var schema = table.Schema<Row>();
+            schema.Order(table.Columns[0], row => row.Rank, () => Array.Empty<Row>());
+            Expect.Throws<InvalidOperationException>(() =>
+                schema.Order(table.Columns[1], row => row.Rank, () => Array.Empty<Row>())
+            );
+            return Task.CompletedTask;
+        });
 
     [TestMethod]
     public Task Section6_1_ZeroVisibleColumnsIsRejected() =>

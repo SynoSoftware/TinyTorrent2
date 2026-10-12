@@ -1,0 +1,14 @@
+<ResourceDictionary
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+>
+  <!-- Use theme colors so a host's focus-brush overrides cannot flatten the two-stroke cue. -->
+  <SolidColorBrush
+    x:Key="TableViewMarkerOuterBrush"
+    Color="{ThemeResource FocusStrokeColorOuter}"
+  />
+  <SolidColorBrush
+    x:Key="TableViewMarkerInnerBrush"
+    Color="{ThemeResource FocusStrokeColorInner}"
+  />
+</ResourceDictionary>

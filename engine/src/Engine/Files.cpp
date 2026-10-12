@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <future>
 #include <set>
+#include <system_error>
 
 namespace tt
 {
@@ -146,12 +147,12 @@ void Engine::State::PrepareNames(lt::add_torrent_params& params, bool appendsSuf
         auto path = root / Wide(name);
         if (auto renamed = params.renamed_files.find(index); renamed != params.renamed_files.end())
         {
-            if (renamed->second == name + ".!tt" &&
+            if (SamePath(FullPath(Wide(renamed->second)), FullPath(Wide(name + ".!tt"))) &&
                 std::filesystem::symlink_status(root / Wide(renamed->second)).type() ==
                     std::filesystem::file_type::not_found &&
                 std::filesystem::symlink_status(path).type() != std::filesystem::file_type::not_found)
             {
-                if (name == files.file_path(index))
+                if (SamePath(FullPath(Wide(name)), FullPath(Wide(files.file_path(index)))))
                     params.renamed_files.erase(renamed);
                 else
                     renamed->second = name;
@@ -162,7 +163,7 @@ void Engine::State::PrepareNames(lt::add_torrent_params& params, bool appendsSuf
         {
             params.renamed_files[index] = name + ".!tt";
         }
-        else if (name != files.file_path(index))
+        else if (!SamePath(FullPath(Wide(name)), FullPath(Wide(files.file_path(index)))))
             params.renamed_files[index] = name;
     }
 }
@@ -176,7 +177,7 @@ bool Engine::State::ApplyNames(lt::torrent_handle const& handle, lt::add_torrent
     {
         auto desired = prepared.renamed_files.find(index);
         auto name = desired == prepared.renamed_files.end() ? files.file_path(index) : desired->second;
-        if (current.file_path(files, index) == name)
+        if (SamePath(FullPath(Wide(current.file_path(files, index))), FullPath(Wide(name))))
             continue;
         pending.insert(index);
         handle.rename_file(index, name);
@@ -308,7 +309,8 @@ void Engine::State::CompleteFiles(Torrent& torrent, lt::span<std::int64_t const>
         return;
     for (auto index : files.file_range())
     {
-        if (torrent.names->mappings.file_path(files, index) == ContentPath(files, index, torrent.facts.layout) + ".!tt" &&
+        if (SamePath(FullPath(Wide(torrent.names->mappings.file_path(files, index))),
+                FullPath(Wide(ContentPath(files, index, torrent.facts.layout) + ".!tt"))) &&
             progress[static_cast<int>(index)] >= files.file_size(index))
             torrent.completedFiles.insert(index);
     }
@@ -317,7 +319,7 @@ void Engine::State::CompleteFiles(Torrent& torrent, lt::span<std::int64_t const>
 
 void Engine::State::FinishFiles(Torrent& torrent, std::optional<lt::file_index_t> after)
 {
-    if (shuttingDown || torrent.deleted || torrent.filesPending || torrent.namePhase != NamePhase::Ready || FilesBusy() || !additions.empty() ||
+    if (IsShuttingDown() || torrent.deleted || torrent.filesPending || torrent.namePhase != NamePhase::Ready || FilesBusy() || !additions.empty() ||
         !changes.IsIdle() ||
         std::chrono::steady_clock::now() < torrent.renameAt || torrent.completedFiles.empty())
         return;
@@ -333,7 +335,7 @@ void Engine::State::FinishFiles(Torrent& torrent, std::optional<lt::file_index_t
             continue;
         auto name = ContentPath(files, index, torrent.facts.layout);
         auto actual = renames.file_path(files, index);
-        if (actual != name + ".!tt")
+        if (!SamePath(FullPath(Wide(actual)), FullPath(Wide(name + ".!tt"))))
             continue;
         auto path = FullPath(std::filesystem::path(Wide(torrent.facts.savePath)) / Wide(actual));
         auto target = FullPath(std::filesystem::path(Wide(torrent.facts.savePath)) / Wide(name));
@@ -392,7 +394,7 @@ void Engine::State::FinishDownload(Torrent& torrent)
     // A torrent that downloads again has no move to wait for.
     if (waits && !torrent.status.is_finished)
         torrent.moveError.reset();
-    if (shuttingDown || torrent.deleted || torrent.restore || torrent.filesPending || torrent.completionPending ||
+    if (IsShuttingDown() || torrent.deleted || torrent.restore || torrent.filesPending || torrent.completionPending ||
         torrent.completionPhase == CompletionPhase::Downloading ||
         torrent.completionPhase == CompletionPhase::Flushing ||
         torrent.completionPhase == CompletionPhase::Checking ||
@@ -409,7 +411,7 @@ void Engine::State::FinishDownload(Torrent& torrent)
             auto found = torrents.find(id);
             if (found == torrents.end() || found->second.deleted)
                 return;
-            StartMove({id}, found->second.facts.finalFolder, false, [this, id](Outcome outcome)
+            StartMove({id}, found->second.facts.finalFolder, [this, id](Outcome outcome)
             {
                 if (!outcome.error || *outcome.error == ErrorCode::FilesBusy)
                     return;
@@ -602,7 +604,7 @@ void Engine::State::On(lt::file_completed_alert const& alert)
     {
         auto const& files = torrent->names->metadata->layout();
         auto name = torrent->names->mappings.file_path(files, alert.index);
-        if (name == ContentPath(files, alert.index, torrent->facts.layout) + ".!tt")
+        if (SamePath(FullPath(Wide(name)), FullPath(Wide(ContentPath(files, alert.index, torrent->facts.layout) + ".!tt"))))
             torrent->completedFiles.insert(alert.index);
     }
     else
@@ -1033,7 +1035,11 @@ void Engine::State::Delete(std::list<Deletion>::iterator deletion)
                 operation->Release();
             if (SUCCEEDED(initialized))
                 CoUninitialize();
-            if (FAILED(result) || aborted)
+            if (FAILED(result))
+                throw std::system_error(
+                    HRESULT_FACILITY(result) == FACILITY_WIN32 ? HRESULT_CODE(result) : result,
+                    std::system_category(), "HRESULT " + std::to_string(result));
+            if (aborted)
                 throw std::runtime_error("recycle_failed");
         }
         else
@@ -1074,7 +1080,7 @@ void Engine::State::Delete(std::list<Deletion>::iterator deletion)
     {
         if (!outcome.succeeded)
         {
-            log.Write("delete", "", "delete_failed");
+            log.Write("delete", "", outcome.detail);
             Notify(NoticeKind::DeleteFailed, deletion->names, outcome.detail);
         }
         deletions.erase(deletion);

@@ -34,7 +34,7 @@ public sealed partial class Table
     private void RefreshText()
     {
         _headerStrip?.RefreshText();
-        RefreshDragText();
+        RefreshDestination();
         RefreshPlaceholderText();
         TextChanged?.Invoke(this, EventArgs.Empty);
     }

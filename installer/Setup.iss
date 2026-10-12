@@ -216,7 +216,6 @@ end;
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   Code: Integer;
-  Registered: Boolean;
 begin
   if CurStep = ssPostInstall then
   begin
@@ -224,11 +223,7 @@ begin
     begin
       if WizardIsTaskSelected('handlers') then
       begin
-        if WizardSilent then
-          Registered := Registration('register_handlers')
-        else
-          Registered := Registration('open_defaults');
-        if not Registered then
+        if not Registration('register_handlers') then
           RaiseException(CustomMessage('RegistrationFailed'));
       end
       else if not Registration('unregister_handlers') then

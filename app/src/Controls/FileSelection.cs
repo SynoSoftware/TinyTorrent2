@@ -1,4 +1,3 @@
-using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Globalization;
 using System.Text.Json;
@@ -15,7 +14,7 @@ public sealed class FileSelection(Strings strings) : INotifyPropertyChanged
     private bool _showsProgress;
     private bool _enabled = true;
     public Strings Text => strings;
-    public ObservableCollection<FileNode> Roots { get; } = [];
+    public IReadOnlyList<FileNode> Roots { get; private set; } = [];
     public bool ShowsProgress
     {
         get => _showsProgress;
@@ -66,13 +65,15 @@ public sealed class FileSelection(Strings strings) : INotifyPropertyChanged
     }
     public long WantedBytes => _files.Where(file => file.Priority > 0).Sum(file => file.Size);
     public string Summary =>
-        _files.Any(file => !file.IsPadding && file.Priority < 0) ? "—" : strings.Format(
-            "files",
-            "summary",
-            _files.Count(file => file.Priority > 0),
-            _files.Count(file => !file.IsPadding),
-            strings.Bytes(WantedBytes)
-        );
+        _files.Any(file => !file.IsPadding && file.Priority < 0)
+            ? "—"
+            : strings.Format(
+                "files",
+                "summary",
+                _files.Count(file => file.Priority > 0),
+                _files.Count(file => !file.IsPadding),
+                strings.Bytes(WantedBytes)
+            );
     public event PropertyChangedEventHandler? PropertyChanged;
     public event EventHandler? Changed;
     public event EventHandler<IReadOnlyDictionary<int, int>>? Edited;
@@ -120,7 +121,8 @@ public sealed class FileSelection(Strings strings) : INotifyPropertyChanged
                                 : choices.GetValueOrDefault(
                                     index,
                                     item.GetProperty("priority").ValueKind == JsonValueKind.Null
-                                        ? -1 : item.GetProperty("priority").GetInt32()
+                                        ? -1
+                                        : item.GetProperty("priority").GetInt32()
                                 )
                         );
                         _files.Add(node);
@@ -164,11 +166,14 @@ public sealed class FileSelection(Strings strings) : INotifyPropertyChanged
             if (!known.TryGetValue(item.GetProperty("index").GetInt32(), out var file))
                 continue;
             var downloaded = item.GetProperty("downloaded");
-            file.Downloaded = downloaded.ValueKind == JsonValueKind.Null ? null : downloaded.GetInt64();
+            file.Downloaded =
+                downloaded.ValueKind == JsonValueKind.Null ? null : downloaded.GetInt64();
             if (!preserveChoices)
             {
                 var priority = item.GetProperty("priority");
-                file.SetPriority(priority.ValueKind == JsonValueKind.Null ? -1 : priority.GetInt32());
+                file.SetPriority(
+                    priority.ValueKind == JsonValueKind.Null ? -1 : priority.GetInt32()
+                );
             }
         }
         Refresh();
@@ -178,24 +183,9 @@ public sealed class FileSelection(Strings strings) : INotifyPropertyChanged
 
     private void Want(IEnumerable<FileNode> files, bool wanted)
     {
-        if (!IsEnabled)
-            return;
-        var changes = new Dictionary<int, int>();
-        foreach (var file in files)
-        {
-            if (file.IsPadding)
-                continue;
-            if (wanted && file.Priority > 0)
-                continue;
-            var priority = wanted ? 4 : 0;
-            if (file.Priority == priority)
-                continue;
-            file.SetPriority(priority);
-            changes.Add(file.Index, file.Priority);
-        }
-        Refresh();
-        if (changes.Count > 0)
-            Edited?.Invoke(this, changes);
+        if (wanted)
+            files = files.Where(file => file.Priority <= 0);
+        Change(files, wanted ? 4 : 0);
     }
 
     internal void Change(IEnumerable<FileNode> nodes, int priority)
@@ -220,24 +210,15 @@ public sealed class FileSelection(Strings strings) : INotifyPropertyChanged
         _files.OrderBy(file => file.Index).Select(file => file.Priority).ToArray();
 
     private bool Matches(FileNode file) =>
-        _search.Length == 0 || FileName.Normalize(file.Path).Contains(
-            FileName.Normalize(_search), StringComparison.Ordinal);
+        _search.Length == 0
+        || FileName
+            .Normalize(file.Path)
+            .Contains(FileName.Normalize(_search), StringComparison.Ordinal);
 
     private void Project()
     {
-        Reconcile(Roots, _roots.Where(root => root.Project(Matches)).ToArray());
+        Roots = _roots.Where(root => root.Project(Matches)).ToArray();
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
-    }
-
-    internal static void Reconcile(ObservableCollection<FileNode> nodes, FileNode[] desired)
-    {
-        var retained = desired.ToHashSet();
-        for (var index = nodes.Count - 1; index >= 0; index--)
-            if (!retained.Contains(nodes[index]))
-                nodes.RemoveAt(index);
-        for (var index = 0; index < desired.Length; index++)
-            if (index >= nodes.Count || nodes[index] != desired[index])
-                nodes.Insert(index, desired[index]);
     }
 
     internal void Refresh()
@@ -254,7 +235,7 @@ public sealed class FileNode : INotifyPropertyChanged
     private readonly FileSelection _owner;
     private int _priority = 4;
     internal List<FileNode> Descendants { get; } = [];
-    public ObservableCollection<FileNode> Children { get; } = [];
+    public IReadOnlyList<FileNode> Children { get; private set; } = [];
     public string Name { get; }
     public string Path { get; internal set; } = string.Empty;
     public FileNode? Parent { get; }
@@ -264,10 +245,7 @@ public sealed class FileNode : INotifyPropertyChanged
     public bool IsExpanded { get; set; } = true;
     public long Size { get; internal set; }
     public long? Downloaded { get; internal set; }
-    public string Glyph =>
-        IsFolder
-            ? Lucide.Folder
-            : FileName.Glyph(FileName.Kind(Name));
+    public string Glyph => IsFolder ? Lucide.Folder : FileName.Glyph(FileName.Kind(Name));
     public long TotalSize => Files().Sum(file => file.Size);
     public string SizeText => _owner.Text.Bytes(TotalSize);
     public double? Progress
@@ -363,10 +341,7 @@ public sealed class FileNode : INotifyPropertyChanged
 
     internal bool Project(Func<FileNode, bool> matches)
     {
-        FileSelection.Reconcile(
-            Children,
-            Descendants.Where(child => child.Project(matches)).ToArray()
-        );
+        Children = Descendants.Where(child => child.Project(matches)).ToArray();
         return Index >= 0 ? !IsPadding && matches(this) : Children.Count > 0;
     }
 

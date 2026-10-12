@@ -20,7 +20,6 @@ public sealed partial class Table : Control
     private const string SurfacePartName = "PART_Surface";
     private const string PlaceholderPartName = "PART_Placeholder";
     private const string MarqueeOverlayPartName = "PART_MarqueeOverlay";
-    private const string RowInsertionMarkerPartName = "PART_RowInsertionMarker";
 
     private readonly ItemIdentity _identity = new();
 
@@ -33,7 +32,6 @@ public sealed partial class Table : Control
     private Body.Surface? _surface;
     private ContentPresenter? _placeholderPresenter;
     private FrameworkElement? _marqueeOverlay;
-    private FrameworkElement? _rowInsertionMarker;
 
     private bool _schemaCaptured;
     private ColumnLayout? _pendingLayout;
@@ -50,6 +48,7 @@ public sealed partial class Table : Control
         _source.SnapshotChanged += OnSnapshotChanged;
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
+        SizeChanged += OnFillSizeChanged;
     }
 
     /// <summary>
@@ -61,7 +60,7 @@ public sealed partial class Table : Control
 
     /// <summary>
     /// Raised once after each completed effective sort, column move, resize, fit, visibility, or
-    /// reset, carrying which of those it was. Never raised by initial setup or by restoring
+    /// reset, carrying which of those it was. Never raised by initial setup, automatic fills, or restoring
     /// <see cref="Layout"/>. A host that wants the snapshot reads <see cref="Layout"/>, which is
     /// the same value the event used to carry.
     /// </summary>
@@ -184,15 +183,12 @@ public sealed partial class Table : Control
         _surface = GetTemplateChild(SurfacePartName) as Body.Surface;
         _placeholderPresenter = GetTemplateChild(PlaceholderPartName) as ContentPresenter;
         _marqueeOverlay = GetTemplateChild(MarqueeOverlayPartName) as FrameworkElement;
-        _rowInsertionMarker = GetTemplateChild(RowInsertionMarkerPartName) as FrameworkElement;
 
         if (_headerStrip is not null)
         {
             _headerStrip.Attach(this);
-            if (!_filledOnce)
-            {
-                LayoutUpdated += OnInitialLayout;
-            }
+            _headerStrip.SizeChanged += OnFillSizeChanged;
+            QueueFill();
         }
 
         if (_surface is not null)
@@ -210,7 +206,9 @@ public sealed partial class Table : Control
     {
         DetachInput();
 
-        LayoutUpdated -= OnInitialLayout;
+        LayoutUpdated -= OnFillLayout;
+        if (_headerStrip is not null)
+            _headerStrip.SizeChanged -= OnFillSizeChanged;
 
         // A settle waiting to fire would rebuild a view whose template parts have just been taken
         // away, and would hold this table alive to do it.
@@ -230,7 +228,8 @@ public sealed partial class Table : Control
         }
 
         _detached = true;
-        LayoutUpdated -= OnInitialLayout;
+        LayoutUpdated -= OnFillLayout;
+        StopWatchingVisibility();
 
         // A table taken out of the tree sees no exit, and nothing points at rows it no longer shows.
         _pointerOver = false;
@@ -250,11 +249,8 @@ public sealed partial class Table : Control
 
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
-        if (!_filledOnce)
-        {
-            LayoutUpdated -= OnInitialLayout;
-            LayoutUpdated += OnInitialLayout;
-        }
+        WatchVisibility();
+        QueueFill();
         _source.Resume();
         _detached = false;
         if (_surface is not null)
@@ -321,7 +317,6 @@ public sealed partial class Table : Control
     /// interactivity and the cursor that shows it there.
     /// </summary>
     internal Func<object, bool>? CanInteract { get; set; }
-    internal Func<object, bool>? CanReorderItem { get; set; }
 
     /// <summary>
     /// Capture the setup-only schema exactly once, validate it, and resolve the first effective
@@ -437,12 +432,8 @@ public sealed partial class Table : Control
             throw ConfigurationError("At least one column must be visible by default.");
         }
 
-        // Section 6.1: one row order. Under a sort by either of two claimants, a drop would name a
-        // place in an order the other column contradicts.
-        if (Columns.Count(column => column.DefinesRowOrder) > 1)
-        {
-            throw ConfigurationError("At most one column may set DefinesRowOrder.");
-        }
+        if (_order is not null && !Columns.Contains(_order.Column))
+            throw ConfigurationError("The order column must belong to this table.");
     }
 
     private void OnColumnsMutatedAfterCapture(object? sender, NotifyCollectionChangedEventArgs e) =>

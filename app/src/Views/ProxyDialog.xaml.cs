@@ -44,7 +44,12 @@ public sealed partial class ProxyDialog : UserControl
         Status.Check.Text = Model.Text.Get("settings", "check");
         ToolTipService.SetToolTip(Status.Check, Model.Text.Get("settings", "check_tip"));
         Status.Check.IsEnabled = Proxy.CanCheck;
-        Status.Refresh(Proxy.IsChecking, Proxy.HasResult ? Proxy.Succeeded : null, Proxy.Result, Proxy.ResultTip);
+        Status.Refresh(
+            Proxy.IsChecking,
+            Proxy.HasResult ? Proxy.Succeeded : null,
+            Proxy.Result,
+            Proxy.ResultTip
+        );
     }
 
     private async void OnCheck(object sender, RoutedEventArgs args) => await Proxy.Check();

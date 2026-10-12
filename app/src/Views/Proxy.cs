@@ -40,15 +40,18 @@ public sealed class Proxy : IDraft
     private string SavedPort =>
         _saved.Port > 0 ? _saved.Port.ToString(CultureInfo.CurrentCulture) : string.Empty;
     public bool IsInUse => _saved.Type != ProxyType.None;
-    internal HttpRoute RouteSettings(string adapter) => new()
-    {
-        Type = _saved.Type,
-        Host = _saved.Host,
-        Port = _saved.Port,
-        Username = _saved.Username,
-        Password = _saved.Password,
-        Adapter = adapter,
-    };
+
+    internal HttpRoute RouteSettings(string adapter) =>
+        new()
+        {
+            Type = _saved.Type,
+            Host = _saved.Host,
+            Port = _saved.Port,
+            Username = _saved.Username,
+            Password = _saved.Password,
+            Adapter = adapter,
+        };
+
     public string Summary =>
         IsInUse
             ? Text.Format("settings", "proxy_summary", Name(_saved.Type), _saved.Host, _saved.Port)
@@ -127,7 +130,10 @@ public sealed class Proxy : IDraft
     public bool IsPending { get; private set; }
     public bool IsChecking { get; private set; }
     public bool CanSubmit => _owner.CanSave && !IsPending;
-    public bool CanCheck => CanSubmit && !IsChecking && _type != ProxyType.None;
+
+    // Check stays enabled while it runs, so focus stays on it; Check ignores
+    // a second press until the first ends.
+    public bool CanCheck => CanSubmit && _type != ProxyType.None;
     public bool CanEditAddress => CanSubmit && _type != ProxyType.None;
 
     // SOCKS4 has no sign-in.
@@ -232,7 +238,7 @@ public sealed class Proxy : IDraft
 
     public async Task Check()
     {
-        if (!CanCheck)
+        if (!CanCheck || IsChecking)
             return;
         if (Read() is not { } server)
             return;
@@ -286,10 +292,7 @@ public sealed class Proxy : IDraft
         };
 
     private int? ParsePort() =>
-        Settings.TryInteger(_port, out var port)
-        && port is >= 1 and <= 65535
-            ? port
-            : null;
+        Settings.TryInteger(_port, out var port) && port is >= 1 and <= 65535 ? port : null;
 
     // Ends the dialog's check when the snapshot reports its result. A snapshot
     // without the check means that the engine could not run it or restarted.
@@ -329,11 +332,7 @@ public sealed class Proxy : IDraft
     private string Reason(ProxyOutcome outcome, Server server, long? elapsed) =>
         outcome switch
         {
-            ProxyOutcome.Connected => Text.Format(
-                "settings",
-                "proxy_connected_tip",
-                elapsed ?? 0
-            ),
+            ProxyOutcome.Connected => Text.Format("settings", "proxy_connected_tip", elapsed ?? 0),
             ProxyOutcome.SignInFailed => Text.Get("settings", "proxy_sign_in_failed_tip"),
             ProxyOutcome.Unreachable => Text.Format(
                 "settings",

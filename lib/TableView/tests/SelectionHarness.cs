@@ -8,7 +8,13 @@ namespace Syno.TableView.Tests;
 /// <summary>One row item with a stable key, so identity reconciliation has something to reconcile.</summary>
 internal sealed class Row
 {
-    internal Row(string key) => Key = key;
+    internal Row(string key)
+    {
+        Key = key;
+        Position = Rank + 1;
+    }
+
+    internal int? Position { get; set; }
 
     internal string Key { get; }
 
@@ -58,7 +64,8 @@ internal sealed class SelectionHarness
     internal static async Task<SelectionHarness> LoadAsync(
         int rowCount,
         Action<Table>? configure = null,
-        double height = 220
+        double height = 220,
+        bool ordered = false
     )
     {
         ObservableCollection<Row> rows = new();
@@ -73,6 +80,8 @@ internal sealed class SelectionHarness
         table.Height = height;
 
         configure?.Invoke(table);
+        if (ordered || table.CanReorder)
+            table.Schema<Row>().Order(table.Columns[0], row => row.Position, () => rows);
         table.ItemsSource = rows;
 
         await TableHarness.LoadAsync(table);
@@ -99,6 +108,18 @@ internal sealed class SelectionHarness
             .Select(r => r.Key)
             .OrderBy(k => k, StringComparer.Ordinal)
             .ToArray();
+    }
+
+    internal Windows.Foundation.Point WheelPoint(int boundary)
+    {
+        var wheel = Proof.Field<Body.Wheel>(Table, "_wheel");
+        var rail = (FrameworkElement)wheel.FindName("Rail");
+        wheel.UpdateLayout();
+        double center = Proof.Field<double>(wheel, "_center");
+        return rail.TransformToVisual(null)
+            .TransformPoint(
+                new(rail.ActualWidth / 2, rail.ActualHeight / 2 + (boundary - .5 - center) * 42)
+            );
     }
 
     internal ListView Surface() =>

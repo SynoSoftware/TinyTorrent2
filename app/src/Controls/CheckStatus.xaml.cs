@@ -12,8 +12,10 @@ public sealed partial class CheckStatus : UserControl
     {
         Progress.IsActive = checking;
         Progress.Visibility = checking ? Visibility.Visible : Visibility.Collapsed;
-        Success.Visibility = !checking && succeeded == true ? Visibility.Visible : Visibility.Collapsed;
-        Failure.Visibility = !checking && succeeded == false ? Visibility.Visible : Visibility.Collapsed;
+        Success.Visibility =
+            !checking && succeeded == true ? Visibility.Visible : Visibility.Collapsed;
+        Failure.Visibility =
+            !checking && succeeded == false ? Visibility.Visible : Visibility.Collapsed;
         Message.Text = message;
         AutomationProperties.SetHelpText(Message, tip);
         ToolTipService.SetToolTip(Root, tip);

@@ -21,7 +21,8 @@ for this documentation review.
 | Selection, current item, anchor, and logical focus | [SelectionState](../src/SelectionState.cs). |
 | Row pointer arbitration | [Table input](../src/Table/Input.cs). |
 | Held rows and the pointed row's frozen place | [Table holding](../src/Table/Holding.cs), applied by the view order in [Table sorting](../src/Table/Sorting.cs). |
-| Marquee geometry and row insertion feedback | [Body.Marquee](../src/Body/Marquee.cs) and [Body.Drag](../src/Body/Drag.cs), driven by the arbiter. |
+| Marquee geometry | [Body.Marquee](../src/Body/Marquee.cs), driven by the arbiter. |
+| Numbered order and drag wheel | [Order](../src/Order.cs) captures host positions; [Table/Reordering](../src/Table/Reordering.cs) owns the gesture snapshot and request; [Body.Wheel](../src/Body/Wheel.xaml.cs) owns popup rendering and gap geometry. |
 | Header gestures and generated menu | [Header.Strip](../src/Header/Strip.cs) and [Header.Menu](../src/Header/Menu.cs). |
 | Generic control text | [Strings](../src/Strings.cs), reading the embedded [en.json](../src/Resources/en.json). |
 
@@ -79,14 +80,17 @@ one value. The contract's restriction on new named style resources does not
 prohibit a local spacing default inside the template. Theme-sensitive colors
 still use the platform resources required by the contract.
 
-`Table.FillOnce` scales widths after the first visible layout during initialization,
-then detaches its layout listener so window resizing cannot
-change widths. Collapsed ancestors defer the fill until the table is actually shown.
+`Table.QueueFill` coalesces load, width and ancestor-visibility notifications into
+one fill after visible layout, then detaches its layout listener. It uses the
+same fit and scale as `FillWidth`, without raising a persistence notification.
+Collapsed ancestors defer the fill until the table is shown. Visibility callbacks
+are registered while loaded and removed on unload; ordinary row updates and
+scrolling do not request a fill.
 Widths stay in the table's effective layout for its lifetime. `ColumnLayout`
 contains only order, visibility and sorting, so neither disk persistence nor a
 host's in-memory layout cache carries widths into another table instance.
 
-Keep virtualized work on realized rows. Explicit fit owns measurement; routine
+Keep virtualized work on realized rows. Fit and fill own measurement; routine
 sorting, scrolling, and gesture feedback do not create a hidden measurement tree.
 Rich cell templates receive row items directly. Live values use live bindings;
 formatting can stay lazy so invisible cells do not allocate display strings.

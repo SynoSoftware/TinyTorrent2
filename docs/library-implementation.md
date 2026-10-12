@@ -147,7 +147,7 @@ single 1,083 ms observation, not a percentile. Memory observations were not a
 controlled before-feature comparison. Cancellation does not make these targets
 passed, and this delivery makes no “instant at 10,000 files” claim.
 
-The Public websites provider remains optional and removable. Its recorded
+The IMDb and Rotten Tomatoes providers remain optional and removable. Its recorded
 browser-access limitations remain in [its status](movie-websites.md#implementation-status).
 The owner stopped further browser experiments; do not reopen them.
 
@@ -164,10 +164,10 @@ determines whether background population is available.
 | --- | --- |
 | C# torrent adapter | Seed and synchronize accepted membership and file facts in SQLite through PipeClient, including unfinished and unwanted files. It decides neither Library eligibility nor subtitle eligibility and exposes no separate file catalogue. |
 | Library | Query finished entries from SQLite; own identification decisions, enrichment acceptance and SQL search/filter/count queries. |
-| C# database owner | One connection, schema version check and serialized transaction path. Existing application wiring supplies each owner's schema; Library and subtitles keep their domain SQL with their behavior. |
+| C# database owner | One connection, authoritative schema, initialization and versioning, serialized transactions and shared consistency rules. Library and subtitles keep domain queries with their behavior. See the [database contract](database.md). |
 | Filename interpretation | One file-kind classification and filename interpretation used by both features, without provider or scheduling decisions. |
-| Video lookup | Selected-provider requests, cancellation and background eligibility; Library accepts identification evidence and saves video information. TMDB owns its API decoding; Public websites owns website extraction and installed-browser access. |
-| File facts reader | Windows property reads for dates and audio tags; Library accepts and saves the returned facts. |
+| Video lookup | Selected-provider requests, cancellation and background eligibility; Library accepts identification evidence and saves video information. TMDB owns its API decoding; Public owns website extraction and installed-browser access for IMDb and Rotten Tomatoes. |
+| File facts reader | One-time Windows property reads for dates, audio tags, media duration, bitrate and video dimensions; Library accepts and saves the returned facts. |
 | Library Browser | Query/configuration input, stable row objects, selection, navigation and opening outcomes; Library initialization, worker events, failure pause, retry and worker drain. TableView performs the only sort. |
 | Existing Inspector and opening owners | Shared card mechanics and Windows file execution. Library supplies a target and consumes the outcome. |
 | C# subtitle owner | Supplier matching, downloading, configuration, saved work and records as defined in its plan; it queries current torrent files in SQLite, including unfinished targets, independently of Library queries and enablement. |
@@ -198,8 +198,7 @@ This is compile-time composition in the existing app, because no runtime plugin
 installation or discovery is required.
 
 A provider owns only what differs between providers: how it searches, how it
-describes a choice, which kinds it knows, when Library may ask it, and its own
-settings. It knows neither current torrent membership nor whether an answer may
+describes a choice, which kinds it knows and when Library may ask it. It knows neither current torrent membership nor whether an answer may
 be saved, and it receives no `Store`:
 
 ```csharp
@@ -217,20 +216,33 @@ internal interface IProvider
         VideoChoice choice, VideoRequest request, CancellationToken cancellation);
 }
 
-internal interface IConfigurable : IProvider
-{
-    VideoEditor Edit(Strings text, Func<IReadOnlyDictionary<string, string>, Task> save);
-}
-
-internal sealed record ProviderOption(string ProviderId, string TextSection,
-    Func<IReadOnlyDictionary<string, string>, IProvider> Create);
+internal sealed record ProviderOption(string ProviderId, string Name, string TextSection,
+    Uri Privacy, Uri Terms, Func<IProvider> Create);
 
 internal sealed record VideoRequest(Release Release, string Language, SavedRecord Saved);
 ```
 
-Library owns automatic identification. It searches the provider for the
+A choice carries `Content`, the facts its listing showed, in the provider's
+record format, and `VideoInformation` carries `Related`, the other choices its
+page listed. Website pages are expensive to read, so a provider returns
+everything a page names and Library keeps it: a later lookup then reuses the
+listing instead of reading the page again.
+
+Library owns automatic identification, and SQLite answers before the provider.
+It first reads the saved choices of the provider's catalogue whose normalized
+title or original title equals the release's title, through an index on each.
+One saved choice of the release's kind and year is described without a search.
+Otherwise it searches the provider for the
 release's title, keeps choices of the release's kind whose title or original
-title and year agree, and describes the one remaining choice. The description
+title and year agree, and describes the one remaining choice. When the search
+keeps none, one saved choice still answers before the lookup reports no match.
+A saved choice decides alone only with the year, because without it the
+provider's search could list a second movie of the same title that no page has
+shown yet. An automatic search runs once a session: the files of one movie
+reuse its result. Fetch metadata's dialog always searches again, because the
+person repeats a search after an empty or failed answer. It lists the saved
+choices of the typed title with the search results, and only those when the
+provider fails. The description
 must agree with that choice, because a search result can lack its year or carry
 a looser title. A provider whose `Kinds` lack the release's kind is not asked.
 The series hint comes from Library's current, accepted sibling decisions, and
@@ -245,43 +257,67 @@ lists, and an episode carries its series title and each episode's number, name
 and synopsis. Library composes the stored title, such as
 `Show · S01E01 Pilot`, and the joined text its search and filters read.
 
-`VideoSchedule` is `Background`, `Selection(Delay)` or `Manual`, so a zero delay
-never stands for a second behavior. The provider ID persists selection, such as
-`public`; `CatalogId` qualifies information, such as `public/imdb`. Changing
-Public's website keeps the selected provider but changes its catalogue. These
+`VideoSchedule` is `Background` or `Manual`. The provider ID persists selection, such as
+`imdb`; `CatalogId` qualifies information, such as `public/imdb`. These
 IDs are implementation-owned stable strings, because removing a provider must
-not require changing central enum ordinals.
+not require changing central enum ordinals. A saved provider ID that no option
+matches turns downloading off rather than refusing to start.
 
-Provider names and consent use the existing Strings owner and their text
-section. Settings binds to the provider options; details reads the schedule.
-MainWindow hosts the editor of an `IConfigurable` provider through the existing
-Interact/ShowEditor owners and imports no provider implementation. A provider
-without settings implements no editor.
+`ProviderOption` carries the provider's name and policy links; its text section
+holds the disclosure and errors. Settings binds to the provider options; details
+reads the schedule. MainWindow imports no provider implementation.
 
-Library saves each provider's settings under its provider ID and creates the
-provider from them. The settings cross the seam as text, because that is their
-stored form; only the provider reads them, through its typed settings. Public
-owns those typed settings, its editor, browser access and website
-implementations inside `Library/Public/`. Its editor submits new settings;
-Library cancels old work, serializes the change, saves the settings and replaces
-the provider. A failed save leaves the previous provider intact. An editor left
-open while the person chose another provider saves nothing. TMDB reuses saved
-raw records through the request's `Saved` lookup, which returns none when
-refreshing.
+Providers have no settings of their own. Public owns its page readers and
+website implementations inside `Library/Public/`; registration creates its
+options. Both providers reuse
+saved raw records through the request's `Saved` lookup, which returns none when
+refreshing. Public also describes a choice from its `Content` when the listing
+already holds the synopsis, as an IMDb search result does; Refresh reads the
+page, because it describes the saved choice without its listing.
 
-VideoLookup has one guarded execution/commit path for background work, delayed
-lookup, Fetch, Refresh and explicit identification. It captures the provider,
+VideoLookup has one guarded execution/commit path for background work, the
+batch, Fetch, Refresh and explicit identification. It captures the provider,
 catalogue, language and current entry evidence, serializes requests, reuses
 matching normalized information unless refreshing, and commits only through
-Library's current-membership and latest-decision guards. Provider and settings
-changes cancel that context. Visibility and dwell remain with Library Browser;
+Library's current-membership and latest-decision guards. A provider change,
+Disable, a connection change, a language change and a network route change
+cancel that context; a route change also clears failures without a retry time. VideoLookup also owns Fetch metadata's batch: one
+queue that identifies its files in order on a worker thread. The background
+sweep finishes the file it is reading and then waits until the batch ends, so
+no page read is wasted and automatic lookups do not start and cancel between
+batch files. A batch file follows the automatic policy, except that it retries
+an earlier miss: its own failure is a miss and its match is automatic. The
+Library view only adds files, stops the batch and shows its progress.
+VideoLookup reports a stored match or miss separately from state changes such
+as the provider, its failure or the batch. Saved data can answer many files a
+second, so the view refreshes its rows at once and then at most once a second
+while such results arrive. Visibility and dwell remain with Library Browser;
 providers do not subscribe to the window. Expected provider failures carry a
 localized message reference. A failure of one video, such as an unreadable page
-or record, uses `VideoException`; it ends an automatic lookup as a miss and an
-explicit one with its error. A provider that cannot serve any request now uses
+or record, uses `VideoException`; it ends an automatic or batch lookup as a
+miss and an explicit one with its error. A provider that cannot serve any
+request now uses
 `ProviderException` with an optional retry time. So one bad page cannot suspend
 unrelated enrichment. Cancellation stays OperationCanceledException; storage
 errors stay with the existing failure owner.
+
+The background sweep takes every video file that `Eligible` leaves: no saved
+decision, no attempt in this session and no `video_misses` row for the provider
+under the file's current name. Opening the database returns earlier failures,
+search-limit stops and unusable pages to the sweep; only the provider's own
+no-match answer is permanent. Automatic and batch
+lookups search the provider only while `video_lookups` counts fewer answered
+searches of that text at that provider than the
+[shared limit](architecture.md#third-party-provider-access), which
+`library_settings` keeps and subtitles read through `VideoLookup`. The sweep starts
+only after the delay that `ObserveFiles` creates for it and for the subtitle
+worker. `FileSources` saves the torrents it has seen finished in `known_torrents` and lists
+this session's new ones in the session table `new_origins`; a database without
+history takes its first list as known. Only subtitles read them: `Reconcile` creates
+automatic jobs only for new torrents and advances only their earlier misses,
+and `Load` cancels unfinished automatic jobs for previously finished torrents
+when the window opens, retaining their history. New unfinished torrents remain
+eligible; the worker runs pending jobs once the switch and delay allow it.
 
 A miss permits background work on the next eligible file. A provider failure
 with a retry time suspends background work until that time; without one, it
@@ -301,8 +337,15 @@ provider lifetime interface, because resources are shared or scoped to a call.
 
 Normalized videos, identification associations and attempts carry catalogue
 identity. Raw records use catalogue, record key and language; providers interpret
-their content, while the shared store preserves their references atomically with
-the existing VideoInformation response. Library supplies the language: it saves
+their content. Library keeps a raw record as soon as the provider returns it,
+also when the lookup rejects the video, and saves its references atomically with
+the accepted VideoInformation response. **Owner ruling, 2026-10-11: keep
+everything a provider returns.** Raw records and saved choices stay after
+their files leave the Library, because reading a page again costs seconds and
+risks the website refusing the person's address. Library saves every search
+result, every related choice and every described video as a saved choice, with
+title, original title, year, kind and the listing's `Content`; a later listing
+of the same choice keeps a known year and content that the new one lacks. Library supplies the language: it saves
 information from a provider that is not `IsLocalized`, such as a website page,
 as valid for every language. Cached normalized facts remain readable
 after a provider is removed. Episode information records its reusable series
@@ -320,10 +363,10 @@ When a saved provider is absent, enrichment is durably disabled with no selected
 provider; silently falling back would change the person's disclosed network
 behavior.
 
-Migration replaces concrete provider enums/branches and the three shared-owner
-partials under Public. The rating addition upgrades existing local databases
-without replacing saved identifications or cached facts. Preserve current decisions, cached facts, failed-refresh retention,
-stale-result rejection and cancellation through this change. Runtime loaders,
+The provider refactoring replaces concrete provider enums/branches and the three
+shared-owner partials under Public. Ratings are part of the first-version schema.
+Preserve current decisions, cached facts, failed-refresh retention, stale-result
+rejection and cancellation through this change. Runtime loaders,
 new projects, pluggable databases and provider-specific schedulers add no required
 behavior.
 
@@ -365,11 +408,19 @@ behavior.
   non-actionable. Retry uses the same open and source-reconciliation path;
   never substitute an empty collection, an alternate database or a destructive
   reset. Torrent operations remain independent of the database.
-- **Preserve existing local data.** The database applies ordered SQL versions
-  in one transaction and refuses a newer version. Version 2 adds nullable
-  ratings and structured episode facts to version 1; existing identifications
-  and metadata survive, with unknown ratings left empty and older episode
-  records retaining their combined-title fallback. C# is the sole database owner.
+- **One complete first-version schema.** The database creates every permanent
+  table, view and index in one transaction at version 3. Opening a version 2
+  file adds `video_misses` and keeps its data; there are no other upgrades
+  for earlier development databases. The complete schema lives in
+  `Services/Database/Schema.cs`; the database owns future versioned migrations.
+  `source_state.initialized` records whether the first confirmed torrent list
+  has been reconciled, including an empty list. That first list establishes
+  `known_torrents` without searching the person's whole collection. Reopening
+  keeps saved facts and decisions and rebuilds only temporary projections. A file
+  with another version, or one that SQLite reports as damaged, is incompatible:
+  feature work pauses, and the failure surface offers Delete database instead
+  of Retry, because a retry cannot repair either file. C# is the sole database
+  owner.
 
 ## Finish the delivery
 
@@ -404,8 +455,7 @@ Complete the confirmed shared-owner corrections in the same batch:
 
 - Use namespace-scoped names for Store, Entry, Query, Matches, Detail, Facet and
   Origin, with OriginId identifying a contribution. Rename the provider interface
-  to IProvider while retaining IConfigurable and VideoEditor, because configurable
-  providers own an editor the host can remove. Preserve LibraryTable, LibraryRow
+  to IProvider. Preserve LibraryTable, LibraryRow
   and concept-qualified keys; update owner paths and reflection consumers together.
 - Apply the product [network route](architecture.md#network-route) through one
   shared HTTP lifetime configured from confirmed settings before update or feature
@@ -420,8 +470,7 @@ Complete the confirmed shared-owner corrections in the same batch:
   Preserve Library's separate facet dimensions. Match its empty-state typography
   and spacing to the torrent table while retaining its recovery actions. Shared
   failures use the workspace feedback without shrinking the rows.
-- Keep website-delay drafts as typed text, including invalid input, using the
-  existing NumberBox editor pattern. Give identification search the native query
+- Give identification search the native query
   icon and initial text focus through the shared Dialog owner. Add stable
   automation IDs to actionable controls in these paths, not decorative content.
 - Share General and Library's field-column geometry through `Controls.FieldColumns`:
@@ -433,12 +482,11 @@ Complete the confirmed shared-owner corrections in the same batch:
   destination uses its exact `EditableText` name; existing callers still match
   any TextBox, including the supplied root. Password reveal lookup stays separate.
   This removes Add's duplicate traversal without introducing a visual-tree framework.
-- Compose feature schemas, source cleanup and cache-invalidation SQL in the
-  existing `MainViewModel/Features.cs` wiring. The database executes supplied SQL
-  through its one connection and transaction path without importing features.
-- Keep `FileFacts` with Library, its only consumer. Recover interrupted video
-  attempts at the start of `VideoLookup.Initialize`, before creating providers
-  or allowing requests, so a restart does not leave unfinished attempts stuck.
+- Keep the authoritative schema and shared consistency SQL with Database.
+  `MainViewModel/Features.cs` constructs owners without supplying SQL fragments.
+- Keep `FileFacts` with Library, its only consumer. Video and file-read attempts
+  are temporary session work; opening the database starts an empty work set.
+  A provider's no-match answer is the exception and stays in `video_misses`.
 - Report shared source failures through the app error surface. Both features
   follow source readiness; Library keeps its own property/provider failures and
   shows unavailable while the shared source cannot serve either feature.
@@ -446,7 +494,7 @@ Complete the confirmed shared-owner corrections in the same batch:
   successful readiness, so ordinary snapshot retries do not repeat the same
   announcement. Keep retries and cancellation unchanged; use the existing source
   gate to suppress failures from obsolete or disposed work.
-- Keep concrete construction, provider registration and shared SQL composition
+- Keep concrete construction and provider registration
   in `Features.cs`. Browser owns Library initialization, its worker events,
   failure pause, retry/resume and worker drain, so these policies no longer
   cross into the window. The app forwards source readiness and requests fresh
@@ -462,9 +510,8 @@ Complete the confirmed shared-owner corrections in the same batch:
   TorrentSource coordinates engine reads without its own database SQL. Retain
   its range-checked verification projection: the Pieces display model also
   parses availability/downloading and classifies every piece, which this source
-  does not need. Feature cleanup consumes the shared currency views for each
-  feature's own tables. The current schema/hook composition is complete and
-  ordered; no checked-registration framework is required without an omission.
+  does not need. Database cleanup consumes the shared currency views for both
+  features; no registration framework is required.
 - Keep shared filename interpretation, title and normalized text on ingestion,
   and correct the master plan's owner table. Moving it adds query work without
   improving behavior. Keep `library.db` so existing saved records remain in use.

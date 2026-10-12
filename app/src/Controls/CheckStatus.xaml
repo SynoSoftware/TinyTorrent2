@@ -5,14 +5,25 @@
   xmlns:controls="using:Syno.TinyTorrent.Controls"
   xmlns:icons="using:Syno"
 >
-  <Grid x:Name="Root" ColumnSpacing="8" Background="Transparent">
+  <Grid x:Name="Root" ColumnSpacing="8" MinHeight="32" Background="Transparent">
     <Grid.ColumnDefinitions>
       <ColumnDefinition Width="Auto" />
-      <ColumnDefinition Width="Auto" />
+      <ColumnDefinition Width="16" />
       <ColumnDefinition Width="*" />
     </Grid.ColumnDefinitions>
-    <controls:ActionButton x:Name="Check" x:FieldModifier="internal" Glyph="{x:Bind icons:Lucide.Plug}" />
-    <ProgressRing x:Name="Progress" Grid.Column="1" Width="16" Height="16" IsActive="False" Visibility="Collapsed" />
+    <controls:ActionButton
+      x:Name="Check"
+      x:FieldModifier="internal"
+      Glyph="{x:Bind icons:Lucide.Plug}"
+    />
+    <ProgressRing
+      x:Name="Progress"
+      Grid.Column="1"
+      Width="16"
+      Height="16"
+      IsActive="False"
+      Visibility="Collapsed"
+    />
     <FontIcon
       x:Name="Success"
       Grid.Column="1"
@@ -37,6 +48,8 @@
       x:Name="Message"
       Grid.Column="2"
       Style="{StaticResource TinyTorrentBodyTextStyle}"
+      VerticalAlignment="Center"
+      TextTrimming="CharacterEllipsis"
       AutomationProperties.LiveSetting="Polite"
     />
   </Grid>

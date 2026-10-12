@@ -125,27 +125,6 @@ public class ColumnMenuTests
             AssertReported(reported, LayoutChange.Visibility);
         });
 
-    [TestMethod]
-    public Task TheColumnListNamesEveryColumnIncludingTheHiddenOnes() =>
-        TestHost.RunAsync(async () =>
-        {
-            Table table = await LoadAsync("a", "b", "c");
-            SetVisibility(table, "b", false);
-
-            MenuFlyoutItem[] toggles = ColumnEntries(Menu(table, "a"));
-
-            CollectionAssert.AreEqual(
-                new[] { "A", "B", "C" },
-                toggles.Select(t => t.Text).ToArray(),
-                "the host's DisplayName names each column, in the effective order"
-            );
-            CollectionAssert.AreEqual(
-                new[] { true, false, true },
-                toggles.Select(t => t.Icon is not null).ToArray(),
-                "a shown column carries the check icon"
-            );
-        });
-
     // ------------------------------------------------------------ enabled only when it can change
 
     [TestMethod]

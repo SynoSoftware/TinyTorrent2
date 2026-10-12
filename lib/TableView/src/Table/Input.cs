@@ -1,8 +1,5 @@
-using System.Globalization;
 using Microsoft.UI.Input;
 using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Automation;
-using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
@@ -26,11 +23,7 @@ public sealed partial class Table
     /// <summary>Movement below this is a click, not a drag or a marquee.</summary>
     private const double DragThresholdDips = 4;
 
-    /// <summary>Groups the drag's destination announcements, so only the latest one is spoken.</summary>
-    private const string RowDragActivityId = "TableViewRowDrag";
-
     private readonly Body.Marquee _marquee = new();
-    private readonly Body.Drag _rowDrag = new();
 
     private RowGesture _gesture;
     private uint _gesturePointerId;
@@ -57,15 +50,6 @@ public sealed partial class Table
 
     /// <summary>The selection as it stood at press, restored if a committed gesture is cancelled.</summary>
     private SelectionState.Checkpoint? _gestureSelection;
-
-    /// <summary>
-    /// Section 16's moving packet, resolved once when the drag begins. Nothing can move the
-    /// selection under a live drag, so the drop reports the packet the gesture started with.
-    /// </summary>
-    private IReadOnlyList<object> _movingPacket = Array.Empty<object>();
-
-    /// <summary>The boundary the live drag last announced. Negative is no live destination.</summary>
-    private int _dragBoundary = -1;
 
     private ScrollViewer? _innerScrollViewer;
 
@@ -113,19 +97,6 @@ public sealed partial class Table
     /// </summary>
     public event EventHandler<ItemContextRequestedEventArgs>? ItemContextRequested;
 
-    private EventHandler<ReorderRequestedEventArgs>? _reorderRequested;
-
-    /// <summary>
-    /// Raised once for a completed row drag that asks for a new order. The table has changed
-    /// nothing: it never mutates the source, and it does not infer that the host accepted the
-    /// request.
-    /// </summary>
-    public event EventHandler<ReorderRequestedEventArgs>? ReorderRequested
-    {
-        add => _reorderRequested += value;
-        remove => _reorderRequested -= value;
-    }
-
     public bool IsMarqueeEnabled
     {
         get => (bool)GetValue(IsMarqueeEnabledProperty);
@@ -161,7 +132,7 @@ public sealed partial class Table
 
         if (!(bool)e.NewValue)
         {
-            table.CancelRowDrag();
+            table.CancelDrag();
         }
 
         table.RowVisualsChanged?.Invoke(table, EventArgs.Empty);
@@ -229,6 +200,7 @@ public sealed partial class Table
         // Deliberately not handledEventsToo: a cell control that shows its own context flyout marks
         // this handled, and section 15 leaves that control its own menu.
         _surface.ContextRequested += OnRowsContextRequested;
+
         _surface.SelectionChanged += OnSurfaceSelectionChanged;
     }
 
@@ -276,6 +248,7 @@ public sealed partial class Table
         );
         _surface.RemoveHandler(UIElement.TappedEvent, new TappedEventHandler(OnRowsTapped));
         _surface.ContextRequested -= OnRowsContextRequested;
+
         _surface.SelectionChanged -= OnSurfaceSelectionChanged;
 
         _innerScrollViewer = null;
@@ -285,8 +258,6 @@ public sealed partial class Table
 
     private void OnRowsPointerPressed(object sender, PointerRoutedEventArgs e)
     {
-        CancelGesture();
-
         if (_surface is null)
         {
             return;
@@ -300,6 +271,7 @@ public sealed partial class Table
             return;
         }
 
+        CancelGesture();
         HitTarget hit = HitTest(e.OriginalSource as DependencyObject, out object? item);
         if (hit == HitTarget.Suppressed)
         {
@@ -314,7 +286,7 @@ public sealed partial class Table
         _gestureItem = item;
         _gestureCtrl = IsDown(VirtualKey.Control);
         _gestureShift = IsDown(VirtualKey.Shift);
-        _gestureCouldDrag = item is not null && CanBeginRowDrag(item);
+        _gestureCouldDrag = item is not null && CanStartDrag(item);
 
         ApplyPress();
     }
@@ -343,7 +315,7 @@ public sealed partial class Table
 
         if (_gesture == RowGesture.RowDrag)
         {
-            UpdateDragDestination(_rowDrag.Track(now.Y));
+            SetDestination(_wheel!.Track(ToRoot(now)));
             return;
         }
 
@@ -356,6 +328,8 @@ public sealed partial class Table
         }
 
         CommitGesture(e.Pointer);
+        if (_gesture == RowGesture.Marquee)
+            _marquee.Track(now);
     }
 
     /// <summary>
@@ -385,7 +359,7 @@ public sealed partial class Table
 
         if (gesture == RowGesture.RowDrag)
         {
-            BeginRowDrag(rows, _gestureItem!);
+            BeginDrag(_gestureItem!);
         }
         else
         {
@@ -422,7 +396,7 @@ public sealed partial class Table
     {
         SyncSelectionPolicy();
 
-        if (_gestureItem is object item && _gestureCouldDrag && CanBeginRowDrag(item))
+        if (_gestureItem is object item && _gestureCouldDrag && CanStartDrag(item))
         {
             return RowGesture.RowDrag;
         }
@@ -435,16 +409,17 @@ public sealed partial class Table
 
     private void OnRowsPointerReleased(object sender, PointerRoutedEventArgs e)
     {
-        bool ours = e.Pointer.PointerId == _gesturePointerId;
+        if (e.Pointer.PointerId != _gesturePointerId)
+            return;
 
-        if (ours && _gesture == RowGesture.RowDrag)
+        if (_gesture == RowGesture.RowDrag)
         {
             // The drop ends the gesture itself, before the request reaches the host.
-            CompleteRowDrag(e.GetCurrentPoint(_surface).Position.Y);
+            CompleteDrag(ToRoot(e.GetCurrentPoint(_surface).Position));
             return;
         }
 
-        if (ours && _gesture == RowGesture.Pressed)
+        if (_gesture == RowGesture.Pressed)
         {
             DispatchClick();
         }
@@ -461,7 +436,9 @@ public sealed partial class Table
     /// </summary>
     private void OnRowsPointerCanceled(object sender, PointerRoutedEventArgs e)
     {
-        if (_gesture == RowGesture.Marquee && e.Pointer.PointerId == _gesturePointerId)
+        if (e.Pointer.PointerId != _gesturePointerId)
+            return;
+        if (_gesture == RowGesture.Marquee)
         {
             RestoreSelectionBeforeMarquee();
             CommitSelection();
@@ -593,6 +570,7 @@ public sealed partial class Table
             return false;
         }
 
+        CancelGesture();
         if (item is not null)
         {
             SelectItem(item, ctrl, shift);
@@ -623,36 +601,18 @@ public sealed partial class Table
         );
     }
 
-    /// <summary>
-    /// Section 16. A selected row moves the whole selected packet and any other row moves alone,
-    /// resolved here because nothing can move the selection under a live drag. The marker shows the
-    /// boundary from the first moment, and nothing else about the table changes until the host acts
-    /// on the request this drag ends with.
-    /// </summary>
-    private void BeginRowDrag(ListView rows, object item)
-    {
-        _gesture = RowGesture.RowDrag;
-        _movingPacket = _selection.IsSelected(item) ? SelectedItems : new[] { item };
-
-        _rowDrag.Begin(rows, _rowInsertionMarker);
-        UpdateDragDestination(_rowDrag.Track(_gestureOrigin.Y));
-        RowVisualsChanged?.Invoke(this, EventArgs.Empty);
-    }
-
     private void CancelGesture()
     {
         bool wasDragging = _gesture == RowGesture.RowDrag;
 
         _gesture = RowGesture.None;
         _marquee.End();
-        _rowDrag.End();
-        UpdateDragDestination(-1);
+        EndDrag();
         ReleaseGesturePointer();
         _gestureItem = null;
         _gestureDeferred = false;
         _gestureCouldDrag = false;
         _gestureSelection = null;
-        _movingPacket = Array.Empty<object>();
 
         if (wasDragging)
         {
@@ -763,257 +723,6 @@ public sealed partial class Table
         CancelGesture();
         SyncSelectionPolicy();
         _selection.Restore(restored, View);
-    }
-
-    // ------------------------------------------------------------------ row drag
-
-    /// <summary>
-    /// Sections 5 and 16: the gesture is offered only when the host enabled it, the view shows the
-    /// row order, so that the boundary a drop names is a place in that order, and the row is one
-    /// the user may act on. The same answer decides whether the press defers its selection change,
-    /// so a row that cannot be dragged still selects on press, and what a drag from it does
-    /// instead: section 14's rectangle.
-    /// </summary>
-    /// <remarks>
-    /// Having a <see cref="ReorderRequested"/> handler used to be part of this, which made
-    /// subscribing to an event load-bearing behaviour that nothing in the API announced — two
-    /// owners of one capability. <see cref="CanReorder"/> is now the only one, and it
-    /// is off by default, so a host that has no order to change offers no dead drag either.
-    /// </remarks>
-    internal bool CanBeginRowDrag(object item)
-    {
-        // The rows ask this for their cursor as soon as they load, which can be before any press
-        // or reconcile has copied the host's interaction predicate into the model.
-        SyncSelectionPolicy();
-        return _hierarchy is null
-            && CanReorder
-            && ShowsRowOrder
-            && _selection.IsInteractive(item)
-            && (
-                CanReorderItem is null
-                || (
-                    CanReorderItem(item)
-                    && (!_selection.IsSelected(item) || SelectedItems.All(CanReorderItem))
-                )
-            );
-    }
-
-    /// <summary>
-    /// Section 16's drop. The gesture ends before the request is raised, so a handler that updates
-    /// its source inside the event finds the table already idle.
-    /// </summary>
-    private void CompleteRowDrag(double y)
-    {
-        int boundary = _rowDrag.Track(y);
-        IReadOnlyList<object> moving = _movingPacket;
-
-        CancelGesture();
-        RequestReorder(moving, boundary);
-    }
-
-    /// <summary>
-    /// Section 16's rejections, all silent: nothing to move, no realized boundary to move it to,
-    /// and a placement that leaves the order as it stands. A drop inside a packet that is already
-    /// one block is that last one, because the anchor resolves past the packet to the row it
-    /// already sits beside. A scattered packet is gathered at the boundary instead, which does
-    /// change the order. A view that no longer shows the row order is refused here too, as a
-    /// backstop: the sort that took it away has already cancelled the drag.
-    /// </summary>
-    /// <remarks>
-    /// Section 5.1 speaks in row order. Under the row-order column sorted downward the view runs
-    /// the other way, so the request is read against the view in the opposite direction: the
-    /// packet reversed, and its anchor the first row above the boundary that is not moving, with
-    /// null at the top of the view meaning the end of the row order. A host that applies the
-    /// request in row order then puts the packet exactly where it was dropped. Reversing the
-    /// packet is right only because it arrives in view order: a selected packet is built by
-    /// walking the view, and a lone row is a packet of one.
-    /// </remarks>
-    private void RequestReorder(IReadOnlyList<object> moving, int boundary)
-    {
-        if (_hierarchy is not null || moving.Count == 0 || boundary < 0 || !ShowsRowOrder)
-        {
-            return;
-        }
-
-        bool reversed = RowOrderIsReversed;
-        object? target = reversed
-            ? InsertTargetAbove(boundary, moving)
-            : InsertTarget(boundary, moving);
-        if (KeepsOrder(moving, target, reversed))
-        {
-            return;
-        }
-
-        IReadOnlyList<object> packet = reversed ? moving.Reverse().ToList() : moving;
-        _reorderRequested?.Invoke(this, new ReorderRequestedEventArgs(packet, target));
-    }
-
-    /// <summary>Section 16: the moving rows carry the platform's own dragged-item treatment.</summary>
-    internal bool IsRowDragging(object? item)
-    {
-        if (item is null || _gesture != RowGesture.RowDrag)
-        {
-            return false;
-        }
-
-        foreach (object moving in _movingPacket)
-        {
-            if (_selection.IsSame(moving, item))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    /// <summary>
-    /// Section 16: the destination, exposed as the table's automation status for as long as the
-    /// drag is live and announced whenever it moves. The control claims no UI Automation drag/drop
-    /// pattern — that would promise a drop-target tree it does not implement — so this status is
-    /// the whole accessible account of a drag. A negative boundary means there is none.
-    /// </summary>
-    private void UpdateDragDestination(int boundary)
-    {
-        if (boundary == _dragBoundary)
-        {
-            return;
-        }
-
-        _dragBoundary = boundary;
-        RefreshDragText();
-    }
-
-    private void RefreshDragText()
-    {
-        string status = DragDestination(_dragBoundary);
-        AutomationProperties.SetItemStatus(this, status);
-
-        if (status.Length > 0)
-        {
-            FrameworkElementAutomationPeer
-                .FromElement(this)
-                ?.RaiseNotificationEvent(
-                    AutomationNotificationKind.Other,
-                    AutomationNotificationProcessing.MostRecent,
-                    status,
-                    RowDragActivityId
-                );
-        }
-    }
-
-    /// <summary>
-    /// The destination as a position rather than the row's own name: a row's name is every cell it
-    /// holds, which is too long to repeat on each boundary the pointer crosses.
-    /// </summary>
-    private string DragDestination(int boundary)
-    {
-        if (boundary < 0)
-        {
-            return string.Empty;
-        }
-
-        object? target = InsertTarget(boundary, _movingPacket);
-        return target is null
-            ? Strings.DropAtEnd
-            : string.Format(
-                CultureInfo.CurrentCulture,
-                Strings.DropBeforeRow,
-                IndexInView(target) + 1,
-                View.Count
-            );
-    }
-
-    /// <summary>
-    /// Section 5.1's insertion anchor: the first row at or after the boundary that is not moving,
-    /// or null for the end of the view. Naming the row rather than an index is what makes the
-    /// request immune to the packet's own removal — once the host has taken the packet out, that
-    /// row is still exactly the one the packet goes before, wherever it has ended up. A held row is
-    /// never the anchor, because the host no longer has it.
-    /// </summary>
-    private object? InsertTarget(int boundary, IReadOnlyList<object> moving)
-    {
-        HashSet<object> packet = new(moving, _identity);
-        for (int i = boundary; i < View.Count; i++)
-        {
-            if (!packet.Contains(View[i]) && !IsHeld(View[i]))
-            {
-                return View[i];
-            }
-        }
-
-        return null;
-    }
-
-    /// <summary>
-    /// The anchor read the other way, for the row-order column sorted downward: the first row
-    /// above the boundary that is not moving, or null when nothing stands above it, which is the
-    /// end of the row order.
-    /// </summary>
-    private object? InsertTargetAbove(int boundary, IReadOnlyList<object> moving)
-    {
-        HashSet<object> packet = new(moving, _identity);
-        for (int i = Math.Min(boundary, View.Count) - 1; i >= 0; i--)
-        {
-            if (!packet.Contains(View[i]) && !IsHeld(View[i]))
-            {
-                return View[i];
-            }
-        }
-
-        return null;
-    }
-
-    /// <summary>
-    /// Whether the placement leaves the view exactly as it is: the packet is already one block, and
-    /// the row beside that block, next in row order, is the one it would be inserted before — the
-    /// row below the block, or the row above it when the view runs opposite to the row order. A
-    /// scattered packet always moves, because the drop gathers it. A packet that is the whole view
-    /// is the same test — its block ends the view and its target is null, which section 5.1
-    /// requires to raise nothing.
-    /// </summary>
-    private bool KeepsOrder(IReadOnlyList<object> moving, object? target, bool reversed)
-    {
-        // The row order the request speaks of is the host's, which has no held rows.
-        IReadOnlyList<object> rows =
-            _held.Count == 0 ? View : View.Where(row => !IsHeld(row)).ToList();
-        int start = -1;
-        for (int i = 0; i < rows.Count && start < 0; i++)
-        {
-            if (_selection.IsSame(rows[i], moving[0]))
-            {
-                start = i;
-            }
-        }
-
-        if (start < 0 || start + moving.Count > rows.Count)
-        {
-            return false;
-        }
-
-        for (int i = 1; i < moving.Count; i++)
-        {
-            if (!_selection.IsSame(rows[start + i], moving[i]))
-            {
-                return false;
-            }
-        }
-
-        int beside = reversed ? start - 1 : start + moving.Count;
-        object? neighbour = beside >= 0 && beside < rows.Count ? rows[beside] : null;
-        return _selection.IsSame(neighbour, target);
-    }
-
-    /// <summary>
-    /// Section 5.3: a source update, <see cref="RefreshView"/>, a sort change, or the host
-    /// withdrawing <see cref="CanReorder"/> all end a live drag, with no request.
-    /// </summary>
-    private void CancelRowDrag()
-    {
-        if (_gesture == RowGesture.RowDrag)
-        {
-            CancelGesture();
-        }
     }
 
     private void OnRowsDoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
@@ -1426,6 +1135,24 @@ public sealed partial class Table
         // ItemsStackPanel's first request can land one row short while estimating its extent.
         _surface?.ScrollIntoView(item);
         _surface?.ScrollIntoView(item);
+    }
+
+    /// <summary>
+    /// Reveal a batch's waiting arrivals together, then scroll to its target without changing
+    /// selection or focus. Already displayed items do not release a future membership change.
+    /// </summary>
+    public void ScrollIntoView(object item, IEnumerable<object> arrivals)
+    {
+        ArgumentNullException.ThrowIfNull(arrivals);
+        if (_hierarchy is null)
+        {
+            HashSet<object> waiting = new(arrivals, _identity);
+            waiting.ExceptWith(View);
+            waiting.IntersectWith(_source.Snapshot);
+            if (waiting.Count > 0)
+                Release(waiting);
+        }
+        ScrollIntoView(item);
     }
 
     /// <summary>

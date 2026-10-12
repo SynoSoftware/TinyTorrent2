@@ -150,9 +150,7 @@
                       Visibility="{x:Bind Model.AddDraft.LacksSpace, Mode=OneWay}"
                     />
                   </Grid>
-                  <controls:FieldHeader
-                    Error="{x:Bind Model.AddDraft.DestinationMessage, Mode=OneWay}"
-                  />
+                  <controls:FieldHeader Error="{x:Bind Model.AddDraft.DestinationMessage, Mode=OneWay}" />
                 </Grid>
                 <TextBlock
                   Text="{x:Bind Model.AddDraft.Shared, Mode=OneWay}"

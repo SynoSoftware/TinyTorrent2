@@ -20,9 +20,6 @@ public sealed partial class FileDialog : UserControl
     private void OnDestination(object sender, RoutedEventArgs args) =>
         DestinationRequested?.Invoke(this, EventArgs.Empty);
 
-    private void OnFeedbackSize(object sender, SizeChangedEventArgs args) =>
-        Body.Margin = new Thickness(0, 0, 0, args.NewSize.Height);
-
     private async void OnRefresh(object sender, RoutedEventArgs args) =>
         await Model.FileDraft.RefreshScope();
 }

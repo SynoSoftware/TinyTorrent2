@@ -1263,9 +1263,9 @@ records the ruling and the arrangement that replaced vcpkg.
 
 ## Wire representation
 
-Protocol version 11 uses a four-byte little-endian UTF-8 JSON frame length,
+Protocol version 13 uses a four-byte little-endian UTF-8 JSON frame length,
 bounded to 16 MiB. The endpoint is `TinyTorrent.<logon SID>`; each connecting
-client first receives `{type:"hello",version:11,session_id:"...",data_directory:"..."}`. The absolute data directory
+client first receives `{type:"hello",version:13,session_id:"...",data_directory:"..."}`. The absolute data directory
 keeps the same store for explicit Restart, which starts the engine beside the
 window rather than a path a pipe peer reports. Requests are
 `{request_id:integer,command:string,...}`. Replies repeat `request_id` and have
@@ -1297,7 +1297,11 @@ and `exit`. Activation acknowledgement lets Open wait through an
 old window's close path without losing the request. Current settings changes accept language (`en`, `es`)
 and theme (`system`, `light`, `dark`); unknown fields or values are refused. A
 settings acknowledgement confirms the same durable replacement as membership.
-Settings also accept `default_destination` (absolute path), `show_add` and
+Settings also accept `default_destination` (absolute path), `torrent_dialog` and
+`magnet_dialog` (independent booleans, default true). An older saved `show_add`
+initializes both when their own saved values are absent; snapshots and new saves
+contain only the separate choices. Settings also accept
+`confirm_delete` (boolean, default true, added in protocol version 12) and
 `limit_mode` (`none`, `speed` or `alternative` for a manual choice, default
 `none`, or null to clear its temporary override while scheduling is enabled).
 The product's [mode selector](interface.md#main-window) commits
@@ -1337,10 +1341,13 @@ Existing saved notification choices keep their value.
 Session pause is persisted as `all_paused` through
 its command and preserves individual torrent intent.
 `registration` takes an `action` string: `observe`, `register_handlers`,
-`unregister_handlers`, `enable_startup`, `disable_startup`, `open_defaults`, or
-`open_startup`. Its data contains `handlers`, `handlers_target`, `startup`,
-`startup_target`, `torrent_default` and `magnet_default`. The two registration
-states are `none`, `this` or `other`; an unavailable default query is null.
+`unregister_handlers`, `enable_startup`, or `disable_startup`. Its data contains
+`handlers`, `handlers_target`, `startup`, `startup_target`, `startup_disabled`,
+`torrent_default`, `magnet_default`, `torrent_app` and `magnet_app`. The two
+registration states are `none`, `this` or `other`; an unavailable default query
+is null. `startup_disabled` is true while Windows has disabled the Run entry.
+The app fields name the app Windows opens each kind with, and are empty when
+Windows asks instead.
 A partial failure includes the observed data with the refusal.
 The same operations are available through the engine executable's
 `--registration OPERATION` option without starting transfers or WinUI.

@@ -4,23 +4,58 @@
   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
   xmlns:controls="using:Syno.TinyTorrent.Controls"
   xmlns:views="using:Syno.TinyTorrent.Views"
+  xmlns:models="using:Syno.TinyTorrent.Models"
   xmlns:icons="using:Syno"
 >
-  <Grid>
-    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-      <StackPanel x:Name="Body" Spacing="12">
+  <UserControl.Resources>
+    <DataTemplate x:Key="FileDialogTorrentTemplate" x:DataType="models:Torrent">
+      <Grid ColumnSpacing="16" MinHeight="32">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
         <TextBlock
-          Text="{x:Bind Model.Text.Get('file_action', 'current'), Mode=OneWay}"
-          Style="{StaticResource TinyTorrentGroupTitleTextStyle}"
-          Visibility="{x:Bind Model.FileDraft.IsMove, Mode=OneWay}"
-        />
-        <TextBlock
-          Text="{x:Bind Model.FileDraft.Locations, Mode=OneWay}"
+          Text="{x:Bind Name, Mode=OneWay}"
           Style="{StaticResource TinyTorrentBodyTextStyle}"
+          TextWrapping="NoWrap"
+          TextTrimming="CharacterEllipsis"
           IsTextSelectionEnabled="True"
-          FlowDirection="LeftToRight"
-          ToolTipService.ToolTip="{x:Bind Model.FileDraft.Locations, Mode=OneWay}"
+          VerticalAlignment="Center"
+        >
+          <ToolTipService.ToolTip>
+            <StackPanel>
+              <TextBlock Text="{x:Bind Name, Mode=OneWay}" />
+              <TextBlock Text="{x:Bind SavePath, Mode=OneWay}" FlowDirection="LeftToRight" />
+            </StackPanel>
+          </ToolTipService.ToolTip>
+        </TextBlock>
+        <TextBlock
+          Grid.Column="1"
+          Text="{x:Bind SizeText, Mode=OneWay}"
+          Style="{StaticResource TinyTorrentBodyTextStyle}"
+          Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+          VerticalAlignment="Center"
+        />
+      </Grid>
+    </DataTemplate>
+  </UserControl.Resources>
+  <Grid>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="*" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
+    </Grid.RowDefinitions>
+    <ScrollViewer
+      MaxHeight="224"
+      VerticalScrollBarVisibility="Auto"
+      HorizontalScrollBarVisibility="Disabled"
+    >
+      <StackPanel Spacing="12">
+        <ItemsControl
+          ItemsSource="{x:Bind Model.FileDraft.Torrents, Mode=OneWay}"
+          ItemTemplate="{StaticResource FileDialogTorrentTemplate}"
           Visibility="{x:Bind Model.FileDraft.IsMove, Mode=OneWay}"
+          IsTabStop="False"
         />
         <ItemsControl
           ItemsSource="{x:Bind Model.FileDraft.Folders, Mode=OneWay}"
@@ -58,33 +93,12 @@
                     VerticalAlignment="Center"
                   />
                 </Grid>
-                <ItemsControl ItemsSource="{x:Bind Torrents}" IsTabStop="False">
-                  <ItemsControl.ItemTemplate>
-                    <DataTemplate x:DataType="views:TorrentSize">
-                      <Grid ColumnSpacing="16" MinHeight="24" Padding="24,0,0,0">
-                        <Grid.ColumnDefinitions>
-                          <ColumnDefinition Width="*" />
-                          <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <TextBlock
-                          Text="{x:Bind Name}"
-                          ToolTipService.ToolTip="{x:Bind Name}"
-                          Style="{StaticResource TinyTorrentBodyTextStyle}"
-                          TextWrapping="NoWrap"
-                          TextTrimming="CharacterEllipsis"
-                          VerticalAlignment="Center"
-                        />
-                        <TextBlock
-                          Grid.Column="1"
-                          Text="{x:Bind Size}"
-                          Style="{StaticResource TinyTorrentBodyTextStyle}"
-                          Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                          VerticalAlignment="Center"
-                        />
-                      </Grid>
-                    </DataTemplate>
-                  </ItemsControl.ItemTemplate>
-                </ItemsControl>
+                <ItemsControl
+                  ItemsSource="{x:Bind Torrents}"
+                  IsTabStop="False"
+                  Margin="24,0,0,0"
+                  ItemTemplate="{StaticResource FileDialogTorrentTemplate}"
+                />
               </StackPanel>
             </DataTemplate>
           </ItemsControl.ItemTemplate>
@@ -112,91 +126,89 @@
           IsTextSelectionEnabled="True"
           ToolTipService.ToolTip="{x:Bind Model.FileDraft.Warning, Mode=OneWay}"
         />
-        <StackPanel Spacing="8" Visibility="{x:Bind Model.FileDraft.IsMove, Mode=OneWay}">
-          <Grid ColumnSpacing="8">
-            <Grid.ColumnDefinitions>
-              <ColumnDefinition Width="*" />
-              <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
-            <TextBox
-              x:Name="Destination"
-              AutomationProperties.AutomationId="MoveDestination"
-              AutomationProperties.Name="{x:Bind Model.Text.Get('file_action', 'destination'), Mode=OneWay}"
-              AutomationProperties.HelpText="{x:Bind Model.FileDraft.DestinationError, Mode=OneWay}"
-              IsReadOnly="True"
-              Text="{x:Bind Model.FileDraft.Destination, Mode=OneWay}"
-              ToolTipService.ToolTip="{x:Bind Model.FileDraft.Destination, Mode=OneWay}"
-              FlowDirection="LeftToRight"
-            >
-              <TextBox.Header>
-                <controls:FieldHeader
-                  Label="{x:Bind Model.Text.Get('file_action', 'destination'), Mode=OneWay}"
-                  Error="{x:Bind Model.FileDraft.DestinationError, Mode=OneWay}"
-                />
-              </TextBox.Header>
-            </TextBox>
-            <controls:ActionButton
-              Glyph="{x:Bind icons:Lucide.FolderSearch}"
-              ToolTipService.ToolTip="{x:Bind Model.Text.Get('file_action', 'browse_tip'), Mode=OneWay}"
-              x:Name="Browse"
-              Text="{x:Bind Model.Text.Get('add', 'browse'), Mode=OneWay}"
-              AutomationProperties.AutomationId="MoveBrowse"
-              Grid.Column="1"
-              VerticalAlignment="Bottom"
-              IsEnabled="{x:Bind Model.FileDraft.CanRefresh, Mode=OneWay}"
-              Click="OnDestination"
-            />
-          </Grid>
-          <Grid ColumnSpacing="12">
-            <Grid.ColumnDefinitions>
-              <ColumnDefinition Width="Auto" />
-              <ColumnDefinition Width="*" />
-            </Grid.ColumnDefinitions>
-            <CheckBox
-              x:Name="UseExisting"
-              Content="{x:Bind Model.Text.Get('file_action', 'use_existing'), Mode=OneWay}"
-              AutomationProperties.AutomationId="UseExisting"
-              IsChecked="{x:Bind Model.FileDraft.UseExisting, Mode=TwoWay}"
-              IsEnabled="{x:Bind Model.FileDraft.CanRefresh, Mode=OneWay}"
-            />
-            <TextBlock
-              x:Name="ExistingWarning"
-              Grid.Column="1"
-              VerticalAlignment="Center"
-              Text="{x:Bind Model.Text.Get('file_action', 'existing_warning'), Mode=OneWay}"
-              Style="{StaticResource TinyTorrentBodyTextStyle}"
-              IsTextSelectionEnabled="True"
-              ToolTipService.ToolTip="{x:Bind Model.Text.Get('file_action', 'existing_warning'), Mode=OneWay}"
-              Visibility="{x:Bind Model.FileDraft.UseExisting, Mode=OneWay}"
-            />
-          </Grid>
-          <Grid
-            ColumnSpacing="12"
-            Visibility="{x:Bind Model.FileDraft.HasDestination, Mode=OneWay}"
-          >
-            <Grid.ColumnDefinitions>
-              <ColumnDefinition Width="Auto" />
-              <ColumnDefinition Width="*" />
-            </Grid.ColumnDefinitions>
-            <TextBlock
-              x:Name="ResultLabel"
-              VerticalAlignment="Center"
-              Text="{x:Bind Model.Text.Get('file_action', 'resulting'), Mode=OneWay}"
-              Style="{StaticResource TinyTorrentGroupTitleTextStyle}"
-            />
-            <TextBlock
-              Grid.Column="1"
-              VerticalAlignment="Center"
-              Text="{x:Bind Model.FileDraft.ResultingFolders, Mode=OneWay}"
-              Style="{StaticResource TinyTorrentBodyTextStyle}"
-              IsTextSelectionEnabled="True"
-              FlowDirection="LeftToRight"
-              ToolTipService.ToolTip="{x:Bind Model.FileDraft.ResultingFolders, Mode=OneWay}"
-            />
-          </Grid>
-        </StackPanel>
       </StackPanel>
     </ScrollViewer>
+    <Border
+      Grid.Row="1"
+      BorderThickness="0,1,0,0"
+      Padding="0,16,0,0"
+      Margin="0,16,0,0"
+      BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
+      Visibility="{x:Bind Model.FileDraft.IsMove, Mode=OneWay}"
+    >
+      <Grid ColumnSpacing="12">
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+        <TextBlock
+          Text="{x:Bind Model.Text.Get('file_action', 'current'), Mode=OneWay}"
+          Style="{StaticResource TinyTorrentBodyTextStyle}"
+          VerticalAlignment="Center"
+        />
+        <TextBlock
+          Grid.Column="1"
+          Margin="12,0,0,0"
+          Text="{x:Bind Model.FileDraft.Locations, Mode=OneWay}"
+          ToolTipService.ToolTip="{x:Bind Model.FileDraft.Locations, Mode=OneWay}"
+          Style="{StaticResource TinyTorrentBodyTextStyle}"
+          Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+          TextWrapping="NoWrap"
+          TextTrimming="CharacterEllipsis"
+          IsTextSelectionEnabled="True"
+          FlowDirection="LeftToRight"
+          VerticalAlignment="Center"
+        />
+        <TextBlock
+          Grid.Row="1"
+          x:Name="DestinationLabel"
+          Margin="0,8,0,0"
+          Text="{x:Bind Model.Text.Get('file_action', 'destination'), Mode=OneWay}"
+          Style="{StaticResource TinyTorrentBodyTextStyle}"
+          VerticalAlignment="Center"
+        />
+        <TextBox
+          Grid.Row="1"
+          Grid.Column="1"
+          Margin="0,8,0,0"
+          x:Name="Destination"
+          AutomationProperties.AutomationId="MoveDestination"
+          AutomationProperties.Name="{x:Bind Model.Text.Get('file_action', 'destination'), Mode=OneWay}"
+          AutomationProperties.HelpText="{x:Bind Model.FileDraft.DestinationError, Mode=OneWay}"
+          AutomationProperties.LabeledBy="{x:Bind DestinationLabel}"
+          IsEnabled="{x:Bind Model.FileDraft.CanRefresh, Mode=OneWay}"
+          Text="{x:Bind Model.FileDraft.Destination, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+          ToolTipService.ToolTip="{x:Bind Model.FileDraft.Destination, Mode=OneWay}"
+          FlowDirection="LeftToRight"
+        />
+        <controls:FieldHeader
+          Grid.Row="2"
+          Grid.Column="1"
+          Grid.ColumnSpan="2"
+          Margin="0,8,0,0"
+          Error="{x:Bind Model.FileDraft.DestinationError, Mode=OneWay}"
+        />
+        <controls:ActionButton
+          Glyph="{x:Bind icons:Lucide.FolderSearch}"
+          ToolTipService.ToolTip="{x:Bind Model.Text.Get('file_action', 'browse_tip'), Mode=OneWay}"
+          x:Name="Browse"
+          Text="{x:Bind Model.Text.Get('add', 'browse'), Mode=OneWay}"
+          AutomationProperties.AutomationId="MoveBrowse"
+          Grid.Row="1"
+          Grid.Column="2"
+          Margin="0,8,0,0"
+          VerticalAlignment="Bottom"
+          IsEnabled="{x:Bind Model.FileDraft.CanRefresh, Mode=OneWay}"
+          Click="OnDestination"
+        />
+      </Grid>
+    </Border>
     <ProgressRing
       Width="20"
       Height="20"
@@ -205,8 +217,9 @@
       IsActive="{x:Bind Model.FileDraft.IsPending, Mode=OneWay}"
       Visibility="{x:Bind Model.FileDraft.IsPending, Mode=OneWay}"
     />
-    <StackPanel VerticalAlignment="Bottom" Spacing="8" SizeChanged="OnFeedbackSize">
+    <StackPanel Grid.Row="2" Spacing="8">
       <InfoBar
+        Margin="0,16,0,0"
         IsClosable="False"
         Severity="Error"
         IsOpen="{x:Bind Model.FileDraft.HasError, Mode=OneWay}"
@@ -226,11 +239,13 @@
         </InfoBar.ActionButton>
       </InfoBar>
       <InfoBar
+        Margin="0,16,0,0"
         IsClosable="False"
         Severity="Error"
         IsOpen="{x:Bind Model.CanRestart, Mode=OneWay}"
         Visibility="{x:Bind Model.CanRestart, Mode=OneWay}"
-        Message="{x:Bind Model.Message, Mode=OneWay}"
+        Title="{x:Bind Model.CurrentStatus.Title, Mode=OneWay}"
+        Message="{x:Bind Model.CurrentStatus.Body, Mode=OneWay}"
       >
         <InfoBar.ActionButton>
           <controls:ActionButton

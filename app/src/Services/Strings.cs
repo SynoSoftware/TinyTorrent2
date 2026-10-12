@@ -15,11 +15,20 @@ public sealed class Strings
     internal Syno.TableView.Strings Table => _current.Table;
     internal bool IsRightToLeft => _current.IsRightToLeft;
 
-    public Strings() : this([]) { }
+    public Strings()
+        : this([]) { }
 
     internal Strings(IEnumerable<string> languageTags)
     {
-        _languageTags = languageTags.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        _languageTags = languageTags
+            .Concat(
+                CultureInfo
+                    .GetCultures(CultureTypes.AllCultures)
+                    .Where(culture => culture.Name.Length > 0)
+                    .Select(culture => culture.Name)
+            )
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
         _current = Prepare("en");
     }
 
@@ -55,10 +64,18 @@ public sealed class Strings
         try
         {
             CultureInfo.CurrentUICulture = culture;
-            foreach (var tag in _languageTags.Append(language).Distinct(StringComparer.OrdinalIgnoreCase))
+            foreach (
+                var tag in _languageTags.Append(language).Distinct(StringComparer.OrdinalIgnoreCase)
+            )
             {
-                try { names.Add(tag, CultureInfo.GetCultureInfo(tag).DisplayName); }
-                catch (CultureNotFoundException) { names.Add(tag, tag); }
+                try
+                {
+                    names.Add(tag, CultureInfo.GetCultureInfo(tag).DisplayName);
+                }
+                catch (CultureNotFoundException)
+                {
+                    names.Add(tag, tag);
+                }
             }
         }
         finally
@@ -142,14 +159,23 @@ public sealed class Strings
             : Format("errors", "detail", message, detail);
     }
 
-    public string Error(Exception error) => error switch
-    {
-        CommandException => error.Message,
-        DatabaseVersionException => Get("errors", "database_version"),
-        Library.VideoException video => Get(video.Section, video.Reason),
-        Subtitles.SubtitleException subtitle => Get("subtitles", "failure_" + subtitle.Reason.ToString().ToLowerInvariant()),
-        _ => Error("unknown", error.Message),
-    };
+    public string Error(Exception error) =>
+        error switch
+        {
+            CommandException => error.Message,
+            DatabaseVersionException => Get("errors", "database_incompatible"),
+            Library.VideoException { Detail: { } detail } video => Format(video.Section, video.Reason, detail),
+            Library.VideoException video => Get(video.Section, video.Reason),
+            Subtitles.SubtitleException subtitle => Get(
+                "subtitles",
+                "failure_" + subtitle.Reason.ToString().ToLowerInvariant()
+            ),
+            // A title or the surrounding control already says that the
+            // operation failed, so only the reason follows it.
+            _ => string.IsNullOrWhiteSpace(error.Message)
+                ? Get("errors", "unknown")
+                : error.Message,
+        };
 
     public string Bytes(double value)
     {

@@ -79,9 +79,9 @@ _Avoid_: autofit, auto-size.
 makes them end at the table's right edge, wider or narrower.
 _Avoid_: stretch.
 
-**First fill**: the one proportional scale of the baseline widths to the
-table's width that the table applies when it first has a width and no width
-override exists. It measures nothing.
+**Automatic fill**: the same fit and proportional scale performed after a table
+becomes visible or its available width changes. It does not publish a saved-layout
+change, because widths belong to the live table.
 
 **Trailing space**: the part of the table to the right of the last visible
 column.
@@ -105,7 +105,19 @@ It is distinct from physical keyboard focus.
 
 **Anchor**: the row from which a range selection extends.
 
-**Packet**: an ordered set of items acted on together in current visual order.
+**Packet**: an ordered set of items acted on together. Selection actions use
+visual order; a reorder packet contains only participating items in numbered order.
+
+**Numbered order**: unique positions supplied by the host, independently of
+filtering and display sorting. Items outside this order can still be selected.
+
+**Position**: an item's number in a numbered order, distinct from its displayed
+row index.
+
+**Insertion gap**: a place before a remaining item, or after the last remaining
+item, once the packet is taken out of the numbered order.
+
+**Wheel**: the drag popup that presents a numbered order and its insertion gaps.
 
 **Non-interactive item**: a host-designated row that is displayed without joining
 selection, invocation, context actions, or reorder packets.

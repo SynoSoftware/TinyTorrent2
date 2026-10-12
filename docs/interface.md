@@ -136,6 +136,18 @@ existing draft guards. Show in Torrents on Library also shows Back on Torrents,
 returning to Library. The arrow sits in the title bar, as in Windows
 Settings, so the page keeps its full height. Keep continuous acrylic.
 
+One window navigation history owns the current destination, Back availability
+and return destinations, including Connection setup inside Settings. Explicit
+Torrents/Library navigation selects a workspace and clears return history;
+Show in Torrents is a contextual visit that retains Library as its return.
+Secondary pages retain their callers. Selecting a destination already in that
+history returns to it without adding a duplicate. Back consumes a destination
+only after departure guards accept it; a refusal preserves the current page
+and history. While departure is pending, further navigation is unavailable.
+The title-bar arrow and Alt+Left use this same owner, so an empty history
+both hides the arrow and disables Back. Page content and inspector state stay
+with their existing owners when navigating.
+
 A second window launch forwards Open to the existing application. Check its outcome
 before exiting. If forwarding fails before a WinUI window exists, a native
 Windows error dialog explains the failure; it does not create a second workspace
@@ -333,7 +345,7 @@ Label wording and icon use follow
   and, where it shows one, the same Lucide icon in the toolbar, the context menu,
   and dialogs. Where [Main window](#main-window) names a command, menus use that
   name and a button uses its one word, with the full name in the tooltip. A
-  person who learns Pause once recognizes it everywhere, while two names for one
+  person who learns Stop once recognizes it everywhere, while two names for one
   act read as two acts.
 - **The accent marks the default button.** The platform's accent style goes on a
   surface's default button, the one Enter runs, and every other button keeps the
@@ -391,16 +403,24 @@ Respect system accent, contrast, animation, and text settings. Preserve the
 expected rest, hover, pressed, selected, focused, disabled, loading, and error
 states of standard controls. Meaning must survive without color or motion.
 
-Standard controls retain their built-in animations. Page and tab changes use
-the LabForms SettingsPage pattern: outgoing and incoming content slide together
-horizontally over 180 ms with cubic ease-out, clipped to their host. The direction
-follows tab order. Changing the inspected torrent moves the new content gently
-into place once; live statistics never restart the transition. These changes
-do not fade through a blank surface. Rapid navigation continues from the current
-positions rather than snapping back to the start. One motion owner supplies the
-shared timing and easing. Motion never delays input or a state change. When
-the user turns animations off in Windows, the same changes stay clear without
-substitute motion.
+Standard controls retain their built-in animations. Motion expresses the
+relationship between views, so one gesture never produces competing directions.
+Torrents sits to the left of Library: their table and button bar slide as one
+surface, left when entering Library and right when returning to Torrents. The
+title bar, filters and shared inspector frame stay in place. The inspector's
+content crossfades during that workspace change, because its subject changes
+inside the same pane rather than navigating to another pane.
+
+Ordered tabs use horizontal motion in their visible order and reverse when
+returning, so direction has an observable meaning. Changing the selected torrent
+or Library file gently fades its new details into place once; live statistics
+and information updates never replay that entrance. These changes do not fade
+through a blank surface. Shared motion uses 180 ms with cubic ease-out, clipped
+to its host, without bounce or decorative staggering. Rapid navigation continues
+from the current position or opacity rather than snapping back to the start.
+One motion owner supplies the shared timing and easing. Motion never delays input
+or a state change. When the user turns animations off in Windows, the same
+changes stay clear without substitute motion.
 
 Required contrast is 4.5:1 for ordinary text and 3:1 for large text and essential
 non-text indicators such as focus and selection. Measure actual adjacent colors
@@ -486,14 +506,14 @@ because Retry is unavailable and they have no Cancel, and closing the window
 drops any edit that cannot be saved.
 
 The subtitle supplier editor requires explicit Save and discards its draft on
-window close, because changing supplier turns automatic subtitles off and stores
-account details the person has not confirmed.
+window close, because it stores account details the person has not confirmed.
+Supplier changes preserve the automatic subtitle switch.
 
 Add and Move still ask, because applying them would start a download or a file
 move that the person has not confirmed. Save runs the editor's own action, Add
 or Move; if it fails, the editor stays open with its error. Discard drops the
 draft and continues. Cancel keeps the editor and focus. Deleting files
-still shows its own confirmation of what will be deleted.
+shows its own confirmation unless the person has chosen not to ask again.
 
 On window close, ask only for work the person has actually entered: a torrent
 source or a move destination. Opening an untouched editor or changing Add or
@@ -535,7 +555,7 @@ keeps the complete title-bar row usable, starting at 720 effective pixels.
 Native dragging, resizing, caption semantics and DPI behavior remain.
 Add torrent file opens the native picker first; cancelling returns to the table
 without a draft. The selected source then opens the Add dialog for destination,
-Start paused and Add/Cancel, following the Show dialog when adding torrents setting.
+Don't start and Add/Cancel, because choosing Add explicitly asks for that workflow.
 
 The torrent table is the primary workspace, with an optional inspector and
 focused Add and Settings tasks. Outside Library, the caption contains native
@@ -572,12 +592,13 @@ Each caller supplies its header, navigation, actions and body content, so changi
 chrome changes both surfaces together. Titles share `TinyTorrentGroupTitleTextStyle`.
 
 The Filters toggle opens a collapsible native pane with All, Downloading,
-Seeding, Paused, Queued and Errors choices and live counts. Closing the drawer
+Seeding, Stopped, Queued and Errors choices and live counts. Closing the drawer
 keeps the chosen criteria, identified by the status label.
 Escape closes the drawer when focus is inside it. Clear filters lives inside
 the drawer and calls the existing filter owner. Downloading includes metadata
-acquisition, Seeding includes completed torrents and Paused includes session
-pause. One shared owner keeps pane visibility and its expanded or compact
+acquisition and Seeding includes completed torrents. Stopped holds only
+torrents with the Stopped status, because a torrent that a session pause holds
+starts again by itself. One shared owner keeps pane visibility and its expanded or compact
 presentation in both modes. Hiding preserves that presentation for the next show.
 Close hides the pane completely and unchecks View > Filters. Minimize uses the
 Lucide Pin icon and collapses the pane to a ten-pixel bar with a vertically
@@ -630,13 +651,19 @@ seeds. Added reads as elapsed time, such as 3 hours ago, because how long ago a
 torrent arrived is what the person compares; the exact date and time is its
 tooltip.
 
-Queue ascending and natural order put downloads in libtorrent queue order,
-followed by completed seeds, whose Queue cell is empty. Seeds remain selectable
-for torrent commands but cannot join a queue move or drag. Dropping downloads
-before a seed means the end of the download queue. This keeps queue actions
-meaningful instead of suggesting a seed priority that libtorrent does not use.
+Natural order follows the engine's download queue. The Queue column shows
+one-based queue positions and a dash for torrents outside the queue. The engine
+owns order and renumbering; the window saves only its table layout.
 
-Torrent commands are Pause, Resume, Force start, Open, Open folder, Copy magnet
+Dragging a selection opens the numbered queue wheel under any table sort.
+The wheel starts at the average of the selected queue positions. While holding
+the button, scroll to a destination and drop between numbers. Selected torrents
+without a queue position remain untouched; a selection containing only those
+torrents still opens the scrollable wheel and says “Nothing to move.”
+Destinations include the complete queue even when the table is filtered.
+Queue menu and keyboard actions use the same engine operation as dragging.
+
+Torrent commands are Stop, Start, Force start, Open, Open folder, Copy magnet
 link, Copy info hash, Move files, Verify, Remove, and Delete files. Download in
 sequential order and Download first and last pieces first are menu choices
 beside them. An item is checked when every selected torrent
@@ -649,15 +676,20 @@ Explorer does, only on the person's request. Double-click and Enter on a row
 invoke Properties in both Torrents and Library, showing and expanding the
 inspector even when it was hidden or compact. Properties in the context menu
 does the same. Close and View > Inspector hide the pane through the same draft
-guards. When no torrent or several are selected, or the inspected torrent is
+guards. **Owner ruling:** Inspector visibility, compact state and split size
+belong to the shared workspace, as filter-pane visibility does. Switching
+between Torrents and Library changes the pane's content and preserves those
+choices, because navigation must not move the workspace or undo an explicit
+Close. Selecting a Library row updates its content without opening the pane.
+When no torrent or several are selected, or the inspected torrent is
 removed, the pane stays open and shows how many are selected, because a pane that
 closes and reopens as rows are selected moves the table under the person.
 Add torrent file opens
 the native picker, and Add magnet
 link opens a field for the link even when the Add dialog is turned off; the
-source then follows the Show dialog when adding torrents setting. Pause all and Resume all
+source then follows the magnet dialog preference. Pause all and Resume all
 are in the window and the tray, and keep each torrent's own
-[paused or running state](engine.md#state-and-work). Exit is in the window as
+[stopped or running state](engine.md#state-and-work). Exit is in the window as
 well as the tray.
 
 Limit torrent speed… sits beside the piece-order choices in Torrent, the row
@@ -683,7 +715,7 @@ by download limit and then upload limit, with no limit as the highest value, so
 an ascending sort lists the limited torrents first.
 
 The toolbar, a row above the table that View shows or hides, is a CommandBar
-holding Add, Magnet, Resume, Pause, Open, Properties, Verify, Remove and
+holding Add, Magnet, Start, Stop, Open, Properties, Verify, Remove and
 Delete as AppBarButtons in
 groups split by AppBarSeparators. Each button shows its label beside its icon,
 so a person knows what it does without hovering; when the window is too narrow
@@ -699,11 +731,14 @@ and the window layout remembers it.
 
 Dropping torrent files or magnet text on the window, or pasting them with Ctrl+V
 while the table has focus, follows the [Add policy](#add): several sources are
-added directly; a single source follows Show dialog when adding torrents.
+added directly; a single source follows its torrent-file or magnet dialog preference.
 An empty list says how to add a torrent.
 
 The status bar shows status only, on one line, and holds no buttons, because
-a control there is easy to miss and mixes acting with reading. Each label is
+a control there is easy to miss and mixes acting with reading. **Owner ruling,
+2026-10-11:** Fetching metadata is the one exception; a small X after its count
+stops the batch, because the person who watches the count is the one who wants
+to stop it. Each label is
 short and starts with a Lucide icon so the person finds it at a glance; its
 tooltip and accessible name give the full sentence. The left group answers how
 fast transfers go and what holds them back. It shows the total download and
@@ -726,7 +761,9 @@ paused. The item tells a person whose torrent resume a global pause blocks why
 nothing moves. When the item changes on its own, such as when the schedule
 pauses transfers, screen readers announce the new state, because nothing else
 tells a person who cannot see the status bar. The right group describes the list and the
-connection. From the left, it shows: Update available when a newer release
+connection. From the left, it shows: Fetching metadata with its count while
+Library fetches metadata for several files in the background, on every page;
+Update available when a newer release
 exists; the external IP while Appearance shows it; the number of torrents and,
 while some are selected, how many, as File Explorer counts items; the active
 filter and its count while one is chosen. On Library the list facts instead
@@ -734,8 +771,8 @@ name its configuration, row count and active filters; torrent selection and
 filter facts stay with Torrents. The final item says whether incoming connections
 arrive, a proxy is in use, or the selected network adapter is absent. The
 right group is aligned to the right edge, so an item that appears or changes
-moves the items to its left. Update available appears on its own, so it comes
-first, where it moves nothing; the external IP follows it, because its address
+moves the items to its left. Fetching metadata and Update available appear on
+their own, so they come first, where they move nothing; the external IP follows it, because its address
 changes on its own. The filter keeps room for its count with every torrent in
 the list, so a torrent that changes state never moves the labels before it. A
 rate keeps room for its longest text, so live rates never move the labels after
@@ -779,7 +816,7 @@ retained. Colour is not the indication of applied limits.
 
 Shortcuts follow Windows conventions, so people keep the habits they use in
 other Windows applications. TinyTorrent has no Print, Save, or Refresh command,
-so Ctrl+P, Ctrl+S, and Ctrl+R are free for Pause, Resume and Verify. Torrent
+so Ctrl+P, Ctrl+S, and Ctrl+R are free for Stop, Start and Verify. Torrent
 shortcuts act while the table, selection toolbar or inspector has focus; an
 editor keeps its own keys.
 
@@ -791,8 +828,8 @@ editor keeps its own keys.
 | Ctrl+K, Ctrl+F, Ctrl+E | Focus global search outside Library, or the Library filter |
 | Ctrl+A | Select all torrents |
 | Enter | Show and expand the inspector for the selected torrent or Library file, as double-click does |
-| Ctrl+S | Resume |
-| Ctrl+P | Pause |
+| Ctrl+S | Start |
+| Ctrl+P | Stop |
 | Ctrl+M | Force start |
 | Ctrl+R | Verify |
 | Ctrl+Shift+S | Resume all |
@@ -812,21 +849,24 @@ use. Ctrl+W does nothing, because in Windows it closes a document or a tab, not
 the application.
 
 Remove keeps data; delete-data is an explicit, distinct decision. Each confirms
-once with the affected torrent names or count, a specific action button,
+by default with the affected torrent names or count, a specific action button,
 Remove or Delete, and a safe Cancel action. Remove confirms because a removed
 torrent cannot be restored without its torrent file or magnet link. Delete files
 also states the file scope, whether files go to the Recycle Bin or are deleted
 permanently, and that files other torrents use are kept. The deletion setting
-chooses the initial option; the confirmation makes that choice explicit so a
-saved preference cannot hide an irreversible action. The dialog's default,
+chooses the deletion mode. Add, Delete and the window's Exit confirmation use
+the shared dialog footer's Don't show this dialog again checkbox; only
+submitting saves that preference.
+Delete then uses the selected deletion mode directly, and a refused operation
+opens the dialog with its error. Settings can restore confirmation. The dialog's default,
 focus and buttons follow the ruling in [Buttons](#buttons).
-Routine pause, resume, and applied settings need no confirmation.
+Routine stop, start, and applied settings need no confirmation.
 
 Retain recognizable identity and last-known read-only values on disconnect, mark
 them stale, and disable writes until the engine is available. Current speed is
 unknown while disconnected and displays an em dash; old rates must not appear
 current. Show loading separately from an empty list. Progress fills its column
-and uses distinct paused and error brushes alongside the written status, so state
+and uses distinct stopped-or-paused and error brushes alongside the written status, so state
 is visible without depending on color. Routine outcomes are announced to assistive
 technology without a visible toast; actionable failures follow the
 [feedback placement policy](#feedback-placement). Pending operations
@@ -843,37 +883,108 @@ message cannot be the only explanation of unfinished or failed work.
 
 | Situation | Surface |
 | --- | --- |
-| Routine pause, resume, addition in the open window or applied setting | The changed state and one accessible outcome announcement; no visible success toast. |
-| Resume or Force start while a global pause prevents transfers | The resume takes effect, so the row changes from Paused to All paused at once, and a dismissible informational notice says when the torrent starts: when all transfers resume, at the time the scheduled pause ends, or when the network adapter is available. It never says the resume failed, because the person would press it again. Resume lifts the global pause; its tooltip says that a scheduled pause is lifted only until the next schedule change and individually paused torrents stay paused. An unavailable adapter offers Settings instead. Screen readers hear the notice instead of the routine announcement. The notice clears when the pause ends. |
+| Routine stop, start, addition in the open window or applied setting | The changed state and one accessible outcome announcement; no visible success toast. |
+| Start or Force start while a global pause prevents transfers | The start takes effect, so the row changes from Stopped to All paused at once, and an informational notice says when the torrent starts: when all transfers resume, at the time the scheduled pause ends, or when the network adapter is available. It never says the start failed, because the person would press it again. Its action is Resume, which lifts the global pause; its tooltip says that a scheduled pause is lifted only until the next schedule change and stopped torrents stay stopped. An unavailable adapter offers Settings instead. Screen readers hear the notice instead of the routine announcement. The notice stays until the person closes it or the pause ends. |
 | Resume all while the network adapter is absent | Resume all lifts the person's own pause, but the missing adapter still pauses every transfer, so the same notice says that transfers start when the adapter is available and offers Settings. |
 | Refused setting or failed editor action | Persistent feedback beside the field or inside that editor, following [Committing edits](#committing-edits). |
-| Failed command without an editor, such as Pause or Open folder | A dismissible app-level error message, separate from connection status; no timed disappearance. Retain the existing policy for clearing it after later command outcomes. |
-| Connection loss or unavailable storage affecting the application | A persistent InfoBar over the bottom of the workspace, above the status footer. It overlays every page without resizing its content; recovery clears the condition. |
-| Shared Library/subtitle source or database failure | The same workspace InfoBar, with Retry through the existing source and feature recovery paths. A table or supplier card does not repeat this shared condition. Supplier-specific lasting problems remain in subtitle Settings. |
-| Useful, noncritical event elsewhere in the open application | A temporary overlay in one consistent corner of the window, without moving page content and without covering a control or a row the person can click. Add this only for a named event whose existing presentation is insufficient. |
-| A finished download | The temporary overlay, with the torrent name and Open folder, as the [notification policy](engine.md#notifications-and-sleep) defines a finished download. It sits bottom-right, above the status bar, with the window's other notices. It takes no room, so showing or hiding it moves nothing. |
-| A torrent stopped by an error, or a deletion that failed after removal | The dismissible app-level error message; a stopped torrent also stays in the Errors count. With the window closed, the engine's [notification policy](engine.md#notifications-and-sleep) sends a Windows notification instead. |
+| Failed command without an editor, such as Stop or Open folder | An error toast that stays until the person closes it, separate from the message bar. Retain the existing policy for clearing it after later command outcomes. |
+| The engine did not start or stopped, or the download state could not be read or saved | The [message bar](#message-bar), with Restart for the engine and Open folder for the engine data folder. Recovery clears it. While the engine starts, the list shows its loading state and no message bar shows. |
+| Shared Library/subtitle source or database failure | The message bar, which names the cause from SQLite's error code. A read-only `library.db` offers Repair, which clears the Read-only attribute; an incompatible database offers Delete. Denied access, a disk error, a full drive or another program using the file offers Open folder beside Retry, because the person fixes it outside the app. Any other failure shows its own message with Retry, through the existing source and feature recovery paths. A table or supplier card does not repeat this shared condition. |
+| A lasting subtitle supplier problem while Automatic subtitles is On or requested manual work waits, such as refused access | The message bar as a warning, titled Subtitles paused, with Settings, or with Retry when the download folder refused a file, because that is fixed outside the app. Subtitle Settings shows state only, never the problem again. |
+| Fetch metadata left files unidentified because the search limit refused their search | One timed warning toast when the batch ends, titled Search limit reached, counting those files, with Settings, which opens the search limit. |
+| A subtitle that could not be downloaded or saved | One error toast, titled Subtitle not saved, naming the latest subtitle file and counting the others, with Settings. It stays until the person closes it. |
+| A language choice that could not be saved | The message bar as a warning, with Settings. |
+| The selected torrent has an error | The details pane shows the error in its summary and progress bar; the window adds no message for it. |
+| A finished download | A success notice for each download, titled Download finished, with the torrent name below it and Open folder, as the [notification policy](engine.md#notifications-and-sleep) defines a finished download. It closes by itself. |
+| A torrent stopped by an error, or a deletion that failed after removal | The error notice of a failed command; a stopped torrent also stays in the Errors count. With the window closed, the engine's [notification policy](engine.md#notifications-and-sleep) shows its native popup instead. |
 | A decision requiring consent | The existing dialog for that operation. |
 
-InfoBar actions align to the right, with the message using the remaining width,
-so recovery has a consistent place instead of moving with the message length.
+**Owner ruling: a message bar or toast never repeats itself.** The person
+reads the title, the torrent, the message and the action as one message from
+top to bottom, so the same words never appear twice among them. As Fluent 2
+asks, the title summarises for scanning and the message adds only the reason
+or the next step, never a restatement of the title, such as The operation
+couldn't be completed under Action failed.
+
+#### Message bar
+
+A lasting problem with the whole application shows in one
+[Fluent 2 message bar](https://fluent2.microsoft.design/components/web/react/core/messagebar/usage),
+the WinUI InfoBar.
+
+**Owner ruling: the message bar sits at the bottom of every page, above the
+status bar.** Fluent 2 places a page-level message bar below the page's
+command bar, and TinyTorrent's toolbar is not that command bar, so the bar
+does not go at the top of the page.
+
+- It shows the most important problem: the engine, then the download state,
+  then Library and subtitles, then the subtitle supplier, then the language.
+- Its title names the problem without a final period, such as Downloads
+  stopped, and its message gives the reason and the next step.
+- An error or warning always has the action that resolves it, because Fluent 2
+  requires one: Restart, Open folder, Retry, Repair or Settings. A problem the
+  person fixes outside the app may add Open folder before Retry, because
+  Fluent 2 allows a second action.
+- Title, message and actions share one line while they fit. Otherwise each
+  takes its own line, with the actions at the bottom right, as the WinUI
+  InfoBar and the Fluent 2 message bar place them.
+- The person may close it. It returns when the problem changes and at the
+  next start while the problem lasts, as Fluent 2 asks, so a closed bar never
+  hides an unresolved problem for good.
+- It overlays the content instead of taking room, so showing or hiding it
+  moves nothing under the person. The WinUI InfoBar takes room in the layout,
+  but a message that appears must not move what the person is looking at.
+  While it shows, it covers the bottom of the content; Close uncovers it. Its
+  severity colour sits on a solid base so the page does not show through.
+
+#### Toasts
+
+Events show as toasts in one stack in the bottom-right corner of the window,
+above the status bar and above the message bar while it shows, following the
+[Fluent 2 toast](https://fluent2.microsoft.design/components/web/react/core/toast/usage):
+a finished download, a failed command, a torrent the engine stopped, a
+subtitle that could not be saved, and a start that waits for a pause to end. A toast shows a severity icon, a bold
+title, the torrent it concerns, the reason or next step, at most one action at
+the bottom right, and Close at the top right.
+
+- The title says what happened, in one line without a final period: a noun
+  and a past-tense verb, such as Download finished, Stop failed or Torrent
+  stopped. A failed command's title names the command, so the error text
+  below keeps only the reason and the next step.
+- Every line keeps to one line, as work-surface text does. A line that does
+  not fit ends with an ellipsis, and its full text shows in a tooltip only
+  then, because a tooltip that repeats readable text adds nothing.
+- The action is a specific verb, such as Open folder.
+- A new toast arrives at the bottom and moves older ones up, 16 pixels apart.
+- A finished download closes after seven seconds on screen. At most four such
+  toasts show; a fifth removes the oldest, because the event stays visible
+  where it happened, such as a finished row. Its action, Open folder, closes
+  it, because the person has acted on it.
+- An error toast stays until the person closes it, because a disappearing
+  message cannot be the only explanation of failed work. The resume toast
+  stays until the person closes it or the pause ends.
+- The seven seconds pause while the pointer is over the stack, keyboard focus
+  is in it, the window is inactive, or the stack is hidden, so a toast that
+  arrives unseen waits for the person.
+- The stack takes no room, so showing or hiding a toast moves no page
+  content. It never takes focus, and it hides while an editor has focus,
+  because it must not cover what the person is typing.
+- **Owner ruling, 2026-10-11:** toasts show above an open dialog, so a result
+  reported while the dialog is open, such as the supplier dialog's Check, is
+  seen at once. The supplier dialog's Check result is a toast: Access checked
+  closes by itself like a finished download, and a failure stays. Field
+  errors stay beside their field.
 
 Native control state notifications can satisfy routine accessible feedback;
 do not add a second announcement of the same result. Keep field and editor
-errors at their point of correction. Keep unresolved
-app conditions visible independently of temporary messages. A transient overlay
-never takes focus, covers the active editor or confirmation, or becomes the sole
-place to recover from a failure. Announce its content once; any action must be
-keyboard accessible, and its timeout pauses during pointer or keyboard interaction.
-Combine repeated events instead of stacking an unbounded stream. Do not repeat
-an engine desktop notification as an in-app toast for the same event.
+errors at their point of correction. A toast never becomes the sole place to
+recover from a failure. Announce a message once when it appears or changes;
+its action must be keyboard accessible. Combine repeated events instead of
+stacking an unbounded stream. Do not repeat an engine desktop notification as
+an in-app toast for the same event.
 
-[Fluent 2 toast guidance](https://fluent2.microsoft.design/components/web/react/core/toast/usage)
-supports consistent floating placement for noncritical events; it describes web
-components, not a native WinUI toast control. Native
-[InfoBar guidance](https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/infobar)
-uses inline presentation for lasting conditions. These are different purposes,
-so making every message float would hide useful context rather than improve it.
+Fluent 2 describes web components, not a native WinUI toast control, so the
+window builds the stack from ordinary controls.
 
 ### Add
 
@@ -903,14 +1014,16 @@ from Explorer that reach the window together. They go to the default folder with
 the default options, and the torrents they add are selected in the list, so the
 person sees that all of them arrived. A torrent already in the list is selected
 where it is and keeps its trackers, because offering a merge would be a
-question. A source that fails is reported in the window's error bar and
+question. A source that fails is reported in the window's error notice and
 dropped. File choices for each torrent are made later in the Files view. One
 drop of thirty torrents opens nothing, because a cascade of dialogs is the
 failure this protects against. Several files chosen through Add torrent file
 open one Add dialog, because choosing that command asks for it. Sources that arrive
 while the Add dialog is open join it, so a second dialog never opens. The dialog has a
-Don't show this dialog again check box, which turns off the Show dialog when adding torrents setting
-where the person meets the dialog.
+Don't show this dialog again check box, which turns off only the dialog preference
+for the source kinds submitted: torrent files, magnet links, or both in a mixed
+dialog. A magnet-only submission never changes the torrent-file preference, and
+cancelling changes neither preference.
 If a source has no wanted files when a single-source task becomes a batch,
 Select all files beside that source restores a valid choice. Keep prior file
 choices until this explicit action; adding another source does not reset them.
@@ -921,8 +1034,8 @@ distinct tracker URLs and the user's choices. Literal input deduplication keeps
 case-sensitive tracker paths distinct.
 
 When sources require the Add dialog, those arriving during another modal task
-remain in the Add draft and open when that task closes. Turning Show dialog when adding torrents
-off allows direct addition during other tasks; an already-open Add dialog
+remain in the Add draft and open when that task closes. Turning a source kind's
+dialog preference off allows direct addition during other tasks; an already-open Add dialog
 still owns new sources and its choices. Failure to show a dialog does not cancel
 its input. One window-owned shortcut path keeps application actions out of modal editors;
 Close and Exit still follow the unfinished-input rules.
@@ -991,8 +1104,9 @@ vertically, using the available right-pane space. Wrapping does not insert line
 breaks into the link. Paste and Preview sit centred below it with the shared
 button treatment. When sources are previewed, they share the pane with the editor
 so its height cannot hide the preview.
-The commit button names its result, Add or Add paused; when several torrents,
-including typed magnet text, will be added, its tooltip gives the count.
+The commit button is Add, and its tooltip says whether the torrent starts; when
+several torrents, including typed magnet text, will be added, the tooltip gives
+the count.
 
 Keep one dialog with a reachable native footer. A long body scrolls; the virtualized
 file list has a finite viewport and owns its collection scrolling. Do not create
@@ -1043,6 +1157,10 @@ the title-bar search's existing scope of torrents, commands and settings.
 The category index is an introductory convenience shown when Settings opens
 from its button. It is not a Back destination: title-bar Back leaves Settings
 directly from a category or the index, preserving the ordinary edit guards.
+A Don't show this page again check box below the cards and the Show the
+Settings start page switch in Dialogs and confirmations change one value, saved
+with window settings. While it is off, Settings opens at General, and checking
+the box leaves the index in place until the person leaves it.
 Keep an explicit editor's actions reachable. Native navigation
 and scrolling handle smaller windows. Settings uses a full page with horizontal
 category selection and grouped sections, so settings have room without obscuring
@@ -1051,14 +1169,32 @@ Settings keeps this LabForms layout independently of the torrent inspector.
 Each category holds LabForms sections: a borderless card headed by an icon, a
 title and native tooltip help. Each setting in a section is one compact row: its
 name on the left, its control on the right, and its error in the
-same row, so feedback never moves the rest of the page. Rows have no separator
-lines; rows that belong together, such as a pair of limits, sit on a borderless
+same row, so feedback never moves the rest of the page. Individual rows have no
+separator lines. A divider may separate saved configuration from an operational work area,
+or commands that affect different resources, because proximity alone can imply
+that a saved policy belongs to one operation. Descriptive help belongs to the
+label's tooltip, so pointing at an editor does not cover neighbouring controls;
+keyboard users retain the editor's accessible help text. Rows that belong
+together, such as a pair of limits, sit on a borderless
 inner card, because spacing and grouping separate them without the visual noise
 of a rule under every row. Labels, values, and state text stay single-line with
 native trimming and full accessible text. If any visible row in a category has
 a unit, every numeric field and switch track in that category shares the value
 edge; units and On/Off occupy the trailing column. Categories without visible
 units reserve no column. Advanced disclosure recomputes this once for the category.
+Transfers and Speed limits instead give every control the same starting edge,
+so paths, selectors, switches and numeric fields read as one column. Transfers
+uses 360 pixels for paths and selectors, with 174-pixel values and unit selectors;
+Speed limits uses a 240-pixel column with 160-pixel values and a Setup button of
+the same width. Switch state text follows the track. The column grows for longer
+localized units. Speed limits shows the engine's current mode and applied caps
+above its cards, with the existing schedule status available as help text.
+Setup remains the existing Connection page; Apply and Cancel retain their return
+to Settings, and the weekly schedule keeps its existing behavior.
+Plugins uses a 520-pixel control column for provider choices and compound subtitle
+rows, with a compact 96-pixel batch-limit editor followed by its scope, and actions
+sharing the right edge. Visible units are not repeated in editor tooltips. The
+Settings page owns this column, so Library and Subtitles keep the same value edge.
 Put Browse beside the default and incomplete download paths,
 and beside Add's destination, using the native Windows folder picker. Cancelling
 the picker preserves the current path and other unfinished input.
@@ -1076,8 +1212,12 @@ without horizontal scrolling.
 The category order is General, Transfers, Speed limits, Appearance, Network,
 Schedule, Subtitles, and Advanced. Routine download controls and personalisation
 precede connectivity, scheduled automation, optional subtitles, and tuning.
-Subtitles puts its main switch first, then supplier and languages, then Existing
-videos for Find and Recheck: setup precedes maintenance of earlier downloads.
+Subtitles puts supplier access and wanted languages first, then the independent
+Download automatically preference. Download automatically
+controls only automatic work, not availability of the feature. Dividers separate
+saved configuration, Batch download and the local subtitle-folder scan, so setup
+precedes explicit actions. The search limit is the Plugins page's shared setting
+above Library and Subtitles ([architecture](architecture.md#third-party-provider-access)).
 Appearance keeps language and theme first and groups status-bar choices together.
 
 Transfers leads with Files, keeping each folder selector beside its destination,
@@ -1097,8 +1237,24 @@ The approved constrained layout places inputs and proposed changes side by side
 when they fit and stacks them otherwise; Apply and Cancel sit in the separated
 footer below the content. Title-bar Back returns to the initiating setting. Ordinary settings
 keep their individual commit behavior. The proposal shows current and proposed
-values, emphasizes changes, and enables Apply only for a valid change. Preset
-identity comes from confirmed settings, not a separate profile. Test measures
+values, emphasizes changes, and enables Apply only for a valid change.
+One slider for each pair sets the standard and the alternative limits as a
+share of the capacity, in 5% steps, so both pairs take one gesture each and the
+person sees which pair they set. The top position removes a pair's limits. The
+standard slider names Reduced at 50%, Balanced at 85% and Full speed at the top,
+and each slider shows the resulting speeds below it. A pair follows its slider
+only after the person moves it or changes the capacity, because the slider
+shows the saved limits rounded to a step and must not propose a change nobody
+made. Before the first setup the sliders start at Balanced and 25%. Queue
+limits follow the standard slider: 2 downloads, 2 seeds and 3 torrents at 50%
+or less, otherwise 3, 5 and 8. The preview groups its rows as Speed limits does,
+under Standard limits, Alternative limits and Queue, and marks the pair in use
+now. It leaves out peer limits, which the page never changes, and the capacity,
+which its fields already show. Apply turns on standard limits only when Limits
+to use is No limits and the standard limits change, because a new install
+starts with No limits and limits that never apply look broken. That row appears
+only while limits are off. Any other choice belongs to the person and stays.
+Preset identity comes from confirmed settings, not a separate profile. Test measures
 real download and upload capacity through the engine's
 [temporary suspension](engine.md#connection-measurement). Test and Cancel use
 the same fixed-width action slot beside the capacity heading. The status and
@@ -1112,32 +1268,49 @@ with the provider, traffic cost, route details and privacy link, keeping these
 details available without permanent extra lines in the form.
 Files holds the default folder, the incomplete-filename suffix, and an optional
 separate incomplete folder. Folder and suffix defaults apply to new torrents;
-the help makes that scope explicit. Turning off Show dialog when adding torrents
-lets torrent files and magnet links add in the background, respecting pause and
-queue choices. General holds Windows integration, Notifications, Startup and
-closing, Power, Updates, and Library. Windows integration groups torrent and
-magnet associations with sign-in startup and its Windows Settings action.
+the help makes that scope explicit. Separate Show the Add dialog switches for
+torrent files and magnet links let either kind add in the background, respecting pause and
+queue choices. General holds Windows integration, Notifications, Dialogs and
+confirmations, Startup and closing, Power, Updates, and Library. Windows
+integration groups torrent and magnet associations with sign-in startup and its
+Windows Settings action.
 Common feedback and window settings precede infrequent power choices,
 maintenance, and optional video information.
-Show advanced settings reveals deliberate tuning, not merely less-used features:
-start-paused and splash settings, peer-connection caps, external-IP diagnostics,
-and protocol, storage, and polling controls. Download locations, seeding limits,
-VPN adapter choice, notifications, and sleep prevention remain ordinary settings.
+Dialogs and confirmations starts with the Settings start page preference,
+then follows the workflow: adding torrents (with the related bring-to-front
+option), deleting downloaded files, then exiting. Spacing separates the start
+page, Add options and confirmations while keeping related rows together. These
+controls restore suppressed dialogs without needing advanced options. Transfers
+keeps the defaults applied by Add rather than a second control for showing its
+dialog. The background-running notice is restored by its Notifications switch,
+so all notification preferences stay together.
+Show advanced settings reveals deliberate tuning and diagnostics, not merely
+less-used features. Startup behavior, bringing Add to the front, queue position,
+folder layout, incomplete filename suffixes, duplicate handling, seeding limits (including inactivity), watched
+folders, and title-bar speeds are ordinary preferences. Download locations,
+confirmation restores, notifications, sleep prevention, VPN adapter and proxy
+setup, Library information, scheduling, and subtitle setup also remain visible.
+Advanced reveals listening port and router mapping, peer protocols and discovery,
+connection caps and attempt rate, slow-torrent thresholds, bandwidth accounting,
+allocation, exclusion patterns, external-IP diagnostics, and
+storage, checking, refresh, and history tuning. Use this copy is ordinary when
+another TinyTorrent copy owns startup, because otherwise the visible switch
+cannot select this copy.
 Closing offers confirmation before Exit stops active transfers;
 the engine's desktop host owns that decision so it also works without WinUI.
 The open window shows the prompt as its own dialog; the host shows a native
 prompt only when no window can. Closing only the window does not ask to stop transfers.
 
-Include, grouped by task: the default download folder and Show dialog when adding torrents;
+Include, grouped by task: the default download folder and the two Add dialog preferences;
 standard and alternative speed limits and when they apply; queue limits for active downloads and
 seeds; seeding ratio and time limits; connection limits; the network adapter,
 port mapping, listen port, connection encryption and proxy server; the
 [notification switches](engine.md#notifications-and-sleep); preventing idle sleep
 while downloading on mains power, and also while seeding; Check for updates,
 following the [update model](architecture.md#installation-and-updates); and
-language. Each uses the existing settings path. Reaching a seeding limit pauses
-the torrent; nothing is removed without a request. Resuming that torrent by
-hand lifts the limit for it, so it seeds on as asked instead of pausing again.
+language. Each uses the existing settings path. Reaching a seeding limit stops
+the torrent; nothing is removed without a request. Starting that torrent by
+hand lifts the limit for it, so it seeds on as asked instead of stopping again.
 The sleep switch names its mains-power condition, so a laptop that sleeps on
 battery does not surprise its owner. The seeding switch only extends it, so it stays
 visible and is disabled while the sleep switch is off; hiding it would move the
@@ -1158,7 +1331,7 @@ General has a Notifications section with four switches in order of
 importance: Notify about problems, Notify when a download finishes, Notify
 when a torrent is added, and Notify when the window closes and transfers
 continue. The order shows which notifications matter most. Turning all four off
-stops every Windows notification except failures of something the person just
+stops every engine notification except failures of something the person just
 asked for. Problems are one switch, because no one needs to silence one kind of
 problem and keep another.
 
@@ -1226,7 +1399,7 @@ Each period has days, start/end times, and a choice of alternative limits
 or pause, edited with native checkboxes, TimePicker controls, and a ComboBox.
 Standard limits apply outside periods; pause takes precedence on overlap. Overnight
 periods end on the following day. Weekly schedule is not chosen by default; the
-schedule repeats in local time. Its engine owner preserves individually paused torrents and manual
+schedule repeats in local time. Its engine owner preserves stopped torrents and manual
 Pause all, so a scheduled boundary cannot undo the person's explicit pause.
 
 Appearance offers Show external IP in the status bar, off by default. The status
@@ -1235,8 +1408,8 @@ one is known. A changed network clears the old addresses; no external lookup
 service is needed. Appearance also offers the application language and Follow Windows, Light, and Dark
 through the existing theme owner. General's Windows integration group holds
 Start when I sign in. Startup and closing holds Start in the notification area,
-Ask before exiting with active transfers, and the advanced startup-paused and
-splash settings. Start in the
+Start with transfers paused, and the splash setting. Exit confirmation belongs
+to Dialogs and confirmations. Start in the
 notification area, off by default, makes
 starting TinyTorrent start only the engine in the tray; opening TinyTorrent
 while it runs still shows the window. The splash switch, on by default, serves
@@ -1247,39 +1420,39 @@ category cannot move the page or push its actions outside the viewport.
 Settings offers a Start when I sign in switch and an Open torrents with
 TinyTorrent switch covering `.torrent` files and magnet links. Both call the
 engine's [registration owner](engine.md#windows-registration) and show its
-observed state. Turning the handler switch on finishes automatically when
-TinyTorrent is already the default; otherwise it takes the person to the
-supported Windows choice and refreshes on return. While Windows still opens
-either kind with another app, Windows Default apps offers Open under the switch.
-The row remains visible with its action disabled when no step is needed, so
-registration changes do not move nearby controls or leave an unexplained gap.
+observed state. Each switch works at once and never opens Windows Settings
+([owner ruling](engine.md#windows-registration)). The handler switch is on only
+while Windows opens both kinds with TinyTorrent; turning it on registers the
+current copy and makes it the default for both. Two read-only rows under the
+switch, Torrent files and Magnet links, each name the app Windows opens that
+kind with, or No default app set, so the person sees what a click starts without hovering
+or opening Windows Settings. The sign-in switch
+is off while Windows has disabled the entry, and turning it on enables it.
 While any torrent or magnet handler starts a program that is missing,
-whichever app registered it, the switch's caution line names that program and
-the action becomes Repair, which removes the broken handlers, asking Windows for
+whichever app registered it, the switch's caution flyout names that program and
+Repair appears beside the switch, which removes the broken handlers, asking Windows for
 an administrator when some were registered for all users, and registers
 TinyTorrent. Only Repair asks for an administrator, and it then shows
 Windows' shield beside its name; the switch never asks. A problem notification about such a handler opens this page.
-Turning it off removes TinyTorrent as a handler. Present mixed
-file/link defaults in ordinary language only when they need action, without a
-registry-status panel.
+Turning it off removes TinyTorrent as a handler. The action beside the switch
+appears only when it is needed; the row's controls are right-aligned, so the
+switch does not move.
 
 **Owner ruling:** an entry that starts another TinyTorrent copy is still
-TinyTorrent's registration, so its switch shows on, with a caution line naming
-that copy's executable; it never shows as unregistered.
+TinyTorrent's registration, so its switch shows on. A warning icon opens a native
+flyout with the complete, selectable message and executable path, so a long path
+does not crowd the setting or hide its explanation. Both registration settings
+use the same caution presentation; an entry never shows as unregistered merely
+because it starts another copy.
 
-While an entry starts another copy, the action under its switch becomes Use this
-copy, which moves that entry to the running copy. Each switch keeps one action
-that names the next step, so the row never changes height.
-
-Keep Windows Startup settings directly below the sign-in control for Windows'
-independent override: a shared settings row names the destination on the left,
-with a neutral Open button and Lucide launch icon on the right. When another copy
-owns startup, that same row offers Use with a tooltip naming the current copy.
-This separates the destination from its action and keeps both aligned with the
-other settings, without a floating text link. Open the relevant [Windows Settings page](https://learn.microsoft.com/en-us/windows/apps/develop/launch/launch-settings),
-using the general page when a more specific route is unsupported. Show failures
-beside the affected action and preserve the user's work. Routine successful
-changes need neither a confirmation dialog nor a technical explanation.
+When torrent handlers start another copy, Use beside the switch writes those
+entries for the running copy. Its tooltip names the scope: torrent files and
+magnet links. When another copy owns startup, Use appears beside the sign-in
+switch in the same row. Both rows place the caution, action, switch and state
+text in that order at the right. The two app names sit in compact, indented rows
+under the handler setting, so they read as its details. Show failures beside the
+affected action and preserve the user's work. Routine successful changes need
+neither a confirmation dialog nor a technical explanation.
 
 ### Inspector and edits
 
@@ -1293,8 +1466,9 @@ the Add dialog's file browser use TableView's
 for wanted, size, progress, and priority content, because folders require
 hierarchy. Torrent-specific file commands stay in the application.
 
-**Owner ruling:** the six inspector sections use a native SelectorBar, centred
-in one header row between the torrent name and Pin and Close icon buttons. The owner
+**Owner ruling:** the six inspector sections use a native SelectorBar at the
+start of one header row. The torrent name is centred in the space between the
+SelectorBar and the Pin and Close icon buttons. The owner
 could not get used to a left navigation pane, and one row keeps the sections
 visible while the working view gets the full inspector width. The person
 adjusts the inspector's height with the split.
@@ -1363,13 +1537,16 @@ Files permits Select none on an existing torrent. It changes wanted choices
 without removing the torrent or its downloaded files; Add still requires at
 least one wanted file, because a new download otherwise has no useful work.
 
-Move files moves the torrent's own files; other files in its folder stay. Show the
-folder the files will be in, so choosing the torrent's own folder instead of
-the folder that contains it is visible before the move. Preserve choices when
-submission is refused, so the person can correct them without starting over.
-When files are already at the destination, offer Use files there,
-following [engine moves](engine.md#removal-and-moves). When other
-torrents use the files, name them and offer to move them together.
+Move torrent moves the torrent's own files; other files in its folder stay.
+Its title is Move torrents for multiple selections. List each torrent's name
+and size once in a bounded scroll area, using the same row as Delete files.
+A separator divides the list from two aligned rows: From and To, the paths in
+a flexible middle column, and Browse beside To. From shows the common save
+folder or Multiple locations; each torrent's tooltip reveals its location.
+To is editable. The list scrolls while these rows and the dialog's actions stay
+visible. Multiple selections show count and total size in the existing footer.
+Preserve choices when submission is refused. When other torrents use the files,
+name them and offer to move them together.
 
 Move files and Delete files are available from selection actions, the row context
 menu and command search. Shift+Delete opens Delete files; Delete still opens
@@ -1381,11 +1558,11 @@ Delete is always available, following
 [the deletion ruling](engine.md#removal-and-moves). Its default follows
 [Buttons](#buttons).
 
-Move files shows the current source folders, the chosen destination parent and
-the resulting content folders. Include shared torrents is an explicit choice;
-the engine rechecks the scope when the command executes. Use files there is a
-separate explicit choice with a warning that verification downloads mismatched
-pieces over those files. A refusal keeps the destination and choices. Accepted
+Include shared torrents is an explicit choice; the engine rechecks the scope
+when the command executes. The engine detects files already at the destination
+and verifies them, following [engine moves](engine.md#removal-and-moves), so the
+dialog needs no file-location checkbox or repeated resulting path. A refusal
+keeps the destination and choices. Accepted
 work appears as Moving files without a file-copy percentage; row errors direct
 the person to reopen Move files and choose the folder holding the files.
 

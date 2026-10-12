@@ -80,10 +80,24 @@ public sealed partial class MainWindow
         FileMenu.Items.Add(new MenuFlyoutSeparator());
         FileMenu.Items.Add(Menu("close", Model.CloseWindow, Syno.Lucide.X));
         FileMenu.Items.Add(Menu("exit", Model.Exit, Syno.Lucide.Power));
-        ViewMenu.Items.Add(Toggle(() => Model.Text.Get("filters", "title"), "filters",
-            Model.SwitchFilters, () => Model.ShowsFilters, Syno.Lucide.Funnel));
-        ViewMenu.Items.Add(Toggle(() => Model.Text.Get("inspector", "title"), "inspector",
-            new RelayCommand(SwitchInspector, () => true), () => Model.HasInspector, Syno.Lucide.PanelBottom));
+        ViewMenu.Items.Add(
+            Toggle(
+                () => Model.Text.Get("filters", "title"),
+                "filters",
+                Model.SwitchFilters,
+                () => Model.ShowsFilters,
+                Syno.Lucide.Funnel
+            )
+        );
+        ViewMenu.Items.Add(
+            Toggle(
+                () => Model.Text.Get("inspector", "title"),
+                "inspector",
+                new RelayCommand(SwitchInspector, () => true),
+                () => Model.HasInspector,
+                Syno.Lucide.PanelBottom
+            )
+        );
         if (Model.Page == WindowPage.Library)
         {
             RefreshLibraryMenu();
@@ -91,7 +105,11 @@ public sealed partial class MainWindow
         }
         else
         {
-            var selection = new MenuFlyoutItem { IsEnabled = false, Icon = Icon(Syno.Lucide.ListChecks) };
+            var selection = new MenuFlyoutItem
+            {
+                IsEnabled = false,
+                Icon = Icon(Syno.Lucide.ListChecks),
+            };
             selection.SetBinding(
                 MenuFlyoutItem.TextProperty,
                 new Binding
@@ -128,7 +146,7 @@ public sealed partial class MainWindow
             Text = Model.Text.Get("subtitles", "setup"),
             Icon = Icon(Syno.Lucide.Captions),
         };
-        subtitles.Click += async (_, _) => await ShowSettings(new(SettingsCategory.Subtitles));
+        subtitles.Click += async (_, _) => await ShowSettings(new(SettingsCategory.Plugins));
         HelpMenu.Items.Add(subtitles);
         HelpMenu.Items.Add(new MenuFlyoutSeparator());
         HelpMenu.Items.Add(
@@ -140,13 +158,15 @@ public sealed partial class MainWindow
                 AccessKey = MenuKey("update"),
             }
         );
-        HelpMenu.Items.Add(new MenuFlyoutItem
-        {
-            Text = Model.Text.Get("about", "title"),
-            Command = Model.ShowAbout,
-            Icon = Icon(Syno.Lucide.Info),
-            AccessKey = MenuKey("about"),
-        });
+        HelpMenu.Items.Add(
+            new MenuFlyoutItem
+            {
+                Text = Model.Text.Get("about", "title"),
+                Command = Model.ShowAbout,
+                Icon = Icon(Syno.Lucide.Info),
+                AccessKey = MenuKey("about"),
+            }
+        );
         AutomationProperties.SetName(Toolbar, Model.Text.Get("menus", "toolbar"));
         foreach (
             var (button, name, command) in new[]
@@ -213,7 +233,7 @@ public sealed partial class MainWindow
 
     private void AddSelection(IList<MenuFlyoutItemBase> items, bool properties)
     {
-        items.Add(Menu("pause", Model.Pause, Syno.Lucide.Pause));
+        items.Add(Menu("pause", Model.Pause, Syno.Lucide.Square));
         items.Add(Menu("resume", Model.Resume, Syno.Lucide.Play));
         items.Add(Menu("force", Model.Force, Syno.Lucide.Zap));
         items.Add(new MenuFlyoutSeparator());
@@ -392,11 +412,7 @@ public sealed partial class MainWindow
     {
         await Interact(async interaction =>
         {
-            var dialog = new Dialog
-            {
-                Glyph = Syno.Lucide.Merge,
-                PrimaryGlyph = Syno.Lucide.Merge,
-            };
+            var dialog = new Dialog { Glyph = Syno.Lucide.Merge, PrimaryGlyph = Syno.Lucide.Merge };
             var choice = await ShowDialog(
                 interaction,
                 dialog,
@@ -433,11 +449,7 @@ public sealed partial class MainWindow
     {
         await Interact(async interaction =>
         {
-            var dialog = new Dialog
-            {
-                Glyph = Syno.Lucide.ListX,
-                PrimaryGlyph = Syno.Lucide.ListX,
-            };
+            var dialog = new Dialog { Glyph = Syno.Lucide.ListX, PrimaryGlyph = Syno.Lucide.ListX };
             var choice = await ShowDialog(
                 interaction,
                 dialog,
@@ -467,6 +479,19 @@ public sealed partial class MainWindow
         {
             if (initialize)
                 Model.FileDraft.Begin(torrents, action);
+            Task<bool> Submit()
+            {
+                if (action == FileAction.Delete)
+                    Torrents.Release(torrents);
+                return Model.FileDraft.Submit();
+            }
+            if (
+                action == FileAction.Delete
+                && !Model.Settings.ConfirmDelete.ConfirmedOn
+                && Model.FileDraft.CanSubmit
+                && await Submit()
+            )
+                return true;
             if (action == FileAction.Move)
                 interaction.Restore = () =>
                     torrents.All(Model.Contains)
@@ -484,11 +509,7 @@ public sealed partial class MainWindow
             void Resize(object? sender = null, SizeChangedEventArgs? args = null)
             {
                 content.Width = Math.Min(560, Root.ActualWidth - 80);
-                var height = Math.Clamp(Root.ActualHeight - 180, 220, 440);
-                if (action == FileAction.Delete)
-                    content.MaxHeight = height;
-                else
-                    content.Height = height;
+                content.MaxHeight = Math.Clamp(Root.ActualHeight - 180, 220, 440);
             }
             Resize();
             Root.SizeChanged += Resize;
@@ -508,8 +529,11 @@ public sealed partial class MainWindow
                     Mode = BindingMode.OneWay,
                 }
             );
+            dialog.Footer = total;
             if (action == FileAction.Delete)
-                dialog.Footer = total;
+            {
+                dialog.AddOptOut(Model.FileDraft.Confirmation);
+            }
             _fileDialog = content;
             // Files that other torrents share add a block above the destination,
             // so the dialog opens with the scope already read.
@@ -529,12 +553,7 @@ public sealed partial class MainWindow
                         dialog.PrimaryToolTip = Model.FileDraft.SubmitToolTip;
                         content.RefreshText();
                     },
-                    submit: () =>
-                    {
-                        if (action == FileAction.Delete)
-                            Torrents.Release(torrents);
-                        return Model.FileDraft.Submit();
-                    }
+                    submit: Submit
                 );
             }
             finally
@@ -555,10 +574,9 @@ public sealed partial class MainWindow
             if (initialize)
                 Model.SpeedLimit.Begin(torrents);
             interaction.Restore = () =>
-                torrents.All(Model.Contains)
-                    ? ShowSpeedLimit(torrents, false)
-                    : Task.CompletedTask;
-            interaction.ResolveDraft = () => SaveOnClose(interaction, Model.SpeedLimit, Model.CanSave);
+                torrents.All(Model.Contains) ? ShowSpeedLimit(torrents, false) : Task.CompletedTask;
+            interaction.ResolveDraft = () =>
+                SaveOnClose(interaction, Model.SpeedLimit, Model.CanSave);
             var content = new SpeedLimitDialog(Model);
             var dialog = new Dialog
             {
@@ -625,8 +643,8 @@ public sealed partial class MainWindow
         });
     }
 
-    private async void OnInspectorClose(object sender, RoutedEventArgs args)
-        => await HideInspector();
+    private async void OnInspectorClose(object sender, RoutedEventArgs args) =>
+        await HideInspector();
 
     private async Task SwitchInspector()
     {
@@ -637,27 +655,21 @@ public sealed partial class MainWindow
         }
         if (Model.IsClosing || HasDialog || Model.Inspector.IsPending)
             return;
-        if (Model.Page == WindowPage.Library)
-            Model.Library.OpenProperties();
-        else
-            Model.OpenInspector(expand: false);
+        Model.OpenInspector(expand: false);
     }
 
     private async Task HideInspector()
     {
-        if (Model.Page == WindowPage.Library)
-        {
-            Model.Library.Close();
-            _libraryTable.FocusRows();
-            return;
-        }
         if (Model.IsClosing || Model.Inspector.IsPending)
             return;
         if (Model.Inspector.HasDraft && !await LeaveInspector())
             return;
         if (!Model.CloseInspector())
             return;
-        Torrents.Focus(FocusState.Programmatic);
+        if (Model.Page == WindowPage.Library)
+            _libraryTable.FocusRows();
+        else
+            Torrents.Focus(FocusState.Programmatic);
     }
 
     private async Task PasteSources()

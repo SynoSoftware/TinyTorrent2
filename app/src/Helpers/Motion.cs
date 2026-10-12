@@ -15,14 +15,22 @@ internal sealed class Motion
 
     internal Motion() => _storyboard.Completed += (_, _) => Stop();
 
-    internal void Show(FrameworkElement content, int direction = 1)
+    internal void Show(FrameworkElement content, int direction = 1) =>
+        Change(content, direction, false);
+
+    internal void CrossFade(FrameworkElement content) => Change(content, 1, true);
+
+    private void Change(FrameworkElement content, int direction, bool crossFade)
     {
         if (ReferenceEquals(Current, content))
             return;
         var previous = Current;
         var departure = (previous?.RenderTransform as TranslateTransform)?.X ?? 0;
         var arrival = ReferenceEquals(_outgoing, content)
-            ? (content.RenderTransform as TranslateTransform)?.X : null;
+            ? (content.RenderTransform as TranslateTransform)?.X
+            : null;
+        var departureOpacity = previous?.Opacity ?? 1;
+        var arrivalOpacity = ReferenceEquals(_outgoing, content) ? content.Opacity : 0;
         Stop();
         Current = content;
         content.Visibility = Visibility.Visible;
@@ -35,17 +43,27 @@ internal sealed class Motion
             Stop();
             return;
         }
-        var distance = direction * Math.Max(previous.ActualWidth, content.ActualWidth);
         previous.IsHitTestVisible = false;
-        Slide(previous, departure, -distance);
-        Slide(content, arrival ?? departure + distance, 0);
+        if (crossFade)
+        {
+            Blend(previous, departureOpacity, 0);
+            Blend(content, arrivalOpacity, 1);
+        }
+        else
+        {
+            var distance = direction * Math.Max(previous.ActualWidth, content.ActualWidth);
+            Slide(previous, departure, -distance);
+            Slide(content, arrival ?? departure + distance, 0);
+        }
         _storyboard.Begin();
     }
 
     internal void Play(FrameworkElement content, double offset = 24)
     {
-        var start = ReferenceEquals(Current, content) && _storyboard.GetCurrentState() == ClockState.Active
-            ? (content.RenderTransform as TranslateTransform)?.X ?? offset : offset;
+        var start =
+            ReferenceEquals(Current, content) && _storyboard.GetCurrentState() == ClockState.Active
+                ? (content.RenderTransform as TranslateTransform)?.X ?? offset
+                : offset;
         Stop();
         if (content.Visibility != Visibility.Visible || !_settings.AnimationsEnabled)
             return;
@@ -54,24 +72,31 @@ internal sealed class Motion
         _storyboard.Begin();
     }
 
-    internal void Fade(FrameworkElement content, double opacity)
+    internal void Fade(FrameworkElement content, double opacity) =>
+        Fade(content, content.Opacity, opacity);
+
+    internal void Fade(FrameworkElement content, double from, double to)
     {
-        var start = content.Opacity;
         Stop();
-        content.Opacity = opacity;
-        if (!content.IsLoaded || !_settings.AnimationsEnabled || start == opacity)
+        content.Opacity = to;
+        if (!content.IsLoaded || !_settings.AnimationsEnabled || from == to)
             return;
+        Blend(content, from, to);
+        _storyboard.Begin();
+    }
+
+    private void Blend(FrameworkElement content, double from, double to)
+    {
         var animation = new DoubleAnimation
         {
-            From = start,
-            To = opacity,
+            From = from,
+            To = to,
             Duration = new Duration(TimeSpan.FromMilliseconds(180)),
             EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
         };
         Storyboard.SetTarget(animation, content);
         Storyboard.SetTargetProperty(animation, nameof(UIElement.Opacity));
         _storyboard.Children.Add(animation);
-        _storyboard.Begin();
     }
 
     private void Slide(FrameworkElement content, double from, double to)

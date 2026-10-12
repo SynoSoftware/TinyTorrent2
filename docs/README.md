@@ -27,6 +27,10 @@ For automatic subtitle downloading or its Settings prototype, read the
 configuration, and required file-operation changes before implementation.
 The completed [subtitle implementation plan](subtitles-implementation.md) maps
 it entirely to C# owners, including database and subtitle-file handling.
+The completed [subtitle records and acquisition plan](subtitles-records-plan.md)
+records unified subtitle records,
+one-time language identification, an explicit rescan and a per-movie lookup
+limit, with implementation evidence. The subtitle contract remains the authority.
 
 For Library work, read the [Library master plan](library.md). It owns the
 agreed data-source membership, cached video information, search and interaction
@@ -35,7 +39,9 @@ Its [prototype implementation review](library.md#prototype-implementation-review
 tracks the current Inspector and navigation decisions, pending choices, and
 evidence required before native adoption.
 The completed [Library implementation plan](library-implementation.md) records the C# work;
-Library and subtitles share one window-lifetime SQLite owner.
+Library and subtitles share one window-lifetime SQLite owner. The
+[database contract](database.md) owns schema initialization, versioning,
+connection lifetime and the rationale for durable and reconstructed state.
 
 For TableView work, continue with the [table glossary](../lib/TableView/CONTEXT.md),
 [TableView contract](../lib/TableView/docs/tableview-contract.md), and

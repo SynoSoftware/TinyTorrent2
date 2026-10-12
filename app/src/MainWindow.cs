@@ -6,7 +6,6 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Data;
 using Microsoft.UI.Xaml.Input;
 using Syno.TinyTorrent.Controls;
@@ -26,6 +25,7 @@ public sealed partial class MainWindow : Window
 {
     public MainViewModel Model { get; }
     public ICommand Back { get; }
+
     partial void ConfigureCapture();
 
     private AddDialog? _addDialog;
@@ -39,20 +39,24 @@ public sealed partial class MainWindow : Window
 
     public MainWindow(Strings strings)
     {
-        Model = new MainViewModel(strings, DispatcherQueue);
+        Model = new MainViewModel(strings, DispatcherQueue, new Navigation(PrepareNavigation));
 #if CAPTURE
         Model.CanStartFeatures = !IsCaptureReview;
 #endif
-        Back = new RelayCommand(GoBack, () => true);
+        Back = new RelayCommand(GoBack, () => Model.Navigation.CanGoBack);
         InitializeComponent();
+        Model.Navigation.PropertyChanged += (_, _) => UpdateBack();
         ConfigureLibrary();
         PageContent.SizeChanged += Motion.Clip;
+        WorkspaceContent.SizeChanged += Motion.Clip;
         SettingsContent.SizeChanged += Motion.Clip;
         _pages.Show(Workspace);
+        _workspaces.Show(TorrentContent);
         Root.Unloaded += (_, _) =>
         {
             _motion.Stop();
             _pages.Stop();
+            _workspaces.Stop();
             _settings.Stop();
         };
         ConfigureCapture();
@@ -96,7 +100,7 @@ public sealed partial class MainWindow : Window
         Root.ActualThemeChanged += (_, _) =>
         {
             UpdateColors();
-            RefreshDialogs();
+            RefreshPopups();
         };
         Model.PropertyChanged += OnModelChanged;
         Model.TextChanged += (_, _) => RefreshText();
@@ -111,13 +115,7 @@ public sealed partial class MainWindow : Window
                 );
         Model.SnapshotApplied += (_, change) =>
         {
-            if (
-                !change.Published
-                && (
-                    change.EligibilityChanged
-                    || Torrents.Sort is { Column: var column } && column != QueueColumn
-                )
-            )
+            if (!change.Published)
                 Torrents.RefreshView();
         };
         Model.RevealRequested += async (_, torrents) =>
@@ -126,10 +124,8 @@ public sealed partial class MainWindow : Window
                 await interaction.Completion.Task;
             if (!await ShowTorrents())
                 return;
-            foreach (var torrent in torrents)
-                Torrents.ScrollIntoView(torrent);
-            if (await SelectTorrent(new Syno.TableView.Selection(torrents, torrents[^1])))
-                Torrents.ScrollIntoView(torrents[^1]);
+            Torrents.ScrollIntoView(torrents[^1], torrents);
+            await SelectTorrent(new Syno.TableView.Selection(torrents, torrents[^1]));
         };
         Model.ReleaseRequested += (_, torrents) => Torrents.Release(torrents);
         Model.SettingsRequested += async (_, target) => await ShowSettings(target);
@@ -149,6 +145,7 @@ public sealed partial class MainWindow : Window
         Model.FilesRequested += async (_, _) => await PickSources();
         Model.RemoveRequested += async (_, torrents) => await ConfirmRemove(torrents);
         Model.MergeRequested += async (_, _) => await ConfirmMerge();
+        Model.DatabaseDeletionRequested += async (_, _) => await ConfirmDatabaseDeletion();
         Model.MoveRequested += async (_, torrents) => await ShowFiles(torrents, FileAction.Move);
         Model.DeleteRequested += async (_, torrents) =>
             await ShowFiles(torrents, FileAction.Delete);
@@ -197,7 +194,11 @@ public sealed partial class MainWindow : Window
         Torrents
             .Schema<Torrent>()
             .Key(row => row.TorrentId)
-            .CanReorder(row => row.Queue >= 0)
+            .Order(
+                QueueColumn,
+                row => row.IsQueued ? row.Queue + 1 : (int?)null,
+                () => Model.Torrents
+            )
             .SortKey(NameColumn, row => row.Name, StringComparer.CurrentCultureIgnoreCase)
             .SortKey(SizeColumn, row => row.Size)
             .SortKey(ProgressColumn, row => row.Progress)
@@ -217,7 +218,7 @@ public sealed partial class MainWindow : Window
         Torrents.ItemInvoked += (_, _) => Run(Model.Properties);
         Torrents.ItemContextRequested += (_, args) => ShowSelectionMenu(args.Target, args.Position);
         Torrents.ReorderRequested += async (_, args) =>
-            await Model.Reorder(args.Items.Cast<Torrent>(), args.Before as Torrent);
+            await Model.Reorder([.. args.Items.Cast<Torrent>()], args.Before as Torrent);
         var scale = GetDpiForWindow(WinRT.Interop.WindowNative.GetWindowHandle(this)) / 96.0;
         UpdateMinimum(scale);
         AppWindow.Resize(new SizeInt32((int)(1040 * scale), (int)(680 * scale)));
@@ -307,10 +308,7 @@ public sealed partial class MainWindow : Window
             new() { Key = Comma, Modifiers = VirtualKeyModifiers.Control },
             Model.ShowSettings
         );
-        AddShortcut(
-            new() { Key = VirtualKey.Left, Modifiers = VirtualKeyModifiers.Menu },
-            Back
-        );
+        AddShortcut(new() { Key = VirtualKey.Left, Modifiers = VirtualKeyModifiers.Menu }, Back);
         AddShortcut(
             new()
             {
@@ -417,12 +415,22 @@ public sealed partial class MainWindow : Window
             UpdateChrome();
         if (args.PropertyName == nameof(MainViewModel.Page))
             UpdatePage();
-        if (string.IsNullOrEmpty(args.PropertyName) || args.PropertyName == nameof(MainViewModel.FilterPane))
+        if (
+            string.IsNullOrEmpty(args.PropertyName)
+            || args.PropertyName == nameof(MainViewModel.FilterPane)
+        )
         {
-            Workspace.DisplayMode = Model.FilterPane == FilterPane.Compact
-                ? SplitViewDisplayMode.CompactInline : SplitViewDisplayMode.Inline;
-            FiltersToggle.Visibility = Model.FilterPane == FilterPane.Compact ? Visibility.Visible : Visibility.Collapsed;
-            if (Model.IsFilterOpen && Model.Page == WindowPage.Library)
+            Workspace.DisplayMode =
+                Model.FilterPane == FilterPane.Compact
+                    ? SplitViewDisplayMode.CompactInline
+                    : SplitViewDisplayMode.Inline;
+            FiltersToggle.Visibility =
+                Model.FilterPane == FilterPane.Compact ? Visibility.Visible : Visibility.Collapsed;
+            if (
+                args.PropertyName == nameof(MainViewModel.FilterPane)
+                && Model.IsFilterOpen
+                && Model.Page == WindowPage.Library
+            )
                 RefreshLibraryFilters();
         }
         if (Model.CanRestart)
@@ -519,25 +527,17 @@ public sealed partial class MainWindow : Window
             _addDialog.AllowDrop = true;
             _addDialog.DragOver += OnDragOver;
             _addDialog.Drop += OnDrop;
-            var neverShow = new CheckBox();
-            AutomationProperties.SetAutomationId(neverShow, "NeverShow");
-            BindAddDraft(
-                neverShow,
-                ToggleButton.IsCheckedProperty,
-                nameof(AddDraft.NeverShow),
-                BindingMode.TwoWay
-            );
+            var dialog = new Dialog { Content = _addDialog, PrimaryGlyph = Syno.Lucide.CirclePlus };
+            var neverShow = dialog.AddOptOut(Model.AddDraft.Confirmation);
             BindAddDraft(neverShow, Control.IsEnabledProperty, nameof(AddDraft.CanEdit));
-            var dialog = new Dialog
-            {
-                Content = _addDialog,
-                Footer = neverShow,
-                PrimaryGlyph = Syno.Lucide.CirclePlus,
-            };
             dialog.SizeToContent();
             _addDialog.CloseRequested += (_, _) => dialog.Hide();
             Model.IsAddOpen = true;
-            BindAddDraft(dialog, ContentDialog.PrimaryButtonTextProperty, nameof(AddDraft.SubmitText));
+            BindAddDraft(
+                dialog,
+                ContentDialog.PrimaryButtonTextProperty,
+                nameof(AddDraft.SubmitText)
+            );
             BindAddDraft(dialog, Dialog.PrimaryToolTipProperty, nameof(AddDraft.SubmitToolTip));
             dialog.Opened += (_, _) => _addDialog?.FocusError();
             var completed = false;
@@ -550,7 +550,6 @@ public sealed partial class MainWindow : Window
                     () =>
                     {
                         AutomationProperties.SetName(dialog, Model.Text.Get("add", "title"));
-                        neverShow.Content = Model.Text.Get("add", "never_show");
                         _addDialog?.RefreshText();
                     },
                     submit: async () =>
@@ -654,8 +653,6 @@ public sealed partial class MainWindow : Window
         await CloseWindow(exiting: false);
     }
 
-    private void OnDismissError(InfoBar sender, object args) => Model.ClearError();
-
     private void BringToFront()
     {
         if (
@@ -687,11 +684,9 @@ public sealed partial class MainWindow : Window
         var answer = ExitAnswer.Cancelled;
         await Interact(async interaction =>
         {
-            var dialog = new Dialog
-            {
-                Glyph = Syno.Lucide.Power,
-                PrimaryGlyph = Syno.Lucide.Power,
-            };
+            var dialog = new Dialog { Glyph = Syno.Lucide.Power, PrimaryGlyph = Syno.Lucide.Power };
+            var preference = new DialogPreference(Model.Settings);
+            dialog.AddOptOut(preference);
             await Model.DeferClose();
             var choice = await ShowDialog(
                 interaction,
@@ -704,7 +699,10 @@ public sealed partial class MainWindow : Window
                 }
             );
             if (choice == ContentDialogResult.Primary)
+            {
+                await preference.Save(Model.Settings.ConfirmExit);
                 answer = ExitAnswer.Confirmed;
+            }
             return true;
         });
         await Model.ReplyExit(answer);
@@ -783,6 +781,9 @@ public sealed partial class MainWindow : Window
                     return;
             }
             AppWindow.Hide();
+            Model.DisconnectFeatures();
+            if (_settingsPage is { } settings && !await settings.SaveFeatures())
+                return;
             await SavePlacement();
             await Model.Close(_exiting);
             await Model.CloseFeatures();
@@ -817,8 +818,8 @@ public sealed partial class MainWindow : Window
                 {
                     if (!suspended.IsResolved)
                         _ = restore();
-                    await Model.ReplyActivation(true);
                 }
+                await Model.ReplyActivation(true);
                 ShowDeferredAdd();
                 // A page the person is already on stays as they left it, and
                 // Recover moves only to the error.

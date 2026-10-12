@@ -25,25 +25,53 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
         _client = client;
     }
 
+    // A slider's share of the connection capacity, in percent. Its top
+    // position removes the pair's limits.
+    private const int Unlimited = 100;
+    private const int AlternativeDefault = 25;
+    private static readonly TransferPreset[] Presets =
+    [
+        TransferPreset.Reduced,
+        TransferPreset.Balanced,
+        TransferPreset.FullSpeed,
+    ];
+
     private string _download = string.Empty;
     private string _upload = string.Empty;
-    private TransferPreset _preset = TransferPreset.Balanced;
+    private int _standardShare = Share(TransferPreset.Balanced);
+    private int _alternativeShare = AlternativeDefault;
+    private bool _standardMoved;
+    private bool _alternativeMoved;
     private Exception? _failure;
     public Strings Text => _settings.Text;
     public bool IsPending { get; private set; }
     public bool CanLeave => !IsPending;
-    public bool CanEdit => _settings.CanEdit && !IsPending && !IsTesting && _phase != ConnectionPhase.Restoring;
+    public bool CanEdit =>
+        _settings.CanEdit && !IsPending && !IsTesting && _phase != ConnectionPhase.Restoring;
     public bool CanApply => CanEdit && !_settings.IsPending && Changes() is { Count: > 0 };
-    public bool IsTesting => _phase is ConnectionPhase.Stopping or ConnectionPhase.Downloading or ConnectionPhase.Uploading;
-    private bool CanRelease => _main.IsConnected && (IsTesting || _phase == ConnectionPhase.Holding);
-    private bool HasCustomRoute => _settings.Proxy.IsInUse || _settings.Adapter.ConfirmedText.Length > 0;
+    public bool IsTesting =>
+        _phase
+            is ConnectionPhase.Stopping
+                or ConnectionPhase.Downloading
+                or ConnectionPhase.Uploading;
+    private bool CanRelease =>
+        _main.IsConnected && (IsTesting || _phase == ConnectionPhase.Holding);
+    private bool HasCustomRoute =>
+        _settings.Proxy.IsInUse || _settings.Adapter.ConfirmedText.Length > 0;
     public bool CanTest => CanEdit && !_settings.IsPending && !HasCustomRoute;
     public bool CanCancelTest => _main.IsConnected && IsTesting && !IsPending;
-    public string TestLabel => Text.Get("connection_setup", _phase == ConnectionPhase.Holding ? "retest"
-        : _phase == ConnectionPhase.Failed ? "retry" : "test");
-    public string TestStatus => _testFailure.Length > 0 ? Text.Get("connection_setup", _testFailure)
+    public string TestLabel =>
+        Text.Get(
+            "connection_setup",
+            _phase == ConnectionPhase.Holding ? "retest"
+                : _phase == ConnectionPhase.Failed ? "retry"
+                : "test"
+        );
+    public string TestStatus =>
+        _testFailure.Length > 0 ? Text.Get("connection_setup", _testFailure)
         : _phase == ConnectionPhase.Holding ? Text.Format("connection_setup", "holding", _remaining)
-        : _phase != ConnectionPhase.Idle ? Text.Get("connection_setup", "test_" + _phase.ToString().ToLowerInvariant())
+        : _phase != ConnectionPhase.Idle
+            ? Text.Get("connection_setup", "test_" + _phase.ToString().ToLowerInvariant())
         : HasCustomRoute ? Text.Get("connection_setup", "test_route")
         : Text.Get("connection_setup", "test_idle");
     public string DownloadError => CapacityError(Download);
@@ -54,12 +82,35 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
         {
             if (_failure is { } failure)
                 return Text.Error(failure);
-            if (Proposal is null)
+            if (Propose() is null)
                 return string.Empty;
             return Text.Get("connection_setup", CanApply ? "ready" : "no_changes");
         }
     }
-    public string PresetName => Name(CurrentPreset);
+    public string PresetName => Name(SavedPreset);
+    public string StandardText
+    {
+        get
+        {
+            if (_standardShare == Unlimited)
+                return Name(TransferPreset.FullSpeed);
+            var preset = Presets.FirstOrDefault(
+                choice => Share(choice) == _standardShare,
+                TransferPreset.Custom
+            );
+            return preset == TransferPreset.Custom
+                ? Percent(_standardShare)
+                : Text.Format("units", "detail", Name(preset), Percent(_standardShare));
+        }
+    }
+    public string AlternativeText =>
+        _alternativeShare == Unlimited
+            ? Text.Get("transfer_limits", "unlimited")
+            : Percent(_alternativeShare);
+    public string StandardRates => Rates(_standardShare);
+    public string AlternativeRates => Rates(_alternativeShare);
+    public string StandardUse => _main.SpeedUse;
+    public string AlternativeUse => _main.AlternativeUse;
     public event PropertyChangedEventHandler? PropertyChanged;
 
     public string Download
@@ -88,62 +139,95 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
         }
     }
 
-    public int PresetIndex
+    public double StandardShare
     {
-        get => (int)_preset;
-        set
-        {
-            if (value is < 0 or > 2 || value == (int)_preset)
-                return;
-            _preset = (TransferPreset)value;
-            _failure = null;
-            Refresh();
-        }
+        get => _standardShare;
+        set => Move(ref _standardShare, ref _standardMoved, value);
     }
 
-    private Limits? Proposal => Propose(_preset, Parse(Download), Parse(Upload));
-    private TransferPreset CurrentPreset
+    public double AlternativeShare
+    {
+        get => _alternativeShare;
+        set => Move(ref _alternativeShare, ref _alternativeMoved, value);
+    }
+
+    private Caps SavedStandard =>
+        new((int)_settings.Download.ConfirmedNumber, (int)_settings.Upload.ConfirmedNumber);
+    private Caps SavedAlternative =>
+        new(
+            (int)_settings.AlternativeDownload.ConfirmedNumber,
+            (int)_settings.AlternativeUpload.ConfirmedNumber
+        );
+    private QueueLimits SavedQueue =>
+        new(
+            (int)_settings.ActiveDownloads.ConfirmedNumber,
+            (int)_settings.ActiveSeeds.ConfirmedNumber,
+            (int)_settings.ActiveTotal.ConfirmedNumber
+        );
+
+    private TransferPreset SavedPreset
     {
         get
         {
             var download = _settings.CapacityDownload.ConfirmedNumber;
             var upload = _settings.CapacityUpload.ConfirmedNumber;
-            foreach (var preset in new[]
-                { TransferPreset.Reduced, TransferPreset.Balanced, TransferPreset.FullSpeed })
-                if (Propose(preset, download, upload) is { } proposal && Matches(proposal))
+            foreach (var preset in Presets)
+                if (
+                    CapsAt(Share(preset), download, upload) == SavedStandard
+                    && Queue(Share(preset)) == SavedQueue
+                )
                     return preset;
             return TransferPreset.Custom;
         }
     }
 
-    public IReadOnlyList<ConnectionChange> Rows
+    // A slider shows the saved limits rounded to a 5% step, so a pair follows
+    // its slider only after the person moves it or changes the capacity.
+    private bool CapacityChanged =>
+        Parse(Download) != _settings.CapacityDownload.ConfirmedNumber
+        || Parse(Upload) != _settings.CapacityUpload.ConfirmedNumber;
+    private bool StandardFollows => _standardMoved || CapacityChanged;
+    private bool AlternativeFollows => _alternativeMoved || CapacityChanged;
+    private bool NeedsCapacity =>
+        StandardFollows && _standardShare < Unlimited
+        || AlternativeFollows && _alternativeShare < Unlimited;
+
+    public IReadOnlyList<ConnectionChange> ModeRows
     {
         get
         {
-            var proposal = Proposal;
-            var rows = new List<ConnectionChange>
-            {
-                Row(_settings.Download, proposal?.DownloadCap),
-                Row(_settings.Upload, proposal?.UploadCap),
-                Row(_settings.ActiveDownloads, proposal?.Downloads),
-                Row(_settings.ActiveSeeds, proposal?.Seeds),
-                Row(_settings.ActiveTotal, proposal?.Total),
-                Row(_settings.ConnectionLimit, (int)_settings.ConnectionLimit.ConfirmedNumber),
-                Row(_settings.TorrentConnections, (int)_settings.TorrentConnections.ConfirmedNumber),
-                CapacityRow(_settings.CapacityDownload, Download, "download_capacity"),
-                CapacityRow(_settings.CapacityUpload, Upload, "upload_capacity"),
-            };
-            var mode = _main.FixedLimits ?? LimitMode.Schedule;
-            var proposedMode = _main.FixedLimits is null ? LimitMode.Schedule : LimitMode.Speed;
-            rows.Add(
+            if (_main.FixedLimits != LimitMode.None)
+                return [];
+            var enables = Propose()?.EnablesLimits == true;
+            return
+            [
                 new(
-                    Text.Get("connection_setup", "mode"),
-                    _main.LimitLabel(mode),
-                    _main.LimitLabel(proposedMode),
-                    mode != proposedMode
-                )
-            );
-            return rows;
+                    Text.Get("transfer_limits", "control"),
+                    Text.Get("transfer_limits", "none"),
+                    enables ? Text.Get("settings", "speed") : Text.Get("transfer_limits", "none"),
+                    enables
+                ),
+            ];
+        }
+    }
+
+    public IReadOnlyList<ConnectionChange> StandardRows =>
+        PairRows(SavedStandard, Propose()?.Standard);
+    public IReadOnlyList<ConnectionChange> AlternativeRows =>
+        PairRows(SavedAlternative, Propose()?.Alternative);
+
+    public IReadOnlyList<ConnectionChange> QueueRows
+    {
+        get
+        {
+            var saved = SavedQueue;
+            var queue = Propose()?.Queue;
+            return
+            [
+                Row(_settings.ActiveDownloads.Label, saved.Downloads, queue?.Downloads, Count),
+                Row(_settings.ActiveSeeds.Label, saved.Seeds, queue?.Seeds, Count),
+                Row(_settings.ActiveTotal.Label, saved.Total, queue?.Total, Count),
+            ];
         }
     }
 
@@ -151,8 +235,10 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
     {
         _download = Input(_settings.CapacityDownload);
         _upload = Input(_settings.CapacityUpload);
-        var preset = CurrentPreset;
-        _preset = preset == TransferPreset.Custom ? TransferPreset.Balanced : preset;
+        _standardShare = SavedShare(SavedStandard, Share(TransferPreset.Balanced));
+        _alternativeShare = SavedShare(SavedAlternative, AlternativeDefault);
+        _standardMoved = false;
+        _alternativeMoved = false;
         _failure = null;
         Refresh();
     }
@@ -172,7 +258,9 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
             "failed" => ConnectionPhase.Failed,
             _ => ConnectionPhase.Idle,
         };
-        _client.SetConnectionTestActive(IsTesting || _phase is ConnectionPhase.Holding or ConnectionPhase.Restoring);
+        _client.SetConnectionTestActive(
+            IsTesting || _phase is ConnectionPhase.Holding or ConnectionPhase.Restoring
+        );
         if (value.TryGetProperty("id", out var id))
         {
             var testId = id.GetString() ?? string.Empty;
@@ -181,19 +269,32 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
             _testFailure = value.GetProperty("failure").GetString() ?? string.Empty;
             if (_testFailure == "connection_test_restore_failed" && previousFailure != _testFailure)
                 _main.Report(new IOException(Text.Get("connection_setup", _testFailure)));
-            if ((_phase is ConnectionPhase.Holding or ConnectionPhase.Completed) && testId != _measuredId
-                && value.GetProperty("download").GetDouble() > 0 && value.GetProperty("upload").GetDouble() > 0)
+            if (
+                (_phase is ConnectionPhase.Holding or ConnectionPhase.Completed)
+                && testId != _measuredId
+                && value.GetProperty("download").GetDouble() > 0
+                && value.GetProperty("upload").GetDouble() > 0
+            )
             {
                 _measuredId = testId;
-                _download = value.GetProperty("download").GetDouble().ToString("0.##", CultureInfo.CurrentCulture);
-                _upload = value.GetProperty("upload").GetDouble().ToString("0.##", CultureInfo.CurrentCulture);
+                _download = value
+                    .GetProperty("download")
+                    .GetDouble()
+                    .ToString("0.##", CultureInfo.CurrentCulture);
+                _upload = value
+                    .GetProperty("upload")
+                    .GetDouble()
+                    .ToString("0.##", CultureInfo.CurrentCulture);
             }
         }
         else
             _testFailure = string.Empty;
         Refresh();
-        if (_phase != previousPhase && _phase != ConnectionPhase.Idle
-            && _testFailure != "connection_test_restore_failed")
+        if (
+            _phase != previousPhase
+            && _phase != ConnectionPhase.Idle
+            && _testFailure != "connection_test_restore_failed"
+        )
             _main.Announce(TestStatus);
     }
 
@@ -272,17 +373,19 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
 
     private Dictionary<string, object>? Changes()
     {
-        if (Proposal is not { } proposal)
+        if (Propose() is not { } proposal)
             return null;
         var changes = new Dictionary<string, object>();
-        Add(_settings.Download, proposal.DownloadCap);
-        Add(_settings.Upload, proposal.UploadCap);
-        Add(_settings.ActiveDownloads, proposal.Downloads);
-        Add(_settings.ActiveSeeds, proposal.Seeds);
-        Add(_settings.ActiveTotal, proposal.Total);
+        Add(_settings.Download, proposal.Standard.Download);
+        Add(_settings.Upload, proposal.Standard.Upload);
+        Add(_settings.AlternativeDownload, proposal.Alternative.Download);
+        Add(_settings.AlternativeUpload, proposal.Alternative.Upload);
+        Add(_settings.ActiveDownloads, proposal.Queue.Downloads);
+        Add(_settings.ActiveSeeds, proposal.Queue.Seeds);
+        Add(_settings.ActiveTotal, proposal.Queue.Total);
         Add(_settings.CapacityDownload, Parse(Download));
         Add(_settings.CapacityUpload, Parse(Upload));
-        if (_main.FixedLimits is { } mode && mode != LimitMode.Speed)
+        if (proposal.EnablesLimits)
             changes.Add("limit_mode", "speed");
         return changes;
 
@@ -297,65 +400,117 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
         }
     }
 
-    private bool Matches(Limits proposal) =>
-        _settings.Download.ConfirmedNumber == proposal.DownloadCap
-        && _settings.Upload.ConfirmedNumber == proposal.UploadCap
-        && _settings.ActiveDownloads.ConfirmedNumber == proposal.Downloads
-        && _settings.ActiveSeeds.ConfirmedNumber == proposal.Seeds
-        && _settings.ActiveTotal.ConfirmedNumber == proposal.Total;
-
-    private ConnectionChange Row(Setting setting, int? value)
+    private void Move(ref int share, ref bool moved, double value)
     {
-        var current = (int)setting.ConfirmedNumber;
-        return new(
-            setting.IsRate ? Text.Get("connection_setup", setting.Name) : setting.Label,
-            Display(current),
-            value is { } number ? Display(number) : "—",
-            value is { } next && next != current
-        );
-
-        string Display(int number)
-        {
-            if (number == 0)
-                return Text.Get("transfer_limits", "unlimited");
-            if (setting.IsRate)
-                return Text.Format("units", "rate", Text.Bytes(number));
-            return number.ToString("N0", CultureInfo.CurrentCulture);
-        }
+        var next = (int)Math.Round(value);
+        if (next == share)
+            return;
+        share = next;
+        moved = true;
+        _failure = null;
+        Refresh();
     }
 
-    private ConnectionChange CapacityRow(Setting setting, string input, string label)
+    // Before the first setup no capacity is saved, so the slider starts at
+    // its default share. A limited pair stays below the top position, which
+    // means no limit.
+    private int SavedShare(Caps saved, int initial)
     {
-        var current = setting.ConfirmedNumber;
-        var number = Parse(input);
-        var proposed = IsCapacity(number, optional: true) ? number : current;
+        var capacity = _settings.CapacityDownload.ConfirmedNumber;
+        if (capacity <= 0)
+            return initial;
+        if (saved.Download == 0)
+            return Unlimited;
+        return Math.Clamp((int)Math.Round(saved.Download / (capacity * 125000) * 20) * 5, 5, 95);
+    }
+
+    private Proposal? Propose()
+    {
+        var download = Parse(Download);
+        var upload = Parse(Upload);
+        var optional = !NeedsCapacity;
+        if (!IsCapacity(download, optional) || !IsCapacity(upload, optional))
+            return null;
+        var standard = StandardFollows ? CapsAt(_standardShare, download, upload) : SavedStandard;
+        var alternative = AlternativeFollows
+            ? CapsAt(_alternativeShare, download, upload)
+            : SavedAlternative;
+        if (standard is not { } nextStandard || alternative is not { } nextAlternative)
+            return null;
+        // A new install starts with No limits, so Apply turns on the standard
+        // limits it sets. Any other choice is the person's and stays.
+        var enables =
+            _main.FixedLimits == LimitMode.None
+            && nextStandard != SavedStandard
+            && nextStandard is not { Download: 0, Upload: 0 };
         return new(
-            Text.Get("connection_setup", label),
-            Display(current),
-            Display(proposed),
-            current != proposed
+            nextStandard,
+            nextAlternative,
+            _standardMoved ? Queue(_standardShare) : SavedQueue,
+            enables
+        );
+    }
+
+    private IReadOnlyList<ConnectionChange> PairRows(Caps saved, Caps? next) =>
+        [
+            Row(
+                Text.Get("connection_setup", "download_limit"),
+                saved.Download,
+                next?.Download,
+                Rate
+            ),
+            Row(Text.Get("connection_setup", "upload_limit"), saved.Upload, next?.Upload, Rate),
+        ];
+
+    private static ConnectionChange Row(
+        string label,
+        int current,
+        int? next,
+        Func<int, string> display
+    ) =>
+        new(
+            label,
+            display(current),
+            next is { } value ? display(value) : "—",
+            next is { } changed && changed != current
         );
 
-        string Display(double value) =>
-            value > 0
-                ? Text.Format(
-                    "connection_setup", "capacity_value", value.ToString("G", CultureInfo.CurrentCulture)
-                )
-                : "—";
+    private string Rate(int bytes) =>
+        bytes == 0
+            ? Text.Get("transfer_limits", "unlimited")
+            : Text.Format("units", "rate", Text.Bytes(bytes));
+
+    private string Count(int number) =>
+        number == 0
+            ? Text.Get("transfer_limits", "unlimited")
+            : number.ToString("N0", CultureInfo.CurrentCulture);
+
+    private string Rates(int share)
+    {
+        if (CapsAt(share, Parse(Download), Parse(Upload)) is not { } caps)
+            return Text.Get("connection_setup", "enter");
+        if (share == Unlimited)
+            return Text.Get("transfer_limits", "unlimited");
+        return Text.Format("settings", "caps_summary", Rate(caps.Download), Rate(caps.Upload));
     }
+
+    private string Percent(int share) => Text.Format("units", "percent", share / 100.0);
 
     private string Name(TransferPreset preset) =>
-        Text.Get("connection_setup", preset switch
-        {
-            TransferPreset.Reduced => "reduced",
-            TransferPreset.Balanced => "balanced",
-            TransferPreset.FullSpeed => "full",
-            _ => "custom",
-        });
+        Text.Get(
+            "connection_setup",
+            preset switch
+            {
+                TransferPreset.Reduced => "reduced",
+                TransferPreset.Balanced => "balanced",
+                TransferPreset.FullSpeed => "full",
+                _ => "custom",
+            }
+        );
 
     private string CapacityError(string input)
     {
-        if (IsCapacity(Parse(input), optional: _preset == TransferPreset.FullSpeed))
+        if (IsCapacity(Parse(input), optional: !NeedsCapacity))
             return string.Empty;
         return string.IsNullOrWhiteSpace(input)
             ? Text.Get("connection_setup", "required")
@@ -382,23 +537,46 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
         return number > 0 ? number.ToString("G", CultureInfo.CurrentCulture) : string.Empty;
     }
 
-    private static Limits? Propose(TransferPreset preset, double download, double upload)
+    private static int Share(TransferPreset preset) =>
+        preset switch
+        {
+            TransferPreset.Reduced => 50,
+            TransferPreset.Balanced => 85,
+            _ => Unlimited,
+        };
+
+    private static QueueLimits Queue(int share) =>
+        share <= Share(TransferPreset.Reduced) ? new(2, 2, 3) : new(3, 5, 8);
+
+    // Capacity is in megabits a second, so 1 Mbps is 125,000 bytes a second.
+    private static Caps? CapsAt(int share, double download, double upload)
     {
-        var uncapped = preset == TransferPreset.FullSpeed;
-        if (!IsCapacity(download, optional: uncapped) || !IsCapacity(upload, optional: uncapped))
+        if (share == Unlimited)
+            return new(0, 0);
+        if (!IsCapacity(download, optional: false) || !IsCapacity(upload, optional: false))
             return null;
-        var reduced = preset == TransferPreset.Reduced;
-        var fraction = reduced ? 0.5 : 0.85;
+        var fraction = share / 100.0;
         return new(
-            DownloadCap: uncapped ? 0 : (int)Math.Round(download * 125000 * fraction),
-            UploadCap: uncapped ? 0 : (int)Math.Round(upload * 125000 * fraction),
-            Downloads: reduced ? 2 : 3,
-            Seeds: reduced ? 2 : 5,
-            Total: reduced ? 3 : 8
+            (int)Math.Round(download * 125000 * fraction),
+            (int)Math.Round(upload * 125000 * fraction)
         );
     }
 
-    private sealed record Limits(int DownloadCap, int UploadCap, int Downloads, int Seeds, int Total);
+    private readonly record struct Caps(int Download, int Upload);
+
+    private readonly record struct QueueLimits(int Downloads, int Seeds, int Total);
+
+    private sealed record Proposal(
+        Caps Standard,
+        Caps Alternative,
+        QueueLimits Queue,
+        bool EnablesLimits
+    );
 }
 
-public sealed record ConnectionChange(string Label, string Current, string Proposed, bool IsChanged);
+public sealed record ConnectionChange(
+    string Label,
+    string Current,
+    string Proposed,
+    bool IsChanged
+);

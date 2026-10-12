@@ -198,6 +198,7 @@ public sealed partial class MainWindow
         if (_placement is not { } placement)
             return;
         Model.SubtitleHelpSeen = placement.SubtitleHelpSeen;
+        Model.ShowsSettingsIndex = placement.ShowsSettingsIndex;
         // An unknown saved value keeps its default; the rest still restores.
         if (Enum.IsDefined(placement.Filter))
             Model.Filter = placement.Filter;
@@ -234,7 +235,7 @@ public sealed partial class MainWindow
         else if (placement.Page == WindowPage.About)
             await ShowAbout();
         else if (placement.Page == WindowPage.Library)
-            await Navigate(WindowPage.Library);
+            await Model.Navigation.Navigate(WindowPage.Library);
     }
 
     private async Task SavePlacement()
@@ -269,13 +270,14 @@ public sealed partial class MainWindow
             ToolbarOpen = Model.IsToolbarOpen,
             Selected = [.. Model.Selected.Select(torrent => torrent.TorrentId)],
             Current = Model.Current?.TorrentId,
-            InspectorOpen = Model.Inspector.IsOpen,
+            InspectorOpen = Model.HasInspector,
             Section = Model.Inspector.Section,
             VerticalOffset = Torrents.VerticalOffset,
             LibraryConfiguration = Model.Library.Configuration,
             LibraryLayouts = _libraryTable.Layouts,
             LibraryFilters = Model.Library.SaveFilters(),
             SubtitleHelpSeen = Model.SubtitleHelpSeen,
+            ShowsSettingsIndex = Model.ShowsSettingsIndex,
         };
         var temporary = _placementPath + ".tmp";
         try
@@ -312,8 +314,15 @@ public sealed partial class MainWindow
         public InspectorSection Section { get; init; }
         public double VerticalOffset { get; init; }
         public LibraryConfiguration LibraryConfiguration { get; init; }
-        public Dictionary<LibraryConfiguration, Syno.TableView.ColumnLayout>? LibraryLayouts { get; init; }
-        public Dictionary<LibraryConfiguration, Dictionary<string, string>>? LibraryFilters { get; init; }
+        public Dictionary<
+            LibraryConfiguration,
+            Syno.TableView.ColumnLayout
+        >? LibraryLayouts { get; init; }
+        public Dictionary<
+            LibraryConfiguration,
+            Dictionary<string, string>
+        >? LibraryFilters { get; init; }
         public bool SubtitleHelpSeen { get; init; }
+        public bool ShowsSettingsIndex { get; init; } = true;
     }
 }

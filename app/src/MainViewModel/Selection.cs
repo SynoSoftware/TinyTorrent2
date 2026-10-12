@@ -34,12 +34,13 @@ public sealed partial class MainViewModel
             // finishes under the Downloading filter. The person did not choose
             // another torrent, so the selection follows the table while the
             // inspector, and any unfinished edit in it, stays on its torrent.
+            var previous = _selected.ToHashSet();
             var dropped =
-                selected.All(_selected.Contains)
-                && !_selected.Except(selected).Any(VisibleTorrents.Contains);
+                selected.All(previous.Contains)
+                && !_selected.Except(selected).ToHashSet().Overlaps(VisibleTorrents);
             var keepsTarget = dropped && Inspector.Target is not null;
             var next = selected.Length == 1 ? selected[0] : null;
-            var changesTarget = Inspector.IsOpen && next != Inspector.Target && !keepsTarget;
+            var changesTarget = HasInspector && next != Inspector.Target && !keepsTarget;
             if (changesTarget)
             {
                 if (Inspector.IsPending)

@@ -375,14 +375,14 @@ public sealed partial class MainWindow
             var item = VisualTreeHelper
                 .GetOpenPopupsForXamlRoot(Root.XamlRoot)
                 .SelectMany(popup => CaptureElements(popup.Child))
-                .OfType<MenuFlyoutItem>()
+                .OfType<ToggleMenuFlyoutItem>()
                 .Single(item => item.Text == Model.Text.Get("files", key));
             (
-                (IInvokeProvider)
+                (IToggleProvider)
                     FrameworkElementAutomationPeer
                         .CreatePeerForElement(item)
-                        .GetPattern(PatternInterface.Invoke)
-            ).Invoke();
+                        .GetPattern(PatternInterface.Toggle)
+            ).Toggle();
             await CaptureLayout();
             await CaptureReady(
                 Model.Inspector,

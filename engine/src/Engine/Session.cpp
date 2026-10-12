@@ -393,8 +393,8 @@ tt::Activity Engine::State::Activity() const
             break;
         }
     }
-    activity.downloading = activity.downloading && !shuttingDown;
-    activity.seeding = activity.seeding && !shuttingDown;
+    activity.downloading = activity.downloading && !IsShuttingDown();
+    activity.seeding = activity.seeding && !IsShuttingDown();
     activity.paused = IsPaused();
     activity.pausedByChoice = IsPausedByChoice();
     activity.missingAdapter = adapterMissing ? settings.networkAdapter : std::string();
@@ -407,6 +407,7 @@ tt::Activity Engine::State::Activity() const
     activity.reportedPrograms = settings.reportedPrograms;
     activity.filesBusy = FilesBusy();
     activity.confirmsExit = settings.confirmsExit;
+    activity.theme = settings.theme;
     return activity;
 }
 
@@ -445,7 +446,7 @@ Json Engine::State::Snapshot() const
         {"proxy_check", !requestedCheck ? Json() : Json{{"check_id", requestedCheck->checkId},
             {"outcome", requestedCheck->result ? Json(std::string(Name(requestedCheck->result->outcome))) : Json()},
             {"milliseconds", requestedCheck->result ? Json(requestedCheck->result->elapsed.count()) : Json()}}},
-        {"shutting_down", shuttingDown}, {"loading", startup != Startup::Ready}, {"storage_failed", !startupError.empty()},
+        {"shutting_down", IsShuttingDown()}, {"loading", startup != Startup::Ready}, {"storage_failed", !startupError.empty()},
         {"startup_error", startupError}};
 }
 
@@ -558,7 +559,7 @@ void Engine::State::RecordHashes(Torrent& torrent)
             else
             {
                 torrent.hashError = Problem{ProblemKind::StorageFailed, outcome.detail};
-                if (shuttingDown)
+                if (IsShuttingDown())
                 {
                     saveFailure = outcome.detail;
                 }
@@ -567,7 +568,7 @@ void Engine::State::RecordHashes(Torrent& torrent)
     }))
     {
         torrent.hashError = Problem{ProblemKind::StorageOverloaded};
-        if (shuttingDown)
+        if (IsShuttingDown())
         {
             saveFailure.emplace();
         }
@@ -603,7 +604,7 @@ void Engine::State::Tick()
         ContinueRename();
         ContinueDeletion();
         RemoveDeferred();
-        if (!shuttingDown)
+        if (!IsShuttingDown())
         {
             Maintain();
         }
@@ -618,7 +619,7 @@ void Engine::State::Tick()
             session->post_torrent_updates(lt::torrent_handle::query_name);
         }
     }
-    if (shuttingDown)
+    if (IsShuttingDown())
     {
         ContinueShutdown();
     }

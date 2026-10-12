@@ -190,14 +190,30 @@ void Engine::PauseSession(bool paused, std::function<void(Outcome)> completion)
     }
     state_->PauseSession(paused, std::move(completion));
 }
-void Engine::SetBackgroundNotification(bool enabled, std::function<void(Outcome)> completion)
+void Engine::TurnOff(NoticeSwitch notices, std::function<void(Outcome)> completion)
 {
     if (auto refusal = state_->Refusal())
     {
         completion({*refusal});
         return;
     }
-    state_->Configure(Json{{"notify_background", enabled}}, std::move(completion));
+    char const* key = nullptr;
+    switch (notices)
+    {
+    case NoticeSwitch::Finished:
+        key = "notifications_enabled";
+        break;
+    case NoticeSwitch::Added:
+        key = "notify_added";
+        break;
+    case NoticeSwitch::Problems:
+        key = "notify_problems";
+        break;
+    case NoticeSwitch::Background:
+        key = "notify_background";
+        break;
+    }
+    state_->Configure(Json{{key, false}}, std::move(completion));
 }
 void Engine::RecordPrograms(std::vector<std::string> programs, std::function<void(Outcome)> completion)
 {
@@ -231,7 +247,6 @@ std::string Engine::Folder(std::string const& torrentId) const
     return found == state_->torrents.end() ? std::string() : found->second.Folder();
 }
 std::string Engine::Language() const { return state_->language; }
-std::string Engine::Theme() const { return state_->settings.theme; }
 
 // Windows paths are at most 32,767 characters, and a NUL would cut a path
 // short at the file system.
@@ -240,12 +255,15 @@ bool Engine::IsSource(std::string const& source)
     return !source.empty() && source.size() <= 32'768 && source.find('\0') == std::string::npos;
 }
 
-bool Engine::IsShuttingDown() const { return state_->shuttingDown; }
+bool Engine::IsShuttingDown() const { return state_->IsShuttingDown(); }
 bool Engine::IsLoading() const { return state_->startup != Startup::Ready; }
 bool Engine::HasStorageFailure() const { return !state_->startupError.empty(); }
 std::string Engine::StartupError() const { return state_->startupError; }
 std::string Engine::SessionId() const { return state_->sessionId; }
-bool Engine::ShowsAdd() const { return state_->settings.showsAdd; }
+bool Engine::ShowsAdd(std::string const& source) const
+{
+    return IsMagnet(source) ? state_->settings.showsMagnetDialog : state_->settings.showsTorrentDialog;
+}
 bool Engine::RaisesAdd() const { return state_->settings.raisesAdd; }
 
 bool Engine::HasSettings() const { return state_->startup != Startup::Settings; }

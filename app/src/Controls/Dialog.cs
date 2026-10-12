@@ -1,6 +1,10 @@
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
+using Microsoft.UI.Xaml.Data;
 using Microsoft.UI.Xaml.Media;
+using Syno.TinyTorrent.Views;
 using Windows.UI.ViewManagement;
 
 namespace Syno.TinyTorrent.Controls;
@@ -12,8 +16,10 @@ namespace Syno.TinyTorrent.Controls;
 public sealed partial class Dialog : ContentDialog
 {
     private readonly UISettings _display = new();
+
     // WinUI's generated XAML assigns this property after construction.
     public ActionButton? FooterAction { get; set; }
+    public CheckBox? OptOut { get; private set; }
     private long _footerText;
     public static readonly DependencyProperty FooterProperty = DependencyProperty.Register(
         nameof(Footer),
@@ -112,7 +118,11 @@ public sealed partial class Dialog : ContentDialog
     public Dialog()
     {
         DefaultButton = ContentDialogButton.Primary;
-        Opened += (_, _) => { AlignActions(); FocusOnOpen(); };
+        Opened += (_, _) =>
+        {
+            AlignActions();
+            FocusOnOpen();
+        };
         // The footer button belongs to the content, which can outlive the
         // dialog, so the dialog listens to it only while shown.
         Loaded += (_, _) =>
@@ -122,7 +132,8 @@ public sealed partial class Dialog : ContentDialog
                 FooterAction?.RegisterPropertyChangedCallback(
                     ActionButton.TextProperty,
                     (_, _) => AlignActions()
-                ) ?? 0;
+                )
+                ?? 0;
         };
         Unloaded += (_, _) =>
         {
@@ -140,30 +151,72 @@ public sealed partial class Dialog : ContentDialog
         Resources["ContentDialogMaxHeight"] = double.PositiveInfinity;
     }
 
+    public CheckBox AddOptOut(DialogPreference preference)
+    {
+        OptOut = new CheckBox();
+        AutomationProperties.SetAutomationId(OptOut, "NeverShow");
+        OptOut.SetBinding(
+            ToggleButton.IsCheckedProperty,
+            new Binding
+            {
+                Source = preference,
+                Path = new PropertyPath(nameof(DialogPreference.NeverShow)),
+                Mode = BindingMode.TwoWay,
+            }
+        );
+        OptOut.SetBinding(
+            IsEnabledProperty,
+            new Binding
+            {
+                Source = this,
+                Path = new PropertyPath(nameof(IsPrimaryButtonEnabled)),
+                Mode = BindingMode.OneWay,
+            }
+        );
+        if (Footer is null)
+            Footer = OptOut;
+        else
+        {
+            var footer = new StackPanel { Spacing = 4 };
+            footer.Children.Add(new ContentControl { Content = Footer, IsTabStop = false });
+            footer.Children.Add(OptOut);
+            Footer = footer;
+        }
+        return OptOut;
+    }
+
     protected override void OnApplyTemplate()
     {
         base.OnApplyTemplate();
-        foreach (var name in new[] { "CommandSpace", "PrimaryButton", "SecondaryButton", "CloseButton" })
+        foreach (
+            var name in new[] { "CommandSpace", "PrimaryButton", "SecondaryButton", "CloseButton" }
+        )
         {
             if (GetTemplateChild(name) is not FrameworkElement part)
                 continue;
             part.SizeChanged += (_, _) => PlaceButtons();
             if (part is ActionButton button)
-                button.RegisterPropertyChangedCallback(ActionButton.TextProperty, (_, _) => AlignActions());
+                button.RegisterPropertyChangedCallback(
+                    ActionButton.TextProperty,
+                    (_, _) => AlignActions()
+                );
         }
         ShowTitle();
         ShowFooter();
         AlignActions();
     }
 
-    private void OnTextScale(UISettings sender, object args) => DispatcherQueue.TryEnqueue(AlignActions);
+    private void OnTextScale(UISettings sender, object args) =>
+        DispatcherQueue.TryEnqueue(AlignActions);
 
     private void AlignActions()
     {
         if (FooterAction is not { } action)
             return;
         var buttons = new[] { "PrimaryButton", "SecondaryButton", "CloseButton" }
-            .Select(GetTemplateChild).OfType<ActionButton>().Where(button => button.Text.Length > 0);
+            .Select(GetTemplateChild)
+            .OfType<ActionButton>()
+            .Where(button => button.Text.Length > 0);
         ActionButton.Align(buttons.Prepend(action));
     }
 

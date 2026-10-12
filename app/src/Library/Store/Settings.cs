@@ -1,67 +1,89 @@
-using Microsoft.Data.Sqlite;
-
 namespace Syno.TinyTorrent.Library;
 
 internal sealed partial class Store
 {
-    internal Task<bool> Enabled(CancellationToken cancellation) => database.Run(connection =>
-    {
-        using var command = connection.CreateCommand();
-        command.CommandText = "SELECT value FROM library_settings WHERE setting='enabled';";
-        return command.ExecuteScalar() as string == "1";
-    }, cancellation);
+    internal Task<bool> Enabled(CancellationToken cancellation) =>
+        database.Run(
+            connection =>
+            {
+                using var command = connection.CreateCommand();
+                command.CommandText = "SELECT enabled FROM library_settings WHERE singleton=1;";
+                var value = command.ExecuteScalar();
+                if (value is long enabled && enabled is 0 or 1)
+                    return enabled == 1;
+                command.CommandText = "UPDATE library_settings SET enabled=0 WHERE singleton=1;";
+                command.ExecuteNonQuery();
+                return false;
+            },
+            cancellation
+        );
 
-    internal Task SetEnabled(bool enabled, CancellationToken cancellation) => SaveSetting("enabled", enabled ? "1" : "0", cancellation);
+    internal Task<string?> Provider(CancellationToken cancellation) =>
+        database.Run(
+            connection =>
+            {
+                using var command = connection.CreateCommand();
+                command.CommandText = "SELECT source FROM library_settings WHERE singleton=1;";
+                return command.ExecuteScalar() as string;
+            },
+            cancellation
+        );
 
-    internal Task<string?> Provider(CancellationToken cancellation) => database.Run(connection =>
-    {
-        using var command = connection.CreateCommand();
-        command.CommandText = "SELECT value FROM library_settings WHERE setting='source';";
-        return command.ExecuteScalar() as string;
-    }, cancellation);
+    internal Task EnableProvider(string providerId, CancellationToken cancellation) =>
+        database.Run(
+            connection =>
+            {
+                using var command = connection.CreateCommand();
+                command.CommandText =
+                    "UPDATE library_settings SET source=$provider,enabled=1 WHERE singleton=1;";
+                command.Parameters.AddWithValue("$provider", providerId);
+                return command.ExecuteNonQuery();
+            },
+            cancellation
+        );
 
-    internal Task SetProvider(string providerId, CancellationToken cancellation) => SaveSetting("source", providerId, cancellation);
+    internal const int DefaultLookupLimit = 5;
 
-    private Task SaveSetting(string setting, string value, CancellationToken cancellation) => database.Run(connection =>
-    {
-        using var command = connection.CreateCommand();
-        command.CommandText = "INSERT INTO library_settings VALUES ($setting,$value) " +
-            "ON CONFLICT(setting) DO UPDATE SET value=excluded.value;";
-        command.Parameters.AddWithValue("$setting", setting);
-        command.Parameters.AddWithValue("$value", value);
-        return command.ExecuteNonQuery();
-    }, cancellation);
+    // How many searches automatic and batch work may make for one movie at one
+    // provider or language; Library and subtitles share it.
+    internal Task<int> LookupLimit(CancellationToken cancellation) =>
+        database.Run(
+            connection =>
+            {
+                using var command = connection.CreateCommand();
+                command.CommandText = "SELECT lookups FROM library_settings WHERE singleton=1;";
+                if (command.ExecuteScalar() is long limit && limit is >= 1 and <= int.MaxValue)
+                    return (int)limit;
+                command.CommandText = "UPDATE library_settings SET lookups=$limit WHERE singleton=1;";
+                command.Parameters.AddWithValue("$limit", DefaultLookupLimit);
+                command.ExecuteNonQuery();
+                return DefaultLookupLimit;
+            },
+            cancellation
+        );
 
-    internal Task<IReadOnlyDictionary<string, string>> Settings(string providerId, CancellationToken cancellation) =>
-        database.Run<IReadOnlyDictionary<string, string>>(connection =>
-        {
-            using var command = connection.CreateCommand();
-            command.CommandText = "SELECT setting,value FROM provider_settings WHERE section=$section;";
-            command.Parameters.AddWithValue("$section", providerId);
-            var settings = new Dictionary<string, string>(StringComparer.Ordinal);
-            using var reader = command.ExecuteReader();
-            while (reader.Read())
-                settings.Add(reader.GetString(0), reader.GetString(1));
-            return settings;
-        }, cancellation);
+    internal Task SaveLookupLimit(int limit, CancellationToken cancellation) =>
+        database.Run(
+            connection =>
+            {
+                using var command = connection.CreateCommand();
+                command.CommandText =
+                    "UPDATE library_settings SET lookups=$limit WHERE singleton=1;";
+                command.Parameters.AddWithValue("$limit", limit);
+                return command.ExecuteNonQuery();
+            },
+            cancellation
+        );
 
-    internal Task SaveSettings(string providerId, IReadOnlyDictionary<string, string> settings,
-        CancellationToken cancellation) => database.Run(connection =>
-    {
-        using var command = connection.CreateCommand();
-        command.CommandText = "DELETE FROM provider_settings WHERE section=$section;";
-        command.Parameters.AddWithValue("$section", providerId);
-        command.ExecuteNonQuery();
-        command.CommandText = "INSERT INTO provider_settings VALUES ($section,$setting,$value);";
-        command.Parameters.Add("$setting", SqliteType.Text);
-        command.Parameters.Add("$value", SqliteType.Text);
-        foreach (var (setting, value) in settings)
-        {
-            cancellation.ThrowIfCancellationRequested();
-            command.Parameters["$setting"].Value = setting;
-            command.Parameters["$value"].Value = value;
-            command.ExecuteNonQuery();
-        }
-        return true;
-    }, cancellation);
+    internal Task DisableProvider(CancellationToken cancellation) =>
+        database.Run(
+            connection =>
+            {
+                using var command = connection.CreateCommand();
+                command.CommandText =
+                    "UPDATE library_settings SET enabled=0 WHERE singleton=1;";
+                return command.ExecuteNonQuery();
+            },
+            cancellation
+        );
 }

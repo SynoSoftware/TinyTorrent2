@@ -6,7 +6,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot/SourceChecks.ps1" -BinaryDirectory $BinaryDirectory
-$database = New-Value 'Services.Database' @($directory, $schemas, $projection)
+$database = New-Value 'Services.Database' @($directory)
 $store = New-Value 'Library.Store' @($database)
 $measurements = [Collections.Generic.List[object]]::new()
 $collections = [Collections.Generic.List[object]]::new()
@@ -46,7 +46,7 @@ try {
         try {
             $command.CommandText = @'
 BEGIN;
-DROP TABLE IF EXISTS library_rows;
+UPDATE library_state SET valid=0 WHERE singleton=1;
 DELETE FROM source_files;
 DELETE FROM contributions;
 DELETE FROM locations;
@@ -60,14 +60,15 @@ INSERT INTO contributions(origin,name,complete,settled,collected,save_path,stamp
 SELECT DISTINCT 'torrent-' || ((entry_id-1)/100),'Pack ' || ((entry_id-1)/100),1,1,1,$root,'fixture',1 FROM locations;
 INSERT INTO source_files
 SELECT 'torrent-' || ((entry_id-1)/100),(entry_id-1)%100,entry_id,'Example.' || entry_id,path,entry_id*1024,1,1,
-    CASE entry_id%4 WHEN 0 THEN 0 WHEN 1 THEN 1 ELSE 3 END,'Example ' || entry_id,lower(path) FROM locations;
-INSERT INTO video_information(catalog_id,video_id,language,title,type,year,genres,cast,synopsis,keywords,search,retrieved)
+    CASE entry_id%4 WHEN 0 THEN 0 WHEN 1 THEN 1 ELSE 3 END,'Example ' || entry_id,
+    CASE entry_id%4 WHEN 0 THEN 'movie' ELSE '' END,NULL,lower(path) FROM locations;
+INSERT INTO video_information(catalog_id,video_id,language,title,type,year,genres,cast,synopsis,keywords,search)
 SELECT 'timing',CAST(entry_id AS TEXT),'','Chosen title ' || entry_id,'movie',2024,'Drama · Mystery','Example Actor',
-    'An investigator solves a mystery in a coastal town.','investigator mystery example actor','investigator mystery example actor',1700000000
+    'An investigator solves a mystery in a coastal town.','investigator mystery example actor','investigator mystery example actor'
 FROM locations WHERE entry_id%4=0 AND entry_id<=4000;
 INSERT INTO identifications
 SELECT origin,file_index,'timing',CAST(entry_id AS TEXT),0,1700000000,name FROM source_files WHERE entry_id%4=0 AND entry_id<=4000;
-INSERT INTO file_facts
+INSERT INTO file_facts(origin,file_index,created,modified,title,artist,album,track,year,genre,duration,search)
 SELECT origin,file_index,1700000000,1700000100,'Song ' || entry_id,'Artist ' || (entry_id%17),'Album ' || (entry_id%53),
     entry_id%12+1,2024,'Rock',180,'artist album rock' FROM source_files WHERE kind=1;
 COMMIT;

@@ -1,3 +1,5 @@
+using System.ComponentModel;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Microsoft.UI.Xaml;
 using Syno.TinyTorrent.Controls;
@@ -9,7 +11,8 @@ namespace Syno.TinyTorrent;
 
 public partial class App : Application
 {
-    internal static Version Version { get; } = typeof(App).Assembly.GetName().Version ?? new Version(0, 0, 0, 0);
+    internal static Version Version { get; } =
+        typeof(App).Assembly.GetName().Version ?? new Version(0, 0, 0, 0);
     internal static string UserAgent { get; } = "TinyTorrent/" + Version;
     private Mutex? _instance;
     private MainWindow? _window;
@@ -43,25 +46,25 @@ public partial class App : Application
         Resources["LucideFont"] = Syno.Lucide.Font;
         Marshal.ThrowExceptionForHR(SetCurrentProcessExplicitAppUserModelID("Syno.TinyTorrent"));
         _instance = new Mutex(false, "Local\\TinyTorrent.Window." + PipeClient.LogonSid);
-        bool owned;
-        try
+        var owned = Acquire(_instance, 0);
+#if CAPTURE
+        if (!owned && MainWindow.IsCaptureReview)
         {
-            owned = _instance.WaitOne(0);
+            _instance.Dispose();
+            Exit();
+            return;
         }
-        catch (AbandonedMutexException)
-        {
-            owned = true;
-        }
+#endif
+#if DEBUG
+        // Every TinyTorrent in a logon session shares this lock, so a development
+        // launch would hand off to another build's window. A window started from
+        // another path is stopped so this launch takes the lock; a window from
+        // this path is shown as usual.
+        if (!owned && await Task.Run(StopOtherWindow))
+            owned = Acquire(_instance, 0);
+#endif
         if (!owned)
         {
-#if CAPTURE
-            if (MainWindow.IsCaptureReview)
-            {
-                _instance.Dispose();
-                Exit();
-                return;
-            }
-#endif
             try
             {
                 var text = await Task.Run(() => new Strings());
@@ -71,7 +74,8 @@ public partial class App : Application
                 }
                 catch (Exception error)
                 {
-                    var message = text.Error(error);
+                    // The message box has no title that names the failure.
+                    var message = text.Error("unknown", error.Message);
                     MessageBoxW(IntPtr.Zero, message, text.Get("window", "title"), 0x10);
                 }
             }
@@ -83,7 +87,9 @@ public partial class App : Application
             return;
         }
 
-        _strings = await Task.Run(() => new Strings(Supplier.CreateAll().SelectMany(supplier => supplier.Languages)));
+        _strings = await Task.Run(() =>
+            new Strings(Supplier.CreateAll().SelectMany(supplier => supplier.Languages))
+        );
         _window = new MainWindow(_strings);
         _windowHandle = WinRT.Interop.WindowNative.GetWindowHandle(_window);
         _window.Closed += (_, _) =>
@@ -101,7 +107,59 @@ public partial class App : Application
         }
 #endif
         _window.Activate();
+
+        static bool Acquire(Mutex instance, int timeout)
+        {
+            try
+            {
+                return instance.WaitOne(timeout);
+            }
+            catch (AbandonedMutexException)
+            {
+                return true;
+            }
+        }
     }
+
+#if DEBUG
+    // Returns whether it stopped a window started from another path. Its child
+    // processes stop too, because the Library's website browsers must not
+    // outlive it.
+    private static bool StopOtherWindow()
+    {
+        using var current = Process.GetCurrentProcess();
+        var window = current.MainModule!.FileName;
+        var stopped = false;
+        foreach (var process in Process.GetProcessesByName(current.ProcessName))
+        {
+            using (process)
+            {
+                try
+                {
+                    // A window running as administrator hides its path, so it
+                    // keeps the lock. Paths compare as launched, which matches
+                    // because a build's processes start each other from one folder.
+                    if (
+                        process.Id == current.Id
+                        || process.SessionId != current.SessionId
+                        || process.MainModule?.FileName is not { } path
+                        || string.Equals(path, window, StringComparison.OrdinalIgnoreCase)
+                    )
+                        continue;
+                    try
+                    {
+                        process.Kill(entireProcessTree: true);
+                    }
+                    catch (AggregateException) { }
+                    stopped |= process.WaitForExit(5000);
+                }
+                catch (Exception error) when (error is Win32Exception or InvalidOperationException)
+                { }
+            }
+        }
+        return stopped;
+    }
+#endif
 
     private void ReportFatal(Exception error, string source, string? message = null)
     {

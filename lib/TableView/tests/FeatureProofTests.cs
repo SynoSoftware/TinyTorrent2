@@ -321,7 +321,7 @@ public class FeatureProofTests
     public Task F09_APressOnARowTheTableWouldNotDragBecomesTheMarquee() =>
         TestHost.RunAsync(async () =>
         {
-            SelectionHarness h = await SelectionHarness.LoadAsync(6, height: 400);
+            SelectionHarness h = await SelectionHarness.LoadAsync(6, height: 400, ordered: true);
             ListView list = h.Surface();
             double rowHeight = ((FrameworkElement)list.ContainerFromItem(h[0])).ActualHeight;
             h.Click(h[0]);
@@ -329,7 +329,7 @@ public class FeatureProofTests
 
             // Reordering is off by default, so no row can be dragged and the press selects the row as
             // a click would.
-            Assert.IsFalse((bool)Proof.Call(h.Table, "CanBeginRowDrag", h[2])!);
+            Assert.IsFalse((bool)Proof.Call(h.Table, "CanStartDrag", h[2])!);
             Gesture.Press(h, row: h[2], item: h[2], originY: rowHeight * 2.5);
             CollectionAssert.AreEqual(
                 new[] { "k2" },
@@ -502,357 +502,156 @@ public class FeatureProofTests
 
     // ================================================================ F11 row drag reorder
 
-    /// <summary>
-    /// Section 16: a drag of the selected packet, the insertion marker it draws, and the request it
-    /// ends with. The table changes no order itself.
-    /// </summary>
     [TestMethod]
-    public Task F11_DraggingASelectedRowMovesTheWholePacket() =>
+    public Task F11_WheelMovesOnlyOrderedItemsRegardlessOfTheDisplaySort() =>
         TestHost.RunAsync(async () =>
         {
             SelectionHarness h = await SelectionHarness.LoadAsync(
                 8,
-                configure: t => t.CanReorder = true,
-                height: 400
-            );
-
-            List<ReorderRequestedEventArgs> requests = new();
-            h.Table.ReorderRequested += (_, e) => requests.Add(e);
-
-            ListView list = h.Surface();
-            FrameworkElement marker = InsertionMarker(h.Table);
-            double rowHeight = ((FrameworkElement)list.ContainerFromItem(h[0])).ActualHeight;
-
-            Assert.AreEqual(Visibility.Collapsed, marker.Visibility);
-
-            h.Table.Selection = new(new object[] { h[1], h[2], h[3] }, h[1]);
-            ObservableCollection<Row> rows = h.Rows;
-
-            Gesture.Press(h, row: h[2], item: h[2], originY: rowHeight * 2.5);
-            Assert.AreEqual(
-                "RowDrag",
-                Proof.Call(h.Table, "GestureAtThreshold")!.ToString(),
-                "a press on a row becomes the drag at the threshold"
-            );
-            Proof.Call(h.Table, "BeginRowDrag", list, h[2]);
-            Assert.AreEqual("RowDrag", Proof.Field<object>(h.Table, "_gesture").ToString());
-
-            CollectionAssert.AreEqual(
-                new object[] { h[1], h[2], h[3] },
-                Proof.Field<IReadOnlyList<object>>(h.Table, "_movingPacket").ToArray(),
-                "the packet resolved at the press is the whole selection"
-            );
-
-            // Drag down to the boundary before row 6.
-            object drag = Proof.Field<object>(h.Table, "_rowDrag");
-            int boundary = (int)Proof.Call(drag, "Track", rowHeight * 5.6)!;
-            Proof.Note(
-                $"F11 marker: visibility={marker.Visibility} y={Proof.TranslateY(marker)} "
-                    + $"boundary={boundary} (rowHeight {rowHeight})"
-            );
-            Assert.AreEqual(Visibility.Visible, marker.Visibility, "the insertion marker is drawn");
-            Assert.AreEqual(6, boundary);
-
-            Proof.Call(h.Table, "CompleteRowDrag", rowHeight * 5.6);
-
-            ReorderRequestedEventArgs request = requests.Single();
-            Proof.Note(
-                $"F11 request: moving={string.Join(",", request.Items)} "
-                    + $"before={request.Before}"
-            );
-            CollectionAssert.AreEqual(new object[] { h[1], h[2], h[3] }, request.Items.ToArray());
-            Assert.AreSame(h[6], request.Before);
-
-            CollectionAssert.AreEqual(
-                new object[]
-                {
-                    rows[0],
-                    rows[1],
-                    rows[2],
-                    rows[3],
-                    rows[4],
-                    rows[5],
-                    rows[6],
-                    rows[7],
-                },
-                rows.ToArray(),
-                "the table moved nothing itself; the request is the whole of it"
-            );
-            Assert.AreEqual(Visibility.Collapsed, marker.Visibility);
-        });
-
-    /// <summary>A drag of an unselected row moves that row alone and leaves the selection standing.</summary>
-    [TestMethod]
-    public Task F11_DraggingAnUnselectedRowMovesThatRowAlone() =>
-        TestHost.RunAsync(async () =>
-        {
-            SelectionHarness h = await SelectionHarness.LoadAsync(
-                8,
-                configure: t =>
+                t =>
                 {
                     t.CanReorder = true;
-                    t.IsMarqueeEnabled = true;
+                    t.Schema<Row>().SortKey(t.Columns[1], row => -row.Rank);
                 },
                 height: 400
             );
-
-            List<ReorderRequestedEventArgs> requests = new();
+            h[6].Position = null;
+            h.Table.Sort = new Sort(h.Table.Columns[1]);
+            h.Table.Selection = new([h[1], h[3], h[6]], h[3]);
+            var original = h.Rows.ToArray();
+            List<ReorderRequestedEventArgs> requests = [];
             h.Table.ReorderRequested += (_, e) => requests.Add(e);
 
-            h.Table.Selection = new(new object[] { h[0], h[1] }, h[0]);
-            double rowHeight = ((FrameworkElement)h.Surface().ContainerFromItem(h[0])).ActualHeight;
-
-            Gesture.Press(h, row: h[5], item: h[5], originY: rowHeight * 5.5);
+            Gesture.Press(h, row: h[3], item: h[3], originY: 120);
+            Assert.AreEqual("RowDrag", Proof.Call(h.Table, "GestureAtThreshold")!.ToString());
+            Proof.Call(h.Table, "BeginDrag", h[3]);
             CollectionAssert.AreEqual(
-                new[] { "k0", "k1" },
-                h.SelectedKeys(),
-                "the press defers, so the packet stands"
-            );
-            Assert.AreEqual(
-                "RowDrag",
-                Proof.Call(h.Table, "GestureAtThreshold")!.ToString(),
-                "a press on a row is a drag at the threshold, never a marquee, whatever the host enabled"
+                new object[] { h[1], h[3] },
+                Proof.Field<IReadOnlyList<object>>(h.Table, "_dragPacket").ToArray()
             );
 
-            Proof.Call(h.Table, "BeginRowDrag", h.Surface(), h[5]);
-            Proof.Call(h.Table, "CompleteRowDrag", rowHeight * 0.2);
+            // A filtered destination remains part of the host's complete order.
+            h.Table.ItemsSource = new[] { h[1], h[3], h[6] };
+            Proof.Call(h.Table, "CompleteDrag", h.WheelPoint(3));
+            var request = requests.Single();
+            CollectionAssert.AreEqual(new object[] { h[1], h[3] }, request.Items.ToArray());
+            Assert.AreSame(h[5], request.Before);
+            CollectionAssert.AreEqual(original, h.Rows.ToArray());
+        });
 
-            Proof.Note(
-                $"F11 unselected drag: moving={string.Join(",", requests.Single().Items)} "
-                    + $"before={requests.Single().Before} "
-                    + $"selection={string.Join(",", h.SelectedKeys())}"
-            );
-            CollectionAssert.AreEqual(new object[] { h[5] }, requests.Single().Items.ToArray());
+    [TestMethod]
+    public Task F11_UnselectedRowMovesAloneAndKeepsSelection() =>
+        TestHost.RunAsync(async () =>
+        {
+            SelectionHarness h = await SelectionHarness.LoadAsync(6, t => t.CanReorder = true);
+            h.Table.Selection = new([h[0], h[1]], h[0]);
+            List<ReorderRequestedEventArgs> requests = [];
+            h.Table.ReorderRequested += (_, e) => requests.Add(e);
+            Gesture.Press(h, row: h[4], item: h[4], originY: 100);
+            Proof.Call(h.Table, "BeginDrag", h[4]);
+            Proof.Call(Proof.Field<object>(h.Table, "_wheel"), "Scroll", 1200, new Point(-1, -1));
+            Proof.Call(h.Table, "CompleteDrag", h.WheelPoint(0));
+            CollectionAssert.AreEqual(new object[] { h[4] }, requests.Single().Items.ToArray());
             Assert.AreSame(h[0], requests.Single().Before);
-            CollectionAssert.AreEqual(
-                new[] { "k0", "k1" },
-                h.SelectedKeys(),
-                "selection untouched"
-            );
+            CollectionAssert.AreEqual(new[] { "k0", "k1" }, h.SelectedKeys());
         });
 
-    /// <summary>
-    /// The flag is the only owner of the gesture. It is off by default, because a reorder is a
-    /// domain request and means something only where the host owns an order; and subscribing to
-    /// <c>ReorderRequested</c> no longer turns it on behind the flag's back, which used to make
-    /// an event subscription load-bearing behaviour that nothing in the API announced.
-    /// </summary>
     [TestMethod]
-    public Task F11_RowDragIsRefusedWithoutTheHostsOptIn() =>
+    public Task F11_AnUnorderedSelectionStillOpensAScrollableWheel() =>
         TestHost.RunAsync(async () =>
         {
-            SelectionHarness h = await SelectionHarness.LoadAsync(6, height: 300);
+            SelectionHarness h = await SelectionHarness.LoadAsync(8, t => t.CanReorder = true);
+            h[1].Position = null;
+            h.Table.Selection = new([h[1]], h[1]);
+            int requests = 0;
+            h.Table.ReorderRequested += (_, _) => requests++;
+            Gesture.Press(h, row: h[1], item: h[1], originY: 80);
+            Assert.IsTrue((bool)Proof.Call(h.Table, "CanStartDrag", h[1])!);
+            Proof.Call(h.Table, "BeginDrag", h[1]);
+            var wheel = Proof.Field<Body.Wheel>(h.Table, "_wheel");
+            Assert.IsTrue(Proof.Field<Popup>(wheel, "_popup").IsOpen);
+            Assert.AreEqual(0, Proof.Field<IReadOnlyList<object>>(h.Table, "_dragPacket").Count);
+            Proof.Call(wheel, "Scroll", -240, new Point(-1, -1));
+            Assert.AreEqual(2d, Proof.Field<double>(wheel, "_center"));
+            Proof.Call(h.Table, "CompleteDrag", h.WheelPoint(2));
+            Assert.AreEqual(0, requests);
+            Assert.IsFalse(Proof.Field<Popup>(wheel, "_popup").IsOpen);
+        });
 
-            Assert.IsFalse((bool)Proof.Call(h.Table, "CanBeginRowDrag", h[2])!, "off by default");
-
-            h.Table.ReorderRequested += (_, _) => { };
-            Assert.IsFalse(
-                (bool)Proof.Call(h.Table, "CanBeginRowDrag", h[2])!,
-                "a handler alone does not turn it on"
+    [TestMethod]
+    public Task F11_RefreshAndSortKeepTheWheelButAnOrderChangeCancelsIt() =>
+        TestHost.RunAsync(async () =>
+        {
+            SelectionHarness h = await SelectionHarness.LoadAsync(
+                6,
+                t =>
+                {
+                    t.CanReorder = true;
+                    t.Schema<Row>().SortKey(t.Columns[1], row => -row.Rank);
+                }
             );
+            h.Table.Selection = new([h[1], h[2]], h[1]);
+            h.Table.SelectionChanged += (_, selection) => h.Table.Selection = selection;
+            Gesture.Press(h, row: h[2], item: h[2], originY: 100);
+            Proof.Call(h.Table, "BeginDrag", h[2]);
+            h.Table.RefreshView();
+            h.Table.Sort = new Sort(h.Table.Columns[1]);
+            Assert.AreEqual("RowDrag", Proof.Field<object>(h.Table, "_gesture").ToString());
+            h[5].Position = null;
+            h.Table.RefreshView();
+            Assert.AreEqual("None", Proof.Field<object>(h.Table, "_gesture").ToString());
+        });
 
+    [TestMethod]
+    public Task F11_UnchangedAndOutsideDropsRaiseNoRequest() =>
+        TestHost.RunAsync(async () =>
+        {
+            SelectionHarness h = await SelectionHarness.LoadAsync(6, t => t.CanReorder = true);
+            h.Table.Selection = new([h[1], h[2]], h[1]);
+            int requests = 0;
+            h.Table.ReorderRequested += (_, _) => requests++;
+            Gesture.Press(h, row: h[1], item: h[1], originY: 80);
+            Proof.Call(h.Table, "BeginDrag", h[1]);
+            Proof.Call(h.Table, "CompleteDrag", h.WheelPoint(1));
+            Gesture.Press(h, row: h[1], item: h[1], originY: 80);
+            Proof.Call(h.Table, "BeginDrag", h[1]);
+            Proof.Call(h.Table, "CompleteDrag", new Point(-1, -1));
+            Assert.AreEqual(0, requests);
+        });
+
+    [TestMethod]
+    public Task F11_RowDragRequiresAnOrder() =>
+        TestHost.RunAsync(async () =>
+        {
+            SelectionHarness h = await SelectionHarness.LoadAsync(3);
             h.Table.CanReorder = true;
-            Proof.Note(
-                "F11 with the opt-in: " + (bool)Proof.Call(h.Table, "CanBeginRowDrag", h[2])!
-            );
-            Assert.IsTrue((bool)Proof.Call(h.Table, "CanBeginRowDrag", h[2])!);
+            Assert.IsFalse((bool)Proof.Call(h.Table, "CanStartDrag", h[0])!);
         });
 
     [TestMethod]
-    public Task F11_RowsOutsideTheOrderStaySelectableButCannotJoinADrag() =>
+    public Task F11_RowDragRequiresTheHostsOptIn() =>
         TestHost.RunAsync(async () =>
         {
-            SelectionHarness h = await SelectionHarness.LoadAsync(
-                6,
-                configure: table =>
-                {
-                    table.CanReorder = true;
-                    table.Schema<Row>().CanReorder(row => row.Rank < 3);
-                },
-                height: 300
-            );
-            h.Table.Selection = new Selection([h[1], h[4]], h[4]);
-            CollectionAssert.AreEqual(new[] { "k1", "k4" }, h.SelectedKeys());
-            Assert.IsFalse((bool)Proof.Call(h.Table, "CanBeginRowDrag", h[4])!);
-            Assert.IsFalse((bool)Proof.Call(h.Table, "CanBeginRowDrag", h[1])!);
-            Assert.IsTrue((bool)Proof.Call(h.Table, "CanBeginRowDrag", h[2])!);
-            h.Table.Selection = new Selection([h[1]], h[1]);
-            Assert.IsTrue((bool)Proof.Call(h.Table, "CanBeginRowDrag", h[1])!);
-        });
-
-    /// <summary>
-    /// Section 16: the drag is offered only while the view shows the row order. Sorted by another
-    /// column, a boundary between two rows is a place in that sort, so the table withholds the drag
-    /// and a drag from a row is section 14's sweep instead. Sorted by the row-order column either
-    /// way, the drag is offered and the request is reported in row order, so a host that applies it
-    /// in that order puts the packet where it was dropped.
-    /// </summary>
-    [TestMethod]
-    public Task F11_TheDragFollowsTheRowOrderColumnThroughTheSort() =>
-        TestHost.RunAsync(async () =>
-        {
-            SelectionHarness h = await SelectionHarness.LoadAsync(
-                8,
-                configure: t =>
-                {
-                    // Column a defines the row order: ascending by key, which is the source order.
-                    // Column b sorts the other way round, so its order is not the row order.
-                    t.Columns[0].DefinesRowOrder = true;
-                    t.Schema<Row>()
-                        .SortKey(t.Columns[0], row => row.Key)
-                        .SortKey(t.Columns[1], row => -row.Rank);
-                    t.CanReorder = true;
-                },
-                height: 400
-            );
-
-            List<ReorderRequestedEventArgs> requests = new();
-            h.Table.ReorderRequested += (_, e) => requests.Add(e);
-            ListView list = h.Surface();
-            double rowHeight = ((FrameworkElement)list.ContainerFromItem(h[0])).ActualHeight;
-
-            Assert.IsTrue(
-                (bool)Proof.Call(h.Table, "CanBeginRowDrag", h[2])!,
-                "unsorted: the view is the row order"
-            );
-
-            ColumnLayout unsorted = h.Table.Layout;
-            h.Table.Layout = unsorted with { SortColumnId = "b" };
-            h.Table.UpdateLayout();
-            Assert.IsFalse(
-                (bool)Proof.Call(h.Table, "CanBeginRowDrag", h[2])!,
-                "sorted by another column: the drag is withheld"
-            );
-            Gesture.Press(h, row: h[2], item: h[2], originY: rowHeight * 5.5);
-            Assert.AreEqual(
-                "Marquee",
-                Proof.Call(h.Table, "GestureAtThreshold")!.ToString(),
-                "and a drag from a row sweeps instead"
-            );
-            Proof.Call(h.Table, "CancelGesture");
-
-            h.Table.Layout = unsorted with { SortColumnId = "a" };
-            h.Table.UpdateLayout();
-            Assert.IsTrue(
-                (bool)Proof.Call(h.Table, "CanBeginRowDrag", h[2])!,
-                "sorted by the row-order column upward: offered"
-            );
-
-            h.Table.Layout = unsorted with
-            {
-                SortColumnId = "a",
-                SortDirection = SortDirection.Descending,
-            };
-            h.Table.UpdateLayout();
-            Assert.IsTrue(
-                (bool)Proof.Call(h.Table, "CanBeginRowDrag", h[2])!,
-                "and downward: offered"
-            );
-            CollectionAssert.AreEqual(
-                new[] { "k7", "k6", "k5", "k4", "k3", "k2", "k1", "k0" },
-                list.Items.Cast<Row>().Select(r => r.Key).ToArray(),
-                "the view runs opposite to the row order"
-            );
-
-            // Drop k5 and k4, selected and so moving as one packet, between k7 and k6: the boundary
-            // before view index 1.
-            h.Table.Selection = new(new object[] { h[4], h[5] }, h[5]);
-            Gesture.Press(h, row: h[5], item: h[5], originY: rowHeight * 2.5);
-            Proof.Call(h.Table, "BeginRowDrag", list, h[5]);
-            Proof.Call(h.Table, "CompleteRowDrag", rowHeight * 1.2);
-
-            ReorderRequestedEventArgs request = requests.Single();
-            Proof.Note(
-                $"F11 descending request: moving={string.Join(",", request.Items)} "
-                    + $"before={request.Before}"
-            );
-            CollectionAssert.AreEqual(
-                new object[] { h[4], h[5] },
-                request.Items.ToArray(),
-                "the packet is reported in row order, not in the order it stands on screen"
-            );
-            Assert.AreSame(
-                h[7],
-                request.Before,
-                "and goes before the row above the boundary, in row order"
-            );
-
-            // A drop right beside the block, on the side that is next in row order, changes nothing:
-            // the boundary before view index 2 is between k6 and k5, and k5 already follows k6.
-            h.Table.Selection = new(new object[] { h[5] }, h[5]);
-            Gesture.Press(h, row: h[5], item: h[5], originY: rowHeight * 2.5);
-            Proof.Call(h.Table, "BeginRowDrag", list, h[5]);
-            Proof.Call(h.Table, "CompleteRowDrag", rowHeight * 1.6);
-            Assert.AreEqual(1, requests.Count, "a placement that keeps the order raises nothing");
-        });
-
-    /// <summary>
-    /// A sort that stops showing the row order ends a live drag even when it leaves every row
-    /// where it was. The drop would be refused, so a drag that can end in nothing must not keep
-    /// its marker up until the release.
-    /// </summary>
-    [TestMethod]
-    public Task F11_ASortThatHidesTheRowOrderEndsALiveDragEvenWhenNothingMoves() =>
-        TestHost.RunAsync(async () =>
-        {
-            SelectionHarness h = await SelectionHarness.LoadAsync(
-                6,
-                configure: t =>
-                {
-                    // Both columns sort ascending by key, which is the source order, so sorting by
-                    // b moves no row; only a is the row order.
-                    Schema<Row> schema = t.Schema<Row>();
-                    foreach (Column column in t.Columns)
-                    {
-                        schema.SortKey(column, row => row.Key);
-                    }
-
-                    t.Columns[0].DefinesRowOrder = true;
-                    t.CanReorder = true;
-                },
-                height: 400
-            );
+            SelectionHarness h = await SelectionHarness.LoadAsync(6, ordered: true);
             h.Table.ReorderRequested += (_, _) => { };
-            ListView list = h.Surface();
-            FrameworkElement marker = InsertionMarker(h.Table);
-            double rowHeight = ((FrameworkElement)list.ContainerFromItem(h[0])).ActualHeight;
-
-            Gesture.Press(h, row: h[2], item: h[2], originY: rowHeight * 2.5);
-            Proof.Call(h.Table, "BeginRowDrag", list, h[2]);
-            Assert.AreEqual(Visibility.Visible, marker.Visibility, "the drag is live");
-
-            h.Table.Layout = h.Table.Layout with { SortColumnId = "b" };
-            CollectionAssert.AreEqual(
-                new[] { "k0", "k1", "k2", "k3", "k4", "k5" },
-                list.Items.Cast<Row>().Select(r => r.Key).ToArray(),
-                "the sort moved nothing"
-            );
-            Proof.Note(
-                "F11 after a sort that hides the row order: gesture="
-                    + Proof.Field<object>(h.Table, "_gesture")
-            );
-            Assert.AreEqual(
-                "None",
-                Proof.Field<object>(h.Table, "_gesture").ToString(),
-                "and still ended the drag"
-            );
-            Assert.AreEqual(Visibility.Collapsed, marker.Visibility);
+            Assert.IsFalse((bool)Proof.Call(h.Table, "CanStartDrag", h[2])!);
+            h.Table.CanReorder = true;
+            Assert.IsTrue((bool)Proof.Call(h.Table, "CanStartDrag", h[2])!);
+            Gesture.Press(h, row: h[2], item: h[2], originY: 100);
+            Proof.Call(h.Table, "BeginDrag", h[2]);
+            h.Table.CanReorder = false;
+            Assert.AreEqual("None", Proof.Field<object>(h.Table, "_gesture").ToString());
         });
 
-    /// <summary>
-    /// Section 9: hiding the sorted column clears the sort, and section 18 refuses a restored sort
-    /// on a hidden column. The header is the only place a sort shows or is changed, so a sort by a
-    /// hidden column would withhold section 16's drag with nothing on screen to explain it.
-    /// </summary>
+    /// <summary>A hidden column cannot leave behind an unexplained active sort.</summary>
     [TestMethod]
-    public Task F11_HidingTheSortedColumnClearsTheSortAndOffersTheDragAgain() =>
+    public Task F11_HidingTheSortedColumnClearsTheSort() =>
         TestHost.RunAsync(async () =>
         {
             SelectionHarness h = await SelectionHarness.LoadAsync(
                 6,
                 configure: t =>
                 {
-                    t.Columns[0].DefinesRowOrder = true;
                     t.Schema<Row>()
                         .SortKey(t.Columns[0], row => row.Key)
                         .SortKey(t.Columns[1], row => -row.Rank);
@@ -867,10 +666,6 @@ public class FeatureProofTests
 
             ColumnLayout unsorted = h.Table.Layout;
             h.Table.Layout = unsorted with { SortColumnId = "b" };
-            Assert.IsFalse(
-                (bool)Proof.Call(h.Table, "CanBeginRowDrag", h[2])!,
-                "sorted by b: withheld"
-            );
             Assert.AreEqual("k5", ((Row)list.Items[0]).Key, "and the view runs by b");
 
             SetVisibility(h.Table, "b", false);
@@ -885,8 +680,8 @@ public class FeatureProofTests
             Assert.IsNull(h.Table.Layout.SortColumnId, "the one change leaves no sort behind");
             Assert.AreEqual("k0", ((Row)list.Items[0]).Key, "the view is back in natural order");
             Assert.IsTrue(
-                (bool)Proof.Call(h.Table, "CanBeginRowDrag", h[2])!,
-                "and the drag is offered again"
+                (bool)Proof.Call(h.Table, "CanStartDrag", h[2])!,
+                "the drag remains available"
             );
 
             // A restored layout that hides the column it sorts by keeps the visibility and drops
@@ -1083,9 +878,6 @@ public class FeatureProofTests
     private static FrameworkElement Overlay(Table table) =>
         Proof.Field<FrameworkElement>(table, "_marqueeOverlay");
 
-    private static FrameworkElement InsertionMarker(Table table) =>
-        Proof.Field<FrameworkElement>(table, "_rowInsertionMarker");
-
     /// <summary>
     /// The menu the strip builds for this column — the very call <c>ShowMenu</c> makes. Reading the
     /// flyout's own items is exact; reading the popup's visual tree depends on realization timing.
@@ -1191,8 +983,7 @@ public class FeatureProofTests
             Proof.SetField(h.Table, "_gestureCtrl", ctrl);
             Proof.SetField(h.Table, "_gestureShift", shift);
 
-            bool couldDrag =
-                item is not null && (bool)Proof.Call(h.Table, "CanBeginRowDrag", item)!;
+            bool couldDrag = item is not null && (bool)Proof.Call(h.Table, "CanStartDrag", item)!;
             Proof.SetField(h.Table, "_gestureCouldDrag", couldDrag);
 
             // The control's own press step, over the fields set above. Never a copy of its rule: a

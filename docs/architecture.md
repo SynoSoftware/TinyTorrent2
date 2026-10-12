@@ -65,6 +65,8 @@ Library projection, provider work or SQLite dependency. C# creates, populates
 and queries the database and owns subtitle-file handling. These features use
 existing torrent facts and commands without adding native feature code or APIs.
 The plan owns the feature's detailed behavior and future data-source seam.
+The [database contract](database.md) owns shared persistence, initialization,
+versioning and connection lifetime.
 
 ### Third-party provider access
 
@@ -76,6 +78,25 @@ the integration; a working key alone does not establish that. Other providers,
 including SubDL and SubSource, require the person's own key, so their allowances
 and any charges belong to that person. Local features remain usable without
 provider access.
+
+**Owner ruling: automatic provider work is limited per movie.**
+Every torrent takes the same import path: its files are read and listed. When
+movie information download is on, every video without a match is identified,
+from saved information first and from the provider only when needed, because
+a file nobody identified cannot be used in Library. A video without a match is
+tried once in each session. Automatic and batch searches stop at the search
+limit, counted per provider and search text over all sessions, because a second
+copy of a movie sends the same search to the provider. Movie lookups and
+subtitle searches share that limit, one setting on the Plugins page.
+Automatic subtitle searches run only for new torrents, because a subtitle
+search spends the supplier's allowance. A torrent is new when the database's list of known
+torrents does not contain it: it was added in this session or while the window
+was closed. A torrent becomes known once the window has seen it finished, so a
+download that finishes after a restart still gets its subtitles. A database with no history takes the torrents it first sees as
+known, so their subtitles wait for Find. Removing a torrent while the window is
+open forgets it, so adding it again makes it new. Automatic work starts 30
+seconds after the window first connects to the engine, so it does not compete
+with startup. Requests the person makes have no such limit.
 
 ### Product boundaries
 

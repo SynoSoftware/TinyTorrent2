@@ -504,7 +504,7 @@ void Engine::State::LimitSeeds()
 
 void Engine::State::QuerySeeds()
 {
-    if (shuttingDown || (settings.seedingMinutes == 0 && settings.inactiveMinutes == 0))
+    if (IsShuttingDown() || (settings.seedingMinutes == 0 && settings.inactiveMinutes == 0))
     {
         seedQueue.clear();
         return;

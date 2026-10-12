@@ -159,6 +159,14 @@ public class HierarchyTests
             Table table = TestData.Table(name);
             table
                 .Schema<Node>()
+                .Order(
+                    name,
+                    row =>
+                        row == folder ? 1
+                        : row == child ? 2
+                        : 3,
+                    () => new[] { folder, child, leaf }
+                )
                 .Hierarchy(
                     name,
                     row => row.Children,
@@ -167,15 +175,10 @@ public class HierarchyTests
                 );
             table.ItemsSource = new[] { folder, leaf };
             table.CanReorder = true;
-            int requests = 0;
-            table.ReorderRequested += (_, _) => requests++;
             await TableHarness.LoadAsync(table);
 
-            Assert.IsFalse((bool)Proof.Call(table, "CanBeginRowDrag", folder)!);
-            Assert.IsFalse((bool)Proof.Call(table, "CanBeginRowDrag", child)!);
-            Proof.Call(table, "RequestReorder", new object[] { child }, 3);
-
-            Assert.AreEqual(0, requests);
+            Assert.IsFalse((bool)Proof.Call(table, "CanStartDrag", folder)!);
+            Assert.IsFalse((bool)Proof.Call(table, "CanStartDrag", child)!);
             CollectionAssert.AreEqual(new[] { "folder", "child", "leaf" }, Names(table));
         });
 

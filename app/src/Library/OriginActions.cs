@@ -18,14 +18,21 @@ internal static class OriginActions
                 Command = origin is null ? null : Command(browser, origin),
             };
         }
-        var menu = new MenuFlyoutSubItem { Text = text, Icon = Icon(), IsEnabled = browser.IsAvailable };
+        var menu = new MenuFlyoutSubItem
+        {
+            Text = text,
+            Icon = Icon(),
+            IsEnabled = browser.IsAvailable,
+        };
         foreach (var origin in browser.Origins)
-            menu.Items.Add(new MenuFlyoutItem
-            {
-                Text = origin.Name,
-                Icon = Icon(),
-                Command = Command(browser, origin),
-            });
+            menu.Items.Add(
+                new MenuFlyoutItem
+                {
+                    Text = origin.Name,
+                    Icon = Icon(),
+                    Command = Command(browser, origin),
+                }
+            );
         return menu;
     }
 
@@ -51,11 +58,16 @@ internal static class OriginActions
         }
     }
 
-    private static FontIcon Icon() => new() { FontFamily = Lucide.Font, Glyph = Lucide.LocateFixed };
+    private static FontIcon Icon() =>
+        new() { FontFamily = Lucide.Font, Glyph = Lucide.LocateFixed };
 
-    private static RelayCommand Command(Browser browser, Origin origin) => new(() =>
-    {
-        browser.ShowTorrent(origin.OriginId);
-        return Task.CompletedTask;
-    }, () => browser.IsAvailable);
+    private static RelayCommand Command(Browser browser, Origin origin) =>
+        new(
+            () =>
+            {
+                browser.ShowTorrent(origin.OriginId);
+                return Task.CompletedTask;
+            },
+            () => browser.IsAvailable
+        );
 }

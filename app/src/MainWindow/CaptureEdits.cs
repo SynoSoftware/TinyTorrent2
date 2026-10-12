@@ -70,7 +70,8 @@ public sealed partial class MainWindow
             var editor =
                 TextEditor.Find(control)
                 ?? throw new InvalidOperationException("The native numeric editor did not load.");
-            editor.Focus(FocusState.Programmatic);
+            if (!editor.IsEnabled || !editor.Focus(FocusState.Programmatic))
+                throw new InvalidOperationException("The native numeric editor cannot receive input.");
             editor.Text = input;
             await CaptureLayout();
             if (setting.Input != input)
@@ -115,6 +116,7 @@ public sealed partial class MainWindow
                 settings.Schedule,
                 () => !settings.Schedule.IsPending && settings.Schedule.IsOpen
             );
+            await CaptureLayout();
             if (
                 settings.Schedule.OpenPeriod is not { } opened
                 || originalPeriods.Any(existing => existing.Matches(opened))
@@ -135,19 +137,10 @@ public sealed partial class MainWindow
                 .OfType<TimePicker>()
                 .Single(control => AutomationProperties.GetAutomationId(control) == "PeriodEnd")
                 .SelectedTime = TimeSpan.FromMinutes(151);
-            var days = CaptureElements(page)
-                .OfType<ItemsRepeater>()
-                .Single(repeater => ReferenceEquals(repeater.ItemsSource, draft.Days));
+            var days = await CaptureDays(page, draft);
             foreach (var day in draft.Days)
             {
-                var element = days.TryGetElement(day.Index);
-                if (
-                    element is not CheckBox control
-                    || AutomationProperties.GetAutomationId(control) != day.AutomationId
-                )
-                    throw new InvalidOperationException(
-                        $"The native schedule day {day.Index} expected {day.AutomationId}, received {(element is null ? "unrealized" : element.GetType().Name + " " + AutomationProperties.GetAutomationId(element))}."
-                    );
+                var control = days[day.Index];
                 if (control.IsChecked == (day.Index == 6))
                     continue;
                 if (
@@ -190,23 +183,33 @@ public sealed partial class MainWindow
 
         try
         {
+            await Model.ChooseLimits(LimitMode.Speed);
             await Edit(rate, "96");
             BackButton.Focus(FocusState.Programmatic);
             await GoBack();
             if (Model.Page != WindowPage.Torrents || rate.HasDraft || rate.ConfirmedNumber != 98304)
-                throw new InvalidOperationException("Back did not leave Settings with the pending rate edit applied.");
+                throw new InvalidOperationException(
+                    "Back did not leave Settings with the pending rate edit applied."
+                );
             completed.Add("edits-back-departure");
 
             await ShowSettings(new());
             if (_settingsPage?.Category is not null)
-                throw new InvalidOperationException("Opening Settings did not show its introductory cards.");
+                throw new InvalidOperationException(
+                    "Opening Settings did not show its introductory cards."
+                );
 
             await Edit(rate, "112");
             Search.Focus(FocusState.Programmatic);
             await ShowSettings(new(SettingsCategory.Network, port.Name));
-            if (_settingsPage?.Category != SettingsCategory.Network
-                || rate.HasDraft || rate.ConfirmedNumber != 114688)
-                throw new InvalidOperationException("Navigating to a named setting lost the pending rate edit.");
+            if (
+                _settingsPage?.Category != SettingsCategory.Network
+                || rate.HasDraft
+                || rate.ConfirmedNumber != 114688
+            )
+                throw new InvalidOperationException(
+                    "Navigating to a named setting lost the pending rate edit."
+                );
             Search.IsSuggestionListOpen = false;
             completed.Add("edits-search-departure");
 
@@ -219,10 +222,15 @@ public sealed partial class MainWindow
             nextCategory.Focus(FocusState.Programmatic);
             categories.SelectedItem = nextCategory;
             await CaptureLayout();
-            if (refusedPage.Category != SettingsCategory.Limits || !rate.HasDraft
+            if (
+                refusedPage.Category != SettingsCategory.Limits
+                || !rate.HasDraft
                 || !ReferenceEquals(rate.Failure, refusal)
-                || !ReferenceEquals(FocusManager.GetFocusedElement(Root.XamlRoot), refusedEditor))
-                throw new InvalidOperationException("Selecting a category hid an already refused rate edit.");
+                || !ReferenceEquals(FocusManager.GetFocusedElement(Root.XamlRoot), refusedEditor)
+            )
+                throw new InvalidOperationException(
+                    "Selecting a category hid an already refused rate edit."
+                );
             await CaptureUi("edits-refused-category");
             rate.Cancel();
             completed.Add("edits-refused-category");
@@ -302,10 +310,11 @@ public sealed partial class MainWindow
             }
 
             var invalidEditor = await Edit(port, "70000");
-            var connections = CaptureElements(_settingsPage!)
-                .OfType<NumberBox>()
-                .Single(control => ReferenceEquals(control.Tag, settings.ConnectionLimit));
-            connections.Focus(FocusState.Programmatic);
+            var mapping = CaptureElements(_settingsPage!)
+                .OfType<ToggleSwitch>()
+                .Single(control => ReferenceEquals(control.Tag, settings.PortMapping));
+            if (!mapping.Focus(FocusState.Programmatic))
+                throw new InvalidOperationException("The native port mapping field cannot receive focus.");
             await CaptureReady(port, () => port.Input == originalPort && !port.HasDraft);
             await CaptureLayout();
             if (invalidEditor.Text != originalPort || port.Message.Length != 0)
@@ -572,8 +581,7 @@ public sealed partial class MainWindow
                 { } remaining
             )
                 await settings.Schedule.Remove(remaining);
-            if (originalLimits >= 0)
-                await Model.ChooseLimits((LimitMode)originalLimits);
+            await Model.ChooseLimits(LimitMode.Speed);
             port.Cancel();
             rate.Cancel();
             upload.Cancel();
@@ -587,6 +595,8 @@ public sealed partial class MainWindow
                 await Edit(upload, originalUpload);
                 await settings.Commit(upload);
             }
+            if (originalLimits >= 0)
+                await Model.ChooseLimits((LimitMode)originalLimits);
             if (
                 rate.Input != originalRate
                 || rate.HasDraft

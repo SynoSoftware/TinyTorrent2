@@ -26,8 +26,7 @@ public sealed class Inspector : INotifyPropertyChanged
     private TaskCompletionSource? _fileSave;
     private bool _filesLoaded;
     private bool _editingTrackers;
-    private bool _open;
-    private bool _visible = true;
+    private bool _visible;
     private Exception? _readFailure;
     private Exception? _editFailure;
     private string _trackerInput = string.Empty;
@@ -38,9 +37,7 @@ public sealed class Inspector : INotifyPropertyChanged
     public Torrent? Target => _target;
     public string Name => _target?.Name ?? string.Empty;
 
-    // The panel stays open while the selection changes; without a target it
-    // shows how many torrents are selected.
-    public bool IsOpen => _open;
+    internal bool IsVisible => _visible;
     public string EmptyText =>
         _owner.Selected.Count == 0
             ? Text.Get("inspector", "none")
@@ -240,22 +237,12 @@ public sealed class Inspector : INotifyPropertyChanged
         );
     }
 
-    // Opens the panel on the target, or without one. Another target opens at the
-    // given section, so the previous section is not read first.
+    // Another target starts at the given section, so the previous section is
+    // not read first.
     internal bool Show(Torrent? target, InspectorSection? section = null)
     {
         if (!Retarget(target, section ?? _section))
             return false;
-        _open = true;
-        Refresh();
-        return true;
-    }
-
-    internal bool Close()
-    {
-        if (!Retarget(null, _section))
-            return false;
-        _open = false;
         Refresh();
         return true;
     }
@@ -344,7 +331,14 @@ public sealed class Inspector : INotifyPropertyChanged
 
     private async Task Read()
     {
-        if (!_visible || _target is null || !IsAvailable || _fetching || _waitingDetail || IsPending)
+        if (
+            !_visible
+            || _target is null
+            || !IsAvailable
+            || _fetching
+            || _waitingDetail
+            || IsPending
+        )
             return;
         _fetching = true;
         var context = ++_context;
@@ -402,10 +396,14 @@ public sealed class Inspector : INotifyPropertyChanged
 
     internal void Receive(JsonElement message)
     {
-        if (!_waitingDetail || !_visible || !IsAvailable ||
-            message.GetProperty("session_id").GetString() != _session ||
-            message.GetProperty("torrent_id").GetString() != _target?.TorrentId ||
-            message.GetProperty("context").GetInt64() != _context)
+        if (
+            !_waitingDetail
+            || !_visible
+            || !IsAvailable
+            || message.GetProperty("session_id").GetString() != _session
+            || message.GetProperty("torrent_id").GetString() != _target?.TorrentId
+            || message.GetProperty("context").GetInt64() != _context
+        )
             return;
         try
         {
@@ -505,13 +503,26 @@ public sealed class Inspector : INotifyPropertyChanged
     // after an aggregation setting changes, so merge by timestamp.
     private async Task<SpeedSample[]> ReadHistory(Torrent target, int context)
     {
-        var day = Samples(await _client.Read(Consumer.Inspector, "history",
-            new { torrent_id = target.TorrentId, range = "day", release_detail = true }));
+        var day = Samples(
+            await _client.Read(
+                Consumer.Inspector,
+                "history",
+                new
+                {
+                    torrent_id = target.TorrentId,
+                    range = "day",
+                    release_detail = true,
+                }
+            )
+        );
         if (context != _context)
             return [];
         var recent = Samples(
-            await _client.Read(Consumer.Inspector, "history",
-                new { torrent_id = target.TorrentId, range = "five_minutes" })
+            await _client.Read(
+                Consumer.Inspector,
+                "history",
+                new { torrent_id = target.TorrentId, range = "five_minutes" }
+            )
         );
         var cut = recent.Length == 0 ? long.MaxValue : recent[0].Time;
         return [.. day.Where(sample => sample.Time < cut), .. recent];

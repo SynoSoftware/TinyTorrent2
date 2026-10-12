@@ -82,11 +82,27 @@ _Avoid_: status, when referring to the saved choice.
 **Status**: a torrent's current transfer condition, such as checking, queued,
 downloading, or seeding, taking pauses, file work, and blocking errors into account.
 
+**Stopped**: a torrent whose own intent holds it still until the person
+selects Start. Stop and Start are its commands; a seeding limit and Don't start
+in the Add dialog also stop a torrent. The protocol, saved files and code call
+this intent `paused`.
+_Avoid_: paused, for one torrent's own choice.
+
+**Paused**: held by something outside the torrent, such as a session pause or
+a scheduled pause period. The torrent continues by itself when that hold ends.
+
 **Session pause**: a pause of transfers across all torrents that preserves each
 torrent's own intent.
 
-**Download queue**: the order in which unfinished torrents are considered for
-downloading. It is distinct from the table's displayed order.
+**Download queue**: the engine-owned order in which unfinished torrents are
+considered for downloading.
+
+**Queue position**: a torrent's place in the download queue. A torrent outside
+that queue has no queue position.
+_Avoid_: priority, when referring to the order of torrents.
+
+**File priority**: the relative download preference of a wanted file within one
+torrent, separate from that torrent's queue position.
 
 **Queue limits**: the maximum numbers of automatically managed downloading,
 seeding, and overall active torrents. They limit activity, not transfer speed.
@@ -139,6 +155,12 @@ data-source contributions.
 one torrent. Library removes its stored facts when it observes that contribution's
 withdrawal or reconciles after reconnecting.
 
+**Import**: the one path by which a torrent Library does not know becomes
+known: its files are read and listed, each video is identified from its name,
+and, when the saved preferences allow, its videos get subtitles. A provider
+lookup is not part of it: every video without a match is looked up, whichever
+torrent it belongs to.
+
 **Library configuration**: one way of showing Library's table: Videos, Music or
 Files, each with its own rows, columns, sort and filters.
 _Avoid_: mode and tab; the person chooses a configuration in the View menu.
@@ -151,7 +173,7 @@ the term is metadata; torrent metadata describes the download's contents.
 from the provider.
 
 **Provider**: the online service the person chose to supply video information,
-such as TMDB or Public websites.
+such as TMDB, IMDb or Rotten Tomatoes.
 _Avoid_: source, which means a torrent file or magnet.
 
 **Series**: a TV show whose files Library identifies by season and episode
@@ -163,9 +185,11 @@ _Avoid_: show, TV.
 **Music information**: the artist, album, track and other tags inside an audio
 file.
 
-**Identification**: the association of a Library file with the movie or TV
-content it represents. It describes the matching operation; the user edits
-or erases metadata.
+**Identification**: deciding what movie or TV content a Library video
+represents. Its name decides first: a name with a season, such as S01E02,
+1x02 or Season 1, is a TV episode, and every other video is a movie, with the
+name's four-digit year. A provider match then replaces that with the
+provider's title, type and year; the user fetches or erases metadata.
 
 ### Subtitles
 
@@ -174,14 +198,25 @@ without interaction, once the person turns it on.
 
 **Subtitle supplier**: the online service that subtitle searches and downloads
 use, such as OpenSubtitles or SubDL.
+
+**Subtitle lookup**: one supplier search for a movie and language, including a
+search that finds no match. Downloading its returned candidates is separate.
 _Avoid_: provider, which means a source of video information in Library.
 
 **Subtitle record**: one subtitle output's path, language and created/found
 origin, associated with the source files it serves. Shared torrents use the same
-output record. C# manages created subtitle files under the
-[subtitle-file rules](docs/subtitles.md#saving-and-following-the-movie).
+output record.
 _Avoid_: added subtitle, which means any subtitle file a person put beside a
 movie.
+
+**Created subtitle**: a subtitle file TinyTorrent saved and may follow when its
+movie moves, while retaining its association with that movie.
+
+**Found subtitle**: an existing subtitle file recognized beside a movie;
+recognition does not give TinyTorrent ownership of the file.
+
+**Subtitle job**: accepted work to find subtitles for one movie location and
+language, together with its progress and outcome.
 
 ### Engine work and presentation
 

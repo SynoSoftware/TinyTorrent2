@@ -277,7 +277,9 @@ public class ReconcileTests
                     _shadow[index] = ((IList)sender)[index]!;
                     break;
                 default:
-                    Assert.Fail($"the view raised {e.CollectionChange}, which the list is never sent");
+                    Assert.Fail(
+                        $"the view raised {e.CollectionChange}, which the list is never sent"
+                    );
                     break;
             }
         }

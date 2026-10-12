@@ -7,8 +7,14 @@ namespace Syno.TinyTorrent.Controls;
 public sealed partial class FieldColumns : Grid
 {
     internal const double WideMinimum = 760;
-    private readonly ContentPresenter _primary = new() { HorizontalContentAlignment = HorizontalAlignment.Stretch };
-    private readonly ContentPresenter _secondary = new() { HorizontalContentAlignment = HorizontalAlignment.Stretch };
+    private readonly ContentPresenter _primary = new()
+    {
+        HorizontalContentAlignment = HorizontalAlignment.Stretch,
+    };
+    private readonly ContentPresenter _secondary = new()
+    {
+        HorizontalContentAlignment = HorizontalAlignment.Stretch,
+    };
     private readonly Border _secondaryHost;
 
     public double MinimumWidth { get; set; } = WideMinimum;
@@ -33,10 +39,17 @@ public sealed partial class FieldColumns : Grid
 
     public FieldColumns()
     {
-        _secondaryHost = new Border { Child = _secondary,
-            Style = (Style)Application.Current.Resources["InspectorRailStyle"] };
-        ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(3, GridUnitType.Star) });
-        ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(2, GridUnitType.Star) });
+        _secondaryHost = new Border
+        {
+            Child = _secondary,
+            Style = (Style)Application.Current.Resources["InspectorRailStyle"],
+        };
+        ColumnDefinitions.Add(
+            new ColumnDefinition { Width = new GridLength(3, GridUnitType.Star) }
+        );
+        ColumnDefinitions.Add(
+            new ColumnDefinition { Width = new GridLength(2, GridUnitType.Star) }
+        );
         RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         Children.Add(_primary);
@@ -53,8 +66,10 @@ public sealed partial class FieldColumns : Grid
         _secondaryHost.Visibility = secondary ? Visibility.Visible : Visibility.Collapsed;
         SetColumn(_secondaryHost, wide ? 1 : 0);
         SetRow(_secondaryHost, wide ? 0 : 1);
-        _secondaryHost.BorderThickness = wide && SeparateSecondary ? new Thickness(1, 0, 0, 0) : new Thickness(0);
-        _secondaryHost.Padding = wide && SeparateSecondary ? new Thickness(24, 0, 0, 0) : new Thickness(0);
+        _secondaryHost.BorderThickness =
+            wide && SeparateSecondary ? new Thickness(1, 0, 0, 0) : new Thickness(0);
+        _secondaryHost.Padding =
+            wide && SeparateSecondary ? new Thickness(24, 0, 0, 0) : new Thickness(0);
         return base.MeasureOverride(availableSize);
     }
 }

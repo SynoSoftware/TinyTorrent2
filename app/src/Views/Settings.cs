@@ -35,9 +35,13 @@ public sealed class Settings : INotifyPropertyChanged
     public Setting CheckingMemory { get; }
     public Setting HashingThreads { get; }
     public Setting FilePool { get; }
-    public Setting ShowAdd { get; }
+    public Setting TorrentDialog { get; }
+    public Setting MagnetDialog { get; }
+
     public Setting StartDownload { get; }
     public Setting QueueTop { get; }
+
+    // Intentionally unbound from XAML; retained so the option can return later.
     public Setting Preallocate { get; }
     public Setting UseLastFolder { get; }
     public Setting StartPaused { get; }
@@ -47,6 +51,7 @@ public sealed class Settings : INotifyPropertyChanged
     public Setting Exclude { get; }
     public Setting Patterns { get; }
     public Setting Deletion { get; }
+    public Setting ConfirmDelete { get; }
     public Setting InactiveTime { get; }
     public Setting SeedRule { get; }
     public Setting Watch { get; }
@@ -116,19 +121,23 @@ public sealed class Settings : INotifyPropertyChanged
         setting.ConfirmedNumber > 0
             ? Text.Format("units", "rate", Text.Bytes(setting.ConfirmedNumber))
             : Text.Get("transfer_limits", "unlimited");
+
     public IReadOnlyList<Setting> All { get; }
     internal Setting? RefusedSetting =>
         All.FirstOrDefault(setting => setting.HasDraft && setting.Failure is CommandException);
-    public bool HasError =>
-        RefusedSetting is not null || Schedule.HasDraft && Schedule.HasError;
+    public bool HasError => RefusedSetting is not null || Schedule.HasDraft && Schedule.HasError;
     public bool IsPending =>
-        All.Any(setting => setting.IsPending) || _registering || Schedule.IsPending || Connection.IsPending;
+        All.Any(setting => setting.IsPending)
+        || _registering
+        || Schedule.IsPending
+        || Connection.IsPending
+        || Proxy.IsPending;
     public bool CanEdit => _owner.CanEdit;
     internal bool CanSave => _owner.CanSave;
     internal LimitMode? FixedLimits => _owner.FixedLimits;
     public bool CanRegister => CanEdit && !_registering;
     private bool HasStartupError =>
-        _registrationError?.Action is "enable_startup" or "disable_startup" or "open_startup";
+        _registrationError?.Action is "enable_startup" or "disable_startup";
     private string RegistrationMessage =>
         _registrationError is { } failure ? Text.Error(failure.Error) : string.Empty;
     public string StartupMessage => HasStartupError ? RegistrationMessage : string.Empty;
@@ -136,19 +145,26 @@ public sealed class Settings : INotifyPropertyChanged
     public bool HasRegistration => _registration.ValueKind == JsonValueKind.Object;
 
     // Another TinyTorrent copy's entry is still TinyTorrent's registration, so
-    // it counts as on and the Other message names that copy.
-    public bool Startup => Registered("startup") != "none";
+    // it counts as on and the caution flyout names that copy. An entry Windows
+    // has disabled does not start anything, so it counts as off.
+    public bool Startup =>
+        Registered("startup") != "none"
+        && Field("startup_disabled").ValueKind != JsonValueKind.True;
     public bool StartupUsesOtherCopy => Registered("startup") == "other";
     public string StartupOtherMessage => Other("startup");
-    public string StartupAction => Text.Get("settings", StartupUsesOtherCopy ? "use_this_copy" : "startup_settings");
-    public string StartupText => StartupUsesOtherCopy ? Text.Get("settings", "use") : Text.Get("commands", "open");
-    public string StartupGlyph => StartupUsesOtherCopy ? Lucide.ArrowLeftRight : Lucide.ExternalLink;
-    public string StartupTip => Text.Get("settings", StartupUsesOtherCopy ? "startup_use_hint" : "startup_settings_hint");
     public bool HandlersRegistered => Registered("handlers") != "none";
     public bool HandlersUseOtherCopy => Registered("handlers") == "other";
 
+    // On only while Windows opens both kinds with TinyTorrent, so turning it
+    // on is the one step that makes TinyTorrent open them. A default Windows
+    // does not report counts as TinyTorrent's.
+    public bool Handlers =>
+        HandlersRegistered
+        && Field("torrent_default").ValueKind != JsonValueKind.False
+        && Field("magnet_default").ValueKind != JsonValueKind.False;
+
     // A default that starts a missing program needs action before another
-    // TinyTorrent copy does, so its message takes the caution line.
+    // TinyTorrent copy does, so its message takes the caution flyout.
     public string HandlersCaution =>
         HasBrokenHandlers
             ? Text.Format(
@@ -168,52 +184,30 @@ public sealed class Settings : INotifyPropertyChanged
     // a shield on the control that asks.
     public bool Elevates => Broken().Any(entry => entry.Machine);
 
-    // Windows lets only the person choose the default app, so a registration
-    // that is not the default yet offers Windows Default apps. A broken
-    // default, whichever app it belongs to, offers Repair, and another copy's
-    // registration offers Use this copy. All three run the same action, which
-    // removes broken entries, registers this copy and opens Windows Default
-    // apps only while another working app is the default, so the link offers
-    // one step at a time.
-    public bool NeedsDefaults =>
-        HasBrokenHandlers
-        || HandlersRegistered
-            && (
-                HandlersUseOtherCopy
-                || Field("torrent_default").ValueKind == JsonValueKind.False
-                || Field("magnet_default").ValueKind == JsonValueKind.False
-            );
+    // The switch covers every other step, so the action appears only for the
+    // two it cannot take: removing a missing program's handlers, which can
+    // need an administrator, and moving another copy's entries to this one.
+    public bool NeedsDefaults => HasBrokenHandlers || HandlersUseOtherCopy;
     public string DefaultsAction =>
-        Text.Get(
-            "settings",
-            HasBrokenHandlers ? "repair_defaults"
-                : HandlersUseOtherCopy ? "use_this_copy"
-                : "defaults_settings"
-        );
-    public string DefaultsText => HasBrokenHandlers ? Text.Get("settings", "repair_defaults")
-        : HandlersUseOtherCopy ? Text.Get("settings", "use") : Text.Get("commands", "open");
-    public string DefaultsGlyph => HasBrokenHandlers ? (Elevates ? Lucide.Shield : Lucide.Wrench)
-        : HandlersUseOtherCopy ? Lucide.ArrowLeftRight : Lucide.ExternalLink;
-    public string DefaultsMessage
-    {
-        get
-        {
-            if (HasBrokenHandlers)
-                return Text.Get("settings", "repair_defaults_tip");
-            var detail = Text.Get("settings", "defaults_detail");
-            if (!HandlersRegistered)
-                return detail;
-            var torrent = Field("torrent_default");
-            var magnet = Field("magnet_default");
-            if (torrent.ValueKind == JsonValueKind.True && magnet.ValueKind == JsonValueKind.False)
-                return Text.Get("settings", "magnet_default");
-            if (magnet.ValueKind == JsonValueKind.True && torrent.ValueKind == JsonValueKind.False)
-                return Text.Get("settings", "torrent_default");
-            return detail;
-        }
-    }
-    public ICommand OpenDefaults { get; }
-    public ICommand OpenStartup { get; }
+        Text.Get("settings", HasBrokenHandlers ? "repair_defaults_tip" : "handlers_use_hint");
+    public string DefaultsText =>
+        HasBrokenHandlers ? Text.Get("settings", "repair_defaults") : Text.Get("settings", "use");
+    public string DefaultsGlyph =>
+        HasBrokenHandlers ? (Elevates ? Lucide.Shield : Lucide.Wrench) : Lucide.ArrowLeftRight;
+
+    // The apps Windows opens each kind with, so the person sees what a click
+    // on a torrent file or magnet link starts.
+    public string TorrentApp => App("torrent_app");
+    public string MagnetApp => App("magnet_app");
+
+    private string App(string name) =>
+        Field(name) is { ValueKind: JsonValueKind.String } app
+        && app.GetString() is { Length: > 0 } text
+            ? text
+            : Text.Get("settings", "no_app");
+
+    public ICommand FixHandlers { get; }
+    public ICommand UseStartup { get; }
 
     // "this", "other" or "none": whether TinyTorrent's entry starts this copy,
     // another TinyTorrent copy, or nothing.
@@ -307,12 +301,48 @@ public sealed class Settings : INotifyPropertyChanged
             SettingKind.Boolean,
             SettingsCategory.Appearance
         );
-        ShowTitleSpeeds = new(this, "show_title_speeds", SettingKind.Boolean, SettingsCategory.Appearance);
-        ShowFreeSpace = new(this, "show_free_space", SettingKind.Boolean, SettingsCategory.Appearance);
-        RefreshInterval = new(this, "refresh_interval", SettingKind.Integer, SettingsCategory.Advanced, 1000, 10000);
-        RecentInterval = new(this, "recent_interval", SettingKind.Integer, SettingsCategory.Advanced, 1, 10);
-        HistoryInterval = new(this, "history_interval", SettingKind.Integer, SettingsCategory.Advanced, 10, 300);
-        CapacityDownload = new(this, "capacity_download", SettingKind.Number, SettingsCategory.Limits);
+        ShowTitleSpeeds = new(
+            this,
+            "show_title_speeds",
+            SettingKind.Boolean,
+            SettingsCategory.Appearance
+        );
+        ShowFreeSpace = new(
+            this,
+            "show_free_space",
+            SettingKind.Boolean,
+            SettingsCategory.Appearance
+        );
+        RefreshInterval = new(
+            this,
+            "refresh_interval",
+            SettingKind.Integer,
+            SettingsCategory.Advanced,
+            1000,
+            10000
+        );
+        RecentInterval = new(
+            this,
+            "recent_interval",
+            SettingKind.Integer,
+            SettingsCategory.Advanced,
+            1,
+            10
+        );
+        HistoryInterval = new(
+            this,
+            "history_interval",
+            SettingKind.Integer,
+            SettingsCategory.Advanced,
+            10,
+            300
+        );
+        CapacityDownload = new(
+            this,
+            "capacity_download",
+            SettingKind.Number,
+            SettingsCategory.Limits
+        );
         CapacityUpload = new(this, "capacity_upload", SettingKind.Number, SettingsCategory.Limits);
         DiskBuffer = new(
             this,
@@ -346,15 +376,26 @@ public sealed class Settings : INotifyPropertyChanged
             1,
             10000
         );
-        ShowAdd = new(this, "show_add", SettingKind.Boolean, SettingsCategory.Transfers);
-        StartDownload = new(this, "starts_download", SettingKind.Boolean, SettingsCategory.Transfers);
+        TorrentDialog = new(this, "torrent_dialog", SettingKind.Boolean, SettingsCategory.General);
+        MagnetDialog = new(this, "magnet_dialog", SettingKind.Boolean, SettingsCategory.General);
+        StartDownload = new(
+            this,
+            "starts_download",
+            SettingKind.Boolean,
+            SettingsCategory.Transfers
+        );
         QueueTop = new(this, "queue_top", SettingKind.Boolean, SettingsCategory.Transfers);
         Preallocate = new(this, "preallocate", SettingKind.Boolean, SettingsCategory.Transfers);
-        UseLastFolder = new(this, "use_last_folder", SettingKind.Boolean, SettingsCategory.Transfers);
+        UseLastFolder = new(
+            this,
+            "use_last_folder",
+            SettingKind.Boolean,
+            SettingsCategory.Transfers
+        );
         StartPaused = new(this, "start_paused", SettingKind.Boolean, SettingsCategory.General);
-        RaiseAdd = new(this, "raise_add", SettingKind.Boolean, SettingsCategory.Transfers)
+        RaiseAdd = new(this, "raise_add", SettingKind.Boolean, SettingsCategory.General)
         {
-            Condition = () => ShowAdd.IsOn,
+            Condition = () => TorrentDialog.IsOn || MagnetDialog.IsOn,
         };
         Layout = new(this, "layout", SettingKind.Text, SettingsCategory.Transfers);
         Duplicates = new(this, "duplicates", SettingKind.Text, SettingsCategory.Transfers);
@@ -364,21 +405,44 @@ public sealed class Settings : INotifyPropertyChanged
             Condition = () => Exclude.IsOn,
         };
         Deletion = new(this, "deletion", SettingKind.Text, SettingsCategory.Transfers);
-        InactiveTime = new(this, "inactive_time", SettingKind.Integer, SettingsCategory.Transfers, 0, 525600)
+        ConfirmDelete = new(this, "confirm_delete", SettingKind.Boolean, SettingsCategory.General);
+        InactiveTime = new(
+            this,
+            "inactive_time",
+            SettingKind.Integer,
+            SettingsCategory.Transfers,
+            0,
+            525600
+        )
         {
             IsDuration = true,
         };
         Watch = new(this, "watch", SettingKind.Boolean, SettingsCategory.Transfers);
         WatchPath = new(this, "watch_path", SettingKind.Text, SettingsCategory.Transfers);
-        WatchRecursive = new(this, "watch_recursive", SettingKind.Boolean, SettingsCategory.Transfers)
+        WatchRecursive = new(
+            this,
+            "watch_recursive",
+            SettingKind.Boolean,
+            SettingsCategory.Transfers
+        )
         {
             Condition = () => Watch.IsOn,
         };
-        WatchDestination = new(this, "watch_destination", SettingKind.Text, SettingsCategory.Transfers)
+        WatchDestination = new(
+            this,
+            "watch_destination",
+            SettingKind.Text,
+            SettingsCategory.Transfers
+        )
         {
             Condition = () => Watch.IsOn,
         };
-        RecheckFinished = new(this, "recheck_finished", SettingKind.Boolean, SettingsCategory.Advanced);
+        RecheckFinished = new(
+            this,
+            "recheck_finished",
+            SettingKind.Boolean,
+            SettingsCategory.Advanced
+        );
         ShowSplash = new(this, "show_splash", SettingKind.Boolean, SettingsCategory.General);
         StartInTray = new(this, "start_in_tray", SettingKind.Boolean, SettingsCategory.General);
         Download = new(this, "download_limit", SettingKind.Rate, SettingsCategory.Limits);
@@ -410,17 +474,38 @@ public sealed class Settings : INotifyPropertyChanged
         );
         Encryption = new(this, "encryption", SettingKind.Text, SettingsCategory.Network);
         ActiveTotal = new(this, "active_total", SettingKind.Integer, SettingsCategory.Limits);
-        TorrentConnections = new(this, "per_torrent_connections", SettingKind.Integer, SettingsCategory.Limits, 2, 10000)
+        TorrentConnections = new(
+            this,
+            "per_torrent_connections",
+            SettingKind.Integer,
+            SettingsCategory.Limits,
+            2,
+            10000
+        )
         {
             HasUnlimited = true,
         };
         IgnoreSlow = new(this, "ignore_slow", SettingKind.Boolean, SettingsCategory.Limits);
-        SlowDownload = new(this, "slow_download", SettingKind.Rate, SettingsCategory.Limits, 0, 1073741824)
+        SlowDownload = new(
+            this,
+            "slow_download",
+            SettingKind.Rate,
+            SettingsCategory.Limits,
+            0,
+            1073741824
+        )
         {
             HasUnlimited = false,
             Condition = () => IgnoreSlow.IsOn,
         };
-        SlowUpload = new(this, "slow_upload", SettingKind.Rate, SettingsCategory.Limits, 0, 1073741824)
+        SlowUpload = new(
+            this,
+            "slow_upload",
+            SettingKind.Rate,
+            SettingsCategory.Limits,
+            0,
+            1073741824
+        )
         {
             HasUnlimited = false,
             Condition = () => IgnoreSlow.IsOn,
@@ -429,19 +514,40 @@ public sealed class Settings : INotifyPropertyChanged
         {
             Condition = () => IgnoreSlow.IsOn,
         };
-        ActiveChecking = new(this, "active_checking", SettingKind.Integer, SettingsCategory.Advanced, 1, 64);
+        ActiveChecking = new(
+            this,
+            "active_checking",
+            SettingKind.Integer,
+            SettingsCategory.Advanced,
+            1,
+            64
+        );
         Transport = new(this, "transport", SettingKind.Text, SettingsCategory.Network);
         IpFamily = new(this, "ip_family", SettingKind.Text, SettingsCategory.Network)
         {
             Condition = CanListen,
         };
-        OutgoingRate = new(this, "outgoing_rate", SettingKind.Integer, SettingsCategory.Network, 1, 1000);
+        OutgoingRate = new(
+            this,
+            "outgoing_rate",
+            SettingKind.Integer,
+            SettingsCategory.Network,
+            1,
+            1000
+        );
         Dht = new(this, "dht", SettingKind.Boolean, SettingsCategory.Network);
         Pex = new(this, "pex", SettingKind.Boolean, SettingsCategory.Network);
         Lsd = new(this, "lsd", SettingKind.Boolean, SettingsCategory.Network);
-        IncludeOverhead = new(this, "include_overhead", SettingKind.Boolean, SettingsCategory.Limits);
+        IncludeOverhead = new(
+            this,
+            "include_overhead",
+            SettingKind.Boolean,
+            SettingsCategory.Limits
+        );
         LimitLan = new(this, "limit_lan", SettingKind.Boolean, SettingsCategory.Limits);
         Proxy = new(this, client);
+        Proxy.PropertyChanged += (_, _) =>
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsPending)));
         Ratio = new(this, "ratio_limit", SettingKind.Number, SettingsCategory.Transfers);
         SeedingMinutes = new(
             this,
@@ -454,8 +560,10 @@ public sealed class Settings : INotifyPropertyChanged
         };
         SeedRule = new(this, "seed_rule", SettingKind.Text, SettingsCategory.Transfers)
         {
-            Condition = () => new[] { Ratio, SeedingMinutes, InactiveTime }
-                .Count(setting => setting.ConfirmedNumber > 0) > 1,
+            Condition = () =>
+                new[] { Ratio, SeedingMinutes, InactiveTime }.Count(setting =>
+                    setting.ConfirmedNumber > 0
+                ) > 1,
         };
         Adapter = new(this, "network_interface", SettingKind.Text, SettingsCategory.Network);
         Adapters = [new(string.Empty, Text.Get("settings", "any_adapter"))];
@@ -512,7 +620,8 @@ public sealed class Settings : INotifyPropertyChanged
         All =
         [
             Destination,
-            ShowAdd,
+            TorrentDialog,
+            MagnetDialog,
             StartDownload,
             QueueTop,
             Preallocate,
@@ -524,6 +633,7 @@ public sealed class Settings : INotifyPropertyChanged
             Exclude,
             Patterns,
             Deletion,
+            ConfirmDelete,
             InactiveTime,
             SeedRule,
             Watch,
@@ -587,12 +697,9 @@ public sealed class Settings : INotifyPropertyChanged
             HashingThreads,
             FilePool,
         ];
-        OpenDefaults = new RelayCommand(() => RegisterHandlers(), () => CanRegister);
+        FixHandlers = new RelayCommand(() => RegisterHandlers(), () => CanRegister);
         Connection = new(this, owner, client);
-        OpenStartup = new RelayCommand(
-            () => Register(StartupUsesOtherCopy ? "enable_startup" : "open_startup"),
-            () => CanRegister
-        );
+        UseStartup = new RelayCommand(() => Register("enable_startup"), () => CanRegister);
     }
 
     public void RefreshAdapters()
@@ -654,6 +761,11 @@ public sealed class Settings : INotifyPropertyChanged
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
     }
 
+    internal Setting AddPreference(string source) =>
+        source.StartsWith("magnet:", StringComparison.OrdinalIgnoreCase)
+            ? MagnetDialog
+            : TorrentDialog;
+
     internal async Task Save(object changes)
     {
         await _client.Send("settings", new { changes });
@@ -675,15 +787,13 @@ public sealed class Settings : INotifyPropertyChanged
             throw error;
     }
 
-    internal Task HideAddDialog() => Save(new { show_add = false });
-
     public Task ObserveRegistration() => Register("observe");
 
     public Task SetStartup(bool enabled) =>
         Register(enabled ? "enable_startup" : "disable_startup");
 
     public Task SetHandlers(bool enabled) =>
-        Register(enabled ? "open_defaults" : "unregister_handlers");
+        Register(enabled ? "register_handlers" : "unregister_handlers");
 
     // The engine removes the person's broken handlers itself. All-users ones
     // need an administrator, so the engine runs once more with Windows'
@@ -696,7 +806,7 @@ public sealed class Settings : INotifyPropertyChanged
         // earlier observation to decide the administrator repair.
         if (!CanRegister)
             return;
-        await Register("open_defaults");
+        await Register("register_handlers");
         var classes = Broken()
             .Where(entry => entry.Machine)
             .Select(entry => entry.Class)
@@ -926,12 +1036,23 @@ public sealed class Settings : INotifyPropertyChanged
     }
 
     internal static bool TryInteger(string input, out int number) =>
-        int.TryParse(input, NumberStyles.Integer | NumberStyles.AllowThousands,
-            CultureInfo.CurrentCulture, out number) && number >= 0;
+        int.TryParse(
+            input,
+            NumberStyles.Integer | NumberStyles.AllowThousands,
+            CultureInfo.CurrentCulture,
+            out number
+        )
+        && number >= 0;
 
     internal static bool TryNumber(string input, out double number) =>
-        double.TryParse(input, NumberStyles.Float | NumberStyles.AllowThousands,
-            CultureInfo.CurrentCulture, out number) && double.IsFinite(number) && number >= 0;
+        double.TryParse(
+            input,
+            NumberStyles.Float | NumberStyles.AllowThousands,
+            CultureInfo.CurrentCulture,
+            out number
+        )
+        && double.IsFinite(number)
+        && number >= 0;
 
     // A speed limit is typed in KiB/s and sent in bytes a second.
     internal static bool TryRate(string input, out int bytes)
@@ -943,8 +1064,10 @@ public sealed class Settings : INotifyPropertyChanged
         return true;
     }
 
+    // Shows whole KiB/s. An unchanged box saves nothing, so the rounding never
+    // changes a saved limit.
     internal static string RateInput(int bytes) =>
-        (bytes / 1024.0).ToString("G", CultureInfo.CurrentCulture);
+        Math.Round(bytes / 1024.0).ToString("G", CultureInfo.CurrentCulture);
 
     public Task CancelDraft() => Schedule.Close();
 
@@ -982,7 +1105,7 @@ public sealed class Settings : INotifyPropertyChanged
         Connection?.Refresh();
         foreach (var name in names.Length == 0 ? new[] { string.Empty } : names)
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
-        foreach (RelayCommand command in new[] { OpenDefaults, OpenStartup })
+        foreach (RelayCommand command in new[] { FixHandlers, UseStartup })
             command.Refresh();
     }
 }
@@ -1118,9 +1241,10 @@ public sealed class Setting(
         DurationUnit = unit;
         if (Settings.TryNumber(_input, out var number))
             _input = (number * scale / DurationScale).ToString("G", CultureInfo.CurrentCulture);
-        _confirmedInput = ConfirmedNumber == 0
-            ? string.Empty
-            : (ConfirmedNumber / DurationScale).ToString("G", CultureInfo.CurrentCulture);
+        _confirmedInput =
+            ConfirmedNumber == 0
+                ? string.Empty
+                : (ConfirmedNumber / DurationScale).ToString("G", CultureInfo.CurrentCulture);
         Refresh();
         owner.Changed();
     }

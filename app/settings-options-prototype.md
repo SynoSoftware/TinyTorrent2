@@ -246,12 +246,12 @@ like the existing "interface language" note. The prototype uses one sample
 catalog for the suppliers, so it does not show this case. Unsupported choices
 stay visible but are excluded from actionable Find counts and requests.
 
-A persistent problem appears in critical text, never as a red card or surface.
-This follows Fluent, which carries severity in the status text, and the existing
-critical color for field errors. The Supplier footer shows it, and while
-Automatic subtitles is On the Subtitles category card on the index shows it in
-place of its summary, so the problem is visible without opening the category.
-The text itself names the problem, so color is never the only signal.
+Problems do not appear on the Subtitles page, its Supplier card or the index
+card. They use the window's [feedback placement](../docs/interface.md#feedback-placement):
+the message bar for a lasting supplier problem and an error toast for a subtitle
+that could not be saved. The Supplier card shows only access and allowance
+state in secondary text. Only a language that cannot be added shows as a field
+error beside the language box.
 
 C opens on its Settings index. A full-width horizontal Automatic subtitles help
 card precedes the category grid, with its brief benefit and a right-aligned

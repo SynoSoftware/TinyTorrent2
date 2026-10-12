@@ -88,7 +88,7 @@
     </ResourceCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
-      <AdditionalDependencies>advapi32.lib;shell32.lib;user32.lib;ole32.lib;uuid.lib;crypt32.lib;iphlpapi.lib;ws2_32.lib;propsys.lib;dwmapi.lib;uxtheme.lib;comctl32.lib;runtimeobject.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>advapi32.lib;shell32.lib;shlwapi.lib;user32.lib;ole32.lib;uuid.lib;crypt32.lib;iphlpapi.lib;ws2_32.lib;propsys.lib;dwmapi.lib;uxtheme.lib;comctl32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'">
@@ -101,6 +101,7 @@
     <ClCompile>
       <Optimization>MaxSpeed</Optimization>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
   </ItemDefinitionGroup>
 
@@ -135,9 +136,11 @@
     <ClCompile Include="Strings.cpp" />
     <ClCompile Include="Registration.cpp" />
     <ClCompile Include="Pipe.cpp" />
+    <ClCompile Include="Desktop\Acrylic.cpp" />
     <ClCompile Include="Desktop\Application.cpp">
       <PreprocessorDefinitions>TT_WINDOW_FILE=L&quot;$(WindowTargetName).exe&quot;;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
+    <ClCompile Include="Desktop\Popup.cpp" />
     <ClCompile Include="Desktop\PowerRequest.cpp" />
     <ClCompile Include="Desktop\Splash.cpp" />
     <ClCompile Include="Desktop\Tray.cpp" />

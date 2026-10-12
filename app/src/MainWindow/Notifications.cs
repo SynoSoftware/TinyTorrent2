@@ -1,5 +1,6 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Data;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 
@@ -7,101 +8,171 @@ namespace Syno.TinyTorrent;
 
 public sealed partial class MainWindow
 {
-    private readonly DispatcherTimer _completionTimer = new()
+    private readonly DispatcherTimer _noticeTimer = new()
     {
         Interval = TimeSpan.FromMilliseconds(250),
     };
-    private int _completionTicks;
-    private bool _completionHovered;
+    private bool _noticeHovered;
+    private bool _windowActive = true;
 
     private void ConfigureNotifications()
     {
-        Feedback.RegisterPropertyChangedCallback(
+        AppStatusBar.RegisterPropertyChangedCallback(
             InfoBar.MessageProperty,
             (_, _) =>
             {
-                if (!Feedback.IsOpen || Feedback.Message.Length == 0)
+                if (!AppStatusBar.IsOpen || AppStatusBar.Message.Length == 0)
                     return;
                 // InfoBar does not announce message changes while it stays open.
-                Feedback.IsOpen = false;
-                Feedback.IsOpen = true;
+                AppStatusBar.IsOpen = false;
+                AppStatusBar.IsOpen = true;
             }
         );
+        Model.Notices.CollectionChanged += (_, _) =>
+        {
+            if (Model.Notices.Count > 0)
+            {
+                _noticeTimer.Start();
+            }
+            else
+            {
+                _noticeTimer.Stop();
+                // A notice that closes under the pointer may leave without
+                // a PointerExited, which would pause the next notices forever.
+                _noticeHovered = false;
+            }
+            UpdateNotices();
+        };
         Model.PropertyChanged += (_, args) =>
         {
-            if (args.PropertyName == nameof(MainViewModel.CompletionText))
-            {
-                _completionTicks = 32;
-                if (Model.HasCompletion)
-                    _completionTimer.Start();
-                else
-                    _completionTimer.Stop();
-            }
             if (
                 string.IsNullOrEmpty(args.PropertyName)
                 || args.PropertyName
-                    is nameof(MainViewModel.CompletionText)
-                        or nameof(MainViewModel.HasCompletion)
-                        or nameof(MainViewModel.IsClosing)
+                    is nameof(MainViewModel.IsClosing)
                         or nameof(MainViewModel.IsPicking)
             )
-                UpdateCompletion();
+                UpdateNotices();
+            if (args.PropertyName == nameof(MainViewModel.ShowsStatus))
+                PlaceNotices();
         };
-        Model.TextChanged += (_, _) => UpdateCompletion();
-        CompletionNotice.Loaded += (_, _) => UpdateCompletion();
-        CompletionNotice.PointerEntered += (_, _) => _completionHovered = true;
-        CompletionNotice.PointerExited += (_, _) => _completionHovered = false;
-        Root.GotFocus += (_, _) => UpdateCompletion();
+        Root.GotFocus += (_, _) => UpdateNotices();
         Root.LostFocus += (_, _) =>
             DispatcherQueue.TryEnqueue(
                 Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,
-                UpdateCompletion
+                UpdateNotices
             );
-        Root.SizeChanged += (_, _) => UpdateCompletion();
-        _completionTimer.Tick += (_, _) =>
+        Root.SizeChanged += (_, _) => UpdateNotices();
+        NoticeStack.SizeChanged += (_, _) => PlaceNotices();
+        AppStatusLayer.SizeChanged += (_, _) => PlaceNotices();
+        // A notice that arrives while the person works in another window
+        // waits until they return, as Windows and VS Code notices do.
+        Activated += (_, args) =>
+            _windowActive = args.WindowActivationState != WindowActivationState.Deactivated;
+        _noticeTimer.Tick += (_, _) =>
         {
-            UpdateCompletion();
+            UpdateNotices();
             if (
-                CompletionNotice.Visibility == Visibility.Visible
-                && !_completionHovered
-                && !HasCompletionFocus()
-                && --_completionTicks <= 0
+                NoticeStack.Visibility != Visibility.Visible
+                || _noticeHovered
+                || !_windowActive
+                || HasNoticeKeyboardFocus()
             )
-                Model.DismissCompletion();
+                return;
+            foreach (var notice in Model.Notices.ToArray())
+            {
+                if (notice.Remaining is not { } remaining)
+                    continue;
+                notice.Remaining = remaining - _noticeTimer.Interval;
+                if (notice.Remaining <= TimeSpan.Zero)
+                    Model.DismissNotice(notice);
+            }
         };
-        Closed += (_, _) => _completionTimer.Stop();
+        Closed += (_, _) => _noticeTimer.Stop();
     }
 
-    private bool HasCompletionFocus()
+    // The popup's corner is the stack's bottom-right, so it follows the
+    // stack's size as notices come and go. The stack sits above the message
+    // bar while the bar shows, so neither covers the other.
+    private void PlaceNotices()
     {
-        var element = FocusManager.GetFocusedElement(Root.XamlRoot) as DependencyObject;
+        var bar = Model.ShowsStatus ? AppStatusLayer.ActualHeight + 8 : 0;
+        NoticeLayer.HorizontalOffset = -NoticeStack.Width;
+        NoticeLayer.VerticalOffset = -NoticeStack.ActualHeight - bar;
+    }
+
+    // Only keyboard focus pauses the notices: a click on a notice's button
+    // usually closes that notice, and focus that WinUI then moves to a
+    // neighbouring notice is not the person reading it.
+    private bool HasNoticeKeyboardFocus()
+    {
+        if (
+            FocusManager.GetFocusedElement(Root.XamlRoot)
+            is not Control { FocusState: FocusState.Keyboard } control
+        )
+            return false;
+        DependencyObject? element = control;
         while (element is not null)
         {
-            if (ReferenceEquals(element, CompletionNotice))
+            if (ReferenceEquals(element, NoticeStack))
                 return true;
             element = VisualTreeHelper.GetParent(element);
         }
         return false;
     }
 
-    private void UpdateCompletion()
+    // Notices show above an open dialog, so a result reported while it is
+    // open is seen at once. They stay hidden, with their time paused, while
+    // they would cover the editor the person is typing in.
+    private void UpdateNotices()
     {
         if (Root.XamlRoot is null)
             return;
-        CompletionNotice.Width = Math.Min(560, Math.Max(0, Root.ActualWidth - 32));
+        NoticeStack.Width = Math.Min(400, Math.Max(0, Root.ActualWidth - 32));
         var visible =
-            Model.HasCompletion
-            && !HasDialog
-            && !HasEditorFocus()
-            && !Model.IsClosing
-            && !Model.IsPicking;
-        CompletionNotice.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
-        CompletionNotice.IsOpen = visible;
+            Model.Notices.Count > 0 && !HasEditorFocus() && !Model.IsClosing && !Model.IsPicking;
+        NoticeStack.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+        PlaceNotices();
+        NoticeLayer.IsOpen = visible;
         if (!visible)
-            _completionHovered = false;
+            _noticeHovered = false;
     }
 
-    private void OnDismissCompletion(InfoBar sender, object args) => Model.DismissCompletion();
+    // A popup draws above the popups opened before it, so the notices reopen
+    // above each dialog that opens.
+    private void RaiseNotices()
+    {
+        if (!NoticeLayer.IsOpen)
+            return;
+        NoticeLayer.IsOpen = false;
+        NoticeLayer.IsOpen = true;
+    }
 
-    private void OnDismissResume(InfoBar sender, object args) => Model.DismissResume();
+    private void OnNoticePointerEntered(object sender, PointerRoutedEventArgs args) =>
+        _noticeHovered = true;
+
+    private void OnNoticePointerExited(object sender, PointerRoutedEventArgs args) =>
+        _noticeHovered = false;
+
+    // A tooltip that repeats readable text adds nothing, so a notice line has
+    // one only while it is cut off. The tooltip follows the line's text,
+    // which can change while it stays cut off.
+    private void OnNoticeTextTrimmed(TextBlock sender, IsTextTrimmedChangedEventArgs args)
+    {
+        if (!sender.IsTextTrimmed)
+        {
+            ToolTipService.SetToolTip(sender, null);
+            return;
+        }
+        var tip = new ToolTip();
+        tip.SetBinding(
+            ContentControl.ContentProperty,
+            new Binding { Source = sender, Path = new PropertyPath(nameof(TextBlock.Text)) }
+        );
+        ToolTipService.SetToolTip(sender, tip);
+    }
+
+    private void OnDismissStatus(InfoBar sender, object args) => Model.DismissStatus();
+
+    private void OnCloseNotice(object sender, RoutedEventArgs args) =>
+        Model.DismissNotice((Notice)((FrameworkElement)sender).DataContext);
 }

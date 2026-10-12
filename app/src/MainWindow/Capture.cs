@@ -119,9 +119,17 @@ public sealed partial class MainWindow
             var folder = await StorageFolder.GetFolderFromPathAsync(directory);
             var scale = Root.XamlRoot.RasterizationScale;
             var scene = new List<FrameworkElement> { Root };
+            // A rendering of Root leaves out its own popups, such as the
+            // notices, and the open-popup list leaves them out too.
             scene.AddRange(
                 VisualTreeHelper
                     .GetOpenPopupsForXamlRoot(Root.XamlRoot)
+                    .Concat(
+                        CaptureElements(Root)
+                            .OfType<Microsoft.UI.Xaml.Controls.Primitives.Popup>()
+                    )
+                    .Distinct()
+                    .Where(popup => popup.IsOpen)
                     .Select(popup => popup.Child)
                     .OfType<FrameworkElement>()
             );
@@ -270,7 +278,11 @@ public sealed partial class MainWindow
         await ready.Task.WaitAsync(TimeSpan.FromSeconds(20));
     }
 
-    private static async Task CaptureReady(INotifyPropertyChanged owner, Func<bool> ready, TimeSpan? timeout = null)
+    private static async Task CaptureReady(
+        INotifyPropertyChanged owner,
+        Func<bool> ready,
+        TimeSpan? timeout = null
+    )
     {
         var completion = new TaskCompletionSource(
             TaskCreationOptions.RunContinuationsAsynchronously
@@ -293,6 +305,129 @@ public sealed partial class MainWindow
         }
     }
 
+    // Every message bar and toast the window shows, so their wording and
+    // layout can be reviewed together. Toasts come through the same handlers
+    // as the engine's notices and the commands' failures; message bars are
+    // presented, because their conditions need a failed engine or store.
+    private async Task CaptureNotifications(string prefix, Torrent torrent)
+    {
+        var text = Model.Text;
+        var command = new RelayCommand(() => Task.CompletedTask, () => true);
+        (string Key, MainViewModel.Status Status)[] bars =
+        [
+            (
+                "stopped",
+                new(
+                    text.Get("notifications", "stopped"),
+                    text.Get("window", "disconnected"),
+                    InfoBarSeverity.Error,
+                    command,
+                    Model.RestartText,
+                    Syno.Lucide.RotateCcw,
+                    string.Empty
+                )
+            ),
+            (
+                "storage",
+                new(
+                    text.Get("notifications", "storage"),
+                    text.Get("window", "storage_failed"),
+                    InfoBarSeverity.Error,
+                    command,
+                    text.Get("commands", "open_folder"),
+                    Syno.Lucide.FolderOpen,
+                    string.Empty
+                )
+            ),
+            (
+                "subtitles-unavailable",
+                new(
+                    text.Get("notifications", "subtitles_unavailable"),
+                    text.Format("window", "database_in_use", Services.Database.FileName),
+                    InfoBarSeverity.Error,
+                    command,
+                    text.Get("inspector", "retry"),
+                    Syno.Lucide.RotateCcw,
+                    string.Empty,
+                    OffersDataFolder: true
+                )
+            ),
+            (
+                "subtitles-paused",
+                new(
+                    text.Get("notifications", "subtitles_paused"),
+                    text.Get("subtitles", "failure_authentication"),
+                    InfoBarSeverity.Warning,
+                    command,
+                    text.Get("notifications", "settings"),
+                    Syno.Lucide.Settings,
+                    string.Empty
+                )
+            ),
+            (
+                "language",
+                new(
+                    text.Get("notifications", "language"),
+                    text.Get("errors", "language_unsaved"),
+                    InfoBarSeverity.Warning,
+                    command,
+                    text.Get("notifications", "settings"),
+                    Syno.Lucide.Settings,
+                    string.Empty
+                )
+            ),
+        ];
+        void Notify(string kind, string code, string detail) =>
+            Model.ReceiveNotice(
+                JsonSerializer.SerializeToElement(
+                    new
+                    {
+                        type = "notice",
+                        kind,
+                        torrent_id = torrent.TorrentId,
+                        name = torrent.Name,
+                        code,
+                        detail,
+                        count = 1,
+                    }
+                )
+            );
+        try
+        {
+            foreach (var (key, status) in bars)
+            {
+                Model.PresentedStatus = status;
+                await CapturePage(prefix + "bar-" + key);
+            }
+            Model.PresentedStatus = null;
+            Notify("completed", string.Empty, string.Empty);
+            Model.ShowOutcome(text.Get("subtitles", "connected"), "OpenSubtitles");
+            await CapturePage(prefix + "toast-finished");
+            Model.Report(new CommandException("storage_failed", null, text, "move"));
+            await CapturePage(prefix + "toast-command");
+            Notify("error", "storage_failed", string.Empty);
+            await CapturePage(prefix + "toast-torrent");
+            Notify("add_failed", string.Empty, string.Empty);
+            await CapturePage(prefix + "toast-add");
+            Notify("delete_failed", string.Empty, "recycle_failed");
+            await CapturePage(prefix + "toast-delete");
+            Model.ClearError();
+            Model.ShowSubtitleFailure(
+                new(Path.Combine(torrent.Name, "movie.en.srt"), SubtitleFailure.Save)
+            );
+            await CapturePage(prefix + "toast-subtitle");
+        }
+        finally
+        {
+            Model.PresentedStatus = null;
+            Model.ClearError();
+            foreach (var notice in Model.Notices.ToArray())
+            {
+                Model.DismissNotice(notice);
+            }
+        }
+    }
+
     private async Task CapturePage(string name, FrameworkElement? content = null)
     {
         await CaptureLayout();
@@ -307,7 +442,11 @@ public sealed partial class MainWindow
         await CaptureUi(name);
         if (scroll is not { ScrollableHeight: > 0, ViewportHeight: > 0 })
             return;
-        for (var offset = scroll.ViewportHeight * 0.8; offset < scroll.ScrollableHeight; offset += scroll.ViewportHeight * 0.8)
+        for (
+            var offset = scroll.ViewportHeight * 0.8;
+            offset < scroll.ScrollableHeight;
+            offset += scroll.ViewportHeight * 0.8
+        )
         {
             scroll.ChangeView(null, offset, null, true);
             await CaptureLayout();
@@ -321,13 +460,13 @@ public sealed partial class MainWindow
     private async Task CaptureDialog(string name, Func<Task> open, Func<ContentDialog?> current)
     {
         var closed = open();
+        if (_fileDialog is not null)
+            await CaptureReady(Model.FileDraft, () => Model.FileDraft.CanRefresh);
         await CaptureLayout();
         var dialog =
             current() ?? throw new InvalidOperationException("The review dialog did not open.");
         try
         {
-            if (_fileDialog is not null)
-                await CaptureReady(Model.FileDraft, () => !Model.FileDraft.IsPending);
             await CapturePage(name, dialog.Content as FrameworkElement);
         }
         finally
@@ -737,6 +876,25 @@ public sealed partial class MainWindow
     [DllImport("user32.dll", ExactSpelling = true)]
     private static extern nint SendMessageW(nint hwnd, uint message, nint wParam, nint lParam);
 
+    private async Task<CheckBox[]> CaptureDays(FrameworkElement page, PeriodDraft draft)
+    {
+        var days = CaptureElements(page)
+            .OfType<ItemsRepeater>()
+            .Single(repeater => ReferenceEquals(repeater.ItemsSource, draft.Days));
+        days.StartBringIntoView(new BringIntoViewOptions { AnimationDesired = false });
+        await CaptureLayout();
+        return draft
+            .Days.Select(day =>
+                days.TryGetElement(day.Index) is CheckBox control
+                    && AutomationProperties.GetAutomationId(control) == day.AutomationId
+                    ? control
+                    : throw new InvalidOperationException(
+                        $"The native schedule day {day.Index} is not realized."
+                    )
+            )
+            .ToArray();
+    }
+
     private async Task CaptureSchedule(List<object> outcomes, List<string> completed)
     {
         var schedule = Model.Settings.Schedule;
@@ -763,18 +921,17 @@ public sealed partial class MainWindow
                 CaptureElements(page)
                     .OfType<TimePicker>()
                     .Single(control => AutomationProperties.GetAutomationId(control) == id);
-            void ClearDays()
+            async Task ClearDays()
             {
-                foreach (var day in CaptureElements(page).OfType<CheckBox>())
-                    if (
-                        AutomationProperties
-                            .GetAutomationId(day)
-                            .StartsWith("PeriodDay", StringComparison.Ordinal)
-                    )
-                        day.IsChecked = false;
+                var draft =
+                    schedule.Draft
+                    ?? throw new InvalidOperationException("The schedule editor is closed.");
+                foreach (var day in await CaptureDays(page, draft))
+                    day.IsChecked = false;
             }
             CaptureInvoke(FindButton("AddPeriod"));
             await CaptureReady(schedule, () => !schedule.IsPending && schedule.IsOpen);
+            await CaptureLayout();
             created =
                 schedule.OpenPeriod
                 ?? throw new InvalidOperationException("Add period did not open the new period.");
@@ -793,7 +950,7 @@ public sealed partial class MainWindow
             );
             // Each cleared day saves at once until none is left, so the saved
             // period keeps whichever days remained before the last.
-            ClearDays();
+            await ClearDays();
             await CaptureReady(schedule, () => schedule.HasError);
             if (
                 schedule.Draft != draft
@@ -815,10 +972,7 @@ public sealed partial class MainWindow
                 }
             );
             await CapturePage("schedule-invalid-period", page);
-            CaptureElements(page)
-                .OfType<CheckBox>()
-                .Single(control => AutomationProperties.GetAutomationId(control) == "PeriodDay0")
-                .IsChecked = true;
+            (await CaptureDays(page, draft))[0].IsChecked = true;
             await CaptureReady(
                 schedule,
                 () =>
@@ -896,7 +1050,7 @@ public sealed partial class MainWindow
                         await CapturePage(prefix + "-overview", page);
                         await schedule.Open(created);
                         await CapturePage(prefix + "-open", page);
-                        ClearDays();
+                        await ClearDays();
                         await CaptureReady(schedule, () => schedule.HasError);
                         await CaptureLayout();
                         await CaptureUi(prefix + "-validation");
@@ -1311,26 +1465,29 @@ public sealed partial class MainWindow
                     var name = "footer-" + suffix + "-resume-notice";
                     await CaptureLayout();
                     await CaptureUi(name);
-                    var action = (ResumeNotice.ActionButton as Controls.ActionButton)?.Text;
+                    var notice = Model.Notices.FirstOrDefault(shown =>
+                        shown.Kind == NoticeKind.Resume
+                    );
                     outcomes.Add(
                         new
                         {
                             journey = name,
                             scope = "Real Resume while every transfer is paused; the notice button is not pressed",
                             status = target.StatusCode,
-                            message = ResumeNotice.Message,
-                            action,
-                            severity = ResumeNotice.Severity.ToString(),
+                            message = notice?.Message,
+                            action = notice?.ActionText,
+                            severity = notice?.Severity.ToString(),
                         }
                     );
                     completed.Add(name);
                     if (
-                        ResumeNotice.Visibility != Visibility.Visible
-                        || !ResumeNotice.IsOpen
-                        || ResumeNotice.Severity != InfoBarSeverity.Informational
-                        || ResumeNotice.Message != Model.ResumeNotice
-                        || !ResumeNotice.Message.Contains(target.Name, StringComparison.Ordinal)
-                        || action != Model.Text.Get("commands", "resume")
+                        notice is null
+                        || NoticeStack.Visibility != Visibility.Visible
+                        || !notice.HasAction
+                        || notice.Severity != InfoBarSeverity.Informational
+                        || notice.Message != Model.ResumeNotice
+                        || !notice.Message.Contains(target.Name, StringComparison.Ordinal)
+                        || notice.ActionText != Model.Text.Get("notifications", "resume")
                         || target.StatusCode != "all_paused"
                     )
                         throw new InvalidOperationException(
@@ -1370,12 +1527,6 @@ public sealed partial class MainWindow
             await CaptureMatrix(
                 async (suffix, _) =>
                 {
-                    var error = Model.Text.Format(
-                        "errors",
-                        "torrent",
-                        target.Name,
-                        Model.Text.Get("errors", "move_failed")
-                    );
                     object Bounds(FrameworkElement element)
                     {
                         var position = element
@@ -1392,20 +1543,10 @@ public sealed partial class MainWindow
                     async Task Scene(string state, string scope)
                     {
                         var name = "footer-" + suffix + "-" + state;
-                        var message = TorrentError.Message;
-                        var visibility = TorrentError.Visibility;
-                        var open = TorrentError.IsOpen;
                         var updateVisibility = update.Visibility;
-                        var errorRequested = state is "torrent-error" or "combined";
                         var updateRequested = state is "update" or "combined";
                         void Present()
                         {
-                            if (errorRequested)
-                            {
-                                TorrentError.Message = error;
-                                TorrentError.IsOpen = true;
-                                TorrentError.Visibility = Visibility.Visible;
-                            }
                             if (updateRequested)
                                 update.Visibility = Visibility.Visible;
                         }
@@ -1429,14 +1570,7 @@ public sealed partial class MainWindow
                                     status = Bounds(StatusBar),
                                     filter = Model.Filter.ToString(),
                                     fixtureRetained = retained,
-                                    errorVisible = TorrentError.Visibility == Visibility.Visible,
-                                    errorText = TorrentError.Message,
-                                    errorOpen = TorrentError.IsOpen,
                                     updateVisible = update.Visibility == Visibility.Visible,
-                                    errorRequested,
-                                    errorRetained = TorrentError.Message == error
-                                        && TorrentError.IsOpen
-                                        && TorrentError.Visibility == Visibility.Visible,
                                     updateRequested,
                                 }
                             );
@@ -1449,9 +1583,6 @@ public sealed partial class MainWindow
                         finally
                         {
                             Model.PropertyChanged -= changed;
-                            TorrentError.Message = message;
-                            TorrentError.Visibility = visibility;
-                            TorrentError.IsOpen = open;
                             update.Visibility = updateVisibility;
                             Bindings.Update();
                         }
@@ -1463,15 +1594,11 @@ public sealed partial class MainWindow
                         await Scene("filtered", "Real Paused filter setter");
                         Model.Filter = TorrentFilter.All;
                         await Scene("filter-cleared", "Real All filter setter");
-                        await Scene(
-                            "torrent-error",
-                            "Simulated selected-torrent error presentation; no engine command"
-                        );
                         await Scene("update", "Simulated update-status visibility");
                         Model.Filter = TorrentFilter.Paused;
                         await Scene(
                             "combined",
-                            "Real Paused filter with simulated torrent-error and update presentation; no engine command or launch"
+                            "Real Paused filter with simulated update presentation; no engine command or launch"
                         );
                     }
                     finally
@@ -1915,7 +2042,7 @@ public sealed partial class MainWindow
                             var handlers = (ToggleSwitch)page.FindName("Handlers");
                             var matches =
                                 startup.IsOn == Model.Settings.Startup
-                                && handlers.IsOn == Model.Settings.HandlersRegistered
+                                && handlers.IsOn == Model.Settings.Handlers
                                 && startup.IsEnabled == Model.Settings.CanRegister
                                 && handlers.IsEnabled == Model.Settings.CanRegister;
                             outcomes.Add(
@@ -1925,7 +2052,7 @@ public sealed partial class MainWindow
                                     startup = startup.IsOn,
                                     handlers = handlers.IsOn,
                                     observedStartup = Model.Settings.Startup,
-                                    observedHandlers = Model.Settings.HandlersRegistered,
+                                    observedHandlers = Model.Settings.Handlers,
                                     startupEnabled = startup.IsEnabled,
                                     handlersEnabled = handlers.IsEnabled,
                                     canRegister = Model.Settings.CanRegister,
@@ -2003,24 +2130,35 @@ public sealed partial class MainWindow
                             );
                         }
                         await ShowTorrents();
-                        var torrent = Model.Torrents.First();
-                        Model.ReceiveNotice(
-                            JsonSerializer.SerializeToElement(
-                                new
-                                {
-                                    type = "notice",
-                                    kind = "completed",
-                                    torrent_id = torrent.TorrentId,
-                                    name = torrent.Name,
-                                    detail = string.Empty,
-                                    count = 1,
-                                }
-                            )
-                        );
+                        // One more notice than the stack holds, so the
+                        // capture shows the oldest one giving way.
+                        var finished = Model.Torrents.Take(5).ToArray();
+                        Notice[] Completions() =>
+                            Model
+                                .Notices.Where(notice => notice.Kind == NoticeKind.Completion)
+                                .ToArray();
+                        foreach (var torrent in finished)
+                            Model.ReceiveNotice(
+                                JsonSerializer.SerializeToElement(
+                                    new
+                                    {
+                                        type = "notice",
+                                        kind = "completed",
+                                        torrent_id = torrent.TorrentId,
+                                        name = torrent.Name,
+                                        detail = string.Empty,
+                                        count = 1,
+                                    }
+                                )
+                            );
                         await CaptureLayout();
-                        if (!Model.HasCompletion || !Model.OpenCompletion.CanExecute(null))
+                        if (
+                            NoticeStack.Visibility != Visibility.Visible
+                            || Completions().Length != Math.Min(finished.Length, 4)
+                            || Completions()[^1].Subject != finished[^1].Name
+                        )
                             throw new InvalidOperationException(
-                                "The completion notice has no available folder action."
+                                "The completion notices do not show the newest finished downloads."
                             );
                         await CapturePage(name + "-completion");
                         if (language == "en" && theme == "light" && size.Width == 1040)
@@ -2029,19 +2167,19 @@ public sealed partial class MainWindow
                             await CaptureLayout();
                             if (
                                 !HasEditorFocus()
-                                || CompletionNotice.Visibility != Visibility.Collapsed
-                                || !Model.HasCompletion
+                                || NoticeStack.Visibility != Visibility.Collapsed
+                                || Completions().Length == 0
                             )
                                 throw new InvalidOperationException(
                                     "Editing search did not postpone completion feedback."
                                 );
                             Torrents.Focus(FocusState.Programmatic);
                             await CaptureLayout();
-                            if (CompletionNotice.Visibility != Visibility.Visible)
+                            if (NoticeStack.Visibility != Visibility.Visible)
                                 throw new InvalidOperationException(
                                     "Completion feedback did not return after editing."
                                 );
-                            await CaptureReady(Model, () => !Model.HasCompletion);
+                            await CaptureReady(Model, () => Completions().Length == 0);
                             outcomes.Add(
                                 new
                                 {
@@ -2052,7 +2190,8 @@ public sealed partial class MainWindow
                                 }
                             );
                         }
-                        Model.DismissCompletion();
+                        foreach (var notice in Completions())
+                            Model.DismissNotice(notice);
                         completed.Add(name);
                     }
                 }
@@ -2177,10 +2316,7 @@ public sealed partial class MainWindow
                         await CapturePage(prefix + "header");
                         if (language == "en" && size.Width == 1040)
                         {
-                            var states = new[]
-                            {
-                                (ThemeButton, "PointerOver"),
-                            };
+                            var states = new[] { (ThemeButton, "PointerOver") };
                             try
                             {
                                 foreach (var (button, state) in states)
@@ -2264,12 +2400,15 @@ public sealed partial class MainWindow
                             Model.ClearError();
                         }
                         await CaptureLayout();
-                        var message = Feedback.Message;
-                        var severity = Feedback.Severity;
-                        var visibility = Feedback.Visibility;
-                        var open = Feedback.IsOpen;
-                        var action = Feedback.ActionButton.Visibility;
-                        var condition = Model.Message;
+                        var stopped = new MainViewModel.Status(
+                            Model.Text.Get("notifications", "stopped"),
+                            Model.Text.Get("window", "disconnected"),
+                            InfoBarSeverity.Error,
+                            Model.Restart,
+                            Model.RestartText,
+                            Syno.Lucide.RotateCcw,
+                            Model.Text.Get("connection", "restart_tip")
+                        );
                         var workspace = new
                         {
                             width = Torrents.ActualWidth,
@@ -2281,11 +2420,7 @@ public sealed partial class MainWindow
                         };
                         try
                         {
-                            Feedback.Message = Model.Text.Get("window", "connecting");
-                            Feedback.Severity = InfoBarSeverity.Warning;
-                            Feedback.Visibility = Visibility.Visible;
-                            Feedback.IsOpen = true;
-                            Feedback.ActionButton.Visibility = Visibility.Visible;
+                            Model.PresentedStatus = stopped;
                             await CapturePage(prefix + "connection-overlay");
                             outcomes.Add(
                                 new
@@ -2314,22 +2449,18 @@ public sealed partial class MainWindow
                                     Model.Text.Get("errors", "invalid_destination")
                                 )
                             );
-                            Feedback.Message = Model.Text.Get("window", "connecting");
-                            Feedback.Severity = InfoBarSeverity.Warning;
-                            Feedback.Visibility = Visibility.Visible;
-                            Feedback.IsOpen = true;
-                            Feedback.ActionButton.Visibility = Visibility.Visible;
                             await CapturePage(prefix + "combined-errors");
-                            var error = CaptureElements(Root)
-                                .OfType<InfoBar>()
-                                .Single(bar => bar.Message == Model.CommandError);
                             CaptureInvoke(
-                                CaptureElements(error)
+                                CaptureElements(NoticeStack)
                                     .OfType<Button>()
-                                    .Single(button => button.Name == "CloseButton")
+                                    .Single(button =>
+                                        button is not Controls.ActionButton
+                                        && button.DataContext
+                                            is Notice { Kind: NoticeKind.CommandError }
+                                    )
                             );
                             await CaptureLayout();
-                            if (Model.HasCommandError || Model.Message != condition)
+                            if (Model.HasCommandError || Model.CurrentStatus != stopped)
                                 throw new InvalidOperationException(
                                     "Dismissing a command error changed connection state or retained the error."
                                 );
@@ -2346,12 +2477,9 @@ public sealed partial class MainWindow
                         finally
                         {
                             Model.ClearError();
-                            Feedback.Message = message;
-                            Feedback.Severity = severity;
-                            Feedback.Visibility = visibility;
-                            Feedback.IsOpen = open;
-                            Feedback.ActionButton.Visibility = action;
+                            Model.PresentedStatus = null;
                         }
+                        await CaptureNotifications(prefix, target);
                         Model.CloseInspector();
                         Model.AddDraft.EditingMagnet = true;
                         var closed = ShowAdd();
@@ -2469,8 +2597,7 @@ public sealed partial class MainWindow
                             CaptureInvoke(dialog);
                             await CaptureReady(
                                 Model.AddDraft,
-                                () =>
-                                    !Model.AddDraft.IsBusy && Model.AddDraft.Failure is not null
+                                () => !Model.AddDraft.IsBusy && Model.AddDraft.Failure is not null
                             );
                             if (
                                 Model.AddDraft.Failure

@@ -3,49 +3,72 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media.Animation;
+using Syno.TinyTorrent.Library;
 using Syno.TinyTorrent.Models;
 using Syno.TinyTorrent.Views;
-using Syno.TinyTorrent.Library;
-using LibraryBrowser = Syno.TinyTorrent.Library.Browser;
 using Windows.System;
+using LibraryBrowser = Syno.TinyTorrent.Library.Browser;
 
 namespace Syno.TinyTorrent;
 
 public sealed partial class MainWindow
 {
     private LibraryTable _libraryTable = null!;
-    private WindowPage _returnPage;
-    private bool _fromLibrary;
     private FocusState _navigationInput;
     private int _navigationRevision;
     private bool _navigationHeld;
     private WindowPage _navigationFace = WindowPage.Torrents;
     private Storyboard? _navigationFlip;
     private CancellationTokenSource? _associationRead;
+    private MenuFlyoutSubItem? _libraryFetch;
 
     private void ConfigureLibrary()
     {
         _libraryTable = new LibraryTable(Model.Library);
         Model.Library.CommandFailed += (_, error) => Model.Report(error);
+        Model.Library.BatchLimited += (_, files) => Model.ShowSearchLimit(files);
+        // A submenu has no command, so the menu bar's Fetch metadata follows
+        // the command in place rather than by rebuilding, which would close it.
+        Model.Library.FetchMetadata.CanExecuteChanged += (_, _) =>
+        {
+            if (_libraryFetch is { } fetch)
+                fetch.IsEnabled = Model.Library.FetchMetadata.CanExecute(null);
+        };
         LibraryContent.Content = _libraryTable;
         _libraryTable.ItemContextRequested += (_, args) =>
         {
-            var menu = new MenuFlyout();
-            menu.Closed += (_, _) => ClearMenu(menu.Items);
-            foreach (var item in LibraryMenu())
-                menu.Items.Add(item);
-            menu.ShowAt(args.Target, new Microsoft.UI.Xaml.Controls.Primitives.FlyoutShowOptions { Position = args.Position });
+            var menu = LibraryContextMenu();
+            menu.ShowAt(
+                args.Target,
+                new Microsoft.UI.Xaml.Controls.Primitives.FlyoutShowOptions
+                {
+                    Position = args.Position,
+                }
+            );
         };
         Model.Library.PropertyChanged += (_, args) =>
         {
             if (args.PropertyName == nameof(LibraryBrowser.Selected))
                 UpdateAssociation();
-            if (Model.Page == WindowPage.Library && args.PropertyName is nameof(LibraryBrowser.Facets) or "")
+            if (
+                Model.Page == WindowPage.Library
+                && args.PropertyName is nameof(LibraryBrowser.Facets) or ""
+            )
                 RefreshLibraryFilters();
-            if (Model.Page == WindowPage.Library && args.PropertyName is nameof(LibraryBrowser.Origins) or
-                nameof(LibraryBrowser.Selected) or nameof(LibraryBrowser.EditMetadataLabel) or nameof(LibraryBrowser.IsAvailable))
+            if (
+                Model.Page == WindowPage.Library
+                && args.PropertyName
+                    is nameof(LibraryBrowser.Origins)
+                        or nameof(LibraryBrowser.Selection)
+                        or nameof(LibraryBrowser.Selected)
+                        or nameof(LibraryBrowser.IsAvailable)
+                        or nameof(LibraryBrowser.IsEnrichmentEnabled)
+            )
                 RefreshLibraryMenu();
-            if (Model.Page == WindowPage.Library && args.PropertyName == nameof(LibraryBrowser.Configuration))
+            if (
+                Model.Page == WindowPage.Library
+                && args.PropertyName == nameof(LibraryBrowser.Configuration)
+            )
                 RefreshMenus();
         };
         Model.PropertyChanged += (_, args) =>
@@ -56,10 +79,7 @@ public sealed partial class MainWindow
         Model.Library.OpenRequested += async (_, row) =>
         {
             var path = row.Entry.Path;
-            var failure = await OpenPath(path);
-            Model.Library.Opened(row, path, failure);
-            if (failure is not null)
-                Model.Report(failure);
+            Model.Library.Opened(row, path, await OpenPath(path));
         };
         Model.Library.FolderRequested += async (_, path) =>
         {
@@ -69,27 +89,53 @@ public sealed partial class MainWindow
         };
         Model.Library.TorrentRequested += async (_, origin) =>
         {
-            if (Model.Torrents.FirstOrDefault(torrent => torrent.TorrentId == origin.OriginId) is not { } torrent)
+            if (
+                Model.Torrents.FirstOrDefault(torrent => torrent.TorrentId == origin.OriginId)
+                is not { } torrent
+            )
                 return;
-            if (!await ShowTorrents())
+            if (!await Model.Navigation.Open(WindowPage.Torrents))
                 return;
-            _fromLibrary = true;
-            _returnPage = WindowPage.Library;
+            if (!Model.VisibleTorrents.Contains(torrent))
+                await Model.ClearFinding();
+            Torrents.Focus(FocusState.Programmatic);
             if (!await SelectTorrent(new Syno.TableView.Selection([torrent], torrent)))
                 return;
             Model.OpenInspector();
-            UpdatePage();
             (InspectorContent.Content as InspectorPane)?.RevealFile(origin.FileIndex);
         };
-        Model.Library.EnableRequested += async (_, _) => await EnableVideoInformation();
-        Model.LibraryRequested += async (_, _) => await Navigate(WindowPage.Library);
-        Model.Library.EditMetadataRequested += async (_, _) => await EditMetadata();
-        Model.Library.ConfigureRequested += async (_, _) => await ConfigureVideo();
-        Activated += (_, args) => Model.Library.ActivateInformation(args.WindowActivationState != WindowActivationState.Deactivated);
-        AddShortcut(new KeyboardAccelerator { Key = VirtualKey.Number1, Modifiers = VirtualKeyModifiers.Control },
-            Model.ShowTorrents);
-        AddShortcut(new KeyboardAccelerator { Key = VirtualKey.Number2, Modifiers = VirtualKeyModifiers.Control },
-            Model.ShowLibrary);
+        Model.Library.SettingsRequested += async (_, _) =>
+            await ShowSettings(new(SettingsCategory.Plugins, "video_information"));
+        Model.LibraryRequested += async (_, _) =>
+            await Model.Navigation.Navigate(WindowPage.Library);
+        Model.Library.FetchMetadataRequested += async (_, source) =>
+        {
+            if (Model.Library.Selected is { } selected)
+                await FetchMetadata(new MetadataDialog(Model.Library, selected.Entry, source));
+        };
+        Model.SubtitlesRequested += async (_, entries) =>
+        {
+            if (entries.Count == 1)
+                await ChooseSubtitle(entries.Single());
+            else
+                await DownloadSubtitles(entries);
+        };
+        AddShortcut(
+            new KeyboardAccelerator
+            {
+                Key = VirtualKey.Number1,
+                Modifiers = VirtualKeyModifiers.Control,
+            },
+            Model.ShowTorrents
+        );
+        AddShortcut(
+            new KeyboardAccelerator
+            {
+                Key = VirtualKey.Number2,
+                Modifiers = VirtualKeyModifiers.Control,
+            },
+            Model.ShowLibrary
+        );
         Search.KeyDown += (_, args) =>
         {
             if (Model.Page != WindowPage.Library)
@@ -111,18 +157,17 @@ public sealed partial class MainWindow
     {
         var revision = _navigationRevision;
         _navigationHeld = _navigationInput != FocusState.Unfocused;
-        if (await Navigate(NavigationPage == WindowPage.Library ? WindowPage.Torrents : WindowPage.Library))
-        {
-            _fromLibrary = false;
-            UpdatePage();
-        }
-        else if (revision == _navigationRevision)
+        if (
+            !await Model.Navigation.Navigate(
+                NavigationPage == WindowPage.Library ? WindowPage.Torrents : WindowPage.Library
+            )
+            && revision == _navigationRevision
+        )
             _navigationHeld = false;
         RefreshNavigation();
     }
 
-    private WindowPage NavigationPage => Model.Page is WindowPage.Torrents or WindowPage.Library
-        ? Model.Page : _returnPage;
+    private WindowPage NavigationPage => Model.Navigation.Workspace;
 
     private void OnNavigationEnter(object sender, PointerRoutedEventArgs args)
     {
@@ -164,12 +209,14 @@ public sealed partial class MainWindow
             _associationRead?.Cancel();
         else
             UpdateAssociation();
-        Torrents.Visibility = library ? Visibility.Collapsed : Visibility.Visible;
-        LibraryContent.Visibility = library ? Visibility.Visible : Visibility.Collapsed;
+        if (Model.Page is WindowPage.Torrents or WindowPage.Library)
+            _workspaces.Show(library ? LibraryContent : TorrentContent, library ? 1 : -1);
         Filters.Visibility = library ? Visibility.Collapsed : Visibility.Visible;
         LibraryFilters.Visibility = library ? Visibility.Visible : Visibility.Collapsed;
-        Toolbar.Visibility = !library && Model.IsToolbarOpen ? Visibility.Visible : Visibility.Collapsed;
-        Search.PlaceholderText = Model.Text.Get(library ? "library" : "finding", library ? "search" : "placeholder");
+        Search.PlaceholderText = Model.Text.Get(
+            library ? "library" : "finding",
+            library ? "search" : "placeholder"
+        );
         Search.IsSuggestionListOpen = false;
         Search.ItemsSource = null;
         Search.Text = Model.Query;
@@ -184,16 +231,26 @@ public sealed partial class MainWindow
     private void RefreshNavigation()
     {
         var library = NavigationPage == WindowPage.Library;
-        var destination = Model.Text.Get(library ? "window" : "library", library ? "torrents" : "title");
-        NameButton(AppIcon, Model.Text.Format("shortcuts", "tip",
-            Model.Text.Format("chrome", "switch_page", destination),
-            ShortcutText(library ? Model.ShowTorrents : Model.ShowLibrary)));
+        var destination = Model.Text.Get(
+            library ? "window" : "library",
+            library ? "torrents" : "title"
+        );
+        NameButton(
+            AppIcon,
+            Model.Text.Format(
+                "shortcuts",
+                "tip",
+                Model.Text.Format("chrome", "switch_page", destination),
+                ShortcutText(library ? Model.ShowTorrents : Model.ShowLibrary)
+            )
+        );
         var active = _navigationInput != FocusState.Unfocused;
         if (!active)
             _navigationHeld = false;
-        var face = active && !_navigationHeld
-            ? (library ? WindowPage.Torrents : WindowPage.Library)
-            : NavigationPage;
+        var face =
+            active && !_navigationHeld
+                ? (library ? WindowPage.Torrents : WindowPage.Library)
+                : NavigationPage;
         if (_navigationFace == face)
             return;
         _navigationFace = face;
@@ -207,25 +264,35 @@ public sealed partial class MainWindow
             ShowNavigationFace();
             return;
         }
-        var shown = TorrentsFace.Visibility == Visibility.Visible ? WindowPage.Torrents : WindowPage.Library;
+        var shown =
+            TorrentsFace.Visibility == Visibility.Visible
+                ? WindowPage.Torrents
+                : WindowPage.Library;
         if (shown == face)
         {
             FlipNavigation(rotation, 0);
             return;
         }
-        var edge = rotation == 0 ? (face == WindowPage.Library ? 90 : -90) : Math.CopySign(90, rotation);
-        FlipNavigation(rotation, edge, () =>
-        {
-            ShowNavigationFace();
-            NavigationProjection.RotationY = -edge;
-            FlipNavigation(-edge, 0);
-        });
+        var edge =
+            rotation == 0 ? (face == WindowPage.Library ? 90 : -90) : Math.CopySign(90, rotation);
+        FlipNavigation(
+            rotation,
+            edge,
+            () =>
+            {
+                ShowNavigationFace();
+                NavigationProjection.RotationY = -edge;
+                FlipNavigation(-edge, 0);
+            }
+        );
     }
 
     private void ShowNavigationFace()
     {
-        TorrentsFace.Visibility = _navigationFace == WindowPage.Torrents ? Visibility.Visible : Visibility.Collapsed;
-        LibraryFace.Visibility = _navigationFace == WindowPage.Library ? Visibility.Visible : Visibility.Collapsed;
+        TorrentsFace.Visibility =
+            _navigationFace == WindowPage.Torrents ? Visibility.Visible : Visibility.Collapsed;
+        LibraryFace.Visibility =
+            _navigationFace == WindowPage.Library ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void FlipNavigation(double from, double to, Action? completed = null)
@@ -240,7 +307,10 @@ public sealed partial class MainWindow
             From = from,
             To = to,
             Duration = new Duration(TimeSpan.FromMilliseconds(110 * Math.Abs(to - from) / 90)),
-            EasingFunction = new CubicEase { EasingMode = to == 0 ? EasingMode.EaseOut : EasingMode.EaseIn },
+            EasingFunction = new CubicEase
+            {
+                EasingMode = to == 0 ? EasingMode.EaseOut : EasingMode.EaseIn,
+            },
         };
         Storyboard.SetTarget(animation, NavigationProjection);
         Storyboard.SetTargetProperty(animation, nameof(NavigationProjection.RotationY));
@@ -262,7 +332,11 @@ public sealed partial class MainWindow
     private async void UpdateAssociation()
     {
         _associationRead?.Cancel();
-        if (Model.Page != WindowPage.Library || Model.Library.Selected is not { } selected || !Model.IsConnected)
+        if (
+            Model.Page != WindowPage.Library
+            || Model.Library.Selected is not { } selected
+            || !Model.IsConnected
+        )
             return;
         var path = selected.Entry.Path;
         using var cancellation = new CancellationTokenSource();
@@ -270,12 +344,19 @@ public sealed partial class MainWindow
         try
         {
             var association = await ReadAssociation(Path.GetExtension(path), cancellation.Token);
-            if (!cancellation.IsCancellationRequested && Model.IsConnected &&
-                ReferenceEquals(selected, Model.Library.Selected) && selected.Entry.Path == path)
+            if (
+                !cancellation.IsCancellationRequested
+                && Model.IsConnected
+                && ReferenceEquals(selected, Model.Library.Selected)
+                && selected.Entry.Path == path
+            )
                 Model.Library.Associate(association);
         }
         catch (OperationCanceledException) { }
-        catch (Exception error) { System.Diagnostics.Debug.WriteLine("File association: " + error.GetType().Name); }
+        catch (Exception error)
+        {
+            System.Diagnostics.Debug.WriteLine("File association: " + error.GetType().Name);
+        }
         finally
         {
             if (ReferenceEquals(_associationRead, cancellation))
@@ -283,27 +364,59 @@ public sealed partial class MainWindow
         }
     }
 
-    private IEnumerable<MenuFlyoutItemBase> LibraryMenu()
+    private MenuFlyout LibraryContextMenu()
+    {
+        var menu = new MenuFlyout();
+        menu.Closed += (_, _) => ClearMenu(menu.Items);
+        menu.Items.Add(
+            new MenuFlyoutItem
+            {
+                Text =
+                    Model.Library.Selected?.Title
+                    ?? Model.Text.Format("window", "selected", Model.Library.Selection.Items.Count),
+                Icon = Icon(Lucide.ListChecks),
+                IsEnabled = false,
+            }
+        );
+        menu.Items.Add(new MenuFlyoutSeparator());
+        foreach (var item in LibraryMenu(MetadataActions.Create(Model.Library)))
+            menu.Items.Add(item);
+        return menu;
+    }
+
+    private IEnumerable<MenuFlyoutItemBase> LibraryMenu(MenuFlyoutSubItem fetch)
     {
         yield return Menu("open", Model.Library.Open, Syno.Lucide.Play);
         yield return Menu("open_folder", Model.Library.OpenFolder, Syno.Lucide.FolderOpen);
         yield return Menu("properties", Model.Library.Properties, Syno.Lucide.Info);
+        yield return OriginActions.Create(Model.Library);
         yield return new MenuFlyoutSeparator();
-        yield return new MenuFlyoutItem { Text = Model.Library.EditMetadataLabel, Command = Model.Library.EditMetadata, Icon = Icon(Model.Library.EditMetadataGlyph) };
+        yield return fetch;
+        yield return new MenuFlyoutItem
+        {
+            Text = Model.Text.Get(
+                "subtitles",
+                Model.Library.Selection.Items.Count == 1 ? "choose" : "download_title"
+            ),
+            Command = Model.DownloadSubtitles,
+            Icon = Icon(Lucide.Download),
+        };
+        yield return new MenuFlyoutSeparator();
         yield return new MenuFlyoutItem
         {
             Text = Model.Text.Get("library", "erase_metadata"),
             Command = Model.Library.EraseMetadata,
             Icon = Icon(Lucide.Eraser),
         };
-        yield return OriginActions.Create(Model.Library);
     }
 
     private void RefreshLibraryMenu()
     {
         TorrentMenu.Title = Model.Text.Get("library", "title");
+        TorrentMenu.AccessKey = MenuKey("library");
         ClearMenu(TorrentMenu.Items);
-        foreach (var item in LibraryMenu())
+        _libraryFetch = MetadataActions.Create(Model.Library);
+        foreach (var item in LibraryMenu(_libraryFetch))
             TorrentMenu.Items.Add(item);
     }
 
@@ -312,103 +425,75 @@ public sealed partial class MainWindow
         ViewMenu.Items.Add(new MenuFlyoutSeparator());
         foreach (var configuration in Enum.GetValues<LibraryConfiguration>())
         {
-            var choice = new ToggleMenuFlyoutItem
+            var choice = new RadioMenuFlyoutItem
             {
                 Text = Model.Text.Get("library", configuration.ToString().ToLowerInvariant()),
+                GroupName = "Library",
                 IsChecked = Model.Library.Configuration == configuration,
-                Icon = Icon(configuration switch
-                {
-                    LibraryConfiguration.Videos => Syno.Lucide.Film,
-                    LibraryConfiguration.Music => Syno.Lucide.Music,
-                    _ => Syno.Lucide.Files,
-                }),
+                Icon = Icon(
+                    configuration switch
+                    {
+                        LibraryConfiguration.Videos => Syno.Lucide.Film,
+                        LibraryConfiguration.Music => Syno.Lucide.Music,
+                        _ => Syno.Lucide.Files,
+                    }
+                ),
             };
-            choice.Click += (_, _) =>
-            {
-                choice.IsChecked = true;
-                Model.Library.Configuration = configuration;
-            };
+            choice.Click += (_, _) => Model.Library.Configuration = configuration;
             ViewMenu.Items.Add(choice);
         }
     }
 
-    private async Task EnableVideoInformation()
+    private async Task FetchMetadata(MetadataDialog content)
     {
-        if (Model.Library.IsEnrichmentEnabled)
-        {
-            try { await Model.Library.SetEnabled(false); }
-            catch (OperationCanceledException) { }
-            catch (Exception error) { Model.Library.ReportCommand(error); }
-            return;
-        }
-        if (Model.Library.Option is not { } option)
-            return;
+        SettingTarget? settings = null;
         await Interact(async interaction =>
         {
-            var dialog = new Controls.Dialog { Glyph = Lucide.Film, PrimaryGlyph = Lucide.Check };
-            var choice = await ShowDialog(interaction, dialog, () =>
-            {
-                dialog.Title = Model.Text.Get("library", "video_information");
-                dialog.Content = Model.Text.Get(option.TextSection, "consent");
-                dialog.PrimaryButtonText = Model.Text.Get("library", "enable").TrimEnd('…');
-                dialog.PrimaryToolTip = Model.Text.Get("library", "enable_tip");
-            });
-            if (choice == ContentDialogResult.Primary)
-                await Model.Library.SetEnabled(true);
-            return true;
-        });
-    }
-
-    private async Task EditMetadata(MetadataDialog? content = null)
-    {
-        if (Model.Library.Selected is not { } selected)
-            return;
-        content ??= new MetadataDialog(Model.Library, selected.Entry);
-        await Interact(async interaction =>
-        {
-            interaction.Restore = () => EditMetadata(content);
+            interaction.Restore = () => FetchMetadata(content);
             interaction.ResolveDraft = () => SaveOnClose(interaction, content, canSave: true);
-            var dialog = new Controls.Dialog { Content = content, Glyph = Lucide.Film, PrimaryGlyph = Lucide.Check };
+            var dialog = new Controls.Dialog
+            {
+                Content = content,
+                Glyph = Lucide.Film,
+                PrimaryGlyph = Lucide.Check,
+            };
             dialog.Opened += async (_, _) =>
             {
                 if (!content.HasDraft)
                     await content.Find();
             };
+            void OpenSettings(object? sender, SettingTarget target)
+            {
+                settings = target;
+                dialog.Hide();
+            }
+            content.SettingsRequested += OpenSettings;
             try
             {
-                await ShowEditor(interaction, dialog, content, () =>
-                {
-                    dialog.Title = Model.Text.Get("library", "edit_metadata");
-                    dialog.PrimaryButtonText = Model.Text.Get("dialog", "save");
-                    dialog.PrimaryToolTip = Model.Text.Get("library", "save_metadata_tip");
-                    content.RefreshText();
-                });
+                await ShowEditor(
+                    interaction,
+                    dialog,
+                    content,
+                    () =>
+                    {
+                        dialog.Title = Model.Text.Get("library", "fetch_metadata");
+                        dialog.PrimaryButtonText = Model.Text.Get("dialog", "save");
+                        dialog.PrimaryToolTip = Model.Text.Get("library", "save_metadata_tip");
+                        content.RefreshText();
+                    }
+                );
             }
-            finally { content.Cancel(); }
-            return true;
-        });
-    }
-
-    private Task<bool> ConfigureVideo(VideoEditor? editor = null, string? section = null)
-    {
-        section ??= Model.Library.Option?.TextSection;
-        editor ??= Model.Library.CreateEditor();
-        if (editor is null || section is null)
-            return Task.FromResult(false);
-        return Interact(async interaction =>
-        {
-            interaction.Restore = () => ConfigureVideo(editor, section);
-            interaction.ResolveDraft = () => SaveOnClose(interaction, editor.Draft, canSave: true);
-            var dialog = new Controls.Dialog { Content = editor.Content, Glyph = Lucide.Globe, PrimaryGlyph = Lucide.Check };
-            await ShowEditor(interaction, dialog, editor.Draft, () =>
+            finally
             {
-                dialog.Title = Model.Text.Get(section, "configure_title");
-                dialog.PrimaryButtonText = Model.Text.Get("dialog", "save");
-                dialog.PrimaryToolTip = Model.Text.Get(section, "save_hint");
-                editor.RefreshText();
-            });
+                content.SettingsRequested -= OpenSettings;
+                content.Cancel();
+            }
             return true;
         });
+        // Settings opens after the dialog has closed, because navigation is
+        // refused while a dialog is open.
+        if (settings is { } target)
+            await ShowSettings(target);
     }
 
     private void RefreshLibraryFilters()
@@ -429,17 +514,29 @@ public sealed partial class MainWindow
             {
                 if (!controls.TryGetValue(section.Key, out var choices))
                 {
-                    choices = new ComboBox { Tag = section.Key, HorizontalAlignment = HorizontalAlignment.Stretch };
-                    Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(choices, "LibraryFilter-" + section.Key);
+                    choices = new ComboBox
+                    {
+                        Tag = section.Key,
+                        HorizontalAlignment = HorizontalAlignment.Stretch,
+                    };
+                    Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(
+                        choices,
+                        "LibraryFilter-" + section.Key
+                    );
                     choices.Items.Add(new ComboBoxItem());
                     choices.SelectionChanged += (_, _) =>
                     {
                         if (!_refreshingFilters)
-                            Model.Library.Filter(section.Key, (choices.SelectedItem as ComboBoxItem)?.Tag as string);
+                            Model.Library.Filter(
+                                section.Key,
+                                (choices.SelectedItem as ComboBoxItem)?.Tag as string
+                            );
                     };
                 }
                 choices.Header = Model.Text.Get("library", section.Key);
-                var existing = choices.Items.OfType<ComboBoxItem>().Where(item => item.Tag is string)
+                var existing = choices
+                    .Items.OfType<ComboBoxItem>()
+                    .Where(item => item.Tag is string)
                     .ToDictionary(item => (string)item.Tag);
                 var all = (ComboBoxItem)choices.Items[0];
                 all.Content = Model.Text.Get("filters", "all");
@@ -449,15 +546,25 @@ public sealed partial class MainWindow
                 {
                     if (!existing.TryGetValue(facet.Value, out var item))
                         item = new ComboBoxItem { Tag = facet.Value };
-                    var label = Model.Library.FilterText(facet.Section, facet.Value);
+                    var label = facet.Section == "series"
+                        ? facet.Label ?? Model.Text.Get("library", "series")
+                        : Model.Library.FilterText(facet.Section, facet.Value);
                     item.Content = Model.Text.Format("filters", "count", label, facet.Count);
                     items.Add(item);
                     if (Model.Library.Filters.GetValueOrDefault(section.Key) == facet.Value)
                         selected = item;
                 }
+                // WinUI throws ArgumentException when an item it still has
+                // selected is removed, which happens when a filter is cleared
+                // outside this box and its value has no files left.
+                if (!choices.Items.SequenceEqual(items))
+                    choices.SelectedItem = null;
                 for (var index = 0; index < items.Count; index++)
                 {
-                    if (index < choices.Items.Count && ReferenceEquals(choices.Items[index], items[index]))
+                    if (
+                        index < choices.Items.Count
+                        && ReferenceEquals(choices.Items[index], items[index])
+                    )
                         continue;
                     choices.Items.Remove(items[index]);
                     choices.Items.Insert(index, items[index]);
@@ -465,7 +572,10 @@ public sealed partial class MainWindow
                 while (choices.Items.Count > items.Count)
                     choices.Items.RemoveAt(choices.Items.Count - 1);
                 choices.SelectedItem = selected;
-                if (position >= panel.Children.Count || !ReferenceEquals(panel.Children[position], choices))
+                if (
+                    position >= panel.Children.Count
+                    || !ReferenceEquals(panel.Children[position], choices)
+                )
                 {
                     panel.Children.Remove(choices);
                     panel.Children.Insert(position, choices);
@@ -475,6 +585,9 @@ public sealed partial class MainWindow
             while (panel.Children.Count > position)
                 panel.Children.RemoveAt(panel.Children.Count - 1);
         }
-        finally { _refreshingFilters = false; }
+        finally
+        {
+            _refreshingFilters = false;
+        }
     }
 }

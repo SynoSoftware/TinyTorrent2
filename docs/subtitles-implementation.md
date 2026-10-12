@@ -106,16 +106,20 @@ created subtitle moves and window-initiated deletion under the
 Filename interpretation and subtitle destinations use the engine-supplied final
 name unchanged. The engine distinguishes that name from its current disk path;
 C# does not strip `.!tt`, because it may be part of the genuine filename.
-No subtitle operation runs while the window is closed. On reopening, C#
+No subtitle operation runs while the window is closed. On reopening, a
+requested search that a failure stopped tries again once, because the reason
+for the failure is not saved. Unfinished automatic work for previously finished
+torrents is cancelled without erasing search history; new unfinished torrents
+remain eligible. C#
 reconciles recorded output paths for still-managed torrents; missed removal
 deletes records without inferring permission to delete files. Native payload
 operations remain unchanged. These decisions replace the earlier open native
 ownership alternatives.
 
 Find counts and queues only supported chosen languages, retaining unsupported
-choices visibly. Saving a different supplier turns Off and cancels pending
-work; finished targets need Find after re-enabling. Correcting the same
-supplier's account preserves accepted targets. Cost text estimates one download
+choices visibly. Saving a different supplier preserves automatic intent and
+accepted targets, discarding supplier-specific pending candidate references.
+Correcting the same supplier's account preserves accepted targets. Cost text estimates one download
 per missing subtitle and explains that retries may use more; no billing ledger
 or unconditional maximum is introduced. These decisions are settled in the
 [feature contract](subtitles.md#configuration), not deferred to the Settings slice.

@@ -57,7 +57,7 @@ std::vector<std::string> TorrentIds(Json const& request)
 // startup failed and left no session.
 std::optional<ErrorCode> Engine::State::Refusal() const
 {
-    if (shuttingDown)
+    if (IsShuttingDown())
     {
         return ErrorCode::ShuttingDown;
     }
@@ -349,10 +349,9 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
         }, BusyFiles::Accepted);
         break;
     case Command::Move:
-        Act(TorrentIds(request), reply, [this, destination = request.at("destination").get<std::string>(),
-            useExisting = request.value("use_existing", false)](auto const& ids, Reply reply)
+        Act(TorrentIds(request), reply, [this, destination = request.at("destination").get<std::string>()](auto const& ids, Reply reply)
         {
-            StartMove(ids, destination, useExisting, [reply](Outcome outcome)
+            StartMove(ids, destination, [reply](Outcome outcome)
             {
                 reply(outcome.error ? Failure(*outcome.error, outcome.detail) : Success());
             });

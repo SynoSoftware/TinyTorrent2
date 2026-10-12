@@ -16,23 +16,6 @@ internal sealed class FileFacts(Database database) : IAsyncDisposable
     internal event EventHandler? Changed;
     internal event EventHandler<Exception>? Failed;
 
-    internal const string Schema = """
-        CREATE TEMP TABLE fact_attempts (entry_id INTEGER PRIMARY KEY, path TEXT COLLATE PATH NOT NULL);
-        """;
-
-    internal const string Reconcile = """
-        WITH facts AS (
-            SELECT s.entry_id,p.*,
-                row_number() OVER (PARTITION BY s.entry_id ORDER BY p.origin,p.file_index) AS rank
-            FROM source_files s JOIN file_facts p USING(origin,file_index)
-        )
-        INSERT INTO file_facts
-        SELECT s.origin,s.file_index,p.created,p.modified,p.title,p.artist,p.album,
-            p.track,p.year,p.genre,p.duration,p.search
-        FROM source_files s JOIN facts p ON p.entry_id=s.entry_id AND p.rank=1
-        WHERE true ON CONFLICT(origin,file_index) DO NOTHING;
-        """;
-
     internal void SetConnected(bool connected)
     {
         lock (_gate)
@@ -71,22 +54,36 @@ internal sealed class FileFacts(Database database) : IAsyncDisposable
                     }
                     _again = false;
                 }
-                var target = await database.Run(connection =>
-                {
-                    using var command = connection.CreateCommand();
-                    command.CommandText = """
-                        SELECT f.entry_id,f.path,f.kind,s.origin,s.file_index FROM current_files f
-                        JOIN source_files s USING(entry_id)
-                        WHERE f.readable=1
-                        AND NOT EXISTS(SELECT 1 FROM file_facts p
-                            JOIN source_files owner USING(origin,file_index) WHERE owner.entry_id=f.entry_id)
-                        AND NOT EXISTS(SELECT 1 FROM fact_attempts a WHERE a.entry_id=f.entry_id AND a.path=f.path COLLATE PATH)
-                        LIMIT 1;
-                        """;
-                    using var reader = command.ExecuteReader();
-                    return reader.Read() ? new Target(reader.GetInt64(0), reader.GetString(1),
-                        reader.GetString(3), reader.GetInt32(4)) { Kind = (FileKind)reader.GetInt32(2) } : null;
-                }, cancellation).ConfigureAwait(false);
+                var target = await database
+                    .Run(
+                        connection =>
+                        {
+                            using var command = connection.CreateCommand();
+                            command.CommandText = """
+                                SELECT f.entry_id,f.path,f.kind,s.origin,s.file_index FROM current_files f
+                                JOIN source_files s USING(entry_id)
+                                WHERE f.readable=1
+                                AND NOT EXISTS(SELECT 1 FROM file_facts p
+                                    JOIN source_files owner USING(origin,file_index) WHERE owner.entry_id=f.entry_id)
+                                AND NOT EXISTS(SELECT 1 FROM fact_attempts a WHERE a.entry_id=f.entry_id AND a.path=f.path COLLATE PATH)
+                                LIMIT 1;
+                                """;
+                            using var reader = command.ExecuteReader();
+                            return reader.Read()
+                                ? new Target(
+                                    reader.GetInt64(0),
+                                    reader.GetString(1),
+                                    reader.GetString(3),
+                                    reader.GetInt32(4)
+                                )
+                                {
+                                    Kind = (FileKind)reader.GetInt32(2),
+                                }
+                                : null;
+                        },
+                        cancellation
+                    )
+                    .ConfigureAwait(false);
                 if (target is null)
                 {
                     lock (_gate)
@@ -99,36 +96,78 @@ internal sealed class FileFacts(Database database) : IAsyncDisposable
                 Facts? facts = null;
                 try
                 {
-                    var file = await StorageFile.GetFileFromPathAsync(target.Path).AsTask(cancellation).ConfigureAwait(false);
-                    var basic = await file.GetBasicPropertiesAsync().AsTask(cancellation).ConfigureAwait(false);
-                    facts = new Facts(file.DateCreated.ToUnixTimeSeconds(), basic.DateModified.ToUnixTimeSeconds());
+                    var file = await StorageFile
+                        .GetFileFromPathAsync(target.Path)
+                        .AsTask(cancellation)
+                        .ConfigureAwait(false);
+                    var basic = await file.GetBasicPropertiesAsync()
+                        .AsTask(cancellation)
+                        .ConfigureAwait(false);
+                    facts = new Facts(
+                        file.DateCreated.ToUnixTimeSeconds(),
+                        basic.DateModified.ToUnixTimeSeconds()
+                    );
                     if (target.Kind == FileKind.Audio)
                     {
-                        var music = await file.Properties.GetMusicPropertiesAsync().AsTask(cancellation).ConfigureAwait(false);
+                        var music = await file
+                            .Properties.GetMusicPropertiesAsync()
+                            .AsTask(cancellation)
+                            .ConfigureAwait(false);
                         facts = facts with
                         {
-                            Title = music.Title, Artist = music.Artist, Album = music.Album,
+                            Title = music.Title,
+                            Artist = music.Artist,
+                            Album = music.Album,
                             Track = music.TrackNumber == 0 ? null : (int)music.TrackNumber,
                             Year = music.Year == 0 ? null : (int)music.Year,
-                            Genre = string.Join(Store.Separator, music.Genre), Duration = (long)music.Duration.TotalSeconds,
+                            Genre = string.Join(Store.Separator, music.Genre),
+                            Duration =
+                                music.Duration > TimeSpan.Zero
+                                    ? (long)music.Duration.TotalSeconds
+                                    : null,
+                            Bitrate = music.Bitrate == 0 ? null : music.Bitrate,
+                        };
+                    }
+                    else if (target.Kind == FileKind.Video)
+                    {
+                        var video = await file
+                            .Properties.GetVideoPropertiesAsync()
+                            .AsTask(cancellation)
+                            .ConfigureAwait(false);
+                        facts = facts with
+                        {
+                            Duration =
+                                video.Duration > TimeSpan.Zero
+                                    ? (long)video.Duration.TotalSeconds
+                                    : null,
+                            Bitrate = video.Bitrate == 0 ? null : video.Bitrate,
+                            Width = video.Width == 0 ? null : (int)video.Width,
+                            Height = video.Height == 0 ? null : (int)video.Height,
                         };
                     }
                 }
                 catch (Exception error) when (error is not OperationCanceledException)
                 {
                     facts = null;
-                    System.Diagnostics.Debug.WriteLine("Library file properties: " + error.GetType().Name);
+                    System.Diagnostics.Debug.WriteLine(
+                        "Library file properties: " + error.GetType().Name
+                    );
                 }
                 lock (_gate)
                     if (!_connected)
                         continue;
-                await database.Run(connection => Save(connection, target, facts), cancellation).ConfigureAwait(false);
+                await database
+                    .Run(connection => Save(connection, target, facts), cancellation)
+                    .ConfigureAwait(false);
                 if (facts is not null)
                     Changed?.Invoke(this, EventArgs.Empty);
             }
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
-        catch (Exception error) { Failed?.Invoke(this, error); }
+        catch (Exception error)
+        {
+            Failed?.Invoke(this, error);
+        }
         finally
         {
             lock (_gate)
@@ -159,10 +198,10 @@ internal sealed class FileFacts(Database database) : IAsyncDisposable
         if (facts is null)
             return false;
         command.CommandText = """
-            INSERT INTO file_facts
-            SELECT origin,file_index,$created,$modified,$title,$artist,$album,$track,$year,$genre,$duration,$search
-            FROM source_files WHERE entry_id=$entry
-            ON CONFLICT(origin,file_index) DO NOTHING;
+            INSERT OR IGNORE INTO file_facts
+            SELECT origin,file_index,$created,$modified,$title,$artist,$album,$track,$year,$genre,$duration,$search,
+                $bitrate,$width,$height
+            FROM source_files WHERE entry_id=$entry;
             """;
         command.Parameters.AddWithValue("$created", facts.Created);
         command.Parameters.AddWithValue("$modified", facts.Modified);
@@ -173,10 +212,17 @@ internal sealed class FileFacts(Database database) : IAsyncDisposable
         command.Parameters.AddWithValue("$year", (object?)facts.Year ?? DBNull.Value);
         command.Parameters.AddWithValue("$genre", facts.Genre);
         command.Parameters.AddWithValue("$duration", (object?)facts.Duration ?? DBNull.Value);
-        command.Parameters.AddWithValue("$search", FileName.Normalize(string.Join(' ', facts.Title,
-            facts.Artist, facts.Album, facts.Year, facts.Genre)));
+        command.Parameters.AddWithValue("$bitrate", (object?)facts.Bitrate ?? DBNull.Value);
+        command.Parameters.AddWithValue("$width", (object?)facts.Width ?? DBNull.Value);
+        command.Parameters.AddWithValue("$height", (object?)facts.Height ?? DBNull.Value);
+        command.Parameters.AddWithValue(
+            "$search",
+            FileName.Normalize(
+                string.Join(' ', facts.Title, facts.Artist, facts.Album, facts.Year, facts.Genre)
+            )
+        );
         command.ExecuteNonQuery();
-        command.CommandText = Store.Invalidate;
+        command.CommandText = Database.Invalidate;
         command.ExecuteNonQuery();
         return true;
     }
@@ -207,5 +253,8 @@ internal sealed class FileFacts(Database database) : IAsyncDisposable
         internal int? Year { get; init; }
         internal string Genre { get; init; } = string.Empty;
         internal long? Duration { get; init; }
+        internal long? Bitrate { get; init; }
+        internal int? Width { get; init; }
+        internal int? Height { get; init; }
     }
 }

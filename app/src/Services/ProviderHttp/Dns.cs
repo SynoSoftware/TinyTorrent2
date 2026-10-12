@@ -6,13 +6,19 @@ namespace Syno.TinyTorrent.Services;
 
 internal sealed partial class ProviderHttp
 {
-    private static async Task<IPAddress[]> Resolve(string host, uint index, CancellationToken cancellation)
+    private static async Task<IPAddress[]> Resolve(
+        string host,
+        uint index,
+        CancellationToken cancellation
+    )
     {
         var addresses = new List<IPAddress>();
         foreach (var type in new ushort[] { 1, 28 })
         {
             cancellation.ThrowIfCancellationRequested();
-            var completed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var completed = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
             DnsCompletion callback = (_, _) => completed.TrySetResult();
             var name = Marshal.StringToHGlobalUni(host);
             var result = Marshal.AllocHGlobal(Marshal.SizeOf<DnsResult>());
@@ -42,13 +48,18 @@ internal sealed partial class ProviderHttp
                     cancellation.ThrowIfCancellationRequested();
                     if (answer.Status is not (0 or 9501 or 9003))
                         throw new Win32Exception(answer.Status);
-                    for (var current = answer.Records; current != IntPtr.Zero;)
+                    for (var current = answer.Records; current != IntPtr.Zero; )
                     {
                         var record = Marshal.PtrToStructure<DnsRecord>(current);
                         if (record.Type == type && record.Length >= (type == 1 ? 4 : 16))
                         {
                             var bytes = new byte[type == 1 ? 4 : 16];
-                            Marshal.Copy(current + Marshal.SizeOf<DnsRecord>(), bytes, 0, bytes.Length);
+                            Marshal.Copy(
+                                current + Marshal.SizeOf<DnsRecord>(),
+                                bytes,
+                                0,
+                                bytes.Length
+                            );
                             addresses.Add(new IPAddress(bytes));
                         }
                         current = record.Next;

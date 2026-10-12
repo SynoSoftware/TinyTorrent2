@@ -121,7 +121,7 @@ public class ColumnFitTests
     // ------------------------------------------------------------------ the first fill
 
     /// <summary>
-    /// The table fills its width from the declared widths before any row arrives, and rows that
+    /// The table fills its width from its headers before any row arrives, and rows that
     /// arrive afterwards resize nothing: a fit to them would move every column in front of the
     /// person as the data came in.
     /// </summary>
@@ -130,28 +130,30 @@ public class ColumnFitTests
         TestHost.RunAsync(async () =>
         {
             Table table = Build(Column("a", 200), Column("b", 150));
+            foreach (var column in table.Columns)
+                column.Header = new Border { Width = 100, Height = 20 };
             Func<int> events = LayoutChanges(table);
             await TableHarness.LoadAsync(table);
             await SettleAsync(table);
 
             Assert.AreEqual(
-                400d,
+                350d,
                 TableHarness.EffectiveWidth(table, "a"),
                 0d,
-                "200:150 scaled to 700"
+                "equal headers share 700 equally"
             );
-            Assert.AreEqual(300d, TableHarness.EffectiveWidth(table, "b"), 0d);
+            Assert.AreEqual(350d, TableHarness.EffectiveWidth(table, "b"), 0d);
 
             table.ItemsSource = Rows(20, 100);
             await SettleAsync(table);
 
             Assert.AreEqual(
-                400d,
+                350d,
                 TableHarness.EffectiveWidth(table, "a"),
                 0d,
                 "the rows resized nothing"
             );
-            Assert.AreEqual(300d, TableHarness.EffectiveWidth(table, "b"), 0d);
+            Assert.AreEqual(350d, TableHarness.EffectiveWidth(table, "b"), 0d);
             Assert.AreEqual(
                 0,
                 events(),
@@ -159,20 +161,23 @@ public class ColumnFitTests
             );
         });
 
-    /// <summary>The fill happens once: a table that later changes width keeps its columns.</summary>
     [TestMethod]
-    public Task ALaterWidthIsNotFilledAgain() =>
+    public Task ResizingFillsTheNewWidthWithoutReportingALayoutChange() =>
         TestHost.RunAsync(async () =>
         {
             Table table = Build(Column("a", 200), Column("b", 150));
+            foreach (var column in table.Columns)
+                column.Header = new Border { Width = 100, Height = 20 };
             await TableHarness.LoadAsync(table);
             await SettleAsync(table);
+            Func<int> events = LayoutChanges(table);
 
             table.Width = 500;
             await SettleAsync(table);
 
-            Assert.AreEqual(400d, TableHarness.EffectiveWidth(table, "a"), 0d);
-            Assert.AreEqual(300d, TableHarness.EffectiveWidth(table, "b"), 0d);
+            Assert.AreEqual(250d, TableHarness.EffectiveWidth(table, "a"), 0d);
+            Assert.AreEqual(250d, TableHarness.EffectiveWidth(table, "b"), 0d);
+            Assert.AreEqual(0, events());
         });
 
     [TestMethod]
@@ -193,13 +198,18 @@ public class ColumnFitTests
         TestHost.RunAsync(async () =>
         {
             Table table = Build(Column("a", 200), Column("b", 150));
+            foreach (var column in table.Columns)
+                column.Header = new Border { Width = 100, Height = 20 };
             table.Layout = System.Text.Json.JsonSerializer.Deserialize<ColumnLayout>(
-                """{"Order":["a","b"],"VisibilityOverrides":{},"WidthOverrides":{"a":250},"HasManualWidths":true}""")!;
+                """{"Order":["a","b"],"VisibilityOverrides":{},"WidthOverrides":{"a":250},"HasManualWidths":true}"""
+            )!;
             await TableHarness.LoadAsync(table);
             await SettleAsync(table);
-            Assert.AreEqual(400d, TableHarness.EffectiveWidth(table, "a"), 0d);
-            Assert.AreEqual(300d, TableHarness.EffectiveWidth(table, "b"), 0d);
-            Assert.IsFalse(System.Text.Json.JsonSerializer.Serialize(table.Layout).Contains("WidthOverrides"));
+            Assert.AreEqual(350d, TableHarness.EffectiveWidth(table, "a"), 0d);
+            Assert.AreEqual(350d, TableHarness.EffectiveWidth(table, "b"), 0d);
+            Assert.IsFalse(
+                System.Text.Json.JsonSerializer.Serialize(table.Layout).Contains("WidthOverrides")
+            );
         });
 
     // ------------------------------------------------------------------ what a fit refuses
@@ -292,7 +302,12 @@ public class ColumnFitTests
             table.FillWidth();
 
             double edge = Descendants<Header.Strip>(table).First().ActualWidth;
-            Assert.AreEqual(edge, TableHarness.TotalWidth(table), 0.5, "the columns end at the edge");
+            Assert.AreEqual(
+                edge,
+                TableHarness.TotalWidth(table),
+                0.5,
+                "the columns end at the edge"
+            );
 
             // Fitted, a is its 200 header and b its 100 cell, each plus the inset; the one factor then
             // spreads those over the whole width.

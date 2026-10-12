@@ -16,7 +16,7 @@ public sealed partial class Table
 {
     private static readonly Size Unbounded = new(double.PositiveInfinity, double.PositiveInfinity);
 
-    private bool _filledOnce;
+    private readonly List<(UIElement Element, long Token)> _visibilityObservers = [];
 
     private static readonly Thickness DefaultCellPadding = new(12, 6, 12, 6);
 
@@ -83,16 +83,25 @@ public sealed partial class Table
     /// Fit each visible resizable column, then scale those columns so they end at the table's
     /// right edge, and report the whole operation once.
     /// </summary>
-    public void FillWidth()
+    public void FillWidth() => FillWidth(notify: true);
+
+    private void FillWidth(bool notify)
     {
         // The fit and the scale each move widths, and a second fill moves them away and back, so
         // only the widths the command ends with say whether it changed anything.
-        double[] before = EffectiveLayout.VisibleColumns.Select(visible => visible.Width).ToArray();
+        double[] before = notify
+            ? EffectiveLayout.VisibleColumns.Select(visible => visible.Width).ToArray()
+            : [];
 
         FitVisible();
         ScaleToWidth();
 
-        if (!EffectiveLayout.VisibleColumns.Select(visible => visible.Width).SequenceEqual(before))
+        if (
+            notify
+            && !EffectiveLayout
+                .VisibleColumns.Select(visible => visible.Width)
+                .SequenceEqual(before)
+        )
         {
             RaiseLayoutChanged(LayoutChange.Fit);
         }
@@ -165,36 +174,83 @@ public sealed partial class Table
         return changed;
     }
 
-    private void OnInitialLayout(object? sender, object args) => FillOnce();
-
-    /// <summary>
-    /// Section 10's first fill: after the table's first visible layout, scale the declared widths to
-    /// it. Later gestures change widths only for this table's lifetime.
-    /// </summary>
-    /// <remarks>
-    /// The scale alone, without <see cref="FillWidth"/>'s fit: a fit would measure whatever rows
-    /// happen to be realized at that moment, and the declared widths are the host's proportions.
-    /// Silent, as the rest of the initial layout is.
-    /// </remarks>
-    private void FillOnce()
+    private void WatchVisibility()
     {
-        if (_filledOnce || !_schemaCaptured || !IsLoaded || ActualHeight <= 0
-            || _headerStrip is not { ActualWidth: > 0 })
+        StopWatchingVisibility();
+        for (
+            DependencyObject? ancestor = this;
+            ancestor is not null;
+            ancestor = VisualTreeHelper.GetParent(ancestor)
+        )
+        {
+            if (ancestor is UIElement element)
+                _visibilityObservers.Add(
+                    (
+                        element,
+                        element.RegisterPropertyChangedCallback(
+                            VisibilityProperty,
+                            OnFillVisibilityChanged
+                        )
+                    )
+                );
+        }
+    }
+
+    private void StopWatchingVisibility()
+    {
+        foreach (var (element, token) in _visibilityObservers)
+            element.UnregisterPropertyChangedCallback(VisibilityProperty, token);
+        _visibilityObservers.Clear();
+    }
+
+    private void OnFillVisibilityChanged(DependencyObject sender, DependencyProperty property) =>
+        QueueFill();
+
+    private void OnFillSizeChanged(object sender, SizeChangedEventArgs args)
+    {
+        if (
+            args.NewSize.Width != args.PreviousSize.Width
+            || args.PreviousSize.Height <= 0 && args.NewSize.Height > 0
+        )
+            QueueFill();
+    }
+
+    private void QueueFill()
+    {
+        if (!IsLoaded)
+            return;
+        // Coalesce visibility and size changes until rows and the header have
+        // their new bounds; fitting from SizeChanged would use the old layout.
+        LayoutUpdated -= OnFillLayout;
+        LayoutUpdated += OnFillLayout;
+    }
+
+    private void OnFillLayout(object? sender, object args)
+    {
+        LayoutUpdated -= OnFillLayout;
+        if (
+            !_schemaCaptured
+            || !IsLoaded
+            || ActualHeight <= 0
+            || _headerStrip is not { ActualWidth: > 0 }
+        )
         {
             return;
         }
 
-        // A hidden tab can have measured widths before its first visible arrangement.
-        for (DependencyObject? ancestor = this; ancestor is not null; ancestor = VisualTreeHelper.GetParent(ancestor))
+        // A collapsed ancestor can leave nonzero bounds from an earlier layout.
+        for (
+            DependencyObject? ancestor = this;
+            ancestor is not null;
+            ancestor = VisualTreeHelper.GetParent(ancestor)
+        )
         {
             if (ancestor is UIElement { Visibility: Visibility.Collapsed })
                 return;
         }
 
-        _filledOnce = true;
-        LayoutUpdated -= OnInitialLayout;
-
-        ScaleToWidth();
+        // Automatic fills do not save layout: widths belong to this instance.
+        FillWidth(notify: false);
     }
 
     /// <summary>

@@ -2,124 +2,219 @@ using System.Globalization;
 using System.Net;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using Syno.TinyTorrent.Library;
 using Syno.TinyTorrent.Models;
 using Syno.TinyTorrent.Services;
 
 namespace Syno.TinyTorrent.Library.Public;
 
-internal sealed class Provider(ProviderHttp http, Settings settings) : IConfigurable
+/// <summary>
+/// A movie website. The base reads pages and describes a movie from its
+/// JSON-LD; each website supplies its addresses and the lists its pages show.
+/// </summary>
+internal abstract class Provider(string catalogId, Uri origin, IPageReader reader) : IProvider
 {
-    internal static IReadOnlyList<Website> Websites { get; } =
-    [
-        new("imdb", "IMDb", new("https://www.imdb.com")),
-        new("rottentomatoes", "Rotten Tomatoes", new("https://www.rottentomatoes.com")),
-    ];
-    private readonly Browser _browser = new(http);
-    private Website Website => settings.Website;
-    private Uri Origin => Website.Origin;
-    public string CatalogId => "public/" + Website.WebsiteId;
-    public bool IsAvailable => Browser.IsAvailable;
+    internal const int PageLimit = 8 * 1024 * 1024;
+    public string CatalogId => catalogId;
+    public bool IsAvailable => reader.IsAvailable;
     public bool IsLocalized => false;
-    public VideoSchedule Schedule => settings.Seconds == 0
-        ? new VideoSchedule.Manual() : new VideoSchedule.Selection(TimeSpan.FromSeconds(settings.Seconds));
+#if CAPTURE
+    // A capture review shows presentation only, so it never asks the website.
+    public VideoSchedule Schedule => VideoSchedule.Manual;
+#else
+    public VideoSchedule Schedule => VideoSchedule.Background;
+#endif
     public IReadOnlySet<VideoKind> Kinds { get; } = new HashSet<VideoKind> { VideoKind.Movie };
 
-    internal static IProvider Create(ProviderHttp http, IReadOnlyDictionary<string, string> values) =>
-        new Provider(http, Settings.Read(values));
-
-    public VideoEditor Edit(Strings text, Func<IReadOnlyDictionary<string, string>, Task> save)
+    // Both Rotten Tomatoes options share one catalogue, because both read the
+    // same pages. IMDb has no HTTP option: it answers a request without a
+    // browser with a bot challenge instead of the page.
+    internal static IReadOnlyList<ProviderOption> Options(ProviderHttp http)
     {
-        var editor = new WebsiteDialog(text, settings, replacement => save(replacement.Values));
-        return new VideoEditor(editor, editor, editor.RefreshText);
+        var browser = new Browser(http);
+        var pages = new Http(http);
+        Uri privacy = new("https://www.versantprivacy.com/privacy");
+        Uri terms = new("https://www.rottentomatoes.com/policies/terms-and-policies");
+        return
+        [
+            new(
+                "imdb",
+                "IMDb",
+                "websites",
+                new("https://www.imdb.com/privacy"),
+                new("https://www.imdb.com/conditions"),
+                () => new Imdb(browser)
+            ),
+            new(
+                "rottentomatoes",
+                "Rotten Tomatoes",
+                "websites",
+                privacy,
+                terms,
+                () => new RottenTomatoes(browser)
+            ),
+            new(
+                "rottentomatoes_http",
+                "Rotten Tomatoes",
+                "websites_http",
+                privacy,
+                terms,
+                () => new RottenTomatoes(pages)
+            ),
+        ];
     }
 
     internal static VideoException Invalid() => new("websites", "invalid_page");
 
-    public async Task<IReadOnlyList<VideoChoice>> Search(string query, string language, CancellationToken cancellation)
+    // A missing page concerns one movie, such as a saved choice the website
+    // has since removed; any other failed reply stops the website's lookups.
+    internal static VideoException Failure(int status) =>
+        status switch
+        {
+            403 => new ProviderException("websites", "refused"),
+            404 or 410 => Invalid(),
+            _ => new ProviderException("websites", "server_error", detail: status.ToString(CultureInfo.InvariantCulture)),
+        };
+
+    internal static ProviderException Unreachable(string reason, Exception? inner = null) =>
+        new("websites", "unreachable", inner: inner, detail: reason);
+
+    internal static ProviderException BrowserFailed(Exception? inner = null) =>
+        new("websites", "browser_failed", inner: inner);
+
+    /// <summary>The search page's path and query for <paramref name="query"/>.</summary>
+    protected abstract string SearchPath(string query);
+
+    /// <summary>The canonical form of a movie page's path, or null when <paramref name="path"/> is not one.</summary>
+    protected abstract string? Canonical(string path);
+
+    internal abstract IReadOnlyList<VideoChoice> Choices(string html);
+
+    /// <summary>The other movies a movie page lists, which Library saves as choices.</summary>
+    protected abstract IEnumerable<VideoChoice?> Related(string html);
+
+    /// <summary>A movie's record built from its search listing, or null when the listing cannot describe it.</summary>
+    protected virtual VideoRecord? Listing(VideoChoice choice, Uri address) => null;
+
+    /// <summary>The movie facts to save from a movie page; a website adds what its JSON-LD lacks.</summary>
+    protected virtual JsonElement Content(JsonElement movie, string html) => movie.Clone();
+
+    protected virtual Rating? ReadImdbRating(JsonElement movie) => null;
+
+    public async Task<IReadOnlyList<VideoChoice>> Search(
+        string query,
+        string language,
+        CancellationToken cancellation
+    )
     {
-        var address = new Uri(Origin, Website.WebsiteId == "imdb"
-            ? "/find/?s=tt&ttype=ft&q=" + Uri.EscapeDataString(query)
-            : "/search?search=" + Uri.EscapeDataString(query));
-        try { return Choices(await _browser.Read(address, cancellation).ConfigureAwait(false)); }
-        catch (RegexMatchTimeoutException) { throw Invalid(); }
+        var html = await reader
+            .Read(new Uri(origin, SearchPath(query)), cancellation)
+            .ConfigureAwait(false);
+        try
+        {
+            var choices = Choices(html);
+            return choices.Count == 0 && Refused(html)
+                ? throw new ProviderException("websites", "refused")
+                : choices;
+        }
+        catch (VideoException error) when (error is not ProviderException && Refused(html))
+        {
+            throw new ProviderException("websites", "refused");
+        }
+        catch (RegexMatchTimeoutException)
+        {
+            throw Invalid();
+        }
     }
 
-    public async Task<VideoInformation> Describe(VideoChoice choice, VideoRequest request, CancellationToken cancellation)
+    public async Task<VideoInformation> Describe(
+        VideoChoice choice,
+        VideoRequest request,
+        CancellationToken cancellation
+    )
     {
         if (choice.Kind != VideoKind.Movie || !Address(choice.VideoId, out var address))
             throw Invalid();
-        try { return Describe(await _browser.Read(address, cancellation).ConfigureAwait(false), address); }
-        catch (RegexMatchTimeoutException) { throw Invalid(); }
-    }
-
-    internal IReadOnlyList<VideoChoice> Choices(string html)
-    {
-        Refusal(html);
-        var choices = new Dictionary<string, VideoChoice>(StringComparer.Ordinal);
-        IEnumerable<(string Html, int? Year)> rows = Website.WebsiteId == "rottentomatoes"
-            ? Regex.Matches(html, "<search-page-media-row\\b(?<attributes>[^>]*)>(?<content>.*?)</search-page-media-row\\s*>",
-                RegexOptions.IgnoreCase | RegexOptions.Singleline, TimeSpan.FromSeconds(1))
-                .Select(row => (Html: row.Groups["content"].Value,
-                    Year: int.TryParse(Attribute(row.Groups["attributes"].Value, "release-year"), out var year) ? (int?)year : null))
-            : [(Html: html, Year: (int?)null)];
-        foreach (var row in rows)
-        foreach (Match match in Regex.Matches(row.Html, "<a\\b(?<attributes>[^>]*)>(?<content>.*?)</a\\s*>",
-            RegexOptions.IgnoreCase | RegexOptions.Singleline, TimeSpan.FromSeconds(1)))
+        if (
+            await request.Saved(address.AbsoluteUri, cancellation).ConfigureAwait(false) is
+            { } saved
+        )
+            return Information(saved);
+        if (Listing(choice, address) is { } listed)
+            return Information(listed);
+        var page = await reader.Read(address, cancellation).ConfigureAwait(false);
+        try
         {
-            var href = Attribute(match.Groups["attributes"].Value, "href");
-            if (!Address(href, out var address))
-                continue;
-            var title = WebUtility.HtmlDecode(Regex.Replace(match.Groups["content"].Value,
-                "<[^>]+>", " ", RegexOptions.None, TimeSpan.FromSeconds(1))).Trim();
-            title = Regex.Replace(title, "\\s+", " ", RegexOptions.None, TimeSpan.FromSeconds(1));
-            if (title.Length == 0 || title.Length > 300)
-                continue;
-            choices.TryAdd(address.AbsoluteUri, new VideoChoice(CatalogId, address.AbsoluteUri, VideoKind.Movie, title) { Year = row.Year });
+            return Describe(page, address);
         }
-        return choices.Values.ToArray();
+        catch (VideoException error) when (error is not ProviderException && Refused(page))
+        {
+            throw new ProviderException("websites", "refused");
+        }
+        catch (RegexMatchTimeoutException)
+        {
+            throw Invalid();
+        }
     }
 
     internal VideoInformation Describe(string html, Uri address)
     {
-        Refusal(html);
-        foreach (Match script in Regex.Matches(html, "<script\\b(?<attributes>[^>]*)>(?<content>.*?)</script\\s*>",
-            RegexOptions.IgnoreCase | RegexOptions.Singleline, TimeSpan.FromSeconds(1)))
+        foreach (var script in Scripts(html, "type", "application/ld+json"))
         {
-            if (!Attribute(script.Groups["attributes"].Value, "type").Equals("application/ld+json", StringComparison.OrdinalIgnoreCase))
-                continue;
             JsonDocument document;
-            try { document = JsonDocument.Parse(script.Groups["content"].Value); }
-            catch (JsonException) { continue; }
+            try
+            {
+                document = JsonDocument.Parse(script);
+            }
+            catch (JsonException)
+            {
+                continue;
+            }
             using (document)
             {
                 foreach (var movie in Objects(document.RootElement))
                 {
-                    if (!movie.TryGetProperty("@type", out var type) || !Values(type).Contains("Movie", StringComparer.Ordinal))
+                    if (
+                        !movie.TryGetProperty("@type", out var type)
+                        || !Values(type).Contains("Movie", StringComparer.Ordinal)
+                        || !Address(Text(movie, "url"), out var canonical)
+                        || canonical != address
+                    )
                         continue;
-                    if (!Address(Text(movie, "url"), out var canonical) || canonical != address)
-                        continue;
-                    var content = movie.Clone();
-                    if (Website.WebsiteId == "rottentomatoes")
+                    var record = new VideoRecord(
+                        canonical.AbsoluteUri,
+                        Content(movie, html),
+                        DateTimeOffset.UtcNow.ToUnixTimeSeconds()
+                    );
+                    return Information(record) with
                     {
-                        var synopsis = Regex.Match(html,
-                            "<rt-text\\b[^>]*data-qa=[\"']synopsis-value[\"'][^>]*>(?<content>.*?)</rt-text\\s*>",
-                            RegexOptions.IgnoreCase | RegexOptions.Singleline, TimeSpan.FromSeconds(1)).Groups["content"].Value;
-                        synopsis = WebUtility.HtmlDecode(Regex.Replace(synopsis, "<[^>]+>", " ",
-                            RegexOptions.None, TimeSpan.FromSeconds(1))).Trim();
-                        if (synopsis.Length == 0)
-                            throw Invalid();
-                        var facts = new Dictionary<string, JsonElement>();
-                        foreach (var property in movie.EnumerateObject())
-                            facts[property.Name] = property.Value.Clone();
-                        facts["synopsis"] = JsonSerializer.SerializeToElement(synopsis);
-                        content = JsonSerializer.SerializeToElement(facts);
-                    }
-                    return Information(new VideoRecord(canonical.AbsoluteUri, content, DateTimeOffset.UtcNow.ToUnixTimeSeconds()));
+                        Related = Unique(
+                            Related(html).Where(choice => choice?.VideoId != canonical.AbsoluteUri)
+                        ),
+                    };
                 }
             }
         }
         throw Invalid();
+    }
+
+    // A website can answer a blocked request with an ordinary page whose title
+    // names the refusal. Callers ask only when the page held no movie data,
+    // because a movie title such as "The Forbidden Kingdom" contains the same words.
+    private static bool Refused(string html)
+    {
+        var title = Regex
+            .Match(
+                html,
+                "<title[^>]*>(.*?)</title>",
+                RegexOptions.IgnoreCase | RegexOptions.Singleline,
+                TimeSpan.FromSeconds(1)
+            )
+            .Groups[1]
+            .Value;
+        return title.Contains("403", StringComparison.OrdinalIgnoreCase)
+            || title.Contains("forbidden", StringComparison.OrdinalIgnoreCase)
+            || title.Contains("access denied", StringComparison.OrdinalIgnoreCase)
+            || title.Contains("captcha", StringComparison.OrdinalIgnoreCase);
     }
 
     private VideoInformation Information(VideoRecord record)
@@ -133,75 +228,128 @@ internal sealed class Provider(ProviderHttp http, Settings settings) : IConfigur
         if (date.Length == 0)
             date = Text(movie, "dateCreated");
         var year = VideoInformation.ParseYear(date);
-        if (title.Length == 0 || title.Length > 300 || year is < 1888 or > 2200 || synopsis.Length == 0)
+        if (
+            title.Length == 0
+            || title.Length > 300
+            || year is < 1888 or > 2200
+            || synopsis.Length == 0
+        )
             throw Invalid();
         return new VideoInformation(CatalogId, record.Path, title, VideoKind.Movie)
         {
-            Year = year, Genres = Names(movie, "genre"), Cast = Names(movie, "actor"),
-            Synopsis = synopsis, Keywords = Names(movie, "keywords"), Records = [record],
-            ImdbRating = Website.WebsiteId == "imdb" ? ReadRating(movie) : null,
+            Year = year,
+            Genres = Names(movie, "genre"),
+            Cast = Names(movie, "actor"),
+            Synopsis = synopsis,
+            Keywords = Names(movie, "keywords"),
+            Records = [record],
+            ImdbRating = ReadImdbRating(movie),
         };
-    }
-
-    private static Rating? ReadRating(JsonElement movie)
-    {
-        if (!movie.TryGetProperty("aggregateRating", out var aggregate) || aggregate.ValueKind != JsonValueKind.Object)
-            return null;
-        double? Number(string name)
-        {
-            if (!aggregate.TryGetProperty(name, out var field))
-                return null;
-            return field.ValueKind == JsonValueKind.Number && field.TryGetDouble(out var number) ? number :
-                field.ValueKind == JsonValueKind.String && double.TryParse(field.GetString(),
-                    NumberStyles.Float, CultureInfo.InvariantCulture, out number) ? number : null;
-        }
-        var best = aggregate.TryGetProperty("bestRating", out _) ? Number("bestRating") : 10;
-        var worst = aggregate.TryGetProperty("worstRating", out _) ? Number("worstRating") : 1;
-        if (Number("ratingValue") is not { } value || !double.IsFinite(value) ||
-            Number("ratingCount") is not { } count || !double.IsFinite(count) || count <= 0 || count != Math.Truncate(count) ||
-            best is not { } maximum || !double.IsFinite(maximum) || maximum <= 0 ||
-            worst is not { } minimum || !double.IsFinite(minimum) || minimum < 0 || minimum >= maximum ||
-            value < minimum || value > maximum)
-            return null;
-        return new Rating(value / maximum * 10, VideoKind.Movie);
     }
 
     private bool Address(string value, out Uri address)
     {
-        address = Origin;
-        if (!Uri.TryCreate(Origin, value, out var candidate) || candidate.Scheme != Uri.UriSchemeHttps ||
-            !candidate.Host.Equals(Origin.Host, StringComparison.OrdinalIgnoreCase) || !candidate.IsDefaultPort ||
-            candidate.UserInfo.Length != 0)
+        address = origin;
+        if (
+            !Uri.TryCreate(origin, value, out var candidate)
+            || candidate.Scheme != Uri.UriSchemeHttps
+            || !candidate.Host.Equals(origin.Host, StringComparison.OrdinalIgnoreCase)
+            || !candidate.IsDefaultPort
+            || candidate.UserInfo.Length != 0
+            || Canonical(candidate.AbsolutePath) is not { } path
+        )
             return false;
-        var pattern = Website.WebsiteId == "imdb" ? "^/title/tt[0-9]+/?$" : "^/m/[a-z0-9_]+/?$";
-        if (!Regex.IsMatch(candidate.AbsolutePath, pattern, RegexOptions.None, TimeSpan.FromSeconds(1)))
-            return false;
-        address = new Uri(Origin, candidate.AbsolutePath.TrimEnd('/') + (Website.WebsiteId == "imdb" ? "/" : string.Empty));
+        address = new Uri(origin, path);
         return true;
     }
 
-    private static void Refusal(string html)
-    {
-        var title = Regex.Match(html, "<title[^>]*>(.*?)</title>", RegexOptions.IgnoreCase | RegexOptions.Singleline,
-            TimeSpan.FromSeconds(1)).Groups[1].Value;
-        if (title.Contains("403", StringComparison.OrdinalIgnoreCase) ||
-            title.Contains("forbidden", StringComparison.OrdinalIgnoreCase) ||
-            title.Contains("access denied", StringComparison.OrdinalIgnoreCase) ||
-            title.Contains("captcha", StringComparison.OrdinalIgnoreCase))
-            throw new ProviderException("websites", "refused");
-    }
+    protected VideoChoice? Choice(
+        string href,
+        string title,
+        int? year,
+        string original,
+        JsonElement content
+    ) =>
+        !Address(href, out var address) || title.Length is 0 or > 300
+            ? null
+            : new VideoChoice(CatalogId, address.AbsoluteUri, VideoKind.Movie, title)
+            {
+                Year = year,
+                Original = original.Length == 0 || original == title ? null : original,
+                Content = content.Clone(),
+            };
 
-    private static string Attribute(string attributes, string name) => WebUtility.HtmlDecode(Regex.Match(attributes,
-        "(?:^|\\s)" + name + "\\s*=\\s*([\"'])(.*?)\\1", RegexOptions.IgnoreCase | RegexOptions.Singleline,
-        TimeSpan.FromSeconds(1)).Groups[2].Value);
+    protected static VideoChoice[] Unique(IEnumerable<VideoChoice?> choices) =>
+        choices.OfType<VideoChoice>().DistinctBy(choice => choice.VideoId).ToArray();
+
+    /// <summary>The content of each script whose <paramref name="attribute"/> is <paramref name="value"/>.</summary>
+    protected static IEnumerable<string> Scripts(string html, string attribute, string value) =>
+        Regex
+            .Matches(
+                html,
+                "<script\\b(?<attributes>[^>]*)>(?<content>.*?)</script\\s*>",
+                RegexOptions.IgnoreCase | RegexOptions.Singleline,
+                TimeSpan.FromSeconds(1)
+            )
+            .Where(script =>
+                Attribute(script.Groups["attributes"].Value, attribute)
+                    .Equals(value, StringComparison.OrdinalIgnoreCase)
+            )
+            .Select(script => script.Groups["content"].Value);
+
+    protected static string Attribute(string attributes, string name) =>
+        WebUtility.HtmlDecode(
+            Regex
+                .Match(
+                    attributes,
+                    "(?:^|\\s)" + name + "\\s*=\\s*([\"'])(.*?)\\1",
+                    RegexOptions.IgnoreCase | RegexOptions.Singleline,
+                    TimeSpan.FromSeconds(1)
+                )
+                .Groups[2]
+                .Value
+        );
+
+    protected static string Text(JsonElement value, string property) =>
+        Child(value, property) is { ValueKind: JsonValueKind.String } text
+            ? WebUtility.HtmlDecode(text.GetString() ?? string.Empty).Trim()
+            : string.Empty;
+
+    protected static int? Number(JsonElement value, string property) =>
+        Child(value, property) is { ValueKind: JsonValueKind.Number } number
+        && number.TryGetInt32(out var result)
+            ? result
+            : null;
+
+    protected static IReadOnlyList<string> Names(JsonElement value, string property) =>
+        Values(Child(value, property)).Where(item => item.Length > 0).Distinct().ToArray();
+
+    // A missing property reads as an undefined element, so nested reads need no checks.
+    protected static JsonElement Child(JsonElement value, string property) =>
+        value.ValueKind == JsonValueKind.Object && value.TryGetProperty(property, out var child)
+            ? child
+            : default;
+
+    protected static string Plain(string html) =>
+        Regex
+            .Replace(
+                WebUtility.HtmlDecode(
+                    Regex.Replace(html, "<[^>]+>", " ", RegexOptions.None, TimeSpan.FromSeconds(1))
+                ),
+                "\\s+",
+                " ",
+                RegexOptions.None,
+                TimeSpan.FromSeconds(1)
+            )
+            .Trim();
 
     private static IEnumerable<JsonElement> Objects(JsonElement value)
     {
         if (value.ValueKind == JsonValueKind.Array)
         {
             foreach (var item in value.EnumerateArray())
-                foreach (var child in Objects(item))
-                    yield return child;
+            foreach (var child in Objects(item))
+                yield return child;
         }
         else if (value.ValueKind == JsonValueKind.Object)
         {
@@ -212,20 +360,20 @@ internal sealed class Provider(ProviderHttp http, Settings settings) : IConfigur
         }
     }
 
-    private static IEnumerable<string> Values(JsonElement value) => value.ValueKind switch
-    {
-        JsonValueKind.Array => value.EnumerateArray().SelectMany(Values),
-        JsonValueKind.String => [WebUtility.HtmlDecode(value.GetString() ?? string.Empty)],
-        JsonValueKind.Object => [Text(value, "name")],
-        _ => [],
-    };
-
-    private static string Text(JsonElement value, string property) =>
-        value.TryGetProperty(property, out var text) && text.ValueKind == JsonValueKind.String
-            ? WebUtility.HtmlDecode(text.GetString() ?? string.Empty).Trim() : string.Empty;
-
-    private static IReadOnlyList<string> Names(JsonElement value, string property) => value.TryGetProperty(property, out var items)
-        ? Values(items).Where(item => item.Length > 0).Distinct().ToArray() : [];
+    private static IEnumerable<string> Values(JsonElement value) =>
+        value.ValueKind switch
+        {
+            JsonValueKind.Array => value.EnumerateArray().SelectMany(Values),
+            JsonValueKind.String => [WebUtility.HtmlDecode(value.GetString() ?? string.Empty)],
+            JsonValueKind.Object => [Text(value, "name")],
+            _ => [],
+        };
 }
 
-internal sealed record Website(string WebsiteId, string Name, Uri Origin);
+/// <summary>Returns the HTML of a website page, at most <see cref="Provider.PageLimit"/> characters.</summary>
+internal interface IPageReader
+{
+    bool IsAvailable { get; }
+
+    Task<string> Read(Uri address, CancellationToken cancellation);
+}

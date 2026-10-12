@@ -21,11 +21,13 @@ private:
     struct Activation
     {
         std::string activationId;
+        bool batch;
         std::vector<std::string> sources;
     };
     static LRESULT CALLBACK Procedure(HWND window, UINT message, WPARAM first, LPARAM second);
     LRESULT Handle(UINT message, WPARAM first, LPARAM second);
     void OnTray(WPARAM first, LPARAM second);
+    void OnNotice(PopupPart part);
     void ShowMenu(POINT point);
     void OnTimer();
     void Dispatch(std::shared_ptr<Pipe::Connection> client, Json request, Reply reply);

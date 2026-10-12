@@ -1,9 +1,9 @@
 #pragma once
 #include "Enums.h"
 #include "Strings.h"
+#include "Desktop/Popup.h"
 #include <windows.h>
 #include <oleacc.h>
-#include <memory>
 #include <optional>
 
 namespace tt::desktop
@@ -17,9 +17,9 @@ bool UsesWindow(NoticeKind kind);
 class Tray
 {
 public:
-    // `backgroundOff` is posted to `window` when the person turns off the
-    // background notice from the notice itself.
-    Tray(HWND window, UINT callback, UINT backgroundOff, HWND broadcast, Strings const& strings, bool headless);
+    // `selected` is posted to `window` when the person selects a notice's
+    // popup, with the PopupPart as its WPARAM.
+    Tray(HWND window, UINT callback, UINT selected, HWND broadcast, Strings const& strings, bool headless);
     ~Tray();
     Tray(Tray const&) = delete;
     Tray& operator=(Tray const&) = delete;
@@ -31,14 +31,17 @@ public:
     BOOL Draw(DRAWITEMSTRUCT const& item);
     void Queue(Notice notice);
     void Notify();
+    // The notice whose popup was selected, unless selecting it only dismisses it.
     std::optional<Notice> TakeNotice();
+    // The switch that the selected popup's button turns off.
+    std::optional<NoticeSwitch> TakeSwitch();
 private:
     struct Row
     {
         std::wstring text;
         MSAAMENUINFO name{};
     };
-    // The notices that wait to share the next balloon.
+    // The notices that wait to share the next popup.
     struct Batch
     {
         std::optional<Notice> first;
@@ -47,11 +50,11 @@ private:
         unsigned failureCount = 0;
         ULONGLONG due = 0;
     };
-    class Toast;
     void Apply(DWORD action);
     void Flush();
     void ShowBackground();
-    void Balloon(std::wstring const& message, bool error);
+    // Adds the button that turns `notices` off, when there is a switch for them.
+    void Show(Popup::Content content, std::optional<NoticeSwitch> notices);
     Row* Find(UINT id);
     Row& Fill(TrayItem item);
     void Rename(TrayItem item, std::wstring text);
@@ -61,12 +64,11 @@ private:
     std::wstring Counts() const;
     std::wstring Tooltip() const;
     std::wstring PauseText() const;
-    std::wstring Message(Notice const& notice, unsigned count) const;
-    std::wstring Failures(Notice const& first, unsigned count) const;
-    std::wstring Detail(Notice const& notice) const;
+    Popup::Content Message(Notice const& notice, unsigned count) const;
+    Popup::Content Failures(Notice const& first, unsigned count) const;
+    std::wstring Problem(std::string const& code) const;
     HWND window_;
     UINT callback_;
-    UINT backgroundOff_;
     HWND broadcast_;
     Strings const& strings_;
     bool headless_;
@@ -81,6 +83,7 @@ private:
     Row counts_;
     Batch batch_;
     std::optional<Notice> notice_;
-    std::unique_ptr<Toast> toast_;
+    std::optional<NoticeSwitch> switch_;
+    Popup popup_;
 };
 }

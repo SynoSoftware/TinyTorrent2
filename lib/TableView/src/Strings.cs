@@ -66,11 +66,21 @@ public sealed class Strings
 
     internal string MoveRight => Get("column_menu", "move_right");
 
-    // Section 16: a live row drag's destination, read by UI Automation. In the before-row text,
-    // {0} is the destination row's position and {1} the number of rows.
+    // The destination is also announced by UI Automation; {0} is its numbered position.
     internal string DropBeforeRow => Get("row_drag", "before_row");
 
     internal string DropAtEnd => Get("row_drag", "at_end");
+
+    internal string NothingToMove => Get("row_drag", "nothing_to_move");
+
+    internal string ChoosePosition => Get("row_drag", "choose_position");
+
+    internal string MoveItems(int count) =>
+        Format("row_drag", count == 1 ? "move_one" : "move_many", count);
+
+    internal string DragHint => Get("row_drag", "hint");
+
+    internal string BrowseOrder => Get("row_drag", "browse");
 
     // Section 19: the column list draws its state as an icon rather than as a toggle's own check,
     // so the state has to be said rather than left to the toggle pattern to report.

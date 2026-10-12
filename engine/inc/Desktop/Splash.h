@@ -1,6 +1,7 @@
 #pragma once
 #include "Enums.h"
 #include "Strings.h"
+#include "Desktop/Acrylic.h"
 #include <deque>
 #include <functional>
 #include <string>
@@ -24,19 +25,15 @@ public:
 private:
     static LRESULT CALLBACK Procedure(HWND window, UINT message, WPARAM first, LPARAM second);
     LRESULT Handle(HWND window, UINT message, WPARAM first, LPARAM second);
-    void ApplyTheme();
     void ApplyDpi(UINT dpi, RECT const* bounds);
     void Paint(HWND window);
     Strings const& strings_;
+    Acrylic acrylic_;
     HWND window_ = nullptr;
     HFONT font_ = nullptr;
     ULONGLONG shownAt_ = 0;
     std::function<void()> show_;
     std::deque<ULONGLONG> launches_;
     std::string theme_ = "system";
-    bool buffered_ = false;
-    bool acrylic_ = false;
-    COLORREF foreground_ = RGB(0, 0, 0);
-    COLORREF background_ = RGB(255, 255, 255);
 };
 }

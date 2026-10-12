@@ -16,6 +16,7 @@ public sealed partial class MainWindow
     private ConnectionPage? _connectionPage;
     private readonly Motion _motion = new();
     private readonly Motion _pages = new();
+    private readonly Motion _workspaces = new();
     private readonly Motion _settings = new();
     private WindowPage _page;
     private bool _refreshingFilters;
@@ -44,7 +45,7 @@ public sealed partial class MainWindow
 
     private async Task<bool> ShowTorrents()
     {
-        if (!await Navigate(WindowPage.Torrents))
+        if (!await Model.Navigation.Navigate(WindowPage.Torrents))
             return false;
         Torrents.Focus(FocusState.Programmatic);
         return true;
@@ -52,68 +53,56 @@ public sealed partial class MainWindow
 
     private async Task GoBack()
     {
-        if (HasDialog || Model.IsClosing || _allowClose)
+        var previous = Model.Navigation.Current;
+        if (!await Model.Navigation.GoBack())
             return;
-        if (Model.Page == WindowPage.Settings && _settings.Current is ConnectionPage)
-        {
-            await ReturnToSettings();
-            return;
-        }
-        _fromLibrary = false;
-        await Navigate(_returnPage);
-    }
-
-    private async Task ReturnToSettings()
-    {
-        if (HasDialog || Model.IsClosing || _allowClose || !Model.Settings.Connection.CanLeave)
-            return;
-        if (!await Model.Settings.Connection.Depart())
-            return;
-        if (HasDialog || Model.IsClosing || _allowClose || Model.Page != WindowPage.Settings
-            || _settings.Current is not ConnectionPage)
-            return;
-        if (_settingsPage is { } page)
-            _settings.Show(page, -1);
+        var destination = Model.Navigation.Current;
         DispatcherQueue.TryEnqueue(
             Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,
             () =>
             {
-                if (Model.Page == WindowPage.Settings && ReferenceEquals(_settings.Current, _settingsPage))
+                if (Model.Navigation.Current != destination || HasDialog || Model.IsClosing)
+                    return;
+                if (destination == WindowPage.Settings && previous == WindowPage.Connection)
                     _settingsPage?.FocusConnection();
+                else
+                    FocusPage();
             }
         );
     }
+
+    private void FocusPage()
+    {
+        if (Model.Navigation.Current == WindowPage.Torrents)
+            Torrents.Focus(FocusState.Programmatic);
+        else if (Model.Navigation.Current == WindowPage.Library)
+            _libraryTable.FocusRows();
+        else
+            BackButton.Focus(FocusState.Programmatic);
+    }
+
+    private Task ReturnToSettings() =>
+        Model.Navigation.Current == WindowPage.Connection ? GoBack() : Task.CompletedTask;
 
     private async Task ShowConnection()
     {
         if (
-            !await Model.Settings.PrepareLeave()
-            || Model.Page != WindowPage.Settings
-            || HasDialog
-            || Model.IsClosing
-            || _allowClose
+            Model.Navigation.Current != WindowPage.Settings
+            || !await Model.Navigation.Navigate(WindowPage.Connection)
         )
             return;
         Model.Settings.Connection.Open();
-        _settingsPage?.Depart();
-        if (_connectionPage is null)
-        {
-            _connectionPage = new ConnectionPage(Model.Settings.Connection);
-            _connectionPage.ReturnRequested += async (_, _) => await ReturnToSettings();
-            SettingsContent.Children.Add(_connectionPage);
-        }
-        _settings.Show(_connectionPage);
         DispatcherQueue.TryEnqueue(
             Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,
             () =>
             {
-                if (Model.Page == WindowPage.Settings && _settings.Current is ConnectionPage page)
-                    page.FocusInput();
+                if (Model.Navigation.Current == WindowPage.Connection)
+                    _connectionPage?.FocusInput();
             }
         );
     }
 
-    private async Task<bool> Navigate(WindowPage page)
+    private async Task<bool> PrepareNavigation(WindowPage page)
     {
         if (HasDialog || Model.IsClosing || _allowClose)
             return false;
@@ -125,7 +114,10 @@ public sealed partial class MainWindow
             return false;
         if (Model.Page == WindowPage.Settings)
         {
-            if (!await Model.Settings.PrepareLeave())
+            if (
+                _settingsPage is { } settings && !await settings.SaveFeatures()
+                || !await Model.Settings.PrepareLeave()
+            )
             {
                 var field = _settingsPage?.Recover(null);
                 field?.StartBringIntoView();
@@ -135,24 +127,26 @@ public sealed partial class MainWindow
         }
         if (HasDialog || Model.IsClosing || _allowClose)
             return false;
-        if (page is WindowPage.Settings or WindowPage.About && Model.Page is WindowPage.Torrents or WindowPage.Library)
-            _returnPage = Model.Page;
-        if (Model.Page == WindowPage.Settings && page != WindowPage.Settings && ReferenceEquals(_settings.Current, _settingsPage))
+        if (Model.Navigation.Current == WindowPage.Settings && page != WindowPage.Settings)
             _settingsPage?.Depart();
-        Model.Page = page;
         return true;
     }
 
     private async Task ShowAbout()
     {
-        if (await Navigate(WindowPage.About))
+        if (await Model.Navigation.Navigate(WindowPage.About))
             BackButton.Focus(FocusState.Programmatic);
     }
 
     private async Task ShowSettings(SettingTarget target)
     {
-        if (!await Navigate(WindowPage.Settings))
+        if (!await Model.Navigation.Navigate(WindowPage.Settings))
             return;
+        GetSettingsPage().Navigate(target);
+    }
+
+    private SettingsPage GetSettingsPage()
+    {
         if (_settingsPage is null)
         {
             _settingsPage = new SettingsPage(Model);
@@ -160,12 +154,12 @@ public sealed partial class MainWindow
             _settingsPage.FolderRequested += async (_, setting) =>
                 await PickSettingsFolder(setting);
             _settingsPage.ProxyRequested += async (_, _) => await ShowProxy();
-            _settingsPage.SupplierRequested += async (_, _) => await ShowSupplier();
+            _settingsPage.SupplierRequested += async (_, supplierId) =>
+                await ShowSupplier(supplierId);
             _settingsPage.ConnectionRequested += async (_, _) => await ShowConnection();
             _settingsPage.LayoutChanged += (_, _) => UpdateChrome();
         }
-        _settingsPage.Navigate(target);
-        _settings.Show(_settingsPage, -1);
+        return _settingsPage;
     }
 
     private void UpdatePage()
@@ -178,11 +172,29 @@ public sealed partial class MainWindow
         };
         _pages.Show(content, Model.Page >= _page ? 1 : -1);
         _page = Model.Page;
-        BackButton.Visibility =
-            Model.Page is WindowPage.Torrents or WindowPage.Library && !_fromLibrary ? Visibility.Collapsed : Visibility.Visible;
+        if (Model.Navigation.Current == WindowPage.Connection)
+        {
+            if (_connectionPage is null)
+            {
+                _connectionPage = new ConnectionPage(Model.Settings.Connection);
+                _connectionPage.ReturnRequested += async (_, _) => await ReturnToSettings();
+                SettingsContent.Children.Add(_connectionPage);
+            }
+            _settings.Show(_connectionPage);
+        }
+        else if (Model.Page == WindowPage.Settings)
+            _settings.Show(GetSettingsPage(), -1);
         TorrentMenu.IsEnabled = Model.Page is WindowPage.Torrents or WindowPage.Library;
         ViewMenu.IsEnabled = TorrentMenu.IsEnabled;
         UpdateLibraryPage();
+    }
+
+    private void UpdateBack()
+    {
+        BackButton.Visibility = Model.Navigation.HasBack
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        ((RelayCommand)Back).Refresh();
     }
 
     private async Task<bool> SelectTorrent(Syno.TableView.Selection? selection = null)
@@ -198,10 +210,11 @@ public sealed partial class MainWindow
                 desired.Current as Torrent,
                 LeaveInspector
             );
-            var retained = Model.Selected.Where(Model.VisibleTorrents.Contains).ToArray();
+            var visible = Model.VisibleTorrents.ToHashSet();
+            var retained = Model.Selected.Where(visible.Contains).ToArray();
             Torrents.Selection = new Syno.TableView.Selection(
                 retained,
-                Model.Current is { } current && Model.VisibleTorrents.Contains(current)
+                Model.Current is { } current && visible.Contains(current)
                     ? current
                     : null
             );
@@ -241,18 +254,17 @@ public sealed partial class MainWindow
                     () =>
                     {
                         prompt.Title = Model.Text.Get("changes", editor + "_title");
-                        (prompt.Content, prompt.PrimaryButtonText, prompt.Glyph) =
-                            isAdd
-                                ? (
-                                    Lines([Model.AddDraft.Heading]),
-                                    Model.AddDraft.SubmitText,
-                                    Syno.Lucide.CirclePlus
-                                )
-                                : (
-                                    Lines([Model.FileDraft.Destination]),
-                                    Model.FileDraft.SubmitText,
-                                    Syno.Lucide.FolderInput
-                                );
+                        (prompt.Content, prompt.PrimaryButtonText, prompt.Glyph) = isAdd
+                            ? (
+                                Lines([Model.AddDraft.Heading]),
+                                Model.AddDraft.SubmitText,
+                                Syno.Lucide.CirclePlus
+                            )
+                            : (
+                                Lines([Model.FileDraft.Destination]),
+                                Model.FileDraft.SubmitText,
+                                Syno.Lucide.FolderInput
+                            );
                         prompt.PrimaryGlyph = prompt.Glyph;
                         prompt.PrimaryToolTip = Model.Text.Get("changes", editor + "_save_tip");
                         prompt.SecondaryButtonText = Model.Text.Get("changes", "discard");
@@ -264,7 +276,9 @@ public sealed partial class MainWindow
                 );
                 var resolved = false;
                 if (choice == ContentDialogResult.Primary)
-                    resolved = isAdd ? await Model.AddDraft.Submit() : await Model.FileDraft.Submit();
+                    resolved = isAdd
+                        ? await Model.AddDraft.Submit()
+                        : await Model.FileDraft.Submit();
                 else if (choice == ContentDialogResult.Secondary)
                 {
                     if (isAdd)
@@ -288,18 +302,24 @@ public sealed partial class MainWindow
         if (!keyboard)
             return;
         var page = Model.Page;
-        DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
-        {
-            if (Model.IsFilterOpen && Model.Page == page && !HasDialog)
-                FiltersClose.Focus(FocusState.Keyboard);
-        });
+        DispatcherQueue.TryEnqueue(
+            Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,
+            () =>
+            {
+                if (Model.IsFilterOpen && Model.Page == page && !HasDialog)
+                    FiltersClose.Focus(FocusState.Keyboard);
+            }
+        );
     }
 
     private void OnFiltersClose(object sender, RoutedEventArgs args) => CloseFilters();
 
     private void OnFiltersMinimize(object sender, RoutedEventArgs args)
     {
-        var focus = FiltersMinimize.FocusState == FocusState.Keyboard ? FocusState.Keyboard : FocusState.Programmatic;
+        var focus =
+            FiltersMinimize.FocusState == FocusState.Keyboard
+                ? FocusState.Keyboard
+                : FocusState.Programmatic;
         Model.FilterPane = FilterPane.Compact;
         FiltersToggle.Focus(focus);
     }
@@ -387,9 +407,13 @@ public sealed partial class MainWindow
     {
         var expanded = Model.HasInspector && !Model.IsInspectorCompact;
         var opening = InspectorSurface.Visibility != Visibility.Visible;
-        Split.Visibility = InspectorSurface.Visibility = expanded ? Visibility.Visible : Visibility.Collapsed;
-        InspectorToggle.Visibility = Model.HasInspector && Model.IsInspectorCompact
-            ? Visibility.Visible : Visibility.Collapsed;
+        Split.Visibility = InspectorSurface.Visibility = expanded
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        InspectorToggle.Visibility =
+            Model.HasInspector && Model.IsInspectorCompact
+                ? Visibility.Visible
+                : Visibility.Collapsed;
         if (!Model.HasInspector)
         {
             InspectorRow.Height = new GridLength(0);
@@ -404,7 +428,10 @@ public sealed partial class MainWindow
                 pane.Layout = layout;
             InspectorContent.Content = pane;
         }
-        ((InspectorPane)InspectorContent.Content).ShowLibrary(Model.Page == WindowPage.Library ? Model.Library : null);
+        ((InspectorPane)InspectorContent.Content).ShowLibrary(
+            Model.Page == WindowPage.Library ? Model.Library : null,
+            Model.DownloadSubtitles
+        );
         if (Model.IsInspectorCompact)
         {
             InspectorRow.Height = new GridLength(10);
@@ -422,16 +449,24 @@ public sealed partial class MainWindow
 
     private void OnInspectorMinimize(object sender, RoutedEventArgs args)
     {
-        var focus = ((Button)sender).FocusState == FocusState.Keyboard ? FocusState.Keyboard : FocusState.Programmatic;
+        var focus =
+            ((Button)sender).FocusState == FocusState.Keyboard
+                ? FocusState.Keyboard
+                : FocusState.Programmatic;
         CollapseInspector(focus);
     }
 
     private void OnSplitCommitted(object? sender, double previous)
     {
-        if (InspectorContent.Content is not InspectorPane pane || Split.Value >= 2 * pane.HeaderHeight)
+        if (
+            InspectorContent.Content is not InspectorPane pane
+            || Split.Value >= 2 * pane.HeaderHeight
+        )
             return;
         _splitHeight = previous;
-        CollapseInspector(Split.FocusState == FocusState.Keyboard ? FocusState.Keyboard : FocusState.Programmatic);
+        CollapseInspector(
+            Split.FocusState == FocusState.Keyboard ? FocusState.Keyboard : FocusState.Programmatic
+        );
     }
 
     private void CollapseInspector(FocusState focus)
@@ -442,7 +477,10 @@ public sealed partial class MainWindow
 
     private void OnInspectorOpen(object sender, RoutedEventArgs args)
     {
-        var focus = InspectorToggle.FocusState == FocusState.Keyboard ? FocusState.Keyboard : FocusState.Programmatic;
+        var focus =
+            InspectorToggle.FocusState == FocusState.Keyboard
+                ? FocusState.Keyboard
+                : FocusState.Programmatic;
         Model.IsInspectorCompact = false;
         if (InspectorContent.Content is InspectorPane pane)
             pane.Minimize.Focus(focus);

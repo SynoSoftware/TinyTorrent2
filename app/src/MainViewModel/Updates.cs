@@ -21,8 +21,13 @@ public sealed partial class MainViewModel
     public string UpdateText => Text.Get("about", "update");
     public ICommand OpenUpdate { get; }
     private bool CanCheckUpdates =>
-        !_closed && !_featuresClosed && _connected && !_loading && !_storageFailed
-        && _providerRoute is not null && Settings.Updates.IsOn;
+        !_closed
+        && !_featuresClosed
+        && _connected
+        && !_loading
+        && !_storageFailed
+        && _providerRoute is not null
+        && Settings.Updates.IsOn;
 
     private void ObserveUpdates()
     {
@@ -75,11 +80,17 @@ public sealed partial class MainViewModel
         _updateRequest = cancellation;
         try
         {
-            using var request = new HttpRequestMessage(HttpMethod.Get,
-                "https://api.github.com/repos/SynoSoftware/TinyTorrent2/releases/latest");
+            using var request = new HttpRequestMessage(
+                HttpMethod.Get,
+                "https://api.github.com/repos/SynoSoftware/TinyTorrent2/releases/latest"
+            );
             request.Headers.Accept.ParseAdd("application/vnd.github+json");
             request.Headers.Add("X-GitHub-Api-Version", "2026-03-10");
-            var reply = await _providerHttp.Send(request, ProviderHttp.JsonLimit, cancellation.Token);
+            var reply = await _providerHttp.Send(
+                request,
+                ProviderHttp.JsonLimit,
+                cancellation.Token
+            );
             if (reply.Status != HttpStatusCode.OK)
                 return;
             using var stream = new MemoryStream(reply.Bytes, writable: false);
@@ -108,7 +119,13 @@ public sealed partial class MainViewModel
             await SaveCheck();
         }
         catch (Exception error)
-            when (error is HttpRequestException or OperationCanceledException or JsonException or IOException or InvalidOperationException)
+            when (error
+                    is HttpRequestException
+                        or OperationCanceledException
+                        or JsonException
+                        or IOException
+                        or InvalidOperationException
+            )
         {
             Debug.WriteLine($"Update check did not complete: {error.Message}");
         }

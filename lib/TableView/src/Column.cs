@@ -80,15 +80,6 @@ public sealed partial class Column : DependencyObject
 
     public bool CanResize { get; set; } = true;
 
-    /// <summary>
-    /// This column's ascending values are the host's row order: the order the unsorted view shows
-    /// and the order a row drag changes. At most one column may say so. Sorted by any other column,
-    /// a row's place on screen is a place in that sort and not in the row order, so the table
-    /// withholds the drag; sorted by this column, up or down, it offers it, and reports the request
-    /// in row order either way.
-    /// </summary>
-    public bool DefinesRowOrder { get; set; }
-
     // No per-column icon here on purpose. The one place it would be drawn is the generated menu's
     // column list, and that list is a set of on/off states where the checkmark is the glyph the eye
     // reads. A second glyph beside it competes with the check, and a host that gave icons to some
@@ -102,7 +93,7 @@ public sealed partial class Column : DependencyObject
     /// no separate switch: a column given a sort key is sortable and one that was not is not, so
     /// the two cannot disagree.
     /// </summary>
-    internal IComparer<object>? Comparer { get; set; }
+    internal Func<IEnumerable<object>, SortDirection, IOrderedEnumerable<object>>? Sort { get; set; }
 
-    internal bool CanSort => Comparer is not null;
+    internal bool CanSort => Sort is not null;
 }

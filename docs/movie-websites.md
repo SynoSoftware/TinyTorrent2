@@ -1,23 +1,29 @@
 # Movie websites
 
-**Public websites** is one video information provider, selected instead of TMDB.
-Its Configure dialog selects **Website** (IMDb or Rotten Tomatoes) and
-**Delay (seconds)**. No account or key is required. The providers are exclusive:
-choosing Public websites stops TMDB requests, and choosing TMDB stops website
-requests. The plugin uses only the chosen website, without automatic fallback.
+**IMDb** and **Rotten Tomatoes** are video information providers, chosen
+instead of TMDB in Settings' Download video information. One Public plugin serves both.
+No account or key is required. The providers are
+exclusive: choosing a website stops TMDB requests, and choosing TMDB stops
+website requests. Each uses only its own website, without automatic fallback.
 
-It uses an installed browser; TinyTorrent embeds and distributes no browser,
-browser runtime, driver or automation package.
+The options are **IMDb (browser)**, **Rotten Tomatoes (browser)** and
+**Rotten Tomatoes (HTTP)**. A browser option reads pages with an installed
+browser; TinyTorrent embeds and distributes no browser, browser runtime, driver
+or automation package.
+
+**Owner steer, 2026-10-11: offer Rotten Tomatoes both through the browser and
+over plain HTTP.** The HTTP option sends ordinary requests through the shared
+HTTP owner, so it uses the saved proxy and network adapter, and reads a page in
+about a second instead of about ten. Both Rotten Tomatoes options save to one
+catalogue, because they read the same pages. IMDb has no HTTP option, because
+it answers a request without a browser with a bot challenge page.
 
 ## Requests and saved information
 
-Opening Library, importing files, searching the table and scrolling through rows
-never request these websites. A request starts from the movie's explicit lookup
-action, or after its empty information pane has remained visible for the provider's
-configured number of seconds. Changing selection, hiding the information pane,
-leaving Library, opening a dialog, deactivating or closing the window cancels
-that pending delay. Zero means
-manual requests only; the initial delay is five seconds.
+With enrichment enabled, the selected website participates in Library's
+background identification workflow. Fetch metadata can also request a lookup
+explicitly. Search and scrolling read saved SQLite facts. A capture review build
+uses a manual schedule and never contacts the websites automatically.
 
 Both triggers use one lookup owner and one in-flight request. A failed or
 ambiguous attempt is recorded and does not retry itself when the person reopens
@@ -32,18 +38,17 @@ a later display need does not require another website request. Multiple current
 files identified as the same source movie reuse one saved result. Library reads
 that saved information on subsequent visits. There is no age-based expiry,
 startup refresh, periodic request or automatic refresh of a partial result.
-Only **Refresh details** requests a saved movie again. An immediate **Fetch details**
-on an empty entry can reuse another entry's validated result; bypassing the dwell
-or retrying a failed attempt does not itself require refreshing saved data. A failed refresh
+An explicit metadata fetch can request a saved movie again. On an empty entry, it
+can reuse another entry's validated result; retrying a failed attempt does not
+itself require refreshing saved data. A failed refresh
 preserves the previous result. Current membership and identification are checked
 again when committing, so a late reply cannot restore a removed entry or undo a
 later identification decision. Existing contribution cleanup owns retention.
 
-The details card offers **Fetch details** immediately when empty and
-**Refresh details** when populated; neither action waits for the delay. It shows
+The details card's More menu offers **Refresh metadata** for both empty and
+populated entries; it does not wait for the delay. The Metadata field shows
 progress and a localized inline outcome. A website refusal leaves local Library
-search and file actions available. Configuration uses the existing native dialog
-owner and NumberBox, with keyboard navigation and the application's theme.
+search and file actions available. The websites have no settings of their own.
 
 ## Browser access
 
@@ -94,12 +99,35 @@ temporary profile per page. This remains a known mismatch with the browser
 ruling above. No extension, browser installation or embedded runtime was added.
 The native UI Automation experiment is not wired into this reader.
 
+The reader returns the page's HTML as the server sent it, through the browser's
+DevTools protocol, as soon as that response arrives. Printing the page with
+`--dump-dom` waited for every script, advert and tracker and took about ten
+seconds a page; the parser needs only the server's HTML, which arrives in about
+three. A bot-check reply (HTTP 202) is skipped, because its script reloads the
+page, and the reader takes the reload's reply.
+
+Both readers treat a missing page (HTTP 404 or 410) as a failure of that movie
+only, because a saved choice can name a page the website has since removed.
+A refusal (403) and every other failed reply stop the website's lookups.
+
+What each page gives:
+
+| Page | Saved choices | Description |
+| --- | --- | --- |
+| IMDb search | Each result's title, original title, year, kind, genres, plot and rating, from the page's `__NEXT_DATA__` | Choosing a result describes it from this listing without a second request (owner decision, 2026-10-11). The listing has no cast or keywords; Refresh metadata reads the movie page, which has them. |
+| IMDb movie | "More like this" movies, without its series: title, year and rating | JSON-LD |
+| Rotten Tomatoes search | Each row's title, year, cast and Tomatometer | None: rows have no synopsis |
+| Rotten Tomatoes movie | Related tiles: title, critics and audience scores | JSON-LD and the synopsis element |
+
+Rotten Tomatoes movie paths contain letters, digits, underscores and hyphens,
+such as `/m/10009598-surrogates`.
+
 | Area | Established result |
 | --- | --- |
-| Rotten Tomatoes | Bounded Chrome probes returned search results and movie data. Production parsing of the saved pages verified title, 1994 release year, synopsis and cast. |
-| IMDb | The probe returned 403 Forbidden without movie data. No retry or refusal bypass was attempted. |
+| Rotten Tomatoes | Bounded Chrome probes returned search results and movie data. Production parsing of the saved pages verified title, 1994 release year, synopsis and cast. Plain HTTP requests with the TinyTorrent user agent returned the same search rows, movie JSON-LD and synopsis in under a second; the browser took 9–15 seconds per page. |
+| IMDb | IMDb refuses the `HeadlessChrome` user agent with 403 Forbidden, so the reader sends an ordinary Chrome user agent. Chrome and Edge probes then returned search results and movie JSON-LD. After repeated requests IMDb serves an AWS WAF challenge page (HTTP 202) whose script reloads the real page. On 2026-10-11 the challenge passed but the reload returned 405 with `x-amzn-waf-action: captcha`, a picture puzzle only a person can solve, while an InPrivate window on the same network loaded normally. The reader reports that answer as a verification request and does not try to pass it. |
 | Normal browser session | Native UI Automation read fixture body text with the foreground unchanged. Hidden JSON-LD readback was not achieved. The earlier managed UI Automation result did not establish that page text was unavailable. |
-| Configuration and details | Native Website/Delay dialog, Information/File selector and Fetch button verified in English/Spanish and Light/Dark. |
+| Details | Information/File selector and Fetch button verified in English/Spanish and Light/Dark. |
 | SQLite and requests | Catalogue isolation, full cached records, durable failed attempts, failed refresh preservation and stale-decision guards passed. |
 | Containment | Public-specific production behavior stays in `Library/Public/`, with one source registration outside it. |
 
@@ -120,29 +148,28 @@ source review only; the recorded binaries and runtime results predate that gate.
 
 The [Library implementation chat](codex://threads/01a11e09-3e87-7133-9f38-440c0f302151)
 owns shared request, cache, scheduling and presentation code. Public owns its
-browser reader, parsing and configuration. Existing implementation and evidence
+browser reader and parsing. Existing implementation and evidence
 are the settled prototype; unresolved normal-session transport is a recorded
 limitation, not a request to restart testing.
 
 ## Boundaries
 
 The [replaceable provider contract](library-implementation.md#replaceable-movie-providers)
-owns the interface and migration. Public contains only its provider, installed
-browser reader, typed settings and configuration body. TMDB has its own provider
+owns the interface and migration. Public contains only its provider and
+options, its browser and HTTP page readers, and parsing. TMDB has its own provider
 folder. Neither provider owns Library membership, current decisions or storage
 transactions.
 
 Library owns provider selection, cancellation, scheduling, guarded completion,
-normalized saved information and complete raw records. UI commands and dwell
-use that same request owner; the existing window dialog owner hosts each
-provider's optional editor. Public declares on-demand scheduling. The shared
-scheduler rejects it before enumerating background work, and Public exposes no
-batch-population method.
+normalized saved information and complete raw records. UI commands and
+background work use that same request owner. Public declares background
+scheduling in production and manual scheduling in capture reviews. The plugin
+exposes no separate batch-population method.
 
 ```mermaid
 flowchart TD
     UI["Library card and Settings"] --> Lookup["Shared requests and scheduling"]
-    Lookup --> Public["Public: browser, parsing and configuration"]
+    Lookup --> Public["Public: browser or HTTP, and parsing"]
     Lookup --> Tmdb["TMDB: API access and interpretation"]
     Lookup --> Store["Shared cache and guarded decisions"]
     Store --> Database["Existing SQLite owner"]
@@ -158,7 +185,8 @@ Source inspection finds one production registration outside Public. Removal is:
 1. Delete `app/src/Library/Public/`.
 2. Remove the Public provider alias and its provider entry in
    `MainViewModel/Features.cs`.
-3. Remove the `websites` sections from both localized resource files.
+3. Remove the `websites` and `websites_http` sections from both localized
+   resource files.
 4. Remove the Public parser fixtures from `SourceChecks.ps1`, supplying ordinary
    synthetic VideoInformation for the shared cache checks that use their result.
    Remove the on-demand provider-controls journey from `CaptureLibraryFiles.cs`

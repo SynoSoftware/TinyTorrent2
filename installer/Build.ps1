@@ -185,6 +185,15 @@ try {
     $properties = @('/p:Configuration=Release', '/p:Platform=x64', '/p:EnableCapture=false',
         "/p:ArtifactsPath=$lane", "/p:Version=$releaseVersion")
     $buildArgs = @('/nologo', '/nr:false', '/v:minimal') + $properties
+    $native = & $msbuild (Join-Path $repository 'engine/src/Engine.vcxproj') @properties /nologo /nr:false /t:LibtorrentDefinitions -getItem:ClCompile
+    if ($LASTEXITCODE -ne 0) { throw 'Native release settings could not be read.' }
+    foreach ($source in ($native -join "`n" | ConvertFrom-Json).Items.ClCompile) {
+        if ($source.RuntimeLibrary -ne 'MultiThreaded' -or
+            $source.PreprocessorDefinitions -notmatch '(^|;)NDEBUG(?:=|;|$)' -or
+            $source.PreprocessorDefinitions -match '(^|;)(_DEBUG|DEBUG|CAPTURE)(?:=|;|$)') {
+            throw "Native diagnostic compilation is enabled for $($source.Identity). The installer was not generated."
+        }
+    }
     Write-Host 'Building the native engine...'
     try {
         Invoke-Tool $msbuild (@((Join-Path $repository 'engine/src/Engine.vcxproj')) + $buildArgs +
@@ -201,7 +210,7 @@ try {
     }
     finally { Check-Output }
 
-    $metadata = & $msbuild (Join-Path $repository 'app/src/TinyTorrent.csproj') @properties /nologo /nr:false '-getProperty:Version,Company,EngineTargetName,WindowTargetName,ProjectAssetsFile,TargetPlatformMinVersion,DefineConstants,EnableCapture'
+    $metadata = & $msbuild (Join-Path $repository 'app/src/TinyTorrent.csproj') @properties /nologo /nr:false '-getProperty:Version,Company,EngineTargetName,WindowTargetName,ProjectAssetsFile,TargetPlatformMinVersion,DefineConstants,EnableCapture,ProjectPriFileName'
     if ($LASTEXITCODE -ne 0) { throw 'Release metadata could not be read from the application project.' }
     $metadata = ($metadata -join "`n" | ConvertFrom-Json).Properties
     if ($metadata.EnableCapture -eq 'true' -or $metadata.DefineConstants -match '(^|;)(DEBUG|CAPTURE)(;|$)') {
@@ -213,6 +222,11 @@ try {
     if ($engine -ne 'TinyTorrent' -or $window -ne 'TinyTorrentUI' -or
         (Test-Path -LiteralPath (Join-Path $publish 'Engine.exe'))) {
         throw 'The release must contain TinyTorrent.exe and TinyTorrentUI.exe, without Engine.exe.'
+    }
+    foreach ($resource in $metadata.ProjectPriFileName, 'TableView.pri', 'Lucide.pri') {
+        if (-not (Test-Path -LiteralPath (Join-Path $publish $resource) -PathType Leaf)) {
+            throw "The published application is missing $resource. The installer was not generated."
+        }
     }
     $expected = [version] $releaseVersion
     $engineFile = Join-Path $publish "$engine.exe"
@@ -325,7 +339,7 @@ try {
     }
     else {
         $installerName += '-unsigned'
-        Write-Host 'No signing certificate configured. Generating an unsigned installer for testing.' -ForegroundColor Yellow
+        Write-Host 'No signing certificate configured. Generating an unsigned installer.' -ForegroundColor Yellow
     }
     Write-Host 'Compiling the installer...'
     Invoke-Tool $compiler ($compilerArgs + "/DInstallerName=$installerName" + (Join-Path $PSScriptRoot 'Setup.iss')) (Join-Path $session 'installer.log')
