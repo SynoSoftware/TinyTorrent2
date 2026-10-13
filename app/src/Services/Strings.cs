@@ -3,6 +3,7 @@ using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Syno.TinyTorrent.Models;
 
 namespace Syno.TinyTorrent.Services;
 
@@ -176,6 +177,20 @@ public sealed class Strings
                 ? Get("errors", "unknown")
                 : error.Message,
         };
+
+    public string RateUnit(RateScale scale) =>
+        Get("units", scale == RateScale.KibPerSecond ? "kib_per_second" : "mb_per_second");
+
+    public string SpeedLimit(double bytes)
+    {
+        var unit = RateUnit(RateScale.MbPerSecond);
+        return bytes switch
+        {
+            0 => Get("transfer_limits", "unlimited"),
+            < 10000 => Format("units", "speed_under", 0.01, unit),
+            _ => Format("units", "speed", bytes / (double)RateScale.MbPerSecond, unit),
+        };
+    }
 
     public string Bytes(double value)
     {

@@ -6,54 +6,7 @@
   xmlns:icons="using:Syno"
 >
   <UserControl.Resources>
-    <!-- Each period is a borderless inner card, like the other sub-groups
-             in Settings. -->
     <ResourceDictionary>
-      <ResourceDictionary.ThemeDictionaries>
-        <ResourceDictionary x:Key="Light">
-          <StaticResource
-            x:Key="ExpanderHeaderBackground"
-            ResourceKey="TinyTorrentInnerCardBrush"
-          />
-          <StaticResource
-            x:Key="ExpanderContentBackground"
-            ResourceKey="TinyTorrentInnerCardBrush"
-          />
-        </ResourceDictionary>
-        <ResourceDictionary x:Key="Dark">
-          <StaticResource
-            x:Key="ExpanderHeaderBackground"
-            ResourceKey="TinyTorrentInnerCardBrush"
-          />
-          <StaticResource
-            x:Key="ExpanderContentBackground"
-            ResourceKey="TinyTorrentInnerCardBrush"
-          />
-        </ResourceDictionary>
-        <ResourceDictionary x:Key="HighContrast">
-          <StaticResource
-            x:Key="ExpanderHeaderBackground"
-            ResourceKey="TinyTorrentInnerCardBrush"
-          />
-          <StaticResource
-            x:Key="ExpanderContentBackground"
-            ResourceKey="TinyTorrentInnerCardBrush"
-          />
-        </ResourceDictionary>
-      </ResourceDictionary.ThemeDictionaries>
-      <Thickness x:Key="ExpanderHeaderBorderThickness">0</Thickness>
-      <Thickness x:Key="ExpanderContentDownBorderThickness">0</Thickness>
-      <HorizontalAlignment x:Key="ExpanderHeaderHorizontalContentAlignment">
-        Stretch
-      </HorizontalAlignment>
-      <Style
-        x:Key="SchedulerPeriodModeStyle"
-        TargetType="TextBlock"
-        BasedOn="{StaticResource TinyTorrentStatusTextStyle}"
-      >
-        <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
-        <Setter Property="VerticalAlignment" Value="Center" />
-      </Style>
       <Style x:Key="SchedulerSwatchStyle" TargetType="Border">
         <Setter Property="Width" Value="16" />
         <Setter Property="Height" Value="16" />
@@ -62,59 +15,84 @@
       </Style>
     </ResourceDictionary>
   </UserControl.Resources>
-  <StackPanel>
+  <StackPanel Spacing="24">
+    <Border x:Name="WeekCard" Style="{StaticResource TinyTorrentSettingsCardStyle}" Padding="16"
+      SizeChanged="OnMapSize">
+      <StackPanel Spacing="16">
+        <Grid ColumnSpacing="16">
+          <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+          <TextBlock Text="{x:Bind Model.Text.Get('settings', 'weekly_schedule'), Mode=OneWay}"
+            Style="{StaticResource TinyTorrentGroupTitleTextStyle}" VerticalAlignment="Center"
+            TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{x:Bind Model.Text.Get('settings', 'weekly_schedule'), Mode=OneWay}" />
+          <ContentControl x:Name="Mode" Grid.Column="1" IsTabStop="False" />
+        </Grid>
     <ContentControl
       x:Name="Timeline"
-      Margin="0,8,0,0"
       HorizontalContentAlignment="Stretch"
       IsTabStop="False"
+      AutomationProperties.Name="{x:Bind Model.Text.Get('settings', 'weekly_schedule'), Mode=OneWay}"
     />
-    <StackPanel Visibility="{x:Bind Model.FollowsSchedule, Mode=OneWay}">
-      <StackPanel MinHeight="56" Orientation="Horizontal" Spacing="24">
-        <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+      <Grid ColumnSpacing="24" MaxWidth="640" HorizontalAlignment="Left"
+        Visibility="{x:Bind Model.FollowsSchedule, Mode=OneWay}">
+        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+        <Grid ColumnSpacing="8" VerticalAlignment="Center">
+          <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
           <Border
             Style="{StaticResource SchedulerSwatchStyle}"
             Background="{ThemeResource ControlFillColorSecondaryBrush}"
             BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
           />
           <TextBlock
+            Grid.Column="1" TextTrimming="CharacterEllipsis"
+            ToolTipService.ToolTip="{x:Bind Model.Text.Get('settings', 'speed'), Mode=OneWay}"
             Text="{x:Bind Model.Text.Get('settings', 'speed'), Mode=OneWay}"
             Style="{StaticResource TinyTorrentStatusTextStyle}"
           />
-        </StackPanel>
-        <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+        </Grid>
+        <Grid Grid.Column="1" ColumnSpacing="8" VerticalAlignment="Center">
+          <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
           <Border
             Style="{StaticResource SchedulerSwatchStyle}"
             Background="{ThemeResource TinyTorrentAlternativeBrush}"
             BorderBrush="{ThemeResource AccentFillColorDefaultBrush}"
           />
           <TextBlock
+            Grid.Column="1" TextTrimming="CharacterEllipsis"
+            ToolTipService.ToolTip="{x:Bind Model.Text.Get('settings', 'alternative'), Mode=OneWay}"
             Text="{x:Bind Model.Text.Get('settings', 'alternative'), Mode=OneWay}"
             Style="{StaticResource TinyTorrentStatusTextStyle}"
           />
-        </StackPanel>
-        <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+        </Grid>
+        <Grid Grid.Column="2" ColumnSpacing="8" VerticalAlignment="Center">
+          <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
           <Border
             Style="{StaticResource SchedulerSwatchStyle}"
             Background="{ThemeResource SystemFillColorCautionBackgroundBrush}"
             BorderBrush="{ThemeResource SystemFillColorCautionBrush}"
           />
           <TextBlock
+            Grid.Column="1" TextTrimming="CharacterEllipsis"
+            ToolTipService.ToolTip="{x:Bind Model.Text.Get('settings', 'paused'), Mode=OneWay}"
             Text="{x:Bind Model.Text.Get('settings', 'paused'), Mode=OneWay}"
             Style="{StaticResource TinyTorrentStatusTextStyle}"
           />
-        </StackPanel>
+        </Grid>
+        <TextBlock x:Name="Now" Grid.Column="3" VerticalAlignment="Center"
+          Style="{StaticResource TinyTorrentStatusTextStyle}" TextTrimming="CharacterEllipsis" />
+      </Grid>
+      <TextBlock Text="{x:Bind Model.TimelineHint, Mode=OneWay}"
+        Style="{StaticResource TinyTorrentTitleDetailTextStyle}" TextTrimming="CharacterEllipsis"
+        ToolTipService.ToolTip="{x:Bind Model.TimelineHint, Mode=OneWay}" />
       </StackPanel>
+    </Border>
+    <StackPanel Spacing="8" Visibility="{x:Bind Model.FollowsSchedule, Mode=OneWay}">
       <local:SettingsRow
         x:Name="PeriodsRow"
         Header="{x:Bind Model.Text.Get('settings', 'periods'), Mode=OneWay}"
         Error="{x:Bind Model.PeriodsMessage, Mode=OneWay}"
+        BorderThickness="0"
       >
         <StackPanel Orientation="Horizontal" Spacing="12">
-          <TextBlock
-            Text="{x:Bind Model.Text.Get('settings', 'local_time'), Mode=OneWay}"
-            Style="{StaticResource SchedulerPeriodModeStyle}"
-          />
           <local:ActionButton
             x:Name="AddPeriod"
             Glyph="{x:Bind icons:Lucide.Plus}"
@@ -126,17 +104,10 @@
           />
         </StackPanel>
       </local:SettingsRow>
-      <StackPanel Spacing="4">
-        <Border Style="{StaticResource TinyTorrentInnerCardStyle}">
-          <local:SettingsRow Header="{x:Bind Model.Text.Get('settings', 'other_times'), Mode=OneWay}">
-            <TextBlock
-              Text="{x:Bind Model.Text.Get('settings', 'speed'), Mode=OneWay}"
-              Style="{StaticResource SchedulerPeriodModeStyle}"
-            />
-          </local:SettingsRow>
-        </Border>
-        <StackPanel x:Name="Periods" Spacing="4" />
-      </StackPanel>
+      <TextBlock Text="{x:Bind Model.Text.Get('settings', 'schedule_hint'), Mode=OneWay}"
+        Style="{StaticResource TinyTorrentTitleDetailTextStyle}" TextTrimming="CharacterEllipsis"
+        ToolTipService.ToolTip="{x:Bind Model.Text.Get('settings', 'schedule_hint'), Mode=OneWay}" />
+        <StackPanel x:Name="Periods" Spacing="8" />
     </StackPanel>
   </StackPanel>
 </UserControl>

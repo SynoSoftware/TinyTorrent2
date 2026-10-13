@@ -42,7 +42,7 @@ internal abstract class Provider(string catalogId, Uri origin, IPageReader reade
                 "websites",
                 new("https://www.imdb.com/privacy"),
                 new("https://www.imdb.com/conditions"),
-                () => new Imdb(browser)
+                _ => new Imdb(browser)
             ),
             new(
                 "rottentomatoes",
@@ -50,7 +50,7 @@ internal abstract class Provider(string catalogId, Uri origin, IPageReader reade
                 "websites",
                 privacy,
                 terms,
-                () => new RottenTomatoes(browser)
+                _ => new RottenTomatoes(browser)
             ),
             new(
                 "rottentomatoes_http",
@@ -58,7 +58,7 @@ internal abstract class Provider(string catalogId, Uri origin, IPageReader reade
                 "websites_http",
                 privacy,
                 terms,
-                () => new RottenTomatoes(pages)
+                _ => new RottenTomatoes(pages)
             ),
         ];
     }

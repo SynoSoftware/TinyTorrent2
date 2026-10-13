@@ -176,16 +176,7 @@ public sealed partial class Table
 
     private IReadOnlyList<object> BuildSelectedPacket()
     {
-        List<object> packet = new();
-        foreach (object item in View)
-        {
-            if (_selection.IsSelected(item))
-            {
-                packet.Add(item);
-            }
-        }
-
-        return packet;
+        return _selection.Items.OrderBy(IndexInView).ToArray();
     }
 
     /// <summary>
@@ -224,39 +215,42 @@ public sealed partial class Table
             return;
         }
 
-        bool[] listed = new bool[count];
+        HashSet<int> listed = new();
         foreach (ItemIndexRange range in _surface.SelectedRanges)
         {
             int last = Math.Min(range.LastIndex, count - 1);
             for (int i = Math.Max(range.FirstIndex, 0); i <= last; i++)
             {
-                listed[i] = true;
+                listed.Add(i);
             }
         }
 
         _syncingContainers = true;
         try
         {
+            var wanted = _selection.Items.Select(IndexInView).Where(index => index >= 0).ToHashSet();
+            var changed = new HashSet<int>(listed);
+            changed.SymmetricExceptWith(wanted);
             int start = -1;
+            int last = -1;
             bool selecting = false;
-
-            for (int i = 0; i <= count; i++)
+            foreach (int index in changed.Order())
             {
-                bool wanted = i < count && _selection.IsSelected(View[i]);
-                bool differs = i < count && wanted != listed[i];
-
-                if (start >= 0 && (!differs || wanted != selecting))
+                bool select = wanted.Contains(index);
+                if (start >= 0 && (index != last + 1 || select != selecting))
                 {
-                    ApplyRange(start, i - start, selecting);
+                    ApplyRange(start, last - start + 1, selecting);
                     start = -1;
                 }
-
-                if (differs && start < 0)
+                if (start < 0)
                 {
-                    start = i;
-                    selecting = wanted;
+                    start = index;
+                    selecting = select;
                 }
+                last = index;
             }
+            if (start >= 0)
+                ApplyRange(start, last - start + 1, selecting);
         }
         finally
         {

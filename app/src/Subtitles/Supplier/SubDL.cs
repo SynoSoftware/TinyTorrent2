@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Net.Http;
 using System.Net.Http.Headers;
+using System.Reflection;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Syno.TinyTorrent.Models;
@@ -16,24 +17,27 @@ internal sealed partial class SubDL : Supplier
     internal override Uri Privacy { get; } = new("https://subdl.com/privacy");
     internal override Uri Terms { get; } = new("https://subdl.com/terms");
     protected override IReadOnlyDictionary<string, string> Codes => LanguageCodes;
+    protected override string? BuiltInKey { get; } =
+        typeof(SubDL)
+            .Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
+            .FirstOrDefault(value => value.Key == "SubDLKey")
+            ?.Value;
 
     protected override void Authenticate(HttpRequestMessage request, Account account) =>
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", account.Secret);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", ApiKey(account));
 
-    internal override async Task Check(
-        ProviderHttp http,
-        Account account,
+    protected override async Task Check(
+        Operation operation,
         CancellationToken cancellation
     )
     {
-        var response = await Get(http, account, new Uri(Origin, "/api/v2/me"), cancellation)
+        var response = await Get(operation, new Uri(Origin, "/api/v2/me"), cancellation)
             .ConfigureAwait(false);
         using var document = Parse(response.Bytes);
     }
 
     protected override async Task<IReadOnlyList<SubtitleCandidate>> Search(
-        ProviderHttp http,
-        Account account,
+        Operation operation,
         SubtitleLookup lookup,
         Release release,
         string language,
@@ -49,10 +53,8 @@ internal sealed partial class SubDL : Supplier
             + Uri.EscapeDataString(language);
         for (var page = 1; ; page++)
         {
-            await lookup.Validate(cancellation).ConfigureAwait(false);
             var response = await Get(
-                    http,
-                    account,
+                    operation,
                     new Uri(Origin, query + "&page=" + page.ToString(CultureInfo.InvariantCulture)),
                     cancellation
                 )
@@ -132,17 +134,14 @@ internal sealed partial class SubDL : Supplier
         }
     }
 
-    internal override async Task<byte[]> Download(
-        ProviderHttp http,
-        Account account,
-        SubtitleLookup lookup,
+    protected override async Task<byte[]> Download(
+        Operation operation,
         SubtitleCandidate candidate,
         CancellationToken cancellation
     )
     {
         var response = await Get(
-                http,
-                account,
+                operation,
                 new Uri(candidate.Reference),
                 cancellation,
                 ProviderHttp.FileLimit

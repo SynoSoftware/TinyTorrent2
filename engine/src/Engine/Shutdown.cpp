@@ -4,8 +4,8 @@ namespace tt
 {
 namespace
 {
-// Shutdown gives each phase this long: file priority edits to complete, then
-// every torrent to pause.
+// Bound pending priority edits, torrent pauses and the final transfer sample
+// so a lost acknowledgement cannot leave Exit waiting indefinitely.
 constexpr auto phaseTimeout = std::chrono::seconds(30);
 }
 
@@ -141,7 +141,10 @@ void Engine::State::ContinueShutdown()
         {
             return;
         }
-        shutdownPhase = ShutdownPhase::Saving;
+        shutdownPhase = ShutdownPhase::Sampling;
+        phaseStarted = std::chrono::steady_clock::now();
+        transfersRequested = lt::clock_type::now();
+        session->post_session_stats();
         log.Write("shutdown", "", "checkpoint");
         for (auto& [id, torrent] : torrents)
         {
@@ -152,6 +155,14 @@ void Engine::State::ContinueShutdown()
                 saveFailure = torrent.hashError->detail;
             }
         }
+    }
+    if (shutdownPhase == ShutdownPhase::Sampling)
+    {
+        if (std::chrono::steady_clock::now() - *phaseStarted < phaseTimeout)
+            return;
+        saveFailure.emplace();
+        log.Write("shutdown", "", "recovery_required");
+        shutdownPhase = ShutdownPhase::Saving;
     }
     if (!saveFailure)
     {

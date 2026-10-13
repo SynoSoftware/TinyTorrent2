@@ -16,6 +16,7 @@ internal sealed class TorrentSource : IAsyncDisposable
     private bool _failureReported;
     private string? _session;
     private long _revision;
+    private Contribution[]? _contributions;
     private CancellationTokenSource _generation = new();
 
     internal event EventHandler? Changed;
@@ -89,6 +90,7 @@ internal sealed class TorrentSource : IAsyncDisposable
     private void Restart()
     {
         _revision++;
+        _contributions = null;
         _latest = null;
         _generation.Cancel();
         _generation.Dispose();
@@ -139,14 +141,7 @@ internal sealed class TorrentSource : IAsyncDisposable
                 }
                 if (snapshot is { } current)
                 {
-                    var contributions = current
-                        .GetProperty("torrents")
-                        .EnumerateArray()
-                        .Select(Read)
-                        .ToArray();
-                    changed |= await _sources
-                        .Reconcile(contributions, cancellation)
-                        .ConfigureAwait(false);
+                    changed |= await Reconcile(current, cancellation).ConfigureAwait(false);
                     if (invalidated)
                         await _sources.Invalidate(cancellation).ConfigureAwait(false);
                     else if (reread)
@@ -202,16 +197,7 @@ internal sealed class TorrentSource : IAsyncDisposable
                         _latest = null;
                     }
                     if (snapshot is { } latest)
-                        changed |= await _sources
-                            .Reconcile(
-                                latest
-                                    .GetProperty("torrents")
-                                    .EnumerateArray()
-                                    .Select(Read)
-                                    .ToArray(),
-                                cancellation
-                            )
-                            .ConfigureAwait(false);
+                        changed |= await Reconcile(latest, cancellation).ConfigureAwait(false);
                     if (Files(next, detail) is { } files)
                         changed |= await _sources
                             .Replace(next, files, cancellation)
@@ -263,6 +249,24 @@ internal sealed class TorrentSource : IAsyncDisposable
                     _work = Task.Run(Run);
             }
         }
+    }
+
+    private async Task<bool> Reconcile(JsonElement snapshot, CancellationToken cancellation)
+    {
+        var contributions = snapshot.GetProperty("torrents").EnumerateArray().Select(Read).ToArray();
+        lock (_gate)
+        {
+            cancellation.ThrowIfCancellationRequested();
+            if (_contributions is not null && _contributions.SequenceEqual(contributions))
+                return false;
+        }
+        var changed = await _sources.Reconcile(contributions, cancellation).ConfigureAwait(false);
+        lock (_gate)
+        {
+            cancellation.ThrowIfCancellationRequested();
+            _contributions = contributions;
+        }
+        return changed;
     }
 
     private static Contribution Read(JsonElement row)

@@ -1,5 +1,6 @@
 #include "Engine/State.h"
 #include <libtorrent/torrent_info.hpp>
+#include <libtorrent/session_stats.hpp>
 
 namespace tt
 {
@@ -81,6 +82,9 @@ void Engine::State::Handle(lt::alert* alert)
     case lt::torrent_deleted_alert::alert_type:
         On(static_cast<lt::torrent_deleted_alert const&>(*alert));
         break;
+    case lt::torrent_removed_alert::alert_type:
+        On(static_cast<lt::torrent_removed_alert const&>(*alert));
+        break;
     case lt::torrent_delete_failed_alert::alert_type:
         On(static_cast<lt::torrent_delete_failed_alert const&>(*alert));
         break;
@@ -112,7 +116,16 @@ void Engine::State::Handle(lt::alert* alert)
 
 void Engine::State::On(lt::session_stats_alert const& alert)
 {
+    static auto received = lt::find_metric_idx("net.recv_payload_bytes");
+    static auto sent = lt::find_metric_idx("net.sent_payload_bytes");
+    auto values = alert.counters();
+    transferred = {values[received], values[sent]};
     ObserveConnectionTest(alert);
+    if (shutdownPhase == ShutdownPhase::Sampling && alert.timestamp() >= transfersRequested)
+    {
+        shutdownPhase = ShutdownPhase::Saving;
+        SaveTransfers();
+    }
 }
 
 void Engine::State::On(lt::external_ip_alert const& alert)
@@ -237,7 +250,7 @@ void Engine::State::On(lt::state_update_alert const& alert)
             torrent->Update(status);
             auto problem = torrent->Error();
             auto error = problem ? problem->detail : std::string();
-            if (!error.empty() && error != torrent->notifiedError)
+            if (problem && !error.empty() && error != torrent->notifiedError)
             {
                 Notify(NoticeKind::Error, *torrent, error, problem->Code());
             }
@@ -408,6 +421,8 @@ void Engine::State::On(lt::file_error_alert const& alert)
 // write already belongs to Store, which still completes it.
 void Engine::State::On(lt::alerts_dropped_alert const& alert)
 {
+    if (shutdownPhase == ShutdownPhase::Sampling && alert.dropped_alerts[lt::session_stats_alert::alert_type])
+        session->post_session_stats();
     if (alert.dropped_alerts[lt::state_update_alert::alert_type])
     {
         seedQueries.clear();
@@ -437,8 +452,14 @@ void Engine::State::On(lt::alerts_dropped_alert const& alert)
         }
         torrent.unsaved = true;
         QueryCompletion(torrent);
-        // The latest status cannot establish the origin of queued file alerts.
-        torrent.transferState.reset();
+        // Only a lost state transition breaks the provenance of file alerts.
+        // A sampled status cannot recover their original cause. File
+        // completions earlier in this batch are unaffected: libtorrent drops
+        // a high-priority state change only after the queue has passed the
+        // limit for normal-priority file completions, so every completion
+        // that arrived was posted before the lost transition.
+        if (alert.dropped_alerts[lt::state_changed_alert::alert_type])
+            torrent.transferState.reset();
         if (!IsShuttingDown())
         {
             torrent.ApplyIntent();

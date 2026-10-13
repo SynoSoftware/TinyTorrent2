@@ -70,14 +70,22 @@ versioning and connection lifetime.
 
 ### Third-party provider access
 
-**Owner ruling: retain free application-key access for TMDB and OpenSubtitles.**
-This avoids customer key setup where a provider supports free application
-access. TinyTorrent funds no paid package and never upgrades access automatically;
+**Owner ruling: build free application keys into the release for TMDB, OMDb,
+MDBList, OpenSubtitles, SubDL and SubSource.** This avoids customer key setup.
+Every provider that takes an API key also accepts the person's own key, which
+replaces the built-in one, because every installation shares the built-in
+key's allowance. TinyTorrent funds no paid package and never upgrades access automatically;
 provider limits delay optional work instead. Applicable free terms must cover
-the integration; a working key alone does not establish that. Other providers,
-including SubDL and SubSource, require the person's own key, so their allowances
-and any charges belong to that person. Local features remain usable without
-provider access.
+the integration; a working key alone does not establish that. SubDL's terms
+forbid a shared free key that powers a commercial service, so its built-in key
+holds only while TinyTorrent is not one ([SubDL access](subtitles.md#subdl)).
+Local features remain usable without provider access.
+
+A Library provider or subtitle supplier declares only what it asks the person
+for: nothing, an API key, or a user name and password. The app's one account
+dialog asks for it and the plugin's owner saves the result, because a dialog per
+plugin would repeat the same fields, checks and wording. The person can enter
+their own key even when the release has no built-in key for that provider.
 
 **Owner ruling: automatic provider work is limited per movie.**
 Every torrent takes the same import path: its files are read and listed. When
@@ -517,6 +525,53 @@ and lifetime costs.
 Neither is needed now. If custom serialization or lifecycle code becomes harder
 to maintain than a platform facility, reconsider that choice at its owner rather
 than wrapping it in more layers.
+
+### Architecture follow-up
+
+[GitHub issues](https://github.com/SynoSoftware/TinyTorrent2/issues) own actionable
+work and its implementation status. This section records ownership and design
+decisions from the combined source review; it is not a second backlog.
+
+- [PipeClient.Files](../app/src/Services/PipeClient/Files.cs) holds Inspector
+  arbitration through the matching fresh push, including after a cached-ready
+  reply. Background file reads settle there; Inspector alone decides whether
+  its current presentation accepts a result. The
+  [protocol contract](protocol.md#snapshots-and-detail) owns that lifetime.
+- Settings and the Plugins search-limit field retain their existing edit owners.
+  Escape discards unsubmitted intent while accepted work settles; later deliberate
+  input remains distinct from cancellation, including input equal to the former
+  confirmed value. [#178](https://github.com/SynoSoftware/TinyTorrent2/issues/178)
+  records the corrections and source-only evidence.
+- [Supplier](../app/src/Subtitles/Supplier.cs) owns validity before every send and
+  allowance reservation. Its operation carries account, HTTP access and the
+  acquisition validity callback through login, retries and redirects. Account
+  Check has no movie membership requirement. Acquisition retains file-work and
+  publication checks; ProviderHttp remains the network-route owner.
+  [#316](https://github.com/SynoSoftware/TinyTorrent2/issues/316) tracks landing
+  and remaining evidence.
+- Table resolves saved visibility and sort before publishing the layout, and
+  accepts held rows and release intentions only after comparison succeeds.
+  A changed saved sort uses the same full-source presentation as explicit Sort;
+  initial capture still evaluates only the final pending sort.
+  [#317](https://github.com/SynoSoftware/TinyTorrent2/issues/317) tracks landing
+  and remaining evidence. General rollback for unrelated host callbacks remains
+  deferred without a demonstrated failure; notification handlers run after mechanics.
+- [Engine settings](../engine/src/Engine/Settings.cpp) protect a changed proxy
+  password before committing it. Confirmed ciphertext is reused by unrelated
+  document saves, so encryption failure refuses the credential change without
+  blocking those saves or losing the previous credentials.
+  [Acquisition.Load](../app/src/Subtitles/Acquisition/Storage.cs) publishes settings
+  and supplier allowance only after its SQLite transaction commits.
+
+Shared Settings editing machinery remains deferred: Setting owns engine wire
+confirmation and uncertain-command reconciliation, while the Plugins field saves
+one SQLite value. A shared module earns its place only if it removes obligations
+without importing those unrelated dependencies; moving the queue behind another
+interface does not do that.
+
+These corrections were initially source-reviewed against the combined, uncommitted
+working tree based on `77a3317`. Subsequent build and targeted test evidence, with
+its limitations, is recorded in the linked GitHub issues.
 
 ## Decisions still open
 

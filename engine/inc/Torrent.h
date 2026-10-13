@@ -165,7 +165,8 @@ struct Torrent
     Json Describe(TorrentView view, bool includeFiles, Detail const& detail,
         std::shared_ptr<lt::torrent_info const> const& metadata,
         std::chrono::steady_clock::time_point since = {}) const;
-    Json Row(bool sessionPaused) const;
+    // `queue` is the torrent's place in the download queue, or -1 outside it.
+    Json Row(bool sessionPaused, int queue) const;
     std::vector<lt::download_priority_t> ChosenPriorities(
         std::shared_ptr<lt::torrent_info const> const& metadata) const;
     std::vector<lt::announce_entry> const& Trackers() const;

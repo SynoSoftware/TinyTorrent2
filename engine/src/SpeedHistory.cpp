@@ -24,52 +24,52 @@ void SpeedHistory::Range::Configure(int value)
     interval = value;
 }
 
-void SpeedHistory::Range::Sample(Point sample)
+void SpeedHistory::Range::Sample(std::int64_t time, double download, double upload)
 {
-    if (count || !points.empty())
+    if (bucket.count || !points.empty())
     {
-        auto previous = count ? bucket.time : points.back().time;
-        if (sample.time <= previous)
+        auto previous = bucket.count ? bucket.time : points.back().time;
+        if (time <= previous)
         {
             points.clear();
             bucket = {};
-            count = 0;
         }
-        else if (sample.time - previous > sampleGap)
+        else if (time - previous > sampleGap)
         {
             Finish();
         }
     }
-    if (count && sample.time / interval != bucket.time / interval)
+    if (bucket.count && time / interval != bucket.time / interval)
     {
         Finish();
     }
-    bucket.time = sample.time;
-    bucket.download += sample.download;
-    bucket.upload += sample.upload;
-    ++count;
-    Prune(sample.time);
+    if (!bucket.count)
+        bucket.start = time;
+    bucket.time = time;
+    bucket.download += download;
+    bucket.upload += upload;
+    ++bucket.count;
+    Prune(time);
 }
 
 void SpeedHistory::Range::Finish()
 {
-    if (!count)
+    if (!bucket.count)
     {
         return;
     }
     points.push_back(Average());
     bucket = {};
-    count = 0;
 }
 
 SpeedHistory::Point SpeedHistory::Range::Average() const
 {
-    return {bucket.time, bucket.download / count, bucket.upload / count};
+    return {bucket.time, bucket.download / bucket.count, bucket.upload / bucket.count, bucket.start, bucket.count};
 }
 
 void SpeedHistory::Range::Prune(std::int64_t time)
 {
-    while (!points.empty() && (points.size() + (count ? 1 : 0) > capacity ||
+    while (!points.empty() && (points.size() + (bucket.count ? 1 : 0) > capacity ||
         points.front().time <= time - duration))
     {
         points.pop_front();
@@ -78,9 +78,8 @@ void SpeedHistory::Range::Prune(std::int64_t time)
 
 void SpeedHistory::Sample(std::int64_t time, double download, double upload)
 {
-    Point sample{time, download, upload};
-    recent.Sample(sample);
-    day.Sample(sample);
+    recent.Sample(time, download, upload);
+    day.Sample(time, download, upload);
 }
 
 Json SpeedHistory::Read(bool day) const
@@ -89,14 +88,14 @@ Json SpeedHistory::Read(bool day) const
     auto append = [&samples](Point const& sample)
     {
         samples.push_back({{"time", sample.time}, {"download_rate", sample.download},
-            {"upload_rate", sample.upload}});
+            {"upload_rate", sample.upload}, {"start", sample.start}, {"count", sample.count}});
     };
     auto const& range = day ? this->day : recent;
     for (auto const& sample : range.points)
     {
         append(sample);
     }
-    if (range.count)
+    if (range.bucket.count)
     {
         append(range.Average());
     }

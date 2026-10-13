@@ -20,7 +20,7 @@ internal sealed partial class OpenSubtitles : Supplier
 
     internal override SubtitleSupplier SupplierId => SubtitleSupplier.OpenSubtitles;
     internal override bool Available => !string.IsNullOrWhiteSpace(Key);
-    internal override bool UsesPassword => true;
+    internal override Access Access => Access.Password;
     internal override bool SupportsHash => true;
     internal override Uri Privacy { get; } = new("https://www.opensubtitles.com/en/privacy");
     internal override Uri Terms { get; } = new("https://www.opensubtitles.com/en/tos");
@@ -37,16 +37,14 @@ internal sealed partial class OpenSubtitles : Supplier
         ProviderReply response
     ) => request.RequestUri?.AbsolutePath == "/api/v1/download" ? Quota(response) : null;
 
-    internal override async Task Check(
-        ProviderHttp http,
-        Account account,
+    protected override async Task Check(
+        Operation operation,
         CancellationToken cancellation
     )
     {
-        var personal = account.Username.Length > 0;
+        var personal = operation.Account.Username.Length > 0;
         var response = await Request(
-                http,
-                account,
+                operation,
                 personal ? "/api/v1/infos/user" : "/api/v1/infos/languages",
                 null,
                 cancellation
@@ -72,8 +70,7 @@ internal sealed partial class OpenSubtitles : Supplier
     }
 
     protected override async Task<IReadOnlyList<SubtitleCandidate>> Search(
-        ProviderHttp http,
-        Account account,
+        Operation operation,
         SubtitleLookup lookup,
         Release release,
         string language,
@@ -91,9 +88,8 @@ internal sealed partial class OpenSubtitles : Supplier
         {
             // A title search matches any title sharing its words, and the API
             // refuses to page past 1,000 results, so search one feature only.
-            await lookup.Validate(cancellation).ConfigureAwait(false);
             if (
-                await Feature(http, account, release, cancellation).ConfigureAwait(false)
+                await Feature(operation, release, cancellation).ConfigureAwait(false)
                 is not { } feature
             )
                 return candidates;
@@ -109,7 +105,6 @@ internal sealed partial class OpenSubtitles : Supplier
         }
         for (var page = 1; ; page++)
         {
-            await lookup.Validate(cancellation).ConfigureAwait(false);
             var parameters = new SortedDictionary<string, string>(filter, StringComparer.Ordinal)
             {
                 ["languages"] = language,
@@ -119,8 +114,7 @@ internal sealed partial class OpenSubtitles : Supplier
             if (page > 1)
                 parameters["page"] = page.ToString(CultureInfo.InvariantCulture);
             var response = await Request(
-                    http,
-                    account,
+                    operation,
                     "/api/v1/subtitles?" + Query(parameters),
                     null,
                     cancellation
@@ -167,17 +161,14 @@ internal sealed partial class OpenSubtitles : Supplier
         }
     }
 
-    internal override async Task<byte[]> Download(
-        ProviderHttp http,
-        Account account,
-        SubtitleLookup lookup,
+    protected override async Task<byte[]> Download(
+        Operation operation,
         SubtitleCandidate candidate,
         CancellationToken cancellation
     )
     {
         var response = await Request(
-                http,
-                account,
+                operation,
                 "/api/v1/download",
                 new
                 {
@@ -193,13 +184,11 @@ internal sealed partial class OpenSubtitles : Supplier
             || !CanDownload(uri)
         )
             throw new SubtitleException(SubtitleFailure.Format);
-        await lookup.Validate(cancellation).ConfigureAwait(false);
         for (var redirect = 0; ; redirect++)
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, uri);
             response = await Send(
-                    http,
-                    account,
+                    operation,
                     request,
                     cancellation,
                     ProviderHttp.FileLimit,
@@ -214,7 +203,6 @@ internal sealed partial class OpenSubtitles : Supplier
                     || !CanDownload(uri)
                 )
                     throw new SubtitleException(SubtitleFailure.Format);
-                await lookup.Validate(cancellation).ConfigureAwait(false);
                 continue;
             }
             return await Decode(response, cancellation).ConfigureAwait(false);
@@ -250,8 +238,7 @@ internal sealed partial class OpenSubtitles : Supplier
     // "Brandywine" for "Death on the Brandywine", so without an exact title
     // the one title holding the file's title words is the file's.
     private async Task<long?> Feature(
-        ProviderHttp http,
-        Account account,
+        Operation operation,
         Release release,
         CancellationToken cancellation
     )
@@ -264,8 +251,7 @@ internal sealed partial class OpenSubtitles : Supplier
             ["type"] = release.Season is null ? "movie" : "tvshow",
         };
         var response = await Request(
-                http,
-                account,
+                operation,
                 "/api/v1/features?" + Query(parameters),
                 null,
                 cancellation
@@ -366,19 +352,19 @@ internal sealed partial class OpenSubtitles : Supplier
     }
 
     private async Task<ProviderReply> Request(
-        ProviderHttp http,
-        Account account,
+        Operation operation,
         string path,
         object? body,
         CancellationToken cancellation
     )
     {
+        var account = operation.Account;
         var key = AccountKey(account);
         if (path == "/api/v1/download")
             lock (_sync)
                 if (_downloads.TryGetValue(key, out var reset) && reset > DateTimeOffset.UtcNow)
                     throw new SubtitleException(SubtitleFailure.Quota, reset);
-        var session = await Login(http, account, cancellation).ConfigureAwait(false);
+        var session = await Login(operation, cancellation).ConfigureAwait(false);
         for (var attempt = 0; ; attempt++)
         {
             try
@@ -404,7 +390,7 @@ internal sealed partial class OpenSubtitles : Supplier
                             Encoding.UTF8,
                             "application/json"
                         );
-                    var response = await Send(http, account, request, cancellation)
+                    var response = await Send(operation, request, cancellation)
                         .ConfigureAwait(false);
                     if ((int)response.Status is < 300 or >= 400)
                         return response;
@@ -427,17 +413,17 @@ internal sealed partial class OpenSubtitles : Supplier
             {
                 lock (_sync)
                     _sessions.Remove(key);
-                session = await Login(http, account, cancellation).ConfigureAwait(false);
+                session = await Login(operation, cancellation).ConfigureAwait(false);
             }
         }
     }
 
     private async Task<Session> Login(
-        ProviderHttp http,
-        Account account,
+        Operation operation,
         CancellationToken cancellation
     )
     {
+        var account = operation.Account;
         if (!Configured(account))
             throw new SubtitleException(SubtitleFailure.Unconfigured);
         if (account.Username.Length == 0)
@@ -459,7 +445,7 @@ internal sealed partial class OpenSubtitles : Supplier
                 "application/json"
             ),
         };
-        var response = await Send(http, account, request, cancellation).ConfigureAwait(false);
+        var response = await Send(operation, request, cancellation).ConfigureAwait(false);
         using var document = Parse(response.Bytes);
         if (Text(document.RootElement, "token") is not { Length: > 0 } token)
             throw new SubtitleException(SubtitleFailure.Authentication);

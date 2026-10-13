@@ -67,6 +67,10 @@ public sealed partial class MainWindow
     {
         if (!_cloaked)
             return;
+        // The window renders while cloaked, so restoring the saved page starts
+        // a transition the person did not make. Finish it before the first
+        // visible frame, or the outgoing page shows behind the new one.
+        StopMotion();
         SetCloak(false);
         Activate();
         SetForegroundWindow(WinRT.Interop.WindowNative.GetWindowHandle(this));
@@ -197,7 +201,6 @@ public sealed partial class MainWindow
         _viewRestored = true;
         if (_placement is not { } placement)
             return;
-        Model.SubtitleHelpSeen = placement.SubtitleHelpSeen;
         Model.ShowsSettingsIndex = placement.ShowsSettingsIndex;
         // An unknown saved value keeps its default; the rest still restores.
         if (Enum.IsDefined(placement.Filter))
@@ -244,8 +247,6 @@ public sealed partial class MainWindow
             await reading;
         if (_placementPath is null || !_viewRestored)
             return;
-        if (Model.Page == WindowPage.Settings && ReferenceEquals(_settings.Current, _settingsPage))
-            _settingsPage?.Depart();
         RememberBounds();
         _libraryTable.SaveLayout();
         var placement = new Placement
@@ -276,7 +277,6 @@ public sealed partial class MainWindow
             LibraryConfiguration = Model.Library.Configuration,
             LibraryLayouts = _libraryTable.Layouts,
             LibraryFilters = Model.Library.SaveFilters(),
-            SubtitleHelpSeen = Model.SubtitleHelpSeen,
             ShowsSettingsIndex = Model.ShowsSettingsIndex,
         };
         var temporary = _placementPath + ".tmp";
@@ -322,7 +322,6 @@ public sealed partial class MainWindow
             LibraryConfiguration,
             Dictionary<string, string>
         >? LibraryFilters { get; init; }
-        public bool SubtitleHelpSeen { get; init; }
         public bool ShowsSettingsIndex { get; init; } = true;
     }
 }

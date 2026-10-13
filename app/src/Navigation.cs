@@ -5,29 +5,42 @@ namespace Syno.TinyTorrent;
 
 internal sealed class Navigation(Func<WindowPage, Task<bool>> prepare) : INotifyPropertyChanged
 {
-    private readonly List<WindowPage> _history = [WindowPage.Torrents];
+    private sealed record Destination(WindowPage Page, SettingTarget? Settings = null);
+
+    private readonly List<Destination> _history = [new(WindowPage.Torrents)];
     private bool _pending;
 
-    internal WindowPage Current => _history[^1];
+    internal WindowPage Current => _history[^1].Page;
+    internal SettingTarget? Settings => _history[^1].Settings;
     internal WindowPage Page => Current == WindowPage.Connection ? WindowPage.Settings : Current;
-    internal WindowPage Workspace => _history.Last(IsWorkspace);
+    internal WindowPage Workspace => _history.Last(item => IsWorkspace(item.Page)).Page;
     internal bool HasBack => _history.Count > 1;
     internal bool CanGoBack => HasBack && !_pending;
     public event PropertyChangedEventHandler? PropertyChanged;
 
     internal Task<bool> Navigate(WindowPage page) =>
-        IsWorkspace(page) ? Change(page, 0) : Open(page);
+        IsWorkspace(page) ? Change(new(page), 0) : Open(page);
 
-    internal Task<bool> Open(WindowPage page)
+    internal Task<bool> Navigate(SettingTarget target) => Open(new Destination(WindowPage.Settings, target));
+
+    internal Task<bool> SelectCategory(SettingsCategory? category)
     {
-        var index = _history.LastIndexOf(page);
-        return Change(page, index < 0 ? _history.Count : index);
+        var index = _history.FindIndex(item => item.Page == WindowPage.Settings);
+        return Change(new(WindowPage.Settings, new(category)), index < 0 ? _history.Count : index);
+    }
+
+    internal Task<bool> Open(WindowPage page) => Open(new Destination(page));
+
+    private Task<bool> Open(Destination destination)
+    {
+        var index = _history.LastIndexOf(destination);
+        return Change(destination, index < 0 ? _history.Count : index);
     }
 
     internal Task<bool> GoBack() =>
         HasBack ? Change(_history[^2], _history.Count - 2) : Task.FromResult(false);
 
-    private async Task<bool> Change(WindowPage page, int retained)
+    private async Task<bool> Change(Destination destination, int retained)
     {
         if (_pending)
             return false;
@@ -35,12 +48,12 @@ internal sealed class Navigation(Func<WindowPage, Task<bool>> prepare) : INotify
         Changed(nameof(CanGoBack));
         try
         {
-            if (!await prepare(page))
+            if (!await prepare(destination.Page))
                 return false;
-            if (Current == page && retained == _history.Count - 1)
+            if (_history[^1] == destination && retained == _history.Count - 1)
                 return true;
             _history.RemoveRange(retained, _history.Count - retained);
-            _history.Add(page);
+            _history.Add(destination);
             Changed(nameof(Current));
             return true;
         }

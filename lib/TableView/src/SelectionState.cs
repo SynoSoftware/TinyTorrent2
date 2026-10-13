@@ -92,6 +92,8 @@ internal sealed class SelectionState
 
     internal bool IsSelected(object item) => _selected.Contains(item);
 
+    internal IEnumerable<object> Items => _selected;
+
     internal bool IsInteractive(object item) => CanInteract is null || CanInteract(item);
 
     internal bool IsSame(object? a, object? b) =>

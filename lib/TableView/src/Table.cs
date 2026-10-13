@@ -155,12 +155,7 @@ public sealed partial class Table : Control
                 return;
             }
 
-            // A restored sort changes the private view. Schema capture rebuilds it itself, so only
-            // the post-load path needs this, and only when the effective sort actually moved.
-            if (ApplyLayoutCore(value))
-            {
-                RebuildView();
-            }
+            ApplyLayoutCore(value, rebuild: true);
         }
     }
 
@@ -449,8 +444,7 @@ public sealed partial class Table : Control
 
     // ------------------------------------------------------- layout persistence
 
-    /// <returns>True when the restored sort is not the one that was already in force.</returns>
-    private bool ApplyLayoutCore(ColumnLayout state)
+    private void ApplyLayoutCore(ColumnLayout state, bool rebuild = false)
     {
         Dictionary<string, EffectiveColumn> byId = new(StringComparer.Ordinal);
         foreach (EffectiveColumn column in _baselineOrder)
@@ -492,10 +486,10 @@ public sealed partial class Table : Control
         }
 
         // An omitted visibility override restores the declared visibility, without changing live widths.
-        foreach (EffectiveColumn column in ordered)
-        {
-            column.VisibilityOverride = null;
-        }
+        Dictionary<EffectiveColumn, bool?> visibility = ordered.ToDictionary(
+            column => column,
+            _ => (bool?)null
+        );
 
         if (state.VisibilityOverrides is not null)
         {
@@ -512,45 +506,52 @@ public sealed partial class Table : Control
                     continue;
                 }
 
-                column.VisibilityOverride = entry.Value;
+                visibility[column] = entry.Value;
             }
         }
 
-        EnsureOneVisibleColumn(ordered);
+        bool IsVisible(EffectiveColumn column) =>
+            column.IsHierarchy || (visibility[column] ?? column.IsBaselineVisible);
+        if (ordered.Count > 0 && !ordered.Any(IsVisible))
+        {
+            EffectiveColumn fallback = ordered.FirstOrDefault(column => column.IsBaselineVisible)
+                ?? ordered[0];
+            visibility[fallback] = true;
+        }
 
-        bool sortChanged = RestoreSort(state, byId);
+        EffectiveColumn? sortColumn = null;
+        SortDirection direction = SortDirection.Ascending;
+        // A hidden sort would have no header through which the user could see or undo it.
+        if (
+            state.SortColumnId is string sortId
+            && byId.TryGetValue(sortId, out EffectiveColumn? saved)
+            && saved.Column.CanSort
+            && IsVisible(saved)
+            && Enum.IsDefined(state.SortDirection)
+        )
+        {
+            sortColumn = saved;
+            direction = state.SortDirection;
+        }
+
+        bool moved = !ReferenceEquals(sortColumn, _sortColumn)
+            || (sortColumn is not null && direction != _sortDirection);
+        // Initial capture resolves any later pending Sort before evaluating host comparisons.
+        IReadOnlyList<object>? order = rebuild && moved
+            ? SortedSnapshot(_source.Snapshot, sortColumn, direction)
+            : null;
+
+        foreach (EffectiveColumn column in ordered)
+        {
+            column.VisibilityOverride = visibility[column];
+        }
+        _sortColumn = sortColumn;
+        _sortDirection = direction;
 
         // SetOrder republishes the layout, which re-applies each header cell's sort indicator.
         EffectiveLayout.SetOrder(ordered);
-        return sortChanged;
-    }
-
-    private static void EnsureOneVisibleColumn(List<EffectiveColumn> ordered)
-    {
-        if (ordered.Count == 0)
-        {
-            return;
-        }
-
-        foreach (EffectiveColumn column in ordered)
-        {
-            if (column.IsVisible)
-            {
-                return;
-            }
-        }
-
-        EffectiveColumn fallback = ordered[0];
-        foreach (EffectiveColumn column in ordered)
-        {
-            if (column.IsBaselineVisible)
-            {
-                fallback = column;
-                break;
-            }
-        }
-
-        fallback.VisibilityOverride = true;
+        if (order is not null)
+            RebuildView(preparedOrder: order);
     }
 
     // ---------------------------------------------------------------- source

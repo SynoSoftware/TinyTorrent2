@@ -24,7 +24,9 @@ function Read-State([string] $Name) {
 
 function Start-Navigation([string] $Method, [string] $Page) {
     $arguments = if ($Page) { [object[]]@([Enum]::Parse($pageType, $Page)) } else { [object[]]@() }
-    $navigationType.GetMethod($Method, $flags).Invoke($navigation, $arguments)
+    $parameters = [Type[]]@()
+    if ($Page) { $parameters = [Type[]]@($pageType) }
+    $navigationType.GetMethod($Method, $flags, $null, $parameters, $null).Invoke($navigation, $arguments)
 }
 
 function Invoke-Navigation([string] $Method, [string] $Page) {
@@ -96,4 +98,18 @@ $gate.Result = [Threading.Tasks.Task]::FromResult($true)
 Invoke-Navigation GoBack
 Require-Route Library $false
 
-Write-Output 'PASS: contextual return, secondary pages, Connection, same-page reset, refusal and overlapping navigation.'
+Invoke-Navigation Navigate Torrents
+Invoke-Navigation Navigate Settings
+$categoryType = $assembly.GetType('Syno.TinyTorrent.Models.SettingsCategory', $true)
+$select = $navigationType.GetMethod('SelectCategory', $flags)
+for ($visit = 0; $visit -lt 4; $visit++) {
+    foreach ($category in 'General', 'Transfers', 'Limits', 'Network', $null) {
+        $value = if ($category) { [Enum]::Parse($categoryType, $category) } else { $null }
+        $selected = $select.Invoke($navigation, [object[]]@($value))
+        Require ($selected.GetAwaiter().GetResult()) 'A sidebar category could not be selected.'
+    }
+}
+Invoke-Navigation GoBack
+Require-Route Torrents $false
+
+Write-Output 'PASS: contextual return, secondary pages, Connection, same-page reset, refusal, overlapping navigation and sidebar history.'

@@ -2,7 +2,7 @@ namespace Syno.TinyTorrent.Services;
 
 internal sealed partial class Database
 {
-    private const int Version = 3;
+    private const int Version = 4;
 
     // A provider searched for the file under the name in evidence and found
     // no match, so background lookups skip it while the name is unchanged.
@@ -15,7 +15,14 @@ internal sealed partial class Database
         );
         """;
 
-    private const string Schema = VideoMisses + """
+    // The person's own API key for a Library provider, protected by
+    // Credentials, which replaces the key built into the release. Version 4
+    // added this table; Open adds it to an older file.
+    private const string ProviderKeys = """
+        CREATE TABLE provider_keys (provider_id TEXT NOT NULL PRIMARY KEY, secret BLOB NOT NULL);
+        """;
+
+    private const string Schema = VideoMisses + ProviderKeys + """
         CREATE TABLE source_state (
             singleton INTEGER PRIMARY KEY CHECK(singleton=1),
             initialized INTEGER NOT NULL CHECK(initialized IN (0,1))

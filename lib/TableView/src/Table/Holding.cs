@@ -210,19 +210,26 @@ public sealed partial class Table
     /// An empty view takes its rows at once: nothing is on screen to be moved. So does a snapshot
     /// that carries a change named by <see cref="Release"/>.
     /// </remarks>
-    private IReadOnlyList<object> Hold(IReadOnlyList<object> snapshot)
+    private (IReadOnlyList<object> Shown, HashSet<object> Held, IReadOnlyList<object> Released) Hold(
+        IReadOnlyList<object> snapshot,
+        bool sortChanged = false
+    )
     {
-        _held.Clear();
-        bool holds = _hierarchy is null && IsPointed && _view.Count > 0;
+        HashSet<object> held = new(_identity);
+        bool holds = !sortChanged && _hierarchy is null && IsPointed && _view.Count > 0;
         if (!holds && _released.Count == 0)
         {
-            return snapshot;
+            return (snapshot, held, Array.Empty<object>());
         }
 
         HashSet<object> live = new(snapshot, _identity);
-        if (ReleasedChangeArrived(live) || !holds)
+        List<object> released = _released
+            .Where(entry => live.Contains(entry.Key) == entry.Value)
+            .Select(entry => entry.Key)
+            .ToList();
+        if (released.Count > 0 || !holds)
         {
-            return snapshot;
+            return (snapshot, held, released);
         }
 
         HashSet<object> shown = new(_view, _identity);
@@ -232,29 +239,19 @@ public sealed partial class Table
         {
             if (!live.Contains(row))
             {
-                _held.Add(row);
+                held.Add(row);
             }
         }
 
-        return staying;
+        return (staying, held, released);
     }
 
-    /// <summary>
-    /// Forget every row named by <see cref="Release"/> whose change <paramref name="live"/> carries,
-    /// and report whether there was one.
-    /// </summary>
-    private bool ReleasedChangeArrived(HashSet<object> live)
+    private void AcceptHold(IReadOnlySet<object> held, IReadOnlyList<object> released)
     {
-        List<object> arrived = _released
-            .Where(entry => live.Contains(entry.Key) == entry.Value)
-            .Select(entry => entry.Key)
-            .ToList();
-        foreach (object row in arrived)
-        {
+        _held.Clear();
+        _held.UnionWith(held);
+        foreach (object row in released)
             _released.Remove(row);
-        }
-
-        return arrived.Count > 0;
     }
 
     /// <summary>
@@ -267,23 +264,24 @@ public sealed partial class Table
     /// the view's count and every pinned index is a place in it.
     /// </remarks>
     private (IReadOnlyList<object> Order, IReadOnlySet<object> Pinned) Pin(
-        IReadOnlyList<object> order
+        IReadOnlyList<object> order,
+        IReadOnlySet<object> held
     )
     {
         bool reorders = _hierarchy is null && _sortColumn is not null && !SortsOrder;
         object? menu = reorders ? _menuRow : null;
         object? pointed = reorders ? _pointedRow : null;
-        if (_held.Count == 0 && menu is null && pointed is null)
+        if (held.Count == 0 && menu is null && pointed is null)
         {
-            return (order, _held);
+            return (order, held);
         }
 
         HashSet<object> pinned = new(_identity);
-        object?[] slots = new object?[order.Count + _held.Count];
+        object?[] slots = new object?[order.Count + held.Count];
         for (int i = 0; i < _view.Count && i < slots.Length; i++)
         {
             object row = _view[i];
-            if (_held.Contains(row))
+            if (held.Contains(row))
             {
                 slots[i] = row;
                 pinned.Add(row);

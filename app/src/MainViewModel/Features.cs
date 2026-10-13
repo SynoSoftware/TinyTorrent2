@@ -6,9 +6,12 @@ using SQLitePCL;
 using Syno.TinyTorrent.Library;
 using Syno.TinyTorrent.Models;
 using Syno.TinyTorrent.Services;
+using MdbListProvider = Syno.TinyTorrent.Library.MdbList.Provider;
+using OmdbProvider = Syno.TinyTorrent.Library.Omdb.Provider;
 using PublicProvider = Syno.TinyTorrent.Library.Public.Provider;
 using SubtitleAcquisition = Syno.TinyTorrent.Subtitles.Acquisition;
 using TmdbProvider = Syno.TinyTorrent.Library.Tmdb.Provider;
+using WikidataProvider = Syno.TinyTorrent.Library.Wikidata.Provider;
 
 namespace Syno.TinyTorrent;
 
@@ -16,6 +19,8 @@ public sealed partial class MainViewModel
 {
     private readonly object _featuresGate = new();
     private readonly SemaphoreSlim _featureAccess = new(1);
+    private bool _refreshingFeatures;
+    private bool _featuresPending;
     private Database? _database;
     private TorrentSource? _fileSource;
     private readonly ProviderHttp _providerHttp = new();
@@ -113,14 +118,20 @@ public sealed partial class MainViewModel
     internal event EventHandler? DatabaseDeletionRequested;
     internal SubtitleAcquisition? Subtitles { get; private set; }
 
-    internal async Task<Statistics?> ReadStatistics()
+    internal Task<Statistics?> ReadStatistics() => ReadDatabase(database => database.ReadStatistics());
+
+    internal Task<long?> ReadDatabaseSize() =>
+        ReadDatabase<long?>(async database => await database.ReadSize());
+
+    // A read of a database that was replaced meanwhile returns nothing.
+    private async Task<T?> ReadDatabase<T>(Func<Database, Task<T>> read)
     {
         if (_featuresClosed || !Library.IsAvailable || _database is not { } database)
-            return null;
+            return default;
         try
         {
-            var statistics = await database.ReadStatistics();
-            return ReferenceEquals(database, _database) ? statistics : null;
+            var result = await read(database);
+            return ReferenceEquals(database, _database) ? result : default;
         }
         catch (OperationCanceledException) { }
         catch (Exception error)
@@ -128,7 +139,7 @@ public sealed partial class MainViewModel
             if (ReferenceEquals(database, _database))
                 ReportFeature(error);
         }
-        return null;
+        return default;
     }
 
     internal ICommand DownloadSubtitles { get; }
@@ -187,8 +198,41 @@ public sealed partial class MainViewModel
                         "tmdb",
                         new("https://www.themoviedb.org/privacy-policy"),
                         new("https://www.themoviedb.org/api-terms-of-use"),
-                        () => new TmdbProvider(http)
+                        key => new TmdbProvider(http, key)
+                    )
+                    {
+                        Access = Access.Key,
+                    },
+                    new ProviderOption(
+                        "wikidata",
+                        "Wikidata",
+                        "wikidata",
+                        new("https://foundation.wikimedia.org/wiki/Special:MyLanguage/Policy:Privacy_policy"),
+                        new("https://foundation.wikimedia.org/wiki/Special:MyLanguage/Policy:Terms_of_Use"),
+                        _ => new WikidataProvider(http)
                     ),
+                    new ProviderOption(
+                        "omdb",
+                        "OMDb",
+                        "omdb",
+                        new("https://www.omdbapi.com/legal.htm"),
+                        new("https://www.omdbapi.com/legal.htm"),
+                        key => new OmdbProvider(http, key)
+                    )
+                    {
+                        Access = Access.Key,
+                    },
+                    new ProviderOption(
+                        "mdblist",
+                        "MDBList",
+                        "mdblist",
+                        new("https://mdblist.com/privacy"),
+                        new("https://mdblist.com/terms"),
+                        key => new MdbListProvider(http, key)
+                    )
+                    {
+                        Access = Access.Key,
+                    },
                     .. PublicProvider.Options(http),
                 ]
             );
@@ -232,7 +276,7 @@ public sealed partial class MainViewModel
                 _dispatcher.TryEnqueue(() =>
                 {
                     if (ReferenceEquals(_fileSource, source))
-                        _ = RefreshFeatures();
+                        _ = RefreshSource();
                 });
             };
             source.Failed += (_, error) => _dispatcher.TryEnqueue(() =>
@@ -254,6 +298,26 @@ public sealed partial class MainViewModel
             Library.ChangeRoute(() => _providerHttp.Configure(route));
             _providerRoute = route;
             _ = Subtitles?.RouteChanged();
+        }
+    }
+
+    private async Task RefreshSource()
+    {
+        _featuresPending = true;
+        if (_refreshingFeatures)
+            return;
+        _refreshingFeatures = true;
+        try
+        {
+            while (_featuresPending)
+            {
+                _featuresPending = false;
+                await RefreshFeatures();
+            }
+        }
+        finally
+        {
+            _refreshingFeatures = false;
         }
     }
 

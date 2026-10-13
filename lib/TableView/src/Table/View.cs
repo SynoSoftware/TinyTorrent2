@@ -8,6 +8,7 @@ public sealed partial class Table
 {
     /// <summary>Set while a snapshot is being applied to the private view.</summary>
     private bool _reconcilingView;
+    private Dictionary<object, (int Index, int Sibling)>? _positions;
 
     /// <summary>The private view, in current visual row order.</summary>
     internal IReadOnlyList<object> View => _view;
@@ -119,12 +120,14 @@ public sealed partial class Table
             }
             else
             {
+                DateTimeOffset settled = _orderSettledAt;
                 try
                 {
                     (order, pinned) = ViewOrder(PrepareHierarchy(snapshot, capture));
                 }
                 catch
                 {
+                    _orderSettledAt = settled;
                     _preparedHierarchy = null;
                     throw;
                 }
@@ -134,12 +137,13 @@ public sealed partial class Table
         {
             // A sort the person or host asked for moves every row, so nothing is held through it.
             order = preparedOrder;
-            _held.Clear();
-            pinned = _held;
+            var (_, held, released) = Hold(snapshot, sortChanged: true);
+            AcceptHold(held, released);
+            pinned = held;
             _orderSettledAt = DateTimeOffset.UtcNow;
         }
         _source.Accept(snapshot);
-        AcceptHierarchy(order);
+        AcceptOrder(order);
         if (_detached)
         {
             _view.Reconcile(order, Array.Empty<int>(), pinned);

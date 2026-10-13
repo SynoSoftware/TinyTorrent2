@@ -44,6 +44,9 @@ public sealed partial class MainWindow
         var originalRate = rate.Input;
         var originalUpload = upload.Input;
         var originalPort = port.Input;
+        var threshold = settings.SlowDownload;
+        var originalThreshold = threshold.Input;
+        var originalExclusion = settings.IgnoreSlow.IsOn;
         var originalPeriods = settings.Schedule.Periods.ToArray();
         var originalLimits = Model.LimitsIndex;
         Task<bool>? departure = null;
@@ -63,13 +66,9 @@ public sealed partial class MainWindow
                 ?? throw new InvalidOperationException(
                     "The edit review settings page did not open."
                 );
-            var control = CaptureElements(page)
-                .OfType<Control>()
-                .Where(control => control is TextBox or NumberBox)
+            var editor = CaptureElements(page)
+                .OfType<TextBox>()
                 .Single(control => ReferenceEquals(control.Tag, setting));
-            var editor =
-                TextEditor.Find(control)
-                ?? throw new InvalidOperationException("The native numeric editor did not load.");
             if (!editor.IsEnabled || !editor.Focus(FocusState.Programmatic))
                 throw new InvalidOperationException("The native numeric editor cannot receive input.");
             editor.Text = input;
@@ -187,11 +186,35 @@ public sealed partial class MainWindow
             await Edit(rate, "96");
             BackButton.Focus(FocusState.Programmatic);
             await GoBack();
-            if (Model.Page != WindowPage.Torrents || rate.HasDraft || rate.ConfirmedNumber != 98304)
+            if (Model.Page != WindowPage.Torrents)
+                throw new InvalidOperationException("Back did not leave Settings.");
+            await rate.Saving;
+            if (rate.HasDraft || rate.ConfirmedNumber != 96000000)
                 throw new InvalidOperationException(
                     "Back did not leave Settings with the pending rate edit applied."
                 );
             completed.Add("edits-back-departure");
+
+            await settings.Toggle(settings.IgnoreSlow, true);
+            await Edit(threshold, "1.5");
+            if (!await Leave())
+                throw new InvalidOperationException("Leaving the KiB/s threshold did not navigate.");
+            await threshold.Saving;
+            if (threshold.ConfirmedNumber != 1536 || threshold.Input != "1.5")
+                throw new InvalidOperationException("The KiB/s threshold did not retain its byte value.");
+            await ShowSettings(new(threshold.Category, threshold.Name));
+            await CaptureLayout();
+            var thresholdEditor = CaptureElements(_settingsPage!).OfType<TextBox>()
+                .Single(control => ReferenceEquals(control.Tag, threshold));
+            if (thresholdEditor.Text != "1.5")
+                throw new InvalidOperationException("The saved KiB/s threshold changed when reopened.");
+            await Edit(threshold, "1048577");
+            await settings.Commit(threshold);
+            if (threshold.Message.Length == 0 || threshold.ConfirmedNumber != 1536
+                || !threshold.Message.Contains("KiB/s", StringComparison.Ordinal))
+                throw new InvalidOperationException("The threshold refusal used the wrong unit or saved invalid input.");
+            threshold.Cancel();
+            completed.Add("edits-kib-threshold");
 
             await ShowSettings(new());
             if (_settingsPage?.Category is not null)
@@ -202,10 +225,12 @@ public sealed partial class MainWindow
             await Edit(rate, "112");
             Search.Focus(FocusState.Programmatic);
             await ShowSettings(new(SettingsCategory.Network, port.Name));
+            if (_settingsPage?.Category != SettingsCategory.Network)
+                throw new InvalidOperationException("The named setting did not open Network.");
+            await rate.Saving;
             if (
-                _settingsPage?.Category != SettingsCategory.Network
-                || rate.HasDraft
-                || rate.ConfirmedNumber != 114688
+                rate.HasDraft
+                || rate.ConfirmedNumber != 112000000
             )
                 throw new InvalidOperationException(
                     "Navigating to a named setting lost the pending rate edit."
@@ -213,23 +238,22 @@ public sealed partial class MainWindow
             Search.IsSuggestionListOpen = false;
             completed.Add("edits-search-departure");
 
-            var refusedEditor = await Edit(rate, "128");
+            await Edit(rate, "128");
             var refusal = new Services.CommandException("storage_failed", null, Model.Text);
             rate.Reject(refusal);
             var refusedPage = _settingsPage!;
-            var categories = (SelectorBar)refusedPage.FindName("Categories");
-            var nextCategory = (SelectorBarItem)refusedPage.FindName("NetworkCategory");
+            var categories = (NavigationView)refusedPage.FindName("Categories");
+            var nextCategory = (NavigationViewItem)refusedPage.FindName("NetworkCategory");
             nextCategory.Focus(FocusState.Programmatic);
             categories.SelectedItem = nextCategory;
             await CaptureLayout();
             if (
-                refusedPage.Category != SettingsCategory.Limits
+                refusedPage.Category != SettingsCategory.Network
                 || !rate.HasDraft
                 || !ReferenceEquals(rate.Failure, refusal)
-                || !ReferenceEquals(FocusManager.GetFocusedElement(Root.XamlRoot), refusedEditor)
             )
                 throw new InvalidOperationException(
-                    "Selecting a category hid an already refused rate edit."
+                    "Selecting a category lost an already refused rate edit."
                 );
             await CaptureUi("edits-refused-category");
             rate.Cancel();
@@ -238,10 +262,11 @@ public sealed partial class MainWindow
             var valid = originalRate == "64" ? "65" : "64";
             await Edit(rate, valid);
             await CapturePage("edits-valid-rate-before-leaving");
+            if (!await Leave() || Model.Page != WindowPage.Torrents)
+                throw new InvalidOperationException("Leaving a valid native rate edit did not navigate.");
+            await rate.Saving;
             if (
-                !await Leave()
-                || Model.Page != WindowPage.Torrents
-                || rate.Input != valid
+                rate.Input != valid
                 || rate.HasDraft
                 || rate.IsPending
                 || rate.Message.Length != 0
@@ -277,10 +302,13 @@ public sealed partial class MainWindow
             try
             {
                 var left = await Leave();
-                var applied =
+                await Task.WhenAll(rate.Saving, upload.Saving);
+                var retained =
                     rate.Input == "161"
+                    && downloadEditor.Text == "161"
+                    && rate.ConfirmedNumber == 160000000
                     && upload.Input == uploadValue
-                    && !rate.HasDraft
+                    && rate.HasDraft
                     && !upload.HasDraft
                     && !rate.IsPending
                     && !upload.IsPending
@@ -291,17 +319,18 @@ public sealed partial class MainWindow
                     {
                         journey = "late earlier-field departure",
                         injectedDuringUpload = injected,
-                        applied,
+                        retained,
                         navigated = left,
                         prompted = false,
                         download = rate.Input,
                         upload = upload.Input,
                     }
                 );
-                if (!injected || !left || Model.Page != WindowPage.Torrents || !applied)
+                if (!injected || !left || Model.Page != WindowPage.Torrents || !retained)
                     throw new InvalidOperationException(
-                        "The first departure did not apply the native Download edit made during Upload's save."
+                        "Departure did not retain the newer Download input over its confirmed value."
                     );
+                rate.Cancel();
                 completed.Add("edits-late-earlier-field-departure");
             }
             finally
@@ -376,7 +405,7 @@ public sealed partial class MainWindow
                 || rate.Message.Length != 0
             )
                 throw new InvalidOperationException(
-                    "The first departure during an active numeric save did not await it and navigate."
+                    "Departure during an active numeric save did not navigate and preserve its accepted save."
                 );
             outcomes.Add(
                 new
@@ -585,6 +614,13 @@ public sealed partial class MainWindow
             port.Cancel();
             rate.Cancel();
             upload.Cancel();
+            threshold.Cancel();
+            if (threshold.Input != originalThreshold)
+            {
+                threshold.Input = originalThreshold;
+                await settings.Commit(threshold);
+            }
+            await settings.Toggle(settings.IgnoreSlow, originalExclusion);
             if (rate.Input != originalRate)
             {
                 await Edit(rate, originalRate);
@@ -604,6 +640,9 @@ public sealed partial class MainWindow
                 || upload.HasDraft
                 || port.Input != originalPort
                 || port.HasDraft
+                || threshold.Input != originalThreshold
+                || threshold.HasDraft
+                || settings.IgnoreSlow.IsOn != originalExclusion
                 || !PeriodsRetained()
                 || Model.LimitsIndex != originalLimits
             )

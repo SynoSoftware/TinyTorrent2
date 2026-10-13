@@ -94,6 +94,13 @@ a scheduled pause period. The torrent continues by itself when that hold ends.
 **Session pause**: a pause of transfers across all torrents that preserves each
 torrent's own intent.
 
+**Session totals**: payload bytes downloaded and uploaded since TinyTorrent's
+engine started, including transfers while its window was closed.
+
+**Lifetime totals**: payload bytes downloaded and uploaded across engine sessions,
+including torrents that have since been removed. Protocol overhead and local
+verification are not payload transfers.
+
 **Download queue**: the engine-owned order in which unfinished torrents are
 considered for downloading.
 
@@ -109,6 +116,16 @@ seeding, and overall active torrents. They limit activity, not transfer speed.
 
 **Bandwidth limits**: caps on download and upload rates, separate from how many
 torrents or peers may be active.
+
+**Limit mode**: the choice of Standard limits, Alternative limits, No limits or
+Weekly schedule that determines which bandwidth limits apply.
+
+**Standard limits**: the ordinary download and upload caps, also used outside
+alternative or pause periods in the weekly schedule.
+
+**Alternative limits**: the second pair of download and upload caps, selectable
+directly or during alternative periods in the weekly schedule.
+_Avoid_: transfer preset, which also includes queue limits.
 
 **Transfer preset**: a named combination of bandwidth and queue limits. Custom
 means the current choices do not match a predefined combination, not a saved profile.

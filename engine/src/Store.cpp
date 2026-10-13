@@ -14,6 +14,19 @@ constexpr std::size_t jobLimit = 64;
 constexpr std::streamoff fileLimit = 16 * 1024 * 1024;
 }
 
+Outcome StorageOutcome::ToOutcome(ErrorCode code) const
+{
+    if (!failure)
+    {
+        return {};
+    }
+    if (*failure == StorageFailure::Overloaded)
+    {
+        return {ErrorCode::Overloaded};
+    }
+    return {code, detail};
+}
+
 Store::Store(std::function<void()> wake) : wake_(std::move(wake)), worker_([this]
 {
     for (;;)
@@ -34,11 +47,10 @@ Store::Store(std::function<void()> wake) : wake_(std::move(wake)), worker_([this
         try
         {
             job.work();
-            outcome.succeeded = true;
         }
         catch (std::exception const& error)
         {
-            outcome.detail = error.what();
+            outcome = {StorageFailure::Failed, error.what()};
         }
         {
             std::lock_guard lock(mutex_);
@@ -71,7 +83,7 @@ void Store::Run(std::function<void()> work, std::function<void(StorageOutcome)> 
         rejected = jobs_.size() >= jobLimit;
         if (rejected)
         {
-            completed_.push_back({std::move(completion), {false, "storage_overloaded"}});
+            completed_.push_back({std::move(completion), {StorageFailure::Overloaded}});
         }
         else
         {

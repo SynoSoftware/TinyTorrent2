@@ -33,8 +33,12 @@ public:
     void Notify();
     // The notice whose popup was selected, unless selecting it only dismisses it.
     std::optional<Notice> TakeNotice();
-    // The switch that the selected popup's button turns off.
+    // The switch that the shown popup's Turn off command turns off.
     std::optional<NoticeSwitch> TakeSwitch();
+#ifdef _DEBUG
+    // Shows an Added notice for a sample torrent, whatever the switches say.
+    void ShowSample();
+#endif
 private:
     struct Row
     {
@@ -53,7 +57,7 @@ private:
     void Apply(DWORD action);
     void Flush();
     void ShowBackground();
-    // Adds the button that turns `notices` off, when there is a switch for them.
+    // Offers the More menu when there is a switch that turns `notices` off.
     void Show(Popup::Content content, std::optional<NoticeSwitch> notices);
     Row* Find(UINT id);
     Row& Fill(TrayItem item);

@@ -109,6 +109,7 @@
         </Grid.ColumnDefinitions>
         <AutoSuggestBox
           x:Name="Search"
+          CornerRadius="{ThemeResource ControlCornerRadius}"
           MaxWidth="320"
           MinWidth="200"
           HorizontalAlignment="Left"
@@ -119,6 +120,11 @@
           QuerySubmitted="OnSearchSubmitted"
           GotFocus="OnSearchFocus"
         >
+          <AutoSuggestBox.TextBoxStyle>
+            <Style TargetType="TextBox" BasedOn="{StaticResource AutoSuggestBoxTextBoxStyle}">
+              <Setter Property="Padding" Value="12,5,12,6" />
+            </Style>
+          </AutoSuggestBox.TextBoxStyle>
           <AutoSuggestBox.ItemTemplate>
             <DataTemplate x:DataType="local:Suggestion">
               <StackPanel Spacing="2" Margin="0,4">
@@ -187,7 +193,7 @@
       >
         <FontIcon
           FontFamily="{x:Bind icons:Lucide.Font}"
-          Glyph="{x:Bind icons:Lucide.Wrench}"
+          Glyph="{x:Bind icons:Lucide.Settings}"
           FontSize="16"
         />
       </Button>
@@ -467,7 +473,6 @@
                     Id="name"
                     Width="280"
                     MinWidth="160"
-                    CanHide="False"
                   >
                     <table:Column.CellTemplate>
                       <DataTemplate x:DataType="models:Torrent">
@@ -643,6 +648,17 @@
                         <TextBlock
                           Text="{x:Bind AddedText, Mode=OneWay}"
                           ToolTipService.ToolTip="{x:Bind AddedTip, Mode=OneWay}"
+                          VerticalAlignment="Center"
+                        />
+                      </DataTemplate>
+                    </table:Column.CellTemplate>
+                  </table:Column>
+                  <table:Column x:Name="CompletedOnColumn" Id="completed_on" Width="140">
+                    <table:Column.CellTemplate>
+                      <DataTemplate x:DataType="models:Torrent">
+                        <TextBlock
+                          Text="{x:Bind CompletedOnText, Mode=OneWay}"
+                          ToolTipService.ToolTip="{x:Bind CompletedOnTip, Mode=OneWay}"
                           VerticalAlignment="Center"
                         />
                       </DataTemplate>

@@ -86,6 +86,7 @@ constexpr std::pair<std::string_view, ErrorCode> errors[] = {
     {"unavailable", ErrorCode::Unavailable},
     {"overloaded", ErrorCode::Overloaded},
     {"storage_failed", ErrorCode::StorageFailed},
+    {"encryption_failed", ErrorCode::EncryptionFailed},
     {"recovery_required", ErrorCode::RecoveryRequired},
     {"files_busy", ErrorCode::FilesBusy},
     {"shared_files", ErrorCode::SharedFiles},
@@ -102,11 +103,6 @@ constexpr std::pair<std::string_view, ErrorCode> errors[] = {
 
 Json Error(char const* code, std::string detail)
 {
-    if (std::string_view(code) == ToString(ErrorCode::StorageFailed) && detail == "storage_overloaded")
-    {
-        code = ToString(ErrorCode::Overloaded);
-        detail.clear();
-    }
     return {{"ok", false}, {"error", {{"code", code}, {"detail", std::move(detail)}}}};
 }
 }
@@ -190,30 +186,33 @@ void Engine::PauseSession(bool paused, std::function<void(Outcome)> completion)
     }
     state_->PauseSession(paused, std::move(completion));
 }
-void Engine::TurnOff(NoticeSwitch notices, std::function<void(Outcome)> completion)
+void Engine::TurnOff(std::vector<NoticeSwitch> const& notices, std::function<void(Outcome)> completion)
 {
     if (auto refusal = state_->Refusal())
     {
         completion({*refusal});
         return;
     }
-    char const* key = nullptr;
-    switch (notices)
+    auto choices = Json::object();
+    for (auto notice : notices)
     {
-    case NoticeSwitch::Finished:
-        key = "notifications_enabled";
-        break;
-    case NoticeSwitch::Added:
-        key = "notify_added";
-        break;
-    case NoticeSwitch::Problems:
-        key = "notify_problems";
-        break;
-    case NoticeSwitch::Background:
-        key = "notify_background";
-        break;
+        switch (notice)
+        {
+        case NoticeSwitch::Finished:
+            choices["notifications_enabled"] = false;
+            break;
+        case NoticeSwitch::Added:
+            choices["notify_added"] = false;
+            break;
+        case NoticeSwitch::Problems:
+            choices["notify_problems"] = false;
+            break;
+        case NoticeSwitch::Background:
+            choices["notify_background"] = false;
+            break;
+        }
     }
-    state_->Configure(Json{{key, false}}, std::move(completion));
+    state_->Configure(choices, std::move(completion));
 }
 void Engine::RecordPrograms(std::vector<std::string> programs, std::function<void(Outcome)> completion)
 {

@@ -146,6 +146,13 @@
     <ClCompile Include="Desktop\Tray.cpp" />
     <ResourceCompile Include="Resources.rc" />
   </ItemGroup>
+  <!-- The notice menu's icons. The window's output has its own copy from Lucide.csproj
+       beside the engine it copies; this one gives the engine's own output its icons. -->
+  <ItemGroup>
+    <CopyFileToFolders Include="$(MSBuildThisFileDirectory)..\..\lib\Lucide\src\Fonts\lucide.ttf">
+      <DestinationFolders>$(OutDir)Lucide\Fonts</DestinationFolders>
+    </CopyFileToFolders>
+  </ItemGroup>
   <ItemGroup>
     <None Include="Dependencies.ps1" />
   </ItemGroup>

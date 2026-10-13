@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
+using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Controls;
 using Syno.TinyTorrent.Models;
 using Syno.TinyTorrent.Services;
@@ -28,6 +29,11 @@ internal sealed class MetadataDialog : UserControl, IDraft
         IsClosable = false,
     };
     private readonly ProgressBar _progress = new() { Opacity = 0 };
+    private readonly TextBlock _empty = new()
+    {
+        Visibility = Visibility.Collapsed,
+        TextWrapping = TextWrapping.Wrap,
+    };
     private CancellationTokenSource? _request;
     private Exception? _failure;
     public bool IsPending { get; private set; }
@@ -62,6 +68,7 @@ internal sealed class MetadataDialog : UserControl, IDraft
         AutomationProperties.SetAutomationId(_source, "MetadataSource");
         AutomationProperties.SetAutomationId(_input, "MetadataSearch");
         AutomationProperties.SetAutomationId(_results, "MetadataMatches");
+        AutomationProperties.SetLiveSetting(_empty, AutomationLiveSetting.Polite);
         AutomationProperties.SetAccessibilityView(
             _progress,
             Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw
@@ -71,7 +78,7 @@ internal sealed class MetadataDialog : UserControl, IDraft
         {
             Spacing = 12,
             MinWidth = 380,
-            Children = { _source, search, _results, _error },
+            Children = { _source, search, _results, _empty, _error },
         };
         _source.SelectionChanged += async (_, _) => await Find();
         _settings.Click += (_, _) => SettingsRequested?.Invoke(this, new(SettingsCategory.Network));
@@ -81,6 +88,7 @@ internal sealed class MetadataDialog : UserControl, IDraft
             if (args.Reason != AutoSuggestionBoxTextChangeReason.UserInput)
                 return;
             Cancel();
+            _empty.Visibility = Visibility.Collapsed;
             _results.ItemsSource = null;
         };
         _results.SelectionChanged += (_, _) =>
@@ -101,6 +109,7 @@ internal sealed class MetadataDialog : UserControl, IDraft
         AutomationProperties.SetName(_results, _library.Text.Get("library", "matches"));
         _error.Message = _failure is null ? string.Empty : _library.Error(_failure);
         _error.IsOpen = _failure is not null;
+        _empty.Text = _library.Text.Get("library", "no_metadata_matches");
     }
 
     private ProviderOption? Source =>
@@ -111,6 +120,7 @@ internal sealed class MetadataDialog : UserControl, IDraft
         if (Source is not { } source)
             return;
         Cancel();
+        _empty.Visibility = Visibility.Collapsed;
         using var request = new CancellationTokenSource();
         Track(request);
         _results.ItemsSource = null;
@@ -119,7 +129,13 @@ internal sealed class MetadataDialog : UserControl, IDraft
         {
             var choices = await _library.FindVideo(_input.Text, source, request.Token);
             if (!request.IsCancellationRequested)
+            {
                 _results.ItemsSource = choices;
+                _empty.Visibility = choices.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+                if (choices.Count == 0)
+                    FrameworkElementAutomationPeer.CreatePeerForElement(_empty)
+                        ?.RaiseAutomationEvent(AutomationEvents.LiveRegionChanged);
+            }
         }
         catch (OperationCanceledException) { }
         catch (Exception error)

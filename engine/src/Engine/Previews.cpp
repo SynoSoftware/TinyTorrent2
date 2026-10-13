@@ -185,13 +185,12 @@ void Engine::State::Inspect(std::string source, std::string connectionId,
             completion({ErrorCode::ShuttingDown}, nullptr);
             return;
         }
-        if (!outcome.succeeded)
+        if (outcome.failure)
         {
-            completion({ErrorCode::InvalidSource, outcome.detail}, nullptr);
+            completion(outcome.ToOutcome(ErrorCode::InvalidSource), nullptr);
             return;
         }
         preview->params.info_hashes = preview->InfoHashes();
-        preview->params.storage_mode = settings.preallocates ? lt::storage_mode_allocate : lt::storage_mode_sparse;
         auto merge = [this, preview, completion]
         {
             auto hashes = Hashes(preview->InfoHashes());
@@ -233,9 +232,9 @@ void Engine::State::Inspect(std::string source, std::string connectionId,
                 UpdatePreview(*preview);
                 if (merge())
                     return;
-                if (!outcome.succeeded)
+                if (outcome.failure)
                 {
-                    completion({ErrorCode::PreviewFailed, outcome.detail}, nullptr);
+                    completion(outcome.ToOutcome(ErrorCode::PreviewFailed), nullptr);
                     return;
                 }
                 ApplyPolicy(preview->handle);

@@ -92,6 +92,17 @@ public sealed partial class Browser
         await _videos.Enable(providerId);
     }
 
+    internal bool HasKey(string providerId) => _videos?.HasKey(providerId) == true;
+
+    /// <summary>Saves the person's own API key, as <see cref="VideoLookup.SaveKey"/> describes.</summary>
+    internal async Task SaveKey(string providerId, string? key)
+    {
+        CancelInformation();
+        if (_videos is null)
+            return;
+        await _videos.SaveKey(providerId, key);
+    }
+
     internal async Task SaveLookupLimit(int limit)
     {
         if (_videos is null)
@@ -125,7 +136,10 @@ public sealed partial class Browser
             CancelInformation();
         else
             _ = ReadDetail();
+        Changed(nameof(IsInspectorVisible));
     }
+
+    internal bool IsInspectorVisible => _inspectorVisible;
 
     private void RefreshInformation()
     {

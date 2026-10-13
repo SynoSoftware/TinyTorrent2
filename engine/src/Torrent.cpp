@@ -668,6 +668,23 @@ Json DescribePieces(Torrent const& torrent, std::shared_ptr<lt::torrent_info con
     data["piece_size"] = metadata ? metadata->piece_length() : 0;
     data["peer_count"] = torrent.status.num_peers;
     data["verified"] = Json::array();
+    std::vector<bool> wanted(count, false);
+    if (metadata)
+    {
+        auto const& files = metadata->layout();
+        auto priorities = torrent.ChosenPriorities(metadata);
+        for (auto index : files.file_range())
+        {
+            if (files.pad_file_at(index) || files.file_size(index) == 0 ||
+                priorities[static_cast<int>(index)] == lt::dont_download)
+                continue;
+            auto first = files.file_offset(index) / metadata->piece_length();
+            auto end = (files.file_offset(index) + files.file_size(index) + metadata->piece_length() - 1) /
+                metadata->piece_length();
+            std::fill(wanted.begin() + first, wanted.begin() + end, true);
+        }
+    }
+    data["wanted"] = std::move(wanted);
     for (int index = 0; index < count; ++index)
     {
         data["verified"].push_back(current.is_seeding ||
@@ -747,9 +764,11 @@ Json Torrent::Describe(TorrentView view, bool includeFiles, Detail const& detail
     return data;
 }
 
-Json Torrent::Row(bool sessionPaused) const
+Json Torrent::Row(bool sessionPaused, int queue) const
 {
     auto problem = Diagnose();
+    auto complete = status.has_metadata && status.is_finished && completionPhase != CompletionPhase::Downloading &&
+        completionPhase != CompletionPhase::Flushing && completionPhase != CompletionPhase::Checking;
     return {{"torrent_id", torrentId}, {"save_path", facts.savePath}, {"final_folder", facts.finalFolder},
         {"moving", moving}, {"move_destination", facts.moveDestination},
         {"paused", facts.intent == Intent::Paused}, {"forced", facts.intent == Intent::Forced},
@@ -767,10 +786,8 @@ Json Torrent::Row(bool sessionPaused) const
         {"swarm_seed_count", status.num_complete >= 0 ? status.num_complete : status.list_seeds},
         {"swarm_leecher_count", status.num_incomplete >= 0 ? status.num_incomplete : status.list_peers - status.list_seeds},
         {"downloaded", status.all_time_download}, {"uploaded", status.all_time_upload},
-        {"queue", static_cast<int>(status.queue_position)},
-        {"complete", status.has_metadata && status.is_finished && completionPhase != CompletionPhase::Downloading &&
-            completionPhase != CompletionPhase::Flushing &&
-            completionPhase != CompletionPhase::Checking},
+        {"queue", queue},
+        {"complete", complete}, {"completed_on", complete ? status.completed_time : 0},
         {"incoming", status.has_incoming}, {"hashes", Hashes()}};
 }
 

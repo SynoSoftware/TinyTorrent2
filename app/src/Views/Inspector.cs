@@ -499,8 +499,8 @@ public sealed class Inspector : INotifyPropertyChanged
         _readFailure = null;
     }
 
-    // Recent samples replace overlapping day samples; their intervals can differ
-    // after an aggregation setting changes, so merge by timestamp.
+    // Switch histories at a shared sample end. Splitting a coarse average
+    // cannot recover the rate of its older portion without its observations.
     private async Task<SpeedSample[]> ReadHistory(Torrent target, int context)
     {
         var day = Samples(
@@ -524,8 +524,12 @@ public sealed class Inspector : INotifyPropertyChanged
                 new { torrent_id = target.TorrentId, range = "five_minutes" }
             )
         );
-        var cut = recent.Length == 0 ? long.MaxValue : recent[0].Time;
-        return [.. day.Where(sample => sample.Time < cut), .. recent];
+        if (recent.Length == 0)
+            return day;
+        var ends = recent.Select(sample => sample.Time).ToHashSet();
+        var cut = day.FirstOrDefault(sample => ends.Contains(sample.Time))?.Time
+            ?? recent[0].Start - 1;
+        return [.. day.Where(sample => sample.Time <= cut), .. recent.Where(sample => sample.Start > cut)];
 
         static SpeedSample[] Samples(JsonElement reply) =>
             reply
@@ -534,7 +538,9 @@ public sealed class Inspector : INotifyPropertyChanged
                 .Select(sample => new SpeedSample(
                     sample.GetProperty("time").GetInt64(),
                     sample.GetProperty("download_rate").GetDouble(),
-                    sample.GetProperty("upload_rate").GetDouble()
+                    sample.GetProperty("upload_rate").GetDouble(),
+                    sample.GetProperty("start").GetInt64(),
+                    sample.GetProperty("count").GetInt32()
                 ))
                 .ToArray();
     }
@@ -847,4 +853,10 @@ public sealed class Inspector : INotifyPropertyChanged
     }
 }
 
-public sealed record SpeedSample(long Time, double DownloadRate, double UploadRate);
+public sealed record SpeedSample(
+    long Time,
+    double DownloadRate,
+    double UploadRate,
+    long Start,
+    double Weight
+);

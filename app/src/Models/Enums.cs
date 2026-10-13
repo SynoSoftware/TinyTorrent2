@@ -34,6 +34,13 @@ public enum TransferPreset
     Custom,
 }
 
+// The engine stores bytes per second; each value is the bytes in one unit.
+public enum RateScale
+{
+    KibPerSecond = 1024,
+    MbPerSecond = 1000000,
+}
+
 public enum FilterPane
 {
     Hidden,
@@ -111,6 +118,17 @@ internal enum SubtitleScope
     New,
     NoExactMatch,
     All,
+}
+
+/// <summary>
+/// What a Library provider or subtitle supplier asks the person for, so the
+/// app can show the matching account dialog.
+/// </summary>
+internal enum Access
+{
+    None,
+    Key,
+    Password,
 }
 
 internal enum SubtitleSupplier

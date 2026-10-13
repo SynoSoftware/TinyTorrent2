@@ -10,38 +10,37 @@ bool Engine::State::IsQueued(lt::queue_position_t position)
     return static_cast<int>(position) >= 0;
 }
 
+// The queued torrents in the accepted order. Status positions can still
+// precede the last accepted queue move, so they place only the torrents that
+// queueOrder does not list yet.
 std::vector<std::string> Engine::State::CurrentQueue() const
 {
-    std::vector<std::pair<int, std::string>> positions;
-    for (auto const& [id, torrent] : torrents)
+    auto queued = [](Torrent const& torrent)
     {
-        if (torrent.restore)
-        {
-            continue;
-        }
-        auto position = torrent.status.queue_position;
-        if (!torrent.deleted && IsQueued(position))
-        {
-            positions.emplace_back(static_cast<int>(position), id);
-        }
-    }
-    std::stable_sort(positions.begin(), positions.end());
+        return !torrent.restore && !torrent.deleted && IsQueued(torrent.status.queue_position);
+    };
     std::vector<std::string> order;
-    // Status positions can still precede the last accepted queue move.
+    std::set<std::string> listed;
     for (auto const& id : queueOrder)
     {
-        if (std::any_of(positions.begin(), positions.end(),
-            [&id](auto const& entry) { return entry.second == id; }))
+        auto found = torrents.find(id);
+        if (found != torrents.end() && queued(found->second) && listed.insert(id).second)
         {
             order.push_back(id);
         }
     }
-    for (auto const& [position, id] : positions)
+    std::vector<std::pair<int, std::string>> unlisted;
+    for (auto const& [id, torrent] : torrents)
     {
-        if (!Contains(order, id))
+        if (!listed.contains(id) && queued(torrent))
         {
-            order.push_back(id);
+            unlisted.emplace_back(static_cast<int>(torrent.status.queue_position), id);
         }
+    }
+    std::stable_sort(unlisted.begin(), unlisted.end());
+    for (auto const& [position, id] : unlisted)
+    {
+        order.push_back(id);
     }
     return order;
 }

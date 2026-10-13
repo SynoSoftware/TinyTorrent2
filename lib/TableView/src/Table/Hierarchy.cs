@@ -10,7 +10,6 @@ public sealed partial class Table
 {
     private Hierarchy? _hierarchy;
     private Hierarchy.Snapshot? _preparedHierarchy;
-    private Dictionary<object, (int Index, int Sibling)>? _positions;
 
     internal Hierarchy? Hierarchy => _hierarchy;
 
@@ -46,16 +45,20 @@ public sealed partial class Table
         return hierarchy.Project(_preparedHierarchy, null, default);
     }
 
-    private void AcceptHierarchy(IReadOnlyList<object> order)
+    private void AcceptOrder(IReadOnlyList<object> order)
     {
+        _positions = new(_identity);
         if (_hierarchy is null)
+        {
+            for (int i = 0; i < order.Count; i++)
+                _positions.Add(order[i], (i, 0));
             return;
+        }
         var snapshot = _preparedHierarchy ?? _hierarchy.Captured;
         if (snapshot is null)
             return;
         if (!ReferenceEquals(_hierarchy.Captured, snapshot))
             _hierarchy.Accept(snapshot);
-        _positions = new(_identity);
         Dictionary<object, int> counts = new(_identity);
         int roots = 0;
         for (int i = 0; i < order.Count; i++)

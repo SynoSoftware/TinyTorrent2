@@ -16,6 +16,11 @@ public:
     Application(std::filesystem::path directory, std::wstring sid, bool headless);
     ~Application() = default;
     int Run(bool background, std::vector<std::string> sources = {});
+#ifdef _DEBUG
+    // Shows the popup of an Added notice for a sample torrent once the engine
+    // has loaded, whatever the notice switches say.
+    void ShowSampleNotice();
+#endif
     static bool ValidSources(std::vector<std::string> const& sources);
 private:
     struct Activation
@@ -27,7 +32,8 @@ private:
     static LRESULT CALLBACK Procedure(HWND window, UINT message, WPARAM first, LPARAM second);
     LRESULT Handle(UINT message, WPARAM first, LPARAM second);
     void OnTray(WPARAM first, LPARAM second);
-    void OnNotice(PopupPart part);
+    void OnNotice();
+    void OnNoticeCommand(NoticeCommand command);
     void ShowMenu(POINT point);
     void OnTimer();
     void Dispatch(std::shared_ptr<Pipe::Connection> client, Json request, Reply reply);
@@ -59,6 +65,9 @@ private:
     void AddSources();
     void FinishSource(Outcome const& outcome, Added const& added);
     void CheckPrograms();
+    // Starts or raises the window at `card`, a card on the General page of
+    // Settings, which the window highlights.
+    void OpenSettings(std::string card);
     void ShowSettings();
     void Notify(Notice notice);
     void ShowError(std::string const& key, std::wstring detail = {});
@@ -75,7 +84,11 @@ private:
     // stage of its own.
     bool saving_ = false;
     bool programsChecked_ = false;
-    bool showsSettings_ = false;
+#ifdef _DEBUG
+    bool showsSample_ = false;
+#endif
+    // The Settings card to show once the window connects.
+    std::optional<std::string> settingsCard_;
     unsigned sequence_ = 0;
     ULONGLONG waitingSince_ = 0;
     // Cold when the current wait for a window began while the engine loaded.

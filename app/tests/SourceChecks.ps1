@@ -207,7 +207,11 @@ try {
     Invoke-Value $sources 'Replace' @($first, $files, $cancel) | Out-Null
     $matches = Invoke-Value $store 'Search' @($query, $cancel)
     $entry = $matches.Entries[0]
-    Require ($null -ne (Invoke-Value $store 'Next' @('tmdb', $cancel))) 'Reopening did not try a file without a match again.'
+    Require ($null -eq (Invoke-Value $store 'Next' @('tmdb', $cancel))) 'Reopening repeated a remembered no-match search.'
+    $retryTarget = New-Value 'Library.VideoTarget' @($entry, 'tmdb', $explicit)
+    $retry = Invoke-Value $store 'Begin' @($retryTarget, $null, $cancel)
+    Require ($null -ne $retry) 'A remembered no-match prevented an explicit retry.'
+    Invoke-Value $store 'Complete' @($retry, $null, 'no_match', $cancel) | Out-Null
     1..2 | ForEach-Object { Invoke-Value $store 'SaveSearch' @('tmdb', 'Example', (New-Values 'Library.VideoChoice' @()), $cancel) | Out-Null }
     Require ((Invoke-Value $store 'Searches' @('tmdb', 'example', $cancel)) -eq 2 -and
         (Invoke-Value $store 'Searches' @('public/imdb', 'Example', $cancel)) -eq 0) 'Searches were not counted per provider and search text.'
@@ -217,7 +221,7 @@ try {
     $http = New-Value 'Services.ProviderHttp' @()
     $options = $assembly.GetType('Syno.TinyTorrent.Library.Public.Provider').GetMethod('Options', [Reflection.BindingFlags]'Static,NonPublic').Invoke($null, @($http))
     foreach ($option in $options) {
-        $adapter = $option.Create.Invoke()
+        $adapter = $option.Create.Invoke($null)
         $source = $adapter.CatalogId
         $address = if ($source -eq 'public/imdb') { 'https://www.imdb.com/title/tt1234567/' } else { 'https://www.rottentomatoes.com/m/example' }
         $html = '<script type="application/ld+json">' + (@{

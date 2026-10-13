@@ -64,8 +64,15 @@ website access. The shared [network route](architecture.md#network-route)
 governs browser access too. The current reader cannot honor a configured proxy
 or selected network adapter, so it rejects those routes before launching.
 It runs only when the shared HTTP owner confirms unrestricted direct access;
-a route change cancels the operation and terminates its browser process.
+a route change cancels the operation and terminates its browser process tree.
 A refusal stops the request and preserves cached information.
+
+Each page's browser is created inside a non-inherited Windows job configured to
+terminate all its processes when TinyTorrent closes the job handle. Assignment
+happens during process creation, before the browser can run or spawn children,
+so a crash or forced termination of TinyTorrent cannot leave them behind. Job
+creation or configuration failure refuses the launch. Normal completion,
+cancellation and the page timeout close the same job before profile cleanup.
 
 Chrome's [remote-debugging policy](https://developer.chrome.com/blog/remote-debugging-port)
 requires a separate data directory from version 136 onward. That supported
@@ -109,6 +116,14 @@ page, and the reader takes the reload's reply.
 Both readers treat a missing page (HTTP 404 or 410) as a failure of that movie
 only, because a saved choice can name a page the website has since removed.
 A refusal (403) and every other failed reply stop the website's lookups.
+
+A search page without its result structure (IMDb's `__NEXT_DATA__` results,
+Rotten Tomatoes' `search-page-manager` element) is an unreadable page, not an
+empty search. Library remembers a website's no-match answer, so a redesigned
+page read as empty would mark every movie as missing. On 2026-10-12 one Rotten
+Tomatoes search for a made-up title returned one loosely related movie inside
+`search-page-manager`, not an empty list; a page with no rows at all was not
+observed.
 
 What each page gives:
 

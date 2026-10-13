@@ -146,7 +146,7 @@ public sealed class SpeedLimit : IDraft
     private static Field Start(IEnumerable<int> limits) =>
         limits.Distinct().ToArray() switch
         {
-            [> 0 and var limit] => new(Settings.RateInput(limit), false),
+            [> 0 and var limit] => new(Settings.RateInput(limit, RateScale.MbPerSecond), false),
             [_] => new(string.Empty, false),
             _ => new(string.Empty, true),
         };
@@ -163,7 +163,7 @@ public sealed class SpeedLimit : IDraft
             limit = 0;
             return true;
         }
-        if (!Settings.TryRate(input, out var bytes))
+        if (!Settings.TryRate(input, out var bytes, RateScale.MbPerSecond))
             return false;
         limit = bytes;
         return true;
@@ -189,7 +189,7 @@ public sealed partial class SpeedLimitDialog : UserControl
             "speed_limit",
             "label",
             Model.Text.Get("limits", name),
-            Model.Text.Get("units", "kib_per_second")
+            Model.Text.RateUnit(RateScale.MbPerSecond)
         );
 
     internal void RefreshText() => Bindings.Update();

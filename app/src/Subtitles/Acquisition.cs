@@ -24,7 +24,6 @@ internal sealed partial class Acquisition(
     private bool _disposed;
     private Account _account = new(SubtitleSupplier.OpenSubtitles, string.Empty, string.Empty);
     private Allowance _allowance = new();
-    private Draft? _checkedDraft;
     private Account? _checkedAccount;
     internal IReadOnlyList<Supplier> Suppliers { get; } = SupplierType.CreateAll();
     internal Supplier? Supplier => GetSupplier(SupplierId);
@@ -129,7 +128,6 @@ internal sealed partial class Acquisition(
             _supplierFailure = SubtitleFailure.None;
             _saveFailed = false;
             Checked = false;
-            _checkedDraft = null;
             _checkedAccount = null;
             _batch.Clear();
             Found = null;
@@ -178,7 +176,6 @@ internal sealed partial class Acquisition(
         {
             Invalidate();
             Checked = false;
-            _checkedDraft = null;
             _checkedAccount = null;
             if (_supplierFailure is SubtitleFailure.Route or SubtitleFailure.Network)
                 _supplierFailure = SubtitleFailure.None;
@@ -353,16 +350,8 @@ internal sealed partial class Acquisition(
     // credentials are never sent to it.
     internal Draft Edit(SubtitleSupplier supplierId) =>
         supplierId == SupplierId
-            ? new(SupplierId, Username, HasSecret)
-            : new(supplierId, string.Empty, false);
-
-    internal void EditChanged(Draft draft)
-    {
-        if (_checkedDraft != draft)
-            return;
-        _checkedDraft = null;
-        _checkedAccount = null;
-    }
+            ? new(SupplierId, Username, string.Empty, HasSecret)
+            : new(supplierId, string.Empty, string.Empty, false);
 
     private Account Interpret(Draft draft)
     {
@@ -371,18 +360,6 @@ internal sealed partial class Acquisition(
             : draft.KeepSecret && draft.SupplierId == SupplierId ? _account.Secret
             : string.Empty;
         return RequireSupplier(draft.SupplierId).Interpret(draft, secret);
-    }
-
-    internal bool CanCheckDraft(Draft draft)
-    {
-        try
-        {
-            return RequireSupplier(draft.SupplierId).Configured(Interpret(draft));
-        }
-        catch (SubtitleException)
-        {
-            return false;
-        }
     }
 
     internal Task SelectSupplier(SubtitleSupplier supplierId) =>
@@ -398,7 +375,7 @@ internal sealed partial class Acquisition(
         var verified = _checkedAccount == account;
         if (changed)
             Invalidate();
-        var secret = account.Secret.Length > 0 ? Protect(account.Secret) : null;
+        var secret = account.Secret.Length > 0 ? Credentials.Protect(account.Secret) : null;
         await _operation.WaitAsync(_lifetime.Token).ConfigureAwait(false);
         try
         {
@@ -456,7 +433,6 @@ internal sealed partial class Acquisition(
             }
             if (verified)
                 Answered(SubtitleFailure.None);
-            _checkedDraft = null;
             _checkedAccount = null;
             await RefreshCounts().ConfigureAwait(false);
         }
@@ -499,10 +475,7 @@ internal sealed partial class Acquisition(
             {
                 pending.Token.ThrowIfCancellationRequested();
                 if (draft is not null)
-                {
-                    _checkedDraft = draft;
                     _checkedAccount = account;
-                }
                 else if (_account == account)
                     Answered(SubtitleFailure.None);
             }
@@ -585,13 +558,12 @@ internal sealed partial class Acquisition(
     }
 }
 
-internal sealed class Draft(SubtitleSupplier supplierId, string username, bool keepSecret)
-{
-    internal SubtitleSupplier SupplierId { get; set; } = supplierId;
-    internal string Username { get; set; } = username;
-    internal string Secret { get; set; } = string.Empty;
-    internal bool KeepSecret { get; set; } = keepSecret;
-}
+internal sealed record Draft(
+    SubtitleSupplier SupplierId,
+    string Username,
+    string Secret,
+    bool KeepSecret
+);
 
 internal sealed record FileFailure(string Path, SubtitleFailure Reason);
 

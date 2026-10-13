@@ -17,7 +17,6 @@ public sealed partial class MainViewModel
     private int _downloadCap;
     private int _uploadCap;
     private LimitMode? _limitsChoice;
-    private Exception? _limitsError;
 
     private bool HasLimits => _connected && !_loading && !_storageFailed;
     private LimitMode CurrentLimits =>
@@ -39,15 +38,7 @@ public sealed partial class MainViewModel
     // The chooser shows a choice still being applied in place of the current one.
     public int LimitsIndex => HasLimits ? (int)(_limitsChoice ?? CurrentLimits) : -1;
 
-    // A pair stays editable while it applies or will apply again when the
-    // schedule takes over; under None with no schedule, neither does.
-    public bool CanEditSpeed => CanEdit && (CurrentLimits == LimitMode.Speed || HasSchedule);
-    public bool CanEditAlternative =>
-        CanEdit
-        && (
-            CurrentLimits == LimitMode.Alternative
-            || HasSchedule && Settings.Schedule.HasAlternative
-        );
+    internal bool HasStandardLimits => HasLimits && _appliedLimits == LimitMode.Speed;
     public bool HasAlternativeLimits => HasLimits && _appliedLimits == LimitMode.Alternative;
     internal PauseReason PausedBy => _pause;
 
@@ -79,8 +70,6 @@ public sealed partial class MainViewModel
             Cap(_uploadCap),
             Text.Get("transfer_limits", "origin_" + _limitOrigin.ToString().ToLowerInvariant())
         );
-    public string LimitsMessage =>
-        _limitsError is not null ? Text.Error(_limitsError) : string.Empty;
     public string LimitsHeading =>
         !HasLimits
             ? "—"
@@ -90,10 +79,15 @@ public sealed partial class MainViewModel
                 LimitMode.Alternative => Text.Get("settings", "alternative"),
                 _ => Text.Get("transfer_limits", "none"),
             };
+    public string LimitsSummary => !HasLimits ? "—"
+        : LimitsHeading + " · " + FormatCaps("settings", "caps_summary")
+            + (CurrentLimits == LimitMode.Schedule ? " · " + LimitsNow : string.Empty);
+    public string ScheduleSummary => !HasLimits ? "—"
+        : FixedLimits is { } mode ? Text.Format("settings", "schedule_unused", LimitLabel(mode))
+        : Settings.Schedule.NextChange(DateTime.Now) is { } change ? Text.Format("settings", "schedule_until", change)
+        : Text.Get("settings", "schedule_all_week");
     public string DownloadCap => Cap(_downloadCap);
     public string UploadCap => Cap(_uploadCap);
-    public string SpeedUse => InUse(HasLimits && _appliedLimits == LimitMode.Speed);
-    public string AlternativeUse => InUse(HasAlternativeLimits);
     public string DownloadStatus => RateStatus(_downloadRate, _downloadCap);
     public string UploadStatus => RateStatus(_uploadRate, _uploadCap);
     public string DownloadTip => RateTip("download_rate", _downloadRate, _downloadCap);
@@ -126,9 +120,6 @@ public sealed partial class MainViewModel
                 : Text.Format("transfer_limits", "now", state);
         }
     }
-
-    private string InUse(bool inUse) =>
-        inUse ? " · " + Text.Get("transfer_limits", "in_use") : string.Empty;
 
     // A cap means nothing while transfers are paused, so the rate shows alone.
     private string RateStatus(double rate, int cap) =>
@@ -177,8 +168,7 @@ public sealed partial class MainViewModel
 
     private string Cap(int value) =>
         !HasLimits ? "—"
-        : value == 0 ? Text.Get("transfer_limits", "unlimited")
-        : Text.Format("units", "rate", Text.Bytes(value));
+        : Text.SpeedLimit(value);
 
     private void ApplyLimits(JsonElement limits)
     {
@@ -238,7 +228,6 @@ public sealed partial class MainViewModel
         if (!CanChooseLimits || mode == CurrentLimits)
             return;
         _limitsChoice = mode;
-        _limitsError = null;
         RefreshWindow();
         try
         {
@@ -250,8 +239,7 @@ public sealed partial class MainViewModel
         }
         catch (Exception error)
         {
-            _limitsError = error;
-            Announce(Text.Error(error));
+            Report(error);
         }
         finally
         {

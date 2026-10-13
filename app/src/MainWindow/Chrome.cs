@@ -269,14 +269,10 @@ public sealed partial class MainWindow
             + SettingsButton.Width
             + ThemeButton.Width;
         var frame = AppWindow.Size.Width - AppWindow.ClientSize.Width;
-        var minimum =
-            Model.Page == WindowPage.Settings && _settingsPage is { } settings
-                ? settings.MeasureWidth()
-                : 720;
         var width =
             (int)
                 Math.Ceiling(
-                    Math.Max(minimum, content + LeftInset.Width.Value + RightInset.Width.Value)
+                    Math.Max(720, content + LeftInset.Width.Value + RightInset.Width.Value)
                         * scale
                 ) + frame;
         var height = (int)Math.Ceiling(560 * scale);
@@ -313,7 +309,7 @@ public sealed partial class MainWindow
     private void RefreshTheme()
     {
         Model.IsDark = Root.ActualTheme == ElementTheme.Dark;
-        ThemeIcon.Glyph = Model.IsDark ? Syno.Lucide.Sun : Syno.Lucide.Moon;
+        ThemeIcon.Glyph = Model.IsDark ? Syno.Lucide.Lightbulb : Syno.Lucide.LightbulbOff;
         NameButton(ThemeButton, Model.Text.Get("chrome", Model.IsDark ? "light" : "dark"));
     }
 
@@ -360,6 +356,7 @@ public sealed partial class MainWindow
         SeedsColumn.DisplayName = Model.Text.Get("columns", "seeds");
         PeersColumn.DisplayName = Model.Text.Get("columns", "peers");
         AddedColumn.DisplayName = Model.Text.Get("columns", "added");
+        CompletedOnColumn.DisplayName = Model.Text.Get("columns", "completed_on");
         Search.PlaceholderText = Model.Text.Get(
             Model.Page == WindowPage.Library ? "library" : "finding",
             Model.Page == WindowPage.Library ? "search" : "placeholder"

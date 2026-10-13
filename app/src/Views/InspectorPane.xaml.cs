@@ -267,7 +267,7 @@ public sealed partial class InspectorPane : UserControl
     {
         if (_library is not null)
         {
-            RefreshLibrary();
+            RefreshLibrary(rebuild: true);
             return;
         }
         EmptyText.Text = Model.EmptyText;

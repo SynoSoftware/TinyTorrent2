@@ -102,9 +102,10 @@ void Engine::State::SaveCheckpoint(Torrent& torrent, lt::add_torrent_params para
             return;
         }
         auto& torrent = found->second;
-        if (!outcome.succeeded)
+        if (outcome.failure)
         {
-            FailCheckpoint(torrent, {ProblemKind::StorageFailed, outcome.detail});
+            FailCheckpoint(torrent, *outcome.failure == StorageFailure::Overloaded ?
+                Problem{ProblemKind::StorageOverloaded} : Problem{ProblemKind::StorageFailed, outcome.detail});
             FinishCheckpoint(torrent);
             return;
         }
@@ -135,7 +136,7 @@ void Engine::State::SaveCheckpoint(Torrent& torrent, lt::add_torrent_params para
             auto found = torrents.find(id);
             if (found == torrents.end())
                 return;
-            if (!observed.succeeded || !*verified || found->second.pendingCheckpoint)
+            if (observed.failure || !*verified || found->second.pendingCheckpoint)
             {
                 FinishCheckpoint(found->second);
                 return;
@@ -157,11 +158,11 @@ void Engine::State::SaveCheckpoint(Torrent& torrent, lt::add_torrent_params para
                 }
                 auto document = Saved();
                 document.torrents.at(id).verifyFiles = false;
-                changes.Commit(document.ToJson(), [this, id](StorageOutcome saved)
+                changes.Commit(document.ToJson(), [this, id](Outcome saved)
                 {
                     auto& torrent = torrents.at(id);
-                    bool refresh = saved.succeeded && torrent.pendingCheckpoint.has_value();
-                    if (saved.succeeded)
+                    bool refresh = !saved.error && torrent.pendingCheckpoint.has_value();
+                    if (!saved.error)
                     {
                         torrent.facts.verifyFiles = false;
                         // A coalesced snapshot can predate the proof. Keep the proved

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Engine.h"
 #include <condition_variable>
 #include <deque>
 #include <filesystem>
@@ -12,8 +13,12 @@ namespace tt
 {
 struct StorageOutcome
 {
-    bool succeeded = false;
+    std::optional<StorageFailure> failure;
     std::string detail;
+
+    // The engine's outcome: Overloaded when the store refused the work,
+    // otherwise `code` with the cause of a failure.
+    Outcome ToOutcome(ErrorCode code) const;
 };
 
 class Store

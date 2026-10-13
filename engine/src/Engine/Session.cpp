@@ -53,7 +53,7 @@ Engine::State::State(std::filesystem::path path, std::function<void()> wake) :
         saved->Read(Json::parse(Store::Read(file)));
     }, [this, saved](StorageOutcome outcome)
     {
-        if (!outcome.succeeded)
+        if (outcome.failure)
         {
             startupError = outcome.detail;
             startup = Startup::Ready;
@@ -83,7 +83,7 @@ Engine::State::State(std::filesystem::path path, std::function<void()> wake) :
             }
         }, [this, saved, resumes](StorageOutcome outcome)
         {
-            if (!outcome.succeeded)
+            if (outcome.failure)
             {
                 startupError = outcome.detail;
                 startup = Startup::Ready;
@@ -119,6 +119,8 @@ void Engine::State::Start(Document const& saved, Resumes& resumes)
 {
     launchPaused = settings.startsPaused;
     watchedSources = saved.watchedSources;
+    previousTransfers = saved.transfers;
+    savedTransfers = saved.transfers;
     lt::settings_pack pack;
     pack.set_str(lt::settings_pack::listen_interfaces, "");
     pack.set_bool(lt::settings_pack::enable_upnp, false);
@@ -258,6 +260,44 @@ std::filesystem::path Engine::State::ResumeFile(std::string const& id) const
     return directory / Wide(id + ".resume");
 }
 
+Json Engine::State::TransferTotals::ToJson() const
+{
+    return {{"downloaded", downloaded}, {"uploaded", uploaded}};
+}
+
+Engine::State::TransferTotals Engine::State::TotalTransfers() const
+{
+    auto maximum = (std::numeric_limits<std::int64_t>::max)();
+    return {previousTransfers.downloaded + std::min(transferred.downloaded, maximum - previousTransfers.downloaded),
+        previousTransfers.uploaded + std::min(transferred.uploaded, maximum - previousTransfers.uploaded)};
+}
+
+void Engine::State::SaveTransfers()
+{
+    if (transfersPending || TotalTransfers() == savedTransfers)
+        return;
+    transfersPending = true;
+    if (!changes.Queue([this]
+    {
+        auto document = Saved();
+        auto totals = document.transfers;
+        changes.Commit(document.ToJson(), [this, totals](Outcome outcome)
+        {
+            transfersPending = false;
+            if (!outcome.error)
+                savedTransfers = totals;
+            else if (IsShuttingDown())
+                saveFailure = outcome.detail;
+        });
+    }))
+    {
+        transfersPending = false;
+        log.Write("checkpoint", "", "storage_overloaded");
+        if (IsShuttingDown())
+            saveFailure.emplace();
+    }
+}
+
 Json Engine::State::Document::ToJson() const
 {
     Json list = Json::array();
@@ -268,7 +308,7 @@ Json Engine::State::Document::ToJson() const
         list.push_back(std::move(entry));
     }
     return {{"format", format}, {"settings", settings.ToFile()}, {"torrents", std::move(list)},
-        {"queue_order", queueOrder}, {"watched_sources", watchedSources}};
+        {"queue_order", queueOrder}, {"watched_sources", watchedSources}, {"transfers", transfers.ToJson()}};
 }
 
 // Refuses a document of another format, which a save must not rewrite, or
@@ -287,6 +327,11 @@ void Engine::State::Document::Read(Json const& saved)
     if (auto found = saved.find("settings"); found != saved.end())
     {
         settings.Read(*found);
+    }
+    if (auto found = saved.find("transfers"); found != saved.end() && found->is_object())
+    {
+        transfers.downloaded = ReadSaved(*found, "downloaded", std::int64_t(0));
+        transfers.uploaded = ReadSaved(*found, "uploaded", std::int64_t(0));
     }
     if (auto found = saved.find("watched_sources"); found != saved.end() && found->is_object())
         for (auto const& [source, stamp] : found->items())
@@ -311,12 +356,13 @@ void Engine::State::Document::Read(Json const& saved)
     }
 }
 
-// The state that this document is built from changes only in a commit's
-// completion, after the write succeeds.
+// Choices change only after their commit succeeds; cumulative transfers also
+// include the latest observed payload so a later settings save cannot erase it.
 Engine::State::Document Engine::State::Saved() const
 {
     Document document;
     document.settings = settings;
+    document.transfers = TotalTransfers();
     document.watchedSources = watchedSources;
     for (auto const& [id, torrent] : torrents)
     {
@@ -413,12 +459,21 @@ tt::Activity Engine::State::Activity() const
 
 Json Engine::State::Snapshot() const
 {
+    // The accepted order, because libtorrent's status reports a queue move
+    // only after its next update, and the list would show the old order.
+    std::map<std::string, int> queue;
+    int position = 0;
+    for (auto const& id : CurrentQueue())
+    {
+        queue[id] = position++;
+    }
     Json rows = Json::array();
     for (auto const& [id, torrent] : torrents)
     {
         if (!torrent.deleted)
         {
-            rows.push_back(torrent.Row(IsPaused()));
+            auto queued = queue.find(id);
+            rows.push_back(torrent.Row(IsPaused(), queued == queue.end() ? -1 : queued->second));
         }
     }
     auto current = settings.ToJson();
@@ -434,6 +489,7 @@ Json Engine::State::Snapshot() const
     return {{"session_id", sessionId}, {"torrents", std::move(rows)}, {"settings", std::move(current)},
         {"language_saved", language == settings.language},
         {"download_rate", activity.downloadRate}, {"upload_rate", activity.uploadRate},
+        {"transfers", {{"session", transferred.ToJson()}, {"all_time", TotalTransfers().ToJson()}}},
         {"session_paused", IsPaused()},
         {"connection_test", ConnectionTestSnapshot()},
         {"limits", {{"origin", origin}, {"mode", Settings::Name(mode)},
@@ -548,17 +604,18 @@ void Engine::State::RecordHashes(Torrent& torrent)
         }
         auto document = Saved();
         document.torrents.at(id).hashes = hashes;
-        changes.Commit(document.ToJson(), [this, id, hashes](StorageOutcome outcome)
+        changes.Commit(document.ToJson(), [this, id, hashes](Outcome outcome)
         {
             auto& torrent = torrents.at(id);
-            if (outcome.succeeded)
+            if (!outcome.error)
             {
                 torrent.facts.hashes = hashes;
                 torrent.hashError.reset();
             }
             else
             {
-                torrent.hashError = Problem{ProblemKind::StorageFailed, outcome.detail};
+                torrent.hashError = outcome.error == ErrorCode::Overloaded ?
+                    Problem{ProblemKind::StorageOverloaded} : Problem{ProblemKind::StorageFailed, outcome.detail};
                 if (IsShuttingDown())
                 {
                     saveFailure = outcome.detail;
@@ -632,6 +689,7 @@ void Engine::State::Maintain()
     if (now - statusAt >= statusInterval)
     {
         statusAt = now;
+        session->post_session_stats();
         MaintainConnectionTest();
         RestorePending();
         WatchFolder();
@@ -655,6 +713,7 @@ void Engine::State::Maintain()
     if (now - checkpointAt >= checkpointInterval)
     {
         checkpointAt = now;
+        SaveTransfers();
         for (auto& [id, torrent] : torrents)
         {
             torrent.unsaved |= torrent.IsChanged();

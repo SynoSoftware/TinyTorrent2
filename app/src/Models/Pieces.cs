@@ -12,6 +12,7 @@ public sealed class Pieces
     public int PieceSize { get; }
     public int PeerCount { get; }
     public IReadOnlyList<bool> Verified { get; }
+    public IReadOnlyList<bool> Wanted { get; }
     public IReadOnlyList<int> Availability { get; }
     public IReadOnlyDictionary<int, double> Downloading { get; }
     public IReadOnlyList<PieceFile> Files { get; }
@@ -27,6 +28,7 @@ public sealed class Pieces
             .EnumerateArray()
             .Select(value => value.GetBoolean())
             .ToArray();
+        Wanted = data.GetProperty("wanted").EnumerateArray().Select(value => value.GetBoolean()).ToArray();
         Availability = data.GetProperty("availability")
             .EnumerateArray()
             .Select(value => value.GetInt32())
@@ -47,7 +49,7 @@ public sealed class Pieces
                 ))
                 .ToArray()
             : files;
-        if (Availability.Count != Count)
+        if (Availability.Count != Count || Wanted.Count != Count)
             throw new InvalidDataException("Incomplete piece availability.");
         States = Classify();
     }
@@ -79,6 +81,7 @@ public sealed class Pieces
         && PieceSize == other.PieceSize
         && PeerCount == other.PeerCount
         && Verified.SequenceEqual(other.Verified)
+        && Wanted.SequenceEqual(other.Wanted)
         && Availability.SequenceEqual(other.Availability)
         && Files.SequenceEqual(other.Files)
         && Downloading.Count == other.Downloading.Count
@@ -107,14 +110,14 @@ public sealed class Pieces
     {
         if (!MetadataReady)
             return Waiting(text);
-        if (States.All(state => state == PieceKind.Verified))
+        if (Enumerable.Range(0, Count).All(index => !Wanted[index] || Verified[index]))
             return Known(text, "complete", InfoBarSeverity.Success);
         if (PeerCount == 0)
             return Known(text, "no_peers", InfoBarSeverity.Warning);
         var unavailable = new int[Count + 1];
         for (var index = 0; index < Count; index++)
             unavailable[index + 1] =
-                unavailable[index] + (States[index] == PieceKind.Unavailable ? 1 : 0);
+                unavailable[index] + (Wanted[index] && States[index] == PieceKind.Unavailable ? 1 : 0);
         if (unavailable[Count] == 0)
             return Known(text, "available", InfoBarSeverity.Success);
         var names = Names(

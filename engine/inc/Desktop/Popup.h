@@ -3,6 +3,7 @@
 #include "Desktop/Acrylic.h"
 #include <optional>
 #include <string>
+#include <vector>
 #include <windows.h>
 
 namespace tt::desktop
@@ -14,21 +15,35 @@ namespace tt::desktop
 class Popup
 {
 public:
+    struct MenuItem
+    {
+        // A Lucide glyph, drawn when the app's Lucide font is installed beside
+        // the engine.
+        wchar_t glyph;
+        std::wstring text;
+        // The LPARAM posted when the person chooses the item.
+        UINT id;
+    };
+
     struct Content
     {
         std::wstring title;
         std::wstring body;
         // Diagnostic lines stay on one line each, with paths shortened to fit.
         std::wstring detail;
-        // The popup has no button when this is empty.
-        std::wstring button;
+        // The More menu, under its title and a separator. With any items, the
+        // More button that opens it shows in the header while the pointer is
+        // over the popup.
+        std::wstring menuTitle;
+        std::vector<MenuItem> menu;
         // Shown beside the product name in place of the product icon.
         HICON icon = nullptr;
         bool persistent = false;
     };
 
-    // Selecting the body or the button posts `selected` to `window`, with the
-    // PopupPart as its WPARAM, and closes the popup.
+    // Selecting the body posts `selected` to `window` with PopupPart::Body as
+    // its WPARAM; choosing an item of the More menu posts PopupPart::More with
+    // the item's id as its LPARAM. Either closes the popup.
     Popup(HWND window, UINT selected);
     ~Popup();
     Popup(Popup const&) = delete;
@@ -38,14 +53,30 @@ public:
     void Close();
     void SetTheme(std::string theme);
     bool IsPersistent() const { return window_ && content_.persistent; }
+    bool IsMenuOpen() const { return menu_ != nullptr; }
 private:
     static LRESULT CALLBACK Procedure(HWND window, UINT message, WPARAM first, LPARAM second);
     LRESULT Handle(HWND window, UINT message, WPARAM first, LPARAM second);
+    static LRESULT CALLBACK MenuProcedure(HWND window, UINT message, WPARAM first, LPARAM second);
+    LRESULT HandleMenu(HWND window, UINT message, WPARAM first, LPARAM second);
+    void OpenMenu();
+    void PaintMenu(HWND window);
+    // Where the first menu item begins, below the title and separator.
+    int MenuItemsTop(UINT dpi) const;
+    // The width the icons and their gap take before the menu's text; none
+    // without the Lucide font.
+    int MenuIconsWidth(UINT dpi) const;
+    std::optional<std::size_t> MenuItemAt(POINT point) const;
+    void HoverMenu(std::optional<std::size_t> item);
+    void Choose(std::size_t item);
     void Layout();
     bool Slides() const;
     void StartSlide(bool leaving);
     void StopSlide();
     void Slide();
+    // Starts the timer that closes the popup, unless it is persistent, under
+    // the pointer, or under its open More menu.
+    void ScheduleClose();
     void Paint(HWND window);
     void Hover(std::optional<PopupPart> part);
     PopupPart Part(POINT point) const;
@@ -60,12 +91,16 @@ private:
     HFONT caption_ = nullptr;
     HFONT headline_ = nullptr;
     HFONT glyphs_ = nullptr;
+    HFONT icons_ = nullptr;
+    // The app's Lucide font is installed beside the engine; a standalone
+    // engine build draws the menu without icons.
+    bool hasIcons_ = false;
     RECT header_{};
     RECT close_{};
     RECT title_{};
     RECT body_{};
     RECT detail_{};
-    RECT button_{};
+    RECT more_{};
     // Where Layout places the popup, and when its current slide began; zero
     // when it is not sliding.
     POINT place_{};
@@ -74,6 +109,10 @@ private:
     bool leaving_ = false;
     // The pointer is over the popup, which then stays open.
     bool tracking_ = false;
+    HWND menu_ = nullptr;
+    // The height of one menu item, set when the menu opens.
+    int menuRow_ = 0;
+    std::optional<std::size_t> menuHover_;
     std::optional<PopupPart> hover_;
 };
 }

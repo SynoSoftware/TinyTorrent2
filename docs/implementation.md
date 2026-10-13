@@ -1263,14 +1263,16 @@ records the ruling and the arrangement that replaced vcpkg.
 
 ## Wire representation
 
-Protocol version 13 uses a four-byte little-endian UTF-8 JSON frame length,
+Protocol version 15 uses a four-byte little-endian UTF-8 JSON frame length,
 bounded to 16 MiB. The endpoint is `TinyTorrent.<logon SID>`; each connecting
-client first receives `{type:"hello",version:13,session_id:"...",data_directory:"..."}`. The absolute data directory
+client first receives `{type:"hello",version:15,session_id:"...",data_directory:"..."}`. The absolute data directory
 keeps the same store for explicit Restart, which starts the engine beside the
 window rather than a path a pipe peer reports. Requests are
 `{request_id:integer,command:string,...}`. Replies repeat `request_id` and have
 `ok:boolean`, either `data` or `error:{code:string,detail:string}`. Native control
-notifications are `{type:"activate"}`, `{type:"close"}`, `{type:"confirm_exit"}`, and `{type:"sources"}`. The pipe
+notifications are `{type:"activate"}`, `{type:"close"}`, `{type:"confirm_exit"}`, and `{type:"sources"}`.
+`{type:"settings",setting}` opens Settings at that card of the General page and
+highlights it, as search does. The pipe
 passes the engine each request's connection beside the request, so no request field
 can claim another connection's previews.
 
@@ -1280,6 +1282,12 @@ the tray stays there, and the window never receives a tray burst. The window
 keeps completion feedback bounded and uses the current
 torrent identity to resolve Open folder. Windows delivery is reserved for a
 closed window and obeys the corresponding notification preference.
+
+Snapshots include `transfers: {session: {downloaded, uploaded}, all_time:
+{downloaded, uploaded}}`, with nonnegative signed 64-bit payload byte counts.
+`settings.json` retains the lifetime pair under `transfers`; older documents
+without it start at zero. The engine owns sampling and persistence; Home only
+formats these snapshot values.
 
 Commands are `snapshot`, `preview` (source, destination), `preview_detail`
 (preview_id, destination), `add` (preview_id, destination, paused, optional
@@ -1395,7 +1403,8 @@ upload_rate (bytes/second), save_path, error (stable code), diagnostic detail,
 added (Unix seconds), seed_count and peer_count (connected; peers include seeds),
 swarm_seed_count and swarm_peer_count (tracker scrape totals, else known peers),
 downloaded/uploaded (bytes), queue
-(libtorrent position), complete, incoming, forced, sequential, first_last, and
+(libtorrent position), complete, completed_on (Unix seconds when libtorrent
+finished the wanted files; 0 until complete), incoming, forced, sequential, first_last, and
 hashes. Protocol version 6 adds `completed`, so content totals and remaining time
 do not mistake verification progress for downloaded bytes. `torrent` returns
 the torrent's facts, name, metadata_ready, files, hashes, current content folder,

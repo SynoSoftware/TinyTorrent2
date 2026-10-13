@@ -49,6 +49,8 @@ internal interface IProvider
 /// A provider the person can choose. <see cref="TextSection"/> holds its
 /// label, disclosure and error text; <see cref="Privacy"/> and
 /// <see cref="Terms"/> are the provider's own policy pages.
+/// <see cref="Create"/> receives the person's own API key, or null for the
+/// key built into the release.
 /// </summary>
 internal sealed record ProviderOption(
     string ProviderId,
@@ -56,9 +58,17 @@ internal sealed record ProviderOption(
     string TextSection,
     Uri Privacy,
     Uri Terms,
-    Func<IProvider> Create
+    Func<string?, IProvider> Create
 )
 {
+    /// <summary>
+    /// <see cref="Access.Key"/> when the person can enter their own API key,
+    /// which replaces the one built into the release.
+    /// </summary>
+    internal Access Access { get; init; }
+
+    internal bool HasBuiltInKey => Create(null).IsAvailable;
+
     /// <summary>The name shown in choices, which tells options for one website apart.</summary>
     internal string Label(Strings text) => text.Format(TextSection, "label", Name);
 }

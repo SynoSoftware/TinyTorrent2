@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory)]
-    [ValidateSet('Frames', 'Targets', 'Facts', 'Restore', 'Exit', 'FailedCommit', 'CheckpointRetry', 'Restart', 'DiskError', 'PreviewGuard', 'RemoveKeepFiles', 'QueueOrder', 'SelectedTransfer', 'MagnetDownload', 'SettingsPolicy', 'CommittedFiles', 'FilesSafety', 'FileNames', 'Pause', 'History')]
+    [ValidateSet('Frames', 'Targets', 'Facts', 'Restore', 'Exit', 'FailedCommit', 'CheckpointRetry', 'Restart', 'DiskError', 'PreviewGuard', 'RemoveKeepFiles', 'QueueOrder', 'SelectedTransfer', 'MagnetDownload', 'SettingsPolicy', 'CommittedFiles', 'FilesSafety', 'FileNames', 'Pause', 'History', 'Accounting')]
     [string] $Check,
     [Parameter(Mandatory)]
     [string] $TorrentFile,
@@ -63,6 +63,33 @@ function Assert-Paused([string] $torrentId) {
 try {
     $initial = Start-Engine
     switch ($Check) {
+        'Accounting' {
+            Assert ($initial.transfers.session.downloaded -eq 0 -and $initial.transfers.all_time.uploaded -eq 0) 'A new store invented transfer totals'
+            $reply = Send-Command @{ command = 'settings'; changes = @{ theme = 'light' } }
+            Assert $reply.ok 'The accounting fixture could not save its settings'
+            Stop-Engine
+            $file = Join-Path $directory 'settings.json'
+            $document = Get-Content -LiteralPath $file -Raw | ConvertFrom-Json -AsHashtable
+            $document.transfers = @{ downloaded = 12345678901L; uploaded = 23456789012L }
+            [IO.File]::WriteAllBytes($file, [Text.Encoding]::UTF8.GetBytes(($document | ConvertTo-Json -Depth 20)))
+            foreach ($theme in 'dark', 'light') {
+                $snapshot = Start-Engine
+                Assert ($snapshot.transfers.session.downloaded -eq 0 -and $snapshot.transfers.session.uploaded -eq 0 -and
+                    $snapshot.transfers.all_time.downloaded -eq 12345678901L -and $snapshot.transfers.all_time.uploaded -eq 23456789012L) `
+                    'Restart lost or double-counted lifetime transfers'
+                $reply = Send-Command @{ command = 'settings'; changes = @{ theme = $theme } }
+                Assert $reply.ok 'An ordinary settings save failed with existing transfer totals'
+                Stop-Engine
+            }
+            $document = Get-Content -LiteralPath $file -Raw | ConvertFrom-Json -AsHashtable
+            Assert ($document.transfers.downloaded -eq 12345678901L -and $document.transfers.uploaded -eq 23456789012L) `
+                'A settings save or final checkpoint overwrote lifetime transfers'
+            $null = $document.Remove('transfers')
+            [IO.File]::WriteAllBytes($file, [Text.Encoding]::UTF8.GetBytes(($document | ConvertTo-Json -Depth 20)))
+            $snapshot = Start-Engine
+            Assert ($snapshot.transfers.all_time.downloaded -eq 0 -and $snapshot.transfers.all_time.uploaded -eq 0 -and
+                $snapshot.settings.theme -eq 'light') 'Legacy accounting defaults lost the existing settings'
+        }
         'Exit' {
             function Exit-Code {
                 $exiting = Start-Process -FilePath $executable -ArgumentList '--headless', '--exit' -WindowStyle Hidden -PassThru

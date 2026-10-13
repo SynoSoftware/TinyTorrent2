@@ -90,7 +90,11 @@ the row and completion notice share that acknowledgement. Rechecks do not create
 download notices. Payload counts contribute to completion only during a download
 cycle: late duplicate blocks received while finished do not start another one.
 The completion phase keeps the active download cycle independently of the last
-ordered file-event origin, which becomes unknown after dropped alerts.
+ordered file-event origin, which becomes unknown only when state-change alerts
+were dropped. Unrelated alert loss preserves that evidence. The drop notice is
+appended to its alert batch, so completions in a batch with lost state changes
+are also excluded from download marking; sampled status cannot identify their
+original cause.
 File completion while downloading also records receipt, so a counter reset on
 resume cannot hide a file that finishes between samples.
 The downloading-to-finished transition requests a fresh asynchronous status
@@ -139,6 +143,17 @@ samples. Each torrent owns its bounded history, which is removed with the
 torrent; the same implementation records session totals for diagnostics.
 History is not saved: the time while the engine was stopped is
 unknown in any case, so after a restart the chart starts empty.
+
+Session and lifetime transfer totals count downloaded and uploaded payload from
+libtorrent's cumulative session counters, including removed torrents. They exclude
+protocol overhead, local verification and the separate connection-capacity test.
+Lifetime totals add the current session to the totals loaded at startup. The
+existing document and commit queue save them with settings changes and at the
+30-second checkpoint cadence; an abrupt termination can lose the tail since the
+last successful checkpoint. Clean shutdown samples after transfers have paused
+and waits for the final commit. A missing final sample or failed save uses the
+existing shutdown failure path. Accounting starts when this version first runs;
+older sessions cannot be reconstructed from the remaining torrents.
 
 ## Committed edits
 
@@ -412,6 +427,12 @@ a failed deletion is notified after the row is gone. A deletion
 interrupted by a crash is not repeated, because repeating an uncertain
 destructive action is unsafe; the remaining files stay on disk, and recovery
 does not restore the removed torrent.
+
+Ordinary Remove also retains a transient file hold until libtorrent reports
+that its disk work has stopped. It keeps payload and partfiles, and removes the
+row as soon as membership commits. A later Delete of shared payload waits for
+that hold in the existing deletion owner, without delaying the UI. If the release
+alert is lost, the same recovery path waits for handle destruction.
 
 A move takes only the torrent's own files, as libtorrent's
 [`move_storage`](https://github.com/arvidn/libtorrent/blob/v2.1.2/include/libtorrent/torrent_handle.hpp)
@@ -758,7 +779,8 @@ Notify about problems is on, shows one problem notification that names the
 first missing program not reported before and counts the others. It adds the
 reported programs to `settings.json` and keeps them after they are no longer
 found, so a problem the person leaves alone, or a check that timed out once,
-does not return at every start. Selecting the notification opens Settings.
+does not return at every start. Selecting the notification opens Settings at
+the Windows integration card, highlighted, where the handlers are repaired.
 
 Every start on the default store also moves what only the product before this
 one wrote: a per-user
@@ -920,6 +942,10 @@ SOCKS4 or HTTP proxy. Its type, address, port, user name and password save
 together, and a proxy without its address or port is refused, because it
 would stop every connection. settings.json holds the password encrypted with
 DPAPI for the current Windows user, so a copy of the file does not reveal it.
+The engine encrypts a password only when a settings command changes it, and
+every later save writes that encrypted text. A failed encryption therefore
+refuses only that command, with `encryption_failed`, and never blocks another
+save or loses the saved password.
 The settings reply and the snapshot carry the password as plain text, because
 only the same logon session can open the pipe. While a proxy is in use,
 libtorrent accepts no incoming connections, so the engine also stops port
@@ -1024,7 +1050,7 @@ connection owns the operation, so another caller cannot release or replace it.
 The engine keeps the defaults of the pinned libtorrent release, v2.1.2, because
 they are tuned and a changed value can slow transfers without a visible
 benefit. The Settings page exposes the approved [product settings](interface.md#settings),
-including network protocol choices, preallocation, queue and seeding policy,
+including network protocol choices, queue and seeding policy,
 and the memory and checking controls in [Disk write caching](#disk-write-caching).
 The [wire record](implementation.md#wire-representation) owns their fields and ranges.
 The disk backend stays at its
@@ -1068,9 +1094,20 @@ stays for Windows' notification duration and stays while the pointer is over
 it. A failure of something the person just asked for stays until dismissed,
 without a timeout or replacement by later notices, so the repair instructions
 remain available. It does not appear over a full-screen app or a presentation.
-Each popup carries a Don't show again button that turns off the switch for its kind of
-notice; a failure of something the person just asked for has no button,
-because it always shows. Selecting the rest of the popup acts on the notice,
+While the pointer is over a popup, its header shows a More button (…) beside
+the close button, as Windows' own notifications do; otherwise each popup shows
+only its message. More opens a menu laid out as Windows' own, drawn on the
+popup's acrylic surface in the popup's theme: the title See fewer
+notifications, a separator, and commands that each show their Lucide icon
+from the font beside the engine: a command that turns off the
+switch for that kind of notice, named for the switch, such as Don't notify when
+a torrent is added; Turn off all notifications, which turns off every switch;
+and Go to notification settings, which opens the window at the Notifications
+card of Settings and highlights it. A failure of something the person just
+asked for has no More button, because it always shows. Debug builds accept
+`--notice`, which shows a sample Added popup whatever the switches say, so the
+popup and its menu can be checked without adding a torrent. A running engine
+shows it; otherwise the engine starts in the tray to show it. Selecting the rest of the popup acts on the notice,
 as each kind below says, and the close button only dismisses it. Show a notice
 only when its switch is on. Problems and completions use the open window when
 one exists; background additions still use the tray so they do not raise that

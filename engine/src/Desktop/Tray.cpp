@@ -72,6 +72,23 @@ std::optional<NoticeSwitch> Switch(NoticeKind kind)
     return std::nullopt;
 }
 
+// The More menu names the Settings switch it turns off.
+char const* TurnOffKey(NoticeSwitch notices)
+{
+    switch (notices)
+    {
+    case NoticeSwitch::Finished:
+        return "off_finished";
+    case NoticeSwitch::Added:
+        return "off_added";
+    case NoticeSwitch::Problems:
+        return "off_problems";
+    case NoticeSwitch::Background:
+        return "off_background";
+    }
+    return "";
+}
+
 bool AcceptsNotifications()
 {
     QUERY_USER_NOTIFICATION_STATE state{};
@@ -413,9 +430,11 @@ void Tray::Queue(Notice notice)
     }
 }
 
+// Notices wait while the More menu is open, so the popup under it keeps the
+// kind of notice that the menu turns off.
 void Tray::Notify()
 {
-    if (batch_.due && GetTickCount64() >= batch_.due)
+    if (batch_.due && GetTickCount64() >= batch_.due && !popup_.IsMenuOpen())
     {
         Flush();
     }
@@ -524,7 +543,7 @@ std::wstring Tray::Problem(std::string const& code) const
 // window the person just closed would undo their action.
 void Tray::ShowBackground()
 {
-    if (popup_.IsPersistent())
+    if (popup_.IsPersistent() || popup_.IsMenuOpen())
     {
         return;
     }
@@ -539,7 +558,15 @@ void Tray::ShowBackground()
 void Tray::Show(Popup::Content content, std::optional<NoticeSwitch> notices)
 {
     switch_ = notices;
-    content.button = notices ? strings_.Text("notification", "off") : std::wstring();
+    if (notices)
+    {
+        content.menuTitle = strings_.Text("notification", "fewer");
+        // Lucide's bell-minus, bell-off and settings glyphs.
+        content.menu = {
+            {L'\uE1F0', strings_.Text("notification", TurnOffKey(*notices)), static_cast<UINT>(NoticeCommand::TurnOff)},
+            {L'\uE05E', strings_.Text("notification", "off_all"), static_cast<UINT>(NoticeCommand::TurnOffAll)},
+            {L'\uE158', strings_.Text("notification", "settings"), static_cast<UINT>(NoticeCommand::Settings)}};
+    }
     popup_.Show(std::move(content));
 }
 
@@ -547,6 +574,14 @@ std::optional<Notice> Tray::TakeNotice()
 {
     return std::exchange(notice_, std::nullopt);
 }
+
+#ifdef _DEBUG
+void Tray::ShowSample()
+{
+    notice_ = Notice{.kind = NoticeKind::Added, .name = "Sample torrent"};
+    Show(Message(*notice_, 1), NoticeSwitch::Added);
+}
+#endif
 
 std::optional<NoticeSwitch> Tray::TakeSwitch()
 {

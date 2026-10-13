@@ -97,6 +97,9 @@ internal sealed partial class PipeClient : IDisposable
     internal event Action<JsonElement>? Snapshot;
     internal event Action<string>? Disconnected;
     internal event Action<string>? Control;
+
+    // The engine names the Settings card to open.
+    internal event Action<string>? SettingsRequested;
     internal event Action<JsonElement>? Notice;
     internal event Action<JsonElement>? Detail;
     internal event Action? CommandCompleted;
@@ -459,16 +462,14 @@ internal sealed partial class PipeClient : IDisposable
                             or "close"
                             or "confirm_exit"
                             or "activations"
-                            or "settings"
                     )
                         Control?.Invoke(type.GetString()!);
+                    else if (type.GetString() == "settings")
+                        SettingsRequested?.Invoke(message.GetProperty("setting").GetString()!);
                     else if (type.GetString() == "notice")
                         Notice?.Invoke(message);
                     else if (type.GetString() == "detail")
-                    {
                         ReceiveDetail(message);
-                        Detail?.Invoke(message);
-                    }
                 }
                 else if (
                     message.TryGetProperty("request_id", out var id)
@@ -534,7 +535,7 @@ internal sealed partial class PipeClient : IDisposable
             var hello = await Read(pipe, deadline.Token);
             if (
                 hello.GetProperty("type").GetString() != "hello"
-                || hello.GetProperty("version").GetInt32() != 13
+                || hello.GetProperty("version").GetInt32() != 15
             )
                 throw new InvalidDataException(strings.Get("connection", "version"));
             return hello;

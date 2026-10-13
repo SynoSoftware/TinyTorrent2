@@ -1,4 +1,5 @@
 using System.Globalization;
+using Microsoft.UI.Input;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Automation.Peers;
@@ -9,6 +10,7 @@ using Microsoft.UI.Xaml.Media;
 using Syno.TinyTorrent.Services;
 using Syno.TinyTorrent.Views;
 using Windows.Foundation;
+using Windows.UI.Core;
 using Windows.System;
 
 namespace Syno.TinyTorrent.Controls;
@@ -26,13 +28,12 @@ public sealed partial class SpeedGraph : UserControl
     // Zoom levels, in seconds. Each view averages its samples in 60 buckets.
     private static readonly long[] Lengths = [300, 900, 1800, 3600, 21600, 86400];
 
-    // Older history has one sample a minute, so a view shorter than this shows
-    // only the present, where per-second samples exist.
+    // Short views stay with recent history, where finer samples exist.
     private const long PastMinimum = 1800;
 
-    // Samples are at most a minute apart, so a longer pause is unknown time,
-    // such as sleep or an engine restart, and the line breaks there.
-    private const long Gap = 90;
+    // The engine's sampleGap: seconds between observations beyond which a
+    // sample's data is missing, so the line breaks there.
+    private const long Gap = 2;
 
     // One notch of a mouse wheel. A touchpad sends smaller deltas that add up to
     // it, so one swipe does not race through every zoom level.
@@ -108,7 +109,7 @@ public sealed partial class SpeedGraph : UserControl
     private void SetView(long length, double end)
     {
         var newest = Newest;
-        var oldest = Samples is null || Samples.Count == 0 ? newest : Samples[0].Time;
+        var oldest = Samples is null || Samples.Count == 0 ? newest : Samples[0].Start;
         var clamped = (long)Math.Max(end, oldest + length);
         long? past = length >= PastMinimum && clamped < newest - length / 60 ? clamped : null;
         if (length == _length && past == _end)
@@ -255,24 +256,36 @@ public sealed partial class SpeedGraph : UserControl
     )
     {
         var runs = new List<List<Average>>();
-        var bucket = new List<SpeedSample>();
+        double weight = 0, time = 0, download = 0, upload = 0;
+        long bucket = -1;
         SpeedSample? previous = null;
         foreach (var sample in samples)
         {
-            if (sample.Time < start || sample.Time > end)
+            if (sample.Time < start || sample.Start > end)
             {
                 continue;
             }
-            if (previous is null || sample.Time - previous.Time > Gap)
+            if (previous is null || sample.Start - previous.Time > Gap)
             {
                 Close();
                 runs.Add([]);
             }
-            else if (sample.Time / width != previous.Time / width)
+            var first = Math.Max(start, sample.Start);
+            var limit = Math.Min(end, sample.Time) + 1;
+            while (first < limit)
             {
-                Close();
+                var index = first / width;
+                if (index != bucket)
+                    Close();
+                bucket = index;
+                var next = Math.Min(limit, (index + 1) * width);
+                var represented = sample.Weight * (next - first) / (sample.Time - sample.Start + 1);
+                weight += represented;
+                time += (first + next - 1) / 2.0 * represented;
+                download += sample.DownloadRate * represented;
+                upload += sample.UploadRate * represented;
+                first = next;
             }
-            bucket.Add(sample);
             previous = sample;
         }
         Close();
@@ -280,20 +293,12 @@ public sealed partial class SpeedGraph : UserControl
 
         void Close()
         {
-            if (bucket.Count == 0)
+            if (weight == 0)
             {
                 return;
             }
-            var time = bucket.Average(sample => (double)sample.Time);
-            runs[^1]
-                .Add(
-                    new Average(
-                        time,
-                        bucket.Average(sample => sample.DownloadRate),
-                        bucket.Average(sample => sample.UploadRate)
-                    )
-                );
-            bucket.Clear();
+            runs[^1].Add(new Average(time / weight, download / weight, upload / weight));
+            weight = time = download = upload = 0;
         }
     }
 
@@ -662,7 +667,9 @@ public sealed partial class SpeedGraph : UserControl
     // Page Down pan half a view, so the keyboard reaches what the pointer does.
     private void OnKey(object sender, KeyRoutedEventArgs args)
     {
-        if (!ReferenceEquals(args.OriginalSource, this))
+        if (!ReferenceEquals(args.OriginalSource, this)
+            || InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Control).HasFlag(CoreVirtualKeyStates.Down)
+            || InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Menu).HasFlag(CoreVirtualKeyStates.Down))
         {
             return;
         }

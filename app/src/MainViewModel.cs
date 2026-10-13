@@ -59,24 +59,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     private bool _addOpen;
     private bool _dark;
     private bool _toolbarOpen = true;
-    private bool _subtitleHelpSeen;
     private bool _showsSettingsIndex = true;
 
     public Strings Text { get; }
     public IReadOnlyList<Torrent> Torrents => _torrents;
     public AddDraft AddDraft { get; }
     public Settings Settings { get; }
-    internal bool SubtitleHelpSeen
-    {
-        get => _subtitleHelpSeen;
-        set
-        {
-            if (_subtitleHelpSeen == value)
-                return;
-            _subtitleHelpSeen = value;
-            Changed(nameof(SubtitleHelpSeen));
-        }
-    }
     public bool ShowsSettingsIndex
     {
         get => _showsSettingsIndex;
@@ -88,15 +76,18 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             Changed(nameof(ShowsSettingsIndex));
         }
     }
+    // Where Settings opens without a category: its index, or General when the
+    // person hid the index.
+    public SettingsCategory? SettingsHome => ShowsSettingsIndex ? null : SettingsCategory.General;
     public LibraryBrowser Library { get; }
     public string Theme =>
         Settings.Theme.ConfirmedText.Length > 0 ? Settings.Theme.ConfirmedText : "system";
-    public bool ShowsTitleSpeeds => Settings.ShowTitleSpeeds.ConfirmedOn;
+    public bool ShowsTitleSpeeds => Settings.ShowTitleSpeeds.IsOn;
     public bool ShowsFreeSpace =>
         _connected
         && !_loading
         && !_storageFailed
-        && Settings.ShowFreeSpace.ConfirmedOn
+        && Settings.ShowFreeSpace.IsOn
         && _spacePath == Settings.Destination.ConfirmedText
         && _freeSpace is not null;
     public string FreeSpaceStatus =>
@@ -108,6 +99,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     public bool IsConnected => _connected;
     internal double DownloadRate => _downloadRate;
     internal double UploadRate => _uploadRate;
+    internal TransferTotals SessionTotals { get; private set; }
+    internal TransferTotals LifetimeTotals { get; private set; }
     public bool IsLoading => _loading || !_connected;
     public bool IsStorageFailed => _storageFailed;
     public bool IsEmptyVisible => !_storageFailed;
@@ -428,9 +421,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             async () =>
             {
                 await Settings.SelectTheme(_dark ? "light" : "dark");
-                if (Settings.Theme.Failure is { } error)
-                    Report(error);
-                else
+                if (Settings.Theme.Failure is null)
                     ClearError();
             },
             () => CanEdit
@@ -630,6 +621,13 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         _client.Detail += detail => QueueDetail(detail);
         _client.CommandCompleted += () => QueueDetail(null);
         _client.Notice += notice => _dispatcher.TryEnqueue(() => ReceiveNotice(notice));
+        // Every card the engine opens is on the General page.
+        _client.SettingsRequested += setting =>
+            _dispatcher.TryEnqueue(() =>
+            {
+                if (!_closed)
+                    RequestSettings(new(SettingsCategory.General, setting));
+            });
         _client.Disconnected += reason =>
             _dispatcher.TryEnqueue(() =>
             {
@@ -655,8 +653,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
                     ActivateRequested?.Invoke(this, EventArgs.Empty);
                 else if (control == "activations")
                     _ = ReceiveActivations();
-                else if (control == "settings")
-                    RequestSettings(new(SettingsCategory.General));
                 else if (control == "confirm_exit")
                     ConfirmExitRequested?.Invoke(this, EventArgs.Empty);
                 else
@@ -682,8 +678,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         var previousAccess = (_connected, _loading, _storageFailed, _shuttingDown);
         var sessionId = snapshot.GetProperty("session_id").GetString()!;
         var reconnected = !_connected || _sessionId != sessionId;
-        if (reconnected && _limitsError is not CommandException)
-            _limitsError = null;
         if (_sessionId != sessionId)
             AddDraft.Invalidate();
         _sessionId = sessionId;
@@ -777,6 +771,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         );
         _downloadRate = snapshot.GetProperty("download_rate").GetDouble();
         _uploadRate = snapshot.GetProperty("upload_rate").GetDouble();
+        var transfers = snapshot.GetProperty("transfers");
+        SessionTotals = ReadTotals(transfers.GetProperty("session"));
+        LifetimeTotals = ReadTotals(transfers.GetProperty("all_time"));
         ObserveSpace();
         var published = Project();
         if (accessChanged)
@@ -800,6 +797,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             RevealRequested?.Invoke(this, revealed);
         }
     }
+
+    private static TransferTotals ReadTotals(JsonElement totals) =>
+        new(totals.GetProperty("downloaded").GetInt64(), totals.GetProperty("uploaded").GetInt64());
 
     // The saved language, which the window needs before it appears.
     internal Task LanguageLoad => _languageLoad;
@@ -1149,11 +1149,13 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
 
     private void ObserveSpace()
     {
+        if (_closed)
+            return;
         var path = Settings.Destination.ConfirmedText;
         if (_spacePath != path)
             _freeSpace = null;
         if (
-            !Settings.ShowFreeSpace.ConfirmedOn
+            !Settings.ShowFreeSpace.IsOn
             || _spaceRead is { IsCompleted: false }
             || _spacePath == path && Environment.TickCount64 - _spaceChecked < 10000
         )
@@ -1248,6 +1250,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     {
         if (ReferenceEquals(sender, Settings))
         {
+            ObserveSpace();
             Changed(nameof(Theme));
             Changed(nameof(ShowsExternalIp));
             Changed(nameof(ShowsTitleSpeeds));
@@ -1279,6 +1282,8 @@ internal sealed class SnapshotAppliedEventArgs(bool published) : EventArgs
 {
     public bool Published { get; } = published;
 }
+
+internal readonly record struct TransferTotals(long Downloaded, long Uploaded);
 
 internal sealed class RelayCommand(Func<Task> execute, Func<bool> enabled) : ICommand
 {

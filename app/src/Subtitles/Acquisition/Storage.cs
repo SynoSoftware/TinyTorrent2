@@ -9,37 +9,38 @@ namespace Syno.TinyTorrent.Subtitles;
 
 internal sealed partial class Acquisition
 {
-    private Task Load() =>
-        Run(
-            connection =>
-            {
-                // Finished torrents never restart automatic searches; unfinished
-                // torrents still qualify when they complete while the window is closed.
-                Cancel(connection, manual: false);
-                Execute(
-                    connection,
-                    """
-                    UPDATE subtitle_jobs SET outcome=$pending WHERE manual=0 AND outcome=$cancelled
-                        AND (reference IS NOT NULL OR lower(path) LIKE '%.'||lower(language)||'.srt')
-                        AND EXISTS (SELECT 1 FROM subtitle_job_sources s WHERE s.path=subtitle_jobs.path
-                            AND s.language=subtitle_jobs.language
-                            AND (s.origin NOT IN (SELECT origin FROM known_torrents)
-                                OR s.origin IN (SELECT origin FROM new_origins)));
-                    """,
-                    ("$pending", (int)SubtitleOutcome.Pending),
-                    ("$cancelled", (int)SubtitleOutcome.Cancelled)
-                );
-                Resume(connection);
-                using var command = connection.CreateCommand();
-                command.CommandText =
-                    "SELECT enabled,supplier,username,secret,languages,request_reset,download_reset,extras FROM subtitle_settings WHERE singleton=1;";
-                using var reader = command.ExecuteReader();
-                if (reader.Read())
+    private async Task Load()
+    {
+        var settings = await Run(
+                connection =>
                 {
-                    Enabled = reader[0] is long enabled && enabled == 1;
-                    var repairEnabled = !Equals(reader[0], Enabled ? 1L : 0L);
-                    Extras = reader[7] is long extras ? (int)Math.Clamp(extras, 0, MaximumExtras) : 1;
-                    var repairExtras = !Equals(reader[7], (long)Extras);
+                    // Finished torrents never restart automatic searches; unfinished
+                    // torrents still qualify when they complete while the window is closed.
+                    Cancel(connection, manual: false);
+                    Execute(
+                        connection,
+                        """
+                        UPDATE subtitle_jobs SET outcome=$pending WHERE manual=0 AND outcome=$cancelled
+                            AND (reference IS NOT NULL OR lower(path) LIKE '%.'||lower(language)||'.srt')
+                            AND EXISTS (SELECT 1 FROM subtitle_job_sources s WHERE s.path=subtitle_jobs.path
+                                AND s.language=subtitle_jobs.language
+                                AND (s.origin NOT IN (SELECT origin FROM known_torrents)
+                                    OR s.origin IN (SELECT origin FROM new_origins)));
+                        """,
+                        ("$pending", (int)SubtitleOutcome.Pending),
+                        ("$cancelled", (int)SubtitleOutcome.Cancelled)
+                    );
+                    Resume(connection);
+                    using var command = connection.CreateCommand();
+                    command.CommandText =
+                        "SELECT enabled,supplier,username,secret,languages,request_reset,download_reset,extras FROM subtitle_settings WHERE singleton=1;";
+                    using var reader = command.ExecuteReader();
+                    if (!reader.Read())
+                        return null;
+                    var enabled = reader[0] is long flag && flag == 1;
+                    var repairEnabled = !Equals(reader[0], enabled ? 1L : 0L);
+                    var extras = reader[7] is long count ? (int)Math.Clamp(count, 0, MaximumExtras) : 1;
+                    var repairExtras = !Equals(reader[7], (long)extras);
                     var secret = string.Empty;
                     var repairSecret = false;
                     if (!reader.IsDBNull(3))
@@ -48,7 +49,7 @@ internal sealed partial class Acquisition
                         {
                             try
                             {
-                                secret = Unprotect(encrypted);
+                                secret = Credentials.Unprotect(encrypted);
                             }
                             catch (CryptographicException)
                             {
@@ -58,31 +59,32 @@ internal sealed partial class Acquisition
                         else
                             repairSecret = true;
                     }
-                    _account = new(
+                    var account = new Account(
                         (SubtitleSupplier)reader.GetInt32(1),
                         reader.GetString(2),
                         secret
                     );
                     var repairLanguages = false;
+                    string[] languages;
                     try
                     {
-                        var languages = JsonSerializer.Deserialize<string?[]>(reader.GetString(4));
-                        Languages =
-                            languages
+                        var saved = JsonSerializer.Deserialize<string?[]>(reader.GetString(4));
+                        languages =
+                            saved
                                 ?.OfType<string>()
                                 .Where(value => !string.IsNullOrWhiteSpace(value))
                                 .Distinct(StringComparer.OrdinalIgnoreCase)
                                 .ToArray()
                             ?? [];
-                        repairLanguages = languages is null || !languages.SequenceEqual(Languages);
+                        repairLanguages = saved is null || !saved.SequenceEqual(languages);
                     }
                     catch (JsonException)
                     {
-                        Languages = [];
+                        languages = [];
                         repairLanguages = true;
                     }
                     var repairResets = false;
-                    _allowance = new Allowance(
+                    var allowance = new Allowance(
                         ReadReset(reader, 5, ref repairResets),
                         ReadReset(reader, 6, ref repairResets)
                     );
@@ -97,21 +99,36 @@ internal sealed partial class Acquisition
                                 download_reset=CASE WHEN $resets THEN $download ELSE download_reset END,
                                 extras=$extras WHERE singleton=1;
                             """,
-                            ("$enabled", Enabled),
+                            ("$enabled", enabled),
                             ("$secret", repairSecret),
                             ("$languages", repairLanguages),
-                            ("$values", JsonSerializer.Serialize(Languages)),
+                            ("$values", JsonSerializer.Serialize(languages)),
                             ("$resets", repairResets),
-                            ("$request", _allowance.RequestReset?.ToUnixTimeMilliseconds()),
-                            ("$download", _allowance.DownloadReset?.ToUnixTimeMilliseconds()),
-                            ("$extras", Extras)
+                            ("$request", allowance.RequestReset?.ToUnixTimeMilliseconds()),
+                            ("$download", allowance.DownloadReset?.ToUnixTimeMilliseconds()),
+                            ("$extras", extras)
                         );
-                    Supplier?.Restore(_account, _allowance);
-                }
-                return true;
-            },
-            _lifetime.Token
-        );
+                    return new
+                    {
+                        Enabled = enabled,
+                        Extras = extras,
+                        Account = account,
+                        Languages = languages,
+                        Allowance = allowance,
+                    };
+                },
+                _lifetime.Token
+            )
+            .ConfigureAwait(false);
+        if (settings is null)
+            return;
+        Enabled = settings.Enabled;
+        Extras = settings.Extras;
+        _account = settings.Account;
+        Languages = settings.Languages;
+        _allowance = settings.Allowance;
+        Supplier?.Restore(_account, _allowance);
+    }
 
     private static DateTimeOffset? ReadReset(
         SqliteDataReader reader,

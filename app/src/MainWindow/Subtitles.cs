@@ -1,6 +1,7 @@
 using Syno.TinyTorrent.Controls;
 using Syno.TinyTorrent.Models;
 using Syno.TinyTorrent.Subtitles;
+using Syno.TinyTorrent.Views;
 
 namespace Syno.TinyTorrent;
 
@@ -57,84 +58,61 @@ public sealed partial class MainWindow
         });
     }
 
-    // Opens the account of supplierId, or of the saved supplier.
-    private async Task ShowSupplier(
-        SubtitleSupplier? supplierId = null,
-        SupplierDialog? content = null
-    )
+    // Opens the account of supplierId, or of the saved supplier. Saving makes
+    // it the saved supplier, so a supplier and its account take effect together.
+    private async Task ShowSupplier(SubtitleSupplier? supplierId = null)
     {
-        if (Model.Subtitles is not { } subtitles)
+        if (
+            Model.Subtitles is not { } subtitles
+            || subtitles.GetSupplier(supplierId ?? subtitles.SupplierId) is not { } supplier
+        )
             return;
-        content ??= new SupplierDialog(
-            Model.Text,
-            subtitles,
-            supplierId ?? subtitles.SupplierId,
-            (supplier, failure) =>
+        var name = supplier.SupplierId.ToString();
+        var saved = subtitles.Edit(supplier.SupplierId);
+        Draft Read(AccountInput input) =>
+            saved with
             {
-                if (failure is null)
-                    Model.ShowOutcome(
-                        Model.Text.Get("subtitles", "connected"),
-                        supplier.ToString()
-                    );
-                else
-                    Model.Report(failure, "failed_subtitle_check", supplier.ToString(), null);
-            }
-        );
-        await Interact(async interaction =>
-        {
-            interaction.Restore = () => ShowSupplier(content.SupplierId, content);
-            interaction.ResolveDraft = () =>
-            {
-                content.Clear();
-                interaction.IsResolved = true;
-                return Task.FromResult(true);
+                Username = input.Username,
+                Secret = input.Secret,
+                KeepSecret = input.KeepSecret,
             };
-            var dialog = new Dialog
-            {
-                Content = content,
-                Footer = content.Status,
-                FooterAction = content.CheckAction,
-                Glyph = Lucide.Captions,
-                PrimaryGlyph = Lucide.Check,
-            };
-            try
-            {
-                await ShowEditor(
-                    interaction,
-                    dialog,
-                    content,
-                    () =>
+        await ShowAccount(
+            new AccountDialog(
+                Model.Text,
+                name,
+                supplier.Access,
+                supplier.HasBuiltInKey,
+                new(saved.Username, string.Empty, saved.KeepSecret),
+                async input =>
+                {
+                    await subtitles.Save(Read(input));
+                    try
                     {
-                        dialog.Title = content.SupplierId.ToString();
-                        dialog.PrimaryButtonText = Model.Text.Get("dialog", "save");
-                        dialog.PrimaryToolTip = Model.Text.Get("subtitles", "save_hint");
-                        content.RefreshText();
-                    },
-                    async () =>
+                        await Model.RetrySubtitles();
+                    }
+                    catch (Exception error)
                     {
-                        if (!await content.Submit())
-                            return false;
+                        Model.Report(error);
+                    }
+                },
+                supplier.Available
+                    ? async (input, cancellation) =>
+                    {
                         try
                         {
-                            await Model.RetrySubtitles();
+                            await subtitles.Check(Read(input), cancellation);
+                            if (!cancellation.IsCancellationRequested)
+                                Model.ShowOutcome(Model.Text.Get("subtitles", "connected"), name);
                         }
-                        catch (Exception error)
+                        catch (OperationCanceledException) { }
+                        catch (Exception error) when (!cancellation.IsCancellationRequested)
                         {
-                            Model.Report(error);
+                            Model.Report(error, "failed_subtitle_check", name, null);
                         }
-                        return true;
                     }
-                );
-            }
-            finally
-            {
-                content.CancelCheck();
-                dialog.Footer = null;
-                if (interaction.IsResolved)
-                    content.Clear();
-            }
-            return true;
-        });
+                    : null
+            )
+        );
     }
 
     private async Task ChooseSubtitle(long entryId, ChoiceDialog? content = null)

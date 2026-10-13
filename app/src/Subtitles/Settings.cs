@@ -11,11 +11,10 @@ internal sealed class Settings : UserControl
 {
     private Acquisition? _model;
     private readonly Func<Task> _retry;
-    private readonly ToggleSwitch _enabled = new();
+    private readonly List<(SettingsRow Row, ToggleSwitch Toggle, bool Home)> _automaticRows = [];
     private readonly ComboBox _extras = new()
     {
-        MinWidth = 80,
-        ItemsSource = Enumerable.Range(0, Acquisition.MaximumExtras + 1).ToArray(),
+        Width = 260,
     };
     private readonly Batch _batch;
     private readonly ActionButton _find = new();
@@ -26,7 +25,6 @@ internal sealed class Settings : UserControl
     private ScanResult? _scanned;
     private readonly ActionButton _check = new() { Glyph = Lucide.Plug };
     private readonly ActionButton _edit = new() { Glyph = Lucide.Pencil };
-    private readonly ActionButton _add = new() { Glyph = Lucide.Plus };
     private readonly Button _information = new()
     {
         Content = new FontIcon
@@ -37,25 +35,38 @@ internal sealed class Settings : UserControl
         },
         Style = (Style)Application.Current.Resources["TinyTorrentSubtleButtonStyle"],
     };
-    private readonly ComboBox _supplier = new() { Width = 280 };
-    private readonly AutoSuggestBox _language = new()
+    private readonly ComboBox _supplier = new() { Width = 260 };
+    private readonly AutoSuggestBox _language = new() { HorizontalAlignment = HorizontalAlignment.Stretch };
+    private readonly RadioButtons _languageMode = new() { MaxColumns = 2 };
+    private readonly RadioButton _languageDefault = new();
+    private readonly RadioButton _languageCustom = new();
+    private readonly ListView _languages = new()
     {
-        HorizontalAlignment = HorizontalAlignment.Stretch,
+        SelectionMode = ListViewSelectionMode.Multiple,
+        IsMultiSelectCheckBoxEnabled = true,
+        MaxHeight = 176,
+        ItemsPanel = (ItemsPanelTemplate)Application.Current.Resources["TinyTorrentLanguagePanel"],
     };
-    private readonly StackPanel _languages = new() { Spacing = 8, MinWidth = 280 };
+    private readonly StackPanel _languageChoices;
+    private readonly Expander _wanted;
+    private readonly SettingsRow _languageRow = new() { BorderThickness = new Thickness(0) };
+    private readonly TextBlock _selection = new() { TextTrimming = TextTrimming.CharacterEllipsis };
+    private readonly TextBlock _selected = new()
+    {
+        Style = (Style)Application.Current.Resources["TinyTorrentTitleDetailTextStyle"],
+    };
+    private readonly SettingsSection _existing;
     private readonly TextBlock _status = new()
     {
         Style = (Style)Application.Current.Resources["TinyTorrentBodyTextStyle"],
         MaxLines = 1,
+        TextTrimming = TextTrimming.CharacterEllipsis,
     };
     private readonly SettingsSection _section;
     private readonly SettingsRow _automaticRow;
     private readonly SettingsRow _extrasRow;
     private readonly SettingsRow _accessRow;
-    private readonly SettingsRow _batchRow;
     private readonly SettingsRow _supplierRow;
-    private readonly SettingsRow _languagesRow;
-    private readonly SettingsRow _languageInputRow;
     private readonly ProgressRing _progress = new()
     {
         Width = 16,
@@ -70,17 +81,16 @@ internal sealed class Settings : UserControl
     private Task _saving = Task.CompletedTask;
     internal Task Saving => _saving;
     private bool _refreshing;
-    private bool _unknownLanguage;
     private Strings Text { get; }
     internal event EventHandler<SubtitleSupplier>? SupplierRequested;
 
     internal Control? Field(string name) =>
         name switch
         {
-            "subtitle_automatic" => _enabled,
+            "subtitle_automatic" => _automaticRows[0].Toggle,
             "subtitle_extras" => _extras,
             "subtitle_supplier" => _supplier,
-            "subtitle_languages" => _language,
+            "subtitle_languages" => _languageMode,
             "subtitle_batch" => _find,
             "subtitle_scan" => _scan,
             _ => null,
@@ -91,7 +101,6 @@ internal sealed class Settings : UserControl
         Text = text;
         _retry = retry;
         _report = report;
-        AutomationProperties.SetAutomationId(_enabled, "SubtitleAutomatic");
         AutomationProperties.SetAutomationId(_extras, "SubtitleExtras");
         _batch = new Batch(text, report);
         AutomationProperties.SetAutomationId(_find, "SubtitleFind");
@@ -107,11 +116,13 @@ internal sealed class Settings : UserControl
         _scan.Click += async (_, _) => await Scan();
         AutomationProperties.SetAutomationId(_check, "SubtitleCheck");
         AutomationProperties.SetAutomationId(_edit, "SubtitleEdit");
-        AutomationProperties.SetAutomationId(_add, "SubtitleAddLanguage");
         AutomationProperties.SetAutomationId(_information, "SubtitleSupplierInformation");
         AutomationProperties.SetAutomationId(_supplier, "SubtitleSupplier");
         AutomationProperties.SetAutomationId(_language, "SubtitleLanguage");
-        _automaticRow = new SettingsRow { Content = _enabled };
+        AutomationProperties.SetLiveSetting(_selected, Microsoft.UI.Xaml.Automation.Peers.AutomationLiveSetting.Polite);
+        _automaticRow = CreateAutomaticRow();
+        for (var count = 0; count <= Acquisition.MaximumExtras; count++)
+            _extras.Items.Add(new ComboBoxItem { Tag = count });
         _extrasRow = new SettingsRow { Content = _extras };
         _supplierRow = new SettingsRow
         {
@@ -125,54 +136,74 @@ internal sealed class Settings : UserControl
                 _edit
             ),
         };
-        var status = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            Spacing = 8,
-            VerticalAlignment = VerticalAlignment.Center,
-            Children = { _status, _progress },
-        };
+        var status = new Grid { ColumnSpacing = 8, VerticalAlignment = VerticalAlignment.Center };
+        status.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        status.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        Grid.SetColumn(_progress, 1);
+        status.Children.Add(_status);
+        status.Children.Add(_progress);
         _accessRow = new SettingsRow { Content = Pair(status, _check) };
-        _languageInputRow = new SettingsRow { Content = Pair(_language, _add) };
-        _languagesRow = new SettingsRow
+        _languageMode.Items.Add(_languageDefault);
+        _languageMode.Items.Add(_languageCustom);
+        _languageChoices = new StackPanel
         {
-            Content = _languages,
-            VerticalContentAlignment = VerticalAlignment.Top,
+            Spacing = 8,
+            Children =
+            {
+                _language,
+                _languages,
+                _selected,
+            },
         };
-        _batchRow = new SettingsRow { Content = Pair(_batch, _find) };
+        _languageRow.Content = _selection;
+        _wanted = new SettingsExpander
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Stretch,
+            Header = _languageRow,
+            Padding = new Thickness(0, 0, 0, 16),
+            Content = new StackPanel { Spacing = 12, Children = { _languageMode, _languageChoices } },
+        };
+        _wanted.Resources["ExpanderHeaderBackground"] = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent);
+        _wanted.Resources["ExpanderContentBackground"] = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent);
+        _wanted.Resources["ExpanderHeaderBorderThickness"] = new Thickness(0);
+        _wanted.Resources["ExpanderContentDownBorderThickness"] = new Thickness(0);
+        _wanted.Resources["ExpanderContentUpBorderThickness"] = new Thickness(0);
+        _wanted.Resources["ExpanderHeaderPadding"] = new Thickness(0);
+        _languages.Loaded += (_, _) => AlignLanguages();
+        _languages.SizeChanged += (_, _) => AlignLanguages();
+        _batch.ShowSettings(_find);
         _scanStatus.Check.Visibility = Visibility.Collapsed;
-        _scanRow = new SettingsRow { Content = Pair(_scanStatus, _scan) };
+        _scanStatus.MinHeight = 20;
+        _scanRow = new SettingsRow { Content = Pair(_scanStatus, _scan), BorderThickness = new Thickness(0) };
+        _existing = new SettingsSection
+        {
+            Style = (Style)Application.Current.Resources["TinyTorrentSettingsGroupStyle"],
+            Content = _scanRow,
+        };
         _section = new SettingsSection
         {
             Glyph = Lucide.Captions,
+            Style = (Style)Application.Current.Resources["TinyTorrentSettingsGroupStyle"],
             Content = new StackPanel
             {
-                Spacing = 16,
-                Children =
-                {
-                    new StackPanel { Children = { _supplierRow, _accessRow } },
-                    new StackPanel { Children = { _languageInputRow, _languagesRow } },
-                    new StackPanel { Children = { _automaticRow, _extrasRow } },
-                    Divider(),
-                    _batchRow,
-                    Divider(),
-                    _scanRow,
-                },
+                Children = { _supplierRow, _accessRow, _wanted, _automaticRow, _extrasRow },
             },
         };
-        Content = _section;
-        _enabled.Toggled += async (_, _) =>
+        Content = new StackPanel
         {
-            if (!_refreshing && _model is { } model)
+            Spacing = 24,
+            Children =
             {
-                var enabled = _enabled.IsOn;
-                await Save(() => model.SetEnabled(enabled));
-            }
+                _section,
+                _batch,
+                _existing,
+            },
         };
         _check.Click += async (_, _) => await Check();
         _extras.SelectionChanged += async (_, _) =>
         {
-            if (!_refreshing && _model is { } model && _extras.SelectedItem is int extras)
+            if (!_refreshing && _model is { } model && _extras.SelectedItem is ComboBoxItem { Tag: int extras })
                 await Save(() => model.SetExtras(extras));
         };
         _edit.Click += (_, _) =>
@@ -191,30 +222,61 @@ internal sealed class Settings : UserControl
                 return;
             await Save(() => model.SelectSupplier(chosen));
         };
-        _add.Click += async (_, _) => await AddLanguage();
-        _language.QuerySubmitted += async (_, args) =>
-            await AddLanguage(args.ChosenSuggestion as LanguageChoice);
-        _language.TextChanged += (_, args) =>
+        _languageMode.SelectionChanged += async (_, _) =>
         {
-            if (args.Reason == AutoSuggestionBoxTextChangeReason.UserInput && _model is { } model)
-                _language.ItemsSource = (model.Supplier?.Languages ?? [])
-                    .Select(Choice)
-                    .Where(choice =>
-                        choice.Name.Contains(
-                            _language.Text,
-                            StringComparison.CurrentCultureIgnoreCase
-                        )
-                        || choice.Tag.StartsWith(_language.Text, StringComparison.OrdinalIgnoreCase)
-                    )
-                    .ToArray();
+            if (_refreshing || _model is not { } model)
+                return;
+            var followsLanguage = _languageMode.SelectedIndex == 0;
+            await Save(() => model.SetLanguages(followsLanguage ? [] : model.EffectiveLanguages));
         };
+        _language.TextChanged += (_, _) => FilterLanguages();
+        _language.QuerySubmitted += (_, args) =>
+        {
+            if (args.ChosenSuggestion is string name)
+                _language.Text = name;
+        };
+        _languages.SelectionChanged += OnLanguageChoice;
         _information.Click += (_, _) =>
         {
             if (_model?.Supplier is { } supplier)
-                SupplierDialog.Information(Text, supplier).ShowAt(_information);
+                Disclosure
+                    .Create(
+                        Text,
+                        supplier.SupplierId.ToString(),
+                        Text.Format("subtitles", "disclosure", supplier.SupplierId),
+                        supplier.Privacy,
+                        supplier.Terms
+                    )
+                    .ShowAt(_information);
         };
         Unloaded += (_, _) => Attach(null);
         RefreshText();
+    }
+
+    internal SettingsRow CreateAutomaticRow()
+    {
+        var toggle = new ToggleSwitch();
+        var home = _automaticRows.Count > 0;
+        var row = new SettingsRow { Content = toggle };
+        AutomationProperties.SetAutomationId(toggle, home ? "SubtitleAutomaticHome" : "SubtitleAutomatic");
+        SetAutomaticText(row, toggle, home);
+        _automaticRows.Add((row, toggle, home));
+        toggle.Toggled += async (_, _) =>
+        {
+            if (!_refreshing && _model is { } model)
+            {
+                var enabled = toggle.IsOn;
+                await Save(() => model.SetEnabled(enabled));
+            }
+        };
+        return row;
+    }
+
+    private void SetAutomaticText(SettingsRow row, ToggleSwitch toggle, bool home)
+    {
+        row.Header = home ? Text.Get("settings", "home_automatic") : T("automatic");
+        row.Description = home ? Text.Get("settings", "home_automatic_hint") : T("automatic_hint");
+        AutomationProperties.SetName(toggle, row.Header);
     }
 
     internal void Attach(Acquisition? model)
@@ -239,35 +301,41 @@ internal sealed class Settings : UserControl
 
     internal void RefreshText()
     {
-        _section.Header = Text.Get("settings", "subtitles");
-        _automaticRow.Header = T("automatic");
-        _automaticRow.Description = T("automatic_hint");
+        _section.Header = T("title");
+        foreach (var (row, toggle, home) in _automaticRows)
+            SetAutomaticText(row, toggle, home);
+        foreach (ComboBoxItem item in _extras.Items)
+            item.Content = (int)item.Tag switch { 0 => T("extras_none"), 1 => T("extras_one"), var count => F("extras_count", count) };
         _extrasRow.Header = T("extras");
         _extrasRow.Description = T("extras_hint");
         _supplierRow.Header = T("supplier");
         _accessRow.Header = T("access");
-        _languageInputRow.Header = T("add_language");
-        _languagesRow.Header = T("language_selection");
-        _batchRow.Header = T("batch");
-        _scanRow.Header = T("files");
+        _accessRow.Description = T("access_hint");
+        _languageRow.Header = T("language_selection");
+        _languageRow.Description = T("languages_hint");
+        AutomationProperties.SetName(_wanted, T("language_selection"));
+        _existing.Header = T("existing_files");
+        AutomationProperties.SetName(_languageMode, T("language_selection"));
+        AutomationProperties.SetName(_languages, T("language_selection"));
+        _languageCustom.Content = T("choose_languages");
+        _scanRow.Header = T("scan_folders");
+        _scanRow.Description = T("scan_short_hint");
         _scan.Text = T("scan");
         ToolTipService.SetToolTip(_scan, T("scan_hint"));
         _batch.Refresh();
         _check.Text = T("check");
         _edit.Text = T("edit");
-        _add.Text = T("add");
         ToolTipService.SetToolTip(_check, T("check_hint"));
         ToolTipService.SetToolTip(_edit, T("edit_hint"));
-        ToolTipService.SetToolTip(_add, T("add_language"));
         AutomationProperties.SetName(_language, T("languages"));
-        AutomationProperties.SetName(_enabled, T("automatic"));
         AutomationProperties.SetName(_extras, T("extras"));
         AutomationProperties.SetHelpText(_extras, T("extras_hint"));
         AutomationProperties.SetName(_supplier, T("supplier"));
         ToolTipService.SetToolTip(_supplier, T("supplier_hint"));
         AutomationProperties.SetName(_information, T("supplier_information"));
         ToolTipService.SetToolTip(_information, T("supplier_information"));
-        _language.PlaceholderText = T("language_hint");
+        _language.Header = T("language_hint");
+        _language.PlaceholderText = T("language_search");
         Refresh();
     }
 
@@ -275,24 +343,21 @@ internal sealed class Settings : UserControl
     {
         _refreshing = true;
         if (_saving.IsCompleted)
+            _extras.SelectedItem = _extras.Items.Cast<ComboBoxItem>()
+                .FirstOrDefault(item => (int)item.Tag == _model?.Extras);
+        foreach (var (row, toggle, _) in _automaticRows)
         {
-            _enabled.IsOn = _model?.Enabled == true;
-            _extras.SelectedItem = _model?.Extras;
+            if (_saving.IsCompleted)
+                toggle.IsOn = _model?.Enabled == true;
+            row.StateText = SettingsRow.State(toggle.IsOn, Text.Get("settings", "on"), Text.Get("settings", "off"));
+            toggle.IsEnabled = _model is not null;
         }
-        _automaticRow.StateText = SettingsRow.State(
-            _enabled.IsOn,
-            Text.Get("settings", "on"),
-            Text.Get("settings", "off")
-        );
-        _enabled.IsEnabled = _model is not null;
         _extras.IsEnabled = _model is not null;
         _scan.IsEnabled = _model is not null;
         var scanned =
             _scanning ? T("scanning")
             : _scanned is { } result ? F("scanned", result.Found, result.Unreadable)
             : string.Empty;
-        _scanStatus.Visibility =
-            _scanning || _scanned is not null ? Visibility.Visible : Visibility.Collapsed;
         _scanStatus.Refresh(
             _scanning,
             _scanned is { } scan ? scan.Unreadable == 0 : null,
@@ -301,7 +366,7 @@ internal sealed class Settings : UserControl
         );
         _check.IsEnabled = _model?.CanCheck == true;
         _edit.IsEnabled = _model is not null && !_checking;
-        _language.IsEnabled = _add.IsEnabled = _model is not null;
+        _language.IsEnabled = _languageMode.IsEnabled = _model is not null;
         _supplier.ItemsSource ??= _model
             ?.Suppliers.Select(supplier => supplier.SupplierId)
             .ToArray();
@@ -319,100 +384,101 @@ internal sealed class Settings : UserControl
             : T("not_checked");
         ToolTipService.SetToolTip(_status, _status.Text);
         AutomationProperties.SetHelpText(_status, _status.Text);
-        _languageInputRow.Error = _unknownLanguage ? T("choose_language") : string.Empty;
         RefreshLanguages();
         _refreshing = false;
     }
 
     private void RefreshLanguages()
     {
-        var tags = _model?.EffectiveLanguages ?? [];
-        var signature =
-            string.Join(",", tags)
-            + ":"
-            + _model?.SupplierId
-            + ":"
-            + Text.Language
-            + ":"
-            + (_model?.Languages.Length == 0);
-        if (Equals(_languages.Tag, signature))
-            return;
-        _languages.Tag = signature;
-        _languages.Children.Clear();
-        foreach (var tag in tags)
+        var selected = _model?.EffectiveLanguages ?? [];
+        _languageDefault.Content = Text.LanguageName(Text.Language);
+        if (_saving.IsCompleted)
+            _languageMode.SelectedIndex = _model?.Languages.Length > 0 ? 1 : 0;
+        _languageChoices.Visibility = _languageMode.SelectedIndex == 1 ? Visibility.Visible : Visibility.Collapsed;
+        _selection.Text = string.Join(", ", selected.Select(Text.LanguageName));
+        ToolTipService.SetToolTip(_wanted, _selection.Text);
+        _selected.Text = F("selected", selected.Count);
+        var tags = (_model?.Supplier?.Languages ?? [])
+            .Concat(selected)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(Text.LanguageName, StringComparer.CurrentCultureIgnoreCase)
+            .ToArray();
+        var signature = string.Join(",", tags) + ":" + Text.Language + ":" + _model?.SupplierId;
+        if (!Equals(_languages.Tag, signature))
         {
-            var name = Text.LanguageName(tag);
-            if (_model is { } model && model.Supplier?.Supports(tag) != true)
-                name += " · " + F("unsupported", model.SupplierId);
-            var remove = new Button
+            _languages.Tag = signature;
+            _languages.Items.Clear();
+            foreach (var tag in tags)
             {
-                Content = new FontIcon { FontFamily = Lucide.Font, Glyph = Lucide.X },
-                Style = (Style)Application.Current.Resources["TinyTorrentSubtleButtonStyle"],
-            };
-            AutomationProperties.SetName(remove, F("remove", Text.LanguageName(tag)));
-            AutomationProperties.SetAutomationId(remove, "SubtitleRemoveLanguage-" + tag);
-            ToolTipService.SetToolTip(remove, F("remove", Text.LanguageName(tag)));
-            remove.IsEnabled = _model?.Languages.Length > 0;
-            var index = _languages.Children.Count;
-            // The removed row leaves the page with its button, so focus moves
-            // to the row that takes its place, or to Add, never to a text box.
-            remove.Click += async (_, _) =>
-            {
-                if (
-                    _model is not { } saved
-                    || !await Save(() =>
-                        saved.SetLanguages(saved.Languages.Where(value => value != tag))
-                    )
-                )
-                    return;
-                var buttons = _languages
-                    .Children.OfType<Grid>()
-                    .Select(row => row.Children[1])
-                    .OfType<Button>()
-                    .Where(button => button.IsEnabled)
-                    .ToArray();
-                Control next =
-                    buttons.Length > 0 ? buttons[Math.Min(index, buttons.Length - 1)] : _add;
-                next.Focus(FocusState.Programmatic);
-            };
-            _languages.Children.Add(
-                Pair(
-                    new TextBlock { Text = name, TextTrimming = TextTrimming.CharacterEllipsis },
-                    remove
-                )
-            );
+                var name = Text.LanguageName(tag);
+                if (_model?.Supplier?.Supports(tag) != true)
+                    name += " · " + F("unsupported", _model?.SupplierId ?? default);
+                var choice = new ListViewItem { Content = new TextBlock { Text = name, TextTrimming = TextTrimming.CharacterEllipsis }, Tag = tag };
+                AutomationProperties.SetAutomationId(choice, "SubtitleLanguage-" + tag);
+                AutomationProperties.SetName(choice, name);
+                ToolTipService.SetToolTip(choice, name);
+                _languages.Items.Add(choice);
+            }
         }
+        foreach (var choice in _languages.Items.Cast<ListViewItem>())
+        {
+            var tag = (string)choice.Tag;
+            if (_saving.IsCompleted)
+            {
+                if (selected.Contains(tag, StringComparer.OrdinalIgnoreCase))
+                {
+                    if (!_languages.SelectedItems.Contains(choice))
+                        _languages.SelectedItems.Add(choice);
+                }
+                else
+                    _languages.SelectedItems.Remove(choice);
+            }
+            choice.IsEnabled = _model is not null
+                && (_model.Supplier?.Supports(tag) == true || selected.Contains(tag, StringComparer.OrdinalIgnoreCase));
+        }
+        FilterLanguages();
     }
 
-    private async Task AddLanguage(LanguageChoice? selected = null)
+    private void FilterLanguages()
     {
-        if (_model is not { } model)
+        foreach (var choice in _languages.Items.Cast<ListViewItem>())
+            choice.Visibility = ((TextBlock)choice.Content).Text.Contains(_language.Text.Trim(), StringComparison.CurrentCultureIgnoreCase)
+                || ((string)choice.Tag).StartsWith(_language.Text.Trim(), StringComparison.OrdinalIgnoreCase)
+                ? Visibility.Visible : Visibility.Collapsed;
+        _language.ItemsSource = _languages.Items.Cast<ListViewItem>()
+            .Where(choice => choice.Visibility == Visibility.Visible)
+            .Select(choice => ((TextBlock)choice.Content).Text).ToArray();
+        AlignLanguages();
+    }
+
+    private void AlignLanguages()
+    {
+        if (_languages.ActualWidth <= 0)
             return;
-        var input = _language.Text;
-        selected ??= (model.Supplier?.Languages ?? [])
-            .Select(Choice)
-            .FirstOrDefault(choice =>
-                string.Equals(choice.Tag, _language.Text.Trim(), StringComparison.OrdinalIgnoreCase)
-                || string.Equals(
-                    choice.Name,
-                    _language.Text.Trim(),
-                    StringComparison.CurrentCultureIgnoreCase
-                )
-            );
-        if (selected is null)
+        var columns = _languages.ActualWidth < 480 ? 1 : 2;
+        var width = Math.Floor(_languages.ActualWidth / columns);
+        foreach (var choice in _languages.Items.Cast<ListViewItem>())
+            choice.Width = width;
+    }
+
+    private async void OnLanguageChoice(object sender, SelectionChangedEventArgs args)
+    {
+        if (_refreshing || _model is not { } model)
+            return;
+        var added = args.AddedItems.Cast<ListViewItem>().Select(choice => (string)choice.Tag).ToArray();
+        var removed = args.RemovedItems.Cast<ListViewItem>().Select(choice => (string)choice.Tag).ToArray();
+        await Save(async () =>
         {
-            _unknownLanguage = true;
-            Refresh();
-            _language.Focus(FocusState.Programmatic);
-            return;
-        }
-        // Adding to the interface-language default keeps that language, which
-        // the person sees in the list.
-        if (
-            await Save(() => model.SetLanguages(model.EffectiveLanguages.Append(selected.Tag)))
-            && _language.Text == input
-        )
-            _language.Text = string.Empty;
+            var wanted = model.EffectiveLanguages
+                .Where(tag => !removed.Contains(tag, StringComparer.OrdinalIgnoreCase))
+                .Concat(added)
+                .ToArray();
+            // An empty list means "follow the interface language", which only
+            // the mode buttons choose. Save refreshes afterwards, which checks
+            // the refused language again.
+            if (wanted.Length > 0)
+                await model.SetLanguages(wanted);
+        });
     }
 
     private async Task<bool> Save(Func<Task> action)
@@ -424,7 +490,6 @@ internal sealed class Settings : UserControl
         );
         _saving = completion.Task;
         await previous;
-        _unknownLanguage = false;
         try
         {
             if (model is null || model.IsDisposed)
@@ -515,6 +580,7 @@ internal sealed class Settings : UserControl
         {
             ColumnSpacing = 12,
             MinWidth = 280,
+            MaxWidth = 520,
             HorizontalAlignment = HorizontalAlignment.Stretch,
         };
         grid.ColumnDefinitions.Add(
@@ -528,37 +594,13 @@ internal sealed class Settings : UserControl
         return grid;
     }
 
-    internal void Align(double width)
+    internal void Align()
     {
-        ActionButton.Align([_find, _check, _edit, _add, _scan]);
-        foreach (
-            var row in new[]
-            {
-                _automaticRow,
-                _extrasRow,
-                _supplierRow,
-                _accessRow,
-                _languageInputRow,
-                _languagesRow,
-                _batchRow,
-                _scanRow,
-            }
-        )
-            row.Align(0, width);
-        _languages.Width = width;
-        foreach (
-            var row in new[] { _supplierRow, _accessRow, _languageInputRow, _batchRow, _scanRow }
-        )
-            ((FrameworkElement)row.Content).Width = width;
+        ActionButton.Align([_find, _check, _edit, _scan]);
     }
 
-    private static Border Divider() =>
-        new() { Style = (Style)Application.Current.Resources["InspectorDividerStyle"] };
-
-    private LanguageChoice Choice(string tag) => new(tag, Text.LanguageName(tag));
-
-    private sealed record LanguageChoice(string Tag, string Name)
+    internal string Coverage
     {
-        public override string ToString() => Name;
+        set => _batch.Coverage = value;
     }
 }

@@ -379,12 +379,25 @@ not match strings shorter than three characters, as documented in the
 
 ## Identification and early enrichment
 
-Choose one provider: TMDB, IMDb or Rotten Tomatoes. Provider selection is
-exclusive, so changing it cancels work belonging to the previous provider.
-For the IMDb and Rotten Tomatoes request triggers, cache rules and browser
-access, read the [website provider contract](movie-websites.md). That plugin
-supports movies from the selected website. Each enabled provider uses the same
-background identification workflow; TMDB also supports series and episodes.
+Choose one provider: TMDB, Wikidata, OMDb, MDBList, IMDb or Rotten Tomatoes.
+Provider selection is exclusive, so changing it cancels work belonging to the
+previous provider. For the IMDb and Rotten Tomatoes request triggers, cache
+rules and browser access, read the [website provider contract](movie-websites.md).
+That plugin supports movies from the selected website. Each enabled provider
+uses the same background identification workflow; TMDB also supports series
+and episodes, and the others support movies only.
+
+The API providers differ in what they return:
+
+| Provider | Access | Information |
+| --- | --- | --- |
+| TMDB | Built-in key, or the person's own | Localized titles, synopsis, genres, cast, keywords, TMDB rating, and recommended titles that Fetch metadata offers as choices |
+| Wikidata | No key | Localized titles, genres and cast, a one-line description as the synopsis, and the IMDb rating that Wikidata editors last recorded |
+| OMDb | Built-in key, or the person's own | English titles, full plot, genres, main cast and IMDb rating |
+| MDBList | Built-in key, or the person's own | English titles, synopsis, genres, and IMDb and TMDB ratings; no cast |
+
+Each saved response also keeps the Rotten Tomatoes and Metacritic scores that
+Wikidata, OMDb and MDBList return, although Library does not show them.
 
 Use names and structured clues such as title, year, season and episode numbers
 without reading video contents.
@@ -454,7 +467,9 @@ series identification for a season pack and fetch episode-specific information
 only for represented episodes, rather than importing an entire series catalogue.
 Fetch searchable cast and synopsis during enrichment, not only when the details
 pane opens, so an actor or subject search can find an unselected file. Do not
-retrieve artwork, trailers, recommendations or unrelated credits as part of it.
+retrieve artwork, trailers or unrelated credits as part of it. Recommendations
+arrive in the same request through `append_to_response`, so they add no
+request; Fetch metadata offers them as choices.
 
 Enrichment runs in C# only while the product window is open and the feature is
 enabled, within the [per-movie limit](architecture.md#third-party-provider-access).
@@ -899,10 +914,15 @@ provider work and cancels pending requests where possible. Cached information
 remains usable only as permitted by the applicable terms; source entries and
 filename search remain usable regardless.
 
-Settings presents Download video information as one choice: Off, TMDB, IMDb
-or Rotten Tomatoes. Off stops downloading only; saved information stays. Its information button opens the selected provider's disclosure, the
+Settings presents Download video information as one choice: Off, then the
+providers. Off stops downloading only; saved information stays. Its information button opens the selected provider's disclosure, the
 inputs it receives, and links to its privacy policy and terms, in the same
-flyout as the subtitle supplier's. A provider that is unavailable when chosen
+flyout as the subtitle supplier's. For a provider that takes an API key, a key
+button beside it opens the [account dialog](architecture.md#third-party-provider-access),
+where the person enters their own key or, when the release has one, keeps the
+built-in key. Choosing such a provider when it has no usable key opens that
+dialog: Save stores the key and turns the provider on, and Cancel leaves the
+choice unchanged. Any other provider that is unavailable when chosen
 changes nothing and shows its error in the row. Library's Settings button opens
 this row.
 
@@ -916,12 +936,15 @@ configured route remains unavailable. The current website reader runs
 only with confirmed unrestricted direct access and stops when that route changes.
 
 Follow [third-party provider access](architecture.md#third-party-provider-access).
-TMDB uses the free application credential supplied with the build; the person
-does not need a TMDB account or key. No paid access is part of this feature.
-Without an application credential, local Library search and saved information
-remain usable, but no TMDB requests run. TMDB limits use the existing wait
-and retry behavior rather than a paid fallback. IMDb and Rotten Tomatoes
-availability is independent of that credential; its [request policy](movie-websites.md#requests-and-saved-information)
+TMDB, OMDb and MDBList use the free application keys supplied with the
+build; the person does not need an account or key. A person who wants their own
+allowance enters their own key, which replaces the built-in one for that
+provider. No paid access is part of this feature. Without a key, local Library
+search and saved information remain usable, but no requests to that provider
+run. Provider limits use the existing wait and retry behavior rather than a
+paid fallback; a refused key stops that provider's lookups until the person
+changes the key. Wikidata needs no key. IMDb and Rotten Tomatoes
+availability is independent of these keys; its [request policy](movie-websites.md#requests-and-saved-information)
 owns retries and saved data.
 
 Verify applicable API/content permission, attribution, credential distribution,

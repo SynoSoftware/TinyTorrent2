@@ -52,13 +52,7 @@ public sealed partial class MainWindow : Window
         SettingsContent.SizeChanged += Motion.Clip;
         _pages.Show(Workspace);
         _workspaces.Show(TorrentContent);
-        Root.Unloaded += (_, _) =>
-        {
-            _motion.Stop();
-            _pages.Stop();
-            _workspaces.Stop();
-            _settings.Stop();
-        };
+        Root.Unloaded += (_, _) => StopMotion();
         ConfigureCapture();
         ConfigureNotifications();
         Filters.ItemsSource = Model.Filters;
@@ -211,7 +205,8 @@ public sealed partial class MainWindow : Window
             .SortKey(RatioColumn, row => row.Ratio)
             .SortKey(SeedsColumn, row => row.SeedCount)
             .SortKey(PeersColumn, row => row.LeecherCount)
-            .SortKey(AddedColumn, row => row.Added);
+            .SortKey(AddedColumn, row => row.Added)
+            .SortKey(CompletedOnColumn, row => row.CompletedOn);
         Torrents.Sort = new Syno.TableView.Sort(QueueColumn);
         Torrents.Placeholder = Syno.TableView.Placeholder.Loading;
         Torrents.SelectionChanged += async (_, _) => await SelectTorrent();
@@ -728,7 +723,6 @@ public sealed partial class MainWindow : Window
             if (
                 !HasDialog
                 && !Model.HasDraft
-                && !Model.Settings.Schedule.HasDraft
                 && !Model.IsPicking
             )
                 AppWindow.Hide();
@@ -763,8 +757,9 @@ public sealed partial class MainWindow : Window
                     Model.PropertyChanged -= OnIdle;
                 }
             }
-            if (!await Model.Settings.PrepareLeave())
+            if (!await Model.Settings.Connection.Depart())
                 return;
+            await Model.Settings.PrepareLeave();
             suspended = _interaction;
             suspended?.Dialog?.Hide();
             if (suspended is not null)
@@ -782,11 +777,12 @@ public sealed partial class MainWindow : Window
             }
             AppWindow.Hide();
             Model.DisconnectFeatures();
-            if (_settingsPage is { } settings && !await settings.SaveFeatures())
-                return;
+            if (_settingsPage is { } settings)
+                await settings.SaveFeatures();
             await SavePlacement();
             await Model.Close(_exiting);
             await Model.CloseFeatures();
+            _settingsPage?.Release();
             _allowClose = true;
             Close();
         }
@@ -823,13 +819,7 @@ public sealed partial class MainWindow : Window
                 ShowDeferredAdd();
                 // A page the person is already on stays as they left it, and
                 // Recover moves only to the error.
-                if (!HasDialog && Model.Settings.HasError)
-                {
-                    if (Model.Page != WindowPage.Settings)
-                        await ShowSettings(new(SettingsCategory.General));
-                    focused = _settingsPage?.Recover(focusName);
-                }
-                else if (!HasDialog && Model.Inspector.HasDraft && Model.Inspector.HasError)
+                if (!HasDialog && Model.Inspector.HasDraft && Model.Inspector.HasError)
                 {
                     if (Model.Page != WindowPage.Torrents)
                         await ShowTorrents();

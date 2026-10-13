@@ -1,5 +1,8 @@
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
+using Syno.TinyTorrent.Controls;
 using Syno.TinyTorrent.Helpers;
 using Syno.TinyTorrent.Models;
 using Windows.Graphics;
@@ -10,6 +13,53 @@ public sealed partial class MainWindow
 {
     private async Task CaptureSettings(List<object> outcomes, List<string> completed)
     {
+        Model.CanStartFeatures = true;
+        Model.RequestSnapshot();
+        await CaptureReady(Model, () => Model.Subtitles is not null);
+        var acquisition = Model.Subtitles ?? throw new InvalidOperationException("Subtitles did not start.");
+        await acquisition.SetEnabled(false);
+        try
+        {
+            await CaptureReady(Model.Library, () => Model.Library.IsAvailable);
+        }
+        catch (TimeoutException error)
+        {
+            await CaptureUi("settings-startup-failure");
+            throw new InvalidOperationException(
+                $"Library startup did not notify readiness: available={Model.Library.IsAvailable}, failure={Model.Library.FailureCause}", error);
+        }
+        var resizeScale = Root.XamlRoot.RasterizationScale;
+        AppWindow.Resize(new SizeInt32((int)(1040 * resizeScale), (int)(680 * resizeScale)));
+        await ShowSettings(new(SettingsCategory.Transfers));
+        await CaptureUi("settings-resize-compact");
+        AppWindow.Resize(new SizeInt32((int)(1538 * resizeScale), (int)(1246 * resizeScale)));
+        await CaptureUi("settings-resize-expanded");
+        var resized = _settingsPage ?? throw new InvalidOperationException("Settings did not open.");
+        var heading = (FrameworkElement)resized.FindName("PageTitle");
+        var transfers = (FrameworkElement)resized.FindName("Transfers");
+        var scroll = (ScrollViewer)resized.FindName("Body");
+        var content = (FrameworkElement)resized.FindName("BodyContent");
+        var headingLeft = heading.TransformToVisual(Root).TransformPoint(new()).X;
+        var panelLeft = transfers.TransformToVisual(Root).TransformPoint(new()).X;
+        var panelRight = panelLeft + transfers.ActualWidth;
+        outcomes.Add(new
+        {
+            journey = "settings compact to expanded resize",
+            headingLeft,
+            panelLeft,
+            panelRight,
+            windowWidth = Root.ActualWidth,
+            scrollLeft = scroll.TransformToVisual(Root).TransformPoint(new()).X,
+            scroll.ViewportWidth,
+            scroll.ExtentWidth,
+            scroll.HorizontalOffset,
+            contentLeft = content.TransformToVisual(Root).TransformPoint(new()).X,
+            contentWidth = content.ActualWidth,
+            translation = (transfers.RenderTransform as TranslateTransform)?.X,
+        });
+        if (Math.Abs(panelLeft - headingLeft) > 1 || panelRight > Root.ActualWidth - 16)
+            throw new InvalidOperationException(
+                $"Settings content escaped the resized viewport: heading={headingLeft}, panel={panelLeft}..{panelRight}, window={Root.ActualWidth}.");
         foreach (
             var (language, theme, width, height) in new[]
             {
@@ -36,45 +86,51 @@ public sealed partial class MainWindow
                 _settingsPage ?? throw new InvalidOperationException("Settings did not open.");
             var advanced = (ToggleSwitch)page.FindName("AdvancedSwitch");
             var prefix = $"settings-{language}-{theme}-{width}";
-            foreach (var expanded in new[] { false, true })
+            foreach (var showAdvanced in new[] { false, true })
             {
-                advanced.IsOn = expanded;
+                advanced.IsOn = showAdvanced;
                 await ShowSettings(new());
                 await CaptureReady(Model.Settings, () => !Model.Settings.IsPending);
-                var state = expanded ? "advanced" : "standard";
+                var state = showAdvanced ? "advanced" : "standard";
                 await CapturePage(prefix + "-index-" + state, page);
                 foreach (var category in Enum.GetValues<SettingsCategory>())
                 {
-                    if (!expanded && category == SettingsCategory.Advanced)
+                    if (!showAdvanced && category == SettingsCategory.Advanced)
                         continue;
                     await ShowSettings(new(category));
-                    await CapturePage(prefix + "-" + category + "-" + state, page);
+                    await CaptureLayout();
+                    foreach (var expander in CaptureElements(page).OfType<Expander>().ToArray())
+                        expander.IsExpanded = false;
+                    await CapturePage(prefix + "-" + category + "-" + state + "-collapsed", page);
+                    foreach (var expander in CaptureElements(page).OfType<Expander>().ToArray())
+                        expander.IsExpanded = true;
+                    await CaptureLayout();
+                    foreach (var expander in CaptureElements(page).OfType<Expander>().ToArray())
+                        expander.IsExpanded = true;
+                    await CapturePage(prefix + "-" + category + "-" + state + "-expanded", page);
                     if (category == SettingsCategory.Plugins)
                     {
-                        var database = (Button)page.FindName("DatabaseSummary");
-                        if ((database.Visibility == Visibility.Visible) != expanded)
+                        var database = (Expander)page.FindName("DatabaseSummary");
+                        if ((database.Visibility == Visibility.Visible) != showAdvanced)
                             throw new InvalidOperationException(
                                 "Database summary did not follow advanced settings."
                             );
-                        if (expanded)
+                        if (showAdvanced)
                         {
-                            ((ScrollViewer)page.FindName("Body")).ChangeView(null, 0, null, true);
+                            database.IsExpanded = true;
+                            database.StartBringIntoView();
                             await CaptureLayout();
-                            database.Flyout.AreOpenCloseAnimationsEnabled = false;
-                            database.Flyout.ShowAt(database);
-                            await CaptureLayout();
-                            var details = (FrameworkElement)((Flyout)database.Flyout).Content;
+                            var details = (FrameworkElement)database.Content;
                             if (
                                 !details.IsLoaded
                                 || details.ActualWidth <= 0
                                 || details.ActualHeight <= 0
-                                || details.ActualWidth > Root.ActualWidth
-                                || details.ActualHeight > Root.ActualHeight
+                                || details.ActualWidth > database.ActualWidth
                             )
                                 throw new InvalidOperationException(
                                     "Database details did not fit the window."
                                 );
-                            database.Flyout.Hide();
+                            database.IsExpanded = false;
                             await CaptureLayout();
                         }
                     }
@@ -82,8 +138,118 @@ public sealed partial class MainWindow
             }
 
             await ShowSettings(new(SettingsCategory.Limits));
+            await CaptureLayout();
+            var body = (ScrollViewer)page.FindName("Body");
+            body.ChangeView(null, body.ScrollableHeight / 2, null, true);
+            await CaptureLayout();
+            var position = body.VerticalOffset;
+            await ShowSettings(new(SettingsCategory.Schedule, "weekly_schedule"));
+            await CaptureLayout();
+            if (page.Category != SettingsCategory.Schedule)
+                throw new InvalidOperationException("The Schedule link did not select Schedule.");
+            await CaptureUi(prefix + "-schedule-destination");
+            await GoBack();
+            await CaptureLayout();
+            if (page.Category != SettingsCategory.Limits || Math.Abs(body.VerticalOffset - position) > 1)
+                throw new InvalidOperationException(
+                    $"Back restored {page.Category} at {body.VerticalOffset}; expected Speed limits at {position}, extent {body.ScrollableHeight}."
+                );
+            await ShowSettings(new(SettingsCategory.Transfers, "queue"));
+            await CaptureLayout();
+            if (page.Category != SettingsCategory.Transfers || !((SettingsSection)page.FindName("QueueSection")).IsExpanded)
+                throw new InvalidOperationException("The Queue link did not reveal Queue in Transfers.");
+            await CaptureUi(prefix + "-queue-destination");
+            outcomes.Add(new { journey = "settings links and Back", restored = true });
+
+            CaptureInvoke((Button)page.FindName("ReturnWorkspace"));
+            await CaptureReady(Model.Navigation, () => Model.Navigation.Current == WindowPage.Torrents);
+            await ShowSettings(new());
+            var categories = (NavigationView)page.FindName("Categories");
+            for (var visit = 0; visit < 4; visit++)
+            {
+                foreach (var name in new[] { "GeneralCategory", "TransfersCategory", "LimitsCategory", "NetworkCategory", "HomeCategory" })
+                {
+                    var item = (NavigationViewItem)page.FindName(name);
+                    categories.SelectedItem = item;
+                    await CaptureReady(Model.Navigation, () => ReferenceEquals(categories.SelectedItem, item) && Model.Navigation.CanGoBack);
+                }
+            }
+            await GoBack();
+            if (Model.Navigation.Current != WindowPage.Torrents || Model.Navigation.HasBack)
+                throw new InvalidOperationException("Sidebar navigation accumulated Settings history.");
+            outcomes.Add(new { journey = "Settings exit and twenty sidebar selections", returned = true });
+
+            await Model.Navigation.Navigate(WindowPage.Library);
+            await ShowSettings(new());
+            await CaptureLayout();
+            CaptureInvoke((Button)page.FindName("Brand"));
+            await CaptureReady(Model.Navigation, () => Model.Navigation.Current == WindowPage.Library);
+            if (Model.Navigation.HasBack)
+                throw new InvalidOperationException("The Settings brand did not exit to the originating workspace.");
+            await ShowTorrents();
+            outcomes.Add(new { journey = "Settings brand returns to Library", returned = true });
+
+            await ShowSettings(new(SettingsCategory.Plugins, "subtitle_languages"));
+            await CaptureLayout();
+            var subtitles = (Subtitles.Settings)((ContentControl)page.FindName("SubtitlesContent")).Content;
+            var languages = (RadioButtons)subtitles.Field("subtitle_languages")!;
+            languages.SelectedIndex = 1;
+            await subtitles.Saving;
+            await CaptureLayout();
+            var list = CaptureElements(subtitles).OfType<ListView>().Single();
+            var choices = list.Items.Cast<ListViewItem>().ToArray();
+            foreach (var tag in new[] { "en", "es" })
+            {
+                var choice = choices.Single(choice => (string)choice.Tag == tag);
+                if (!list.SelectedItems.Contains(choice))
+                    list.SelectedItems.Add(choice);
+            }
+            await subtitles.Saving;
+            list.ScrollIntoView(choices[0]);
+            list.StartBringIntoView();
+            await CaptureLayout();
+            await CaptureUi(prefix + "-subtitle-catalogue");
+            var filter = CaptureElements(subtitles).OfType<AutoSuggestBox>().Single();
+            filter.Text = "en";
+            var english = list.Items.Cast<ListViewItem>().Single(choice => (string)choice.Tag == "en");
+            list.ScrollIntoView(english);
+            await CaptureLayout();
+            await CaptureUi(prefix + "-subtitle-languages");
+            var label = (TextBlock)english.Content;
+            var point = label.TransformToVisual(Root).TransformPoint(
+                new Windows.Foundation.Point(label.ActualWidth / 2, label.ActualHeight / 2));
+            if (english.Visibility != Visibility.Visible || !label.IsLoaded
+                || label.ActualWidth <= 0 || label.ActualHeight <= 0
+                || !VisualTreeHelper.FindElementsInHostCoordinates(point, list).Contains(label))
+                throw new InvalidOperationException("The filtered English language is not visible in the list.");
+            if (new[] { "en", "es" }.Any(tag => !acquisition.Languages.Contains(tag)
+                || !list.SelectedItems.Cast<ListViewItem>().Any(choice => (string)choice.Tag == tag))
+                || list.ContainerFromItem(english) is not ListViewItem { IsSelected: true })
+                throw new InvalidOperationException("Filtering subtitle languages lost a selection: "
+                    + string.Join(", ", new[] { "en", "es" }.Select(tag => tag
+                        + " stored=" + acquisition.Languages.Contains(tag)
+                        + " selected=" + list.SelectedItems.Cast<ListViewItem>().Any(choice => (string)choice.Tag == tag)))
+                    + "; English container=" + (list.ContainerFromItem(english) as ListViewItem)?.IsSelected);
+            var automatic = (ToggleSwitch)subtitles.Field("subtitle_automatic")!;
+            automatic.IsOn = true;
+            automatic.IsOn = false;
+            await subtitles.Saving;
+            if (acquisition.Enabled || automatic.IsOn)
+                throw new InvalidOperationException("Rapid subtitle changes lost the final choice.");
+            filter.Text = string.Empty;
+            languages.SelectedIndex = 0;
+            await subtitles.Saving;
+            if (acquisition.Languages.Length != 0)
+                throw new InvalidOperationException("The default subtitle language was not restored.");
+            outcomes.Add(new { journey = "subtitle language filtering and rapid changes", retained = true });
+
+            await CapturePlugins(prefix, page);
+
+            await ShowSettings(new(SettingsCategory.Limits));
             await ShowConnection();
-            if (_settings.Current is not Views.ConnectionPage)
+            if (Model.Navigation.Current != WindowPage.Connection
+                || _settingsPage?.FindName("ChildContent") is not ContentControl
+                { Content: Views.ConnectionPage, Visibility: Visibility.Visible })
                 throw new InvalidOperationException(
                     "Connection setup did not open. "
                         + string.Join(
@@ -99,6 +265,21 @@ public sealed partial class MainWindow
                 );
             var connection = Model.Settings.Connection;
             await CapturePage(prefix + "-connection-empty", _connectionPage);
+            var testInfo = CaptureElements(_connectionPage!)
+                .OfType<Button>()
+                .Single(button => AutomationProperties.GetAutomationId(button) == "ConnectionTestInfo");
+            testInfo.StartBringIntoView();
+            await CaptureLayout();
+            CaptureInvoke(testInfo);
+            try
+            {
+                await CaptureLayout();
+                await CaptureUi(prefix + "-connection-test-info");
+            }
+            finally
+            {
+                testInfo.Flyout!.Hide();
+            }
             connection.Download = "200";
             connection.Upload = "40";
             connection.StandardShare = 50;
@@ -126,6 +307,7 @@ public sealed partial class MainWindow
                 outcomes.Add(new { journey = "connection settings submission", applied = true });
             }
             await ReturnToSettings();
+            await CaptureProxy(prefix);
             await CaptureLayout();
             var drafts = Model.Settings.All.Where(setting => setting.HasDraft).ToArray();
             if (drafts.Length > 0)
@@ -161,9 +343,79 @@ public sealed partial class MainWindow
             search.Text = string.Empty;
             completed.Add(prefix);
         }
-        if (!await Model.Settings.PrepareLeave())
-            throw new InvalidOperationException(
-                "Settings refused departure after the capture journey."
-            );
+        await Model.Settings.PrepareLeave();
+    }
+
+    private async Task CaptureProxy(string prefix)
+    {
+        await ShowSettings(new(SettingsCategory.Network));
+        var closed = ShowProxy();
+        var proxy = Model.Settings.Proxy;
+        try
+        {
+            await CaptureLayout();
+            var dialog = _interaction?.Dialog
+                ?? throw new InvalidOperationException("The proxy editor did not open.");
+            foreach (var (type, name) in new[] { (0, "none"), (1, "socks5"), (2, "socks4"), (3, "http") })
+            {
+                proxy.TypeIndex = type;
+                proxy.Host = type == 0 ? string.Empty : "proxy.example";
+                proxy.Port = type == 0 ? string.Empty : "1080";
+                proxy.Username = type == 0 ? string.Empty : "review";
+                proxy.Password = type == 0 ? string.Empty : "review-password";
+                await CapturePage(prefix + "-proxy-" + name, dialog.Content as FrameworkElement);
+            }
+        }
+        finally
+        {
+            proxy.Begin();
+            _interaction?.Dialog?.Hide();
+            await closed;
+        }
+    }
+
+    private async Task CapturePlugins(string prefix, Views.SettingsPage page)
+    {
+        await ShowSettings(new(SettingsCategory.Plugins));
+        await CaptureInformation("provider-information", (Button)page.FindName("ProviderInformation"));
+        var subtitles = Model.Subtitles ?? throw new InvalidOperationException("Subtitles did not start.");
+        var original = subtitles.SupplierId;
+        var information = CaptureElements(page).OfType<Button>().Single(button =>
+            AutomationProperties.GetAutomationId(button) == "SubtitleSupplierInformation");
+        try
+        {
+            foreach (var supplier in Enum.GetValues<SubtitleSupplier>())
+            {
+                await CaptureDialog(
+                    prefix + "-supplier-" + supplier,
+                    () => ShowSupplier(supplier),
+                    () => _interaction?.Dialog
+                );
+                await subtitles.SelectSupplier(supplier);
+                await CaptureInformation("supplier-information-" + supplier, information);
+            }
+        }
+        finally
+        {
+            await subtitles.SelectSupplier(original);
+        }
+
+        async Task CaptureInformation(string name, Button button)
+        {
+            button.StartBringIntoView();
+            await CaptureLayout();
+            CaptureInvoke(button);
+            await CaptureLayout();
+            var popup = VisualTreeHelper.GetOpenPopupsForXamlRoot(Root.XamlRoot)
+                .Single(popup => popup.Child is FlyoutPresenter);
+            try
+            {
+                await CaptureUi(prefix + "-" + name);
+            }
+            finally
+            {
+                popup.IsOpen = false;
+            }
+        }
     }
 }

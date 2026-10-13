@@ -2,13 +2,20 @@ using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 
-namespace Syno.TinyTorrent.Subtitles;
+namespace Syno.TinyTorrent.Services;
 
-internal sealed partial class Acquisition
+/// <summary>
+/// Encrypts a saved password or API key with Windows data protection, so only
+/// the same Windows user on the same computer can read it again.
+/// </summary>
+internal static class Credentials
 {
-    private static byte[] Protect(string secret) => Protect(Encoding.UTF8.GetBytes(secret), true);
+    internal static byte[] Protect(string secret) => Protect(Encoding.UTF8.GetBytes(secret), true);
 
-    private static string Unprotect(byte[] secret)
+    /// <exception cref="CryptographicException">
+    /// <paramref name="secret"/> is damaged, or another Windows user or computer protected it.
+    /// </exception>
+    internal static string Unprotect(byte[] secret)
     {
         var bytes = Protect(secret, false);
         try

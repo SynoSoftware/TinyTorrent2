@@ -29,17 +29,28 @@
          process that the window only copies beside itself. -->
     <MSBuildWarningsAsMessages>$(MSBuildWarningsAsMessages);MSB3851</MSBuildWarningsAsMessages>
   </PropertyGroup>
-  <!-- A local build embeds the two application credentials from
+  <!-- A local build embeds the application credentials from
        secrets/keys.json, which git ignores, so a plain Visual Studio build
-       reaches TMDB and OpenSubtitles. A property given on the command line
-       wins. A missing file or key leaves that provider unavailable, which the
-       Library and subtitle Settings show. The patterns read
-       tmdb.readAccessToken and opensubtitles.apiKey; \x22 is a double quote,
-       which MSBuild would otherwise read as an argument delimiter. -->
+       reaches TMDB, OMDb, MDBList, OpenSubtitles, SubDL and SubSource. A
+       property given on the command line wins. A missing file or key leaves
+       TMDB, OMDb, MDBList and OpenSubtitles unavailable, and SubDL and
+       SubSource needing the person's own key, which the Library and subtitle
+       Settings show. The patterns
+       read tmdb.readAccessToken and the apiKey of omdb, mdblist,
+       opensubtitles, subdl and subsource; \x22 is a double quote, which
+       MSBuild would otherwise read as an argument delimiter. -->
   <PropertyGroup Condition="Exists('$(MSBuildThisFileDirectory)..\..\secrets\keys.json')">
     <SecretsJson>$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)..\..\secrets\keys.json'))</SecretsJson>
     <TmdbToken Condition="'$(TmdbToken)' == ''"
       >$([System.Text.RegularExpressions.Regex]::Replace('$(SecretsJson)', '(?s)^(?:.*\x22tmdb\x22\s*:\s*\{[^}]*\x22readAccessToken\x22\s*:\s*\x22([^\x22]*)\x22.*|.*)$', '$1'))</TmdbToken>
+    <OmdbKey Condition="'$(OmdbKey)' == ''"
+      >$([System.Text.RegularExpressions.Regex]::Replace('$(SecretsJson)', '(?s)^(?:.*\x22omdb\x22\s*:\s*\{[^}]*\x22apiKey\x22\s*:\s*\x22([^\x22]*)\x22.*|.*)$', '$1'))</OmdbKey>
+    <MdbListKey Condition="'$(MdbListKey)' == ''"
+      >$([System.Text.RegularExpressions.Regex]::Replace('$(SecretsJson)', '(?s)^(?:.*\x22mdblist\x22\s*:\s*\{[^}]*\x22apiKey\x22\s*:\s*\x22([^\x22]*)\x22.*|.*)$', '$1'))</MdbListKey>
+    <SubDLKey Condition="'$(SubDLKey)' == ''"
+      >$([System.Text.RegularExpressions.Regex]::Replace('$(SecretsJson)', '(?s)^(?:.*\x22subdl\x22\s*:\s*\{[^}]*\x22apiKey\x22\s*:\s*\x22([^\x22]*)\x22.*|.*)$', '$1'))</SubDLKey>
+    <SubSourceKey Condition="'$(SubSourceKey)' == ''"
+      >$([System.Text.RegularExpressions.Regex]::Replace('$(SecretsJson)', '(?s)^(?:.*\x22subsource\x22\s*:\s*\{[^}]*\x22apiKey\x22\s*:\s*\x22([^\x22]*)\x22.*|.*)$', '$1'))</SubSourceKey>
     <OpenSubtitlesKey Condition="'$(OpenSubtitlesKey)' == ''"
       >$([System.Text.RegularExpressions.Regex]::Replace('$(SecretsJson)', '(?s)^(?:.*\x22opensubtitles\x22\s*:\s*\{[^}]*\x22apiKey\x22\s*:\s*\x22([^\x22]*)\x22.*|.*)$', '$1'))</OpenSubtitlesKey>
   </PropertyGroup>
@@ -58,6 +69,7 @@
     <PackageReference Include="Microsoft.WindowsAppSDK.Runtime" Version="2.4.0" />
     <ProjectReference Include="..\..\lib\TableView\src\TableView.csproj" />
     <EmbeddedResource Include="Resources\*.json" LogicalName="%(Filename)%(Extension)" />
+    <Content Include="Assets\*.jpg;Assets\Settings\*.svg;Assets\Settings\*.png;Assets\Settings\LICENSE" CopyToOutputDirectory="PreserveNewest" />
     <Content
       Include="..\..\resources\TinyTorrent.ico"
       Link="Assets\TinyTorrent.ico"
@@ -83,6 +95,10 @@
     <UpToDateCheckOutput Include="$(TargetDir)$(EngineTargetName).exe" />
     <AssemblyMetadata Include="EngineFile" Value="$(EngineTargetName).exe" />
     <AssemblyMetadata Include="TmdbToken" Value="$(TmdbToken)" Condition="'$(TmdbToken)' != ''" />
+    <AssemblyMetadata Include="OmdbKey" Value="$(OmdbKey)" Condition="'$(OmdbKey)' != ''" />
+    <AssemblyMetadata Include="MdbListKey" Value="$(MdbListKey)" Condition="'$(MdbListKey)' != ''" />
+    <AssemblyMetadata Include="SubDLKey" Value="$(SubDLKey)" Condition="'$(SubDLKey)' != ''" />
+    <AssemblyMetadata Include="SubSourceKey" Value="$(SubSourceKey)" Condition="'$(SubSourceKey)' != ''" />
     <AssemblyMetadata
       Include="OpenSubtitlesKey"
       Value="$(OpenSubtitlesKey)"

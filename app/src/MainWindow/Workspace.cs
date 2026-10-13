@@ -17,7 +17,6 @@ public sealed partial class MainWindow
     private readonly Motion _motion = new();
     private readonly Motion _pages = new();
     private readonly Motion _workspaces = new();
-    private readonly Motion _settings = new();
     private WindowPage _page;
     private bool _refreshingFilters;
     private bool _selecting;
@@ -33,7 +32,6 @@ public sealed partial class MainWindow
                 is TextBox
                     or RichEditBox
                     or PasswordBox
-                    or NumberBox
                     or ComboBox
                     or AutoSuggestBox
             )
@@ -57,11 +55,12 @@ public sealed partial class MainWindow
         if (!await Model.Navigation.GoBack())
             return;
         var destination = Model.Navigation.Current;
+        var settings = Model.Navigation.Settings;
         DispatcherQueue.TryEnqueue(
             Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,
             () =>
             {
-                if (Model.Navigation.Current != destination || HasDialog || Model.IsClosing)
+                if (Model.Navigation.Current != destination || Model.Navigation.Settings != settings || HasDialog || Model.IsClosing)
                     return;
                 if (destination == WindowPage.Settings && previous == WindowPage.Connection)
                     _settingsPage?.FocusConnection();
@@ -97,7 +96,7 @@ public sealed partial class MainWindow
             () =>
             {
                 if (Model.Navigation.Current == WindowPage.Connection)
-                    _connectionPage?.FocusInput();
+                    _connectionPage?.FocusHeading();
             }
         );
     }
@@ -114,21 +113,14 @@ public sealed partial class MainWindow
             return false;
         if (Model.Page == WindowPage.Settings)
         {
-            if (
-                _settingsPage is { } settings && !await settings.SaveFeatures()
-                || !await Model.Settings.PrepareLeave()
-            )
-            {
-                var field = _settingsPage?.Recover(null);
-                field?.StartBringIntoView();
-                field?.Focus(FocusState.Programmatic);
+            if (Model.Navigation.Current == WindowPage.Connection && !await Model.Settings.Connection.Depart())
                 return false;
-            }
+            if (_settingsPage is { } settings)
+                _ = settings.SaveFeatures();
+            _ = Model.Settings.PrepareLeave();
         }
         if (HasDialog || Model.IsClosing || _allowClose)
             return false;
-        if (Model.Navigation.Current == WindowPage.Settings && page != WindowPage.Settings)
-            _settingsPage?.Depart();
         return true;
     }
 
@@ -140,9 +132,18 @@ public sealed partial class MainWindow
 
     private async Task ShowSettings(SettingTarget target)
     {
-        if (!await Model.Navigation.Navigate(WindowPage.Settings))
-            return;
-        GetSettingsPage().Navigate(target);
+        if (target.Category is null && Model.SettingsHome is { } home)
+            target = new(home);
+        await GetSettingsPage().Open(target);
+    }
+
+    // Ends every transition at its final state: the new page in place and the
+    // outgoing page collapsed.
+    private void StopMotion()
+    {
+        _motion.Stop();
+        _pages.Stop();
+        _workspaces.Stop();
     }
 
     private SettingsPage GetSettingsPage()
@@ -156,6 +157,7 @@ public sealed partial class MainWindow
             _settingsPage.ProxyRequested += async (_, _) => await ShowProxy();
             _settingsPage.SupplierRequested += async (_, supplierId) =>
                 await ShowSupplier(supplierId);
+            _settingsPage.KeyRequested += async (_, option) => await ShowKey(option);
             _settingsPage.ConnectionRequested += async (_, _) => await ShowConnection();
             _settingsPage.LayoutChanged += (_, _) => UpdateChrome();
         }
@@ -172,18 +174,25 @@ public sealed partial class MainWindow
         };
         _pages.Show(content, Model.Page >= _page ? 1 : -1);
         _page = Model.Page;
-        if (Model.Navigation.Current == WindowPage.Connection)
+        if (Model.Page == WindowPage.Settings)
         {
-            if (_connectionPage is null)
+            var settings = GetSettingsPage();
+            if (Model.Navigation.Current == WindowPage.Connection)
             {
-                _connectionPage = new ConnectionPage(Model.Settings.Connection);
-                _connectionPage.ReturnRequested += async (_, _) => await ReturnToSettings();
-                SettingsContent.Children.Add(_connectionPage);
+                if (_connectionPage is null)
+                {
+                    _connectionPage = new ConnectionPage(Model.Settings.Connection);
+                    _connectionPage.ReturnRequested += async (_, _) => await ReturnToSettings();
+                    _connectionPage.ParentRequested += async (_, _) => await ShowSettings(new(SettingsCategory.Limits));
+                }
+                settings.ShowConnection(_connectionPage, animate: !_pages.IsActive);
             }
-            _settings.Show(_connectionPage);
+            else
+            {
+                settings.ShowConnection(null, animate: !_pages.IsActive);
+                settings.Navigate(Model.Navigation.Settings ?? new(), animate: !_pages.IsActive);
+            }
         }
-        else if (Model.Page == WindowPage.Settings)
-            _settings.Show(GetSettingsPage(), -1);
         TorrentMenu.IsEnabled = Model.Page is WindowPage.Torrents or WindowPage.Library;
         ViewMenu.IsEnabled = TorrentMenu.IsEnabled;
         UpdateLibraryPage();

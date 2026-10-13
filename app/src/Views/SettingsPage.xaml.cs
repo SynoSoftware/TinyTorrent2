@@ -1,14 +1,18 @@
 using System.ComponentModel;
+using Microsoft.UI.System;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
+using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Imaging;
 using Syno.TinyTorrent.Controls;
 using Syno.TinyTorrent.Helpers;
 using Syno.TinyTorrent.Models;
 using Windows.System;
 using Windows.UI.ViewManagement;
+using ProviderOption = Syno.TinyTorrent.Library.ProviderOption;
 using SubtitleSettings = Syno.TinyTorrent.Subtitles.Settings;
 
 namespace Syno.TinyTorrent.Views;
@@ -20,21 +24,29 @@ public sealed partial class SettingsPage : UserControl
     private readonly HashSet<ComboBox> _choices = [];
     private bool _refreshing;
     private bool _refreshingProviders;
-    private Exception? _providerFailure;
     private Task _providerSave = Task.CompletedTask;
-    private Task<bool> _lookupSave = Task.FromResult(true);
+    private Task _lookupSave = Task.CompletedTask;
+    private bool _lookupEdited;
+    private readonly ThemePicker _themes;
+    private readonly ThemePicker _homeThemes;
+    private readonly WindowsIntegration _integration;
+    private readonly WindowsIntegration _homeIntegration;
     private readonly Scheduler _scheduler;
+    private readonly SpeedLimits _speedLimits;
+    private readonly SpeedLimits _scheduleLimits;
     private readonly UISettings _display = new();
+    private ThemeSettings? _themeSettings;
     private readonly Motion _motion = new();
-    private readonly Dictionary<SelectorBarItem, double> _positions = [];
-    private SelectorBarItem? _category;
-    private bool _restoringCategory;
+    private readonly Motion _pages = new();
+    private readonly Dictionary<NavigationViewItem, double> _positions = [];
+    private NavigationViewItem? _category;
     private double _indexPosition;
     public Settings Model { get; }
     public MainViewModel Main { get; }
     public event EventHandler<Setting>? FolderRequested;
     public event EventHandler? ProxyRequested;
     internal event EventHandler<SubtitleSupplier>? SupplierRequested;
+    internal event EventHandler<ProviderOption>? KeyRequested;
     public event EventHandler? ConnectionRequested;
     internal event EventHandler? LayoutChanged;
 
@@ -43,12 +55,32 @@ public sealed partial class SettingsPage : UserControl
         Main = main;
         Model = main.Settings;
         InitializeComponent();
+        Categories.ItemInvoked += OnCategoryInvoked;
         // Keep the overhanging corner marks off the navigation pane and caption.
         Root.SizeChanged += Motion.Clip;
         BodyContent.SizeChanged += Motion.Clip;
+        PageHost.SizeChanged += Motion.Clip;
+        BodyContent.LayoutUpdated += (_, _) => PositionOutline();
+        BodyContent.GotFocus += OnFocus;
+        _outlineTimer.Tick += (_, _) => ClearOutline();
         _motion.Show(IndexContent);
-        _scheduler = new Scheduler(Model.Schedule);
+        _pages.Show(PageContent);
+        _themes = new(Model);
+        _homeThemes = new(Model);
+        ThemeContent.Content = _themes;
+        _integration = new(Model);
+        _homeIntegration = new(Model);
+        HomeIntegrationContent.Content = _homeIntegration;
+        HomeThemeContent.Content = _homeThemes;
+        IntegrationContent.Content = _integration;
+        _scheduler = new Scheduler(Model.Schedule, new LimitSelector(main));
         ScheduleContent.Content = _scheduler;
+        _speedLimits = new(main, RegisterProfile);
+        _scheduleLimits = new(main, RegisterProfile, inline: true);
+        _speedLimits.ConnectionRequested += OnConnection;
+        _scheduleLimits.ConnectionRequested += OnConnection;
+        SpeedContent.Content = _speedLimits;
+        ScheduleSpeedContent.Content = _scheduleLimits;
         var subtitles = new SubtitleSettings(
             Model.Text,
             Main.RetrySubtitles,
@@ -57,6 +89,7 @@ public sealed partial class SettingsPage : UserControl
         subtitles.SupplierRequested += (_, supplierId) =>
             SupplierRequested?.Invoke(this, supplierId);
         SubtitlesContent.Content = subtitles;
+        InitializeHome(subtitles);
         Watch(Destination);
         Watch(IncompleteFolder);
         Loaded += OnLoaded;
@@ -73,19 +106,64 @@ public sealed partial class SettingsPage : UserControl
         Main.Library.PropertyChanged += OnProviders;
         RefreshSubtitles();
         _display.TextScaleFactorChanged += OnTextScale;
+        _themeSettings = ThemeSettings.CreateForWindowId(XamlRoot.ContentIslandEnvironment.AppWindowId);
+        _themeSettings.Changed += OnThemeChanged;
+        RefreshCategoryIcons();
         RefreshText();
         Model.RefreshAdapters();
         _ = Model.ObserveRegistration();
     }
 
-    private void OnUnloaded(object sender, RoutedEventArgs args)
+    private void OnUnloaded(object sender, RoutedEventArgs args) => Release();
+
+    internal void Release()
     {
+        ClearOutline();
         _motion.Stop();
+        _pages.Stop();
         Model.TextChanged -= OnText;
         Model.PropertyChanged -= OnModel;
         Main.PropertyChanged -= OnSubtitleMain;
         Main.Library.PropertyChanged -= OnProviders;
         _display.TextScaleFactorChanged -= OnTextScale;
+        if (_themeSettings is { } theme)
+        {
+            theme.Changed -= OnThemeChanged;
+            _themeSettings = null;
+        }
+    }
+
+    private void OnThemeChanged(ThemeSettings sender, object args) =>
+        DispatcherQueue.TryEnqueue(RefreshCategoryIcons);
+
+    private void RefreshCategoryIcons()
+    {
+        if (_themeSettings is not { } theme)
+            return;
+        var size = (double)Categories.Resources["NavigationViewItemOnLeftIconBoxHeight"];
+        foreach (var (item, glyph, asset) in new[]
+        {
+            (HomeCategory, Lucide.House, "home"),
+            (GeneralCategory, Lucide.Settings, "general"),
+            (TransfersCategory, Lucide.ArrowDownUp, "transfers"),
+            (LimitsCategory, Lucide.SlidersHorizontal, "limits"),
+            (ScheduleCategory, Lucide.CalendarClock, "schedule"),
+            (AppearanceCategory, Lucide.Palette, "appearance"),
+            (NetworkCategory, Lucide.Network, "network"),
+            (PluginsCategory, Lucide.Puzzle, "library"),
+            (AdvancedCategory, Lucide.Wrench, "advanced"),
+        })
+        {
+            item.Icon = theme.HighContrast
+                ? new FontIcon { FontFamily = Lucide.Font, Glyph = glyph, FontSize = size }
+                : new ImageIcon
+                {
+                    Source = new SvgImageSource(new Uri($"ms-appx:///Assets/Settings/{asset}.svg")),
+                    Width = size,
+                    Height = size,
+                };
+            AutomationProperties.SetAccessibilityView(item.Icon, AccessibilityView.Raw);
+        }
     }
 
     private void OnText(object? sender, EventArgs args) => RefreshText();
@@ -107,8 +185,19 @@ public sealed partial class SettingsPage : UserControl
             || _providerSave.IsCompleted && index == InformationIndex
         )
             return;
-        _providerFailure = null;
-        InformationRow.Error = string.Empty;
+        // A provider with no usable key asks for the person's own, and saving
+        // it turns the provider on; until then the choice stays as it was.
+        if (
+            index > 0
+            && Main.Library.Providers[index - 1] is { Access: Access.Key } chosen
+            && !chosen.HasBuiltInKey
+            && !Main.Library.HasKey(chosen.ProviderId)
+        )
+        {
+            RefreshProviders();
+            KeyRequested?.Invoke(this, chosen);
+            return;
+        }
         var save =
             index == 0
                 ? Main.Library.Disable()
@@ -120,13 +209,18 @@ public sealed partial class SettingsPage : UserControl
         }
         catch (Exception error)
         {
-            if (ReferenceEquals(_providerSave, save))
-                _providerFailure = error;
+            Main.Report(error);
         }
         finally
         {
             RefreshProviders();
         }
+    }
+
+    private void OnProviderKey(object sender, RoutedEventArgs args)
+    {
+        if (Main.Library.Option is { Access: Access.Key } option)
+            KeyRequested?.Invoke(this, option);
     }
 
     private void OnProviderInformation(object sender, RoutedEventArgs args)
@@ -146,13 +240,17 @@ public sealed partial class SettingsPage : UserControl
     // Library saves the search limit, not the engine, so the limit follows
     // the field rules of Settings.Commit and Settings.Depart here: Enter keeps
     // invalid input with its error, leaving restores the saved limit, and a
-    // refused save keeps the input with its error.
+    // refused save is reported through the application notification.
     private void OnLookupLoaded(object sender, RoutedEventArgs args)
     {
         if (TextEditor.Find(LookupLimit) is { } editor && _editors.Add(editor))
         {
             Watch(editor);
-            editor.TextChanged += (_, _) => LookupsRow.Error = string.Empty;
+            editor.TextChanging += (_, _) =>
+            {
+                _lookupEdited = true;
+                LookupsRow.Error = string.Empty;
+            };
         }
     }
 
@@ -181,7 +279,6 @@ public sealed partial class SettingsPage : UserControl
     {
         if (TextEditor.Find(LookupLimit) is not { } editor || _composing.Contains(editor))
             return;
-        var stays = false;
         for (
             var current = FocusManager.GetFocusedElement(XamlRoot) as DependencyObject;
             current is not null;
@@ -191,27 +288,26 @@ public sealed partial class SettingsPage : UserControl
             if (current == LookupLimit)
                 return;
             if (current == this)
-            {
-                stays = true;
                 break;
-            }
         }
         if (ParseLookupLimit(editor.Text) is not { } limit)
             RefreshLookupLimit();
-        else if (!await SaveLookupLimit(limit) && stays)
-            editor.Focus(FocusState.Programmatic);
+        else
+            await SaveLookupLimit(limit);
     }
 
     private static int? ParseLookupLimit(string input) =>
         Settings.TryInteger(input, out var limit) && limit >= 1 ? limit : null;
 
-    private Task<bool> SaveLookupLimit(int limit)
+    private Task SaveLookupLimit(int limit)
     {
+        if (!_lookupEdited)
+            return _lookupSave;
         var input = LookupLimit.Text;
         var previous = _lookupSave;
         return _lookupSave = Save();
 
-        async Task<bool> Save()
+        async Task Save()
         {
             await previous;
             if (limit != Main.Library.LookupLimit)
@@ -222,18 +318,25 @@ public sealed partial class SettingsPage : UserControl
                 }
                 catch (Exception error)
                 {
-                    LookupsRow.Error = Main.Library.Error(error);
-                    return false;
+                    Main.Report(error);
+                    return;
                 }
             }
-            if (LookupLimit.Text == input)
+            if (!_lookupEdited || LookupLimit.Text == input)
                 RefreshLookupLimit();
-            return true;
         }
     }
 
-    internal async Task<bool> SaveFeatures()
+    internal async Task SaveFeatures()
     {
+        Task lookup = _lookupSave;
+        if (Main.Page == WindowPage.Settings && _category == PluginsCategory)
+        {
+            if (ParseLookupLimit(LookupLimit.Text) is { } limit)
+                lookup = SaveLookupLimit(limit);
+            else
+                RefreshLookupLimit();
+        }
         try
         {
             await _providerSave;
@@ -242,24 +345,17 @@ public sealed partial class SettingsPage : UserControl
         {
             // The selector already reports and restores a refused choice.
         }
-        await _lookupSave;
-        if (Main.Page == WindowPage.Settings && _category == PluginsCategory)
-        {
-            if (ParseLookupLimit(LookupLimit.Text) is { } limit)
-            {
-                if (!await SaveLookupLimit(limit))
-                    return false;
-            }
-            else
-                RefreshLookupLimit();
-        }
+        await lookup;
         if (SubtitlesContent.Content is SubtitleSettings subtitles)
             await subtitles.Saving;
-        return true;
     }
 
     private void OnProviders(object? sender, PropertyChangedEventArgs args)
     {
+        if (args.PropertyName == nameof(Main.Library.Status))
+            RefreshHeader();
+        if (args.PropertyName is nameof(Main.Library.IsEnrichmentEnabled) or nameof(Main.Library.Providers) or "")
+            RefreshHome();
         if (args.PropertyName is nameof(Main.Library.IsAvailable) or "")
             RefreshCoverage();
         if (args.PropertyName is nameof(Main.Library.Providers) or "")
@@ -268,7 +364,7 @@ public sealed partial class SettingsPage : UserControl
         if (
             args.PropertyName is (nameof(Main.Library.LookupLimit) or "")
             && _lookupSave.IsCompleted
-            && LookupsRow.Error.Length == 0
+            && !_lookupEdited
             && TextEditor.Find(LookupLimit)?.FocusState is null or FocusState.Unfocused
         )
             RefreshLookupLimit();
@@ -280,14 +376,18 @@ public sealed partial class SettingsPage : UserControl
         LookupLimit.Text = Main.Library.LookupLimit.ToString(
             System.Globalization.CultureInfo.CurrentCulture
         );
+        _lookupEdited = false;
     }
 
     private void RefreshProviders()
     {
-        InformationRow.Error = _providerFailure is { } failure
-            ? Main.Library.Error(failure)
-            : string.Empty;
         ProviderInformation.IsEnabled = Main.Library.Option is not null;
+        // The key button belongs to the provider the box shows, so it hides
+        // while information is off.
+        ProviderKey.Visibility =
+            InformationIndex > 0 && Main.Library.Option is { Access: Access.Key }
+                ? Visibility.Visible
+                : Visibility.Collapsed;
         if (!_providerSave.IsCompleted)
             return;
         _refreshingProviders = true;
@@ -300,35 +400,33 @@ public sealed partial class SettingsPage : UserControl
     }
 
     private void OnTextScale(UISettings sender, object args) =>
-        DispatcherQueue.TryEnqueue(AlignCategory);
-
-    private async void OnLimitsChanged(object sender, SelectionChangedEventArgs args)
-    {
-        if (
-            sender is ComboBox { SelectedIndex: >= 0 } choice
-            && choice.SelectedIndex != Main.LimitsIndex
-        )
-            await Main.ChooseLimits((LimitMode)choice.SelectedIndex);
-    }
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            AlignCategory();
+            UpdateHomeLayout();
+            ArrangeHeader();
+        });
 
     private void OnModel(object? sender, PropertyChangedEventArgs args)
     {
         _refreshing = true;
         Languages.SelectedItem = Model.Text.Language == "es" ? Spanish : English;
-        Theme.SelectedItem = Model.Theme.Input switch
-        {
-            "light" => LightTheme,
-            "dark" => DarkTheme,
-            _ => SystemTheme,
-        };
         EncryptionChoice.SelectedItem = SelectedEncryption;
+        var unitsChanged = false;
         foreach (var choice in _choices)
+        {
+            var previous = choice.SelectedItem;
             RefreshChoice(choice);
+            unitsChanged |= choice.Tag is Setting { IsDuration: true }
+                && !ReferenceEquals(previous, choice.SelectedItem);
+        }
         _refreshing = false;
-        AlignCategory();
+        RefreshHome();
+        if (unitsChanged)
+            AlignCategory();
     }
 
-    private ComboBoxItem SelectedEncryption =>
+    private RadioButton SelectedEncryption =>
         Model.Encryption.Input switch
         {
             "required" => RequiredEncryption,
@@ -340,10 +438,11 @@ public sealed partial class SettingsPage : UserControl
     internal void RefreshText()
     {
         RefreshProviders();
-        RefreshLookupLimit();
+        if (!_lookupEdited)
+            RefreshLookupLimit();
         _refreshing = true;
         Bindings.Update();
-        PageTitle.Text = Model.Text.Get("finding", "settings");
+        Label(HomeCategory, "home");
         Label(GeneralCategory, "general");
         Label(TransfersCategory, "transfers");
         Label(LimitsCategory, "limits");
@@ -353,56 +452,41 @@ public sealed partial class SettingsPage : UserControl
         Label(ScheduleCategory, "schedule");
         Label(PluginsCategory, "plugins");
         RefreshSubtitles();
-        AdvancedLabel.Text = Model.Text.Get("settings", "show_advanced");
+        AdvancedLabel.Text = Model.Text.Get("settings", "advanced");
         AutomationProperties.SetName(AdvancedSwitch, AdvancedLabel.Text);
         AutomationProperties.SetName(Categories, Model.Text.Get("settings", "categories"));
-        Label(DownloadsSection, "files", "downloads_hint");
-        Label(AddingSection, "adding", "adding_hint");
-        Label(ConfirmationsSection, "confirmations", "confirmations_hint");
-        Label(FileSelectionSection, "file_selection", "file_selection_hint");
-        Label(WatchedSection, "watched_folder", "watch_hint");
-        IntegrationSection.Header = Model.Text.Get("settings", "windows_integration");
-        Label(MemorySection, "memory", "memory_hint");
-        Label(CheckingSection, "checking", "checking_hint");
+        DownloadsSection.Header = Model.Text.Get("settings", "files");
+        AddingSection.Header = Model.Text.Get("settings", "adding");
+        ConfirmationsSection.Header = Model.Text.Get("settings", "confirmations");
+        FileSelectionSection.Header = Model.Text.Get("settings", "file_selection");
+        WatchedSection.Header = Model.Text.Get("settings", "watched_folder");
+        MemorySection.Header = Model.Text.Get("settings", "memory");
+        CheckingSection.Header = Model.Text.Get("settings", "checking");
         NotificationsSection.Header = Model.Text.Get("settings", "notifications");
+        NotificationsSection.Description = Model.Text.Get("settings", "notifications_hint");
         LifecycleSection.Header = Model.Text.Get("settings", "startup_closing");
-        SignInRow.Header = Model.Text.Get("settings", "start_signin");
-        AutomationProperties.SetName(Startup, SignInRow.Header);
-        TrayRow.Description = Model.Text.Get("settings", "start_in_tray_hint");
-        HandlersRow.Header = Model.Text.Get("settings", "open_defaults");
-        AutomationProperties.SetName(Handlers, HandlersRow.Header);
         IndexRow.Header = Model.Text.Get("settings", "settings_index");
         AutomationProperties.SetName(IndexSwitch, IndexRow.Header);
-        Label(IndexOptOut, "never_show_index");
-        Label(PowerSection, "power", "power_hint");
-        Label(UpdatesSection, "updates", "updates_hint");
-        Label(CapsSection, "standard_caps", "speed_hint");
-        Label(AlternativeSection, "alternative_caps", "speed_hint");
-        Label(PeersSection, "connections", "connections_hint");
-        Label(ModeSection, "limits", "schedule_hint");
-        Label(SummarySection, "caps", "speed_hint");
-        Label(AccountingSection, "bandwidth_accounting", "bandwidth_accounting_hint");
-        Label(DiscoverySection, "peer_discovery", "peer_discovery_hint");
-        Label(RefreshSection, "interface", "refresh_interval_hint");
-        Label(HistorySection, "speed_history", "speed_history_hint");
-        Label(WindowSection, "window", "title_speeds_hint");
-        Label(StatusSection, "status_bar", "free_space_hint");
-        Label(QueueSection, "queue", "queue_hint");
-        Label(SeedingSection, "seeding", "seeding_hint");
-        Label(NetworkSection, "connections", "network_hint");
+        PowerSection.Header = Model.Text.Get("settings", "power");
+        PeersSection.Header = Model.Text.Get("settings", "connections");
+        AccountingSection.Header = Model.Text.Get("settings", "bandwidth_accounting");
+        DiscoverySection.Header = Model.Text.Get("settings", "peer_discovery");
+        RefreshSection.Header = Model.Text.Get("settings", "interface");
+        HistorySection.Header = Model.Text.Get("settings", "speed_history");
+        QueueSection.Header = Model.Text.Get("settings", "queue");
+        SeedingSection.Header = Model.Text.Get("settings", "seeding");
+
         AdapterRow.Description = Model.Text.Get("settings", "adapter_hint");
         ConnectionLimitRow.Description = Model.Text.Get("settings", "connections_hint");
-        EncryptionRow.Description = Model.Text.Get("settings", "encryption_hint");
-        Label(PreferredEncryption, PreferredLabel, "encryption_preferred");
+        Label(PreferredEncryption, PreferredLabel, "encryption_recommended");
         Label(RequiredEncryption, RequiredLabel, "encryption_required");
         Label(AllowedEncryption, AllowedLabel, "encryption_allowed");
         Label(DisabledEncryption, DisabledLabel, "encryption_disabled");
         EncryptionChoice.SelectedItem = null;
         EncryptionChoice.SelectedItem = SelectedEncryption;
-        Label(ProxySection, "proxy_server", "proxy_hint");
+        ProxyRow.Description = Model.Text.Get("settings", "proxy_hint");
         ProxyRow.Header = Model.Text.Get("settings", "proxy");
-        Label(ScheduleSection, "limits_apply", "schedule_hint");
-        Label(AppearanceSection, "appearance", "appearance_hint");
+        AppearanceSection.Header = Model.Text.Get("settings", "personalization");
         LanguageRow.Header = Model.Text.Get("settings", "language");
         AutomationProperties.SetName(Languages, LanguageRow.Header);
         Label(English, EnglishLabel, "english");
@@ -410,186 +494,101 @@ public sealed partial class SettingsPage : UserControl
         Languages.SelectedItem = null;
         Languages.SelectedItem = Model.Text.Language == "es" ? Spanish : English;
         ThemeRow.Header = Model.Text.Get("settings", "theme");
-        AutomationProperties.SetName(Theme, ThemeRow.Header);
-        Label(SystemTheme, SystemLabel, "system_theme");
-        Label(LightTheme, LightLabel, "light_theme");
-        Label(DarkTheme, DarkLabel, "dark_theme");
-        Theme.SelectedItem = null;
-        Theme.SelectedItem = Model.Theme.Input switch
-        {
-            "light" => LightTheme,
-            "dark" => DarkTheme,
-            _ => SystemTheme,
-        };
         foreach (var choice in _choices)
         {
             choice.SelectedItem = null;
             RefreshChoice(choice);
         }
-        foreach (var choice in new[] { LimitsChoice, ScheduleLimitsChoice })
-        {
-            choice.SelectedIndex = -1;
-            choice.SelectedIndex = Main.LimitsIndex;
-        }
         _refreshing = false;
-        RefreshIndex();
+        RefreshHome();
         (SubtitlesContent.Content as SubtitleSettings)?.RefreshText();
         AlignCategory();
     }
 
-    private void Label(ContentControl control, string key, string group = "settings")
-    {
-        control.Content = Model.Text.Get(group, key);
-        AutomationProperties.SetName(control, (string)control.Content);
-    }
-
-    private void Label(ComboBoxItem item, TextBlock label, string key)
+    private void Label(Control item, TextBlock label, string key)
     {
         label.Text = Model.Text.Get("settings", key);
         AutomationProperties.SetName(item, label.Text);
     }
 
-    private void Label(SelectorBarItem item, string key)
+    private void Label(NavigationViewItem item, string key)
     {
-        item.Text = Model.Text.Get("settings", key);
-        AutomationProperties.SetName(item, item.Text);
+        item.Content = Model.Text.Get("settings", key);
+        AutomationProperties.SetName(item, (string)item.Content);
     }
 
-    private void Label(SettingsSection section, string header, string description)
+    private async void OnCategory(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
     {
-        section.Header = Model.Text.Get("settings", header);
-        section.Description = Model.Text.Get("settings", description);
+        if (_refreshing || args.SelectedItem is not NavigationViewItem item)
+            return;
+        var index = Array.IndexOf(CategoryItems, item);
+        var target = new SettingTarget(index < 0 ? null : (SettingsCategory)index);
+        if (Main.Navigation.Current != WindowPage.Connection && item == (_category ?? HomeCategory))
+            return;
+        _refreshing = true;
+        Categories.SelectedItem = Main.Navigation.Current == WindowPage.Connection ? LimitsCategory : _category ?? HomeCategory;
+        _refreshing = false;
+        if (await Main.Navigation.SelectCategory(target.Category))
+            Navigate(target, focus: true);
     }
 
-    private async void OnCategory(SelectorBar sender, SelectorBarSelectionChangedEventArgs args)
+    private async void OnCategoryInvoked(NavigationView sender, NavigationViewItemInvokedEventArgs args)
     {
-        if (_restoringCategory)
-            return;
-        var requested = sender.SelectedItem;
-        var canLeave = await SaveFeatures() && await Model.PrepareLeave();
-        if (sender.SelectedItem != requested)
-            return;
-        if (canLeave)
-        {
-            ShowCategory();
-            return;
-        }
-        _restoringCategory = true;
-        try
-        {
-            sender.SelectedItem = _category;
-            var field = Recover(null);
-            ShowCategory();
-            field?.Focus(FocusState.Programmatic);
-        }
-        finally
-        {
-            _restoringCategory = false;
-        }
+        if (Main.Navigation.Current == WindowPage.Connection && args.InvokedItemContainer == LimitsCategory
+            && await Main.Navigation.SelectCategory(SettingsCategory.Limits))
+            Navigate(new(SettingsCategory.Limits), focus: true);
     }
 
-    private void ShowCategory()
+    internal void ShowConnection(ConnectionPage? page, bool animate = true)
     {
-        if (_category is null && Categories.SelectedItem is not null)
-            Depart();
-        var previousIndex = _category is null ? -1 : Categories.Items.IndexOf(_category);
+        ClearOutline();
+        _motion.Stop();
+        if (page is not null)
+            ChildContent.Content = page;
+        FrameworkElement content = page is null ? PageContent : ChildContent;
+        if (animate)
+            _pages.Show(content, page is null ? -1 : 1);
+        else
+            _pages.Replace(content);
+        _refreshing = true;
+        Categories.SelectedItem = page is null ? _category ?? HomeCategory : LimitsCategory;
+        _refreshing = false;
+    }
+
+    private void ShowCategory(bool animate = true)
+    {
+        var next = ReferenceEquals(Categories.SelectedItem, HomeCategory) ? null : Categories.SelectedItem as NavigationViewItem;
+        if (_category == next)
+            return;
+        var previousIndex = _category is null ? -1 : Categories.MenuItems.IndexOf(_category);
         if (_category is { } previous)
             _positions[previous] = Body.VerticalOffset;
         else
             _indexPosition = Body.VerticalOffset;
-        _category = Categories.SelectedItem;
-        Categories.Visibility = _category is null ? Visibility.Collapsed : Visibility.Visible;
-        var nextIndex = _category is null ? -1 : Categories.Items.IndexOf(_category);
+        _category = next;
+        RefreshHeader();
+        var nextIndex = _category is null ? -1 : Categories.MenuItems.IndexOf(_category);
         var content = _category is null
             ? IndexContent
             : CategoryPanels.First(panel => panel.Name == (string)_category.Tag);
-        _motion.Show(content, nextIndex >= previousIndex ? 1 : -1);
+        // Only the active category contributes to the restored scroll extent.
+        _motion.Replace(content);
         UpdateLayout();
         RefreshCoverage();
         AlignCategory();
         var position = _category is { } item ? _positions.GetValueOrDefault(item) : _indexPosition;
         Body.ChangeView(null, position, null, true);
+        if (animate && !_pages.IsActive)
+            _motion.Play(content, nextIndex >= previousIndex ? 24 : -24);
     }
 
     private IEnumerable<FrameworkElement> CategoryPanels =>
         CategoryContent.Children.OfType<FrameworkElement>();
 
-    private void RefreshIndex()
+    private void OnAdvanced(object sender, RoutedEventArgs args)
     {
-        CategoryIndex.Children.Clear();
-        CategoryIndex.RowDefinitions.Clear();
-        var items = Categories
-            .Items.Where(item => item != AdvancedCategory || AdvancedSwitch.IsOn)
-            .ToArray();
-        for (var index = 0; index < items.Length; index++)
-        {
-            if (index % 2 == 0)
-                CategoryIndex.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            var item = items[index];
-            var panel = CategoryPanels.First(panel => panel.Name == (string)item.Tag);
-            var content = new StackPanel();
-            if (item.Icon is FontIcon icon)
-                content.Children.Add(
-                    new FontIcon
-                    {
-                        FontFamily = icon.FontFamily,
-                        Glyph = icon.Glyph,
-                        Style = (Style)Application.Current.Resources["TinyTorrentSurfaceIconStyle"],
-                        HorizontalAlignment = HorizontalAlignment.Left,
-                        Margin = new Thickness(0, 0, 0, 12),
-                    }
-                );
-            content.Children.Add(
-                new TextBlock
-                {
-                    Text = item.Text,
-                    Style = (Style)Application.Current.Resources["TinyTorrentGroupTitleTextStyle"],
-                }
-            );
-            var description = string.Join(
-                " · ",
-                Elements(panel)
-                    .OfType<SettingsSection>()
-                    .Where(section => !section.IsAdvanced || AdvancedSwitch.IsOn)
-                    .Select(section => section.Header)
-                    .Take(4)
-            );
-            content.Children.Add(
-                new TextBlock
-                {
-                    Text = description,
-                    Style = (Style)Application.Current.Resources["TinyTorrentTitleDetailTextStyle"],
-                    TextTrimming = TextTrimming.CharacterEllipsis,
-                    Margin = new Thickness(0, 8, 0, 0),
-                }
-            );
-            var button = new Button
-            {
-                Content = content,
-                Tag = item,
-                Style = (Style)Resources["SettingsIndexCardStyle"],
-            };
-            AutomationProperties.SetName(button, item.Text);
-            AutomationProperties.SetHelpText(button, description);
-            button.Click += (_, _) =>
-            {
-                Categories.SelectedItem = item;
-                item.Focus(FocusState.Programmatic);
-            };
-            Grid.SetColumn(button, index % 2);
-            Grid.SetRow(button, index / 2);
-            CategoryIndex.Children.Add(button);
-        }
-    }
-
-    private async void OnAdvanced(object sender, RoutedEventArgs args)
-    {
-        if (!AdvancedSwitch.IsOn && !await Model.PrepareLeave())
-        {
-            AdvancedSwitch.IsOn = true;
-            Recover(null)?.Focus(FocusState.Programmatic);
-            return;
-        }
+        if (!AdvancedSwitch.IsOn)
+            _ = Model.PrepareLeave();
         UpdateDisclosure();
     }
 
@@ -602,16 +601,18 @@ public sealed partial class SettingsPage : UserControl
             ? Visibility.Visible
             : Visibility.Collapsed;
         if (!AdvancedSwitch.IsOn)
-            DatabaseSummary.Flyout.Hide();
+            DatabaseSummary.IsExpanded = false;
+        else
+            RefreshCoverage();
         foreach (var panel in CategoryPanels)
         foreach (var element in Elements(panel))
             if (element is SettingsRow { IsAdvanced: true } or SettingsSection { IsAdvanced: true })
                 element.Visibility = AdvancedSwitch.IsOn
                     ? Visibility.Visible
                     : Visibility.Collapsed;
-        if (!AdvancedSwitch.IsOn && Categories.SelectedItem == AdvancedCategory)
-            Categories.SelectedItem = Main.ShowsSettingsIndex ? null : GeneralCategory;
-        RefreshIndex();
+        if (!AdvancedSwitch.IsOn && ReferenceEquals(Categories.SelectedItem, AdvancedCategory))
+            _ = Main.Navigation.SelectCategory(Main.SettingsHome);
+        RefreshHome();
         AlignCategory();
     }
 
@@ -621,54 +622,25 @@ public sealed partial class SettingsPage : UserControl
         if (_category is null)
             return;
         var panel = CategoryPanels.First(panel => panel.Name == (string)_category.Tag);
-        var rows = Elements(panel, visible: true).OfType<SettingsRow>().ToArray();
-        var units = rows.Select(row => row.Unit).Where(unit => unit.Length > 0).ToArray();
-        var hasUnits = units.Length > 0 || rows.Any(row => row.UnitSelector is not null);
-        var labels =
-            hasUnits && rows.Any(row => row.Content is ToggleSwitch)
-                ? units.Concat([Model.OnText, Model.OffText])
-                : units;
-        var width = 0d;
-        foreach (var text in labels)
+        foreach (var section in Elements(panel, visible: true).OfType<SettingsSection>())
         {
-            var label = new TextBlock { Text = text };
-            label.Measure(
-                new Windows.Foundation.Size(double.PositiveInfinity, double.PositiveInfinity)
-            );
-            width = Math.Max(width, label.DesiredSize.Width);
+            var rows = Elements(section, visible: true).OfType<SettingsRow>().ToArray();
+            var width = 0d;
+            foreach (var unit in rows.Select(row => row.Unit).Where(unit => unit.Length > 0).Distinct())
+            {
+                var label = new TextBlock
+                {
+                    Text = unit,
+                    Style = (Style)Application.Current.Resources["TinyTorrentBodyTextStyle"],
+                };
+                label.Measure(new Windows.Foundation.Size(double.PositiveInfinity, double.PositiveInfinity));
+                width = Math.Max(width, label.DesiredSize.Width);
+            }
+            foreach (var row in rows)
+                row.Align(width);
         }
-        foreach (var selector in rows.Select(row => row.UnitSelector).OfType<ComboBox>())
-        {
-            selector.Measure(
-                new Windows.Foundation.Size(double.PositiveInfinity, double.PositiveInfinity)
-            );
-            width = Math.Max(width, selector.DesiredSize.Width);
-        }
-        double? controlWidth =
-            _category == TransfersCategory ? Math.Max(360, 174 + 12 + width)
-            : _category == LimitsCategory ? Math.Max(240, 160 + 12 + width)
-            : _category == PluginsCategory ? 520
-            : null;
-        foreach (var row in rows)
-            row.Align(width, controlWidth);
-        if (
-            _category == PluginsCategory
-            && controlWidth is { } pluginsWidth
-            && SubtitlesContent.Content is SubtitleSettings content
-        )
-            content.Align(pluginsWidth);
-    }
-
-    internal double MeasureWidth()
-    {
-        Categories.Measure(
-            new Windows.Foundation.Size(double.PositiveInfinity, double.PositiveInfinity)
-        );
-        PageContent.MaxWidth = Math.Max(
-            (double)Application.Current.Resources["TinyTorrentSettingsWidth"],
-            Categories.DesiredSize.Width
-        );
-        return PageContent.MaxWidth + PageContent.Margin.Left + PageContent.Margin.Right;
+        if (_category == PluginsCategory && SubtitlesContent.Content is SubtitleSettings content)
+            content.Align();
     }
 
     private static IEnumerable<FrameworkElement> Elements(
@@ -682,6 +654,7 @@ public sealed partial class SettingsPage : UserControl
         var children = element switch
         {
             Panel panel => panel.Children.OfType<FrameworkElement>(),
+            Border border => new[] { border.Child }.OfType<FrameworkElement>(),
             SettingsRow row => new[]
             {
                 row.Content,
@@ -689,6 +662,7 @@ public sealed partial class SettingsPage : UserControl
                 row.UnitSelector,
             }.OfType<FrameworkElement>(),
             ContentControl control => new[] { control.Content }.OfType<FrameworkElement>(),
+            UserControl control => new[] { control.Content }.OfType<FrameworkElement>(),
             _ => [],
         };
         foreach (var child in children)
@@ -696,16 +670,15 @@ public sealed partial class SettingsPage : UserControl
             yield return descendant;
     }
 
-    private void OnEditLimits(object sender, RoutedEventArgs args) =>
-        Navigate(new(SettingsCategory.Limits, "download_limit"));
-
-    private void OnConnection(object sender, RoutedEventArgs args) =>
+    private void OnConnection(object? sender, EventArgs args) =>
         ConnectionRequested?.Invoke(this, EventArgs.Empty);
 
-    internal void FocusConnection() => ConnectionEdit.Focus(FocusState.Programmatic);
+    private SpeedLimits CurrentProfiles => _category == ScheduleCategory ? _scheduleLimits : _speedLimits;
+
+    internal void FocusConnection() => CurrentProfiles.FocusConnection();
 
     // In SettingsCategory order.
-    private SelectorBarItem[] CategoryItems =>
+    private NavigationViewItem[] CategoryItems =>
         [
             GeneralCategory,
             TransfersCategory,
@@ -726,112 +699,118 @@ public sealed partial class SettingsPage : UserControl
         }
     }
 
-    internal Control? Recover(string? focusName)
+    internal async Task Open(SettingTarget target)
     {
-        if (LookupsRow.Error.Length > 0)
-        {
-            Categories.SelectedItem = PluginsCategory;
-            return TextEditor.Find(LookupLimit) ?? (Control)LookupLimit;
-        }
-        if (Model.RefusedSetting is { } setting)
-        {
-            Reveal(new(setting.Category, setting.Name));
-            Categories.SelectedItem = CategoryItems[(int)setting.Category];
-            var control = FindControl(setting.Name) ?? Categories;
-            return control is NumberBox ? TextEditor.Find(control) ?? control : control;
-        }
-        if (!Model.Schedule.HasDraft || !Model.Schedule.HasError)
-            return null;
-        Categories.SelectedItem = ScheduleCategory;
-        return _scheduler.Field(focusName);
+        if (await Main.Navigation.Navigate(target))
+            Navigate(target, focus: true);
     }
 
-    internal void Navigate(SettingTarget target)
+    internal void Navigate(SettingTarget target, bool focus = false, bool animate = true)
     {
-        if (target.Category is null && !Main.ShowsSettingsIndex)
-            target = new(SettingsCategory.General);
+        ClearOutline();
         if (target.Category is not { } category)
         {
-            Categories.SelectedItem = null;
+            _refreshing = true;
+            Categories.SelectedItem = HomeCategory;
+            _refreshing = false;
+            ShowCategory(animate);
+            if (!focus)
+                return;
             DispatcherQueue.TryEnqueue(
                 Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,
                 () =>
-                    CategoryIndex
-                        .Children.OfType<Button>()
-                        .FirstOrDefault()
-                        ?.Focus(FocusState.Programmatic)
+                {
+                    if (Main.Navigation.Current == WindowPage.Settings && Main.Navigation.Settings == target)
+                        Heading.Focus(FocusState.Programmatic);
+                }
             );
             return;
         }
-        Reveal(target);
+        if (category == SettingsCategory.Advanced)
+            AdvancedSwitch.IsOn = true;
+        _refreshing = true;
         Categories.SelectedItem = CategoryItems[(int)category];
+        _refreshing = false;
+        ShowCategory(animate);
+        if (!focus)
+            return;
+        Reveal(target);
         DispatcherQueue.TryEnqueue(
             Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,
             () =>
             {
+                if (Main.Navigation.Current != WindowPage.Settings || Main.Navigation.Settings != target)
+                    return;
                 UpdateLayout();
                 if (target.Name == "add_period")
                 {
                     _scheduler.FocusAdd();
                     return;
                 }
-                var control = FindControl(target.Name);
-                if (control is null)
-                    return;
-                if (control == Categories)
+                if (target.Name is null)
                 {
-                    Categories.SelectedItem?.Focus(FocusState.Programmatic);
+                    Heading.Focus(FocusState.Programmatic);
                     return;
                 }
-                control.StartBringIntoView();
-                // Keyboard focus draws the focus rectangle even after a click,
-                // so the person sees which setting they were brought to.
-                if (control is NumberBox && TextEditor.Find(control) is { } editor)
-                    editor.Focus(FocusState.Keyboard);
-                else
-                    control.Focus(FocusState.Keyboard);
+                if (FindControl(target.Name) is { } control)
+                    ShowDestination(control);
             }
         );
     }
 
     private void Reveal(SettingTarget target)
     {
-        if (target.Category == SettingsCategory.Advanced)
-        {
-            AdvancedSwitch.IsOn = true;
+        if (target.Name is not { } name || FindControl(name) is not { } control)
             return;
-        }
-        var advanced = CategoryPanels
-            .SelectMany(panel => Elements(panel))
-            .Where(element =>
-                element is SettingsRow { IsAdvanced: true } or SettingsSection { IsAdvanced: true }
-            );
-        foreach (var element in advanced)
+        var groups = CategoryPanels.SelectMany(panel => Elements(panel)).ToArray();
+        foreach (var element in groups)
         {
-            var controls = Elements(element).OfType<Control>();
-            if (
-                !controls.Any(control =>
-                    control.Tag is Setting setting && setting.Name == target.Name
-                )
-            )
+            if (!Elements(element).Contains(control))
                 continue;
-            AdvancedSwitch.IsOn = true;
-            return;
+            if (element is SettingsSection section)
+            {
+                if (section.IsAdvanced)
+                    AdvancedSwitch.IsOn = true;
+                section.IsExpanded = true;
+            }
+            else if (element is SettingsRow { IsAdvanced: true })
+                AdvancedSwitch.IsOn = true;
+            else if (element is Expander expander)
+                expander.IsExpanded = true;
         }
     }
 
-    private Control? FindControl(string? settingName) =>
+    private Control? FindControl(string settingName) =>
         settingName switch
         {
-            "start_signin" => Startup,
-            "limit_mode" => LimitsChoice,
-            "open_defaults" => Handlers,
+            "patterns" when !Model.Exclude.IsOn => FindControl("exclude"),
+            "queue" => QueueSection,
+            "weekly_schedule" => _scheduler.Map,
+            "seeding" => SeedingSection,
+            "adding" => AddingSection,
+            "download_locations" => DownloadsSection,
+            "windows_integration" => _integration.Section,
+            "notifications" => NotificationsSection,
+            "power" => PowerSection,
+            "dialogs" => ConfirmationsSection,
+            "startup_closing" => LifecycleSection,
+            "watched_folder" => WatchedSection,
+            "deleting_files" => DeletionRow,
+            "peer_connections" => PeersSection,
+            "peer_discovery" => DiscoverySection,
+            "incoming_connections" => IncomingSection,
+            "connection_encryption" => EncryptionSection,
+            "bandwidth_accounting" => AccountingSection,
+            "start_signin" => _integration.Field("start_signin"),
+            "limit_mode" => _category == ScheduleCategory ? _scheduler.Selector : _speedLimits.Selector,
+            "download_limit" or "upload_limit" or "alternative_download_limit" or "alternative_upload_limit" => CurrentProfiles.Field(settingName),
+            "open_defaults" => _integration.Field("open_defaults"),
             "settings_index" => IndexSwitch,
             "network_interface" => Adapters,
             "proxy" => ProxyEdit,
-            "connection_setup" => ConnectionEdit,
+            "connection_setup" => CurrentProfiles.Field("connection_setup"),
             "language" => Languages,
-            "theme" => Theme,
+            "theme" => _themes.Choices,
             "video_information" => VideoInformation,
             "lookup_limit" => LookupLimit,
             "subtitle_automatic"
@@ -842,7 +821,6 @@ public sealed partial class SettingsPage : UserControl
             or "subtitle_scan" => (SubtitlesContent.Content as SubtitleSettings)?.Field(
                 settingName
             ),
-            null => Categories,
             _ => CategoryPanels
                 .SelectMany(panel => Elements(panel))
                 .OfType<Control>()
@@ -855,6 +833,20 @@ public sealed partial class SettingsPage : UserControl
     {
         if (sender is ToggleSwitch { Tag: Setting setting } control)
             await Model.Toggle(setting, control.IsOn);
+    }
+
+    private static bool Recycles(string value) => value == "recycle";
+
+    private string SlowDescription(bool enabled, string key) =>
+        Model.Text.Get("settings", enabled ? key : "enable_slow");
+
+    private async void OnRecycling(object sender, RoutedEventArgs args)
+    {
+        var value = ((ToggleSwitch)sender).IsOn ? "recycle" : "permanent";
+        if (!Model.Deletion.CanEdit || value == Model.Deletion.Input)
+            return;
+        Model.Deletion.Input = value;
+        await Model.Commit(Model.Deletion);
     }
 
     private void OnChoiceLoaded(object sender, RoutedEventArgs args)
@@ -900,6 +892,7 @@ public sealed partial class SettingsPage : UserControl
         if (setting.IsDuration)
         {
             setting.SelectUnit((string)value);
+            AlignCategory();
             return;
         }
         if ((string)value == setting.Input)
@@ -908,25 +901,8 @@ public sealed partial class SettingsPage : UserControl
         await Model.Commit(setting);
     }
 
-    private async void OnStartup(object sender, RoutedEventArgs args)
-    {
-        if (!_refreshing && Model.HasRegistration && Startup.IsOn != Model.Startup)
-            await Model.SetStartup(Startup.IsOn);
-    }
-
-    private bool Hides(bool shows) => !shows;
-
-    private void OnIndexOptOut(object sender, RoutedEventArgs args) =>
-        Main.ShowsSettingsIndex = IndexOptOut.IsChecked != true;
-
     private void OnIndexSwitch(object sender, RoutedEventArgs args) =>
         Main.ShowsSettingsIndex = IndexSwitch.IsOn;
-
-    private async void OnHandlers(object sender, RoutedEventArgs args)
-    {
-        if (!_refreshing && Model.HasRegistration && Handlers.IsOn != Model.Handlers)
-            await Model.SetHandlers(Handlers.IsOn);
-    }
 
     private async void OnAdapter(object sender, SelectionChangedEventArgs args)
     {
@@ -944,7 +920,7 @@ public sealed partial class SettingsPage : UserControl
     {
         if (
             _refreshing
-            || EncryptionChoice.SelectedItem is not ComboBoxItem { Tag: string encryption }
+            || EncryptionChoice.SelectedItem is not RadioButton { Tag: string encryption }
             || encryption == Model.Encryption.Input
         )
             return;
@@ -958,16 +934,6 @@ public sealed partial class SettingsPage : UserControl
             Model.SelectLanguage(language);
     }
 
-    private async void OnTheme(object sender, SelectionChangedEventArgs args)
-    {
-        if (
-            !_refreshing
-            && Model.CanSelectTheme
-            && Theme.SelectedItem is ComboBoxItem { Tag: string theme }
-        )
-            await Model.SelectTheme(theme);
-    }
-
     private void OnFolder(object sender, RoutedEventArgs args)
     {
         if (sender is FrameworkElement { Tag: Setting setting })
@@ -977,35 +943,19 @@ public sealed partial class SettingsPage : UserControl
     private void OnProxy(object sender, RoutedEventArgs args) =>
         ProxyRequested?.Invoke(this, EventArgs.Empty);
 
-    private void OnNumberLoaded(object sender, RoutedEventArgs args)
-    {
-        if (
-            sender is NumberBox { Tag: Setting setting } number
-            && TextEditor.Find(number) is { } editor
-            && _editors.Add(editor)
-        )
-        {
-            // NumberBox's focused TextBox does not inherit its HelpText.
-            void ForwardHelp() =>
-                AutomationProperties.SetHelpText(editor, AutomationProperties.GetHelpText(number));
-            number.RegisterPropertyChangedCallback(
-                AutomationProperties.HelpTextProperty,
-                (_, _) => ForwardHelp()
-            );
-            ForwardHelp();
-            Watch(editor);
-            editor.TextChanged += (_, _) =>
-            {
-                if (number.IsEnabled)
-                    setting.Input = editor.Text;
-            };
-        }
-    }
-
     private void Watch(TextBox editor)
     {
         editor.TextCompositionStarted += (_, _) => _composing.Add(editor);
         editor.TextCompositionEnded += (_, _) => _composing.Remove(editor);
+    }
+
+    private void RegisterProfile(TextBox editor)
+    {
+        if (!_editors.Add(editor))
+            return;
+        Watch(editor);
+        editor.PreviewKeyDown += OnFieldKey;
+        editor.LostFocus += OnFieldDeparture;
     }
 
     private void OnTextLoaded(object sender, RoutedEventArgs args)
@@ -1036,7 +986,7 @@ public sealed partial class SettingsPage : UserControl
         }
     }
 
-    private async void OnFieldDeparture(object sender, RoutedEventArgs args)
+    private void OnFieldDeparture(object sender, RoutedEventArgs args)
     {
         if (
             sender is not Control { Tag: Setting setting } control
@@ -1062,8 +1012,7 @@ public sealed partial class SettingsPage : UserControl
             if (current == this)
             {
                 setting.Input = editor.Text;
-                if (!await Model.Depart(setting))
-                    Recover(null)?.Focus(FocusState.Programmatic);
+                _ = Model.Depart(setting);
                 return;
             }
         }

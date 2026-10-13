@@ -3,6 +3,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Controls;
+using Syno.TinyTorrent.Controls;
 using Syno.TinyTorrent.Models;
 using Syno.TinyTorrent.Services;
 
@@ -26,6 +27,17 @@ internal sealed class Batch : UserControl, INotifyPropertyChanged
     private long? _batchId;
     private int _count;
     private int _recount;
+    private SettingsSection? _section;
+    private SettingsRow? _scopeRow;
+    private SettingsRow? _downloadRow;
+    internal string Coverage
+    {
+        set
+        {
+            if (_section is not null)
+                _section.Description = value;
+        }
+    }
 
     // A batch runs from Find until its manual jobs finish, so manual jobs kept
     // from an earlier session count as one.
@@ -77,6 +89,27 @@ internal sealed class Batch : UserControl, INotifyPropertyChanged
 
     private void OnChanged(object? sender, EventArgs args) => DispatcherQueue.TryEnqueue(Refresh);
 
+    internal void ShowSettings(ActionButton action)
+    {
+        ((Grid)((StackPanel)Content).Children[0]).Children.Clear();
+        ((StackPanel)Content).Children.Clear();
+        _scope.Width = _download.Width = 260;
+        var choices = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12 };
+        choices.Children.Add(_download);
+        choices.Children.Add(action);
+        _scopeRow = new SettingsRow { Content = _scope, Detail = _status };
+        _downloadRow = new SettingsRow { Content = choices };
+        _status.MinHeight = 20;
+        _status.Style = (Style)Application.Current.Resources["TinyTorrentTitleDetailTextStyle"];
+        _section = new SettingsSection
+        {
+            Style = (Style)Application.Current.Resources["TinyTorrentSettingsGroupStyle"],
+            Content = new StackPanel { Children = { _scopeRow, _downloadRow } },
+        };
+        Content = _section;
+        Present();
+    }
+
     private void OnChoice(object sender, SelectionChangedEventArgs args)
     {
         if (_refreshing)
@@ -112,8 +145,19 @@ internal sealed class Batch : UserControl, INotifyPropertyChanged
         _refreshing = true;
         var scope = Math.Max(0, _scope.SelectedIndex);
         var download = _download.SelectedIndex < 0 ? 2 : _download.SelectedIndex;
-        _scope.Header = T("movies");
-        _download.Header = T("download");
+        if (_scopeRow is not null && _downloadRow is not null && _section is not null)
+        {
+            _scope.Header = _download.Header = null;
+            _section.Header = T("library_search");
+            _scopeRow.Header = T("movies_to_search");
+            _downloadRow.Header = T("matches_to_download");
+            _downloadRow.Description = T("matches_hint");
+        }
+        else
+        {
+            _scope.Header = T("movies");
+            _download.Header = T("download");
+        }
         if (_language != _text.Language)
         {
             _language = _text.Language;
@@ -129,6 +173,8 @@ internal sealed class Batch : UserControl, INotifyPropertyChanged
             _scope.SelectedIndex = scope;
             _download.SelectedIndex = download;
         }
+        AutomationProperties.SetName(_scope, T("movies_to_search"));
+        AutomationProperties.SetName(_download, T("matches_to_download"));
         _scope.IsEnabled = _download.IsEnabled = !_busy && _model?.Finding != true;
         _status.Text =
             _model is { Finding: true } finding ? Waiting(finding)

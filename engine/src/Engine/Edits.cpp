@@ -161,15 +161,15 @@ void Engine::State::CommitEdit(std::string const& id,
     }
     auto document = Saved();
     document.torrents.at(id) = facts;
-    changes.Commit(document.ToJson(), [apply, reply](StorageOutcome outcome)
+    changes.Commit(document.ToJson(), [apply, reply](Outcome outcome)
     {
-        if (outcome.succeeded)
+        if (!outcome.error)
         {
             apply();
         }
         else
         {
-            reply(Failure(ErrorCode::StorageFailed, outcome.detail));
+            reply(Failure(*outcome.error, outcome.detail));
         }
     });
 }

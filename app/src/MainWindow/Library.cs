@@ -52,7 +52,8 @@ public sealed partial class MainWindow
                 UpdateAssociation();
             if (
                 Model.Page == WindowPage.Library
-                && args.PropertyName is nameof(LibraryBrowser.Facets) or ""
+                && args.PropertyName is nameof(LibraryBrowser.Facets) or nameof(LibraryBrowser.Filters)
+                    or nameof(LibraryBrowser.Configuration) or ""
             )
                 RefreshLibraryFilters();
             if (
@@ -107,7 +108,10 @@ public sealed partial class MainWindow
         Model.Library.SettingsRequested += async (_, _) =>
             await ShowSettings(new(SettingsCategory.Plugins, "video_information"));
         Model.LibraryRequested += async (_, _) =>
-            await Model.Navigation.Navigate(WindowPage.Library);
+        {
+            if (await Model.Navigation.Navigate(WindowPage.Library))
+                FocusPage();
+        };
         Model.Library.FetchMetadataRequested += async (_, source) =>
         {
             if (Model.Library.Selected is { } selected)
@@ -444,6 +448,34 @@ public sealed partial class MainWindow
         }
     }
 
+    // Asks for the person's own API key for option. Saving also turns
+    // information on with option, because Settings opens this dialog when the
+    // person chooses a provider that has no usable key.
+    private Task ShowKey(ProviderOption option)
+    {
+        var library = Model.Library;
+        return ShowAccount(
+            new AccountDialog(
+                Model.Text,
+                option.Name,
+                option.Access,
+                option.HasBuiltInKey,
+                new(string.Empty, string.Empty, library.HasKey(option.ProviderId)),
+                async input =>
+                {
+                    // Saving a key restarts the provider's lookups, so an
+                    // unchanged choice saves nothing. No typed key and no kept
+                    // key means the built-in key.
+                    var key = input.Secret.Length > 0 ? input.Secret : null;
+                    if (key is not null || (!input.KeepSecret && library.HasKey(option.ProviderId)))
+                        await library.SaveKey(option.ProviderId, key);
+                    if (!library.IsEnrichmentEnabled || library.Option != option)
+                        await library.Enable(option.ProviderId);
+                }
+            )
+        );
+    }
+
     private async Task FetchMetadata(MetadataDialog content)
     {
         SettingTarget? settings = null;
@@ -498,7 +530,8 @@ public sealed partial class MainWindow
 
     private void RefreshLibraryFilters()
     {
-        if (!Model.IsFilterOpen)
+        LibraryFilters.IsEnabled = Model.Library.RowsConfiguration == Model.Library.Configuration;
+        if (!Model.IsFilterOpen || !LibraryFilters.IsEnabled)
             return;
         if (LibraryFilters.Content is not StackPanel panel)
         {
@@ -526,7 +559,7 @@ public sealed partial class MainWindow
                     choices.Items.Add(new ComboBoxItem());
                     choices.SelectionChanged += (_, _) =>
                     {
-                        if (!_refreshingFilters)
+                        if (!_refreshingFilters && LibraryFilters.IsEnabled)
                             Model.Library.Filter(
                                 section.Key,
                                 (choices.SelectedItem as ComboBoxItem)?.Tag as string

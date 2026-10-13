@@ -15,7 +15,7 @@ public sealed partial class MainViewModel
     public bool HasIncoming { get; private set; }
     private string _externalIpv4 = string.Empty;
     private string _externalIpv6 = string.Empty;
-    public bool ShowsExternalIp => Settings.ShowExternalIp.ConfirmedOn;
+    public bool ShowsExternalIp => Settings.ShowExternalIp.IsOn;
     public string ExternalIp =>
         !_connected || _externalIpv4.Length + _externalIpv6.Length == 0
             ? Text.Get("window", "external_unknown")
@@ -103,6 +103,7 @@ public sealed partial class MainViewModel
             if (_inspectorCompact == value)
                 return;
             _inspectorCompact = value;
+            RefreshInspector();
             Changed(nameof(IsInspectorCompact));
         }
     }
@@ -551,8 +552,8 @@ public sealed partial class MainViewModel
 
     private void RefreshInspector()
     {
-        Inspector.SetVisible(HasInspector && Page == WindowPage.Torrents);
-        Library.WatchInspector(HasInspector && Page == WindowPage.Library);
+        Inspector.SetVisible(HasInspector && !IsInspectorCompact && Page == WindowPage.Torrents);
+        Library.WatchInspector(HasInspector && !IsInspectorCompact && Page == WindowPage.Library);
     }
 }
 

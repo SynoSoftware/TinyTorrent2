@@ -348,6 +348,7 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
             () =>
             {
                 _filters.Remove(Configuration);
+                Changed(nameof(Filters));
                 SearchChanged();
                 return Task.CompletedTask;
             },
@@ -512,6 +513,11 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
             _connected = false;
             Pause();
         }
+        _dispatcher.TryEnqueue(() =>
+        {
+            if (!_disposed)
+                RefreshReadiness();
+        });
     }
 
     private void Pause()
@@ -590,6 +596,7 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
             else
                 filters.Remove("season");
         }
+        Changed(nameof(Filters));
         FiltersRequested?.Invoke(this, EventArgs.Empty);
         SearchChanged();
     }
@@ -681,18 +688,27 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
                 _refreshDetail = false;
                 var retained = new HashSet<long>();
                 var rows = new List<LibraryRow>(matches.Entries.Count);
+                var rowsChanged = RowsConfiguration != query.Configuration;
                 foreach (var entry in matches.Entries)
                 {
                     retained.Add(entry.EntryId);
                     if (!_rows.TryGetValue(entry.EntryId, out var row))
                         _rows[entry.EntryId] = row = new LibraryRow(entry, this);
                     else
+                    {
+                        rowsChanged |= row.Entry != entry;
                         row.Update(entry);
+                    }
                     rows.Add(row);
                 }
                 foreach (var key in _rows.Keys.Where(key => !retained.Contains(key)).ToArray())
                     _rows.Remove(key);
-                Rows = rows;
+                rowsChanged |= !Rows.SequenceEqual(rows);
+                var facetsChanged = RowsConfiguration != query.Configuration || !Facets.SequenceEqual(matches.Facets);
+                var countsChanged = Counts.Count != matches.Counts.Count
+                    || Counts.Any(pair => !matches.Counts.TryGetValue(pair.Key, out var count) || count != pair.Value);
+                if (rowsChanged)
+                    Rows = rows;
                 RowsConfiguration = query.Configuration;
                 Facets = matches.Facets;
                 Counts = matches.Counts;
@@ -721,9 +737,12 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
                     _ = ReadDetail();
                 if (Selected is not null && previousEntry?.Path != Selected.Entry.Path)
                     Changed(nameof(Selected));
-                Changed(nameof(Rows));
-                Changed(nameof(Facets));
-                Changed(nameof(Counts));
+                if (rowsChanged)
+                    Changed(nameof(Rows));
+                if (facetsChanged)
+                    Changed(nameof(Facets));
+                if (countsChanged)
+                    Changed(nameof(Counts));
                 Changed(nameof(Status));
                 RefreshState();
                 RefreshCommands();
@@ -913,6 +932,7 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
         foreach (var pair in filters)
             if (Enum.IsDefined(pair.Key))
                 _filters[pair.Key] = new Dictionary<string, string>(pair.Value);
+        Changed(nameof(Filters));
         Refresh();
     }
 
@@ -1026,13 +1046,19 @@ public sealed class LibraryRow(Entry entry, Browser library) : INotifyPropertyCh
     public string Folder => Entry.Folder;
     public string Title => Entry.Title;
     public string Type => Text.Get("library", Entry.Type.Length > 0 ? Entry.Type : "unidentified");
-    public string Year => Provided(Entry.Year?.ToString() ?? string.Empty);
+    public string Year => Entry.Year?.ToString() ?? string.Empty;
     public string ImdbRating => Provided(Score(Entry.ImdbRating));
     public string TmdbRating => Provided(Score(Entry.TmdbRating));
     public string ImdbTip => RatingTip(Entry.ImdbRating);
     public string TmdbTip => RatingTip(Entry.TmdbRating);
-    public string Genres => Provided(Entry.Genres);
-    public string Cast => Provided(Entry.Cast);
+    public string Genres => Entry.Genres;
+    public string Cast => Entry.Cast;
+
+    // Table cells. Details and sorting read the plain values above, because a
+    // dash there would show as a field and sort among real values.
+    public string YearCell => Provided(Year);
+    public string GenresCell => Provided(Genres);
+    public string CastCell => Provided(Cast);
     public string Artist => Entry.Artist;
     public string Album => Entry.Album;
     public string Subtitles =>
@@ -1069,7 +1095,8 @@ public sealed class LibraryRow(Entry entry, Browser library) : INotifyPropertyCh
     private static string Score(Rating? rating) => rating?.Value.ToString("0.0") ?? string.Empty;
 
     // An empty provider cell of an unmatched file shows a dash, so a file the
-    // provider does not have differs from one not looked up yet.
+    // provider does not have differs from one not looked up yet. Only table
+    // cells use it; the rating texts appear nowhere else.
     private string Provided(string value) => value.Length == 0 && Entry.IsUnmatched ? "—" : value;
 
     private string RatingTip(Rating? rating) =>

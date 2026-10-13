@@ -3,6 +3,7 @@
 #include "Resources.h"
 #include <algorithm>
 #include <cmath>
+#include <filesystem>
 #include <sstream>
 #include <windowsx.h>
 
@@ -11,6 +12,7 @@ namespace tt::desktop
 namespace
 {
 constexpr wchar_t windowClass[] = L"TinyTorrent.Notice";
+constexpr wchar_t menuClass[] = L"TinyTorrent.NoticeMenu";
 constexpr UINT_PTR closeTimer = 1;
 constexpr UINT_PTR slideTimer = 2;
 // The slide in from the screen's edge and back out, as Windows notifications
@@ -21,6 +23,8 @@ constexpr UINT slideInterval = 10;
 constexpr ULONG defaultDuration = 5;
 // Segoe MDL2 Assets' ChromeClose, which Windows 10 and 11 both have.
 constexpr wchar_t closeGlyph[] = L"\xE8BB";
+// Segoe MDL2 Assets' More, the button Windows' own notifications show.
+constexpr wchar_t moreGlyph[] = L"\xE712";
 constexpr UINT textFormat = DT_WORDBREAK | DT_EDITCONTROL | DT_NOPREFIX | DT_END_ELLIPSIS;
 constexpr UINT labelFormat = DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX | DT_END_ELLIPSIS;
 constexpr UINT detailFormat = DT_SINGLELINE | DT_NOPREFIX;
@@ -40,18 +44,23 @@ constexpr int captionSize = 12;
 constexpr int closeSize = 32;
 constexpr int closeInset = 8;
 constexpr int glyphSize = 10;
-constexpr int buttonHeight = 32;
-constexpr int buttonGap = 12;
-// Space each side of the button's text, and the narrowest the button gets.
-constexpr int buttonInset = 12;
-constexpr int buttonWidth = 96;
 constexpr int radius = 4;
+// The More menu, sized as Windows' own notification menu.
+constexpr int menuPadding = 4;
+constexpr int menuRow = 36;
+constexpr int menuInset = 12;
+constexpr int menuIconSize = 16;
+constexpr int menuIconGap = 12;
+constexpr int menuGap = 4;
+// The separator under the menu's title: a one-pixel line centred in it.
+constexpr int menuSeparator = 9;
 // Bound long names and diagnostics so a burst cannot fill the work area.
 constexpr int textLimit = 160;
 
-// Fills of the foreground colour over the backdrop, out of 255.
-constexpr BYTE restOpacity = 0x1A;
-constexpr BYTE hoverOpacity = 0x2E;
+// The fill of the foreground colour over the backdrop under the pointer, out of 255.
+constexpr BYTE hoverOpacity = 0x1A;
+// Fluent's divider stroke, out of 255.
+constexpr BYTE dividerOpacity = 0x14;
 
 int Scale(int value, UINT dpi)
 {
@@ -77,6 +86,13 @@ UINT Duration()
     }
     return seconds * 1000;
 }
+
+// The window ships the Lucide font beside the engine; sharing its copy keeps
+// the engine small.
+std::filesystem::path IconFont()
+{
+    return std::filesystem::path(Executable()).parent_path() / L"Lucide" / L"Fonts" / L"lucide.ttf";
+}
 }
 
 Popup::Popup(HWND window, UINT selected) : owner_(window), selected_(selected)
@@ -88,15 +104,28 @@ Popup::Popup(HWND window, UINT selected) : owner_(window), selected_(selected)
     type.hCursor = LoadCursorW(nullptr, IDC_ARROW);
     type.lpszClassName = windowClass;
     RegisterClassW(&type);
+    type.lpfnWndProc = MenuProcedure;
+    type.lpszClassName = menuClass;
+    RegisterClassW(&type);
+    hasIcons_ = AddFontResourceExW(IconFont().c_str(), FR_PRIVATE, nullptr) > 0;
 }
 
 Popup::~Popup()
 {
     Close();
+    if (hasIcons_)
+    {
+        RemoveFontResourceExW(IconFont().c_str(), FR_PRIVATE, nullptr);
+    }
 }
 
 void Popup::Show(Content content)
 {
+    // The menu belongs to the content it was opened for.
+    if (menu_)
+    {
+        DestroyWindow(menu_);
+    }
     content_ = std::move(content);
     if (!window_)
     {
@@ -131,10 +160,7 @@ void Popup::Show(Content content)
     ShowWindow(window_, SW_SHOWNOACTIVATE);
     // Screen readers announce the alert although the popup never takes focus.
     NotifyWinEvent(EVENT_SYSTEM_ALERT, window_, OBJID_CLIENT, CHILDID_SELF);
-    if (!content_.persistent && !tracking_)
-    {
-        SetTimer(window_, closeTimer, Duration(), nullptr);
-    }
+    ScheduleClose();
 }
 
 void Popup::Close()
@@ -144,6 +170,14 @@ void Popup::Close()
         DestroyWindow(window_);
     }
     DeleteFonts();
+}
+
+void Popup::ScheduleClose()
+{
+    if (!content_.persistent && !tracking_ && !menu_)
+    {
+        SetTimer(window_, closeTimer, Duration(), nullptr);
+    }
 }
 
 void Popup::SetTheme(std::string theme)
@@ -157,11 +191,15 @@ void Popup::SetTheme(std::string theme)
     {
         acrylic_.Apply(window_, theme_);
     }
+    if (menu_)
+    {
+        acrylic_.Apply(menu_, theme_);
+    }
 }
 
 void Popup::DeleteFonts()
 {
-    for (auto font : {&font_, &caption_, &headline_, &glyphs_})
+    for (auto font : {&font_, &caption_, &headline_, &glyphs_, &icons_})
     {
         if (*font)
         {
@@ -191,11 +229,15 @@ void Popup::Layout()
     glyph.lfCharSet = DEFAULT_CHARSET;
     wcscpy_s(glyph.lfFaceName, L"Segoe MDL2 Assets");
     glyphs_ = CreateFontIndirectW(&glyph);
+    glyph.lfHeight = -Scale(menuIconSize, dpi);
+    wcscpy_s(glyph.lfFaceName, L"Lucide");
+    icons_ = CreateFontIndirectW(&glyph);
 
     auto width = Scale(popupWidth, dpi);
     auto inset = Scale(padding, dpi);
     close_ = {width - Scale(closeInset + closeSize, dpi), Scale(closeInset, dpi), width - Scale(closeInset, dpi),
         Scale(closeInset + closeSize, dpi)};
+    more_ = {close_.left - Scale(closeSize, dpi), close_.top, close_.left, close_.bottom};
     header_ = {inset, close_.top, close_.left, close_.bottom};
     auto device = GetDC(window_);
     auto measure = [&](std::wstring const& text, HFONT font, LONG top)
@@ -229,19 +271,6 @@ void Popup::Layout()
         detail_ = {inset, bottom + Scale(detailGap, dpi), width - inset,
             bottom + Scale(detailGap, dpi) + height};
         bottom = detail_.bottom;
-    }
-    button_ = {};
-    if (!content_.button.empty())
-    {
-        RECT label{};
-        auto previous = SelectObject(device, font_);
-        DrawTextW(device, content_.button.c_str(), -1, &label, DT_CALCRECT | DT_SINGLELINE | DT_NOPREFIX);
-        SelectObject(device, previous);
-        auto size = std::clamp<LONG>(label.right + Scale(2 * buttonInset, dpi), Scale(buttonWidth, dpi),
-            width - 2 * inset);
-        button_ = {width - inset - size, bottom + Scale(buttonGap, dpi), width - inset,
-            bottom + Scale(buttonGap + buttonHeight, dpi)};
-        bottom = button_.bottom;
     }
     ReleaseDC(window_, device);
     auto height = bottom + inset;
@@ -320,11 +349,23 @@ void Popup::Paint(HWND window)
         MAKEINTRESOURCEW(IDI_TINYTORRENT), IMAGE_ICON, size, size, LR_SHARED));
     DrawIconEx(canvas.Device(), header_.left, (header_.top + header_.bottom - size) / 2, icon, size, size, 0,
         nullptr, DI_NORMAL);
-    RECT name{header_.left + size + Scale(iconGap, dpi), header_.top, header_.right, header_.bottom};
+    // As in Windows' own notifications, More shows only while the pointer is
+    // over the popup, so the message is all the person reads.
+    auto showsMore = !content_.menu.empty() && (hover_ || menu_);
+    RECT name{header_.left + size + Scale(iconGap, dpi), header_.top, showsMore ? more_.left : header_.right,
+        header_.bottom};
     canvas.Text(productName, name, labelFormat, caption_);
+    if (showsMore)
+    {
+        if (hover_ == PopupPart::More || menu_)
+        {
+            canvas.Fill(more_, foreground, hoverOpacity, corner);
+        }
+        canvas.Text(moreGlyph, more_, DT_SINGLELINE | DT_CENTER | DT_VCENTER, glyphs_);
+    }
     if (hover_ == PopupPart::Close)
     {
-        canvas.Fill(close_, foreground, restOpacity, corner);
+        canvas.Fill(close_, foreground, hoverOpacity, corner);
     }
     canvas.Text(closeGlyph, close_, DT_SINGLELINE | DT_CENTER | DT_VCENTER, glyphs_);
     canvas.Text(content_.title, title_, textFormat, headline_);
@@ -341,11 +382,6 @@ void Popup::Paint(HWND window)
         auto ellipsis = line.find(L'\\') == std::wstring::npos ? DT_END_ELLIPSIS : DT_PATH_ELLIPSIS;
         canvas.Text(line, bounds, detailFormat | ellipsis, caption_);
         bounds.top = bounds.bottom + Scale(lineGap, dpi);
-    }
-    if (!content_.button.empty())
-    {
-        canvas.Fill(button_, foreground, hover_ == PopupPart::Button ? hoverOpacity : restOpacity, corner);
-        canvas.Text(content_.button, button_, labelFormat | DT_CENTER, font_);
     }
 }
 
@@ -364,9 +400,9 @@ PopupPart Popup::Part(POINT point) const
     {
         return PopupPart::Close;
     }
-    if (!content_.button.empty() && PtInRect(&button_, point))
+    if (!content_.menu.empty() && PtInRect(&more_, point))
     {
-        return PopupPart::Button;
+        return PopupPart::More;
     }
     return PopupPart::Body;
 }
@@ -430,15 +466,26 @@ LRESULT Popup::Handle(HWND window, UINT message, WPARAM first, LPARAM second)
     case WM_MOUSELEAVE:
         tracking_ = false;
         Hover(std::nullopt);
-        if (!content_.persistent)
-        {
-            SetTimer(window, closeTimer, Duration(), nullptr);
-        }
+        ScheduleClose();
         return 0;
     case WM_LBUTTONUP:
     {
         auto part = Part({GET_X_LPARAM(second), GET_Y_LPARAM(second)});
-        if (part != PopupPart::Close)
+        // The More button toggles its menu, which a click on this popup does
+        // not close, because the popup never takes the focus.
+        if (part == PopupPart::More)
+        {
+            if (menu_)
+            {
+                DestroyWindow(menu_);
+            }
+            else
+            {
+                OpenMenu();
+            }
+            return 0;
+        }
+        if (part == PopupPart::Body)
         {
             PostMessageW(owner_, selected_, static_cast<WPARAM>(part), 0);
         }
@@ -470,6 +517,219 @@ LRESULT Popup::Handle(HWND window, UINT message, WPARAM first, LPARAM second)
         hover_.reset();
         slideStart_ = 0;
         leaving_ = false;
+        break;
+    }
+    return DefWindowProcW(window, message, first, second);
+}
+
+// The menu opens above the More button, aligned to its right edge, as
+// Windows' own notification menu does, or below it when the work area leaves
+// no room above. It takes the focus, so Escape and a click elsewhere close it.
+void Popup::OpenMenu()
+{
+    auto dpi = GetDpiForWindow(window_);
+    auto device = GetDC(window_);
+    auto previous = SelectObject(device, font_);
+    auto measure = [device](std::wstring const& text)
+    {
+        RECT bounds{};
+        DrawTextW(device, text.c_str(), -1, &bounds, DT_CALCRECT | DT_SINGLELINE | DT_NOPREFIX);
+        return bounds.right;
+    };
+    auto widest = measure(content_.menuTitle);
+    for (auto const& item : content_.menu)
+    {
+        widest = std::max(widest, measure(item.text));
+    }
+    SelectObject(device, previous);
+    ReleaseDC(window_, device);
+    menuRow_ = Scale(menuRow, dpi);
+    auto width = widest + Scale(2 * menuPadding + 2 * menuInset, dpi) + MenuIconsWidth(dpi);
+    auto height = MenuItemsTop(dpi) + static_cast<int>(content_.menu.size()) * menuRow_ + Scale(menuPadding, dpi);
+    auto anchor = more_;
+    MapWindowPoints(window_, nullptr, reinterpret_cast<POINT*>(&anchor), 2);
+    auto work = Taskbar().rcWork;
+    auto x = std::max<LONG>(work.left, anchor.right - width);
+    auto y = anchor.top - Scale(menuGap, dpi) - height;
+    if (y < work.top)
+    {
+        y = anchor.bottom + Scale(menuGap, dpi);
+    }
+    // The frame styles keep DWM's rounded corners and shadow, as on the popup.
+    CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_TOPMOST, menuClass, productName, WS_POPUP | WS_CAPTION | WS_THICKFRAME,
+        x, y, width, height, window_, nullptr, GetModuleHandleW(nullptr), this);
+    if (!menu_)
+    {
+        return;
+    }
+    KillTimer(window_, closeTimer);
+    acrylic_.Apply(menu_, theme_);
+    ShowWindow(menu_, SW_SHOW);
+    SetForegroundWindow(menu_);
+    InvalidateRect(window_, nullptr, FALSE);
+}
+
+void Popup::PaintMenu(HWND window)
+{
+    Acrylic::Canvas canvas(acrylic_, window);
+    auto dpi = GetDpiForWindow(window);
+    auto padding = Scale(menuPadding, dpi);
+    auto inset = Scale(menuInset, dpi);
+    auto width = canvas.Bounds().right;
+    // The title lines up with the items' text, as in Windows' menu.
+    RECT title{padding + inset + MenuIconsWidth(dpi), padding, width - padding - inset, padding + menuRow_};
+    canvas.Text(content_.menuTitle, title, labelFormat, font_);
+    auto line = title.bottom + Scale(menuSeparator, dpi) / 2;
+    canvas.Fill({0, line, width, line + Scale(1, dpi)}, acrylic_.Foreground(), dividerOpacity, 0);
+    auto itemsTop = MenuItemsTop(dpi);
+    for (std::size_t index = 0; index < content_.menu.size(); ++index)
+    {
+        auto const& item = content_.menu[index];
+        auto top = itemsTop + static_cast<int>(index) * menuRow_;
+        RECT row{padding, top, width - padding, top + menuRow_};
+        if (menuHover_ == index)
+        {
+            canvas.Fill(row, acrylic_.Foreground(), hoverOpacity, Scale(radius, dpi));
+        }
+        auto left = row.left + inset;
+        if (hasIcons_)
+        {
+            RECT icon{left, row.top, left + Scale(menuIconSize, dpi), row.bottom};
+            canvas.Text(std::wstring(1, item.glyph), icon, DT_SINGLELINE | DT_CENTER | DT_VCENTER, icons_);
+        }
+        RECT text{left + MenuIconsWidth(dpi), row.top, row.right - inset, row.bottom};
+        canvas.Text(item.text, text, labelFormat, font_);
+    }
+}
+
+int Popup::MenuItemsTop(UINT dpi) const
+{
+    return Scale(menuPadding + menuSeparator, dpi) + menuRow_;
+}
+
+int Popup::MenuIconsWidth(UINT dpi) const
+{
+    return hasIcons_ ? Scale(menuIconSize + menuIconGap, dpi) : 0;
+}
+
+std::optional<std::size_t> Popup::MenuItemAt(POINT point) const
+{
+    RECT bounds{};
+    GetClientRect(menu_, &bounds);
+    auto dpi = GetDpiForWindow(menu_);
+    auto padding = Scale(menuPadding, dpi);
+    auto top = MenuItemsTop(dpi);
+    if (point.x < padding || point.x >= bounds.right - padding || point.y < top)
+    {
+        return std::nullopt;
+    }
+    auto item = static_cast<std::size_t>((point.y - top) / menuRow_);
+    if (item >= content_.menu.size())
+    {
+        return std::nullopt;
+    }
+    return item;
+}
+
+void Popup::HoverMenu(std::optional<std::size_t> item)
+{
+    if (item != menuHover_)
+    {
+        menuHover_ = item;
+        InvalidateRect(menu_, nullptr, FALSE);
+    }
+}
+
+void Popup::Choose(std::size_t item)
+{
+    PostMessageW(owner_, selected_, static_cast<WPARAM>(PopupPart::More), content_.menu[item].id);
+    Close();
+}
+
+LRESULT CALLBACK Popup::MenuProcedure(HWND window, UINT message, WPARAM first, LPARAM second)
+{
+    auto owner = reinterpret_cast<Popup*>(GetWindowLongPtrW(window, GWLP_USERDATA));
+    if (message == WM_NCCREATE)
+    {
+        owner = static_cast<Popup*>(reinterpret_cast<CREATESTRUCTW*>(second)->lpCreateParams);
+        owner->menu_ = window;
+        SetWindowLongPtrW(window, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(owner));
+    }
+    return owner ? owner->HandleMenu(window, message, first, second) :
+        DefWindowProcW(window, message, first, second);
+}
+
+LRESULT Popup::HandleMenu(HWND window, UINT message, WPARAM first, LPARAM second)
+{
+    switch (message)
+    {
+    case WM_MOUSEMOVE:
+    {
+        TRACKMOUSEEVENT track{sizeof(track), TME_LEAVE, window, 0};
+        TrackMouseEvent(&track);
+        HoverMenu(MenuItemAt({GET_X_LPARAM(second), GET_Y_LPARAM(second)}));
+        return 0;
+    }
+    case WM_MOUSELEAVE:
+        HoverMenu(std::nullopt);
+        return 0;
+    case WM_LBUTTONUP:
+        if (auto item = MenuItemAt({GET_X_LPARAM(second), GET_Y_LPARAM(second)}))
+        {
+            Choose(*item);
+        }
+        return 0;
+    case WM_KEYDOWN:
+    {
+        auto count = content_.menu.size();
+        if (first == VK_ESCAPE)
+        {
+            DestroyWindow(window);
+        }
+        else if (first == VK_DOWN)
+        {
+            HoverMenu(menuHover_ ? (*menuHover_ + 1) % count : 0);
+        }
+        else if (first == VK_UP)
+        {
+            HoverMenu(menuHover_ ? (*menuHover_ + count - 1) % count : count - 1);
+        }
+        else if ((first == VK_RETURN || first == VK_SPACE) && menuHover_)
+        {
+            Choose(*menuHover_);
+        }
+        return 0;
+    }
+    case WM_ACTIVATE:
+        // A click elsewhere closes the menu, as it closes Windows' own.
+        if (LOWORD(first) == WA_INACTIVE)
+        {
+            PostMessageW(window, WM_CLOSE, 0, 0);
+        }
+        break;
+    case WM_NCCALCSIZE:
+        return 0;
+    case WM_NCHITTEST:
+        return HTCLIENT;
+    case WM_ERASEBKGND:
+        return 0;
+    case WM_PAINT:
+        PaintMenu(window);
+        return 0;
+    case WM_SETTINGCHANGE:
+    case WM_SYSCOLORCHANGE:
+    case WM_THEMECHANGED:
+    case WM_DWMCOMPOSITIONCHANGED:
+        acrylic_.Apply(window, theme_);
+        return 0;
+    case WM_NCDESTROY:
+        menu_ = nullptr;
+        menuHover_.reset();
+        if (window_)
+        {
+            ScheduleClose();
+            InvalidateRect(window_, nullptr, FALSE);
+        }
         break;
     }
     return DefWindowProcW(window, message, first, second);

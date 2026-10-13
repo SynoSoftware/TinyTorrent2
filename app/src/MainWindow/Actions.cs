@@ -535,10 +535,15 @@ public sealed partial class MainWindow
                 dialog.AddOptOut(Model.FileDraft.Confirmation);
             }
             _fileDialog = content;
-            // Files that other torrents share add a block above the destination,
-            // so the dialog opens with the scope already read.
             if (initialize)
-                await Model.FileDraft.RefreshScope();
+            {
+                // Move needs the shared-file choices before it opens. Delete
+                // already has its selection and does not depend on this read.
+                if (action == FileAction.Move)
+                    await Model.FileDraft.RefreshScope();
+                else
+                    _ = Model.FileDraft.RefreshScope();
+            }
             try
             {
                 await ShowEditor(
@@ -626,6 +631,7 @@ public sealed partial class MainWindow
                 Glyph = Syno.Lucide.Route,
                 PrimaryGlyph = Syno.Lucide.Check,
             };
+            dialog.SizeToContent();
             await ShowEditor(
                 interaction,
                 dialog,

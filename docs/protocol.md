@@ -113,6 +113,9 @@ The same coherence, cancellation and payload bounds below apply to those reads.
 
 Start with complete summary snapshots while WinUI is open, and request only the
 visible detail section. Fetching files must not also fetch all peers and pieces.
+Pieces replies include a `wanted` boolean per piece, derived from the chosen
+non-padding files. A boundary piece shared with a wanted file remains wanted,
+so completion conclusions exclude skipped content without hiding required bytes.
 Publish a snapshot only when it is coherent and complete; no caller observes a
 copy another thread is still filling. Membership and application state form one
 consistent copy; transfer telemetry is sampled, not a promise to freeze every
@@ -139,6 +142,13 @@ they never hold the request slot for libtorrent. Missing values remain unknown,
 not zero or empty sets. The existing detail collector sends a complete fresh
 result on the same connection when its queries finish. Both messages carry the
 inspector context, and the pushed result also identifies its session and torrent.
+The immediate reply's readiness describes available facts, not completion of the
+fresh demand. PipeClient keeps background file reads behind that demand until
+its matching push arrives or the demand ends through failure, replacement,
+release or disconnect, so a Library read cannot replace Inspector's awaited update.
+PipeClient forwards only the current Inspector push to the window's coalesced
+detail update; background file results settle their own wait inside PipeClient,
+so they cannot overwrite an Inspector result awaiting the UI dispatcher.
 The window invalidates that context on command replies before applying later
 pushed data, so a queued pre-command result cannot overwrite a confirmed edit.
 Reads used by actions such as Open retain their complete-data replies because
@@ -160,7 +170,10 @@ accumulate behind a disconnected client. The `history` request accepts
 `torrent_id` to read that torrent's samples; an unknown or removed torrent is
 refused with `torrent_removed`. Without `torrent_id` it reads session totals for
 diagnostics. Both accept `range` as `five_minutes` or `day`; torrent replies
-include `torrent_id`. Speed history is engine state with its
+include `torrent_id`. Each sample carries its first and last observation times
+as `start` and `time`, and the observation `count` represented by its average.
+Consumers use those bounds to distinguish coarse samples from missing time and
+weight combined averages by represented observations. Speed history is engine state with its
 own [bound](engine.md#state-and-work), not data kept for a client, so it continues. Do not add field-level
 patches, replay logs, or another cache authority to avoid modest summary copies.
 Measure a real payload problem before replacing this design.

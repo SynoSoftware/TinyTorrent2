@@ -35,23 +35,22 @@
           />
         </TextBox.Header>
       </TextBox>
-      <NumberBox
+      <TextBox
         x:Name="Port"
-        Text="{x:Bind Proxy.Port, Mode=OneWay}"
+        InputScope="Number"
+        Text="{x:Bind Proxy.Port, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
         IsEnabled="{x:Bind Proxy.CanEditAddress, Mode=OneWay}"
-        ValidationMode="Disabled"
-        Loaded="OnPortLoaded"
         AutomationProperties.Name="{x:Bind Model.Text.Get('settings', 'proxy_port'), Mode=OneWay}"
         AutomationProperties.HelpText="{x:Bind Proxy.PortError, Mode=OneWay}"
         AutomationProperties.AutomationId="ProxyPort"
       >
-        <NumberBox.Header>
+        <TextBox.Header>
           <controls:FieldHeader
             Label="{x:Bind Model.Text.Get('settings', 'proxy_port'), Mode=OneWay}"
             Error="{x:Bind Proxy.PortError, Mode=OneWay}"
           />
-        </NumberBox.Header>
-      </NumberBox>
+        </TextBox.Header>
+      </TextBox>
       <!-- A disabled field shows no tooltip and passes the pointer to its
                  parent, so this panel says why SOCKS4 disables the fields. -->
       <StackPanel
@@ -78,6 +77,6 @@
         />
       </StackPanel>
     </StackPanel>
-    <controls:CheckStatus x:Name="Status" x:FieldModifier="internal" />
+    <controls:CheckStatus x:Name="Status" x:FieldModifier="internal" Width="280" />
   </Grid>
 </UserControl>

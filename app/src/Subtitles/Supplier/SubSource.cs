@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Net.Http;
+using System.Reflection;
 using System.Text.Json;
 using Syno.TinyTorrent.Models;
 using Syno.TinyTorrent.Services;
@@ -15,19 +16,22 @@ internal sealed partial class SubSource : Supplier
     internal override Uri Privacy { get; } = new("https://subsource.net/policy");
     internal override Uri Terms { get; } = new("https://subsource.net/terms");
     protected override IReadOnlyDictionary<string, string> Codes => LanguageCodes;
+    protected override string? BuiltInKey { get; } =
+        typeof(SubSource)
+            .Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
+            .FirstOrDefault(value => value.Key == "SubSourceKey")
+            ?.Value;
 
     protected override void Authenticate(HttpRequestMessage request, Account account) =>
-        request.Headers.Add("X-API-Key", account.Secret);
+        request.Headers.Add("X-API-Key", ApiKey(account));
 
-    internal override async Task Check(
-        ProviderHttp http,
-        Account account,
+    protected override async Task Check(
+        Operation operation,
         CancellationToken cancellation
     )
     {
         var response = await Get(
-                http,
-                account,
+                operation,
                 new Uri(
                     Origin,
                     "/api/v1/movies/search?searchType=text&q=TinyTorrentConnectionCheck"
@@ -40,8 +44,7 @@ internal sealed partial class SubSource : Supplier
     }
 
     protected override async Task<IReadOnlyList<SubtitleCandidate>> Search(
-        ProviderHttp http,
-        Account account,
+        Operation operation,
         SubtitleLookup lookup,
         Release release,
         string language,
@@ -53,7 +56,7 @@ internal sealed partial class SubSource : Supplier
             "/api/v1/movies/search?searchType=text&q=" + Uri.EscapeDataString(release.Title);
         if (release.Season is { } season)
             query += "&season=" + season.ToString(CultureInfo.InvariantCulture);
-        var response = await Get(http, account, new Uri(Origin, query), cancellation)
+        var response = await Get(operation, new Uri(Origin, query), cancellation)
             .ConfigureAwait(false);
         using var movies = Parse(response.Bytes);
         long? movieId = null;
@@ -81,7 +84,6 @@ internal sealed partial class SubSource : Supplier
 
         for (var page = 1; ; page++)
         {
-            await lookup.Validate(cancellation).ConfigureAwait(false);
             query =
                 "/api/v1/subtitles?movieId="
                 + movieId.Value.ToString(CultureInfo.InvariantCulture)
@@ -89,7 +91,7 @@ internal sealed partial class SubSource : Supplier
                 + Uri.EscapeDataString(language)
                 + "&sort=rating&limit=100&page="
                 + page.ToString(CultureInfo.InvariantCulture);
-            response = await Get(http, account, new Uri(Origin, query), cancellation)
+            response = await Get(operation, new Uri(Origin, query), cancellation)
                 .ConfigureAwait(false);
             using var subtitles = Parse(response.Bytes);
             foreach (var subtitle in Data(subtitles.RootElement).EnumerateArray())
@@ -132,16 +134,14 @@ internal sealed partial class SubSource : Supplier
         }
     }
 
-    internal override async Task<byte[]> Download(
-        ProviderHttp http,
-        Account account,
-        SubtitleLookup lookup,
+    protected override async Task<byte[]> Download(
+        Operation operation,
         SubtitleCandidate candidate,
         CancellationToken cancellation
     )
     {
         var download = new Uri(Origin, "/api/v1/subtitles/" + candidate.Reference + "/download");
-        var response = await Get(http, account, download, cancellation, ProviderHttp.FileLimit)
+        var response = await Get(operation, download, cancellation, ProviderHttp.FileLimit)
             .ConfigureAwait(false);
         if (!response.Bytes.AsSpan().StartsWith("PK"u8))
             throw new SubtitleException(SubtitleFailure.Format);

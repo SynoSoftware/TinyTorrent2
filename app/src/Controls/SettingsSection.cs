@@ -10,19 +10,11 @@ public sealed partial class SettingsSection : ContentControl
     public static readonly DependencyProperty GlyphProperty = Text(nameof(Glyph));
     public static readonly DependencyProperty HeaderProperty = Text(nameof(Header));
     public static readonly DependencyProperty DescriptionProperty = Text(nameof(Description));
-    public static readonly DependencyProperty HeaderActionProperty = DependencyProperty.Register(
-        nameof(HeaderAction),
-        typeof(UIElement),
-        typeof(SettingsSection),
-        new PropertyMetadata(null)
+    public static readonly DependencyProperty SummaryProperty = Text(nameof(Summary));
+    public static readonly DependencyProperty IsExpandedProperty = DependencyProperty.Register(
+        nameof(IsExpanded), typeof(bool), typeof(SettingsSection),
+        new PropertyMetadata(false, (section, _) => ((SettingsSection)section).RefreshSummary())
     );
-
-    public UIElement? HeaderAction
-    {
-        get => (UIElement?)GetValue(HeaderActionProperty);
-        set => SetValue(HeaderActionProperty, value);
-    }
-
     public string Glyph
     {
         get => (string)GetValue(GlyphProperty);
@@ -39,11 +31,50 @@ public sealed partial class SettingsSection : ContentControl
         set => SetValue(DescriptionProperty, value);
     }
 
+    public string Summary
+    {
+        get => (string)GetValue(SummaryProperty);
+        set => SetValue(SummaryProperty, value);
+    }
+
+    public bool IsExpanded
+    {
+        get => (bool)GetValue(IsExpandedProperty);
+        set => SetValue(IsExpandedProperty, value);
+    }
+
+    internal FrameworkElement Surface =>
+        GetTemplateChild("GroupCard") as FrameworkElement
+        ?? GetTemplateChild("SectionExpander") as FrameworkElement
+        ?? this;
+
+    protected override void OnApplyTemplate()
+    {
+        base.OnApplyTemplate();
+        RefreshSummary();
+    }
+
+    private void RefreshSummary()
+    {
+        if (GetTemplateChild("HeaderLayout") is Grid header)
+        {
+            header.ColumnDefinitions[0].Width = new GridLength(Glyph.Length == 0 ? 0 : 20);
+            header.ColumnSpacing = Glyph.Length == 0 ? 0 : 24;
+        }
+        if (GetTemplateChild("SummaryLabel") is TextBlock label)
+        {
+            label.Text = Description.Length > 0 ? Description : Summary;
+            label.Visibility = label.Text.Length > 0 && (!IsExpanded || Description.Length > 0)
+                ? Visibility.Visible : Visibility.Collapsed;
+            ToolTipService.SetToolTip(label, label.Text);
+        }
+    }
+
     private static DependencyProperty Text(string name) =>
         DependencyProperty.Register(
             name,
             typeof(string),
             typeof(SettingsSection),
-            new PropertyMetadata(string.Empty)
+            new PropertyMetadata(string.Empty, (section, _) => ((SettingsSection)section).RefreshSummary())
         );
 }

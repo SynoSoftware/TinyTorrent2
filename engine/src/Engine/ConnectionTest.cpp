@@ -204,8 +204,6 @@ void Engine::State::MaintainConnectionTest()
         }
         return;
     }
-    if (test.phase == ConnectionPhase::Stopping)
-        session->post_session_stats();
 }
 
 void Engine::State::ObserveConnectionTest(lt::session_stats_alert const& alert)
@@ -214,8 +212,6 @@ void Engine::State::ObserveConnectionTest(lt::session_stats_alert const& alert)
         return;
     static auto connected = lt::find_metric_idx("peer.num_peers_connected");
     static auto halfOpen = lt::find_metric_idx("peer.num_peers_half_open");
-    static auto sent = lt::find_metric_idx("net.sent_payload_bytes");
-    static auto received = lt::find_metric_idx("net.recv_payload_bytes");
     auto values = alert.counters();
     auto& test = *connectionTest;
     auto now = Clock::now();
@@ -224,12 +220,12 @@ void Engine::State::ObserveConnectionTest(lt::session_stats_alert const& alert)
         MaintainConnectionTest();
         return;
     }
-    if (values[connected] != 0 || values[halfOpen] != 0 || values[sent] != test.sent || values[received] != test.received)
+    if (values[connected] != 0 || values[halfOpen] != 0 || transferred.uploaded != test.sent || transferred.downloaded != test.received)
         test.quietSince.reset();
     else if (!test.quietSince)
         test.quietSince = now;
-    test.sent = values[sent];
-    test.received = values[received];
+    test.sent = transferred.uploaded;
+    test.received = transferred.downloaded;
     if (test.quietSince && now - *test.quietSince >= std::chrono::seconds(1))
         MeasureConnection(connectionTest);
 }
@@ -263,7 +259,7 @@ void Engine::State::MeasureConnection(std::shared_ptr<ConnectionTest> const& tes
             MaintainConnectionTest();
             return;
         }
-        if (!outcome.succeeded)
+        if (outcome.failure)
         {
             log.Write("connection_test", "", outcome.detail);
             test->failure = outcome.detail == "connection_test_timeout"

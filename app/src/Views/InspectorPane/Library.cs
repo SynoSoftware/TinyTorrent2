@@ -18,6 +18,9 @@ public sealed partial class InspectorPane
     private readonly SelectorBarItem _fileSection = new();
     private SelectorBarItem? _librarySection;
     private ICommand? _downloadSubtitles;
+    private Entry? _libraryEntry;
+    private bool _libraryFile;
+    private bool _libraryEnrichment;
 
     internal void ShowLibrary(LibraryBrowser? library, ICommand? downloadSubtitles)
     {
@@ -83,15 +86,26 @@ public sealed partial class InspectorPane
     {
         if (_library is not { } library)
             return;
+        if (args.PropertyName == nameof(LibraryBrowser.IsInspectorVisible))
+        {
+            if (library.IsInspectorVisible)
+                RefreshLibrary(rebuild: true);
+            else
+                ClearLibraryActions();
+            return;
+        }
+        if (!library.IsInspectorVisible)
+            return;
         if (args.PropertyName == nameof(LibraryBrowser.IsAvailable))
         {
             (_libraryContent?.Content as Details)?.RefreshCommands();
-            RefreshLibraryActions();
+            RefreshLibraryOrigins();
+            LibraryMore.IsEnabled = library.IsAvailable;
             return;
         }
         if (args.PropertyName == nameof(LibraryBrowser.Origins))
         {
-            RefreshLibraryActions();
+            RefreshLibraryOrigins();
             return;
         }
         if (args.PropertyName == nameof(LibraryBrowser.Message))
@@ -134,9 +148,9 @@ public sealed partial class InspectorPane
         }
     }
 
-    private void RefreshLibrary()
+    private void RefreshLibrary(bool rebuild = false)
     {
-        if (_library is not { } library || _libraryContent is null)
+        if (_library is not { IsInspectorVisible: true } library || _libraryContent is null)
             return;
         var text = library.Text;
         var row = library.Selected;
@@ -159,13 +173,22 @@ public sealed partial class InspectorPane
             library.CancelInformation();
         RefreshLibraryFailure();
         Retry.Command = library.Retry;
-        ClearLibraryContent();
-        RefreshLibraryActions();
-        _libraryContent.Content = new Details(
-            library,
-            ReferenceEquals(Sections.SelectedItem, _fileSection),
-            _libraryContent
-        );
+        var showsFile = ReferenceEquals(Sections.SelectedItem, _fileSection);
+        var targetChanged = _libraryEntry?.EntryId != row?.Entry.EntryId;
+        if (rebuild || targetChanged || LibraryMore.Flyout is null)
+            RefreshLibraryActions();
+        if (!rebuild && _libraryEntry == row?.Entry && _libraryFile == showsFile
+            && _libraryEnrichment == library.IsEnrichmentEnabled
+            && _libraryContent.Content is Details details)
+            details.Refresh(library);
+        else
+        {
+            ClearLibraryContent();
+            _libraryContent.Content = new Details(library, showsFile, _libraryContent);
+        }
+        _libraryEntry = row?.Entry;
+        _libraryFile = showsFile;
+        _libraryEnrichment = library.IsEnrichmentEnabled;
         _motion.CrossFade(row is null ? EmptyState : _libraryContent);
     }
 
@@ -180,7 +203,7 @@ public sealed partial class InspectorPane
         RefreshLibraryOpenTip();
         AutomationProperties.SetName(LibraryTorrents, text.Get("library", "show_torrents"));
         ToolTipService.SetToolTip(LibraryTorrents, text.Get("library", "show_torrents"));
-        OriginActions.Bind(LibraryTorrents, library);
+        RefreshLibraryOrigins();
         AutomationProperties.SetName(LibraryMore, text.Get("library", "more"));
         ToolTipService.SetToolTip(LibraryMore, text.Get("library", "more"));
         var more = new MenuFlyout();
@@ -217,6 +240,8 @@ public sealed partial class InspectorPane
         {
             var narrow = _libraryContent.ActualWidth < FieldColumns.WideMinimum;
             open.Visibility = narrow ? Visibility.Visible : Visibility.Collapsed;
+            var originIndex = more.Items.IndexOf(torrents);
+            more.Items[originIndex] = torrents = OriginActions.Create(library);
             torrents.Visibility = narrow ? Visibility.Visible : Visibility.Collapsed;
             // Providers and their availability can change after the menu is
             // built, so the submenu is built again each time it opens.
@@ -249,6 +274,20 @@ public sealed partial class InspectorPane
         more.Items.Add(removal);
         more.Items.Add(erase);
         LibraryMore.Flyout = more;
+        LibraryMore.IsEnabled = library.IsAvailable;
+    }
+
+    private void RefreshLibraryOrigins()
+    {
+        if (_library is not { IsInspectorVisible: true } library || LibraryTorrents.Flyout?.IsOpen == true)
+            return;
+        OriginActions.Bind(LibraryTorrents, library);
+        if (LibraryTorrents.Flyout is { } flyout)
+            flyout.Closed += (_, _) =>
+            {
+                if (ReferenceEquals(LibraryTorrents.Flyout, flyout))
+                    RefreshLibraryOrigins();
+            };
     }
 
     private void RefreshLibraryFailure()

@@ -31,6 +31,9 @@ constexpr std::pair<std::string_view, Command> commands[] = {
     {"pending_activations", Command::PendingActivations},
     {"activations_received", Command::ActivationsReceived},
     {"open", Command::Open},
+#ifdef _DEBUG
+    {"sample_notice", Command::SampleNotice},
+#endif
     {"exit", Command::Exit}};
 
 constexpr std::pair<std::string_view, CloseState> closeStates[] = {
@@ -233,6 +236,13 @@ Application::Application(std::filesystem::path directory, std::wstring sid, bool
     RegisterApplicationRestart(restart.c_str(), RESTART_NO_PATCH | RESTART_NO_REBOOT);
 }
 
+#ifdef _DEBUG
+void Application::ShowSampleNotice()
+{
+    showsSample_ = true;
+}
+#endif
+
 int Application::Run(bool background, std::vector<std::string> sources)
 {
     tray_->Add();
@@ -299,7 +309,14 @@ LRESULT Application::Handle(UINT message, WPARAM first, LPARAM second)
         OnTray(first, second);
         return 0;
     case notice:
-        OnNotice(static_cast<PopupPart>(first));
+        if (static_cast<PopupPart>(first) == PopupPart::More)
+        {
+            OnNoticeCommand(static_cast<NoticeCommand>(second));
+        }
+        else
+        {
+            OnNotice();
+        }
         return 0;
     case WM_TIMER:
         if (first == tickTimer)
@@ -382,26 +399,40 @@ void Application::OnTray(WPARAM first, LPARAM second)
     }
 }
 
-void Application::OnNotice(PopupPart part)
+void Application::OnNoticeCommand(NoticeCommand command)
 {
-    if (part == PopupPart::Button)
+    if (command == NoticeCommand::Settings)
     {
-        auto notices = tray_->TakeSwitch();
-        if (!notices)
+        OpenSettings("notifications");
+        return;
+    }
+    std::vector<NoticeSwitch> notices;
+    if (command == NoticeCommand::TurnOffAll)
+    {
+        notices = {NoticeSwitch::Finished, NoticeSwitch::Added, NoticeSwitch::Problems, NoticeSwitch::Background};
+    }
+    else
+    {
+        auto shown = tray_->TakeSwitch();
+        if (!shown)
         {
             return;
         }
-        engine_->TurnOff(*notices, [this](Outcome outcome)
-        {
-            if (outcome.error)
-            {
-                Notify({.kind = NoticeKind::Failure, .name = Utf8(productName),
-                    .detail = outcome.detail, .code = "notification"});
-            }
-            Refresh();
-        });
-        return;
+        notices = {*shown};
     }
+    engine_->TurnOff(notices, [this](Outcome outcome)
+    {
+        if (outcome.error)
+        {
+            Notify({.kind = NoticeKind::Failure, .name = Utf8(productName),
+                .detail = outcome.detail, .code = "notification"});
+        }
+        Refresh();
+    });
+}
+
+void Application::OnNotice()
+{
     auto shown = tray_->TakeNotice();
     if (!shown)
     {
@@ -409,13 +440,7 @@ void Application::OnNotice(PopupPart part)
     }
     if (shown->kind == NoticeKind::MissingProgram)
     {
-        // Set first, so a launch failure inside Open can clear it.
-        showsSettings_ = true;
-        if (!Open())
-        {
-            showsSettings_ = false;
-        }
-        ShowSettings();
+        OpenSettings("windows_integration");
         return;
     }
     // A completed torrent opens its folder; any other notice opens the window.
@@ -465,7 +490,7 @@ void Application::OnTimer()
             {
                 waitingSince_ = 0;
                 reopen_ = false;
-                showsSettings_ = false;
+                settingsCard_.reset();
                 splash_.Close();
                 ShowError("startup", std::to_wstring(code));
             }
@@ -479,7 +504,7 @@ void Application::OnTimer()
     {
         waitingSince_ = 0;
         reopen_ = false;
-        showsSettings_ = false;
+        settingsCard_.reset();
         if (!IsExiting() && exit_ != ExitPhase::WindowConfirming)
         {
             splash_.Close();
@@ -610,6 +635,12 @@ void Application::Receive(std::shared_ptr<Pipe::Connection> const& client, Json 
             reply(Success());
             Exit();
             break;
+#ifdef _DEBUG
+        case Command::SampleNotice:
+            ShowSampleNotice();
+            reply(Success());
+            break;
+#endif
         }
     }
     catch (Json::exception const& error)
@@ -851,7 +882,7 @@ bool Application::Open()
     {
         auto error = GetLastError();
         waitingSince_ = 0;
-        showsSettings_ = false;
+        settingsCard_.reset();
         splash_.Close();
         auto key = "launch";
         switch (error)
@@ -1080,6 +1111,15 @@ void Application::Tick()
     engine_->Tick();
     Refresh();
     AddSources();
+#ifdef _DEBUG
+    // The engine loads the transfers on this thread, and a popup shown before
+    // that ends stops responding until it does.
+    if (showsSample_ && !engine_->IsLoading())
+    {
+        showsSample_ = false;
+        tray_->ShowSample();
+    }
+#endif
     if (pendingStart_ && engine_->HasSettings())
     {
         pendingStart_ = false;
@@ -1254,7 +1294,10 @@ void Application::FinishSource(Outcome const& outcome, Added const& added)
         }
         else
         {
-            Notify({.kind = NoticeKind::AddFailed, .name = source, .detail = outcome.detail});
+            // The detail explains the failure; without one, such as when the
+            // engine is busy, the code's sentence does.
+            Notify({.kind = NoticeKind::AddFailed, .name = source, .detail = outcome.detail,
+                .code = outcome.detail.empty() ? ToString(*outcome.error) : ""});
         }
     }
     else
@@ -1309,14 +1352,23 @@ void Application::CheckPrograms()
     });
 }
 
-// Opens Settings in the window, where the person repairs handlers that start
-// a missing program; a window still opening receives it once it is ready.
+void Application::OpenSettings(std::string card)
+{
+    // Set first, so a launch failure inside Open can clear it.
+    settingsCard_ = std::move(card);
+    if (!Open())
+    {
+        settingsCard_.reset();
+    }
+    ShowSettings();
+}
+
 void Application::ShowSettings()
 {
-    if (showsSettings_ && windowClient_)
+    if (settingsCard_ && windowClient_)
     {
-        showsSettings_ = false;
-        windowClient_->Send(Json{{"type", "settings"}});
+        windowClient_->Send(Json{{"type", "settings"}, {"setting", *settingsCard_}});
+        settingsCard_.reset();
     }
 }
 

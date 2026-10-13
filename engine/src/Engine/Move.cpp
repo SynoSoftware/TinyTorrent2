@@ -76,12 +76,12 @@ void Engine::State::StartMove(std::vector<std::string> const& ids, std::string c
         document.torrents.at(id).moveDestination = destination;
     }
     move = std::move(moving);
-    changes.Commit(document.ToJson(), [this, accepted](StorageOutcome outcome)
+    changes.Commit(document.ToJson(), [this, accepted](Outcome outcome)
     {
-        if (!outcome.succeeded)
+        if (outcome.error)
         {
             move.reset();
-            accepted({ErrorCode::StorageFailed, outcome.detail});
+            accepted(std::move(outcome));
             return;
         }
         for (auto const& id : move->ids)
@@ -167,8 +167,9 @@ void Engine::State::PrepareMove()
         }
     }, [this, problem, existing](StorageOutcome outcome)
     {
-        if (!outcome.succeeded)
-            *problem = Problem{ProblemKind::MoveFailed, outcome.detail};
+        if (outcome.failure)
+            *problem = *outcome.failure == StorageFailure::Overloaded ?
+                Problem{ProblemKind::StorageOverloaded} : Problem{ProblemKind::MoveFailed, outcome.detail};
         if (*problem)
         {
             FailMove(**problem);
@@ -246,9 +247,9 @@ void Engine::State::FinishMove(lt::torrent_handle const& handle, std::optional<P
         *status = handle.status(lt::torrent_handle::query_save_path);
     }, [this, status, problem](StorageOutcome outcome)
     {
-        if (!outcome.succeeded || status->moving_storage)
+        if (outcome.failure || status->moving_storage)
         {
-            if (!outcome.succeeded)
+            if (outcome.failure)
                 log.Write("move", move->ids.at(move->current), outcome.detail);
             move->phase = MovePhase::Moving;
             RecoverMove();
@@ -287,11 +288,12 @@ void Engine::State::SaveMove()
                 moved(document.torrents.at(id));
             }
         }
-        changes.Commit(document.ToJson(), [this, moved](StorageOutcome outcome)
+        changes.Commit(document.ToJson(), [this, moved](Outcome outcome)
         {
-            if (!outcome.succeeded)
+            if (outcome.error)
             {
-                EndMove(Problem{ProblemKind::MoveFailed, outcome.detail});
+                EndMove(outcome.error == ErrorCode::Overloaded ?
+                    Problem{ProblemKind::StorageOverloaded} : Problem{ProblemKind::MoveFailed, outcome.detail});
                 return;
             }
             for (auto const& id : move->ids)
@@ -328,9 +330,9 @@ void Engine::State::FailMove(Problem problem)
                     document.torrents.at(id).moveDestination.clear();
                 }
             }
-            changes.Commit(document.ToJson(), [this, problem](StorageOutcome outcome)
+            changes.Commit(document.ToJson(), [this, problem](Outcome outcome)
             {
-                if (outcome.succeeded)
+                if (!outcome.error)
                 {
                     for (auto const& id : move->ids)
                     {

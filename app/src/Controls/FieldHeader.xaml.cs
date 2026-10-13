@@ -1,5 +1,6 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
+using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Controls;
 
 namespace Syno.TinyTorrent.Controls;
@@ -7,7 +8,6 @@ namespace Syno.TinyTorrent.Controls;
 public sealed partial class FieldHeader : UserControl
 {
     public static readonly DependencyProperty LabelProperty = Property(nameof(Label));
-    public static readonly DependencyProperty DescriptionProperty = Property(nameof(Description));
     public static readonly DependencyProperty ErrorProperty = Property(nameof(Error));
     public static readonly DependencyProperty CautionProperty = Property(nameof(Caution));
 
@@ -15,11 +15,6 @@ public sealed partial class FieldHeader : UserControl
     {
         get => (string)GetValue(LabelProperty);
         set => SetValue(LabelProperty, value);
-    }
-    public string Description
-    {
-        get => (string)GetValue(DescriptionProperty);
-        set => SetValue(DescriptionProperty, value);
     }
     public string Error
     {
@@ -48,6 +43,7 @@ public sealed partial class FieldHeader : UserControl
 
     private void Refresh()
     {
+        var previousError = ErrorRun.Text;
         LabelRun.Text = Label;
         ErrorRun.Text =
             Error.Length > 0 ? (Label.Length > 0 ? " · " : string.Empty) + Error : string.Empty;
@@ -70,7 +66,10 @@ public sealed partial class FieldHeader : UserControl
             new[] { Label, Error, Caution }.Where(value => value.Length > 0)
         );
         Visibility = text.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
-        ToolTipService.SetToolTip(Text, Description.Length > 0 ? Description : text);
+        ToolTipService.SetToolTip(Text, text);
         AutomationProperties.SetHelpText(this, text);
+        if (IsLoaded && Error.Length > 0 && ErrorRun.Text != previousError)
+            FrameworkElementAutomationPeer.CreatePeerForElement(Text)
+                ?.RaiseAutomationEvent(AutomationEvents.LiveRegionChanged);
     }
 }

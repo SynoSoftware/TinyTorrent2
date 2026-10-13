@@ -1,6 +1,7 @@
 #include "Engine/State.h"
 #include <algorithm>
 #include <climits>
+#include <system_error>
 
 namespace tt
 {
@@ -367,7 +368,7 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
         }
         Act(TorrentIds(request), reply, [this, mode](auto const& ids, Reply reply)
         {
-            Remove(ids, reply, true, mode == "recycle" ? DeletionMode::Recycle : DeletionMode::Permanent);
+            Remove(ids, reply, mode == "recycle" ? DeletionMode::Recycle : DeletionMode::Permanent);
         }, BusyFiles::Accepted);
         break;
     }
@@ -535,21 +536,21 @@ void Engine::State::Verify(std::vector<std::string> const& ids, Reply reply)
     reply(Success());
 }
 
-// Removes the torrents from the list. With deleteData it also deletes their
+// Removes the torrents from the list. With a mode it also deletes their
 // files; a torrent that CanRemove refuses leaves the list at once and is
 // removed when CanRemove allows it.
-void Engine::State::Remove(std::vector<std::string> const& ids, Reply reply, bool deleteData, DeletionMode mode)
+void Engine::State::Remove(std::vector<std::string> const& ids, Reply reply, std::optional<DeletionMode> mode)
 {
-    auto namesReady = !deleteData || NamesReady();
+    auto namesReady = !mode || NamesReady();
     std::vector<std::string> ready;
     std::vector<std::string> later;
     for (auto const& id : ids)
     {
-        (!deleteData || (namesReady && CanRemove(torrents.at(id))) ? ready : later).push_back(id);
+        (!mode || (namesReady && CanRemove(torrents.at(id))) ? ready : later).push_back(id);
     }
     Json kept = 0;
-    auto deletion = deleteData ? PrepareDeletion(ready, mode) : deletions.end();
-    if (deleteData)
+    auto deletion = PrepareDeletion(ready, mode);
+    if (mode)
     {
         kept = namesReady ? Json(FileScope(ids).kept.size()) : Json();
     }
@@ -558,16 +559,16 @@ void Engine::State::Remove(std::vector<std::string> const& ids, Reply reply, boo
     std::erase_if(document.torrents, [&removed](auto const& entry) { return removed(entry.first); });
     std::erase_if(document.queueOrder, removed);
     changes.Commit(document.ToJson(),
-        [this, ready, later, order = document.queueOrder, deletion, kept, reply, mode](StorageOutcome outcome)
+        [this, ready, later, order = document.queueOrder, deletion, kept, reply, mode](Outcome outcome)
     {
-        if (!outcome.succeeded)
+        if (outcome.error)
         {
             if (deletion != deletions.end())
             {
                 deletions.erase(deletion);
                 ContinueDeletion();
             }
-            reply(Failure(ErrorCode::StorageFailed, outcome.detail));
+            reply(Failure(*outcome.error, outcome.detail));
             return;
         }
         queueOrder = order;
@@ -576,7 +577,7 @@ void Engine::State::Remove(std::vector<std::string> const& ids, Reply reply, boo
         {
             auto& torrent = torrents.at(id);
             torrent.deleted = true;
-            torrent.deletionMode = mode;
+            torrent.deletionMode = *mode;
             torrent.ApplyIntent();
         }
         ContinueMove();
@@ -585,33 +586,45 @@ void Engine::State::Remove(std::vector<std::string> const& ids, Reply reply, boo
 }
 
 std::list<Engine::State::Deletion>::iterator Engine::State::PrepareDeletion(std::vector<std::string> const& ids,
-    DeletionMode mode)
+    std::optional<DeletionMode> mode)
 {
     if (ids.empty())
     {
         return deletions.end();
     }
-    auto scope = FileScope(ids);
     Deletion deleting;
     deleting.mode = mode;
-    deleting.holds = std::move(scope.holds);
-    for (auto const& file : scope.files)
+    if (mode)
     {
-        if (!std::binary_search(scope.kept.begin(), scope.kept.end(), file, PathBefore))
+        auto scope = FileScope(ids);
+        deleting.holds = std::move(scope.holds);
+        for (auto const& file : scope.files)
         {
-            deleting.files.push_back(file);
+            if (!std::binary_search(scope.kept.begin(), scope.kept.end(), file, PathBefore))
+                deleting.files.push_back(file);
         }
     }
     for (auto const& id : ids)
     {
         auto const& torrent = torrents.at(id);
-        deleting.roots.push_back(FullPath(Wide(torrent.facts.savePath)));
+        if (mode)
+            deleting.roots.push_back(FullPath(Wide(torrent.facts.savePath)));
+        else
+        {
+            for (auto logical : {false, true})
+            {
+                auto held = FilePaths(torrent, {}, logical);
+                deleting.holds.insert(deleting.holds.end(), held.begin(), held.end());
+            }
+        }
         if (!deleting.names.empty())
         {
             deleting.names += ", ";
         }
         deleting.names += torrent.Name();
     }
+    std::sort(deleting.holds.begin(), deleting.holds.end(), PathBefore);
+    deleting.holds.erase(std::unique(deleting.holds.begin(), deleting.holds.end(), SamePath), deleting.holds.end());
     return deletions.insert(deletions.end(), std::move(deleting));
 }
 
@@ -636,35 +649,38 @@ void Engine::State::RemoveHandles(std::vector<std::string> const& ids, std::list
         }
         if (!found->second.restore)
         {
-            if (deletion != deletions.end())
+            if (deletion->mode)
             {
                 session->remove_torrent(found->second.handle, lt::session::delete_partfile);
-                deletion->waiting.push_back(found->second.handle);
             }
             else
             {
                 session->remove_torrent(found->second.handle);
             }
+            deletion->waiting.push_back(found->second.handle);
             handles.erase(found->second.handle);
             seedQueries.erase(found->second.handle);
         }
         torrents.erase(found);
         files.push_back(ResumeFile(id));
     }
-    if (deletion != deletions.end())
-    {
-        deletion->phase = DeletionPhase::Waiting;
-        ContinueDeletion();
-    }
+    deletion->phase = DeletionPhase::Waiting;
+    ContinueDeletion();
     store.Run([files]
     {
+        std::error_code failure;
         for (auto const& file : files)
         {
-            std::filesystem::remove(file);
+            std::error_code error;
+            std::filesystem::remove(file, error);
+            if (error && !failure)
+                failure = error;
         }
+        if (failure)
+            throw std::system_error(failure);
     }, [this](StorageOutcome removed)
     {
-        if (!removed.succeeded)
+        if (removed.failure)
         {
             log.Write("remove", "", "metadata_cleanup_failed");
         }

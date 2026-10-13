@@ -13,7 +13,7 @@ public sealed class Schedule : INotifyPropertyChanged
     private Task? _saving;
     private Task? _changing;
     private (int Index, PeriodDraft Draft)? _open;
-    private Refusal? _refusal;
+    private RefusalReason? _refusal;
 
     public ReadOnlyCollection<SchedulePeriod> Periods { get; private set; } = new([]);
     public PeriodDraft? Draft => _open?.Draft;
@@ -42,19 +42,21 @@ public sealed class Schedule : INotifyPropertyChanged
             : FormatMode(mode);
 
     public bool FollowsSchedule => FixedMode is null;
+    public string TimelineHint => FixedMode is { } mode
+        ? Text.Format("settings", "fixed_schedule_hint", FormatFixedLimits(mode))
+        : Text.Get("settings", "timeline_hint");
     public bool CanSchedule => CanEdit && !IsPending && FollowsSchedule;
     public bool IsOpen => _open is not null;
     public bool HasAlternative => Periods.Any(period => period.Mode == ScheduleMode.Alternative);
-    public bool HasError => _refusal is not null;
+    public bool HasError => _refusal is RefusalReason.InvalidPeriod or RefusalReason.DuplicatePeriod;
     public string DaysMessage =>
-        _refusal?.Reason == RefusalReason.InvalidPeriod
+        _refusal == RefusalReason.InvalidPeriod
             ? Text.Get("settings", "invalid_period")
             : string.Empty;
     public string Message =>
         _refusal switch
         {
-            { Reason: RefusalReason.DuplicatePeriod } => Text.Get("settings", "duplicate_period"),
-            { Failure: { } failure } => Text.Error(failure),
+            RefusalReason.DuplicatePeriod => Text.Get("settings", "duplicate_period"),
             _ => string.Empty,
         };
     public string PeriodMessage => IsOpen ? Message : string.Empty;
@@ -62,8 +64,6 @@ public sealed class Schedule : INotifyPropertyChanged
     public Strings Text => _owner.Text;
     public event PropertyChangedEventHandler? PropertyChanged;
     public event EventHandler? TextChanged;
-
-    private sealed record Refusal(RefusalReason Reason, Exception? Failure = null);
 
     internal Schedule(Settings owner) => _owner = owner;
 
@@ -73,19 +73,25 @@ public sealed class Schedule : INotifyPropertyChanged
             .EnumerateArray()
             .Select(value => new SchedulePeriod(this, value))
             .ToArray();
-        if (
+        var changed = !(
             Periods.Count == values.Length
             && Periods.Zip(values).All(pair => pair.First.Matches(pair.Second))
-        )
-            return;
+        );
         // Adding or removing a period invalidates the open period's position.
         if (Periods.Count != values.Length)
         {
             _open = null;
             _refusal = null;
         }
-        Periods = Array.AsReadOnly(values);
-        Refresh();
+        if (changed)
+            Periods = Array.AsReadOnly(values);
+        if (_refusal == RefusalReason.SaveFailed && !HasDraft)
+        {
+            _refusal = null;
+            changed = true;
+        }
+        if (changed)
+            Refresh();
     }
 
     internal Task Open(SchedulePeriod period)
@@ -188,7 +194,7 @@ public sealed class Schedule : INotifyPropertyChanged
             _refusal = null;
             if (draft.Period is not { } period)
             {
-                _refusal = new(RefusalReason.InvalidPeriod);
+                _refusal = RefusalReason.InvalidPeriod;
                 Refresh();
                 return;
             }
@@ -198,27 +204,34 @@ public sealed class Schedule : INotifyPropertyChanged
                 return;
             }
             if (!await SubmitPeriod(period, Periods.IndexOf(open)))
+            {
+                if (ReferenceEquals(Draft, draft) && draft.Period?.Matches(period) != true)
+                {
+                    _refusal = null;
+                    if (_owner.CanSave)
+                        continue;
+                }
                 return;
+            }
         }
     }
 
-    // Leaving Settings keeps a period the schedule did not take on screen
-    // with its error, so the person never leaves believing it runs; a
-    // duplicate closes because the schedule already holds it. A departure
-    // waits for the save in progress and applies a change made during it, so
-    // a refusal never lands on a hidden page.
-    internal async Task<bool> Depart()
+    // Leaving Settings drops a refused duplicate (see the interface contract).
+    // The person can come back and edit during the waits, so the duplicate is
+    // cleared only while the same draft still holds the values that were refused.
+    internal async Task Depart()
     {
-        await Settle();
-        if (!HasDraft || !_owner.CanSave)
-            return true;
-        if (_refusal?.Reason == RefusalReason.DuplicatePeriod)
-        {
+        var draft = Draft;
+        var period = draft?.Period;
+        if (draft is not null && period is null)
             ClearDraft();
-            return true;
-        }
-        return _refusal?.Reason != RefusalReason.InvalidPeriod
-            && _refusal?.Failure is not CommandException;
+        while (_changing is { } changing)
+            await changing;
+        await Settle();
+        if (period is not null && ReferenceEquals(Draft, draft)
+            && draft?.Period is { } current && current.Matches(period)
+            && _refusal == RefusalReason.DuplicatePeriod)
+            ClearDraft();
     }
 
     private async Task Settle()
@@ -263,7 +276,7 @@ public sealed class Schedule : INotifyPropertyChanged
     {
         if (Periods.Where((_, candidate) => candidate != index).Any(value => value.Matches(period)))
         {
-            _refusal = new(RefusalReason.DuplicatePeriod);
+            _refusal = RefusalReason.DuplicatePeriod;
             Refresh();
             return false;
         }
@@ -296,7 +309,7 @@ public sealed class Schedule : INotifyPropertyChanged
 
     private async Task<bool> SubmitSchedule(IEnumerable<SchedulePeriod> periods)
     {
-        var saved = new TaskCompletionSource();
+        var saved = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         _saving = saved.Task;
         _refusal = null;
         Refresh();
@@ -317,7 +330,8 @@ public sealed class Schedule : INotifyPropertyChanged
         }
         catch (Exception error)
         {
-            _refusal = new(RefusalReason.SaveFailed, error);
+            _refusal = HasDraft ? RefusalReason.SaveFailed : null;
+            _owner.Report(error);
             return false;
         }
         finally
@@ -330,7 +344,6 @@ public sealed class Schedule : INotifyPropertyChanged
 
     internal void RefreshText()
     {
-        Refresh();
         Draft?.Refresh();
         TextChanged?.Invoke(this, EventArgs.Empty);
     }
@@ -450,6 +463,11 @@ public sealed class Schedule : INotifyPropertyChanged
             mode == ScheduleMode.Normal ? "speed" : mode.ToString().ToLowerInvariant()
         );
 
+    internal string Behavior(ScheduleMode mode) =>
+        mode == ScheduleMode.Alternative
+            ? FormatMode(mode) + " · " + _owner.AlternativeSummary
+            : mode == ScheduleMode.Paused ? Text.Get("settings", "pause_transfers") : FormatMode(mode);
+
     internal string DescribeDays(IReadOnlyList<int> days)
     {
         if (days.Count == 7)
@@ -473,7 +491,7 @@ public sealed class Schedule : INotifyPropertyChanged
     internal static int Weekday(DateTime time) => ((int)time.DayOfWeek + 6) % 7;
 
     internal static string Time(int minutes) =>
-        DateTime.Today.AddMinutes(minutes).ToString("t", CultureInfo.CurrentCulture);
+        DateTime.Today.AddMinutes(minutes).ToString("HH:mm", CultureInfo.CurrentCulture);
 }
 
 public sealed class SchedulePeriod
@@ -498,22 +516,16 @@ public sealed class SchedulePeriod
         : Span.Duration % 60 == 0 ? _owner.Text.Format("units", "hours", Span.Duration / 60)
         : _owner.Text.Format("units", "hours_minutes", Span.Duration / 60, Span.Duration % 60);
     public string TimeLabel => _owner.Text.Format("settings", "time_summary", TimeRange, Length);
+    public string When => _owner.DescribeDays(Days) + " · " + TimeLabel;
+    public string Behavior => _owner.Behavior(Mode);
     public string Description =>
-        Start == 0 && End == 0
-            ? _owner.Text.Format(
-                "settings",
-                "period_all_day",
-                _owner.DescribeDays(Days),
-                _owner.FormatMode(Mode)
-            )
-            : _owner.Text.Format(
-                "settings",
-                End <= Start ? "period_overnight" : "period",
-                _owner.DescribeDays(Days),
-                Schedule.Time(Start),
-                Schedule.Time(End),
-                _owner.FormatMode(Mode)
-            );
+        _owner.Text.Format(
+            "settings",
+            "period",
+            _owner.DescribeDays(Days),
+            TimeRange,
+            _owner.FormatMode(Mode)
+        );
     public string RemoveName => _owner.Text.Format("settings", "remove_period", Description);
 
     private SchedulePeriod(Schedule owner) => _owner = owner;

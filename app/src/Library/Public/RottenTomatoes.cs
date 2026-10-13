@@ -17,8 +17,13 @@ internal sealed class RottenTomatoes(IPageReader reader)
             ? path.TrimEnd('/')
             : null;
 
-    internal override IReadOnlyList<VideoChoice> Choices(string html) =>
-        Unique(
+    internal override IReadOnlyList<VideoChoice> Choices(string html)
+    {
+        // A page without the search element is not a search page, so finding
+        // no rows on it says nothing about whether the movie exists.
+        if (!html.Contains("<search-page-manager", StringComparison.OrdinalIgnoreCase))
+            throw Invalid();
+        return Unique(
             Regex
                 .Matches(
                     html,
@@ -62,6 +67,7 @@ internal sealed class RottenTomatoes(IPageReader reader)
                         );
                 })
         );
+    }
 
     protected override IEnumerable<VideoChoice?> Related(string html) =>
         Regex

@@ -13,6 +13,8 @@ public sealed partial class MainViewModel
     private bool _filtersCollapsed;
     internal Navigation Navigation { get; }
     public WindowPage Page => Navigation.Page;
+    public ICommand ReturnWorkspace => Navigation.Workspace == WindowPage.Library ? ShowLibrary : ShowTorrents;
+    public string ReturnText => Text.Get("settings", Navigation.Workspace == WindowPage.Library ? "return_library" : "return_torrents");
 
     private void RefreshNavigation()
     {
@@ -21,6 +23,8 @@ public sealed partial class MainViewModel
         RefreshInspector();
         Library.SetVisible(Page == WindowPage.Library);
         Changed(nameof(Page));
+        Changed(nameof(ReturnWorkspace));
+        Changed(nameof(ReturnText));
         Changed(nameof(Query));
         Changed(nameof(FilterStatus));
         Changed(nameof(HasFilter));

@@ -119,7 +119,7 @@ void Engine::State::PrepareFiles(Torrent& torrent)
         if (found == torrents.end())
             return;
         auto& torrent = found->second;
-        if (!outcome.succeeded)
+        if (outcome.failure)
         {
             torrent.namePhase = NamePhase::Pending;
             torrent.renameAt = std::chrono::steady_clock::now() + std::chrono::seconds(30);
@@ -283,7 +283,7 @@ void Engine::State::QueryFiles()
             if (found == torrents.end() || found->second.handle != observation.handle)
                 continue;
             auto& torrent = found->second;
-            if (!outcome.succeeded)
+            if (outcome.failure)
             {
                 torrent.renameAt = std::chrono::steady_clock::now() + std::chrono::seconds(30);
                 log.Write("files", torrent.torrentId, outcome.detail);
@@ -470,7 +470,7 @@ void Engine::State::ContinueRename()
         {
             auto const& owner = rename->owners.at(rename->current);
             auto& torrent = torrents.at(owner.torrentId);
-            if (!outcome.succeeded)
+            if (outcome.failure)
             {
                 torrent.renameAt = std::chrono::steady_clock::now() + std::chrono::seconds(30);
                 log.Write("rename", owner.torrentId, outcome.detail);
@@ -547,7 +547,7 @@ void Engine::State::ContinueRename()
                 throw std::runtime_error(std::to_string(GetLastError()));
         }, [this, complete](StorageOutcome outcome)
         {
-            if (!outcome.succeeded)
+            if (outcome.failure)
             {
                 auto const& id = rename->owners.front().torrentId;
                 torrents.at(id).renameAt = std::chrono::steady_clock::now() + std::chrono::seconds(30);
@@ -652,7 +652,7 @@ void Engine::State::On(lt::file_completed_alert const& alert)
             throw std::runtime_error(std::to_string(error));
     }, [this, id = torrent->torrentId, index = alert.index](StorageOutcome outcome)
     {
-        if (!outcome.succeeded)
+        if (outcome.failure)
             log.Write("mark_of_the_web", id, outcome.detail);
         if (auto found = torrents.find(id); found != torrents.end())
         {
@@ -959,19 +959,26 @@ std::vector<std::string> Engine::State::Holders(std::shared_ptr<lt::torrent_info
 
 void Engine::State::ContinueDeletion()
 {
-    // libtorrent destroys a removed torrent only after it releases the files,
-    // so a deletion whose alerts were lost waits for that instead.
+    // libtorrent destroys a removed torrent only after it releases the files.
+    // This also releases holds when disk-stop fails without posting an alert.
     for (auto& deletion : deletions)
     {
-        if (deletion.phase == DeletionPhase::Unknown)
+        if (deletion.phase == DeletionPhase::Unknown ||
+            (!deletion.mode && deletion.phase == DeletionPhase::Waiting))
         {
             std::erase_if(deletion.waiting, [](auto const& handle) { return !handle.is_valid(); });
         }
     }
+    auto released = [](Deletion const& deletion)
+    {
+        return deletion.waiting.empty() &&
+            (deletion.phase == DeletionPhase::Waiting || deletion.phase == DeletionPhase::Unknown);
+    };
+    // A removal that keeps the files has nothing to delete once they are released.
+    std::erase_if(deletions, [&released](auto const& deletion) { return !deletion.mode && released(deletion); });
     for (auto deletion = deletions.begin(); deletion != deletions.end(); ++deletion)
     {
-        if (deletion->waiting.empty() &&
-            (deletion->phase == DeletionPhase::Waiting || deletion->phase == DeletionPhase::Unknown))
+        if (released(*deletion))
         {
             // Another removed handle can still flush writes to a shared file.
             bool held = std::any_of(deletions.begin(), deletions.end(), [&deletion](auto const& other)
@@ -1078,10 +1085,12 @@ void Engine::State::Delete(std::list<Deletion>::iterator deletion)
         }
     }, [this, deletion](StorageOutcome outcome)
     {
-        if (!outcome.succeeded)
+        if (outcome.failure)
         {
-            log.Write("delete", "", outcome.detail);
-            Notify(NoticeKind::DeleteFailed, deletion->names, outcome.detail);
+            // A busy store refused the deletion before it began, so it has no detail.
+            std::string code = outcome.failure == StorageFailure::Overloaded ? ToString(ErrorCode::Overloaded) : "";
+            log.Write("delete", "", code.empty() ? outcome.detail : code);
+            Notify(NoticeKind::DeleteFailed, deletion->names, outcome.detail, {}, code);
         }
         deletions.erase(deletion);
     });
@@ -1092,6 +1101,18 @@ void Engine::State::On(lt::torrent_deleted_alert const& alert)
     for (auto& deletion : deletions)
     {
         std::erase(deletion.waiting, alert.handle);
+    }
+    ContinueDeletion();
+}
+
+void Engine::State::On(lt::torrent_removed_alert const& alert)
+{
+    for (auto& deletion : deletions)
+    {
+        // Ordinary Remove keeps the files, but holds their ownership until
+        // libtorrent's disk-stop callback has finished all outstanding writes.
+        if (!deletion.mode)
+            std::erase(deletion.waiting, alert.handle);
     }
     ContinueDeletion();
 }

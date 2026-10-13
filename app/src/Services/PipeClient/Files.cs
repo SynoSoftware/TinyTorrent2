@@ -114,11 +114,11 @@ internal sealed partial class PipeClient
     {
         if (command.Consumer != Consumer.Inspector)
             return;
+        // Readiness describes cached facts; the fresh push ends the demand.
         lock (_gate)
             if (
                 data.ValueKind != JsonValueKind.Object
-                || !data.TryGetProperty("ready", out var ready)
-                || ready.GetBoolean()
+                || !data.TryGetProperty("ready", out _)
             )
                 EndInspector();
     }
@@ -128,23 +128,27 @@ internal sealed partial class PipeClient
         var context = message.GetProperty("context").GetInt64();
         lock (_gate)
         {
-            if (_inspectorContext == context)
-                EndInspector();
-            if (
-                _files is not { } pending
-                || pending.Context != context
-                || message.GetProperty("torrent_id").GetString() != pending.TorrentId
-            )
+            if (_inspectorContext != context)
+            {
+                if (
+                    _files is not { } pending
+                    || pending.Context != context
+                    || message.GetProperty("torrent_id").GetString() != pending.TorrentId
+                )
+                    return;
+                try
+                {
+                    pending.Completion.TrySetResult(ReadOutcome(message, _strings, "torrent"));
+                }
+                catch (CommandException error)
+                {
+                    pending.Completion.TrySetException(error);
+                }
                 return;
-            try
-            {
-                pending.Completion.TrySetResult(ReadOutcome(message, _strings, "torrent"));
             }
-            catch (CommandException error)
-            {
-                pending.Completion.TrySetException(error);
-            }
+            EndInspector();
         }
+        Detail?.Invoke(message);
     }
 
     private void EndFiles()

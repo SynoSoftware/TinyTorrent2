@@ -28,7 +28,8 @@ public sealed class Torrent(string torrentId, Strings strings) : INotifyProperty
     public int Queue { get; private set; }
     public bool IsQueued => Queue >= 0;
     public int QueueOrder => IsQueued ? Queue : int.MaxValue;
-    public long Added { get; private set; }
+    public DateTimeOffset? Added { get; private set; }
+    public DateTimeOffset? CompletedOn { get; private set; }
     public string[] Hashes { get; private set; } = [];
     public bool Sequential { get; private set; }
     public bool FirstLast { get; private set; }
@@ -96,22 +97,21 @@ public sealed class Torrent(string torrentId, Strings strings) : INotifyProperty
     public string SeedsName => strings.Format("inspector", "swarm", SeedCount, SwarmSeedCount);
     public string PeersName =>
         strings.Format("inspector", "swarm", LeecherCount, SwarmLeecherCount);
-    public string AddedText =>
-        Added <= 0 ? "—" : strings.Ago(DateTimeOffset.FromUnixTimeSeconds(Added));
-    public string? AddedTip =>
-        Added <= 0 ? null : strings.Time(DateTimeOffset.FromUnixTimeSeconds(Added));
+    public string AddedText => Ago(Added);
+    public string? AddedTip => Time(Added);
+    public string CompletedOnText => Ago(CompletedOn);
+    public string? CompletedOnTip => Time(CompletedOn);
     public string QueueText => IsQueued ? (Queue + 1).ToString(CultureInfo.CurrentCulture) : "—";
 
-    // The limits that are set, such as "↓ 500 KiB/s"; empty without one.
+    // The limits that are set, such as "↓ 0.5 MB/s"; empty without one.
     public string LimitText => Limits(string.Empty);
 
     // LimitText in words, because Narrator reads the arrows as arrows.
     public string LimitName => Limits("spoken_");
 
-    private string Limit(int limit) =>
-        limit > 0
-            ? strings.Format("units", "rate", strings.Bytes(limit))
-            : strings.Get("transfer_limits", "unlimited");
+    private string Ago(DateTimeOffset? moment) => moment is { } at ? strings.Ago(at) : "—";
+
+    private string? Time(DateTimeOffset? moment) => moment is { } at ? strings.Time(at) : null;
 
     private string Limits(string style) =>
         (DownloadLimit > 0, UploadLimit > 0) switch
@@ -119,15 +119,19 @@ public sealed class Torrent(string torrentId, Strings strings) : INotifyProperty
             (true, true) => strings.Format(
                 "speed_limit",
                 style + "both",
-                Limit(DownloadLimit),
-                Limit(UploadLimit)
+                strings.SpeedLimit(DownloadLimit),
+                strings.SpeedLimit(UploadLimit)
             ),
             (true, false) => strings.Format(
                 "speed_limit",
                 style + "download",
-                Limit(DownloadLimit)
+                strings.SpeedLimit(DownloadLimit)
             ),
-            (false, true) => strings.Format("speed_limit", style + "upload", Limit(UploadLimit)),
+            (false, true) => strings.Format(
+                "speed_limit",
+                style + "upload",
+                strings.SpeedLimit(UploadLimit)
+            ),
             _ => string.Empty,
         };
 
@@ -161,7 +165,8 @@ public sealed class Torrent(string torrentId, Strings strings) : INotifyProperty
         SwarmSeedCount = row.GetProperty("swarm_seed_count").GetInt32();
         SwarmLeecherCount = row.GetProperty("swarm_leecher_count").GetInt32();
         Queue = row.GetProperty("queue").GetInt32();
-        Added = row.GetProperty("added").GetInt64();
+        Added = Moment(row.GetProperty("added"));
+        CompletedOn = Moment(row.GetProperty("completed_on"));
         Hashes = row.GetProperty("hashes")
             .EnumerateArray()
             .Select(hash => hash.GetString()!)
@@ -177,5 +182,12 @@ public sealed class Torrent(string torrentId, Strings strings) : INotifyProperty
         ErrorCode = row.GetProperty("error").GetString()!;
         ErrorDetail = row.GetProperty("detail").GetString()!;
         RefreshText();
+    }
+
+    // The engine sends 0 for a time it does not have.
+    private static DateTimeOffset? Moment(JsonElement value)
+    {
+        var seconds = value.GetInt64();
+        return seconds > 0 ? DateTimeOffset.FromUnixTimeSeconds(seconds) : null;
     }
 }

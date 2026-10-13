@@ -7,38 +7,32 @@
   xmlns:icons="using:Syno"
 >
   <StackPanel>
-    <local:SettingsRow
-      x:Name="PeriodError"
-      Header="{x:Bind Model.Text.Get('settings', 'period_mode'), Mode=OneWay}"
-      Error="{x:Bind Model.PeriodMessage, Mode=OneWay}"
-    >
-      <ComboBox
-        x:Name="PeriodMode"
-        Width="{x:Bind StartTime.ActualWidth, Mode=OneWay}"
+    <Grid ColumnSpacing="16" Padding="0,8">
+      <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+      <local:FieldHeader x:Name="PeriodError" VerticalAlignment="Center"
+        Label="{x:Bind Model.Text.Get('settings', 'period_mode'), Mode=OneWay}"
+        Error="{x:Bind Model.PeriodMessage, Mode=OneWay}" />
+      <RadioButtons x:Name="PeriodMode" Grid.Column="1" MaxColumns="2" HorizontalAlignment="Left"
         SelectedIndex="{x:Bind Model.Draft.ModeIndex, Mode=TwoWay, FallbackValue=0}"
         IsEnabled="{x:Bind Model.CanEdit, Mode=OneWay}"
         AutomationProperties.Name="{x:Bind Model.Text.Get('settings', 'period_mode'), Mode=OneWay}"
-        AutomationProperties.AutomationId="PeriodMode"
-      >
-        <ComboBoxItem
-          Content="{x:Bind Model.Text.Get('settings', 'alternative'), Mode=OneWay}"
-          AutomationProperties.AutomationId="AlternativeMode"
-        />
-        <ComboBoxItem
-          Content="{x:Bind Model.Text.Get('settings', 'paused'), Mode=OneWay}"
-          AutomationProperties.AutomationId="PausedMode"
-        />
-      </ComboBox>
-    </local:SettingsRow>
-    <local:SettingsRow
-      x:Name="DaysRow"
-      Header="{x:Bind Model.Text.Get('settings', 'days'), Mode=OneWay}"
-      Error="{x:Bind Model.DaysMessage, Mode=OneWay}"
-    >
-      <ContentControl IsEnabled="{x:Bind Model.CanEdit, Mode=OneWay}" IsTabStop="False">
+        AutomationProperties.AutomationId="PeriodMode">
+        <RadioButton Content="{x:Bind Model.Text.Get('settings', 'alternative'), Mode=OneWay}"
+          AutomationProperties.AutomationId="AlternativeMode" />
+        <RadioButton Content="{x:Bind Model.Text.Get('settings', 'pause_transfers'), Mode=OneWay}"
+          AutomationProperties.AutomationId="PausedMode" />
+      </RadioButtons>
+    </Grid>
+    <Grid ColumnSpacing="16" Padding="0,8">
+      <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+      <local:FieldHeader x:Name="DaysRow" VerticalAlignment="Center"
+        Label="{x:Bind Model.Text.Get('settings', 'days'), Mode=OneWay}"
+        Error="{x:Bind Model.DaysMessage, Mode=OneWay}" />
+      <ContentControl Grid.Column="1" HorizontalAlignment="Left" HorizontalContentAlignment="Stretch"
+        IsEnabled="{x:Bind Model.CanEdit, Mode=OneWay}" IsTabStop="False">
         <ItemsRepeater ItemsSource="{x:Bind Model.Draft.Days, Mode=OneWay}">
           <ItemsRepeater.Layout>
-            <StackLayout Orientation="Horizontal" Spacing="12" />
+            <UniformGridLayout Orientation="Horizontal" MinItemWidth="72" MinItemHeight="40" MaximumRowsOrColumns="7" />
           </ItemsRepeater.Layout>
           <ItemsRepeater.ItemTemplate>
             <DataTemplate x:DataType="views:DayChoice">
@@ -54,35 +48,40 @@
           </ItemsRepeater.ItemTemplate>
         </ItemsRepeater>
       </ContentControl>
-    </local:SettingsRow>
-    <local:SettingsRow Header="{x:Bind Model.Text.Get('settings', 'start_time'), Mode=OneWay}">
-      <TimePicker
-        x:Name="StartTime"
-        SelectedTime="{x:Bind Model.Draft.Start, Mode=TwoWay}"
-        IsEnabled="{x:Bind Model.CanEdit, Mode=OneWay}"
-        AutomationProperties.Name="{x:Bind Model.Text.Get('settings', 'start_time'), Mode=OneWay}"
-        AutomationProperties.AutomationId="PeriodStart"
-      />
-    </local:SettingsRow>
-    <local:SettingsRow Header="{x:Bind Model.Text.Get('settings', 'end_time'), Mode=OneWay}">
-      <TimePicker
-        x:Name="EndTime"
-        SelectedTime="{x:Bind Model.Draft.End, Mode=TwoWay}"
-        IsEnabled="{x:Bind Model.CanEdit, Mode=OneWay}"
-        AutomationProperties.Name="{x:Bind Model.Text.Get('settings', 'end_time'), Mode=OneWay}"
-        AutomationProperties.AutomationId="PeriodEnd"
-      />
-    </local:SettingsRow>
-    <local:SettingsRow Header="{x:Bind Model.Draft.Duration, Mode=OneWay}">
-      <local:ActionButton
+    </Grid>
+    <Grid x:Name="Times" ColumnSpacing="16" Padding="0,16" SizeChanged="OnTimesSize">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="*" />
+      </Grid.ColumnDefinitions>
+      <Grid.RowDefinitions>
+        <RowDefinition Height="Auto" />
+      </Grid.RowDefinitions>
+      <StackPanel x:Name="StartPair" Orientation="Horizontal" Spacing="8">
+        <TextBlock VerticalAlignment="Center" Text="{x:Bind Model.Text.Get('settings', 'start_time'), Mode=OneWay}" />
+        <TimePicker x:Name="StartTime" ClockIdentifier="24HourClock" HorizontalAlignment="Stretch"
+          SelectedTime="{x:Bind Model.Draft.Start, Mode=TwoWay}"
+          IsEnabled="{x:Bind Model.CanEdit, Mode=OneWay}"
+          AutomationProperties.Name="{x:Bind Model.Text.Get('settings', 'start_time'), Mode=OneWay}"
+          AutomationProperties.AutomationId="PeriodStart" />
+      </StackPanel>
+      <StackPanel x:Name="EndPair" Grid.Column="1" Orientation="Horizontal" Spacing="8">
+        <TextBlock VerticalAlignment="Center" Text="{x:Bind Model.Text.Get('settings', 'end_time'), Mode=OneWay}" />
+        <TimePicker x:Name="EndTime" ClockIdentifier="24HourClock" HorizontalAlignment="Stretch"
+          SelectedTime="{x:Bind Model.Draft.End, Mode=TwoWay}"
+          IsEnabled="{x:Bind Model.CanEdit, Mode=OneWay}"
+          AutomationProperties.Name="{x:Bind Model.Text.Get('settings', 'end_time'), Mode=OneWay}"
+          AutomationProperties.AutomationId="PeriodEnd" />
+      </StackPanel>
+      <local:ActionButton x:Name="Remove" Grid.Column="2" HorizontalAlignment="Right" VerticalAlignment="Bottom"
         Glyph="{x:Bind icons:Lucide.Trash2}"
         Text="{x:Bind Model.Text.Get('settings', 'remove'), Mode=OneWay}"
         IsEnabled="{x:Bind Model.CanEdit, Mode=OneWay}"
         ToolTipService.ToolTip="{x:Bind Model.OpenPeriod.RemoveName, Mode=OneWay}"
         Click="OnRemove"
         AutomationProperties.Name="{x:Bind Model.OpenPeriod.RemoveName, Mode=OneWay}"
-        AutomationProperties.AutomationId="RemovePeriod"
-      />
-    </local:SettingsRow>
+        AutomationProperties.AutomationId="RemovePeriod" />
+    </Grid>
   </StackPanel>
 </UserControl>

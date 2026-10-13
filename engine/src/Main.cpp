@@ -63,6 +63,9 @@ int WINAPI wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ PWSTR, _In_ int)
         int count = 0;
         auto arguments = CommandLineToArgvW(GetCommandLineW(), &count);
         bool background = false;
+#ifdef _DEBUG
+        bool notice = false;
+#endif
         bool exiting = false;
         bool literal = false;
         std::string registration;
@@ -108,6 +111,13 @@ int WINAPI wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ PWSTR, _In_ int)
                 }
                 directory = arguments[index];
             }
+#ifdef _DEBUG
+            else if (!literal && argument == tt::option::notice)
+            {
+                notice = true;
+                background = true;
+            }
+#endif
             else if (!literal && argument == tt::option::repairClass)
             {
                 if (++index == count)
@@ -199,6 +209,14 @@ int WINAPI wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ PWSTR, _In_ int)
             {
                 forwarding = tt::Pipe::Forward(sid, {{"command", "activate_sources"}, {"sources", sources}});
             }
+#ifdef _DEBUG
+            // The running engine shows the sample, as it takes another
+            // launch's sources.
+            else if (notice)
+            {
+                forwarding = tt::Pipe::Forward(sid, {{"command", "sample_notice"}});
+            }
+#endif
             else if (!background && !headless)
             {
                 forwarding = tt::Pipe::Forward(sid);
@@ -269,6 +287,12 @@ int WINAPI wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ PWSTR, _In_ int)
                 tt::Registration().Repair();
             }
             tt::desktop::Application application(directory, sid, headless);
+#ifdef _DEBUG
+            if (notice)
+            {
+                application.ShowSampleNotice();
+            }
+#endif
             result = application.Run(background, std::move(sources));
         }
         ReleaseMutex(mutex.get());

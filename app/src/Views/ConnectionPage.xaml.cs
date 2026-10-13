@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
@@ -13,6 +14,7 @@ public sealed partial class ConnectionPage : UserControl
     private bool _composing;
     public ConnectionSetup Model { get; }
     public event EventHandler? ReturnRequested;
+    internal event EventHandler? ParentRequested;
 
     public ConnectionPage(ConnectionSetup model)
     {
@@ -27,10 +29,16 @@ public sealed partial class ConnectionPage : UserControl
         KeyDown += OnApplyKey;
         Loaded += (_, _) =>
         {
+            Model.PropertyChanged += OnModel;
+            RefreshHierarchy();
             _display.TextScaleFactorChanged += OnTextScale;
             UpdateColumns();
         };
-        Unloaded += (_, _) => _display.TextScaleFactorChanged -= OnTextScale;
+        Unloaded += (_, _) =>
+        {
+            Model.PropertyChanged -= OnModel;
+            _display.TextScaleFactorChanged -= OnTextScale;
+        };
     }
 
     public static FontWeight Weight(bool changed) =>
@@ -39,7 +47,22 @@ public sealed partial class ConnectionPage : UserControl
     public static Visibility Hidden(bool visible) =>
         visible ? Visibility.Collapsed : Visibility.Visible;
 
-    internal void FocusInput() => Download.Focus(FocusState.Programmatic);
+    internal void FocusHeading() => Hierarchy.Focus(FocusState.Programmatic);
+
+    private void OnModel(object? sender, PropertyChangedEventArgs args) => RefreshHierarchy();
+
+    private void RefreshHierarchy()
+    {
+        var labels = new[] { Model.Text.Get("settings", "limits"), Model.Text.Get("connection_setup", "title") };
+        if (Hierarchy.ItemsSource is not string[] current || !current.SequenceEqual(labels))
+            Hierarchy.ItemsSource = labels;
+    }
+
+    private void OnHierarchy(BreadcrumbBar sender, BreadcrumbBarItemClickedEventArgs args)
+    {
+        if (args.Index == 0)
+            ParentRequested?.Invoke(this, EventArgs.Empty);
+    }
 
     private async void OnTest(object sender, RoutedEventArgs args) => await Model.Test();
 
@@ -55,7 +78,7 @@ public sealed partial class ConnectionPage : UserControl
     {
         var scale = _display.TextScaleFactor;
         TestActions.Width = 120 * scale;
-        StatusArea.Height = 44 * scale;
+        StatusArea.Height = 24 * scale;
         var stacked = Body.ActualWidth < 880 * scale;
         InputColumn.Width = stacked
             ? new GridLength(1, GridUnitType.Star)

@@ -242,7 +242,8 @@ public sealed partial class Table
     {
         if (_hierarchy is not null && _sortColumn is null)
             return (snapshot, _held);
-        IReadOnlyList<object> shown = Hold(snapshot);
+        var (shown, held, released) = Hold(snapshot);
+        DateTimeOffset now = DateTimeOffset.UtcNow;
 
         // Natural order belongs to the host, which reorders when it means to, and the row-order
         // column shows that same order, so holding it would delay the person's own reorder; an
@@ -250,17 +251,12 @@ public sealed partial class Table
         // for none of this.
         if (_sortColumn is null || SortsOrder || _view.Count == 0 || _sortInterval == TimeSpan.Zero)
         {
-            IReadOnlyList<object> order = SortedSnapshot(shown, _sortColumn, _sortDirection);
-            _orderSettledAt = DateTimeOffset.UtcNow;
-            return Pin(order);
+            return Finish(SortedSnapshot(shown, _sortColumn, _sortDirection), settled: true);
         }
 
-        DateTimeOffset now = DateTimeOffset.UtcNow;
         if (now - _orderSettledAt >= _sortInterval)
         {
-            IReadOnlyList<object> order = SortedSnapshot(shown, _sortColumn, _sortDirection);
-            _orderSettledAt = now;
-            return Pin(order);
+            return Finish(SortedSnapshot(shown, _sortColumn, _sortDirection), settled: true);
         }
 
         // The base sequence, not the sorted one: a kept update keeps the order the view already
@@ -272,15 +268,27 @@ public sealed partial class Table
         // A membership change the hold let through is never kept back, so it is also never
         // settled: KeptOrder returns null for one, and the sorted order is what the arriving row
         // needs anyway.
-        if (KeptOrder(shown) is not List<object> kept)
+        if (KeptOrder(shown, held) is not List<object> kept)
         {
-            IReadOnlyList<object> order = SortedSnapshot(shown, _sortColumn, _sortDirection);
-            _orderSettledAt = now;
-            return Pin(order);
+            return Finish(SortedSnapshot(shown, _sortColumn, _sortDirection), settled: true);
         }
 
-        ScheduleSettle(_sortInterval - (now - _orderSettledAt));
-        return Pin(kept);
+        return Finish(kept, settled: false);
+
+        (IReadOnlyList<object> Order, IReadOnlySet<object> Pinned) Finish(
+            IReadOnlyList<object> order,
+            bool settled
+        )
+        {
+            var result = Pin(order, held);
+            // A failed comparison must not consume a release or change held-row interactivity.
+            AcceptHold(held, released);
+            if (settled)
+                _orderSettledAt = now;
+            else
+                ScheduleSettle(_sortInterval - (now - _orderSettledAt));
+            return result;
+        }
     }
 
     /// <summary>
@@ -348,9 +356,9 @@ public sealed partial class Table
     /// nothing about membership removes the merge, the cost and the arbitrary placement together.
     /// </para>
     /// </remarks>
-    private List<object>? KeptOrder(IReadOnlyList<object> shown)
+    private List<object>? KeptOrder(IReadOnlyList<object> shown, IReadOnlySet<object> held)
     {
-        if (shown.Count + _held.Count != _view.Count)
+        if (shown.Count + held.Count != _view.Count)
         {
             return null;
         }
@@ -367,7 +375,7 @@ public sealed partial class Table
         List<object> order = new(shown.Count);
         foreach (object row in _view)
         {
-            if (_held.Contains(row))
+            if (held.Contains(row))
             {
                 continue;
             }
@@ -402,46 +410,5 @@ public sealed partial class Table
         }
 
         return column.Column.Sort!(snapshot, direction).ToList();
-    }
-
-    /// <summary>
-    /// Section 18's defensive sort restoration. The saved sort applies only when its column is
-    /// currently sortable, visible once the saved visibility has been applied, and its direction
-    /// is one of the two valid values; anything else, a missing ID included, is natural order. A
-    /// hidden column is refused for section 9's reason: the header is the only place a sort shows
-    /// or is changed, so a sort by a hidden column is one the user could neither see nor undo.
-    /// </summary>
-    /// <returns>True when the effective sort is not the one that was already in force.</returns>
-    private bool RestoreSort(ColumnLayout state, Dictionary<string, EffectiveColumn> byId)
-    {
-        EffectiveColumn? previousColumn = _sortColumn;
-        SortDirection previousDirection = _sortDirection;
-
-        _sortColumn = null;
-        _sortDirection = SortDirection.Ascending;
-
-        if (
-            state.SortColumnId is string id
-            && byId.TryGetValue(id, out EffectiveColumn? column)
-            && column.Column.CanSort
-            && column.IsVisible
-            && Enum.IsDefined(state.SortDirection)
-        )
-        {
-            _sortColumn = column;
-            _sortDirection = state.SortDirection;
-        }
-
-        bool moved =
-            !ReferenceEquals(previousColumn, _sortColumn)
-            || (_sortColumn is not null && previousDirection != _sortDirection);
-
-        if (moved)
-        {
-            // A restored sort is a new order the host asked for, not a drift of the old one.
-            _orderSettledAt = DateTimeOffset.MinValue;
-        }
-
-        return moved;
     }
 }

@@ -285,7 +285,7 @@ public sealed partial class MainWindow
         var editor = _settingsPage is null
             ? null
             : CaptureElements(_settingsPage)
-                .OfType<NumberBox>()
+                .OfType<TextBox>()
                 .SingleOrDefault(control => ReferenceEquals(control.Tag, port));
         var focus = FocusManager.GetFocusedElement(Root.XamlRoot) as DependencyObject;
         while (focus is not null && !ReferenceEquals(focus, editor))

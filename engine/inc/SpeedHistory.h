@@ -19,6 +19,9 @@ private:
         std::int64_t time = 0;
         double download = 0;
         double upload = 0;
+        // The first sample's time and the number of samples in the point.
+        std::int64_t start = 0;
+        int count = 0;
     };
 
     struct Range
@@ -28,10 +31,9 @@ private:
         int interval;
         std::deque<Point> points;
         Point bucket;
-        int count = 0;
 
         void Configure(int value);
-        void Sample(Point sample);
+        void Sample(std::int64_t time, double download, double upload);
         void Finish();
         Point Average() const;
         void Prune(std::int64_t time);

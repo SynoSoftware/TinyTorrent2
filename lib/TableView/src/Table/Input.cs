@@ -986,30 +986,33 @@ public sealed partial class Table
 
     private bool MoveCurrentBy(int delta, bool extend, bool ctrl)
     {
-        List<object> interactive = InteractiveItems();
-        if (interactive.Count == 0)
+        SyncSelectionPolicy();
+        int index = IndexInView(_selection.Current);
+        if (index < 0)
+            return MoveCurrentToEdge(delta > 0, extend, ctrl);
+        int target = index;
+        int step = Math.Sign(delta);
+        int remaining = Math.Abs(delta);
+        while (remaining > 0 && index + step >= 0 && index + step < View.Count)
         {
-            return false;
+            index += step;
+            if (!_selection.IsInteractive(View[index]))
+                continue;
+            target = index;
+            remaining--;
         }
-
-        int index = IndexOfCurrent(interactive);
-        int target =
-            index < 0
-                ? (delta > 0 ? 0 : interactive.Count - 1)
-                : Math.Clamp(index + delta, 0, interactive.Count - 1);
-
-        return MoveCurrentTo(interactive[target], extend, ctrl);
+        return MoveCurrentTo(View[target], extend, ctrl);
     }
 
     private bool MoveCurrentToEdge(bool first, bool extend, bool ctrl)
     {
-        List<object> interactive = InteractiveItems();
-        if (interactive.Count == 0)
+        SyncSelectionPolicy();
+        for (int index = first ? 0 : View.Count - 1; index >= 0 && index < View.Count; index += first ? 1 : -1)
         {
-            return false;
+            if (_selection.IsInteractive(View[index]))
+                return MoveCurrentTo(View[index], extend, ctrl);
         }
-
-        return MoveCurrentTo(first ? interactive[0] : interactive[^1], extend, ctrl);
+        return false;
     }
 
     private bool MoveCurrentTo(object item, bool extend, bool ctrl)
@@ -1072,35 +1075,6 @@ public sealed partial class Table
 
         ItemInvoked?.Invoke(this, new ItemInvokedEventArgs(item, SelectedItems));
         return true;
-    }
-
-    private List<object> InteractiveItems()
-    {
-        SyncSelectionPolicy();
-
-        List<object> interactive = new();
-        foreach (object item in View)
-        {
-            if (_selection.IsInteractive(item))
-            {
-                interactive.Add(item);
-            }
-        }
-
-        return interactive;
-    }
-
-    private int IndexOfCurrent(List<object> interactive)
-    {
-        for (int i = 0; i < interactive.Count; i++)
-        {
-            if (_selection.IsSame(interactive[i], _selection.Current))
-            {
-                return i;
-            }
-        }
-
-        return -1;
     }
 
     private int RowsPerPage()

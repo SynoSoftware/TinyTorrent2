@@ -133,9 +133,9 @@ void Engine::State::Add(Preview& preview, Addition::Choices choices, std::functi
             auto found = additions.find(id);
             if (found == additions.end())
                 return;
-            if (!outcome.succeeded)
+            if (outcome.failure)
             {
-                Abandon(id, {ErrorCode::AddFailed, outcome.detail});
+                Abandon(id, outcome.ToOutcome(ErrorCode::AddFailed));
                 return;
             }
             auto& addition = found->second;
@@ -173,9 +173,9 @@ void Engine::State::PrepareAddition(std::string const& id, lt::torrent_handle ha
         auto found = additions.find(id);
         if (found == additions.end() || found->second.phase != AdditionPhase::Naming)
             return;
-        if (!outcome.succeeded)
+        if (outcome.failure)
         {
-            Abandon(id, {ErrorCode::AddFailed, outcome.detail});
+            Abandon(id, outcome.ToOutcome(ErrorCode::AddFailed));
             return;
         }
         auto& addition = found->second;
@@ -251,11 +251,11 @@ void Engine::State::RecordWatch(std::string source, std::string stamp, std::func
         }
         auto document = Saved();
         document.watchedSources[source] = stamp;
-        changes.Commit(document.ToJson(), [this, source, stamp, completion](StorageOutcome outcome)
+        changes.Commit(document.ToJson(), [this, source, stamp, completion](Outcome outcome)
         {
-            if (!outcome.succeeded)
+            if (outcome.error)
             {
-                completion({ErrorCode::StorageFailed, outcome.detail});
+                completion(std::move(outcome));
                 return;
             }
             watchedSources[source] = stamp;
@@ -276,10 +276,10 @@ void Engine::State::SaveAddition(std::string id, lt::torrent_handle handle)
     params.userdata = lt::client_data_t{};
     WriteResume(id, std::move(params), [this, id](StorageOutcome outcome)
     {
-        if (!outcome.succeeded)
+        if (outcome.failure)
         {
             log.Write("add", id, "storage_failed");
-            Abandon(id, {ErrorCode::StorageFailed, outcome.detail});
+            Abandon(id, outcome.ToOutcome(ErrorCode::StorageFailed));
             return;
         }
         if (!changes.Queue([this, id] { CommitAddition(id); }))
@@ -307,11 +307,11 @@ void Engine::State::CommitAddition(std::string const& id)
         document.queueOrder.push_back(id);
     }
     changes.Commit(document.ToJson(), [this, id, order = document.queueOrder,
-        folder = document.settings.lastFolder, watched = document.watchedSources](StorageOutcome outcome)
+        folder = document.settings.lastFolder, watched = document.watchedSources](Outcome outcome)
     {
-        if (!outcome.succeeded)
+        if (outcome.error)
         {
-            Abandon(id, {ErrorCode::StorageFailed, outcome.detail});
+            Abandon(id, std::move(outcome));
             return;
         }
         auto found = additions.find(id);
@@ -345,7 +345,7 @@ void Engine::State::Abandon(std::string id, Outcome outcome, Added added)
         store.Run([file = ResumeFile(id)] { std::filesystem::remove(file); },
             [this, id](StorageOutcome removed)
         {
-            if (!removed.succeeded)
+            if (removed.failure)
             {
                 log.Write("add", id, "metadata_cleanup_failed");
             }
@@ -453,7 +453,7 @@ void Engine::State::RecoverAdditions()
             auto& addition = found->second;
             if (observation.phase == AdditionPhase::Adding)
                 addition.handle = observation.handle;
-            if (!outcome.succeeded || !observation.handle.is_valid())
+            if (outcome.failure || !observation.handle.is_valid())
             {
                 Abandon(observation.id, {ErrorCode::RecoveryRequired, outcome.detail});
                 continue;

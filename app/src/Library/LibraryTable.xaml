@@ -62,7 +62,7 @@
     </DataTemplate>
     <DataTemplate x:Key="Year" x:DataType="local:LibraryRow">
       <TextBlock
-        Text="{x:Bind Year, Mode=OneWay}"
+        Text="{x:Bind YearCell, Mode=OneWay}"
         Style="{StaticResource TinyTorrentBodyTextStyle}"
       />
     </DataTemplate>
@@ -89,13 +89,13 @@
     </DataTemplate>
     <DataTemplate x:Key="Genres" x:DataType="local:LibraryRow">
       <TextBlock
-        Text="{x:Bind Genres, Mode=OneWay}"
+        Text="{x:Bind GenresCell, Mode=OneWay}"
         Style="{StaticResource TinyTorrentBodyTextStyle}"
       />
     </DataTemplate>
     <DataTemplate x:Key="Cast" x:DataType="local:LibraryRow">
       <TextBlock
-        Text="{x:Bind Cast, Mode=OneWay}"
+        Text="{x:Bind CastCell, Mode=OneWay}"
         Style="{StaticResource TinyTorrentBodyTextStyle}"
       />
     </DataTemplate>

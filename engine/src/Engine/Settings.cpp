@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <climits>
 #include <cmath>
+#include <expected>
 
 namespace tt
 {
@@ -51,7 +52,6 @@ constexpr char destination[] = "default_destination";
 constexpr char lastFolder[] = "last_folder";
 constexpr char startsDownload[] = "starts_download";
 constexpr char queueTop[] = "queue_top";
-constexpr char preallocates[] = "preallocate";
 constexpr char usesLastFolder[] = "use_last_folder";
 constexpr char additionFolder[] = "addition_destination";
 constexpr char startsPaused[] = "start_paused";
@@ -186,20 +186,18 @@ bool IsHistoryInterval(Json const& value)
 }
 
 // The password is encrypted for the current Windows user, so a copy of
-// settings.json does not reveal it. When encryption fails, the file holds no
-// password, because every save writes the settings and an exception would end
-// the engine in the middle of one.
-std::string Protect(std::string const& secret)
+// settings.json does not reveal it.
+std::expected<std::string, Outcome> Protect(std::string const& secret)
 {
     if (secret.empty())
     {
-        return {};
+        return std::string();
     }
     DATA_BLOB input{static_cast<DWORD>(secret.size()), reinterpret_cast<BYTE*>(const_cast<char*>(secret.data()))};
     DATA_BLOB output{};
     if (!CryptProtectData(&input, nullptr, nullptr, nullptr, nullptr, CRYPTPROTECT_UI_FORBIDDEN, &output))
     {
-        return {};
+        return std::unexpected(Outcome{ErrorCode::EncryptionFailed, "CryptProtectData: " + std::to_string(GetLastError())});
     }
     std::string bytes(reinterpret_cast<char const*>(output.pbData), output.cbData);
     LocalFree(output.pbData);
@@ -319,7 +317,6 @@ Json Engine::State::Settings::ToJson() const
         {setting::lastFolder, lastFolder},
         {setting::startsDownload, startsDownload},
         {setting::queueTop, queueTop},
-        {setting::preallocates, preallocates},
         {setting::usesLastFolder, usesLastFolder},
         {setting::additionFolder, AdditionFolder()},
         {setting::startsPaused, startsPaused},
@@ -410,7 +407,7 @@ Json Engine::State::Settings::ToFile() const
 {
     auto values = ToJson();
     values.erase(setting::additionFolder);
-    values[setting::proxyPassword] = Protect(proxy.password);
+    values[setting::proxyPassword] = encryptedPassword;
     return values;
 }
 
@@ -428,7 +425,6 @@ void Engine::State::Settings::Read(Json const& saved)
     }
     startsDownload = ReadSaved(saved, setting::startsDownload, startsDownload);
     queueTop = ReadSaved(saved, setting::queueTop, queueTop);
-    preallocates = ReadSaved(saved, setting::preallocates, preallocates);
     usesLastFolder = ReadSaved(saved, setting::usesLastFolder, usesLastFolder);
     startsPaused = ReadSaved(saved, setting::startsPaused, startsPaused);
     raisesAdd = ReadSaved(saved, setting::raisesAdd, raisesAdd);
@@ -544,7 +540,11 @@ void Engine::State::Settings::Read(Json const& saved)
     {
         proxy.username = std::move(name);
     }
-    proxy.password = Unprotect(ReadSaved(saved, setting::proxyPassword, std::string()));
+    auto encrypted = ReadSaved(saved, setting::proxyPassword, std::string());
+    proxy.password = Unprotect(encrypted);
+    // Only a password it could decrypt keeps its encryption, so the file
+    // always holds the password the engine uses.
+    encryptedPassword = proxy.password.empty() ? std::string() : std::move(encrypted);
     if (auto found = saved.find(setting::ratio); found != saved.end() && IsRatio(*found))
     {
         ratio = found->get<double>();
@@ -625,10 +625,6 @@ std::optional<Engine::State::Settings> Engine::State::Settings::With(Json const&
         else if (key == setting::queueTop && value.is_boolean())
         {
             next.queueTop = value;
-        }
-        else if (key == setting::preallocates && value.is_boolean())
-        {
-            next.preallocates = value;
         }
         else if (key == setting::usesLastFolder && value.is_boolean())
         {
@@ -1009,13 +1005,23 @@ void Engine::State::Configure(Json const& choices, std::function<void(Outcome)> 
             finish();
             return;
         }
+        if (next.proxy.password != settings.proxy.password)
+        {
+            auto encrypted = Protect(next.proxy.password);
+            if (!encrypted)
+            {
+                completion(std::move(encrypted.error()));
+                return;
+            }
+            next.encryptedPassword = std::move(*encrypted);
+        }
         auto document = Saved();
         document.settings = next;
-        changes.Commit(document.ToJson(), [this, next = document.settings, finish, completion](StorageOutcome outcome)
+        changes.Commit(document.ToJson(), [this, next = document.settings, finish, completion](Outcome outcome)
         {
-            if (!outcome.succeeded)
+            if (outcome.error)
             {
-                completion({ErrorCode::StorageFailed, outcome.detail});
+                completion(std::move(outcome));
                 return;
             }
             bool routeChanged = settings.proxy != next.proxy || settings.networkAdapter != next.networkAdapter;
@@ -1090,11 +1096,11 @@ void Engine::State::PauseSession(bool paused, std::function<void(Outcome)> compl
         }
         auto document = Saved();
         document.settings.allPaused = paused;
-        changes.Commit(document.ToJson(), [this, paused, finish, completion](StorageOutcome outcome)
+        changes.Commit(document.ToJson(), [this, paused, finish, completion](Outcome outcome)
         {
-            if (!outcome.succeeded)
+            if (outcome.error)
             {
-                completion({ErrorCode::StorageFailed, outcome.detail});
+                completion(std::move(outcome));
                 return;
             }
             settings.allPaused = paused;
@@ -1112,11 +1118,11 @@ void Engine::State::RecordPrograms(std::vector<std::string> programs, std::funct
     {
         auto document = Saved();
         document.settings.reportedPrograms = programs;
-        changes.Commit(document.ToJson(), [this, programs, completion](StorageOutcome outcome)
+        changes.Commit(document.ToJson(), [this, programs, completion](Outcome outcome)
         {
-            if (!outcome.succeeded)
+            if (outcome.error)
             {
-                completion({ErrorCode::StorageFailed, outcome.detail});
+                completion(std::move(outcome));
                 return;
             }
             settings.reportedPrograms = programs;

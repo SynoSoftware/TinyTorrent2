@@ -15,6 +15,11 @@ here so moving a topic does not require renaming its links.
 | 7 | [Testing](testing.md) | Which evidence earns its cost and what it establishes. |
 | 8 | [Naming and structure](naming.md) | Names and placement of types, files, folders, namespaces, and resource keys. |
 
+The [architecture follow-up](architecture.md#architecture-follow-up) records
+settled ownership and deferred design choices. GitHub issues own actionable work,
+implementation status and remaining acceptance criteria; local review artifacts
+are not a second backlog.
+
 The [selected refactoring plan](architecture/proposed/README.md) preserves
 the architecture reviews and delivery decisions at that checkpoint. The active
 contracts above remain the authority for product behavior.
@@ -42,6 +47,15 @@ The completed [Library implementation plan](library-implementation.md) records t
 Library and subtitles share one window-lifetime SQLite owner. The
 [database contract](database.md) owns schema initialization, versioning,
 connection lifetime and the rationale for durable and reconstructed state.
+
+The [request protection proposal](request-protection.md) reviews Library and
+subtitle flood prevention and designs shared suppression, pacing and user reset.
+It is a design for review, not an implemented feature or a replacement for the
+active contracts.
+
+The [IMDb datasets plan](imdb-datasets.md) designs a Library provider that
+reads IMDb's downloadable datasets from a local SQLite file. It is also a design
+for review.
 
 For TableView work, continue with the [table glossary](../lib/TableView/CONTEXT.md),
 [TableView contract](../lib/TableView/docs/tableview-contract.md), and

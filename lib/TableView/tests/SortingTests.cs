@@ -35,6 +35,85 @@ internal sealed class SortRow
 public class SortingTests
 {
     [TestMethod]
+    public Task FailedLayoutComparisonPreservesAcceptedState() =>
+        TestHost.RunAsync(async () =>
+        {
+            SortHarness h = await SortHarness.LoadAsync(
+                new[] { 3, 1, 2 },
+                configure: table =>
+                {
+                    table.Schema<SortRow>().SortKey<int>(
+                        table.Columns[1],
+                        _ => throw new InvalidOperationException("Unavailable sort key")
+                    );
+                    table.Layout = TestData.Layout(
+                        visibility: new Dictionary<string, bool> { ["b"] = false },
+                        sortColumnId: "a"
+                    );
+                }
+            );
+            h.Table.Selection = new(new object[] { h.Rows[0] });
+            TableHarness.SetWidth(h.Table, "a", 230);
+            int layouts = 0;
+            int selections = 0;
+            h.Table.LayoutChanged += (_, _) => layouts++;
+            h.Table.SelectionChanged += (_, _) => selections++;
+
+            Expect.Throws<InvalidOperationException>(() =>
+                h.Table.Layout = TestData.Layout(order: new[] { "b", "c", "a" }, sortColumnId: "b")
+            );
+
+            CollectionAssert.AreEqual(new[] { "a", "b", "c" }, TableHarness.Order(h.Table));
+            CollectionAssert.AreEqual(new[] { "k1", "k2", "k0" }, h.ViewKeys());
+            Assert.IsFalse(TableHarness.IsVisible(h.Table, "b"));
+            Assert.AreEqual(230d, TableHarness.EffectiveWidth(h.Table, "a"));
+            Assert.AreEqual("a", h.Table.Layout.SortColumnId);
+            Assert.AreSame(h.Rows[0], h.Table.Selection.Current);
+            Assert.AreEqual(0, layouts);
+            Assert.AreEqual(0, selections);
+        });
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public Task FailedReleaseCanRecoverThroughSortWithoutReleasingLaterArrivals(bool restore) =>
+        TestHost.RunAsync(async () =>
+        {
+            bool fails = false;
+            SortHarness h = await SortHarness.LoadAsync(
+                new[] { 1, 2, 3 },
+                sortableColumns: 2,
+                configure: table =>
+                {
+                    table.Schema<SortRow>().SortKey(
+                        table.Columns[0],
+                        row => fails ? throw new InvalidOperationException("Unavailable sort key") : row.Rank
+                    );
+                    table.SortInterval = TimeSpan.Zero;
+                    table.Sort = new(table.Columns[0]);
+                }
+            );
+            SortRow removed = h.Rows[0];
+            Proof.Call(h.Table, "PointAt", h.Rows[1]);
+            h.Rows.Remove(removed);
+            fails = true;
+
+            Expect.Throws<InvalidOperationException>(() => h.Table.Release(new object[] { removed }));
+
+            CollectionAssert.AreEqual(new[] { "k0", "k1", "k2" }, h.ViewKeys());
+            Assert.IsTrue((bool)Proof.Call(h.Table, "IsHeld", removed)!);
+            if (restore)
+                h.Table.Layout = TestData.Layout(sortColumnId: "b");
+            else
+                h.Table.Sort = new(h.Table.Columns[1]);
+            CollectionAssert.AreEqual(new[] { "k1", "k2" }, h.ViewKeys());
+            Assert.IsFalse((bool)Proof.Call(h.Table, "IsHeld", removed)!);
+
+            h.Rows.Add(new SortRow("arrival", 4));
+            CollectionAssert.AreEqual(new[] { "k1", "k2" }, h.ViewKeys());
+        });
+
+    [TestMethod]
     public Task InitialStateResolvesTogetherWithTheLatestSort() =>
         TestHost.RunAsync(async () =>
         {

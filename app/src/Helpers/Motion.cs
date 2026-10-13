@@ -12,6 +12,7 @@ internal sealed class Motion
     private readonly Storyboard _storyboard = new();
     private FrameworkElement? _outgoing;
     internal FrameworkElement? Current { get; private set; }
+    internal bool IsActive => _storyboard.GetCurrentState() == ClockState.Active;
 
     internal Motion() => _storyboard.Completed += (_, _) => Stop();
 
@@ -19,6 +20,16 @@ internal sealed class Motion
         Change(content, direction, false);
 
     internal void CrossFade(FrameworkElement content) => Change(content, 1, true);
+
+    internal void Replace(FrameworkElement content)
+    {
+        var previous = Current;
+        Stop();
+        Current = content;
+        content.Visibility = Visibility.Visible;
+        if (previous is not null && !ReferenceEquals(previous, content))
+            previous.Visibility = Visibility.Collapsed;
+    }
 
     private void Change(FrameworkElement content, int direction, bool crossFade)
     {

@@ -22,6 +22,7 @@ internal sealed partial class Details : UserControl, IDisposable
     private double _columnWidth = double.NaN;
     private double _columnScale = double.NaN;
     private double _columnHeight;
+    private readonly List<System.Action> _refresh = [];
 
     internal Details(Browser library, bool showsFile, ScrollViewer viewport)
     {
@@ -45,58 +46,79 @@ internal sealed partial class Details : UserControl, IDisposable
                 Lucide.Folder,
                 Action(Lucide.FolderOpen, text.Get("commands", "open_folder"), library.OpenFolder)
             );
-            foreach (var origin in library.Origins)
+            var origins = new StackPanel();
+            left.Children.Add(origins);
+            IReadOnlyList<Origin>? shownOrigins = null;
+            _refresh.Add(() =>
             {
-                var show = Action(
-                    Lucide.LocateFixed,
-                    text.Get("library", "show_torrents"),
-                    new RelayCommand(
-                        () =>
+                if (shownOrigins is not null && shownOrigins.SequenceEqual(library.Origins))
+                    return;
+                foreach (var field in origins.Children.OfType<Field>())
+                    if (field.Action is Button button)
+                    {
+                        button.Command = null;
+                        _actions.Remove(button);
+                    }
+                origins.Children.Clear();
+                shownOrigins = library.Origins.ToArray();
+                foreach (var origin in shownOrigins)
+                {
+                    var show = Action(
+                        Lucide.LocateFixed,
+                        text.Get("library", "show_torrents"),
+                        new RelayCommand(
+                            () =>
+                            {
+                                library.ShowTorrent(origin.OriginId);
+                                return Task.CompletedTask;
+                            },
+                            () => library.IsAvailable
+                        )
+                    );
+                    origins.Children.Add(
+                        new Field
                         {
-                            library.ShowTorrent(origin.OriginId);
-                            return Task.CompletedTask;
-                        },
-                        () => library.IsAvailable
-                    )
-                );
-                left.Children.Add(
-                    new Field
-                    {
-                        Label = text.Get("menus", "torrent"),
-                        Glyph = Lucide.LocateFixed,
-                        Content = Value(origin.Name),
-                        Action = show,
-                    }
-                );
-            }
+                            Label = text.Get("menus", "torrent"),
+                            Glyph = Lucide.LocateFixed,
+                            Content = Value(origin.Name),
+                            Action = show,
+                        }
+                    );
+                }
+            });
             AddField(right, "size", row.Size, Lucide.HardDrive);
-            AddField(right, "file_type", library.FileType, row.Glyph);
-            var application = AddField(
-                right,
-                "opens_with",
-                library.Application.Length > 0 ? library.Application
-                    : library.FileType.Length > 0 ? text.Get("library", "no_application")
-                    : string.Empty,
-                Lucide.Play
-            );
-            if (application is not null && library.ApplicationIcon is { } icon)
+            var fileType = new Field
             {
-                var associated = new Grid { ColumnSpacing = 8 };
-                associated.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-                associated.ColumnDefinitions.Add(new ColumnDefinition());
-                associated.Children.Add(
-                    new Image
-                    {
-                        Source = icon,
-                        Width = 20,
-                        Height = 20,
-                    }
-                );
-                var name = Value(library.Application);
-                Grid.SetColumn(name, 1);
-                associated.Children.Add(name);
-                application.Content = associated;
-            }
+                Label = text.Get("library", "file_type"),
+                Glyph = row.Glyph,
+                Content = Value(string.Empty),
+            };
+            right.Children.Add(fileType);
+            var associated = new Grid { ColumnSpacing = 8 };
+            associated.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            associated.ColumnDefinitions.Add(new ColumnDefinition());
+            var icon = new Image { Width = 20, Height = 20 };
+            associated.Children.Add(icon);
+            var name = Value(string.Empty);
+            Grid.SetColumn(name, 1);
+            associated.Children.Add(name);
+            var application = new Field
+            {
+                Label = text.Get("library", "opens_with"),
+                Glyph = Lucide.Play,
+                Content = associated,
+            };
+            right.Children.Add(application);
+            _refresh.Add(() =>
+            {
+                SetValue(fileType, library.FileType);
+                name.Text = library.Application.Length > 0 ? library.Application
+                    : library.FileType.Length > 0 ? text.Get("library", "no_application") : string.Empty;
+                ToolTipService.SetToolTip(name, name.Text);
+                application.Visibility = name.Text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+                icon.Source = library.ApplicationIcon;
+                icon.Visibility = icon.Source is null ? Visibility.Collapsed : Visibility.Visible;
+            });
             AddField(right, "created", row.Created, Lucide.Calendar);
             AddField(right, "modified", row.Modified, Lucide.Clock);
         }
@@ -114,49 +136,60 @@ internal sealed partial class Details : UserControl, IDisposable
             };
             var kind =
                 row.Entry.Kind == FileKind.Video ? row.Type : row.Kind;
-            var episodes = library.Episodes;
-            var title = string.Join(
-                " · ",
-                episodes.Select(episode => episode.Name).Where(name => name.Length > 0)
-            );
-            Heading(title.Length > 0 ? title : row.Title, null, kind);
-            if (episodes.Count > 0 && library.Series is { } series)
+            IReadOnlyList<Episode>? shownEpisodes = null;
+            VideoChoice? shownSeries = null;
+            _refresh.Add(() =>
             {
-                var context = new TextBlock { TextTrimming = TextTrimming.CharacterEllipsis };
-                context.Inlines.Add(
-                    FilterLink("series", series.Title, () => library.FilterSeries(series))
+                if (shownEpisodes is not null && shownEpisodes.SequenceEqual(library.Episodes)
+                    && shownSeries == library.Series)
+                    return;
+                shownEpisodes = library.Episodes.ToArray();
+                shownSeries = library.Series;
+                var episodes = library.Episodes;
+                var title = string.Join(
+                    " · ",
+                    episodes.Select(episode => episode.Name).Where(name => name.Length > 0)
                 );
-                foreach (var season in episodes.GroupBy(episode => episode.Season))
+                Heading(title.Length > 0 ? title : row.Title, null, kind);
+                group.Detail = null;
+                if (episodes.Count > 0 && library.Series is { } series)
                 {
-                    context.Inlines.Add(new Run { Text = Store.Separator });
-                    var label = text.Format("library", "season_number", season.Key);
+                    var context = new TextBlock { TextTrimming = TextTrimming.CharacterEllipsis };
                     context.Inlines.Add(
-                        FilterLink("season", label, () => library.FilterSeries(series, season.Key))
+                        FilterLink("series", series.Title, () => library.FilterSeries(series))
                     );
-                    context.Inlines.Add(
-                        new Run
-                        {
-                            Text =
-                                Store.Separator
-                                + text.Format(
-                                    "library",
-                                    season.Count() > 1 ? "episode_numbers" : "episode_number",
-                                    string.Join(", ", season.Select(episode => episode.Number))
-                                ),
-                        }
+                    foreach (var season in episodes.GroupBy(episode => episode.Season))
+                    {
+                        context.Inlines.Add(new Run { Text = Store.Separator });
+                        var label = text.Format("library", "season_number", season.Key);
+                        context.Inlines.Add(
+                            FilterLink("season", label, () => library.FilterSeries(series, season.Key))
+                        );
+                        context.Inlines.Add(
+                            new Run
+                            {
+                                Text =
+                                    Store.Separator
+                                    + text.Format(
+                                        "library",
+                                        season.Count() > 1 ? "episode_numbers" : "episode_number",
+                                        string.Join(", ", season.Select(episode => episode.Number))
+                                    ),
+                            }
+                        );
+                    }
+                    ToolTipService.SetToolTip(
+                        context,
+                        series.Title
+                            + Store.Separator
+                            + string.Join(
+                                Store.Separator,
+                                episodes.Select(episode => $"S{episode.Season:00}E{episode.Number:00}")
+                            )
                     );
+                    group.Detail = context;
                 }
-                ToolTipService.SetToolTip(
-                    context,
-                    series.Title
-                        + Store.Separator
-                        + string.Join(
-                            Store.Separator,
-                            episodes.Select(episode => $"S{episode.Season:00}E{episode.Number:00}")
-                        )
-                );
-                group.Detail = context;
-            }
+            });
             Controls.Section? first;
             Controls.Section? second;
             WrapPanel? cast = null;
@@ -179,54 +212,73 @@ internal sealed partial class Details : UserControl, IDisposable
             {
                 if (!row.Entry.HasMetadata)
                 {
-                    // Download off offers Settings whatever the provider's state,
-                    // because the person turns downloading on by choosing a provider there.
-                    var available = !library.IsEnrichmentEnabled || library.IsProviderAvailable;
-                    var status =
-                        !library.IsEnrichmentEnabled ? text.Get("library", "download_off")
-                        : !available ? text.Get("library", "source_unavailable")
-                        : library.Waiting ?? text.Get("library", "no_metadata");
                     // The action sits at the heading's far right, not at the
                     // edge of the left column, where it would float mid-pane.
                     group.Action = MetadataActions.Button(library);
-                    var metadata = AddField(
-                        left,
-                        "metadata",
-                        status,
-                        available ? Lucide.ScanSearch : Lucide.CloudOff
-                    );
-                    ToolTipService.SetToolTip(
-                        metadata!,
-                        !available ? text.Get("library", "provider_unavailable") : status
-                    );
+                    var metadata = new Field
+                    {
+                        Label = text.Get("library", "metadata"),
+                        Content = Value(string.Empty),
+                    };
+                    left.Children.Add(metadata);
+                    _refresh.Add(() =>
+                    {
+                        // Download off offers Settings whatever the provider's state,
+                        // because the person turns downloading on by choosing a provider there.
+                        var enabled = !library.IsEnrichmentEnabled || library.IsProviderAvailable;
+                        var message = !library.IsEnrichmentEnabled ? text.Get("library", "download_off")
+                            : !enabled ? text.Get("library", "source_unavailable")
+                            : library.Waiting ?? text.Get("library", "no_metadata");
+                        SetValue(metadata, message);
+                        metadata.Glyph = enabled ? Lucide.ScanSearch : Lucide.CloudOff;
+                        ToolTipService.SetToolTip(metadata, !enabled ? text.Get("library", "provider_unavailable") : message);
+                    });
                 }
                 first = null;
                 second = null;
                 if (row.Entry.HasMetadata)
                 {
-                    first = Section("synopsis", library.Synopsis, Lucide.AlignLeft);
-                    if (library.Cast.Length > 0)
+                    first = new Controls.Section
                     {
-                        cast = new WrapPanel
+                        Header = text.Get("library", "synopsis"),
+                        Glyph = Lucide.AlignLeft,
+                        Content = new TextBlock
                         {
-                            Orientation = Orientation.Vertical,
-                            ColumnSpacing = 12,
-                            RowSpacing = 4,
-                        };
-                        foreach (
-                            var name in library.Cast.Split(
-                                Store.Separator,
-                                StringSplitOptions.RemoveEmptyEntries
-                            )
-                        )
-                            cast.Children.Add(Listed(Value(name)));
-                        second = new Controls.Section
-                        {
-                            Header = text.Get("library", "cast"),
-                            Glyph = Lucide.Users,
-                            Content = cast,
-                        };
-                    }
+                            Style = (Style)Application.Current.Resources["TinyTorrentBodyTextStyle"],
+                            TextWrapping = TextWrapping.Wrap,
+                            IsTextSelectionEnabled = true,
+                        },
+                    };
+                    cast = new WrapPanel
+                    {
+                        Orientation = Orientation.Vertical,
+                        ColumnSpacing = 12,
+                        RowSpacing = 4,
+                    };
+                    second = new Controls.Section
+                    {
+                        Header = text.Get("library", "cast"),
+                        Glyph = Lucide.Users,
+                        Content = cast,
+                    };
+                    var synopsis = first!;
+                    var castSection = second;
+                    var castNames = cast;
+                    var previousCast = string.Empty;
+                    _refresh.Add(() =>
+                    {
+                        var description = (TextBlock)synopsis.Content;
+                        if (description.Text != library.Synopsis)
+                            description.Text = library.Synopsis;
+                        synopsis.Visibility = library.Synopsis.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+                        castSection.Visibility = library.Cast.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+                        if (previousCast == library.Cast)
+                            return;
+                        previousCast = library.Cast;
+                        castNames.Children.Clear();
+                        foreach (var name in library.Cast.Split(Store.Separator, StringSplitOptions.RemoveEmptyEntries))
+                            castNames.Children.Add(Listed(Value(name)));
+                    });
                     AddField(right, "imdb", row.ImdbTip, Lucide.Star);
                     AddField(right, "tmdb", row.TmdbTip, Lucide.Star);
                 }
@@ -259,6 +311,18 @@ internal sealed partial class Details : UserControl, IDisposable
                 _cast = cast;
                 sections.WidthReference = null;
                 _viewport.SizeChanged += OnViewportSizeChanged;
+                _refresh.Add(() =>
+                {
+                    var primary = first?.Visibility == Visibility.Visible ? first : null;
+                    var secondary = second?.Visibility == Visibility.Visible ? second : null;
+                    if (!ReferenceEquals(sections.Primary, primary ?? secondary)
+                        || !ReferenceEquals(sections.Secondary, primary is null ? null : secondary))
+                    {
+                        sections.Primary = sections.Secondary = null;
+                        sections.Primary = primary ?? secondary;
+                        sections.Secondary = primary is null ? null : secondary;
+                    }
+                });
             }
             else
                 fields.SizeChanged += (_, args) =>
@@ -269,7 +333,7 @@ internal sealed partial class Details : UserControl, IDisposable
             left.Children.Add(sections);
         }
         group.Content = fields;
-        RefreshFetch(library);
+        Refresh(library);
 
         TextBlock Value(string value)
         {
@@ -462,15 +526,27 @@ internal sealed partial class Details : UserControl, IDisposable
             InvalidateMeasure();
     }
 
+    private static void SetValue(Field field, string value)
+    {
+        ((TextBlock)field.Content).Text = value;
+        ToolTipService.SetToolTip((TextBlock)field.Content, value);
+        field.Visibility = value.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
     internal void RefreshFetch(Browser library)
     {
-        if (_fetchMessage?.Content is TextBlock message)
-        {
-            message.Text = library.FetchMessage;
-            ToolTipService.SetToolTip(message, message.Text);
-            _fetchMessage.Visibility =
-                message.Text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
-        }
+        if (_fetchMessage is { } field)
+            SetValue(field, library.FetchMessage);
+    }
+
+    internal void Refresh(Browser library)
+    {
+        foreach (var refresh in _refresh)
+            refresh();
+        _columnWidth = double.NaN;
+        RefreshFetch(library);
+        RefreshCommands();
+        InvalidateMeasure();
     }
 
     internal void RefreshCommands()
@@ -486,5 +562,6 @@ internal sealed partial class Details : UserControl, IDisposable
         foreach (var action in _actions)
             action.Command = null;
         _actions.Clear();
+        _refresh.Clear();
     }
 }

@@ -21,17 +21,25 @@ internal sealed partial class Database : IAsyncDisposable
         _path = Path.Combine(directory, FileName);
     }
 
+    internal Task<long> ReadSize() =>
+        Run(connection =>
+        {
+            using var command = connection.CreateCommand();
+            command.CommandText = "SELECT page_count*page_size FROM pragma_page_count(),pragma_page_size();";
+            return Convert.ToInt64(command.ExecuteScalar());
+        });
+
     internal Task<Statistics> ReadStatistics() =>
         Run(connection =>
         {
             using var command = connection.CreateCommand();
             command.CommandText = """
-                SELECT page_count*page_size,freelist_count*page_size,
+                SELECT freelist_count*page_size,
                     movies,series,episodes,
                     (SELECT COUNT(*) FROM current_files WHERE complete=1),
                     (SELECT COUNT(*) FROM video_records),
                     subtitles,created,found,languages
-                FROM pragma_page_count(),pragma_page_size(),pragma_freelist_count(),
+                FROM pragma_page_size(),pragma_freelist_count(),
                     (SELECT COUNT(CASE WHEN type='movie' THEN 1 END) AS movies,
                         COUNT(CASE WHEN type='tv' THEN 1 END) AS series,
                         COUNT(CASE WHEN type='episode' THEN 1 END) AS episodes FROM video_information),
@@ -43,17 +51,16 @@ internal sealed partial class Database : IAsyncDisposable
             reader.Read();
             return new Statistics
             {
-                Size = reader.GetInt64(0),
-                Reusable = reader.GetInt64(1),
-                Movies = reader.GetInt64(2),
-                Series = reader.GetInt64(3),
-                Episodes = reader.GetInt64(4),
-                Files = reader.GetInt64(5),
-                Responses = reader.GetInt64(6),
-                Subtitles = reader.GetInt64(7),
-                Created = reader.GetInt64(8),
-                Found = reader.GetInt64(9),
-                Languages = reader.GetInt64(10),
+                Reusable = reader.GetInt64(0),
+                Movies = reader.GetInt64(1),
+                Series = reader.GetInt64(2),
+                Episodes = reader.GetInt64(3),
+                Files = reader.GetInt64(4),
+                Responses = reader.GetInt64(5),
+                Subtitles = reader.GetInt64(6),
+                Created = reader.GetInt64(7),
+                Found = reader.GetInt64(8),
+                Languages = reader.GetInt64(9),
             };
         });
 
@@ -77,6 +84,11 @@ internal sealed partial class Database : IAsyncDisposable
                         try
                         {
                             return Transact(Open(), action, cancellation);
+                        }
+                        catch (SqliteException error)
+                            when (error.SqliteErrorCode == raw.SQLITE_INTERRUPT && cancellation.IsCancellationRequested)
+                        {
+                            throw new OperationCanceledException(null, error, cancellation);
                         }
                         catch (SqliteException error)
                             when (error.SqliteErrorCode is raw.SQLITE_CORRUPT or raw.SQLITE_NOTADB)
@@ -178,12 +190,15 @@ internal sealed partial class Database : IAsyncDisposable
                 {
                     command.CommandText = "PRAGMA user_version;";
                     var version = Convert.ToInt32(command.ExecuteScalar());
-                    _incompatible = version is not (0 or 2 or Version);
+                    _incompatible = version is not (0 or 2 or 3 or Version);
                     if (_incompatible)
                         throw new DatabaseVersionException();
-                    if (version == 2)
+                    if (version is 2 or 3)
                     {
-                        command.CommandText = VideoMisses + $"PRAGMA user_version={Version};";
+                        command.CommandText =
+                            (version == 2 ? VideoMisses : string.Empty)
+                            + ProviderKeys
+                            + $"PRAGMA user_version={Version};";
                         command.ExecuteNonQuery();
                     }
                     if (version == 0)
@@ -225,7 +240,19 @@ internal sealed partial class Database : IAsyncDisposable
         command.ExecuteNonQuery();
         try
         {
-            var result = action(connection);
+            T result;
+            try
+            {
+                if (cancellation.CanBeCanceled)
+                    raw.sqlite3_progress_handler(connection.Handle!, 1000,
+                        _ => cancellation.IsCancellationRequested ? 1 : 0, null);
+                result = action(connection);
+            }
+            finally
+            {
+                if (cancellation.CanBeCanceled)
+                    raw.sqlite3_progress_handler(connection.Handle!, 0, null, null);
+            }
             cancellation.ThrowIfCancellationRequested();
             command.CommandText = "COMMIT;";
             command.ExecuteNonQuery();
@@ -280,7 +307,6 @@ internal sealed class DatabaseVersionException : SqliteException
 
 internal sealed record Statistics
 {
-    internal required long Size { get; init; }
     internal required long Reusable { get; init; }
     internal required long Movies { get; init; }
     internal required long Series { get; init; }

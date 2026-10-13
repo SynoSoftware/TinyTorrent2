@@ -124,6 +124,7 @@ public sealed partial class MainWindow
                         piece_size = 262144,
                         peer_count = 20,
                         verified,
+                        wanted = Enumerable.Repeat(true, count).ToArray(),
                         availability,
                         downloading,
                     }

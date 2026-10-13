@@ -76,17 +76,7 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
         : Text.Get("connection_setup", "test_idle");
     public string DownloadError => CapacityError(Download);
     public string UploadError => CapacityError(Upload);
-    public string Message
-    {
-        get
-        {
-            if (_failure is { } failure)
-                return Text.Error(failure);
-            if (Propose() is null)
-                return string.Empty;
-            return Text.Get("connection_setup", CanApply ? "ready" : "no_changes");
-        }
-    }
+    public string Message => _failure is { } failure ? Text.Error(failure) : string.Empty;
     public string PresetName => Name(SavedPreset);
     public string StandardText
     {
@@ -109,8 +99,14 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
             : Percent(_alternativeShare);
     public string StandardRates => Rates(_standardShare);
     public string AlternativeRates => Rates(_alternativeShare);
-    public string StandardUse => _main.SpeedUse;
-    public string AlternativeUse => _main.AlternativeUse;
+    public string StandardHint => Text.Get("connection_setup", "standard_hint")
+        + (StandardFollows ? string.Empty : " " + Text.Get("connection_setup", "kept_hint"));
+    public string AlternativeHint => Text.Get("connection_setup", "alternative_hint")
+        + (AlternativeFollows ? string.Empty : " " + Text.Get("connection_setup", "kept_hint"));
+    public string StandardUse => _main.IsConnected
+        ? Text.Get("connection_setup", _main.HasStandardLimits ? "in_use" : "not_in_use") : string.Empty;
+    public string AlternativeUse => _main.IsConnected
+        ? Text.Get("connection_setup", _main.HasAlternativeLimits ? "in_use" : "not_in_use") : string.Empty;
     public event PropertyChangedEventHandler? PropertyChanged;
 
     public string Download
@@ -224,9 +220,9 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
             var queue = Propose()?.Queue;
             return
             [
-                Row(_settings.ActiveDownloads.Label, saved.Downloads, queue?.Downloads, Count),
-                Row(_settings.ActiveSeeds.Label, saved.Seeds, queue?.Seeds, Count),
-                Row(_settings.ActiveTotal.Label, saved.Total, queue?.Total, Count),
+                Row(Text.Get("connection_setup", "active_downloads"), saved.Downloads, queue?.Downloads, Count),
+                Row(Text.Get("connection_setup", "active_seeds"), saved.Seeds, queue?.Seeds, Count),
+                Row(Text.Get("connection_setup", "active_torrents"), saved.Total, queue?.Total, Count),
             ];
         }
     }
@@ -476,9 +472,7 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
         );
 
     private string Rate(int bytes) =>
-        bytes == 0
-            ? Text.Get("transfer_limits", "unlimited")
-            : Text.Format("units", "rate", Text.Bytes(bytes));
+        Text.SpeedLimit(bytes);
 
     private string Count(int number) =>
         number == 0
@@ -488,7 +482,7 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
     private string Rates(int share)
     {
         if (CapsAt(share, Parse(Download), Parse(Upload)) is not { } caps)
-            return Text.Get("connection_setup", "enter");
+            return Text.Get("connection_setup", "enter_capacity");
         if (share == Unlimited)
             return Text.Get("transfer_limits", "unlimited");
         return Text.Format("settings", "caps_summary", Rate(caps.Download), Rate(caps.Upload));

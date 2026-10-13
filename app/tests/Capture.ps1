@@ -122,6 +122,7 @@ if ($Review -in 'files', 'files-layout', 'library', 'library-files', 'traffic') 
 }
 $document.settings.default_destination = $payload
 $document.settings.all_paused = $Review -notin 'add-layout', 'traffic', 'library-files'
+if ($Review -eq 'settings-prototype') { $document.settings.exclude = $true }
 if ($Language) { $document.settings.language = $Language }
 foreach ($torrent in $document.torrents) { $torrent.save_path = $payload }
 if ($Review -eq 'traffic') {

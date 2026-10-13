@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Reflection;
@@ -10,14 +9,20 @@ using Syno.TinyTorrent.Services;
 
 namespace Syno.TinyTorrent.Library.Tmdb;
 
-internal sealed class Provider(ProviderHttp http) : IProvider
+/// <param name="key">
+/// The person's own API key or API read access token, or null for the token
+/// built into the release.
+/// </param>
+internal sealed class Provider(ProviderHttp http, string? key) : IProvider
 {
-    private static readonly string? Token = typeof(Provider)
-        .Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
-        .FirstOrDefault(value => value.Key == "TmdbToken")
-        ?.Value;
+    private readonly string? _token =
+        key
+        ?? typeof(Provider)
+            .Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
+            .FirstOrDefault(value => value.Key == "TmdbToken")
+            ?.Value;
     public string CatalogId => "tmdb";
-    public bool IsAvailable => !string.IsNullOrWhiteSpace(Token);
+    public bool IsAvailable => !string.IsNullOrWhiteSpace(_token);
     public bool IsLocalized => true;
     public VideoSchedule Schedule => VideoSchedule.Background;
     public IReadOnlySet<VideoKind> Kinds { get; } =
@@ -43,17 +48,10 @@ internal sealed class Provider(ProviderHttp http) : IProvider
                 .EnumerateArray()
                 .Where(item => Text(item, "media_type") is "movie" or "tv")
                 .Select(item =>
-                    Text(item, "media_type") == "movie"
-                        ? new VideoChoice(CatalogId, Id(item), VideoKind.Movie, Text(item, "title"))
-                        {
-                            Year = VideoInformation.ParseYear(Text(item, "release_date")),
-                            Original = Text(item, "original_title"),
-                        }
-                        : new VideoChoice(CatalogId, Id(item), VideoKind.Series, Text(item, "name"))
-                        {
-                            Year = VideoInformation.ParseYear(Text(item, "first_air_date")),
-                            Original = Text(item, "original_name"),
-                        }
+                    Choice(
+                        item,
+                        Text(item, "media_type") == "movie" ? VideoKind.Movie : VideoKind.Series
+                    )
                 )
                 .ToArray();
         }
@@ -123,6 +121,13 @@ internal sealed class Provider(ProviderHttp http) : IProvider
                     ? Names(actors)
                     : [];
             var genres = Names(data.GetProperty("genres"));
+            // A movie's recommendations are movies and a series' are series,
+            // so each takes the kind of the described choice.
+            VideoChoice[] related =
+                data.TryGetProperty("recommendations", out var recommendations)
+                && recommendations.TryGetProperty("results", out var results)
+                    ? results.EnumerateArray().Select(item => Choice(item, choice.Kind)).ToArray()
+                    : [];
             if (choice.Kind == VideoKind.Movie)
                 return new VideoInformation(
                     CatalogId,
@@ -138,6 +143,7 @@ internal sealed class Provider(ProviderHttp http) : IProvider
                     Keywords = keywords,
                     Records = records,
                     TmdbRating = ReadRating(data, VideoKind.Movie),
+                    Related = related,
                 };
             var episodes = numbers
                 .Select(
@@ -168,6 +174,7 @@ internal sealed class Provider(ProviderHttp http) : IProvider
                 Keywords = keywords,
                 Records = records,
                 TmdbRating = ReadRating(data, VideoKind.Series),
+                Related = related,
             };
         }
         catch (Exception error)
@@ -194,48 +201,20 @@ internal sealed class Provider(ProviderHttp http) : IProvider
     {
         if (!IsAvailable)
             throw new ProviderException("tmdb", "unavailable");
+        // A TMDB account shows both an API read access token, a JWT that
+        // contains dots, and a shorter API key, which TMDB accepts only as a
+        // query parameter; a person may paste either.
+        var bearer = _token!.Contains('.');
+        var credential = bearer
+            ? string.Empty
+            : (path.Contains('?') ? "&" : "?") + "api_key=" + Uri.EscapeDataString(_token);
         using var request = new HttpRequestMessage(
             HttpMethod.Get,
-            "https://api.themoviedb.org/3/" + path
+            "https://api.themoviedb.org/3/" + path + credential
         );
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", Token);
-        ProviderReply reply;
-        try
-        {
-            reply = await http.Send(request, ProviderHttp.JsonLimit, cancellation)
-                .ConfigureAwait(false);
-        }
-        catch (HttpRouteException error)
-        {
-            throw new RouteException("tmdb", error);
-        }
-        catch (InvalidDataException error)
-        {
-            throw new ProviderException("tmdb", "invalid_result", inner: error);
-        }
-        catch (Exception error)
-            when (error is HttpRequestException or IOException or InvalidOperationException)
-        {
-            throw new ProviderException("tmdb", "unavailable", inner: error);
-        }
-        DateTimeOffset? retryAt = null;
-        if (reply.Status is HttpStatusCode.TooManyRequests or HttpStatusCode.ServiceUnavailable)
-            retryAt = reply.RetryAt ?? DateTimeOffset.UtcNow.AddMinutes(1);
-        // A missing item concerns one video, such as an episode TMDB does not
-        // list, so it must not stop lookups of other videos.
-        if (reply.Status == HttpStatusCode.NotFound)
-            throw new VideoException("tmdb", "invalid_result");
-        if (reply.Status != HttpStatusCode.OK)
-            throw new ProviderException("tmdb", "unavailable", retryAt);
-        try
-        {
-            using var document = JsonDocument.Parse(reply.Bytes);
-            return document.RootElement.Clone();
-        }
-        catch (JsonException error)
-        {
-            throw new ProviderException("tmdb", "invalid_result", inner: error);
-        }
+        if (bearer)
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _token);
+        return await ProviderJson.Get(http, request, "tmdb", cancellation).ConfigureAwait(false);
     }
 
     private async Task<VideoRecord> Read(
@@ -251,7 +230,7 @@ internal sealed class Provider(ProviderHttp http) : IProvider
                     + (
                         path.Contains("/season/", StringComparison.Ordinal)
                             ? "?language="
-                            : "?append_to_response=credits,keywords&language="
+                            : "?append_to_response=credits,keywords,recommendations&language="
                     )
                     + Uri.EscapeDataString(request.Language),
                 cancellation
@@ -259,6 +238,19 @@ internal sealed class Provider(ProviderHttp http) : IProvider
             .ConfigureAwait(false);
         return new VideoRecord(path, content, DateTimeOffset.UtcNow.ToUnixTimeSeconds());
     }
+
+    private VideoChoice Choice(JsonElement item, VideoKind kind) =>
+        kind == VideoKind.Movie
+            ? new VideoChoice(CatalogId, Id(item), VideoKind.Movie, Text(item, "title"))
+            {
+                Year = VideoInformation.ParseYear(Text(item, "release_date")),
+                Original = Text(item, "original_title"),
+            }
+            : new VideoChoice(CatalogId, Id(item), VideoKind.Series, Text(item, "name"))
+            {
+                Year = VideoInformation.ParseYear(Text(item, "first_air_date")),
+                Original = Text(item, "original_name"),
+            };
 
     private static string Id(JsonElement item) =>
         item.GetProperty("id").GetInt32().ToString(CultureInfo.InvariantCulture);

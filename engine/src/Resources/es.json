@@ -42,7 +42,13 @@
     "missing_title": "Programa no encontrado",
     "missing_program": "Los torrents están configurados para abrirse con un programa que ya no está: {0}. Selecciona este aviso para repararlo en Ajustes.",
     "missing_programs": "Los torrents están configurados para abrirse con programas que ya no están: {0} y {1} más. Selecciona este aviso para repararlos en Ajustes.",
-    "off": "No volver a mostrar"
+    "fewer": "Ver menos notificaciones",
+    "off_finished": "No notificar al finalizar una descarga",
+    "off_added": "No notificar al añadir un torrent",
+    "off_problems": "No notificar los problemas",
+    "off_background": "No notificar al cerrar la ventana",
+    "off_all": "Desactivar todas las notificaciones",
+    "settings": "Ir a los ajustes de notificaciones"
   },
   "power": {
     "transfers": "TinyTorrent está transfiriendo archivos."
@@ -71,6 +77,7 @@
     "torrent_error": "El torrent se detuvo debido a un error.",
     "storage_failed": "No se pudo leer o guardar el estado de las descargas. Comprueba la carpeta de datos del motor y vuelve a intentarlo.",
     "storage_overloaded": "TinyTorrent está guardando el estado de las descargas. Vuelve a intentarlo en unos instantes.",
+    "overloaded": "TinyTorrent está ocupado. Vuelve a intentarlo en unos instantes.",
     "checkpoint_failed": "No se pudo guardar el estado de la descarga. Comprueba la carpeta de datos del motor y vuelve a intentarlo.",
     "watch_limit": "Esta carpeta vigilada contiene más de 10.000 archivos torrent. Retira archivos de origen antiguos o elige una carpeta más pequeña.",
     "start": "TinyTorrent no pudo iniciarse.",

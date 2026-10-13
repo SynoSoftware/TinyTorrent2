@@ -21,7 +21,14 @@ internal abstract class Supplier
 
     internal abstract SubtitleSupplier SupplierId { get; }
     internal virtual bool Available => true;
-    internal virtual bool UsesPassword => false;
+    internal virtual Access Access => Access.Key;
+
+    /// <summary>
+    /// The API key built into the release, which an API-key supplier sends
+    /// when the account holds no key of the person's own.
+    /// </summary>
+    protected virtual string? BuiltInKey => null;
+    internal bool HasBuiltInKey => !string.IsNullOrWhiteSpace(BuiltInKey);
     internal virtual bool SupportsHash => false;
     internal abstract Uri Privacy { get; }
     internal abstract Uri Terms { get; }
@@ -33,17 +40,22 @@ internal abstract class Supplier
     internal bool Configured(Account account) =>
         Available
         && (
-            UsesPassword
+            Access == Access.Password
                 ? (account.Username.Length == 0) == (account.Secret.Length == 0)
-                : account.Secret.Length > 0
+                : account.Secret.Length > 0 || HasBuiltInKey
         );
 
     internal Account Interpret(Draft draft, string secret)
     {
-        var username = UsesPassword ? draft.Username.Trim() : string.Empty;
-        if (UsesPassword && username.Length == 0 && draft.Secret.Length == 0)
+        var password = Access == Access.Password;
+        var username = password ? draft.Username.Trim() : string.Empty;
+        if (password && username.Length == 0 && draft.Secret.Length == 0)
             secret = string.Empty;
-        if (UsesPassword ? (username.Length > 0) != (secret.Length > 0) : secret.Length == 0)
+        if (
+            password
+                ? (username.Length > 0) != (secret.Length > 0)
+                : secret.Length == 0 && !HasBuiltInKey
+        )
             throw new SubtitleException(SubtitleFailure.Unconfigured);
         return new(SupplierId, username, secret);
     }
@@ -71,30 +83,41 @@ internal abstract class Supplier
                     _downloads[key] = download;
     }
 
-    internal abstract Task Check(
+    internal Task Check(
         ProviderHttp http,
         Account account,
         CancellationToken cancellation
-    );
+    ) => Check(new(http, account, _ => Task.CompletedTask), cancellation);
+
+    protected abstract Task Check(Operation operation, CancellationToken cancellation);
 
     // Lists the full SRT subtitles in the supplier's language code for the
     // title the lookup names, or, with a hash, for that exact file.
     protected abstract Task<IReadOnlyList<SubtitleCandidate>> Search(
-        ProviderHttp http,
-        Account account,
+        Operation operation,
         SubtitleLookup lookup,
         Release release,
         string code,
         CancellationToken cancellation
     );
-    internal abstract Task<byte[]> Download(
+    internal Task<byte[]> Download(
         ProviderHttp http,
         Account account,
         SubtitleLookup lookup,
         SubtitleCandidate candidate,
         CancellationToken cancellation
+    ) => Download(new(http, account, lookup.Validate), candidate, cancellation);
+
+    protected abstract Task<byte[]> Download(
+        Operation operation,
+        SubtitleCandidate candidate,
+        CancellationToken cancellation
     );
     protected abstract void Authenticate(HttpRequestMessage request, Account account);
+
+    // The person's own key replaces the built-in one.
+    protected string ApiKey(Account account) =>
+        account.Secret.Length > 0 ? account.Secret : BuiltInKey ?? string.Empty;
 
     protected virtual void Reserve(string key) { }
 
@@ -112,19 +135,23 @@ internal abstract class Supplier
         CancellationToken cancellation
     ) =>
         Timed(
-            token => Match(http, account, lookup, FileName.Interpret(lookup.FileName), token),
+            token => Match(
+                new(http, account, lookup.Validate),
+                lookup,
+                FileName.Interpret(lookup.FileName),
+                token
+            ),
             cancellation
         );
 
     private async Task<IReadOnlyList<SubtitleCandidate>> Match(
-        ProviderHttp http,
-        Account account,
+        Operation operation,
         SubtitleLookup lookup,
         Release release,
         CancellationToken cancellation
     )
     {
-        var candidates = await Find(http, account, lookup, release, cancellation)
+        var candidates = await Find(operation, lookup, release, cancellation)
             .ConfigureAwait(false);
         var exact = candidates.FirstOrDefault(candidate =>
             candidate.HashMatch || SameRelease(release, candidate.Release)
@@ -133,8 +160,7 @@ internal abstract class Supplier
         {
             // A hash search lists that file's subtitles; a guess needs the title's.
             candidates = await Find(
-                    http,
-                    account,
+                    operation,
                     lookup with
                     {
                         Hash = null,
@@ -167,7 +193,12 @@ internal abstract class Supplier
         CancellationToken cancellation
     ) =>
         Timed(
-            token => Find(http, account, lookup, FileName.Interpret(lookup.FileName), token),
+            token => Find(
+                new(http, account, lookup.Validate),
+                lookup,
+                FileName.Interpret(lookup.FileName),
+                token
+            ),
             cancellation
         );
 
@@ -192,8 +223,7 @@ internal abstract class Supplier
     }
 
     private async Task<IReadOnlyList<SubtitleCandidate>> Find(
-        ProviderHttp http,
-        Account account,
+        Operation operation,
         SubtitleLookup lookup,
         Release release,
         CancellationToken cancellation
@@ -201,12 +231,11 @@ internal abstract class Supplier
     {
         if (!Available)
             throw new SubtitleException(SubtitleFailure.Unavailable);
-        await lookup.Validate(cancellation).ConfigureAwait(false);
         if (release.Title.Length == 0 || release.IsExtra)
             return [];
         if (!Codes.TryGetValue(lookup.Language, out var code))
             throw new SubtitleException(SubtitleFailure.Unavailable);
-        return await Search(http, account, lookup, release, code, cancellation)
+        return await Search(operation, lookup, release, code, cancellation)
             .ConfigureAwait(false);
     }
 
@@ -221,15 +250,14 @@ internal abstract class Supplier
     }
 
     protected async Task<ProviderReply> Get(
-        ProviderHttp http,
-        Account account,
+        Operation operation,
         Uri uri,
         CancellationToken cancellation,
         int maximum = ProviderHttp.JsonLimit
     )
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, uri);
-        return await Send(http, account, request, cancellation, maximum).ConfigureAwait(false);
+        return await Send(operation, request, cancellation, maximum).ConfigureAwait(false);
     }
 
     protected static string AccountKey(Account account)
@@ -248,14 +276,17 @@ internal abstract class Supplier
     }
 
     protected async Task<ProviderReply> Send(
-        ProviderHttp http,
-        Account account,
+        Operation operation,
         HttpRequestMessage request,
         CancellationToken cancellation,
         int maximum = ProviderHttp.JsonLimit,
         bool authenticate = true
     )
     {
+        cancellation.ThrowIfCancellationRequested();
+        await operation.Validate(cancellation).ConfigureAwait(false);
+        cancellation.ThrowIfCancellationRequested();
+        var account = operation.Account;
         if (authenticate && !Configured(account))
             throw new SubtitleException(SubtitleFailure.Unconfigured);
         var key = AccountKey(account);
@@ -271,7 +302,8 @@ internal abstract class Supplier
         }
         try
         {
-            var response = await http.Send(request, maximum, cancellation).ConfigureAwait(false);
+            var response = await operation.Http.Send(request, maximum, cancellation)
+                .ConfigureAwait(false);
             var retry = Retry(response);
             var downloadReset = authenticate ? DownloadReset(request, response) : null;
             if (downloadReset is { } reset)
@@ -338,6 +370,12 @@ internal abstract class Supplier
             if (!_waits.TryGetValue(key, out var current) || reset > current)
                 _waits[key] = reset;
     }
+
+    protected sealed record Operation(
+        ProviderHttp Http,
+        Account Account,
+        Func<CancellationToken, Task> Validate
+    );
 
     protected static bool Matches(
         Release release,

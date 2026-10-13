@@ -36,6 +36,11 @@ constexpr wchar_t exit[] = L"--exit";
 constexpr wchar_t registration[] = L"--registration";
 constexpr wchar_t data[] = L"--data";
 constexpr wchar_t repairClass[] = L"--repair-class";
+#ifdef _DEBUG
+// Starts in the tray and shows a sample notice popup, whatever the notice
+// switches say, so its look and More menu can be checked.
+constexpr wchar_t notice[] = L"--notice";
+#endif
 }
 
 constexpr std::string_view magnetScheme = "magnet:";
@@ -133,8 +138,8 @@ public:
     // otherwise its cause, which is empty when the cause is unknown.
     void Shutdown(std::function<void(std::optional<std::string> failure)> completion);
     void PauseSession(bool paused, std::function<void(Outcome)> completion);
-    // Saves the switch that turns `notices` off.
-    void TurnOff(NoticeSwitch notices, std::function<void(Outcome)> completion);
+    // Saves the switches that turn `notices` off, in one settings change.
+    void TurnOff(std::vector<NoticeSwitch> const& notices, std::function<void(Outcome)> completion);
     // Saves the missing programs that torrent handlers start, once reported.
     void RecordPrograms(std::vector<std::string> programs, std::function<void(Outcome)> completion);
     // Adds a source to the default destination with the default file choices.

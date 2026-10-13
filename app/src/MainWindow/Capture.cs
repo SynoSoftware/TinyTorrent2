@@ -107,6 +107,8 @@ public sealed partial class MainWindow
         var clock = Stopwatch.StartNew();
         try
         {
+            await Task.Delay(500);
+            await CaptureLayout();
             var stamp = DateTime.UtcNow.ToString(
                 "yyyyMMdd-HHmmss-fffffff",
                 CultureInfo.InvariantCulture
@@ -156,9 +158,9 @@ public sealed partial class MainWindow
                     pixels = (await bitmap.GetPixelsAsync()).ToArray();
                     if (previous is null || !pixels.AsSpan().SequenceEqual(previous))
                         unchanged.Restart();
-                    stable = unchanged.ElapsedMilliseconds >= 300;
+                    stable = unchanged.ElapsedMilliseconds >= 500;
                     previous = pixels;
-                } while (!stable && rendering.ElapsedMilliseconds < 3000);
+                } while (!stable && rendering.ElapsedMilliseconds < 5000);
                 var frame = frames.Count == 0 ? "window.png" : $"popup-{frames.Count}.png";
                 var file = await folder.CreateFileAsync(
                     frame,
@@ -921,6 +923,33 @@ public sealed partial class MainWindow
                 CaptureElements(page)
                     .OfType<TimePicker>()
                     .Single(control => AutomationProperties.GetAutomationId(control) == id);
+            async Task CaptureTime(string id, string name)
+            {
+                var picker = FindTime(id);
+                var time = picker.SelectedTime;
+                picker.StartBringIntoView(new BringIntoViewOptions { AnimationDesired = false });
+                await CaptureLayout();
+                CaptureInvoke(CaptureElements(picker).OfType<Button>()
+                    .Single(button => button.Name == "FlyoutButton"));
+                await CaptureLayout();
+                var popup = VisualTreeHelper.GetOpenPopupsForXamlRoot(Root.XamlRoot)
+                    .Single(popup => popup.Child is TimePickerFlyoutPresenter);
+                try
+                {
+                    await CaptureUi(name);
+                }
+                finally
+                {
+                    CaptureInvoke(CaptureElements(popup.Child).OfType<Button>()
+                        .Single(button => button.Name == "DismissButton"));
+                    await CaptureLayout();
+                }
+                if (popup.IsOpen || picker.SelectedTime != time)
+                    throw new InvalidOperationException(
+                        "Dismissing the native time picker left it open or changed the period time."
+                    );
+                outcomes.Add(new { journey = "dismiss schedule time picker", picker = id, timeRetained = true });
+            }
             async Task ClearDays()
             {
                 var draft =
@@ -1047,9 +1076,24 @@ public sealed partial class MainWindow
                             + "x"
                             + size.Height;
                         await schedule.Close();
+                        if (size.Width == 720)
+                        {
+                            await Model.ChooseLimits(LimitMode.None);
+                            if (Model.LimitsIndex != (int)LimitMode.None)
+                                throw new InvalidOperationException("The review could not choose No limits.");
+                            await CapturePage(prefix + "-fixed", page);
+                            await Model.ChooseLimits(LimitMode.Schedule);
+                            if (!Model.FollowsSchedule)
+                                throw new InvalidOperationException("The review could not restore the weekly schedule.");
+                        }
                         await CapturePage(prefix + "-overview", page);
                         await schedule.Open(created);
                         await CapturePage(prefix + "-open", page);
+                        if (size.Width == 720)
+                        {
+                            await CaptureTime("PeriodStart", prefix + "-start-picker");
+                            await CaptureTime("PeriodEnd", prefix + "-end-picker");
+                        }
                         await ClearDays();
                         await CaptureReady(schedule, () => schedule.HasError);
                         await CaptureLayout();
@@ -2038,8 +2082,8 @@ public sealed partial class MainWindow
                         await CapturePage(name, page);
                         if (language == "en" && theme == "light" && size.Width == 720)
                         {
-                            var startup = (ToggleSwitch)page.FindName("Startup");
-                            var handlers = (ToggleSwitch)page.FindName("Handlers");
+                            var startup = CaptureElements(page).OfType<ToggleSwitch>().First(control => control.Name == "Startup");
+                            var handlers = CaptureElements(page).OfType<ToggleSwitch>().First(control => control.Name == "Handlers");
                             var matches =
                                 startup.IsOn == Model.Settings.Startup
                                 && handlers.IsOn == Model.Settings.Handlers

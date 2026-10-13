@@ -15,6 +15,12 @@ void Engine::State::WatchFolder()
     auto found = std::make_shared<std::map<std::string, std::string, PathLess>>();
     auto folder = settings.watchPath;
     auto recursive = settings.watchesRecursively;
+    // A result applies only to the watch that produced it.
+    auto isCurrent = [this, folder, recursive]
+    {
+        return !IsShuttingDown() && settings.watches && settings.watchPath == folder &&
+            settings.watchesRecursively == recursive;
+    };
     sources.Run([found, folder, recursive]
     {
         auto inspect = [found](std::filesystem::directory_entry const& entry)
@@ -45,16 +51,17 @@ void Engine::State::WatchFolder()
                     break;
             }
         }
-    }, [this, found, folder, recursive](StorageOutcome outcome)
+    }, [this, found, folder, isCurrent](StorageOutcome outcome)
     {
         watchPhase = WatchPhase::Idle;
-        if (IsShuttingDown() || !settings.watches || settings.watchPath != folder || settings.watchesRecursively != recursive)
+        // A busy store is not a problem with the folder; the next scan retries.
+        if (!isCurrent() || outcome.failure == StorageFailure::Overloaded)
             return;
-        if (!outcome.succeeded || found->size() > torrentLimit)
+        if (outcome.failure || found->size() > torrentLimit)
         {
             if (!watchFailed)
                 Notify(NoticeKind::AddFailed, folder, outcome.detail, {},
-                    outcome.succeeded ? "watch_limit" : "");
+                    outcome.failure ? "" : "watch_limit");
             watchFailed = true;
             return;
         }
@@ -63,22 +70,35 @@ void Engine::State::WatchFolder()
         if (std::any_of(watchedSources.begin(), watchedSources.end(), absent))
         {
             watchPhase = WatchPhase::Scanning;
-            if (!changes.Queue([this, absent, folder]
+            if (!changes.Queue([this, absent, folder, isCurrent]
             {
-                auto document = Saved();
-                std::erase_if(document.watchedSources, absent);
-                changes.Commit(document.ToJson(), [this, folder, retained = document.watchedSources](StorageOutcome outcome)
+                if (!isCurrent())
                 {
                     watchPhase = WatchPhase::Idle;
-                    if (outcome.succeeded)
-                        watchedSources = retained;
-                    else
-                        Notify(NoticeKind::AddFailed, folder, outcome.detail);
+                    return;
+                }
+                auto document = Saved();
+                std::erase_if(document.watchedSources, absent);
+                changes.Commit(document.ToJson(), [this, folder, retained = document.watchedSources](Outcome outcome)
+                {
+                    watchPhase = WatchPhase::Idle;
+                    if (outcome.error == ErrorCode::Overloaded)
+                        return;
+                    if (outcome.error)
+                    {
+                        if (!watchSaveFailed)
+                            Notify(NoticeKind::AddFailed, folder, outcome.detail, {}, ToString(*outcome.error));
+                        watchSaveFailed = true;
+                        return;
+                    }
+                    watchedSources = retained;
+                    watchSaveFailed = false;
                 });
             }))
                 watchPhase = WatchPhase::Idle;
             return;
         }
+        watchSaveFailed = false;
         auto now = std::chrono::steady_clock::now();
         std::erase_if(watchedFiles, [&found](auto const& file) { return !found->contains(file.first); });
         for (auto const& [source, stamp] : *found)
@@ -101,7 +121,8 @@ void Engine::State::WatchFolder()
                     if (file != watchedFiles.end() && file->second.stamp == stamp)
                     {
                         file->second.readyAt = std::chrono::steady_clock::now() + std::chrono::seconds(30);
-                        if (*outcome.error != ErrorCode::FilesBusy && !file->second.reported)
+                        if (*outcome.error != ErrorCode::FilesBusy && *outcome.error != ErrorCode::Overloaded &&
+                            !file->second.reported)
                         {
                             Notify(NoticeKind::AddFailed, source, outcome.detail);
                             file->second.reported = true;

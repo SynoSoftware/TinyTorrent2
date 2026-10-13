@@ -117,7 +117,6 @@ public:
         std::string lastFolder;
         bool startsDownload = true;
         bool queueTop = false;
-        bool preallocates = false;
         bool usesLastFolder = false;
         bool startsPaused = false;
         bool raisesAdd = true;
@@ -175,6 +174,10 @@ public:
         bool limitsLan = true;
         Encryption encryption = Encryption::Preferred;
         Proxy proxy;
+        // proxy.password as settings.json holds it, encrypted for the current
+        // Windows user. Configure encrypts only a changed password, so a failed
+        // encryption refuses that change and never another save.
+        std::string encryptedPassword;
         double ratio = 0;
         int seedingMinutes = 0;
         bool checksUpdates = true;
@@ -226,6 +229,15 @@ public:
         bool operator()(std::string const& left, std::string const& right) const;
     };
 
+    struct TransferTotals
+    {
+        std::int64_t downloaded = 0;
+        std::int64_t uploaded = 0;
+
+        bool operator==(TransferTotals const&) const = default;
+        Json ToJson() const;
+    };
+
     // The saved document. A change edits a copy of the saved one and commits
     // it.
     struct Document
@@ -233,6 +245,7 @@ public:
         static constexpr int format = 1;
 
         Settings settings;
+        TransferTotals transfers;
         std::map<std::string, Facts> torrents;
         std::vector<std::string> queueOrder;
         std::map<std::string, std::string, PathLess> watchedSources;
@@ -295,6 +308,11 @@ public:
     Changes changes{store, directory / L"settings.json", log};
     std::function<void()> wake;
     std::string sessionId = NewId();
+    TransferTotals transferred;
+    TransferTotals previousTransfers;
+    TransferTotals savedTransfers;
+    bool transfersPending = false;
+    lt::time_point transfersRequested{};
     std::string externalIpv4;
     std::string externalIpv6;
     Settings settings = Defaults();
@@ -310,6 +328,7 @@ public:
     std::chrono::steady_clock::time_point watchAt{};
     WatchPhase watchPhase = WatchPhase::Idle;
     bool watchFailed = false;
+    bool watchSaveFailed = false;
     std::vector<std::string> queueOrder;
     bool queuePending = false;
     std::string language;
@@ -381,7 +400,7 @@ public:
     };
     struct Deletion
     {
-        DeletionMode mode = DeletionMode::Permanent;
+        std::optional<DeletionMode> mode;
         std::vector<lt::torrent_handle> waiting;
         std::vector<std::filesystem::path> holds;
         std::vector<std::filesystem::path> files;
@@ -448,6 +467,8 @@ public:
     void RestorePending();
     std::filesystem::path ResumeFile(std::string const& id) const;
     Document Saved() const;
+    TransferTotals TotalTransfers() const;
+    void SaveTransfers();
     void Tick();
     void Maintain();
     bool SuspendsForConnectionTest() const;
@@ -530,10 +551,10 @@ public:
     void MergeTrackers(Preview& preview, std::string const& torrentId, Reply reply);
     void Act(std::vector<std::string> ids, Reply reply, Action action, BusyFiles busy = BusyFiles::Refused);
     void Verify(std::vector<std::string> const& ids, Reply reply);
-    void Remove(std::vector<std::string> const& ids, Reply reply, bool deleteData = false,
-        DeletionMode mode = DeletionMode::Permanent);
+    void Remove(std::vector<std::string> const& ids, Reply reply,
+        std::optional<DeletionMode> mode = std::nullopt);
     std::list<Deletion>::iterator PrepareDeletion(std::vector<std::string> const& ids,
-        DeletionMode mode = DeletionMode::Permanent);
+        std::optional<DeletionMode> mode);
     void RemoveHandles(std::vector<std::string> const& ids, std::list<Deletion>::iterator deletion);
     bool CanRemove(Torrent const& torrent) const;
     void RemoveDeferred();
@@ -558,6 +579,7 @@ public:
     void ContinueDeletion();
     void Delete(std::list<Deletion>::iterator deletion);
     void On(lt::torrent_deleted_alert const& alert);
+    void On(lt::torrent_removed_alert const& alert);
     void On(lt::torrent_delete_failed_alert const& alert);
     void RecoverFiles();
     void PrepareFiles(Torrent& torrent);

@@ -153,6 +153,52 @@ public sealed partial class MainWindow
         }
     }
 
+    private async Task ShowAccount(AccountDialog content)
+    {
+        await Interact(async interaction =>
+        {
+            interaction.Restore = () => ShowAccount(content);
+            interaction.ResolveDraft = () =>
+            {
+                content.Clear();
+                interaction.IsResolved = true;
+                return Task.FromResult(true);
+            };
+            var dialog = new Dialog
+            {
+                Content = content,
+                Footer = content.Status,
+                FooterAction = content.CheckAction,
+                Glyph = Lucide.KeyRound,
+                PrimaryGlyph = Lucide.Check,
+            };
+            dialog.SizeToContent();
+            try
+            {
+                await ShowEditor(
+                    interaction,
+                    dialog,
+                    content,
+                    () =>
+                    {
+                        dialog.Title = content.Title;
+                        dialog.PrimaryButtonText = Model.Text.Get("dialog", "save");
+                        dialog.PrimaryToolTip = Model.Text.Get("account", "save_tip");
+                        content.RefreshText();
+                    }
+                );
+            }
+            finally
+            {
+                content.CancelCheck();
+                dialog.Footer = null;
+                if (interaction.IsResolved)
+                    content.Clear();
+            }
+            return true;
+        });
+    }
+
     private static async Task<bool> SaveOnClose(
         DialogInteraction interaction,
         IDraft draft,

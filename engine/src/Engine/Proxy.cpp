@@ -424,7 +424,7 @@ void Engine::State::CheckProxy(Settings::Proxy proxy, std::function<void(std::op
         check->elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - started);
     }, [check, completion, stop](StorageOutcome outcome)
     {
-        completion(outcome.succeeded && !stop.stop_requested() ? std::optional(*check) : std::nullopt);
+        completion(!outcome.failure && !stop.stop_requested() ? std::optional(*check) : std::nullopt);
     });
 }
 }

@@ -19,7 +19,7 @@ public:
     // Returns false, and queues nothing, when the queue is full.
     bool Queue(std::function<void()> change);
     // Writes the document; a change calls this at most once.
-    void Commit(Json document, std::function<void(StorageOutcome)> completion);
+    void Commit(Json document, std::function<void(Outcome)> completion);
     // Commits a command's change. Only after the write succeeds does `apply`
     // change the state to match; its result is the reply.
     void Commit(Json document, Reply reply, std::function<Json()> apply);

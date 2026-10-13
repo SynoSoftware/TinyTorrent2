@@ -176,6 +176,7 @@ enum class ShutdownPhase
     Idle,
     Draining,
     Pausing,
+    Sampling,
     Saving
 };
 
@@ -331,6 +332,7 @@ enum class ErrorCode
     Unavailable,
     Overloaded,
     StorageFailed,
+    EncryptionFailed,
     RecoveryRequired,
     FilesBusy,
     SharedFiles,
@@ -344,6 +346,13 @@ enum class ErrorCode
     AliasConflict,
     AddFailed,
     RegistrationFailed
+};
+
+enum class StorageFailure
+{
+    Failed,
+    // The store refused the work because too many jobs were waiting.
+    Overloaded
 };
 
 enum class NoticeKind
@@ -384,6 +393,14 @@ enum class TrayItem
     Counts
 };
 
+// The commands in a notice popup's More menu, in Windows' order.
+enum class NoticeCommand
+{
+    TurnOff,
+    TurnOffAll,
+    Settings
+};
+
 // How a second launch's request to the running engine ended. A different
 // version is its own outcome, because the person must exit that engine first.
 enum class Forwarding
@@ -414,7 +431,7 @@ enum class TrayClick
 enum class PopupPart
 {
     Body,
-    Button,
+    More,
     Close
 };
 
@@ -460,7 +477,10 @@ enum class Command
     PendingActivations,
     ActivationsReceived,
     Open,
-    Exit
+    Exit,
+#ifdef _DEBUG
+    SampleNotice,
+#endif
 };
 }
 }

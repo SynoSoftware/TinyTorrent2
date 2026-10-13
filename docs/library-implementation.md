@@ -166,7 +166,7 @@ determines whether background population is available.
 | Library | Query finished entries from SQLite; own identification decisions, enrichment acceptance and SQL search/filter/count queries. |
 | C# database owner | One connection, authoritative schema, initialization and versioning, serialized transactions and shared consistency rules. Library and subtitles keep domain queries with their behavior. See the [database contract](database.md). |
 | Filename interpretation | One file-kind classification and filename interpretation used by both features, without provider or scheduling decisions. |
-| Video lookup | Selected-provider requests, cancellation and background eligibility; Library accepts identification evidence and saves video information. TMDB owns its API decoding; Public owns website extraction and installed-browser access for IMDb and Rotten Tomatoes. |
+| Video lookup | Selected-provider requests, cancellation and background eligibility; Library accepts identification evidence and saves video information. TMDB, Wikidata, OMDb and MDBList each own their API decoding; Public owns website extraction and installed-browser access for IMDb and Rotten Tomatoes. |
 | File facts reader | One-time Windows property reads for dates, audio tags, media duration, bitrate and video dimensions; Library accepts and saves the returned facts. |
 | Library Browser | Query/configuration input, stable row objects, selection, navigation and opening outcomes; Library initialization, worker events, failure pause, retry and worker drain. TableView performs the only sort. |
 | Existing Inspector and opening owners | Shared card mechanics and Windows file execution. Library supplies a target and consumes the outcome. |
@@ -409,9 +409,10 @@ behavior.
   never substitute an empty collection, an alternate database or a destructive
   reset. Torrent operations remain independent of the database.
 - **One complete first-version schema.** The database creates every permanent
-  table, view and index in one transaction at version 3. Opening a version 2
-  file adds `video_misses` and keeps its data; there are no other upgrades
-  for earlier development databases. The complete schema lives in
+  table, view and index in one transaction at version 4. Opening a version 2
+  file adds `video_misses` and `provider_keys`, and a version 3 file adds
+  `provider_keys`; both keep their data. There are no other upgrades for
+  earlier development databases. The complete schema lives in
   `Services/Database/Schema.cs`; the database owns future versioned migrations.
   `source_state.initialized` records whether the first confirmed torrent list
   has been reconciled, including an empty list. That first list establishes

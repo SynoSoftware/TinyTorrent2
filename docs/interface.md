@@ -89,8 +89,8 @@ Title-bar actions are ordinary Buttons with the existing
 TinyTorrentCaptionButtonStyle, so they share its size, spacing and states with
 each other and with the native caption buttons beside them; CommandBar's
 separate button metrics would break that consistency. Settings sits immediately
-left of the theme button, using the Lucide Wrench icon. The theme button uses
-Lucide Sun for switching to light and Moon for switching to dark, so it
+left of the theme button, using the Lucide Settings gear icon. The theme button uses
+Lucide Lightbulb for switching to light and LightbulbOff for switching to dark, so it
 remains distinct from Settings. Its tooltip names the destination theme. It sits
 immediately beside the native caption buttons, with no extra gap.
 Windows still owns minimize, maximize and close; never simulate those controls.
@@ -106,7 +106,7 @@ The app-icon page switch receives client input. It has no system-menu hit region
 or double-click-to-close behavior. Alt+Space and the unused caption area retain
 Windows' system-menu behavior.
 
-There is no application navigation pane, identity text, command overflow,
+There is no workspace navigation pane, identity text, command overflow,
 language switch or permanent Exit button. Language and theme
 are chosen in Settings; the title-bar light/dark shortcut uses the same theme
 owner.
@@ -144,6 +144,16 @@ Secondary pages retain their callers. Selecting a destination already in that
 history returns to it without adding a duplicate. Back consumes a destination
 only after departure guards accept it; a refusal preserves the current page
 and history. While departure is pending, further navigation is unavailable.
+
+Breadcrumbs describe page hierarchy; Back describes navigation history; related
+settings provide shortcuts. A cross-link does not make its destination a child
+of its source. Speed limits to Schedule selects Schedule in the sidebar and
+shows Schedule as the page title, with no breadcrumb. Speed limits to Queue
+selects Transfers, expands Queue and scrolls it into view, with no breadcrumb.
+Connection setup is a child of Speed limits and shows Speed limits > Connection
+setup. Back from Schedule opened through Speed limits returns to Speed limits
+and restores its scroll position, so a shortcut does not lose the caller's place.
+
 The title-bar arrow and Alt+Left use this same owner, so an empty history
 both hides the arrow and disables Back. Page content and inspector state stay
 with their existing owners when navigating.
@@ -185,14 +195,19 @@ make it clear. Button labels follow the one-word ruling in
 [Buttons](#buttons); a menu item is read in a vertical list and may name its act
 with a verb phrase.
 
-**Owner ruling: help text is forbidden on work surfaces.** Help text explains
-what a control or choice does. It appears only on a surface dedicated to help
-and in
-[tooltips](https://fluent2.microsoft.design/components/web/react/core/tooltip/usage/),
-available on keyboard focus as well as hover. A work surface, such as the main
-window, a dialog or Settings, shows labels, values, states and errors.
-Labels and the layout carry the meaning, and a sentence that explains them is
-help text. Errors stay visible beside the control they concern.
+**Owner ruling: help text on a work surface must add real value.** Help text
+explains what a control or choice does. A work surface, such as the main
+window, a dialog or Settings, shows labels, values, states and errors, and
+shows help text only when it tells the person something the label and layout
+cannot, such as a consequence they would not expect. That text follows
+[Fluent 2 content design](https://fluent2.microsoft.design/content-design): one
+short, plain sentence that never restates the title or label it belongs to,
+and that no tooltip beside it repeats. Every other explanation goes in a
+[tooltip](https://fluent2.microsoft.design/components/web/react/core/tooltip/usage/),
+available on keyboard focus as well as hover. Visible text is read on every
+visit, so a sentence that repeats the label or says what the layout already
+shows costs the person time and pushes the controls apart. Errors stay visible
+beside the control they concern.
 
 **Owner ruling: work-surface text does not wrap, and no line is left empty to
 separate text.** A label, value or message takes one line. A value too long for
@@ -403,7 +418,11 @@ Respect system accent, contrast, animation, and text settings. Preserve the
 expected rest, hover, pressed, selected, focused, disabled, loading, and error
 states of standard controls. Meaning must survive without color or motion.
 
-Standard controls retain their built-in animations. Motion expresses the
+Standard controls retain their built-in animations. Settings expanders retain
+the native header and accessibility, with the owner's LabForms drawer animation:
+the clipped body animates its height over 260 ms opening and 220 ms closing,
+then returns to automatic sizing so following cards move with the reveal.
+Motion expresses the
 relationship between views, so one gesture never produces competing directions.
 Torrents sits to the left of Library: their table and button bar slide as one
 surface, left when entering Library and right when returning to Torrents. The
@@ -461,6 +480,12 @@ textual facts.
 
 ## Committing edits
 
+**Owner ruling: use TextBox for all numeric input, never NumberBox.** The
+standard single-line TextBox provides a clear button and keeps editing consistent
+with other fields. Use numeric InputScope as a keyboard hint; the existing field
+owner retains parsing, ranges, errors, and commit behavior. Do not replace the
+native template or duplicate validation in the control.
+
 Apply independent choices when the user commits them. A switch applies when
 flipped; a selection applies when chosen. Validate text and numbers before
 committing on Enter or an appropriate focus departure. Escape cancels unfinished
@@ -480,10 +505,14 @@ confirmation.
 **Owner ruling: a setting applies immediately and never asks.** Fluent 2 and
 Microsoft's app settings guidance apply a setting without a Save or confirmation
 step. Leaving Settings or closing the window applies each valid typed value, as
-moving to another field does, and restores the saved value of an invalid one, as
-WinUI's NumberBox does by default. If the engine refuses a valid value, the
-person stays on Settings with the error beside the field, because the error
-would otherwise be on a page they can no longer see.
+moving to another field does, and restores the saved value of an invalid one.
+**Owner ruling: Settings closes without
+waiting for saves; failures are notifications.** Navigation and category changes
+capture valid input and continue immediately. Accepted saves finish in their
+existing owners, and failures use the application notification even after the
+person leaves Settings. A reply belongs to the input submitted, so it cannot
+mark newer input as refused or discard it. Window shutdown still drains accepted
+work after hiding the window.
 
 An unavailable engine is different from a refused value. Back preserves unfinished
 ordinary Settings input in the window and leaves the page; closing the window may
@@ -494,19 +523,22 @@ A picker or an operation already in progress finishes before close continues.
 **Owner ruling: leaving an editor applies its input, and only Add and Move
 ask.** Fluent 2 applies a change without a confirmation step, so leaving a
 schedule period or a tracker list applies it, as leaving a setting does, and
-failed file choices are sent again. Nothing changes under the person's hands:
+failed file choices are sent again. Schedule save, Add and Remove failures use
+notifications and never hold Settings navigation; leaving drops an incomplete
+or duplicate period. Nothing changes under the person's hands:
 an edit that cannot be applied, because it is incomplete, invalid or refused,
-keeps the person at the editor with its error, so they never leave believing
-it applied. A duplicate schedule period is dropped, because the schedule
-already holds it. A row that leaves the table's view, such as a torrent that
+keeps the person at the editor with its error, except for Settings and its
+schedule, whose failures follow the notification rule above. A row that leaves
+the table's view, such as a torrent that
 finishes under the Downloading filter, leaves the selection but not the
 inspector: the inspector stays on that torrent, with any unfinished edit. When
 the engine or the torrent is unavailable, file choices are dropped on leaving,
 because Retry is unavailable and they have no Cancel, and closing the window
 drops any edit that cannot be saved.
 
-The subtitle supplier editor requires explicit Save and discards its draft on
-window close, because it stores account details the person has not confirmed.
+The account dialog, which asks for a subtitle supplier's or Library provider's
+key or sign-in, requires explicit Save and discards its draft on window close,
+because it stores account details the person has not confirmed.
 Supplier changes preserve the automatic subtitle switch.
 
 Add and Move still ask, because applying them would start a download or a file
@@ -525,7 +557,8 @@ torrent, move files or discard input while the person is trying to close.
 
 Send only intended changes through the [engine's edit path](engine.md#committed-edits).
 Refresh confirmed facts without replacing the user's current input. On refusal,
-keep that input and explain the actionable reason at the affected control.
+keep that input and explain the actionable reason at the affected control,
+or in the application notification for Settings.
 Reconnection preserves unfinished input but does not submit it automatically.
 When the engine is unavailable, Restart is reachable inside an open Add draft
 as well as the main window. A modal editor must not cover the
@@ -641,15 +674,16 @@ preserving its selection and the inspector. Torrent and View menus are disabled 
 a secondary page is visible so commands cannot act on a hidden selection.
 
 The table starts with Name, Size, Progress, Status, Down speed, Up speed, Time
-left, Ratio, Seeds, Peers, and Added; the person can hide, show, and reorder them.
+left, Ratio, Seeds, Peers, Added, and Completed; the person can hide, show, and reorder them.
 Time left reads in its two largest units, such as 3 d 4 h or 45 min, and 100
 days or more reads as ∞, because a raw count of minutes cannot
 be read at a glance. Seeds and Peers each show the connected count with the
 swarm total in parentheses: the tracker's count when it
 reports one, otherwise the peers this session has heard of. Peers excludes
-seeds. Added reads as elapsed time, such as 3 hours ago, because how long ago a
-torrent arrived is what the person compares; the exact date and time is its
-tooltip.
+seeds. Added and Completed read as elapsed time, such as 3 hours ago, because
+how long ago a torrent arrived or finished is what the person compares; the
+exact date and time is the tooltip. Completed shows a dash until the torrent
+is complete.
 
 Natural order follows the engine's download queue. The Queue column shows
 one-based queue positions and a dash for torrents outside the queue. The engine
@@ -1135,6 +1169,10 @@ Window-only settings have one WinUI operational owner; the existing settings
 store persists their choices alongside theme. There are no remote profiles or
 connected-server scopes in this local product.
 
+**Owner ruling: TinyTorrent does not preallocate disk space.** The owner chose
+not to offer this setting, so later work does not add it back. New downloads use
+libtorrent's default sparse files.
+
 **Owner ruling: the Settings page background is the window's acrylic with two
 translucent gear marks.** The page sets no background of its own, so the
 window's acrylic shows between and around the cards. Two large Lucide Cog glyphs
@@ -1154,85 +1192,110 @@ across categories. Search includes those settings and reveals the chosen row.
 own.** The title-bar search already finds settings, including advanced settings;
 a second box duplicates the task and takes a row away from the settings. Keep
 the title-bar search's existing scope of torrents, commands and settings.
-The category index is an introductory convenience shown when Settings opens
-from its button. It is not a Back destination: title-bar Back leaves Settings
-directly from a category or the index, preserving the ordinary edit guards.
-A Don't show this page again check box below the cards and the Show the
-Settings start page switch in Dialogs and confirmations change one value, saved
-with window settings. While it is off, Settings opens at General, and checking
-the box leaves the index in place until the person leaves it.
-Keep an explicit editor's actions reachable. Native navigation
-and scrolling handle smaller windows. Settings uses a full page with horizontal
-category selection and grouped sections, so settings have room without obscuring
-the task. Returning to torrents preserves selection and the inspector view.
-Settings keeps this LabForms layout independently of the torrent inspector.
-Each category holds LabForms sections: a borderless card headed by an icon, a
-title and native tooltip help. Each setting in a section is one compact row: its
-name on the left, its control on the right, and its error in the
-same row, so feedback never moves the rest of the page. Individual rows have no
-separator lines. A divider may separate saved configuration from an operational work area,
-or commands that affect different resources, because proximity alone can imply
-that a saved policy belongs to one operation. Descriptive help belongs to the
-label's tooltip, so pointing at an editor does not cover neighbouring controls;
-keyboard users retain the editor's accessible help text. Rows that belong
-together, such as a pair of limits, sit on a borderless
-inner card, because spacing and grouping separate them without the visual noise
-of a rule under every row. Labels, values, and state text stay single-line with
-native trimming and full accessible text. If any visible row in a category has
-a unit, every numeric field and switch track in that category shares the value
-edge; units and On/Off occupy the trailing column. Categories without visible
-units reserve no column. Advanced disclosure recomputes this once for the category.
-Transfers and Speed limits instead give every control the same starting edge,
-so paths, selectors, switches and numeric fields read as one column. Transfers
-uses 360 pixels for paths and selectors, with 174-pixel values and unit selectors;
-Speed limits uses a 240-pixel column with 160-pixel values and a Setup button of
-the same width. Switch state text follows the track. The column grows for longer
-localized units. Speed limits shows the engine's current mode and applied caps
-above its cards, with the existing schedule status available as help text.
-Setup remains the existing Connection page; Apply and Cancel retain their return
-to Settings, and the weekly schedule keeps its existing behavior.
-Plugins uses a 520-pixel control column for provider choices and compound subtitle
-rows, with a compact 96-pixel batch-limit editor followed by its scope, and actions
-sharing the right edge. Visible units are not repeated in editor tooltips. The
-Settings page owns this column, so Library and Subtitles keep the same value edge.
-Put Browse beside the default and incomplete download paths,
-and beside Add's destination, using the native Windows folder picker. Cancelling
-the picker preserves the current path and other unfinished input.
-Do not show an engine field dump. Advanced includes Memory and files (Disk write
-buffer and Open-file limit), Torrent checking (Checking memory and Checking
-threads), interface refresh and speed-history intervals, and the protocol and
-storage choices in their task categories. Memory and checking controls follow
-the [engine policy](engine.md#disk-write-caching). Each
-control names its units, range, default, and speed/resource tradeoff in its
-help. Buffer targets do not claim to cap total memory. Settings has a wider
-shared header and body. Its window minimum accommodates the complete category
-strip in the current language and text size, so every category stays visible
-without horizontal scrolling.
+Settings uses the approved Windows Settings composition in
+`app/settings-windows-prototype.html`, variant C, and its accompanying notes.
+Its sidebar contains Home, General, Transfers, Speed limits, Schedule,
+Appearance, Network, Library & subtitles, and Advanced. Advanced appears with
+the existing disclosure switch. The sidebar's TinyTorrent logo and name form a
+native button that returns directly to the workspace Settings was opened from.
+The footer puts Advanced, its On/Off state and its switch above the same return
+action, last in the pane. Advanced uses the category icon and label insets; its
+state and switch align at the right. The return label names Torrents or Library
+from the navigation owner's workspace, and both return buttons use that workspace's existing command and departure
+guards, so browsing Settings does not trap the person in its history.
+The sidebar uses a compact icon rail at smaller widths
+without a hamburger button; it does not set the window minimum
+from translated category labels. Content is bounded at 1200 DIPs.
 
-The category order is General, Transfers, Speed limits, Appearance, Network,
-Schedule, Subtitles, and Advanced. Routine download controls and personalisation
-precede connectivity, scheduled automation, optional subtitles, and tuning.
-Subtitles puts supplier access and wanted languages first, then the independent
-Download automatically preference. Download automatically
-controls only automatic work, not availability of the feature. Dividers separate
-saved configuration, Batch download and the local subtitle-folder scan, so setup
-precedes explicit actions. The search limit is the Plugins page's shared setting
-above Library and Subtitles ([architecture](architecture.md#third-party-provider-access)).
-Appearance keeps language and theme first and groups status-bar choices together.
+Settings category icons use Microsoft's Fluent color SVGs in a 28-DIP icon box,
+with 16-DIP labels, to make the categories easier to recognize. This is the sidebar exception to Lucide
+iconography; High Contrast uses the existing Lucide glyphs and native colors.
+Only the nine used assets and their MIT license ship with the app.
 
-Transfers leads with Files, keeping each folder selector beside its destination,
-then Adding torrents, File selection, Seeding limits, and Watched folder. Routine
-file choices precede allocation and naming details. Speed limits shows the current
-mode before the optional connection-setup aid, then groups
-standard and alternative caps, queue activity, peer connections, and bandwidth
-accounting. Schedule has its own category, with actual standard and alternative
-caps and Edit at the right of their card header, then the same limits chooser
-and current limits as Speed limits, above the existing weekly editor.
-Connection setup is a child Settings page because its capacity inputs and
-multi-field proposal form one explicit operation. Its content and footer share
-Settings' `TinyTorrentSettingsWidth` resource (1000 DIPs), so a wide window does
-not spread the proposal across the workspace. Settings can grow beyond that
-baseline when its translated category labels need more room.
+**Owner ruling: Settings tab headers put artwork first, the title next, and two
+compact facts with Lucide icons at the end.** One shared header keeps the tabs
+consistent. Facts describe the selected tab using its existing owners, so they
+remain current without another query or stored summary. Measured content widths
+move facts below the title, then into separate rows when necessary. Captions and
+values and the single-line page title keep their full text in tooltips. Home uses one
+Home title beside its logo, an activity subtitle, and session and all-time totals
+in the 20-DIP semibold role, avoiding a repeated heading and small primary facts.
+
+Home provides curated shortcuts and the same theme, Windows integration and
+automatic subtitle controls as their category pages. It shows facts supplied
+by the native owners; prototype sample activity and totals are never production
+data. The existing start-page preference controls whether Settings opens at
+Home or General.
+
+Use 24-DIP gaps between major tasks, 8-DIP gaps between sibling cards in either
+direction, 8 DIPs from an external section heading to its card, and 16-DIP
+horizontal card insets. Related rows share themed separators, no exterior row
+gaps, a compact 52-DIP minimum or 64 DIPs with a description. Trailing controls
+align to the actual right inset. Reserve an action column only where a group
+has related actions. Numeric inputs use native TextBox, including its clear
+button; optional limits use the Unlimited placeholder.
+
+Use native WinUI Expanders with the shared Settings drawer animation described
+above. Their headers contain the subject and a configured
+summary from the existing settings owner; collapse that summary when expanded
+so it does not leave an empty line above the controls. Notifications retains its consequence
+description under the heading. Static group headings stay outside their cards,
+except Home's overview groups, whose stronger headings sit inside their cards.
+Home link hover and focus cover their full row with the content inset inside the
+button; the group heading is not part of the interactive row.
+Settings labels, values and feedback remain single-line, with ellipsis and the
+full text available through tooltips and accessibility.
+
+General begins with Windows integration, then Startup and closing,
+Notifications, Power, Dialogs and confirmations, and automatic updates.
+Registration warnings use the full row width below the first row of actions.
+The native proxy dialog keeps its existing transaction, validation, feedback
+slot and button placement.
+
+Transfers contains Download locations, Adding torrents, Queue, Seeding limits,
+Watched folder, Skip files, and a Delete through Recycle Bin switch. Skip files
+hides its pattern editor while off, retaining the saved patterns. Network begins with adapter
+and proxy cards; advanced groups contain encryption, peer connections,
+discovery and incoming connections. Library & subtitles places video
+information before supplier access, wanted languages, automatic subtitles and
+additional matches, followed by Library search, local scan and the shared
+provider search limit. Filtering languages never discards hidden selections.
+Search and scan feedback occupy reserved single-line slots, so results do not
+shift controls.
+
+Speed limits puts Limits to use before equally sized Standard and Alternative
+profiles, then Connection setup. Both profiles remain editable in every mode.
+Speed limits and Schedule use one editor and the existing decimal MB/s
+conversion; connection capacity stays in Mbps. Schedule wraps that shared
+editor in an expander and retains an always accessible four-choice mode selector
+beside the weekly map. Periods keep their existing save owner, with when and
+behavior summaries, inline days, 24-hour Start/End controls and Remove beside
+them when space permits.
+
+Appearance uses one responsive three-column native radio group for System,
+Light and Dark. All previews share a compact 21:9 crop with 8-DIP clipped
+corners; System splits the same Light/Dark artwork. Display language remains
+a separate row below. There is no redundant theme dropdown. Free space,
+external IP and title-bar speeds use three directly accessible switch cards.
+The external-IP card follows Show advanced settings; hiding it keeps its saved
+value and removes its whole card from the layout.
+
+Home, search and related links use one reveal-expand-scroll-focus path. A
+destination surface receives a neutral outline with normal card rounding,
+flush against the block and excluding external section headings. It lasts
+three seconds or until focus enters a control. Theme selection retains its
+accent outline and checkmark. Sidebar category selection replaces the current
+Settings visit, so Back does not retrace every peer category. Related links keep
+their return destination and scroll position; breadcrumbs describe hierarchy.
+Connection setup alone is a child page, with Speed limits > Connection setup.
+It keeps the same Settings sidebar visible with Speed limits selected; the
+retained caller category and scroll position still govern Back.
+Related Schedule and Queue links select their real categories and reveal the
+weekly map or Queue.
+
+Connection setup retains its existing proposal and Apply/Cancel workflow.
+Its content and footer share the Settings width resource, so the proposal
+does not spread across an arbitrarily wide workspace.
 The approved constrained layout places inputs and proposed changes side by side
 when they fit and stacks them otherwise; Apply and Cancel sit in the separated
 footer below the content. Title-bar Back returns to the initiating setting. Ordinary settings
@@ -1292,7 +1355,7 @@ confirmation restores, notifications, sleep prevention, VPN adapter and proxy
 setup, Library information, scheduling, and subtitle setup also remain visible.
 Advanced reveals listening port and router mapping, peer protocols and discovery,
 connection caps and attempt rate, slow-torrent thresholds, bandwidth accounting,
-allocation, exclusion patterns, external-IP diagnostics, and
+allocation, exclusion patterns, and
 storage, checking, refresh, and history tuning. Use this copy is ordinary when
 another TinyTorrent copy owns startup, because otherwise the visible switch
 cannot select this copy.
@@ -1339,7 +1402,11 @@ Scheduler presents one weekly overview with standard limits, alternative limits,
 and paused periods, because separate schedules obscure their combined effect.
 Time runs left to right beneath a 00–24 hour ruler; each day has one row, and
 segments occupy widths proportional to their duration. The week shows saved
-periods, and a line marks the current day and time. While a fixed choice
+periods, and an accent line with a round head marks the current day and time.
+The compact legend includes the same current day and time. Ordinary periods
+use fills; an outline and handles distinguish the selected period. High Contrast
+retains a thin outline around ordinary periods so their edges remain visible.
+While a fixed choice
 applies, the week shows that choice on every day, all day, and hides the legend
 and the periods, because the map shows the limits that actually apply; the
 periods return when Weekly schedule is chosen. Periods are coloured, and
@@ -1356,10 +1423,11 @@ so editing controls do not compete with the header's expand gesture.
 Every change applies at once, like every other setting, so the
 editor has no Save or Cancel. Input the schedule cannot take, such as a period
 with no day or a duplicate of another period, stays on screen beside its error.
-Closing the period drops that input. Leaving Settings with it is refused, so the
-person never leaves believing it runs. Leaving, closing or switching periods,
-Add and Remove wait for a save and apply valid input made during it before
-replacing the editor, so save timing cannot discard a change. Period changes
+Closing the period or leaving Settings drops that invalid input. Settings
+navigation continues immediately while valid input saves in the background.
+Closing or switching periods, Add and Remove apply valid input made during an
+earlier save before replacing the editor, so save timing cannot discard a change.
+Period changes
 run in the order they are asked for, so a click made during one is never lost.
 Add saves Monday to Friday, 09:00 to 17:00, with alternative limits, and opens
 it; when the schedule already holds that period, Add opens it instead.
@@ -1391,9 +1459,10 @@ An overnight period shows its following-day portion and handles at its actual
 endpoints. The fill still shows the effective mode, with Pause taking precedence.
 Reject exact duplicate submissions; preserve distinct overlapping rules so a
 later Edit or Remove retains its meaning. A fixed choice stops application of
-the periods and keeps them for the next time Weekly schedule is chosen. A refused save keeps the attempted
-values in the open period beside the error, so the person can correct them or
-close the period.
+the periods and keeps them for the next time Weekly schedule is chosen. A refused
+save keeps the attempted values in the open period and reports the failure through
+the application notification, so the person can correct them or close the period
+without a navigation delay.
 Full-day descriptions say All day rather than midnight to midnight.
 Each period has days, start/end times, and a choice of alternative limits
 or pause, edited with native checkboxes, TimePicker controls, and a ComboBox.
@@ -1445,10 +1514,10 @@ does not crowd the setting or hide its explanation. Both registration settings
 use the same caution presentation; an entry never shows as unregistered merely
 because it starts another copy.
 
-When torrent handlers start another copy, Use beside the switch writes those
-entries for the running copy. Its tooltip names the scope: torrent files and
-magnet links. When another copy owns startup, Use appears beside the sign-in
-switch in the same row. Both rows place the caution, action, switch and state
+When torrent handlers start another copy, Use this copy beside the switch writes
+those entries for the running copy. Its tooltip names the scope: torrent files
+and magnet links. When another copy owns startup, Use this copy appears beside
+the sign-in switch in the same row. Both rows place the caution, action, switch and state
 text in that order at the right. The two app names sit in compact, indented rows
 under the handler setting, so they read as its details. Show failures beside the
 affected action and preserve the user's work. Routine successful changes need

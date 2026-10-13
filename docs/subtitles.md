@@ -72,7 +72,7 @@ manual downloads never requires enabling automatic work.
 | Download automatically | Saves automatic intent independently of readiness. Missing credentials or temporary failures pause work without changing the switch. |
 | Extra subtitles when unsure | Saves 0 to 3 alternatives for new automatic searches, default 1. Accepted jobs retain their matching choice, and batch choices remain independent. |
 | Supplier | Selection applies immediately, with empty credentials for a different supplier. Only Edit opens the account dialog. Selection preserves automatic intent. |
-| API key | OpenSubtitles uses the free application key without customer setup. SubDL and SubSource require the person's own key, following [third-party provider access](architecture.md#third-party-provider-access). |
+| API key | OpenSubtitles uses the free application key without customer setup. SubDL and SubSource use the free application key built into the release, and the person may enter their own key instead, following [third-party provider access](architecture.md#third-party-provider-access). |
 | User name and password | OpenSubtitles optionally accepts a personal login alongside the application key. Both blank omits user login; entering either requires the complete pair. Other suppliers show only the key. |
 | Wanted languages | When unset, use the interface language. An explicit choice downloads one suitable subtitle for **each** selected language, so this is not an ordered fallback list. |
 | Batch download | Movies: Not searched, No exact match, All movies. Download: Exact match only, Best match, Up to 2, 3, or 4 subtitles. These choices apply only to the requested batch. |
@@ -104,7 +104,8 @@ the application key. Failed login never silently
 falls back to anonymous access, because that changes the allowance being used.
 
 **Owner ruling: supplier selection is immediate and never opens a dialog.**
-Edit opens the selected supplier's Save/Cancel account dialog. A draft never
+Edit opens the selected supplier in the
+[account dialog](architecture.md#third-party-provider-access). A draft never
 changes live credentials. Check validates the complete draft without saving it
 or sending movie information. Save does not require a preceding Check; Cancel
 and Escape discard the draft. Failed saves retain the draft and explain the
@@ -474,6 +475,12 @@ The [product code rules](../AGENTS.md#code-style) govern reuse and ownership.
 The table below identifies the existing owners for subtitle work; supplier
 implementations add only the request and decoding behavior that differs.
 
+Supplier's operation carries the account, HTTP access and acquisition validity
+through each adapter call. The shared send path validates it before reserving
+allowance, including login, retries and redirects, so adapters cannot accidentally
+spend requests for obsolete work. Account Check carries no movie membership;
+its cancellation and network route still apply.
+
 | Responsibility | Existing owner to reuse or extend |
 | --- | --- |
 | Dialog shell, buttons, settings layout | [Dialog](../app/src/Controls/Dialog.cs), [ActionButton](../app/src/Controls/ActionButton.cs), [SettingsRow](../app/src/Controls/SettingsRow.cs), [SettingsSection](../app/src/Controls/SettingsSection.cs), and their shared App.xaml styles. Equal action sizing belongs in that shared styling, not a subtitle-only dialog template. |
@@ -594,11 +601,14 @@ application-key access. Facts below come from
 SubDL's [API documentation](https://subdl.com/developers) and
 [terms](https://subdl.com/terms), read 2026-10-08.
 
-- Access is the person's own free API key from their SubDL account. SubDL's
-  terms allow an application in which each user brings their own key, and
-  forbid sharing one free key across an application's users and asking for
-  SubDL passwords. TinyTorrent therefore ships no SubDL key and asks only for
-  the API key, never a SubDL password.
+- Access is the free API key built into the release, or the person's own key
+  from their SubDL account, which replaces it. SubDL's terms, read
+  2026-10-13, require a paid plan for commercial use and say a free key must
+  not be used as a shared key to power a commercial service for its users;
+  they allow an app in which each user brings their own key. They do not
+  address a shared key in a non-commercial app. The built-in key follows the
+  [owner ruling](architecture.md#third-party-provider-access). TinyTorrent
+  asks only for an API key, never a SubDL password.
 - Matching uses the release filename search, `GET /api/v2/files/search`, and
   accepts an individual SRT only when its release and language match exactly
   under the matching rules above. Explicit forced or foreign-part labels are
@@ -617,8 +627,10 @@ SubDL's [API documentation](https://subdl.com/developers) and
 SubSource's [API documentation](https://subsource.net/api-docs) and
 [terms](https://subsource.net/terms), read 2026-10-08.
 
-- Access is the person's own API key, generated under My Profile on
-  subsource.net and sent as `X-API-Key`. TinyTorrent ships no SubSource key.
+- Access is the API key built into the release, or the person's own key,
+  generated under My Profile on subsource.net, which replaces it. Either is
+  sent as `X-API-Key`. SubSource limits requests per key, so every
+  installation shares the built-in key's limits.
 - Matching takes two steps. `GET /movies/search` finds the title by text with
   year, or by IMDb ID when one is known; `GET /subtitles` then lists that
   title's subtitles by `movieId` and language. Accept a result only when its

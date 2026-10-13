@@ -90,6 +90,7 @@ public sealed class FileSelection(Strings strings) : INotifyPropertyChanged
     internal void Load(JsonElement files)
     {
         var choices = _files.ToDictionary(file => file.Index, file => file.Priority);
+        var folders = new Dictionary<(FileNode? Parent, string Name), FileNode>();
         _roots.Clear();
         _files.Clear();
         foreach (var item in files.EnumerateArray())
@@ -103,7 +104,7 @@ public sealed class FileSelection(Strings strings) : INotifyPropertyChanged
                 var leaf = i == parts.Length - 1;
                 var node = leaf
                     ? null
-                    : siblings.FirstOrDefault(node => node.Name == parts[i] && node.Index < 0);
+                    : folders.GetValueOrDefault((parent, parts[i]));
                 if (node is null)
                 {
                     var index = leaf ? item.GetProperty("index").GetInt32() : -1;
@@ -128,6 +129,8 @@ public sealed class FileSelection(Strings strings) : INotifyPropertyChanged
                         _files.Add(node);
                     }
                     siblings.Add(node);
+                    if (!leaf)
+                        folders.Add((parent, parts[i]), node);
                 }
                 parent = node;
                 siblings = node.Descendants;
