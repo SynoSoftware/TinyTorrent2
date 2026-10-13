@@ -1,8 +1,10 @@
 # Library and subtitle request protection
 
-Design proposal, rechecked against current source 2026-10-13. Not implemented.
-Active app contracts remain authoritative. This covers TMDB, Wikidata, OMDb,
-MDBList, IMDb, both Rotten Tomatoes readers, OpenSubtitles, SubDL and SubSource.
+Implemented and verified on 2026-10-13, reconciled with IMDb datasets phase 1.
+Active app contracts remain authoritative. This covers remote calls from TMDB,
+Wikidata, OMDb, MDBList, OpenSubtitles, SubDL, SubSource and IMDb dataset
+downloads. IMDb movie searches read local data under the rules below. The
+removed IMDb and Rotten Tomatoes website readers are outside this change.
 
 ## Decision and scope
 
@@ -31,16 +33,17 @@ Success has four observable conditions:
 
 Known misses do not poll. Keep the app's automatic-work eligibility, startup
 delay, subtitle completion stages, network route and file-publication rules.
-Keep the current five-search cap and shared setting. Reaching it creates a
+Keep the current five-search cap for remote searches and shared setting. Reaching it creates a
 local block; the agreed Force/Missing/All actions provide explicit recovery.
 
 ## Source findings
 
-| Current code | Problem the replacement solves |
+| Implementation baseline | Problem the replacement solves |
 | --- | --- |
 | [VideoLookup](../app/src/Library/VideoLookup.cs) keeps search answers in `_searches`; [Store](../app/src/Library/Store/Identification.cs) persists counts and per-file `video_misses`. | Empty answers are not reusable across a restart and another file. Per-file misses also omit language. |
 | Library's capped search returns an empty list plus `Limited`/`Answered` flags. | Refusal to search can be confused with an actual missing answer. |
-| [ProviderJson](../app/src/Library/ProviderJson.cs) and [Public.Provider](../app/src/Library/Public/Provider.cs) conflate missing resources with unusable responses. | The caller cannot choose the right recovery. |
+| [ProviderJson](../app/src/Library/ProviderJson.cs) treats any 404 as an unusable video. | Resource absence needs endpoint knowledge; a broken search endpoint must not become a movie miss. |
+| [IMDb](../app/src/Library/Imdb/Provider.cs) searches a replaceable local dataset through the same Library workflow. | Remote suppression, search charges and durable query reuse would needlessly stop or stale local answers. |
 | [Supplier](../app/src/Subtitles/Supplier.cs) returns filtered matches; [Acquisition](../app/src/Subtitles/Acquisition/Acquire.cs) counts the completed workflow. | No acceptable match can look like remote absence. A workflow count cannot pace its pages, login or fallback calls. |
 | Library failures, supplier waits and per-job subtitle network backoff have separate owners. | Recovery and reset have inconsistent scope; many jobs can each make a first failing request. |
 | [Account checks](../app/src/Subtitles/Acquisition.cs) serialize with acquisition, but persist allowance only for the saved account in `subtitle_settings`. | A different draft account's remote wait is only session state; cancelling the draft or reopening must not discard the protection it incurred. |
@@ -60,7 +63,8 @@ These are source findings, not executed runtime evidence.
 | Subtitle workflow, matching, successful candidates and files | Subtitles | Candidates still need language, release and destination rules. |
 | Suppression, access recovery, pacing and reset semantics | RequestPolicy | Every adapter needs the same protection decisions. |
 | Request parameters, parsing and provider-specific quota facts | Adapter | Remote contracts differ; common policy does not. |
-| HTTP connections, confirmed route and transport cancellation | ProviderHttp; existing supported website reader | Protection must not create a second transport or route authority. |
+| HTTP connections, confirmed route and transport cancellation | ProviderHttp, including its streaming Download path | Protection must not create a second transport or route authority. |
+| IMDb download/import and replaceable data | Imdb.Dataset; Library coordinates lookup drain | A dataset update must preserve the installed file until a complete replacement is ready. |
 | Schema initialization and transaction execution | Database | Feature data and protection need one commit authority. |
 | Construction, lifetime and cross-feature reset coordination | MainViewModel | Neither feature owns the other's lifetime. |
 
@@ -72,7 +76,7 @@ flowchart TD
     Feature --> Adapter["Selected adapter"]
     Adapter --> Send["Common outbound path"]
     Send --> Policy
-    Send --> Transport["ProviderHttp / website reader"]
+    Send --> Transport["ProviderHttp Send / Download"]
     Policy --> DB["Existing Database"]
 ```
 
@@ -92,7 +96,7 @@ credentials are sent, not whether pacing applies to an unauthenticated download.
 Library currently serializes execution through `VideoLookup._access`;
 Subtitles uses `Acquisition._operation`, including account checks. Keep
 serialization with each workflow because it also protects decisions and
-publication. Both Rotten Tomatoes readers use Library's execution owner.
+publication. IMDb reads use Library's execution owner too, but no network policy.
 Refactor those methods as needed; their present shape is not a constraint.
 A shared executor, second scheduler, generic cache callbacks and shared-task
 cancellation machinery would duplicate that responsibility and are unnecessary.
@@ -128,17 +132,17 @@ as the outbound request. Do not parse or normalize independently in two places.
   later title search even with unchanged remote parameters. Equivalent copies
   share the completed-evidence answer. Earlier successful candidates remain
   reusable where they satisfy the matching rules.
-- Catalogue identity is independent of reader choice: Rotten Tomatoes browser
-  and HTTP share content history. IMDb, OMDb and MDBList do not share answers
-  merely because they describe the same movie.
+- Catalogue identity distinguishes providers. OMDb and MDBList do not share
+  answers merely because they describe the same IMDb movie; local IMDb data
+  cannot satisfy a remote provider's missing search or resource.
 - Local paths and torrent identities do not distinguish otherwise equivalent
   questions. An adapter that sends a filename includes that effective filename,
   not its directory. Account-dependent content includes its account scope.
 
 Access scope answers: **which calls does this failure or allowance affect?**
-Adapters identify the applicable service, key, account, reader or endpoint
-scope and request/download allowance. Apply every relevant hold. A browser
-launch failure affects that reader; a website-wide limit affects both readers.
+Adapters identify the applicable service, key, account or endpoint scope and
+request/download allowance. Apply every relevant hold. IMDb dataset downloads
+have their own access scope, independent of local movie reads.
 A search-format failure cannot be cleared by successful login.
 
 Use the effective built-in or personal key for key-scoped allowances, and a
@@ -248,14 +252,99 @@ A relevant remote deadline takes precedence over an earlier local retry.
 Parse both Retry-After forms and provider-specific quota facts. HTTP 429 does
 not prescribe the service's quota scope; see [HTTP 429](https://www.rfc-editor.org/rfc/rfc6585.html#section-4)
 and [Retry-After](https://www.rfc-editor.org/rfc/rfc9110.html#name-retry-after).
+The shared policy caps a newly received deadline at 24 hours from receipt,
+so an excessive remote value cannot prevent requests indefinitely. This caps
+newly recorded deadlines; it does not rewrite existing stored holds.
 Without a usable deadline, use the supplier's documented reset rule or a
 one-hour fallback followed by one probe. Missing headers must not create
 permanent waits. These policy constants are not new user settings.
 
-Website readers use the same protection and pace app-initiated navigations.
-Their internal browser traffic is outside exact call accounting. Keep bounded
-operation timeouts and confirmed-route restrictions; never select another
-reader or network route automatically.
+The streaming dataset download path uses the same outbound admission and
+records status and Retry-After facts before reading the body or starting the
+next transfer. Classify remote transfer failures there; local file writes,
+import failures and dataset SQLite errors remain Dataset recovery and do not
+create remote service backoff. Preserve its
+idle timeout and streaming writes; do not buffer a large dataset or impose
+the JSON path's whole-request timeout. A dataset 404 is a download failure,
+never evidence that a particular movie is absent.
+
+## IMDb datasets and local answers
+
+[IMDb datasets phase 1](imdb-datasets.md#phase-1-the-imdb-provider) is already
+implemented. Keep its separate replaceable file, read-only lookup connections,
+temporary import, explicit Download/Update/Delete actions and Settings feedback.
+This feature protects its remote downloads; it does not repeat that implementation.
+
+**Owner ruling: IMDb offline is managed only in Settings.** It is not an entry
+in Library context menus, the individual Fetch/Force fetch provider chooser,
+or batch fetch actions. Local movie reads never start a download. Settings
+Download/Update requests the complete dataset as one operation; there is no
+per-movie IMDb download endpoint. Phase 1 currently transfers the basics and
+ratings source archives to build one installed SQLite dataset; this feature
+does not change that import format or split it into movie downloads.
+
+RequestPolicy protects remote requests, so it needs no IMDb bypass or special
+exemption. **The plugin contract declares whether a provider supports
+downloading information for an individual movie: `ProviderOption.IsOnline`,
+true for every provider that declares no `Dataset`.** API providers are
+online; IMDb offline declares its dataset. Settings still lists both. The
+provider chooser, context menus, batch actions and execution admission consume
+this same capability; never infer it from the provider's name or from whether
+its data is installed. Library
+continues to read the installed dataset locally under its ordinary matching owner.
+
+- Reading local movie data is not a protected remote request: it creates no
+  remote search count, negative history or access wait. Missing or damaged
+  data directs the person to Settings. Reset cannot install or repair it.
+- Remote completed-query caching must not absorb local dataset reads. Local
+  answers use the installed dataset's freshness: after replacement, neither
+  learned candidates nor saved title/year matching shortcuts may settle an
+  unresolved movie using stale dataset facts. Keep accepted identifications
+  and useful saved metadata. This is local data invalidation at Library's
+  existing owner, not permission to bypass any protection or contact IMDb.
+- Keep the existing per-session attempt markers to bound an automatic sweep.
+  An empty local answer does not cause a busy loop; a later session may read it
+  again. Installing a dataset clears only that catalogue's unresolved attempt
+  markers and any session query reuse, so eligible unfinished work can see new
+  titles during the same session. Failed or cancelled installation leaves the
+  old dataset and its eligibility state intact.
+- Dataset installation and deletion use Library's pause/drain operation instead
+  of ending its batch. Keep queued entries and explicit decisions. Installation
+  resumes eligible accepted work; deletion leaves work waiting for available
+  data or an explicit Stop, without starting a download. Preserve the existing
+  setting that deletion turns off IMDb automatic lookups.
+- Download and Update are explicit Settings commands for the entire dataset.
+  Each transfer follows the same request protection, pacing and remote waits
+  as other outbound calls. Each explicit Download or Update uses the shared
+  recheck command: it may try once past an earlier attention or local backoff
+  hold. It still respects remote waits, allowance and pacing. Reset uses the
+  standard rules; no separate IMDb override is needed. Do not charge the
+  movie cap, create per-movie misses, automatically redownload a dataset, or
+  let a remote download hold stop reads of the installed file.
+- Reset for IMDb or all providers first prevents another dataset command from
+  starting, then cancels and drains the whole Download/Build/Install command
+  and its policy writes **before taking Library's change/execution gates**.
+  Otherwise completion can wait for `Reload` while reset waits for completion.
+  Use the existing download owner and check cancellation before installation;
+  preserve installed data and report interruption in its existing UI. Reset
+  never restarts the large download. File replacement
+  remains serialized with Library reads; no database lock is held while
+  draining the transfer or importing the data.
+
+The later cross-provider IMDb rating join belongs to phase 2, after this feature.
+Do not implement ATTACH, rating fallback, IMDb-ID backfill, a dataset migration,
+or phase 3 imports here. Keep protection transactions in `library.db` and
+dataset failures out of that file's incompatible-storage recovery. When phase 2
+adds the attachment, its Database owner will coordinate detach/replacement
+outside transactions within the existing Library drain; it must retain these
+protection and file-preservation rules. A changed local rating never clears an
+OMDb/TMDB search hold or grants permission to contact those providers.
+
+The pre-V1 initial-schema ruling applies to this implementation: increment the
+Library schema revision and remove obsolete development migrations. The phase 2
+plan's proposed saved-ID backfill does not authorize a migration here; its
+owner decision is resolved when that phase starts. No future-only attachment
+or version protocol is added for it now.
 
 ## Retry and reset
 
@@ -265,6 +354,11 @@ The label exposes the override before the click; do not show two competing
 commands or require a failed Fetch followed by another confirmation. The command
 captures the item, provider and query. Changed input uses ordinary admission,
 and a newly discovered block is explained rather than silently overridden.
+
+Search feedback covers that captured query. Selecting a candidate identifies
+its detail or subtitle-download resource; a hold on that resource is shown at
+the selection action, which offers its own scoped Force fetch. A different
+candidate never inherits permission to override the previous candidate's hold.
 
 Use the existing [feedback placement](interface.md#feedback-placement) owner
 to show why an item is blocked. A remembered miss is informational, not an error;
@@ -304,6 +398,13 @@ Exclude unsupported inputs and explicitly cleared Library entries under their
 existing rules. Derive counts and execution from this one feature classification,
 recheck at execution, and report changed eligibility or waits. Group equivalent
 requests so each is refreshed once per batch. Saved data stays if refresh fails.
+
+Library also projects resource holds discovered for the current file evidence
+in this session. The attempt records the required question and joins its live
+RequestPolicy hold, so another successful request releases it immediately.
+After reopening, dependencies such as episode resources are discovered again
+during resolution; initial counts cannot include an undiscovered dependency,
+but persisted protection still refuses its HTTP request at execution.
 
 Library defines missing through its existing identification/data rules, not
 whether every optional field has a value. Subtitles defines the corresponding
@@ -410,8 +511,25 @@ Use the existing Database, schema authority and transaction path. Keep only:
 - Access holds, failure streaks and deadlines with their actual scopes.
 - Bounded pacing usage required by declared windows.
 - Existing cap counts while the owner ruling remains.
+- Completion times on reusable answers, so one accepted refresh is shared by
+  equivalent batch items and survives a queued subtitle job reopening.
 
-Successful caches stay with their feature. Record complete search identity
+The SQLite consolidation implemented in commit `77a3317` is the starting point,
+as recorded in [the database contract](database.md). Preserve its ownership:
+`Database/Schema.cs` defines storage, `Database.Run` executes transactions, and
+`Database/Files.cs` owns shared membership reconciliation, cleanup and snapshot
+invalidation. Current source membership remains temporary engine-derived facts;
+protection history never creates membership or accepted work. Keep protection
+independent of torrent withdrawal, so removing and re-adding a movie does not
+refill its remote allowance. Save reusable replies after cancellation but apply
+them to files only through the existing current-membership/decision check.
+Reset must invalidate affected presentation snapshots in its commit and retain
+the established rollback/reopen and fail-closed recovery paths. Add no second
+connection, schema initializer, in-memory membership catalogue or reset store
+for protection. IMDb's separately owned replaceable file remains the documented
+exception, not another owner of `library.db`.
+
+Successful remote-answer caches stay with their feature. Record complete search identity
 alongside candidates: Library's learned choices alone cannot prove that a
 specific query was answered. Subtitle caches retain stable references and
 matching facts, not expired download URLs or subtitle payloads. Respect provider
@@ -433,7 +551,7 @@ atomically, and uncertain requests must not become permanent negative answers.
 If protection cannot be read or saved, pause new remote work and use existing
 storage recovery. Do not silently run unprotected. Local features remain usable
 where their data is readable. A confirmed route change cancels obsolete traffic
-and releases route-specific transient failure, preserving content history and
+and releases local transient backoff, preserving content history and
 remote account holds. Shutdown, database recovery and reset use the app's
 existing lifetime authority.
 
@@ -462,10 +580,26 @@ callers and removes their old implementation; the final result has one protectio
 authority. Follow the pre-V1 schema ruling rather than adding migrations or
 compatibility scaffolding.
 
+Use these skills during implementation and review:
+
+- [sqlite-expert](C:/Users/user/.agents/skills/sqlite-expert/SKILL.md): review
+  durable request keys, constraints, indexes, transaction boundaries and atomic
+  reset, including preservation of successful data and accepted retry intent.
+- [domain-modeling](C:/Users/user/.agents/skills/domain-modeling/SKILL.md): keep
+  New, Blocked, Missing, Force fetch, reset and provider waits precise and
+  consistent with the product vocabulary; record settled terms in `CONTEXT.md`.
+- [codebase-design](C:/Users/user/.agents/skills/codebase-design/SKILL.md): review
+  ownership, interfaces and seams, keeping one policy implementation and removing
+  replaced paths without adding unnecessary layers.
+
+Apply their guidance within the app's authoritative contracts and this feature's
+scope. Preserve the single SQLite owner, pre-V1 schema policy and the owner's
+build/test authorization rules; generic skill defaults do not override them.
+
 | Step | Change and deletions | Complete when |
 | --- | --- | --- |
 | 1. Define shared outcomes and history | Add concrete RequestPolicy and durable request/access state. Place enums according to app naming rules. Move the existing cap and its setting to this owner. | Every hold has an owner, scope and release condition; admission never masquerades as an empty answer. |
-| 2. Move Library lookup and resource reuse | Integrate all API and website paths. Replace session-only search reuse, per-file `video_misses` admission, `_failures` and `Limited`/`Answered` inference. Centralize the shared resource-read sequence at Library's owner. | Equivalent requests reuse durable answers, language/resources remain distinct, and failed refresh preserves good data. No adapter implements independent protection. |
+| 2. Move Library lookup and resource reuse | Integrate API paths and Settings' streaming IMDb dataset download. Keep local dataset reads outside the remote-request workflow; no IMDb protection exception. Remove IMDb from per-item and batch Fetch actions. Replace session-only remote search reuse, per-file `video_misses` admission, `_failures` and `Limited`/`Answered` inference. Centralize the shared resource-read sequence at Library's owner. | Equivalent remote requests reuse durable answers; local reads see the installed dataset. IMDb downloads start only through Settings. Language/resources remain distinct, and failed refresh preserves good data. No adapter implements independent protection. |
 | 3. Move subtitle protection | Separate remote candidates from host matching. Integrate through the existing operation/send path. Replace supplier wait dictionaries, saved-account-only deadlines, private rate enforcement and per-job network backoff; retain evidence stages and local file recovery. | Hash/title/completion behavior is correct; checks and every outbound call are paced; draft checks retain their own holds; an outage does not retry once per movie. |
 | 4. Implement recovery and reset | Refactor pause/drain without losing accepted work. Use one Fetch/Force fetch entry for an individual item, three batch scopes with shared counting/admission, and reset only in Plugins settings. Retain subtitle match/download choices. Reuse the shared account editor and remove the cross-feature limit callback. | The label exposes local override before the click; batch counts match the chosen scope, reset commits without starting a search, late writes cannot undo it, and remote waits survive. |
 | 5. Consolidate contracts and verify | Update architecture, Library, Subtitles, Database and affected interface/text contracts together. Replace duplicated protection descriptions with the approved authority. | No old protection path or obsolete schema/state remains; focused evidence below is recorded when authorized. |
@@ -482,13 +616,54 @@ when it keeps the feature simpler and its authority obvious.
 
 ## Verification
 
-Source inspection and iterative adversarial review covered execution gates,
-account checks, cancellation, persistence, scoped retry and batch classification.
-This supports the design; it does not establish runtime behavior. No application
-build or tests were run.
+The completed implementation passed an independent adversarial source review,
+including focused rechecks of its findings. Debug x64 compilation completed with
+zero warnings and zero errors. Referenced projects were up to date; the app's
+C# and XAML compilation covered the changed feature. No engine or third-party
+dependency build was required.
 
-When authorized, use the existing focused checks and real SQLite with controlled
-transport/time at the relevant seams. Keep evidence for these concrete failures:
+`app/tests/SourceChecks.ps1` passed against the built app with real isolated
+SQLite files and controlled HTTP replies. Its existing workflow coverage includes
+stale-result rejection, source membership, subtitle publication and ownership,
+reopen, lookup counts and failed-request exclusion. Added regression scenarios
+protect against these observed defects, which the previous coverage did not test:
+
+- Empty Library answers remain distinguishable from absent answers, obey the
+  captured refresh time, and cease to be reusable after reset.
+- Equivalent fresh subtitle work sends and charges one search; completed evidence
+  can retry an early miss even when the supplier has no hash search.
+- Remote wait headers survive an unreadable response body; OpenSubtitles' body
+  deadlines retain their download-only scope for both successful and 402 replies.
+- A malformed detail endpoint receives one failed request during shared backoff,
+  rather than another request for each movie.
+- A force command cannot bypass a new failure it just caused; reset retains
+  remote holds, pacing reservations and existing subtitle output ownership.
+- Cached candidates are matched against the current year/release, while the
+  chooser retains both candidate selection and explicit fresh retry. Chooser-only
+  no-match decisions participate in reset without deleting candidate facts.
+- Batch scope membership remains stable under remote holds, excludes unsupported
+  inputs, and projects known resource holds from RequestPolicy rather than a
+  second saved block. Resolving that resource releases the projected hold.
+- Prepared query text identifies the same search counter in preflight and
+  execution. Route recovery clears local backoff while retaining content history
+  and remote waits.
+- A new Force command supersedes an older failed access recheck. Accepted
+  subtitle retries survive local file waits and resume with their original
+  authorization; choosing a subtitle does not renew that authorization.
+- Contradictory later subtitle pages cannot replace a complete cached answer.
+  OMDb errors inside successful HTTP responses hold the provider instead of
+  creating a separate failed movie record for every request.
+- Dataset installation and its automatic provider switch preserve accepted API
+  batches; an explicit provider change retains its normal cancellation behavior.
+
+`app/tests/ProviderChecks.ps1` passed HTTP CONNECT, SOCKS4a, SOCKS5 and unavailable
+adapter refusal checks. The required generated-output check found no recursive
+output outside `artifacts/`. No live provider account, large IMDb download or
+interactive desktop journey was exercised; visual layout and live service
+behavior remain outside this validation evidence.
+
+The following scenarios remain the review criteria for later changes; they are
+not a claim that each was separately exercised by the checks above:
 
 - Duplicate files and reopen repeat an empty lookup; changed language/resource
   or completed subtitle evidence is wrongly suppressed.
@@ -510,6 +685,13 @@ transport/time at the relevant seams. Keep evidence for these concrete failures:
 - Nonempty candidates yield no acceptable match, then reset and ordinary Fetch
   reuse that same completed search instead of sending one fresh query; retained
   candidate facts and subtitle files must survive this reset.
+- Local IMDb empty/ambiguous answers or cap history stop a new dataset from
+  resolving an unfinished movie; installation loses queued Library work.
+  Local reads must not send HTTP or incur remote-policy charges. Dataset
+  download waits must leave installed-data reads usable, and reset/cancellation
+  must preserve the installed file without restarting a download.
+- IMDb damage reaches Library's incompatible-storage recovery and offers to
+  delete user decisions; keep that failure classified at its dataset owner.
 
 Verify these through feature execution as well as policy decisions: policy
 tests alone cannot prove serialization or publication. Review the smallest

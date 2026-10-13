@@ -1,5 +1,9 @@
 # Native Settings implementation
 
+**Implementation done.** Remaining defects and validation limits are recorded
+below. The owner cancelled the full screenshot sweep and requested source review;
+that cancelled work is not an outstanding implementation step.
+
 The approved reference is `app/settings-windows-prototype.html`, variant C,
 with the decisions recorded in `app/settings-windows-prototype.md`. The browser
 holds sample data; native Settings continues to use its existing state, save
@@ -212,3 +216,121 @@ Custom motion checks the Windows animation preference. Stock control transitions
 retain WinUI's handling of that preference. Source review covers interruption,
 ownership and clipping; reduced-motion rendering and live interaction timing have
 not been verified at runtime.
+
+### Authorized compilation and checks — 13 October 2026
+
+The owner subsequently requested compilation, correction of errors and warnings,
+and tests. Debug x64 engine, app, TableView and test targets compile with zero
+warnings and errors. The Release engine, required for its integration checks,
+and the separate Debug capture target also compile with zero warnings and errors.
+No capture journey was launched and no screenshots were taken.
+
+The latest header reference places the category heading above a summary row
+with 96-DIP artwork, identity/status and two centered fact blocks. Home retains
+one Home heading beside its logo. Review restored single-line title trimming
+with full tooltips and the prototype's file-selection labels and pattern prose.
+Compilation corrected the common type of the page-transition target and updated
+one diagnostic fixture to create an immutable account draft with its secret.
+
+The non-interactive TableView suite passes 180/180. All 21 engine checks pass,
+including the five local transfer/file-safety checks; Pause uses the Debug
+engine. QueueOrder initially received the wrong fixture and passed with its
+required single-file fixture, without changing the test. NavigationChecks,
+AddSourceChecks, ProviderChecks and SourceChecks all pass against the newly
+built app. SourceChecks uses a stored incomplete account to verify that Check
+stays unavailable without erasing automatic intent, independently of built-in
+release keys.
+
+Build and check logs are under `artifacts/evidence/validation-20261013/`.
+Table results are in `artifacts/TestResults/validation-20261013/table.trx`.
+The app checks use the lane 2 Debug output; the diagnostic build uses the default
+capture output. Generated-output checks found no folders outside `artifacts/`.
+
+The persistent missing-content incident is tracked in
+[GitHub #351](https://github.com/SynoSoftware/TinyTorrent2/issues/351). These
+automated checks do not reproduce that UI failure or establish current rendered
+layout, animation timing, High Contrast or increased-text-scale behavior.
+
+The final freshness check found later concurrent changes to the database,
+request policy and IMDb provider. The results above cover their compiled
+versions, not those later edits; verification of the latest combined source is
+pending a stable revision.
+
+### Ownership polish — 13 October 2026
+
+SpeedLimits keeps one collection of rows and lets its existing compiled bindings
+observe live values. Its explicit refresh handles language changes; it no longer
+rebuilds those bindings for every unrelated model notification. Settings owns the
+encryption summary used by both Home and the Network header. The incomplete-account
+fixture loads persisted state through the existing acquisition owner.
+
+The subsequent normal Debug x64 app build passes with zero warnings and errors;
+its log is `artifacts/evidence/validation-20261013/app-polish-build.log`. Lucide and
+TableView compilation was already current. NavigationChecks, AddSourceChecks and
+ProviderChecks pass against this output. The RequestPolicy integration initially
+left SourceChecks using replaced APIs; this is tracked in
+[GitHub #352](https://github.com/SynoSoftware/TinyTorrent2/issues/352).
+
+Continuation checked the later normal Debug output written at 08:57:51 UTC,
+which was current with production source when the checks began. All four app
+scripts pass against that version. SourceChecks now also records a known remote
+miss through RequestPolicy, reopens the database and verifies the policy still
+refuses it. This preserves the durable-miss guarantee at its new owner; checking
+stored counts and waits alone did not cover it.
+
+One subsequent full SourceChecks run intermittently failed its accepted-subtitle-
+deletion assertion. A diagnostic full run then passed, as did 20 iterations of
+a reduced deletion fixture. The cause remains unconfirmed and is tracked in
+[GitHub #354](https://github.com/SynoSoftware/TinyTorrent2/issues/354); no speculative
+production change was made. The assertion includes queue and source-state counts
+to help identify the failure. Production and test source changed again during
+this investigation, so final combined validation remains pending. This task
+launched no application and used no desktop interaction or screenshots.
+
+### Shared expander correction — 13 October 2026
+
+The owner reproduced expansion crashes in Settings and Schedule, both of which
+use `SettingsExpander`. The LabForms Orders drawer supplied the 260 ms opening
+and 220 ms closing height animation. LabForms animates a border it owns; it
+does not remove a native Expander's storyboards or reparent its template parts.
+
+The selected correction retains native `Expander` with an explicit shared
+template in `App.xaml`, retaining the native default style key. It reuses the native
+header styles, named parts and automation wiring. The template declares the
+clipped, full-height body; `SettingsExpander` alone animates the drawer height
+and restores automatic sizing. `OnApplyTemplate` no longer changes the visual
+tree or removes already-applied storyboards. Existing callers and expansion
+events remain unchanged, including Schedule's shared editor handoff.
+
+Stock motion would lose the requested height animation. A separate header and
+body would require additional event and accessibility plumbing. Repairing the
+runtime template modifications would retain their dependency on WinUI's live
+visual states. The explicit template keeps that dependency declarative and
+confined to one shared control, without copying the native header template.
+
+Independent source review covered native template parts, style lookup,
+initial state, reversal, resize, unload and Schedule's editor transfer. XML
+parsing and the diff whitespace check pass. The winui-design and
+winui-code-review skills were applied; the final source review found no error
+or warning in the expander changes.
+
+The Debug x64 capture build passed with zero warnings and errors. The Settings
+journey completed its English/Dark standard and advanced expansion captures
+without the native crash. It then stopped at an unrelated stale invocation of
+the ReturnWorkspace navigation item, before reaching Spanish/Light. Schedule
+passed all 12 English/Spanish, Light/Dark and window-size combinations,
+including repeated editor expansion and collapse. Selected Settings and
+Schedule screenshots show the native header and expanded content correctly.
+
+Evidence is under `artifacts/evidence/`: build log
+`expander-20261013-build.log`, Settings run
+`Capture-settings-prototype-1cad2110-4dd7-4f12-89a2-61eeb6fc8b59`, and Schedule
+run `Capture-schedule-c85b5292-ede8-4798-8d84-eb9cd55220d5`.
+The tested executable is in `artifacts/bin/TinyTorrent/debug_win-x64_capture`;
+the ordinary Debug output was not rebuilt. A user-launched app was using the
+capture output after the checks and was left running.
+
+The original native fault's exact cause was not isolated. The replacement no
+longer reproduces it in these scenarios. Narrator, keyboard interaction, High
+Contrast, rapid reversal and disabled Windows animations remain untested.
+Runtime evidence is tracked in [GitHub #353](https://github.com/SynoSoftware/TinyTorrent2/issues/353).

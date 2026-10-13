@@ -9,7 +9,7 @@ internal sealed partial class Acquisition(
     Database database,
     ProviderHttp http,
     Task settled,
-    Func<int> lookupLimit
+    RequestPolicy policy
 ) : IAsyncDisposable
 {
     internal const int MaximumExtras = 3;
@@ -25,7 +25,7 @@ internal sealed partial class Acquisition(
     private Account _account = new(SubtitleSupplier.OpenSubtitles, string.Empty, string.Empty);
     private Allowance _allowance = new();
     private Account? _checkedAccount;
-    internal IReadOnlyList<Supplier> Suppliers { get; } = SupplierType.CreateAll();
+    internal IReadOnlyList<Supplier> Suppliers { get; } = SupplierType.CreateAll(policy);
     internal Supplier? Supplier => GetSupplier(SupplierId);
 
     internal Supplier? GetSupplier(SubtitleSupplier supplierId) =>
@@ -110,6 +110,7 @@ internal sealed partial class Acquisition(
     // Manual work is unfinished: a batch, or manual jobs kept from an earlier
     // session.
     internal bool Finding { get; private set; }
+    internal int Blocked { get; private set; }
     internal event EventHandler? Changed;
     internal event EventHandler? LanguagesChanged;
 
@@ -124,6 +125,7 @@ internal sealed partial class Acquisition(
         await _operation.WaitAsync(_lifetime.Token).ConfigureAwait(false);
         try
         {
+            await policy.Initialize(_lifetime.Token).ConfigureAwait(false);
             _language = language;
             _supplierFailure = SubtitleFailure.None;
             _saveFailed = false;
@@ -168,49 +170,51 @@ internal sealed partial class Acquisition(
             Notify();
     }
 
-    // Failures and retry waits seen on the old route say nothing about the
-    // new one, so waiting work tries the new route at once.
-    internal async Task RouteChanged()
+    // Called while acquisition is suspended; admission rechecks remote waits.
+    internal void ChangeRoute(SqliteConnection connection)
     {
-        lock (_requestSync)
-        {
-            Invalidate();
-            Checked = false;
-            _checkedAccount = null;
-            if (_supplierFailure is SubtitleFailure.Route or SubtitleFailure.Network)
-                _supplierFailure = SubtitleFailure.None;
-        }
-        Notify();
+        Execute(connection, "UPDATE subtitle_jobs SET retry_at=0 WHERE outcome=$pending;",
+            ("$pending", (int)SubtitleOutcome.Pending));
+        Checked = false;
+        _checkedAccount = null;
+        if (_supplierFailure is SubtitleFailure.Route or SubtitleFailure.Network)
+            _supplierFailure = SubtitleFailure.None;
+    }
+
+    internal async Task Suspend(Func<Task> apply)
+    {
+        Invalidate();
+        await _operation.WaitAsync(_lifetime.Token).ConfigureAwait(false);
         try
         {
-            await _operation.WaitAsync(_lifetime.Token).ConfigureAwait(false);
-            try
-            {
-                await Run(
-                        connection =>
-                        {
-                            Execute(
-                                connection,
-                                "UPDATE subtitle_jobs SET retry_at=0 WHERE outcome=$pending;",
-                                ("$pending", (int)SubtitleOutcome.Pending)
-                            );
-                            return true;
-                        },
-                        _lifetime.Token
-                    )
-                    .ConfigureAwait(false);
-            }
-            finally
-            {
-                _operation.Release();
-            }
+            await apply().ConfigureAwait(false);
+            await RefreshAllowance().ConfigureAwait(false);
+            if (_supplierFailure == SubtitleFailure.Network)
+                _supplierFailure = SubtitleFailure.None;
+            await RefreshCounts().ConfigureAwait(false);
         }
-        catch (OperationCanceledException) { }
-        catch (SqliteException)
+        finally
         {
+            _operation.Release();
             Notify();
+            Wake();
         }
-        Wake();
+    }
+
+    internal void ResetProtection(SqliteConnection connection, string? providerId)
+    {
+        Execute(connection, """
+            UPDATE subtitle_searches SET reusable=0
+            WHERE ($provider IS NULL OR provider_id=$provider)
+                AND (rejected=1 OR EXISTS(SELECT 1 FROM request_blocks b
+                    WHERE b.provider_id=subtitle_searches.provider_id AND b.question_id=subtitle_searches.question_id));
+            """, ("$provider", providerId));
+        if (providerId is not null && providerId != SupplierId.ToString().ToLowerInvariant())
+            return;
+        Unblock(connection);
+        Execute(connection, """
+            UPDATE subtitle_jobs SET retry_at=0 WHERE outcome=$pending;
+            """, ("$pending", (int)SubtitleOutcome.Pending));
     }
 
     internal async Task SetEnabled(bool enabled)
@@ -343,7 +347,7 @@ internal sealed partial class Acquisition(
         }
     }
 
-    // The shared search limit changed in Library; Find's counts depend on it.
+    // Find's counts depend on the shared search limit.
     internal void RefreshLookupLimit() => Notify();
 
     // Another supplier starts with an empty account, so the saved supplier's
@@ -370,17 +374,17 @@ internal sealed partial class Acquisition(
     private async Task SaveAccount(Account account)
     {
         var changed = account != _account;
-        // Saving the values Check just accepted corrects refused access even
-        // when they equal the saved ones.
-        var verified = _checkedAccount == account;
         if (changed)
             Invalidate();
         var secret = account.Secret.Length > 0 ? Credentials.Protect(account.Secret) : null;
         await _operation.WaitAsync(_lifetime.Token).ConfigureAwait(false);
         try
         {
+            // Saving the values Check just accepted corrects refused access even
+            // when they equal the saved ones.
+            var verified = _checkedAccount == account;
             var allowance = changed
-                ? RequireSupplier(account.SupplierId).Allowance(account)
+                ? await RequireSupplier(account.SupplierId).Allowance(account).ConfigureAwait(false)
                 : _allowance;
             await Run(
                     connection =>
@@ -388,17 +392,18 @@ internal sealed partial class Acquisition(
                         Execute(
                             connection,
                             """
-                            UPDATE subtitle_settings SET supplier=$supplier, username=$username, secret=$secret,
-                                request_reset=$request, download_reset=$download WHERE singleton=1;
+                            UPDATE subtitle_settings SET supplier=$supplier, username=$username, secret=$secret WHERE singleton=1;
                             """,
                             ("$supplier", (int)account.SupplierId),
                             ("$username", account.Username),
-                            ("$secret", secret),
-                            ("$request", allowance.RequestReset?.ToUnixTimeMilliseconds()),
-                            ("$download", allowance.DownloadReset?.ToUnixTimeMilliseconds())
+                            ("$secret", secret)
                         );
+                        if (changed)
+                            policy.Succeed(connection, RequireSupplier(account.SupplierId).Authentication(account));
                         if (changed || verified)
                             Resume(connection);
+                        if (changed)
+                            Execute(connection, "UPDATE subtitle_jobs SET fresh=NULL WHERE fresh IS NOT NULL;");
                         // References cannot cross suppliers; extra jobs only
                         // download their reference, while the first job can search again.
                         if (account.SupplierId != SupplierId)
@@ -419,6 +424,8 @@ internal sealed partial class Acquisition(
                                 "UPDATE subtitle_jobs SET reference=NULL WHERE reference IS NOT NULL;"
                             );
                         }
+                        if (changed)
+                            Unblock(connection);
                         return true;
                     },
                     _lifetime.Token
@@ -428,6 +435,7 @@ internal sealed partial class Acquisition(
             _allowance = allowance;
             if (changed)
             {
+                _retryCommands.Clear();
                 Checked = false;
                 _supplierFailure = SubtitleFailure.None;
             }
@@ -482,8 +490,13 @@ internal sealed partial class Acquisition(
         }
         catch (SubtitleException error)
         {
-            if (!pending.IsCancellationRequested && draft is null && _account == account)
-                Answered(error.Reason);
+            if (!pending.IsCancellationRequested)
+            {
+                if (error.Reason == SubtitleFailure.Authentication && _checkedAccount == account)
+                    _checkedAccount = null;
+                if (draft is null && _account == account)
+                    Answered(error.Reason);
+            }
             throw;
         }
         finally
@@ -491,7 +504,7 @@ internal sealed partial class Acquisition(
             try
             {
                 if (account == _account && GetSupplier(account.SupplierId) is { } supplier)
-                    await SaveAllowance(supplier.Allowance(account)).ConfigureAwait(false);
+                    _allowance = await supplier.Allowance(account).ConfigureAwait(false);
             }
             finally
             {

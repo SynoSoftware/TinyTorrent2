@@ -1,6 +1,7 @@
 using System.Windows.Input;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Data;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media.Animation;
 using Syno.TinyTorrent.Library;
@@ -13,7 +14,7 @@ namespace Syno.TinyTorrent;
 
 public sealed partial class MainWindow
 {
-    private LibraryTable _libraryTable = null!;
+    private LibraryTable? _libraryTable;
     private FocusState _navigationInput;
     private int _navigationRevision;
     private bool _navigationHeld;
@@ -24,7 +25,6 @@ public sealed partial class MainWindow
 
     private void ConfigureLibrary()
     {
-        _libraryTable = new LibraryTable(Model.Library);
         Model.Library.CommandFailed += (_, error) => Model.Report(error);
         Model.Library.BatchLimited += (_, files) => Model.ShowSearchLimit(files);
         // A submenu has no command, so the menu bar's Fetch metadata follows
@@ -33,18 +33,6 @@ public sealed partial class MainWindow
         {
             if (_libraryFetch is { } fetch)
                 fetch.IsEnabled = Model.Library.FetchMetadata.CanExecute(null);
-        };
-        LibraryContent.Content = _libraryTable;
-        _libraryTable.ItemContextRequested += (_, args) =>
-        {
-            var menu = LibraryContextMenu();
-            menu.ShowAt(
-                args.Target,
-                new Microsoft.UI.Xaml.Controls.Primitives.FlyoutShowOptions
-                {
-                    Position = args.Position,
-                }
-            );
         };
         Model.Library.PropertyChanged += (_, args) =>
         {
@@ -114,8 +102,10 @@ public sealed partial class MainWindow
         };
         Model.Library.FetchMetadataRequested += async (_, source) =>
         {
-            if (Model.Library.Selected is { } selected)
+            if (Model.Library.Selection.Items.Count == 1 && Model.Library.Selected is { } selected)
                 await FetchMetadata(new MetadataDialog(Model.Library, selected.Entry, source));
+            else
+                await FetchBatch(source);
         };
         Model.SubtitlesRequested += async (_, entries) =>
         {
@@ -151,7 +141,7 @@ public sealed partial class MainWindow
             }
             else if (args.Key == VirtualKey.Down)
             {
-                _libraryTable.FocusRows();
+            _libraryTable?.FocusRows();
                 args.Handled = true;
             }
         };
@@ -209,6 +199,21 @@ public sealed partial class MainWindow
         if (Model.Page != WindowPage.Torrents)
             (InspectorContent.Content as InspectorPane)?.CancelReveal();
         var library = Model.Page == WindowPage.Library;
+        if (library && _libraryTable is null)
+        {
+            _libraryTable = new LibraryTable(Model.Library);
+            if (_placement?.LibraryLayouts is { } layouts)
+                _libraryTable.RestoreLayouts(layouts);
+            _libraryTable.ItemContextRequested += (_, args) =>
+                LibraryContextMenu().ShowAt(
+                    args.Target,
+                    new Microsoft.UI.Xaml.Controls.Primitives.FlyoutShowOptions
+                    {
+                        Position = args.Position,
+                    }
+                );
+            LibraryContent.Content = _libraryTable;
+        }
         if (!library)
             _associationRead?.Cancel();
         else
@@ -217,6 +222,7 @@ public sealed partial class MainWindow
             _workspaces.Show(library ? LibraryContent : TorrentContent, library ? 1 : -1);
         Filters.Visibility = library ? Visibility.Collapsed : Visibility.Visible;
         LibraryFilters.Visibility = library ? Visibility.Visible : Visibility.Collapsed;
+        Workspace.OpenPaneLength = library ? 280 : 196;
         Search.PlaceholderText = Model.Text.Get(
             library ? "library" : "finding",
             library ? "search" : "placeholder"
@@ -476,13 +482,120 @@ public sealed partial class MainWindow
         );
     }
 
+    // Settings opens this dialog when the person chooses a provider whose
+    // data is not downloaded, and the finished download turns the provider
+    // on. It also opens when the person updates installed data, and then
+    // states the data's age. The download continues after the dialog closes,
+    // and Settings shows its progress.
+    private async Task ConfirmDownload(ProviderOption option)
+    {
+        var installed = option.Dataset?.Inspect();
+        var current = option.Dataset?.IsCurrent == true;
+        await Interact(async interaction =>
+        {
+            var dialog = new Controls.Dialog { Glyph = Lucide.Database, PrimaryGlyph = Lucide.Download };
+            dialog.SetBinding(
+                ContentDialog.IsPrimaryButtonEnabledProperty,
+                new Binding
+                {
+                    Source = Model.Library,
+                    Path = new PropertyPath(nameof(LibraryBrowser.CanDownload)),
+                    Mode = BindingMode.OneWay,
+                }
+            );
+            dialog.PrimaryButtonClick += (sender, args) =>
+            {
+                args.Cancel = !Model.Library.CanDownload;
+                if (!args.Cancel)
+                    _ = Model.DownloadData(enable: installed is null);
+            };
+            var choice = await ShowDialog(
+                interaction,
+                dialog,
+                () =>
+                {
+                    var id = option.ProviderId;
+                    if (installed is null)
+                    {
+                        dialog.Title = Model.Text.Get(id, "download_title");
+                        dialog.Content = Model.Text.Get(id, "download_body");
+                        dialog.PrimaryButtonText = Model.Text.Get(id, "download");
+                        dialog.PrimaryToolTip = Model.Text.Get(id, "download_tip");
+                        return;
+                    }
+                    // Current data warns, as Dataset.IsCurrent explains; data
+                    // less than a week old notes that little has changed.
+                    var days = (int)(DateTime.UtcNow - installed.LastWriteTimeUtc).TotalDays;
+                    dialog.Title = Model.Text.Get(id, "update_title");
+                    dialog.Content =
+                        current ? Model.Text.Get(id, "update_current")
+                        : days < 7 ? Model.Text.FormatCount(id, "update_recent", days)
+                        : Model.Text.Format(id, "update_age", days);
+                    dialog.PrimaryButtonText = Model.Text.Get(id, "update");
+                    dialog.PrimaryToolTip = Model.Text.Get(id, "update_tip");
+                }
+            );
+            return choice == ContentDialogResult.Primary;
+        });
+    }
+
+    private async Task ConfirmDataDeletion(ProviderOption option)
+    {
+        if (option.Dataset?.Inspect() is not { } data)
+            return;
+        await Interact(async interaction =>
+        {
+            var dialog = new Controls.Dialog { Glyph = Lucide.Database, PrimaryGlyph = Lucide.Trash2 };
+            var choice = await ShowDialog(
+                interaction,
+                dialog,
+                () =>
+                {
+                    dialog.Title = Model.Text.Get(option.ProviderId, "delete_title");
+                    dialog.Content = Model.Text.Format(option.ProviderId, "delete_body", Model.Text.Bytes(data.Length));
+                    dialog.PrimaryButtonText = Model.Text.Get("file_action", "delete");
+                    dialog.PrimaryToolTip = Model.Text.Get(option.ProviderId, "delete_tip");
+                }
+            );
+            if (choice != ContentDialogResult.Primary)
+                return false;
+            await Model.Library.DeleteData();
+            return true;
+        });
+    }
+
+    private async Task FetchBatch(ProviderOption source)
+    {
+        try
+        {
+            var entries = Model.Library.Selection.Items.Cast<LibraryRow>().Select(row => row.Entry).ToArray();
+            var plan = await Model.Library.Plan(entries, source, CancellationToken.None);
+            var content = new Library.BatchDialog(Model.Library, source, plan);
+            await Interact(async interaction =>
+            {
+                var dialog = new Controls.Dialog { Content = content, Glyph = Lucide.Film, PrimaryGlyph = Lucide.Download };
+                await ShowEditor(interaction, dialog, content, () =>
+                {
+                    dialog.Title = Model.Text.Get("library", "fetch_metadata");
+                    dialog.PrimaryButtonText = Model.Text.Get("library", "fetch");
+                    content.RefreshText();
+                });
+                return true;
+            });
+        }
+        catch (Exception error)
+        {
+            Model.Report(error);
+        }
+    }
+
     private async Task FetchMetadata(MetadataDialog content)
     {
         SettingTarget? settings = null;
         await Interact(async interaction =>
         {
             interaction.Restore = () => FetchMetadata(content);
-            interaction.ResolveDraft = () => SaveOnClose(interaction, content, canSave: true);
+            interaction.ResolveDraft = () => SaveOnClose(interaction, content, canSave: !content.RequiresForce);
             var dialog = new Controls.Dialog
             {
                 Content = content,
@@ -500,6 +613,9 @@ public sealed partial class MainWindow
                 dialog.Hide();
             }
             content.SettingsRequested += OpenSettings;
+            void UpdateSubmit(object? sender, System.ComponentModel.PropertyChangedEventArgs args) =>
+                dialog.PrimaryButtonText = content.SubmitText;
+            content.PropertyChanged += UpdateSubmit;
             try
             {
                 await ShowEditor(
@@ -509,7 +625,7 @@ public sealed partial class MainWindow
                     () =>
                     {
                         dialog.Title = Model.Text.Get("library", "fetch_metadata");
-                        dialog.PrimaryButtonText = Model.Text.Get("dialog", "save");
+                        dialog.PrimaryButtonText = content.SubmitText;
                         dialog.PrimaryToolTip = Model.Text.Get("library", "save_metadata_tip");
                         content.RefreshText();
                     }
@@ -518,6 +634,7 @@ public sealed partial class MainWindow
             finally
             {
                 content.SettingsRequested -= OpenSettings;
+                content.PropertyChanged -= UpdateSubmit;
                 content.Cancel();
             }
             return true;
@@ -538,35 +655,78 @@ public sealed partial class MainWindow
             panel = new StackPanel { Spacing = 12 };
             LibraryFilters.Content = panel;
         }
-        var controls = panel.Children.OfType<ComboBox>().ToDictionary(choice => (string)choice.Tag);
+        var rows = panel.Children.OfType<Grid>().ToDictionary(row => (string)row.Tag);
         _refreshingFilters = true;
         try
         {
             var position = 0;
             foreach (var section in Model.Library.Facets.GroupBy(facet => facet.Section))
             {
-                if (!controls.TryGetValue(section.Key, out var choices))
+                if (!rows.TryGetValue(section.Key, out var row))
                 {
-                    choices = new ComboBox
+                    var icon = new FontIcon
+                    {
+                        FontFamily = Lucide.Font,
+                        Glyph = section.Key switch
+                        {
+                            "type" => Lucide.Clapperboard,
+                            "genres" => Lucide.Tags,
+                            "year" or "modified" => Lucide.Calendar,
+                            "series" => Lucide.Tv,
+                            "season" => Lucide.ListOrdered,
+                            "artist" => Lucide.Users,
+                            "album" => Lucide.Disc,
+                            "size" => Lucide.HardDrive,
+                            _ => Lucide.File,
+                        },
+                        Style = (Style)Application.Current.Resources["TinyTorrentStatusIconStyle"],
+                    };
+                    Microsoft.UI.Xaml.Automation.AutomationProperties.SetAccessibilityView(
+                        icon, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
+                    var label = new TextBlock
+                    {
+                        Style = (Style)Application.Current.Resources["TinyTorrentBodyTextStyle"],
+                    };
+                    var selector = new ComboBox
                     {
                         Tag = section.Key,
                         HorizontalAlignment = HorizontalAlignment.Stretch,
+                        MinWidth = 0,
                     };
+                    row = new Grid
+                    {
+                        Tag = section.Key,
+                        ColumnSpacing = 8,
+                        ColumnDefinitions =
+                        {
+                            new ColumnDefinition { Width = GridLength.Auto },
+                            new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) },
+                            new ColumnDefinition { Width = new GridLength(1.5, GridUnitType.Star) },
+                        },
+                        Children = { icon, label, selector },
+                    };
+                    Grid.SetColumn(label, 1);
+                    Grid.SetColumn(selector, 2);
                     Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(
-                        choices,
+                        selector,
                         "LibraryFilter-" + section.Key
                     );
-                    choices.Items.Add(new ComboBoxItem());
-                    choices.SelectionChanged += (_, _) =>
+                    Microsoft.UI.Xaml.Automation.AutomationProperties.SetLabeledBy(selector, label);
+                    selector.Items.Add(new ComboBoxItem());
+                    selector.SelectionChanged += (_, _) =>
                     {
                         if (!_refreshingFilters && LibraryFilters.IsEnabled)
                             Model.Library.Filter(
                                 section.Key,
-                                (choices.SelectedItem as ComboBoxItem)?.Tag as string
+                                (selector.SelectedItem as ComboBoxItem)?.Tag as string
                             );
                     };
                 }
-                choices.Header = Model.Text.Get("library", section.Key);
+                var choices = (ComboBox)row.Children[2];
+                var heading = (TextBlock)row.Children[1];
+                heading.Text = Model.Text.Get("library", section.Key);
+                ToolTipService.SetToolTip(heading, heading.Text);
+                Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(choices, heading.Text);
                 var existing = choices
                     .Items.OfType<ComboBoxItem>()
                     .Where(item => item.Tag is string)
@@ -605,13 +765,14 @@ public sealed partial class MainWindow
                 while (choices.Items.Count > items.Count)
                     choices.Items.RemoveAt(choices.Items.Count - 1);
                 choices.SelectedItem = selected;
+                ToolTipService.SetToolTip(choices, selected.Content);
                 if (
                     position >= panel.Children.Count
-                    || !ReferenceEquals(panel.Children[position], choices)
+                    || !ReferenceEquals(panel.Children[position], row)
                 )
                 {
-                    panel.Children.Remove(choices);
-                    panel.Children.Insert(position, choices);
+                    panel.Children.Remove(row);
+                    panel.Children.Insert(position, row);
                 }
                 position++;
             }

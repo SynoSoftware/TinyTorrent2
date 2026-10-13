@@ -20,7 +20,7 @@ settled ownership and deferred design choices. GitHub issues own actionable work
 implementation status and remaining acceptance criteria; local review artifacts
 are not a second backlog.
 
-The [selected refactoring plan](architecture/proposed/README.md) preserves
+The completed [selected refactoring plan](architecture/proposed/README.md) preserves
 the architecture reviews and delivery decisions at that checkpoint. The active
 contracts above remain the authority for product behavior.
 
@@ -48,14 +48,19 @@ Library and subtitles share one window-lifetime SQLite owner. The
 [database contract](database.md) owns schema initialization, versioning,
 connection lifetime and the rationale for durable and reconstructed state.
 
-The [request protection proposal](request-protection.md) reviews Library and
-subtitle flood prevention and designs shared suppression, pacing and user reset.
-It is a design for review, not an implemented feature or a replacement for the
-active contracts.
+The completed [native Settings implementation](settings-implementation.md) records
+the sidebar, page composition, shared controls and ownership corrections, with
+remaining defects and validation limits kept explicit.
+
+The completed [request protection plan](request-protection.md) records Library
+and subtitle suppression, pacing, explicit retries and Settings reset, with
+implementation evidence. The active feature contracts remain the authorities.
 
 The [IMDb datasets plan](imdb-datasets.md) designs a Library provider that
-reads IMDb's downloadable datasets from a local SQLite file. It is also a design
-for review.
+reads IMDb's downloadable datasets from a local SQLite file, and shows their
+ratings for every provider's movies. Phases 1 and 2 have implementation done;
+dataset measurements and live-data validation remain outstanding. Phase 3 is
+not implemented and remains a design for review.
 
 For TableView work, continue with the [table glossary](../lib/TableView/CONTEXT.md),
 [TableView contract](../lib/TableView/docs/tableview-contract.md), and

@@ -71,21 +71,22 @@ internal sealed partial class Acquisition
                             WHERE destination.path=$new AND destination.language=$language
                                 AND previous.path=$old AND previous.language=$language
                                 AND destination.reference IS NULL;
-                            INSERT INTO subtitle_jobs(path,language,stage,outcome,retry_at,attempts,manual,guesses,match,reference)
-                            SELECT $new,language,stage,outcome,retry_at,attempts,manual,guesses,match,reference
+                            INSERT INTO subtitle_jobs(path,language,stage,outcome,retry_at,attempts,manual,guesses,match,reference,fresh)
+                            SELECT $new,language,stage,outcome,retry_at,attempts,manual,guesses,match,reference,fresh
                             FROM subtitle_jobs WHERE path=$old AND language=$language
                             ON CONFLICT(path,language) DO UPDATE SET stage=excluded.stage,outcome=excluded.outcome,
                                 retry_at=excluded.retry_at,attempts=excluded.attempts,manual=excluded.manual,
-                                guesses=excluded.guesses,reference=excluded.reference,
+                                guesses=excluded.guesses,reference=excluded.reference,fresh=excluded.fresh,
                                 match=CASE WHEN excluded.reference IS NOT NULL THEN excluded.match ELSE subtitle_jobs.match END
-                            WHERE excluded.manual=1 AND excluded.outcome IN ($pending,$unavailable)
-                                AND (subtitle_jobs.manual=0 OR subtitle_jobs.outcome NOT IN ($pending,$unavailable));
+                            WHERE excluded.manual=1 AND excluded.outcome IN ($pending,$unavailable,$blocked)
+                                AND (subtitle_jobs.manual=0 OR subtitle_jobs.outcome NOT IN ($pending,$unavailable,$blocked));
                             """,
                             ("$new", target.Path),
                             ("$old", source.Path),
                             ("$language", source.Language),
                             ("$pending", (int)SubtitleOutcome.Pending),
                             ("$unavailable", (int)SubtitleOutcome.Unavailable),
+                            ("$blocked", (int)SubtitleOutcome.Blocked),
                             ("$exact", (int)SubtitleMatch.Exact)
                         );
                         AssociateJob(connection, target);

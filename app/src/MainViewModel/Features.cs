@@ -6,9 +6,10 @@ using SQLitePCL;
 using Syno.TinyTorrent.Library;
 using Syno.TinyTorrent.Models;
 using Syno.TinyTorrent.Services;
+using ImdbDataset = Syno.TinyTorrent.Library.Imdb.Dataset;
+using ImdbProvider = Syno.TinyTorrent.Library.Imdb.Provider;
 using MdbListProvider = Syno.TinyTorrent.Library.MdbList.Provider;
 using OmdbProvider = Syno.TinyTorrent.Library.Omdb.Provider;
-using PublicProvider = Syno.TinyTorrent.Library.Public.Provider;
 using SubtitleAcquisition = Syno.TinyTorrent.Subtitles.Acquisition;
 using TmdbProvider = Syno.TinyTorrent.Library.Tmdb.Provider;
 using WikidataProvider = Syno.TinyTorrent.Library.Wikidata.Provider;
@@ -22,6 +23,7 @@ public sealed partial class MainViewModel
     private bool _refreshingFeatures;
     private bool _featuresPending;
     private Database? _database;
+    private RequestPolicy? _requestPolicy;
     private TorrentSource? _fileSource;
     private readonly ProviderHttp _providerHttp = new();
     private HttpRoute? _providerRoute;
@@ -183,65 +185,33 @@ public sealed partial class MainViewModel
         if (_fileSource is null && DataDirectory is { } directory)
         {
             _database ??= new Database(directory);
+            var policy = _requestPolicy ??= new RequestPolicy(_database);
             // Automatic lookups and subtitle searches wait, so starting the
             // window does not compete with them for the network.
             var settled = _settled ??= Task.Delay(TimeSpan.FromSeconds(30));
-            var store = new Store(_database);
             var http = _providerHttp;
+            var imdb = new ImdbDataset(http, directory, policy);
+            var store = new Store(_database, imdb);
+            // The list is the order Settings shows the providers in.
             var videos = new VideoLookup(
                 store,
                 settled,
                 [
-                    new ProviderOption(
-                        "tmdb",
-                        "TMDB",
-                        "tmdb",
-                        new("https://www.themoviedb.org/privacy-policy"),
-                        new("https://www.themoviedb.org/api-terms-of-use"),
-                        key => new TmdbProvider(http, key)
-                    )
-                    {
-                        Access = Access.Key,
-                    },
-                    new ProviderOption(
-                        "wikidata",
-                        "Wikidata",
-                        "wikidata",
-                        new("https://foundation.wikimedia.org/wiki/Special:MyLanguage/Policy:Privacy_policy"),
-                        new("https://foundation.wikimedia.org/wiki/Special:MyLanguage/Policy:Terms_of_Use"),
-                        _ => new WikidataProvider(http)
-                    ),
-                    new ProviderOption(
-                        "omdb",
-                        "OMDb",
-                        "omdb",
-                        new("https://www.omdbapi.com/legal.htm"),
-                        new("https://www.omdbapi.com/legal.htm"),
-                        key => new OmdbProvider(http, key)
-                    )
-                    {
-                        Access = Access.Key,
-                    },
-                    new ProviderOption(
-                        "mdblist",
-                        "MDBList",
-                        "mdblist",
-                        new("https://mdblist.com/privacy"),
-                        new("https://mdblist.com/terms"),
-                        key => new MdbListProvider(http, key)
-                    )
-                    {
-                        Access = Access.Key,
-                    },
-                    .. PublicProvider.Options(http),
-                ]
+                    TmdbProvider.Option,
+                    WikidataProvider.Option,
+                    OmdbProvider.Option,
+                    MdbListProvider.Option,
+                    ImdbProvider.Option(imdb),
+                ],
+                policy,
+                http
             );
             Library.Attach(store, videos, new FileFacts(_database));
             var subtitles = new SubtitleAcquisition(
                 _database,
                 _providerHttp,
                 settled,
-                () => videos.LookupLimit
+                policy
             );
             Subtitles = subtitles;
             subtitles.Changed += (_, _) => _dispatcher.TryEnqueue(() =>
@@ -288,16 +258,41 @@ public sealed partial class MainViewModel
         }
     }
 
-    private void ConfigureRoute()
+    private async Task ConfigureRoute()
     {
         if (_closed || _featuresClosed)
             return;
         var route = Settings.Proxy.RouteSettings(Settings.Adapter.ConfirmedText);
-        if (_providerRoute != route)
+        if (_providerRoute == route)
+            return;
+        _providerRoute = route;
+        // The new route ends the running IMDb data download, which the person
+        // did not ask for, so it is stopped as an interruption first.
+        _ = Library.InterruptDownload();
+        _providerHttp.Configure(route);
+        await _featureAccess.WaitAsync();
+        try
         {
-            Library.ChangeRoute(() => _providerHttp.Configure(route));
-            _providerRoute = route;
-            _ = Subtitles?.RouteChanged();
+            if (_closed || _featuresClosed || _providerRoute != route)
+                return;
+            if (_database is not { } database || Subtitles is not { } subtitles)
+                return;
+            await Library.SuspendProtection(() => subtitles.Suspend(() => database.Run(connection =>
+            {
+                RequestPolicy.ClearBackoff(connection);
+                subtitles.ChangeRoute(connection);
+                return true;
+            })), includeDataset: true);
+        }
+        catch (Exception error)
+        {
+            if (_providerRoute == route)
+                _providerRoute = null;
+            ReportFeature(error);
+        }
+        finally
+        {
+            _featureAccess.Release();
         }
     }
 
@@ -344,6 +339,7 @@ public sealed partial class MainViewModel
                 );
             }
             await observing;
+            Changed(nameof(LookupLimit));
             lock (_featuresGate)
                 if (
                     _closed
@@ -440,6 +436,7 @@ public sealed partial class MainViewModel
                 await database.DeleteIncompatible();
             await database.DisposeAsync();
             _database = null;
+            _requestPolicy = null;
             _featureFailure = null;
             RefreshFeedback();
         }
@@ -456,12 +453,50 @@ public sealed partial class MainViewModel
             RequestSnapshot();
     }
 
-    // Library saves the search limit and subtitles read it, so their Find
-    // counts refresh with it.
+    internal async Task DownloadData(bool enable = false)
+    {
+        if (await Library.Download(enable))
+            Announce(Text.Get("imdb", "ready"));
+    }
+
+    internal int LookupLimit => _requestPolicy?.Limit ?? RequestPolicy.DefaultLimit;
+
     internal async Task SaveLookupLimit(int limit)
     {
-        await Library.SaveLookupLimit(limit);
-        Subtitles?.RefreshLookupLimit();
+        await _featureAccess.WaitAsync();
+        try
+        {
+            if (_closed || _featuresClosed || _requestPolicy is not { } policy)
+                return;
+            await policy.SaveLimit(limit, CancellationToken.None);
+            Changed(nameof(LookupLimit));
+            Subtitles?.RefreshLookupLimit();
+        }
+        finally
+        {
+            _featureAccess.Release();
+        }
+    }
+
+    internal async Task ResetProtection(string? providerId = null)
+    {
+        await _featureAccess.WaitAsync();
+        try
+        {
+            if (_closed || _featuresClosed || _database is not { } database || Subtitles is not { } subtitles)
+                return;
+            await Library.SuspendProtection(() => subtitles.Suspend(() => database.Run(connection =>
+            {
+                Store.ResetProtection(connection, providerId);
+                subtitles.ResetProtection(connection, providerId);
+                RequestPolicy.Reset(connection, providerId);
+                return true;
+            })), providerId is null || providerId == Library.DataProvider?.ProviderId);
+        }
+        finally
+        {
+            _featureAccess.Release();
+        }
     }
 
     internal async Task RetrySubtitles()

@@ -11,7 +11,6 @@ internal sealed class Settings : UserControl
 {
     private Acquisition? _model;
     private readonly Func<Task> _retry;
-    private readonly List<(SettingsRow Row, ToggleSwitch Toggle, bool Home)> _automaticRows = [];
     private readonly ComboBox _extras = new()
     {
         Width = 260,
@@ -31,7 +30,7 @@ internal sealed class Settings : UserControl
         {
             FontFamily = Lucide.Font,
             Glyph = Lucide.Info,
-            FontSize = 16,
+            FontSize = (double)Application.Current.Resources["TinyTorrentButtonIconSize"],
         },
         Style = (Style)Application.Current.Resources["TinyTorrentSubtleButtonStyle"],
     };
@@ -63,14 +62,14 @@ internal sealed class Settings : UserControl
         TextTrimming = TextTrimming.CharacterEllipsis,
     };
     private readonly SettingsSection _section;
-    private readonly SettingsRow _automaticRow;
+    private readonly Automatic _automatic;
     private readonly SettingsRow _extrasRow;
     private readonly SettingsRow _accessRow;
     private readonly SettingsRow _supplierRow;
     private readonly ProgressRing _progress = new()
     {
-        Width = 16,
-        Height = 16,
+        Width = (double)Application.Current.Resources["TinyTorrentInlineIconSize"],
+        Height = (double)Application.Current.Resources["TinyTorrentInlineIconSize"],
         IsActive = false,
     };
     private bool _checking;
@@ -79,15 +78,16 @@ internal sealed class Settings : UserControl
     // notification title key that names the action.
     private readonly Action<Exception, string> _report;
     private Task _saving = Task.CompletedTask;
-    internal Task Saving => _saving;
+    internal Task Saving => Task.WhenAll(_saving, _automatic.Saving);
     private bool _refreshing;
+    private bool _visible;
     private Strings Text { get; }
     internal event EventHandler<SubtitleSupplier>? SupplierRequested;
 
     internal Control? Field(string name) =>
         name switch
         {
-            "subtitle_automatic" => _automaticRows[0].Toggle,
+            "subtitle_automatic" => _automatic.Field,
             "subtitle_extras" => _extras,
             "subtitle_supplier" => _supplier,
             "subtitle_languages" => _languageMode,
@@ -120,7 +120,7 @@ internal sealed class Settings : UserControl
         AutomationProperties.SetAutomationId(_supplier, "SubtitleSupplier");
         AutomationProperties.SetAutomationId(_language, "SubtitleLanguage");
         AutomationProperties.SetLiveSetting(_selected, Microsoft.UI.Xaml.Automation.Peers.AutomationLiveSetting.Polite);
-        _automaticRow = CreateAutomaticRow();
+        _automatic = new Automatic(text, report);
         for (var count = 0; count <= Acquisition.MaximumExtras; count++)
             _extras.Items.Add(new ComboBoxItem { Tag = count });
         _extrasRow = new SettingsRow { Content = _extras };
@@ -187,7 +187,7 @@ internal sealed class Settings : UserControl
             Style = (Style)Application.Current.Resources["TinyTorrentSettingsGroupStyle"],
             Content = new StackPanel
             {
-                Children = { _supplierRow, _accessRow, _wanted, _automaticRow, _extrasRow },
+                Children = { _supplierRow, _accessRow, _wanted, _automatic, _extrasRow },
             },
         };
         Content = new StackPanel
@@ -217,10 +217,9 @@ internal sealed class Settings : UserControl
                 _refreshing
                 || _model is not { } model
                 || _supplier.SelectedItem is not SubtitleSupplier chosen
-                || chosen == model.SupplierId
             )
                 return;
-            await Save(() => model.SelectSupplier(chosen));
+            await Save(() => chosen == model.SupplierId ? Task.CompletedTask : model.SelectSupplier(chosen));
         };
         _languageMode.SelectionChanged += async (_, _) =>
         {
@@ -249,34 +248,12 @@ internal sealed class Settings : UserControl
                     )
                     .ShowAt(_information);
         };
-        Unloaded += (_, _) => Attach(null);
-        RefreshText();
-    }
-
-    internal SettingsRow CreateAutomaticRow()
-    {
-        var toggle = new ToggleSwitch();
-        var home = _automaticRows.Count > 0;
-        var row = new SettingsRow { Content = toggle };
-        AutomationProperties.SetAutomationId(toggle, home ? "SubtitleAutomaticHome" : "SubtitleAutomatic");
-        SetAutomaticText(row, toggle, home);
-        _automaticRows.Add((row, toggle, home));
-        toggle.Toggled += async (_, _) =>
+        Unloaded += (_, _) =>
         {
-            if (!_refreshing && _model is { } model)
-            {
-                var enabled = toggle.IsOn;
-                await Save(() => model.SetEnabled(enabled));
-            }
+            SetVisible(false);
+            Attach(null);
         };
-        return row;
-    }
-
-    private void SetAutomaticText(SettingsRow row, ToggleSwitch toggle, bool home)
-    {
-        row.Header = home ? Text.Get("settings", "home_automatic") : T("automatic");
-        row.Description = home ? Text.Get("settings", "home_automatic_hint") : T("automatic_hint");
-        AutomationProperties.SetName(toggle, row.Header);
+        RefreshText();
     }
 
     internal void Attach(Acquisition? model)
@@ -288,9 +265,28 @@ internal sealed class Settings : UserControl
         _model = model;
         _scanned = null;
         _batch.Attach(model);
-        if (_model is not null)
+        _automatic.Attach(_visible ? model : null);
+        if (_visible && _model is not null)
             _model.Changed += OnChanged;
         Refresh();
+    }
+
+    internal void SetVisible(bool visible)
+    {
+        if (_visible == visible)
+            return;
+        _visible = visible;
+        if (_model is not null)
+        {
+            if (visible)
+                _model.Changed += OnChanged;
+            else
+                _model.Changed -= OnChanged;
+        }
+        _batch.SetVisible(visible);
+        _automatic.Attach(visible ? _model : null);
+        if (visible)
+            RefreshText();
     }
 
     private void OnChanged(object? sender, EventArgs args) => DispatcherQueue.TryEnqueue(Refresh);
@@ -302,8 +298,7 @@ internal sealed class Settings : UserControl
     internal void RefreshText()
     {
         _section.Header = T("title");
-        foreach (var (row, toggle, home) in _automaticRows)
-            SetAutomaticText(row, toggle, home);
+        _automatic.Refresh();
         foreach (ComboBoxItem item in _extras.Items)
             item.Content = (int)item.Tag switch { 0 => T("extras_none"), 1 => T("extras_one"), var count => F("extras_count", count) };
         _extrasRow.Header = T("extras");
@@ -341,17 +336,12 @@ internal sealed class Settings : UserControl
 
     private void Refresh()
     {
+        if (!_visible)
+            return;
         _refreshing = true;
         if (_saving.IsCompleted)
             _extras.SelectedItem = _extras.Items.Cast<ComboBoxItem>()
                 .FirstOrDefault(item => (int)item.Tag == _model?.Extras);
-        foreach (var (row, toggle, _) in _automaticRows)
-        {
-            if (_saving.IsCompleted)
-                toggle.IsOn = _model?.Enabled == true;
-            row.StateText = SettingsRow.State(toggle.IsOn, Text.Get("settings", "on"), Text.Get("settings", "off"));
-            toggle.IsEnabled = _model is not null;
-        }
         _extras.IsEnabled = _model is not null;
         _scan.IsEnabled = _model is not null;
         var scanned =
@@ -364,13 +354,14 @@ internal sealed class Settings : UserControl
             scanned,
             scanned
         );
-        _check.IsEnabled = _model?.CanCheck == true;
-        _edit.IsEnabled = _model is not null && !_checking;
+        _check.IsEnabled = _saving.IsCompleted && _model?.CanCheck == true;
+        _edit.IsEnabled = _saving.IsCompleted && _model is not null && !_checking;
         _language.IsEnabled = _languageMode.IsEnabled = _model is not null;
         _supplier.ItemsSource ??= _model
             ?.Suppliers.Select(supplier => supplier.SupplierId)
             .ToArray();
-        _supplier.SelectedItem = _model?.SupplierId;
+        if (_saving.IsCompleted)
+            _supplier.SelectedItem = _model?.SupplierId;
         _supplier.IsEnabled = _model is not null && !_checking;
         _progress.IsActive = _checking;
         _progress.Visibility = _checking ? Visibility.Visible : Visibility.Collapsed;
@@ -489,9 +480,10 @@ internal sealed class Settings : UserControl
             TaskCreationOptions.RunContinuationsAsynchronously
         );
         _saving = completion.Task;
-        await previous;
         try
         {
+            Refresh();
+            await previous;
             if (model is null || model.IsDisposed)
                 return false;
             await action();

@@ -486,12 +486,12 @@ public sealed partial class MainWindow
         CaptureInvoke(button);
     }
 
-    private static void CaptureInvoke(Button button)
+    private static void CaptureInvoke(Control control)
     {
-        button.Focus(FocusState.Programmatic);
-        var peer = FrameworkElementAutomationPeer.CreatePeerForElement(button);
+        control.Focus(FocusState.Programmatic);
+        var peer = FrameworkElementAutomationPeer.CreatePeerForElement(control);
         if (peer.GetPattern(PatternInterface.Invoke) is not IInvokeProvider invoke)
-            throw new InvalidOperationException("The review button cannot be invoked.");
+            throw new InvalidOperationException("The review control cannot be invoked.");
         invoke.Invoke();
     }
 
@@ -1136,7 +1136,7 @@ public sealed partial class MainWindow
                 }
             );
             await CapturePage("schedule-moved-period", page);
-            CaptureInvoke(FindButton("RemovePeriod"));
+            CaptureInvoke(FindButton("DeletePeriod"));
             await CaptureReady(
                 schedule,
                 () => !schedule.IsPending && schedule.Periods.Count == existing.Length
@@ -2111,7 +2111,7 @@ public sealed partial class MainWindow
                         foreach (var section in new[] { "IntegrationSection", "LifecycleSection" })
                         {
                             var element =
-                                page.FindName(section) as FrameworkElement
+                                CaptureElements(page).FirstOrDefault(element => element.Name == section)
                                 ?? throw new InvalidOperationException(
                                     "The registration section did not load."
                                 );
@@ -2129,8 +2129,9 @@ public sealed partial class MainWindow
                                     + section.Replace("Section", string.Empty).ToLowerInvariant()
                             );
                         }
-                        if (page.FindName("NotificationsSection") is FrameworkElement notifications)
+                        if (page.FindName("NotificationsSection") is Controls.SettingsSection notifications)
                         {
+                            notifications.IsExpanded = true;
                             notifications.StartBringIntoView(
                                 new BringIntoViewOptions
                                 {

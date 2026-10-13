@@ -9,7 +9,7 @@ using Syno.TinyTorrent.Services;
 
 namespace Syno.TinyTorrent.Subtitles;
 
-internal sealed partial class SubDL : Supplier
+internal sealed partial class SubDL(RequestPolicy policy) : Supplier(policy)
 {
     private static readonly Uri Origin = new("https://api.subdl.com");
 
@@ -36,7 +36,7 @@ internal sealed partial class SubDL : Supplier
         using var document = Parse(response.Bytes);
     }
 
-    protected override async Task<IReadOnlyList<SubtitleCandidate>> Search(
+    protected override async Task<SubtitleSearch> Search(
         Operation operation,
         SubtitleLookup lookup,
         Release release,
@@ -45,6 +45,7 @@ internal sealed partial class SubDL : Supplier
     )
     {
         var candidates = new List<SubtitleCandidate>();
+        var total = 0;
         var codes = language.Split(',');
         var query =
             "/api/v2/files/search?engine=local&episode_scope=exact&unpack=1&subs_per_page=30&filename="
@@ -61,11 +62,10 @@ internal sealed partial class SubDL : Supplier
                 .ConfigureAwait(false);
             using var document = Parse(response.Bytes);
             var root = document.RootElement;
-            if (
-                !root.TryGetProperty("match", out var match)
-                || match.ValueKind == JsonValueKind.Null
-            )
-                return candidates;
+            if (!root.TryGetProperty("match", out var match))
+                throw new SubtitleException(SubtitleFailure.Format);
+            if (match.ValueKind == JsonValueKind.Null)
+                return page == 1 ? new(candidates, true) : throw new SubtitleException(SubtitleFailure.Format);
             if (
                 Text(match, "type") != (release.Season is null ? "movie" : "tv")
                 || release.Season is not null && Number(match, "season") is null
@@ -78,7 +78,7 @@ internal sealed partial class SubDL : Supplier
                     release.Episodes.Count == 1 ? Number(match, "episode") : null
                 )
             )
-                return candidates;
+                return page == 1 ? new(candidates) : throw new SubtitleException(SubtitleFailure.Format);
             if (
                 !root.TryGetProperty("subtitles", out var subtitles)
                 || subtitles.ValueKind != JsonValueKind.Array
@@ -89,6 +89,7 @@ internal sealed partial class SubDL : Supplier
                 throw new SubtitleException(SubtitleFailure.Format);
             foreach (var subtitle in subtitles.EnumerateArray())
             {
+                total++;
                 if (
                     Text(subtitle, "language") is not { } code
                     || !codes.Contains(code, StringComparer.OrdinalIgnoreCase)
@@ -130,7 +131,7 @@ internal sealed partial class SubDL : Supplier
                 }
             }
             if (page >= pages)
-                return candidates;
+                return new(candidates, total == 0);
         }
     }
 

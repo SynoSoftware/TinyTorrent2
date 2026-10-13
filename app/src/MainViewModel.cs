@@ -358,7 +358,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         Settings.PropertyChanged += (sender, args) =>
         {
             if (!_closed && !_applyingSettings && _providerRoute is not null)
-                ConfigureRoute();
+                _ = ConfigureRoute();
             OnTaskChanged(sender, args);
         };
         FileDraft.PropertyChanged += OnTaskChanged;
@@ -715,7 +715,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
                 snapshot.GetProperty("proxy"),
                 snapshot.GetProperty("proxy_check")
             );
-            ConfigureRoute();
+            _ = ConfigureRoute();
         }
         finally
         {

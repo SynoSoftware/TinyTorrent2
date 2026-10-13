@@ -223,7 +223,7 @@ public sealed partial class MainWindow
         // page hides the table.
         Torrents.ScrollTo(placement.VerticalOffset);
         if (placement.LibraryLayouts is { } libraryLayouts)
-            _libraryTable.RestoreLayouts(libraryLayouts);
+            _libraryTable?.RestoreLayouts(libraryLayouts);
         if (placement.LibraryFilters is { } libraryFilters)
             Model.Library.RestoreFilters(libraryFilters);
         if (Enum.IsDefined(placement.LibraryConfiguration))
@@ -248,7 +248,7 @@ public sealed partial class MainWindow
         if (_placementPath is null || !_viewRestored)
             return;
         RememberBounds();
-        _libraryTable.SaveLayout();
+        _libraryTable?.SaveLayout();
         var placement = new Placement
         {
             X = _normalBounds.X,
@@ -275,7 +275,7 @@ public sealed partial class MainWindow
             Section = Model.Inspector.Section,
             VerticalOffset = Torrents.VerticalOffset,
             LibraryConfiguration = Model.Library.Configuration,
-            LibraryLayouts = _libraryTable.Layouts,
+            LibraryLayouts = _libraryTable?.Layouts ?? _placement?.LibraryLayouts,
             LibraryFilters = Model.Library.SaveFilters(),
             ShowsSettingsIndex = Model.ShowsSettingsIndex,
         };

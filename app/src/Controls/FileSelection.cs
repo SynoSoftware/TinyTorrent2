@@ -267,6 +267,8 @@ public sealed class FileNode : INotifyPropertyChanged
     public string ProgressText => Progress?.ToString("P1", CultureInfo.CurrentCulture) ?? "—";
     public double ProgressValue => Progress ?? 0;
     public bool IsIndeterminate => Progress is null;
+    public bool IsComplete => Progress is >= 1;
+    public bool IsIncomplete => !IsComplete;
     public bool IsEnabled => _owner.IsEnabled;
     public bool? Wanted
     {

@@ -38,6 +38,7 @@ public sealed partial class MainViewModel
     public string VersionText => Text.Format("about", "version", App.Version.ToString());
     public string CreditsText => Text.Get("about", "credits");
     public string TmdbCredit => Text.Get("about", "tmdb");
+    public string ImdbCredit => Text.Get("about", "imdb");
 
     public IReadOnlyList<Torrent> VisibleTorrents { get; private set; } = [];
     public string Query
@@ -448,8 +449,20 @@ public sealed partial class MainViewModel
 public sealed class FilterChoice(MainViewModel owner, TorrentFilter filter) : INotifyPropertyChanged
 {
     public TorrentFilter Filter { get; } = filter;
+    public string Glyph => Filter switch
+    {
+        TorrentFilter.Downloading => Lucide.ArrowDownToLine,
+        TorrentFilter.Seeding => Lucide.ArrowUpFromLine,
+        TorrentFilter.Paused => Lucide.Square,
+        TorrentFilter.Queued => Lucide.Clock,
+        TorrentFilter.Errors => Lucide.CircleAlert,
+        _ => Lucide.List,
+    };
     public string Label => owner.Text.Get("filters", Filter.ToString().ToLowerInvariant());
     public int Count => owner.Torrents.Count(torrent => MainViewModel.Matches(torrent, Filter));
+    public bool IsCountAccent => Filter == TorrentFilter.Downloading && Count > 0;
+    public bool IsCountCritical => Filter == TorrentFilter.Errors && Count > 0;
+    public bool IsCountNeutral => !IsCountAccent && !IsCountCritical;
     public string Caption => owner.Text.Format("filters", "count", Label, Count);
     public event PropertyChangedEventHandler? PropertyChanged;
 

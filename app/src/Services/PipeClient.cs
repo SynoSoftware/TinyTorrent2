@@ -225,10 +225,6 @@ internal sealed partial class PipeClient : IDisposable
                         }
                         throw;
                     }
-#if DEBUG
-                    if (!_hasConnected && StopOtherEngine(pipe))
-                        continue;
-#endif
                     var hello = await ReadGreeting(pipe, _strings, token);
                     _ =
                         hello.GetProperty("session_id").GetString()
@@ -236,6 +232,11 @@ internal sealed partial class PipeClient : IDisposable
                     _dataDirectory = hello.TryGetProperty("data_directory", out var directory)
                         ? directory.GetString()
                         : _dataDirectory;
+#if DEBUG
+                    // Preserve this engine's store before replacing its process.
+                    if (!_hasConnected && StopOtherEngine(pipe))
+                        continue;
+#endif
                     _hasConnected = true;
                     lock (_gate)
                     {

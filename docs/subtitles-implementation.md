@@ -1,6 +1,6 @@
 # Subtitles implementation plan
 
-**Complete.** Automatic subtitles are delivered; [Current status](#current-status)
+**Implementation done.** Automatic subtitles are delivered; [Current status](#current-status)
 records the evidence. The sections below record the delivered design and its
 decisions, not open work. Release permissions and privacy publication remain in
 the [release assessment](subtitles-release.md).

@@ -22,7 +22,7 @@ public sealed partial class Scheduler : UserControl
         InitializeComponent();
         Mode.Content = selector;
         _editor = new PeriodEditor(model);
-        _editor.Removing += (_, _) => FocusAdd();
+        _editor.Deleting += (_, _) => FocusAdd();
         var week = new Week(model);
         week.TimeChanged += OnTime;
         week.SizeChanged += OnMapSize;
@@ -205,7 +205,7 @@ public sealed partial class Scheduler : UserControl
             ColumnSpacing = 24;
             ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(20) });
             ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            Children.Add(new FontIcon { FontFamily = Syno.Lucide.Font, Glyph = Syno.Lucide.Clock, FontSize = 20 });
+            Children.Add(new FontIcon { FontFamily = Syno.Lucide.Font, Glyph = Syno.Lucide.Clock, FontSize = (double)Application.Current.Resources["TinyTorrentHeaderIconSize"] });
             var labels = new StackPanel
             {
                 Spacing = 4,

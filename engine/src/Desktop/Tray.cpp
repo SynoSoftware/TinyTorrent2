@@ -379,22 +379,36 @@ std::wstring Tray::PauseText() const
     return strings_.Text("tray", activity_.pausedByChoice ? "resume" : "pause");
 }
 
+static bool IsFailure(NoticeKind kind)
+{
+    return kind == NoticeKind::Error || kind == NoticeKind::AddFailed || kind == NoticeKind::DeleteFailed ||
+        kind == NoticeKind::Failure;
+}
+
 bool UsesWindow(NoticeKind kind)
 {
     return kind == NoticeKind::Error || kind == NoticeKind::AddFailed || kind == NoticeKind::DeleteFailed ||
         kind == NoticeKind::Completed;
 }
 
-void Tray::Queue(Notice notice)
+bool Tray::Accepts(NoticeKind kind) const
 {
-    auto kind = notice.kind;
-    bool failure = kind == NoticeKind::Error || kind == NoticeKind::AddFailed || kind == NoticeKind::DeleteFailed ||
-        kind == NoticeKind::Failure;
+    bool failure = IsFailure(kind);
     bool added = kind == NoticeKind::Added || kind == NoticeKind::Duplicate;
     if (headless_ || (failure && kind != NoticeKind::Failure && !activity_.notifiesProblems) ||
         (kind == NoticeKind::MissingProgram && !activity_.notifiesProblems) ||
         (kind == NoticeKind::Completed && !activity_.notificationsEnabled) || (added && !activity_.notifiesAdded) ||
         (kind == NoticeKind::Background && !activity_.notifiesBackground))
+    {
+        return false;
+    }
+    return true;
+}
+
+void Tray::Queue(Notice notice)
+{
+    auto kind = notice.kind;
+    if (!Accepts(kind))
     {
         return;
     }
@@ -403,63 +417,44 @@ void Tray::Queue(Notice notice)
         ShowBackground();
         return;
     }
-    // A failure popup names only the failures, so a batch never mixes
-    // notices for the window with tray-only ones. A missing program is shown
-    // once and its popup opens Settings, so it never joins a batch.
-    if (batch_.first && (UsesWindow(batch_.first->kind) != UsesWindow(kind) ||
-        batch_.first->kind == NoticeKind::MissingProgram || kind == NoticeKind::MissingProgram))
+    // One batch per kind bounds pending context while an open menu keeps its
+    // popup unchanged. Different notification switches never share a batch.
+    auto [entry, inserted] = batches_.try_emplace(kind, Batch{std::move(notice), 1, GetTickCount64() + noticeDelay});
+    if (!inserted && kind != NoticeKind::MissingProgram)
     {
-        Flush();
-    }
-    if (failure)
-    {
-        if (!batch_.failure)
-        {
-            batch_.failure = notice;
-        }
-        ++batch_.failureCount;
-    }
-    if (!batch_.first)
-    {
-        batch_.first = std::move(notice);
-    }
-    ++batch_.count;
-    if (!batch_.due)
-    {
-        batch_.due = GetTickCount64() + noticeDelay;
+        ++entry->second.count;
     }
 }
 
-// Notices wait while the More menu is open, so the popup under it keeps the
-// kind of notice that the menu turns off.
 void Tray::Notify()
 {
-    if (batch_.due && GetTickCount64() >= batch_.due && !popup_.IsMenuOpen())
-    {
-        Flush();
-    }
-}
-
-// Every notice in a batch is turned off by the same switch, because a batch
-// keeps notices for the window apart from tray-only ones.
-void Tray::Flush()
-{
-    auto batch = std::exchange(batch_, {});
-    if (popup_.IsPersistent())
+    // Let the displayed notice finish its lifetime, including hover and menu
+    // interaction, before publishing another category.
+    if (batches_.empty() || popup_.IsOpen())
     {
         return;
     }
-    auto kind = batch.first->kind;
-    notice_ = batch.count == 1 ? std::move(*batch.first) : Notice{NoticeKind::Aggregate};
-    if (!AcceptsNotifications())
+    auto next = std::min_element(batches_.begin(), batches_.end(), [](auto const& left, auto const& right)
     {
-        notice_.reset();
+        return left.second.due < right.second.due;
+    });
+    if (GetTickCount64() < next->second.due)
+    {
+        return;
     }
-    else if (batch.failure)
+    auto batch = std::move(next->second);
+    batches_.erase(next);
+    auto kind = batch.first.kind;
+    if (!Accepts(kind) || !AcceptsNotifications())
     {
-        auto content = Failures(*batch.failure, batch.failureCount);
+        return;
+    }
+    notice_ = batch.count == 1 ? batch.first : Notice{NoticeKind::Aggregate};
+    if (IsFailure(kind))
+    {
+        auto content = Failures(batch.first, batch.count);
         content.icon = errorIcon_;
-        Show(std::move(content), Switch(batch.failure->kind));
+        Show(std::move(content), Switch(kind));
     }
     else
     {
@@ -564,8 +559,8 @@ void Tray::Show(Popup::Content content, std::optional<NoticeSwitch> notices)
         // Lucide's bell-minus, bell-off and settings glyphs.
         content.menu = {
             {L'\uE1F0', strings_.Text("notification", TurnOffKey(*notices)), static_cast<UINT>(NoticeCommand::TurnOff)},
-            {L'\uE05E', strings_.Text("notification", "off_all"), static_cast<UINT>(NoticeCommand::TurnOffAll)},
-            {L'\uE158', strings_.Text("notification", "settings"), static_cast<UINT>(NoticeCommand::Settings)}};
+            {L'\uE05A', strings_.Text("notification", "off_all"), static_cast<UINT>(NoticeCommand::TurnOffAll)},
+            {L'\uE154', strings_.Text("notification", "settings"), static_cast<UINT>(NoticeCommand::Settings)}};
     }
     popup_.Show(std::move(content));
 }

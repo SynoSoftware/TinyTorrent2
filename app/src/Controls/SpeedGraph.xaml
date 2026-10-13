@@ -94,7 +94,7 @@
         <Line
           X2="18"
           VerticalAlignment="Center"
-          Stroke="{ThemeResource TextFillColorPrimaryBrush}"
+          Stroke="{ThemeResource TinyTorrentUploadBrush}"
           StrokeThickness="2"
           StrokeDashArray="3,2.25"
         />
@@ -180,7 +180,7 @@
       <Path
         x:Name="UploadLine"
         Grid.RowSpan="4"
-        Stroke="{ThemeResource TextFillColorPrimaryBrush}"
+        Stroke="{ThemeResource TinyTorrentUploadBrush}"
         StrokeThickness="1.5"
         StrokeLineJoin="Round"
         StrokeDashArray="4,3"
@@ -208,7 +208,7 @@
           Width="7"
           Height="7"
           Fill="{ThemeResource ControlAltFillColorSecondaryBrush}"
-          Stroke="{ThemeResource TextFillColorPrimaryBrush}"
+          Stroke="{ThemeResource TinyTorrentUploadBrush}"
           StrokeThickness="1.5"
         />
       </Canvas>

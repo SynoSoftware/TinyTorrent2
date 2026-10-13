@@ -139,8 +139,13 @@ Defaults remain one second and one minute. Retain at most 300 recent and 8640
 day samples, including the partial bucket, so changing granularity cannot grow
 history without bound. Interval changes keep completed samples and finish the
 old partial bucket at its last observed timestamp; gaps never gain invented
-samples. Each torrent owns its bounded history, which is removed with the
-torrent; the same implementation records session totals for diagnostics.
+samples. Consecutive zero samples join into one sample, so a stopped or idle
+torrent keeps a few samples instead of thousands. A joined recent sample stays
+within one day sample and a joined day sample within one clock hour, so each day
+sample still ends where a recent sample ends, and the oldest sample reaches at
+most that far before its range. Each torrent owns its bounded history, which is
+removed with the torrent; the same implementation records session totals for
+diagnostics.
 History is not saved: the time while the engine was stopped is
 unknown in any case, so after a restart the chart starts empty.
 
@@ -893,6 +898,12 @@ resume-data generation, application commit, and session join are separate facts.
 In the pinned [implementation](https://github.com/arvidn/libtorrent/blob/v2.1.2/src/torrent.cpp),
 `save_resume_data(flush_disk_cache)` does not wait for file-release completion
 before posting resume data. Its name is not a power-loss durability guarantee.
+
+A stopped torrent keeps no peers. Stopping clears its peer list before its
+resume data is saved, so neither memory nor the resume file holds peers it
+cannot use; starting it again finds peers through trackers, DHT and local
+discovery. Session pause, the schedule and temporary holds keep peers, because
+they end by themselves.
 
 A hung window ends the close wait with a tray notification and cancels that Exit
 attempt, preserving unfinished input. The tray can request Exit again when the

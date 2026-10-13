@@ -8,6 +8,8 @@ internal sealed partial class Database
         DELETE FROM video_information WHERE NOT EXISTS (
             SELECT 1 FROM identifications i WHERE i.catalog_id=video_information.catalog_id
             AND i.video_id=video_information.video_id);
+        DELETE FROM title_facts WHERE NOT EXISTS (
+            SELECT 1 FROM video_information v WHERE v.imdb_id=title_facts.imdb_id);
         """;
 
     internal const string Cleanup =
@@ -16,10 +18,6 @@ internal sealed partial class Database
             SELECT 1 FROM pending_origins p WHERE p.origin=video_attempts.origin)
         AND NOT EXISTS (SELECT 1 FROM collected_files f
             WHERE f.origin=video_attempts.origin AND f.file_index=video_attempts.file_index);
-        DELETE FROM video_misses WHERE NOT EXISTS (
-            SELECT 1 FROM pending_origins p WHERE p.origin=video_misses.origin)
-        AND NOT EXISTS (SELECT 1 FROM collected_files f
-            WHERE f.origin=video_misses.origin AND f.file_index=video_misses.file_index);
         DELETE FROM identifications WHERE NOT EXISTS (
             SELECT 1 FROM pending_origins p WHERE p.origin=identifications.origin)
         AND NOT EXISTS (SELECT 1 FROM collected_files f

@@ -28,7 +28,7 @@ mechanism in a domain or in startup wiring.
 
 Before release, increment `Database.Version` whenever the initial schema changes,
 so an obsolete development database reaches incompatible-storage recovery
-instead of failing later in feature SQL. The current schema revision is 2.
+instead of failing later in feature SQL. The current schema revision is 8.
 
 Library owns identification, provider reuse, file facts and search queries.
 Subtitles owns accepted work, supplier policy and subtitle-file operations.
@@ -40,11 +40,13 @@ domains. `FileSources` applies source facts through that transaction boundary;
 wiring supplies these owners, never schema fragments.
 
 Library's Store saves an answered search and its reusable candidates in one
-transaction. It likewise saves a described video's provider responses and
-candidates together, even if matching later rejects that video. Lookup callers
-do not coordinate individual table writes. Once the provider has answered,
-these saves finish even if the requesting context is cancelled; cancellation
-still prevents that obsolete context from applying a match.
+transaction. Each downloaded resource and its request outcome commit together
+before a description reads its next resource. Completing a description saves
+its choices, and applying a match saves its resource references; neither writes
+the responses again, because reuse must not make old data count as freshly
+downloaded. Responses and choices survive a rejected match. Once the provider
+has answered, these saves finish even if the requesting context is cancelled;
+cancellation still prevents that obsolete context from applying a match.
 
 One connection needs no concurrent-reader WAL setup, pooled connections, ORM or
 generic repository. Each short operation commits or rolls back as a whole.
@@ -58,10 +60,13 @@ seconds. No performance claims are implied without measurement.
 | `source_state`, `known_torrents` | Distinguish first connection from a genuinely empty collection and remember which additions are already known for automatic subtitle eligibility. Confirmed withdrawal removes an origin. They contain no saved file catalogue. |
 | `identifications` | Accepted provider matches and explicit user decisions, including an explicit clear. They belong to source-file identity, survive moves, and end with confirmed withdrawal. Ordinary unsuccessful attempts are not decisions. |
 | `video_information`, `video_references` | Parsed metadata used by current identifications and links to its provider responses. Unreferenced metadata is pruned; deleting it cascades its response links. |
+| `title_facts` | Ratings per site, directors, age rating and box office, shared by every provider's metadata that names the same IMDb ID. A row no metadata names is pruned. |
 | `video_records`, `video_choices` | Reusable provider responses with retrieval time and saved candidates for later searches. They outlive a file's membership under the saved-provider-data ruling; ordinary cleanup does not discard responses or learned candidates and spend the allowance again. Provider freshness policy remains with the provider. |
-| `video_lookups`, `subtitle_lookups` | Searches already spent against the per-movie lookup allowance. Restarts and torrent removal must not silently reset that allowance. |
+| `request_settings`, `request_counts`, `request_blocks` | The shared search cap, completed search charges and classified local holds. RequestPolicy owns their meaning; restarts and torrent removal retain them. |
+| `request_holds`, `request_usage` | Access holds, failure streaks and outbound reservations. Reset clears local backoff while preserving remote waits and pacing. |
+| `video_searches`, `subtitle_searches` | Feature-owned completed query answers and completion times, separate from local matching. A fresh batch reuses answers completed after its acceptance. Reset invalidates rejected or empty query reuse while retaining successful facts and candidates. |
 | `file_facts` | Successful reads of file dates and media properties, including a successful empty result, so the window need not repeat filesystem reads. Shared contributors inherit them; confirmed withdrawal removes them. Failed reads remain session work. |
-| `library_settings`, `subtitle_settings` | Typed singleton settings and supplier allowance deadlines. Subtitle credentials are protected for the Windows user. The saved automatic extras count remains part of the subtitle contract. Each domain validates readable saved settings. |
+| `library_settings`, `subtitle_settings` | Typed singleton settings. Subtitle credentials are protected for the Windows user. The saved automatic extras count remains part of the subtitle contract. Each domain validates readable saved settings; RequestPolicy owns allowance deadlines. |
 | `provider_keys` | The person's own API key for a Library provider, protected for the Windows user. It replaces the key built into the release until the person removes it. A key that cannot be decrypted is removed, so the provider uses its built-in key again. |
 | `subtitle_outputs` | Actual subtitle path, language, created/found ownership and supplier reference. These facts distinguish files the app created from files it merely found. |
 | `subtitle_output_sources` | Associations of actual subtitle outputs with source files and the movie location they served. A failed move retains old ownership without claiming a subtitle at the new location. Deleting an output cascades its associations. |
@@ -85,7 +90,7 @@ never recreates an association after its last source leaves.
 | `present`, `received` | Transaction scratch sets for replacing complete origin and file lists without treating partial reads as deletion. |
 | `new_origins` | Current-session subtitle eligibility, derived while reconciling durable known-origin history. |
 | `collected_files`, `pending_origins`, `current_files` | Shared membership and file-read readiness rules, including path settlement. |
-| `video_attempts`, `fact_attempts` | In-flight work and session failures/misses. Reopening clears them; no startup repair writes or permanent request history are needed. Withdrawn locations are pruned. |
+| `video_attempts`, `fact_attempts` | In-flight work and session failures/misses. A blocked video attempt names its required request; batch projection joins the current RequestPolicy hold instead of copying it. Reopening clears attempts; durable remote history belongs to RequestPolicy. Withdrawn locations are pruned. |
 | `subtitle_languages` | Languages actually associated with a movie's current location, derived from ownership and current source facts. |
 | `library_entries`, `library_rows`, `library_state`, `library_matches` | Joined display/search data, a rebuildable row snapshot, its validity and the current match set. Changes invalidate this snapshot in the same transaction as their writes. There is no parallel C# cache to survive a rollback incorrectly. |
 

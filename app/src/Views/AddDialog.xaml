@@ -22,8 +22,8 @@
         <ColumnDefinition Width="Auto" />
       </Grid.ColumnDefinitions>
       <ProgressRing
-        Width="24"
-        Height="24"
+        Width="{StaticResource TinyTorrentSurfaceIconSize}"
+        Height="{StaticResource TinyTorrentSurfaceIconSize}"
         VerticalAlignment="Center"
         IsActive="{x:Bind Model.AddDraft.GettingMetadata, Mode=OneWay}"
         Visibility="{x:Bind Model.AddDraft.GettingMetadata, Mode=OneWay}"
@@ -58,7 +58,7 @@
         Grid.Column="2"
         Click="OnChoices"
       >
-        <FontIcon x:Name="ChoicesIcon" FontFamily="{x:Bind icons:Lucide.Font}" FontSize="16" />
+        <FontIcon x:Name="ChoicesIcon" FontFamily="{x:Bind icons:Lucide.Font}" FontSize="{StaticResource TinyTorrentButtonIconSize}" />
       </Button>
       <Button
         Style="{StaticResource TinyTorrentSubtleButtonStyle}"
@@ -66,7 +66,7 @@
         Grid.Column="3"
         Click="OnResize"
       >
-        <FontIcon x:Name="ResizeIcon" FontFamily="{x:Bind icons:Lucide.Font}" FontSize="16" />
+        <FontIcon x:Name="ResizeIcon" FontFamily="{x:Bind icons:Lucide.Font}" FontSize="{StaticResource TinyTorrentButtonIconSize}" />
       </Button>
       <Button
         Style="{StaticResource TinyTorrentSubtleButtonStyle}"
@@ -77,7 +77,7 @@
         <FontIcon
           FontFamily="{x:Bind icons:Lucide.Font}"
           Glyph="{x:Bind icons:Lucide.X}"
-          FontSize="16"
+          FontSize="{StaticResource TinyTorrentButtonIconSize}"
         />
       </Button>
     </Grid>
@@ -133,29 +133,50 @@
                     Click="OnDestination"
                   />
                 </Grid>
-                <Grid>
+                <!-- A control row's height, as each option has, so both cards
+                     end with the same room and an error takes this row's place
+                     without moving anything. The icon and text match the status
+                     bar's free space. -->
+                <Grid MinHeight="32">
                   <Grid Visibility="{x:Bind local:AddDialog.Hidden(Model.AddDraft.HasDestinationError), Mode=OneWay}">
-                    <TextBlock
-                      Text="{x:Bind Model.AddDraft.Space, Mode=OneWay}"
-                      Style="{StaticResource TinyTorrentBodyTextStyle}"
-                      Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    <StackPanel
+                      Orientation="Horizontal"
+                      Spacing="6"
+                      Visibility="{x:Bind Model.AddDraft.HasSpace, Mode=OneWay}"
                       ToolTipService.ToolTip="{x:Bind Model.AddDraft.Space, Mode=OneWay}"
-                      Visibility="{x:Bind local:AddDialog.Hidden(Model.AddDraft.LacksSpace), Mode=OneWay}"
-                    />
-                    <TextBlock
-                      Text="{x:Bind Model.AddDraft.Space, Mode=OneWay}"
-                      Style="{StaticResource TinyTorrentBodyTextStyle}"
-                      Foreground="{ThemeResource SystemFillColorCautionBrush}"
-                      ToolTipService.ToolTip="{x:Bind Model.AddDraft.Space, Mode=OneWay}"
-                      Visibility="{x:Bind Model.AddDraft.LacksSpace, Mode=OneWay}"
-                    />
+                    >
+                      <FontIcon
+                        Style="{StaticResource TinyTorrentStatusIconStyle}"
+                        FontFamily="{x:Bind icons:Lucide.Font}"
+                        Glyph="{x:Bind icons:Lucide.HardDrive}"
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        AutomationProperties.AccessibilityView="Raw"
+                      />
+                      <Grid>
+                        <TextBlock
+                          Text="{x:Bind Model.AddDraft.Space, Mode=OneWay}"
+                          Style="{StaticResource TinyTorrentStatusTextStyle}"
+                          Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                          Visibility="{x:Bind local:AddDialog.Hidden(Model.AddDraft.LacksSpace), Mode=OneWay}"
+                        />
+                        <TextBlock
+                          Text="{x:Bind Model.AddDraft.Space, Mode=OneWay}"
+                          Style="{StaticResource TinyTorrentStatusTextStyle}"
+                          Foreground="{ThemeResource SystemFillColorCautionBrush}"
+                          Visibility="{x:Bind Model.AddDraft.LacksSpace, Mode=OneWay}"
+                        />
+                      </Grid>
+                    </StackPanel>
                   </Grid>
                   <controls:FieldHeader Error="{x:Bind Model.AddDraft.DestinationMessage, Mode=OneWay}" />
                 </Grid>
+                <!-- An empty TextBlock still takes a line, so the line
+                     collapses until another torrent shares the folder. -->
                 <TextBlock
                   Text="{x:Bind Model.AddDraft.Shared, Mode=OneWay}"
                   Style="{StaticResource TinyTorrentBodyTextStyle}"
                   ToolTipService.ToolTip="{x:Bind Model.AddDraft.Shared, Mode=OneWay}"
+                  Visibility="{x:Bind Model.AddDraft.IsShared, Mode=OneWay}"
                   MaxLines="1"
                   IsTextSelectionEnabled="True"
                 />

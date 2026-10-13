@@ -4,6 +4,7 @@
 #include "Desktop/Popup.h"
 #include <windows.h>
 #include <oleacc.h>
+#include <map>
 #include <optional>
 
 namespace tt::desktop
@@ -48,14 +49,12 @@ private:
     // The notices that wait to share the next popup.
     struct Batch
     {
-        std::optional<Notice> first;
-        unsigned count = 0;
-        std::optional<Notice> failure;
-        unsigned failureCount = 0;
-        ULONGLONG due = 0;
+        Notice first;
+        unsigned count;
+        ULONGLONG due;
     };
     void Apply(DWORD action);
-    void Flush();
+    bool Accepts(NoticeKind kind) const;
     void ShowBackground();
     // Offers the More menu when there is a switch that turns `notices` off.
     void Show(Popup::Content content, std::optional<NoticeSwitch> notices);
@@ -85,7 +84,7 @@ private:
     HFONT font_ = nullptr;
     Row rates_;
     Row counts_;
-    Batch batch_;
+    std::map<NoticeKind, Batch> batches_;
     std::optional<Notice> notice_;
     std::optional<NoticeSwitch> switch_;
     Popup popup_;

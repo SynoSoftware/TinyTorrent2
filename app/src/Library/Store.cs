@@ -7,7 +7,7 @@ using Syno.TinyTorrent.Services;
 
 namespace Syno.TinyTorrent.Library;
 
-internal sealed partial class Store(Database database)
+internal sealed partial class Store(Database database, Imdb.Dataset imdb)
 {
     // Stored lists such as genres keep this separator, which the Genres filter
     // splits on.
@@ -44,10 +44,13 @@ internal sealed partial class Store(Database database)
                         SELECT CAST(entry_id AS TEXT) AS video_id,row_number() OVER (ORDER BY entry_id) AS position
                         FROM timing_videos ORDER BY entry_id LIMIT 2
                     )
-                    UPDATE video_information SET title=title || ' (sample ratings)',
-                        imdb_rating=CASE samples.position WHEN 1 THEN 7.8 ELSE 6.9 END,imdb_kind='movie',
-                        tmdb_rating=CASE samples.position WHEN 1 THEN 8.1 ELSE 7.2 END,tmdb_kind='movie'
+                    UPDATE video_information SET title=title || ' (sample ratings)',imdb_id=999999000+samples.position
                     FROM samples WHERE catalog_id='timing' AND video_information.video_id=samples.video_id;
+                    INSERT OR REPLACE INTO title_facts(imdb_id,ratings,directors,certification,box_office) VALUES
+                        (999999001,'{"Imdb":{"Value":7.8,"Kind":"Movie","Votes":2712000},"Tmdb":{"Value":8.1,"Kind":"Movie","Votes":31250},"RottenTomatoes":{"Value":9.1,"Kind":"Movie","Votes":412},"Popcornmeter":{"Value":8.7,"Kind":"Movie","Votes":25000},"Metacritic":{"Value":8.2,"Kind":"Movie","Votes":58}}',
+                            'Sam Okafor','PG-13',412500000),
+                        (999999002,'{"Imdb":{"Value":6.9,"Kind":"Movie","Votes":48},"Tmdb":{"Value":7.2,"Kind":"Movie","Votes":2712},"RottenTomatoes":{"Value":5.4,"Kind":"Movie"}}',
+                            'Sam Okafor','PG-13',2300000);
                     INSERT INTO identifications(origin,file_index,catalog_id,video_id,explicit,decided,evidence)
                     SELECT f.origin,f.file_index,'timing',CAST(f.entry_id AS TEXT),1,1700000000,f.name
                     FROM source_files f JOIN timing_videos v USING(entry_id);
@@ -71,7 +74,36 @@ internal sealed partial class Store(Database database)
         });
 #endif
 
-    internal Task<Matches> Search(Query query, CancellationToken cancellation) =>
+    internal async Task<Matches> Search(Query query, CancellationToken cancellation)
+    {
+        var matches = await Find(query, cancellation).ConfigureAwait(false);
+        return matches with { Entries = await Rate(matches.Entries, cancellation).ConfigureAwait(false) };
+    }
+
+    // An IMDb rating comes from the downloaded IMDb data when that has it,
+    // because the data is newer than the provider's saved rating.
+    private async Task<IReadOnlyList<Entry>> Rate(
+        IReadOnlyList<Entry> entries,
+        CancellationToken cancellation
+    )
+    {
+        var ratings = await imdb.Ratings(
+                entries.Select(entry => entry.ImdbId).OfType<long>().ToHashSet(),
+                cancellation
+            )
+            .ConfigureAwait(false);
+        return ratings.Count == 0
+            ? entries
+            : entries
+                .Select(entry =>
+                    entry.ImdbId is { } id && ratings.TryGetValue(id, out var rating)
+                        ? entry with { Ratings = entry.Ratings with { Imdb = rating } }
+                        : entry
+                )
+                .ToArray();
+    }
+
+    private Task<Matches> Find(Query query, CancellationToken cancellation) =>
         database.Run(
             connection =>
             {
@@ -319,24 +351,38 @@ internal sealed partial class Store(Database database)
     // Whether the selected provider, $catalog, searched for the row's file
     // under its current name and found no match.
     private const string Unmatched = """
-        EXISTS(SELECT 1 FROM source_files s JOIN video_misses x USING(origin,file_index)
-            WHERE s.entry_id=r.entry_id AND x.catalog_id=$catalog AND x.evidence=s.name) AS unmatched
+        EXISTS(SELECT 1 FROM source_files s JOIN video_attempts x USING(origin,file_index)
+            WHERE s.entry_id=r.entry_id AND x.catalog_id=$catalog AND x.evidence=s.name
+                AND x.outcome='no_match') AS unmatched
         """;
 
-    internal Task<Detail?> Detail(long entryId, string? catalogId, CancellationToken cancellation) =>
+    internal async Task<Detail?> Detail(long entryId, string? catalogId, CancellationToken cancellation)
+    {
+        var detail = await ReadDetail(entryId, catalogId, cancellation).ConfigureAwait(false);
+        return detail is null
+            ? null
+            : detail with { Entry = (await Rate([detail.Entry], cancellation).ConfigureAwait(false))[0] };
+    }
+
+    private Task<Detail?> ReadDetail(long entryId, string? catalogId, CancellationToken cancellation) =>
         database.Run(
             connection =>
             {
                 using var command = connection.CreateCommand();
                 command.CommandText = $"""
-                    SELECT r.*,{Unmatched},COALESCE(v.cast,'') AS full_cast,COALESCE(v.synopsis,'') AS synopsis
-                    FROM library_entries r LEFT JOIN video_information v USING(catalog_id,video_id) WHERE r.entry_id=$entry;
+                    SELECT r.*,{Unmatched},COALESCE(v.cast,'') AS full_cast,COALESCE(v.synopsis,'') AS synopsis,
+                        COALESCE(t.directors,'') AS directors,COALESCE(t.certification,'') AS certification,t.box_office
+                    FROM library_entries r LEFT JOIN video_information v USING(catalog_id,video_id)
+                    LEFT JOIN title_facts t ON t.imdb_id=r.imdb_id WHERE r.entry_id=$entry;
                     """;
                 command.Parameters.AddWithValue("$entry", entryId);
                 command.Parameters.AddWithValue("$catalog", (object?)catalogId ?? DBNull.Value);
                 Entry entry;
                 string cast;
                 string synopsis;
+                string directors;
+                string certification;
+                long? boxOffice;
                 VideoChoice? series;
                 IReadOnlyList<Episode> episodes;
                 using (var reader = command.ExecuteReader())
@@ -346,6 +392,10 @@ internal sealed partial class Store(Database database)
                     entry = Read(reader);
                     cast = reader.GetString(reader.GetOrdinal("full_cast"));
                     synopsis = reader.GetString(reader.GetOrdinal("synopsis"));
+                    directors = reader.GetString(reader.GetOrdinal("directors"));
+                    certification = reader.GetString(reader.GetOrdinal("certification"));
+                    var takings = reader.GetOrdinal("box_office");
+                    boxOffice = reader.IsDBNull(takings) ? null : reader.GetInt64(takings);
                     var identity = reader.GetOrdinal("series_id");
                     series = reader.IsDBNull(identity)
                         ? null
@@ -374,6 +424,9 @@ internal sealed partial class Store(Database database)
                 {
                     Series = series,
                     Episodes = episodes,
+                    Directors = directors,
+                    Certification = certification,
+                    BoxOffice = boxOffice,
                 };
             },
             cancellation
@@ -391,7 +444,7 @@ internal sealed partial class Store(Database database)
                 command.Parameters.AddWithValue("$path", entry.Path);
                 command.Parameters.AddWithValue("$name", entry.Name);
                 if (Convert.ToInt64(command.ExecuteScalar()) == 0)
-                    throw new VideoException("library", "file_changed");
+                    throw new VideoException(VideoFailure.FileChanged);
                 SaveIdentification(connection, entry.EntryId, null, true);
                 return true;
             },
@@ -434,20 +487,33 @@ internal sealed partial class Store(Database database)
         string? language
     )
     {
+        video = Filled(connection, video);
         using var command = connection.CreateCommand();
+        command.CommandText = "SELECT ratings FROM title_facts WHERE imdb_id=$imdbId;";
+        command.Parameters.AddWithValue("$imdbId", (object?)video.ImdbId ?? DBNull.Value);
+        var shared = command.ExecuteScalar() is string saved ? ReadRatings(saved).Merge(video.Ratings) : video.Ratings;
+        // The larger box office stays: TMDB and MDBList report worldwide
+        // takings and OMDb only US takings, and a total only grows.
         command.CommandText = """
             INSERT INTO video_information(catalog_id,video_id,language,title,type,year,genres,cast,synopsis,keywords,search,
-                series_catalog,series_id,series_type,series_title,series_year,imdb_rating,imdb_kind,tmdb_rating,tmdb_kind,episodes) VALUES (
+                series_catalog,series_id,series_type,series_title,series_year,ratings,episodes,imdb_id) VALUES (
                 $catalog,$id,$language,$title,$type,$year,$genres,$cast,$synopsis,$keywords,$search,
-                $seriesCatalog,$seriesId,$seriesType,$seriesTitle,$seriesYear,$imdbRating,$imdbKind,$tmdbRating,$tmdbKind,$episodes)
+                $seriesCatalog,$seriesId,$seriesType,$seriesTitle,$seriesYear,$ratings,$episodes,$imdbId)
             ON CONFLICT(catalog_id,video_id) DO UPDATE SET language=excluded.language,
                 title=excluded.title,type=excluded.type,year=excluded.year,genres=excluded.genres,
                 cast=excluded.cast,synopsis=excluded.synopsis,keywords=excluded.keywords,
                 search=excluded.search,
                 series_catalog=excluded.series_catalog,series_id=excluded.series_id,series_type=excluded.series_type,
                 series_title=excluded.series_title,series_year=excluded.series_year,
-                imdb_rating=excluded.imdb_rating,imdb_kind=excluded.imdb_kind,
-                tmdb_rating=excluded.tmdb_rating,tmdb_kind=excluded.tmdb_kind,episodes=excluded.episodes;
+                ratings=excluded.ratings,episodes=excluded.episodes,
+                imdb_id=excluded.imdb_id;
+            INSERT INTO title_facts(imdb_id,ratings,directors,certification,box_office)
+            SELECT $imdbId,$shared,$directors,$certification,$boxOffice WHERE $imdbId IS NOT NULL
+            ON CONFLICT(imdb_id) DO UPDATE SET ratings=excluded.ratings,
+                directors=CASE WHEN excluded.directors<>'' THEN excluded.directors ELSE directors END,
+                certification=CASE WHEN excluded.certification<>'' THEN excluded.certification ELSE certification END,
+                box_office=CASE WHEN box_office IS NULL OR excluded.box_office>box_office
+                    THEN excluded.box_office ELSE box_office END;
             """;
         var title = Joined(
             video
@@ -496,22 +562,11 @@ internal sealed partial class Store(Database database)
             (object?)video.Series?.Title ?? DBNull.Value
         );
         command.Parameters.AddWithValue("$seriesYear", (object?)video.Series?.Year ?? DBNull.Value);
-        command.Parameters.AddWithValue(
-            "$imdbRating",
-            (object?)video.ImdbRating?.Value ?? DBNull.Value
-        );
-        command.Parameters.AddWithValue(
-            "$imdbKind",
-            video.ImdbRating is { } imdb ? Stored(imdb.Kind) : (object)DBNull.Value
-        );
-        command.Parameters.AddWithValue(
-            "$tmdbRating",
-            (object?)video.TmdbRating?.Value ?? DBNull.Value
-        );
-        command.Parameters.AddWithValue(
-            "$tmdbKind",
-            video.TmdbRating is { } tmdb ? Stored(tmdb.Kind) : (object)DBNull.Value
-        );
+        command.Parameters.AddWithValue("$ratings", WriteRatings(video.Ratings));
+        command.Parameters.AddWithValue("$shared", WriteRatings(shared));
+        command.Parameters.AddWithValue("$directors", Joined(video.Directors));
+        command.Parameters.AddWithValue("$certification", video.Certification);
+        command.Parameters.AddWithValue("$boxOffice", (object?)video.BoxOffice ?? DBNull.Value);
         command.Parameters.AddWithValue(
             "$episodes",
             video.Episodes.Count == 0
@@ -519,7 +574,37 @@ internal sealed partial class Store(Database database)
                 : JsonSerializer.Serialize(video.Episodes)
         );
         command.ExecuteNonQuery();
-        SaveRecords(connection, video, language);
+        SaveReferences(connection, video, language);
+    }
+
+    // A movie whose provider lacks its synopsis, cast or genres keeps the ones
+    // already saved for it, by this provider or by another that names the same
+    // IMDb ID, so a fetch from a sparser provider does not lose them. Episodes
+    // are left out, because every episode of a series shares its IMDb ID.
+    private static VideoInformation Filled(SqliteConnection connection, VideoInformation video)
+    {
+        if (video.Kind != VideoKind.Movie || video.Synopsis.Length > 0 && video.Cast.Count > 0 && video.Genres.Count > 0)
+            return video;
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT synopsis,"cast",genres FROM video_information
+            WHERE type='movie' AND (catalog_id=$catalog AND video_id=$id OR imdb_id=$imdbId)
+            ORDER BY catalog_id=$catalog AND video_id=$id DESC;
+            """;
+        command.Parameters.AddWithValue("$catalog", video.CatalogId);
+        command.Parameters.AddWithValue("$id", video.VideoId);
+        command.Parameters.AddWithValue("$imdbId", (object?)video.ImdbId ?? DBNull.Value);
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            if (video.Synopsis.Length == 0)
+                video = video with { Synopsis = reader.GetString(0) };
+            if (video.Cast.Count == 0)
+                video = video with { Cast = Split(reader.GetString(1)) };
+            if (video.Genres.Count == 0)
+                video = video with { Genres = Split(reader.GetString(2)) };
+        }
+        return video;
     }
 
     private static string Match(SqliteCommand command, Query query, string? except = null)
@@ -647,6 +732,7 @@ internal sealed partial class Store(Database database)
     private static Entry Read(SqliteDataReader reader)
     {
         long? Number(int ordinal) => reader.IsDBNull(ordinal) ? null : reader.GetInt64(ordinal);
+        var ratings = reader.GetOrdinal("ratings");
         return new Entry(
             reader.GetInt64(0),
             reader.GetString(1),
@@ -678,8 +764,8 @@ internal sealed partial class Store(Database database)
                     .Order(StringComparer.OrdinalIgnoreCase)
                     .ToArray()
             ),
-            ImdbRating = ReadRating(reader, "imdb_rating", "imdb_kind"),
-            TmdbRating = ReadRating(reader, "tmdb_rating", "tmdb_kind"),
+            Ratings = reader.IsDBNull(ratings) ? new() : ReadRatings(reader.GetString(ratings)),
+            ImdbId = Number(reader.GetOrdinal("imdb_id")),
         };
     }
 }

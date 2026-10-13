@@ -19,8 +19,8 @@
     <ProgressRing
       x:Name="Progress"
       Grid.Column="1"
-      Width="16"
-      Height="16"
+      Width="{StaticResource TinyTorrentInlineIconSize}"
+      Height="{StaticResource TinyTorrentInlineIconSize}"
       IsActive="False"
       Visibility="Collapsed"
     />

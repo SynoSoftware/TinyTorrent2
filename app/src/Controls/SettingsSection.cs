@@ -58,7 +58,9 @@ public sealed partial class SettingsSection : ContentControl
     {
         if (GetTemplateChild("HeaderLayout") is Grid header)
         {
-            header.ColumnDefinitions[0].Width = new GridLength(Glyph.Length == 0 ? 0 : 20);
+            header.ColumnDefinitions[0].Width = new GridLength(
+                Glyph.Length == 0 ? 0 : (double)Application.Current.Resources["TinyTorrentHeaderIconSize"]
+            );
             header.ColumnSpacing = Glyph.Length == 0 ? 0 : 24;
         }
         if (GetTemplateChild("SummaryLabel") is TextBlock label)

@@ -22,8 +22,8 @@ public sealed partial class SettingsPage
         FrameworkElement block = control;
         if (control is SettingsSection section)
             block = section.Surface;
-        else if (ReferenceEquals(control, _scheduler.Map))
-            block = _scheduler.Surface;
+        else if (_scheduler is { } scheduler && ReferenceEquals(control, scheduler.Map))
+            block = scheduler.Surface;
         else
         {
             for (DependencyObject? parent = control; parent is not null; parent = VisualTreeHelper.GetParent(parent))

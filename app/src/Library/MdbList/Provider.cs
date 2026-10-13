@@ -3,7 +3,6 @@ using System.Net.Http;
 using System.Reflection;
 using System.Text.Json;
 using Syno.TinyTorrent.Models;
-using Syno.TinyTorrent.Services;
 
 namespace Syno.TinyTorrent.Library.MdbList;
 
@@ -11,33 +10,39 @@ namespace Syno.TinyTorrent.Library.MdbList;
 /// MDBList, which describes movies in English with ratings it gathers from
 /// IMDb, TMDB and other sites. It names no cast.
 /// </summary>
-/// <param name="key">The person's own API key, or null for the one built into the release.</param>
-internal sealed class Provider(ProviderHttp http, string? key) : IProvider
+/// <param name="key">The person's own API key, or the one built into the release.</param>
+internal sealed class Provider(string key) : IProvider
 {
-    private readonly string? _key =
-        key
-        ?? typeof(Provider)
-            .Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
-            .FirstOrDefault(value => value.Key == "MdbListKey")
-            ?.Value;
-    public string CatalogId => "mdblist";
-    public bool IsAvailable => !string.IsNullOrWhiteSpace(_key);
-    public bool IsLocalized => false;
-    public VideoSchedule Schedule => VideoSchedule.Background;
-    public IReadOnlySet<VideoKind> Kinds { get; } = new HashSet<VideoKind> { VideoKind.Movie };
+    private const string CatalogId = "mdblist";
+
+    internal static ProviderOption Option { get; } =
+        new(
+            CatalogId,
+            "MDBList",
+            new("https://mdblist.com/privacy"),
+            new("https://mdblist.com/terms"),
+            value => new Provider(value)
+        )
+        {
+            Access = Access.Key,
+            BuiltInKey = typeof(Provider)
+                .Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
+                .FirstOrDefault(value => value.Key == "MdbListKey")
+                ?.Value,
+        };
 
     // A movie is named by its TMDB identity, because some results lack an IMDb one.
-    public async Task<IReadOnlyList<VideoChoice>> Search(
-        string query,
-        string language,
+    public async Task<VideoSearch> Search(
+        VideoQuery query,
         CancellationToken cancellation
     )
     {
-        var data = await Get("search/movie?query=" + Uri.EscapeDataString(query), cancellation)
+        var data = await Get(query.Get, "search/movie?query=" + Uri.EscapeDataString(query.Text), cancellation)
             .ConfigureAwait(false);
         try
         {
-            return data.GetProperty("search")
+            var results = data.GetProperty("search");
+            var choices = results
                 .EnumerateArray()
                 .Select(item =>
                     TmdbId(item) is { } id && Text(item, "title") is { Length: > 0 and <= 300 } title
@@ -49,11 +54,12 @@ internal sealed class Provider(ProviderHttp http, string? key) : IProvider
                 )
                 .OfType<VideoChoice>()
                 .ToArray();
+            return new(choices, results.GetArrayLength() == 0);
         }
         catch (Exception error)
             when (error is InvalidOperationException or KeyNotFoundException)
         {
-            throw new VideoException("mdblist", "invalid_result", error);
+            throw new VideoException(VideoFailure.InvalidResult, error);
         }
     }
 
@@ -69,19 +75,19 @@ internal sealed class Provider(ProviderHttp http, string? key) : IProvider
             || !int.TryParse(choice.VideoId, NumberStyles.None, CultureInfo.InvariantCulture, out var number)
             || number <= 0
         )
-            throw new VideoException("mdblist", "invalid_result");
+            throw new VideoException(VideoFailure.InvalidResult);
         var path = "tmdb/movie/" + choice.VideoId;
-        var record =
-            await request.Saved(path, cancellation).ConfigureAwait(false)
-            ?? new VideoRecord(
-                path,
-                await Get(path, cancellation).ConfigureAwait(false),
-                DateTimeOffset.UtcNow.ToUnixTimeSeconds()
-            );
+        var record = await request.Read(path, async token =>
+        {
+            var content = await Get(request.Get, path, token).ConfigureAwait(false);
+            if (Text(content, "title").Length is 0 or > 300)
+                throw new VideoException(VideoFailure.InvalidResult);
+            return new VideoRecord(path, content, DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+        }, cancellation).ConfigureAwait(false);
         var movie = record.Content;
         var title = Text(movie, "title");
         if (title.Length is 0 or > 300)
-            throw new VideoException("mdblist", "invalid_result");
+            throw new VideoException(VideoFailure.InvalidResult);
         var ratings = Child(movie, "ratings");
         return new VideoInformation(CatalogId, choice.VideoId, title, VideoKind.Movie)
         {
@@ -96,13 +102,27 @@ internal sealed class Provider(ProviderHttp http, string? key) : IProvider
                 : [],
             Synopsis = Text(movie, "description"),
             Records = [record],
-            ImdbRating = ReadRating(ratings, "imdb"),
-            TmdbRating = ReadRating(ratings, "tmdb"),
+            Ratings = new()
+            {
+                Imdb = ReadRating(ratings, "imdb"),
+                Tmdb = ReadRating(ratings, "tmdb"),
+                RottenTomatoes = ReadRating(ratings, "tomatoes"),
+                Popcornmeter = ReadRating(ratings, "popcorn"),
+                Metacritic = ReadRating(ratings, "metacritic"),
+            },
+            Certification = Text(movie, "certification"),
+            // MDBList writes 0 for takings it does not know.
+            BoxOffice = Child(movie, "revenue") is { ValueKind: JsonValueKind.Number } revenue
+                && revenue.TryGetInt64(out var takings)
+                && takings > 0
+                ? takings
+                : null,
+            ImdbId = VideoInformation.ParseImdbId(Text(Child(movie, "ids"), "imdb")),
         };
     }
 
-    // Each rating's score is its source's rating on a 0 to 100 scale; a
-    // source without votes has none.
+    // Each rating's score is its source's rating on a 0 to 100 scale, and its
+    // votes the count behind it; a source without votes has no score.
     private static Rating? ReadRating(JsonElement ratings, string source) =>
         ratings.ValueKind != JsonValueKind.Array
             ? null
@@ -114,23 +134,28 @@ internal sealed class Provider(ProviderHttp http, string? key) : IProvider
                     && score.TryGetDouble(out var value)
                     && value is > 0 and <= 100
                         ? new Rating(value / 10, VideoKind.Movie)
+                        {
+                            Votes = Child(rating, "votes") is { ValueKind: JsonValueKind.Number } count
+                                && count.TryGetInt64(out var votes)
+                                && votes > 0
+                                    ? votes
+                                    : null,
+                        }
                         : null
                 )
                 .FirstOrDefault(rating => rating is not null);
 
-    private async Task<JsonElement> Get(string path, CancellationToken cancellation)
+    private async Task<JsonElement> Get(ProviderGet get, string path, CancellationToken cancellation)
     {
-        if (!IsAvailable)
-            throw new ProviderException("mdblist", "unavailable");
         using var request = new HttpRequestMessage(
             HttpMethod.Get,
             "https://api.mdblist.com/"
                 + path
                 + (path.Contains('?') ? "&" : "?")
                 + "apikey="
-                + Uri.EscapeDataString(_key!)
+                + Uri.EscapeDataString(key)
         );
-        return await ProviderJson.Get(http, request, "mdblist", cancellation).ConfigureAwait(false);
+        return await get(request, cancellation).ConfigureAwait(false);
     }
 
     private static int? ReadYear(JsonElement item) =>

@@ -152,6 +152,7 @@ internal enum SubtitleOutcome
     Failed,
     Complete,
     Cancelled,
+    Blocked,
 }
 
 internal enum SubtitleMatch
@@ -231,6 +232,13 @@ public enum LimitMode
     Schedule,
 }
 
+internal enum LimitProfile
+{
+    None,
+    Speed,
+    Alternative,
+}
+
 internal enum LimitOrigin
 {
     Manual,
@@ -253,6 +261,80 @@ public enum VideoKind
     Movie,
     Series,
     Episode,
+}
+
+internal enum RequestOutcome
+{
+    Answered,
+    Missing,
+    Unusable,
+    NoMatch,
+}
+
+/// <summary>
+/// Why video information failed, which decides the text the person reads.
+/// Library writes the text and fills in the provider's name.
+/// </summary>
+internal enum VideoFailure
+{
+    // The provider cannot answer any request now.
+    Unavailable,
+    Route,
+    Refused,
+    Exhausted,
+    Blocked,
+    Damaged,
+    Unreadable,
+
+    // The provider has no usable answer for one video.
+    InvalidResult,
+    Missing,
+
+    // Downloading the provider's data failed, and the installed data stays.
+    DownloadFailed,
+    DownloadDamaged,
+    DiskFull,
+    InUse,
+    UnknownFormat,
+    Interrupted,
+
+    // Library refused the request itself.
+    ProviderUnavailable,
+    LookupStopped,
+    FileChanged,
+    EpisodeRequired,
+}
+
+internal enum RequestBlockKind
+{
+    Missing,
+    Unusable,
+    Limit,
+    Backoff,
+    RemoteWait,
+    Attention,
+    Allowance,
+    NoMatch,
+}
+
+internal enum FetchScope
+{
+    New,
+    Missing,
+    All,
+}
+
+// Lookup policies govern eligibility and whether a match is the person's decision.
+internal enum LookupKind
+{
+    // The background sweep skips decisions and previous attempts.
+    Automatic,
+    // A batch retries unresolved files; matching still makes the decision.
+    Batch,
+    // Refresh preserves an existing identification from the same provider.
+    Refresh,
+    // An individual request reports errors and saves an explicit decision.
+    Explicit,
 }
 
 internal enum PauseReason

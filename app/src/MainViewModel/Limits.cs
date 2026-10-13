@@ -7,8 +7,7 @@ public sealed partial class MainViewModel
 {
     private LimitOrigin _limitOrigin;
 
-    // What the engine applies now: None, Speed or Alternative, never Schedule.
-    private LimitMode _appliedLimits;
+    private LimitProfile _appliedLimits;
     private PauseReason _pause;
 
     // The restriction last applied, so a change that happens on its own, such as
@@ -20,15 +19,21 @@ public sealed partial class MainViewModel
 
     private bool HasLimits => _connected && !_loading && !_storageFailed;
     private LimitMode CurrentLimits =>
-        _limitOrigin == LimitOrigin.Schedule ? LimitMode.Schedule : _appliedLimits;
+        _limitOrigin == LimitOrigin.Schedule ? LimitMode.Schedule : _appliedLimits switch
+        {
+            LimitProfile.None => LimitMode.None,
+            LimitProfile.Speed => LimitMode.Speed,
+            LimitProfile.Alternative => LimitMode.Alternative,
+            _ => throw new InvalidOperationException(),
+        };
     private bool CanChooseLimits => CanEdit && _limitsChoice is null;
     private bool HasSchedule => HasLimits && _limitOrigin != LimitOrigin.Manual;
 
     // The limits chosen for the whole week, or null while the weekly schedule
     // decides them or the choice is not known. The page follows the engine's
     // choice, not one still being applied, so it changes once per choice.
-    internal LimitMode? FixedLimits =>
-        HasLimits && CurrentLimits != LimitMode.Schedule ? CurrentLimits : null;
+    internal LimitProfile? FixedLimits =>
+        HasLimits && _limitOrigin != LimitOrigin.Schedule ? _appliedLimits : null;
     public bool FollowsSchedule => FixedLimits is null;
     public bool CanUseNone => CanChoose(LimitMode.None);
     public bool CanUseSpeed => CanChoose(LimitMode.Speed);
@@ -38,8 +43,8 @@ public sealed partial class MainViewModel
     // The chooser shows a choice still being applied in place of the current one.
     public int LimitsIndex => HasLimits ? (int)(_limitsChoice ?? CurrentLimits) : -1;
 
-    internal bool HasStandardLimits => HasLimits && _appliedLimits == LimitMode.Speed;
-    public bool HasAlternativeLimits => HasLimits && _appliedLimits == LimitMode.Alternative;
+    internal bool HasStandardLimits => HasLimits && _appliedLimits == LimitProfile.Speed;
+    public bool HasAlternativeLimits => HasLimits && _appliedLimits == LimitProfile.Alternative;
     internal PauseReason PausedBy => _pause;
 
     // Resume all lifts the person's and the schedule's pause, not a missing adapter's.
@@ -57,7 +62,7 @@ public sealed partial class MainViewModel
         : _pause == PauseReason.Adapter ? Text.Get("status", "paused")
         : PauseStatus;
     public string RestrictionTip => IsSessionPaused ? PauseStatus : AlternativeTip;
-    public string RestrictionGlyph => IsSessionPaused ? Syno.Lucide.Pause : Syno.Lucide.Turtle;
+    public bool ShowsAlternativeLimits => !IsSessionPaused && HasAlternativeLimits;
     private string AlternativeStatus =>
         HasSchedule && Settings.Schedule.NextChange(DateTime.Now) is { } change
             ? Text.Format("window", "alternative_until", change)
@@ -75,8 +80,8 @@ public sealed partial class MainViewModel
             ? "—"
             : _appliedLimits switch
             {
-                LimitMode.Speed => Text.Get("settings", "speed"),
-                LimitMode.Alternative => Text.Get("settings", "alternative"),
+                LimitProfile.Speed => Text.Get("settings", "speed"),
+                LimitProfile.Alternative => Text.Get("settings", "alternative"),
                 _ => Text.Get("transfer_limits", "none"),
             };
     public string LimitsSummary => !HasLimits ? "—"
@@ -132,7 +137,7 @@ public sealed partial class MainViewModel
         var current = Text.Format("window", key, Rate(rate));
         if (!HasLimits)
             return current;
-        if (_appliedLimits == LimitMode.None)
+        if (_appliedLimits == LimitProfile.None)
             return current + "\n" + Text.Get("transfer_limits", "unlimited");
         var pair = Text.Get("window", HasAlternativeLimits ? "alternative_pair" : "speed_pair");
         return current
@@ -144,18 +149,24 @@ public sealed partial class MainViewModel
             );
     }
 
-    internal string LimitLabel(LimitMode mode) =>
-        mode == LimitMode.Schedule
-            ? Text.Get("settings", "schedule")
-            : Text.Get("transfer_limits", "state_" + EngineName(mode));
+    private string LimitLabel(LimitProfile profile) =>
+        Text.Get("transfer_limits", "state_" + EngineName(profile));
+
+    private static string EngineName(LimitProfile profile) => profile switch
+    {
+        LimitProfile.None => "none",
+        LimitProfile.Speed => "speed",
+        LimitProfile.Alternative => "alternative",
+        _ => throw new ArgumentOutOfRangeException(nameof(profile)),
+    };
 
     // The engine's name for a mode; following the schedule is the absence of one.
     private static string? EngineName(LimitMode mode) =>
         mode switch
         {
-            LimitMode.None => "none",
-            LimitMode.Speed => "speed",
-            LimitMode.Alternative => "alternative",
+            LimitMode.None => EngineName(LimitProfile.None),
+            LimitMode.Speed => EngineName(LimitProfile.Speed),
+            LimitMode.Alternative => EngineName(LimitProfile.Alternative),
             _ => null,
         };
 
@@ -180,13 +191,13 @@ public sealed partial class MainViewModel
             "schedule" => LimitOrigin.Schedule,
             _ => throw new InvalidDataException("Unknown limits source."),
         };
-        var mode = limits.GetProperty("mode").GetString();
-        _appliedLimits =
-            Enum.GetValues<LimitMode>()
-                .Where(choice => choice != LimitMode.Schedule && EngineName(choice) == mode)
-                .Select(choice => (LimitMode?)choice)
-                .SingleOrDefault()
-            ?? throw new InvalidDataException("Unknown limits mode.");
+        _appliedLimits = limits.GetProperty("mode").GetString() switch
+        {
+            "none" => LimitProfile.None,
+            "speed" => LimitProfile.Speed,
+            "alternative" => LimitProfile.Alternative,
+            _ => throw new InvalidDataException("Unknown limits mode."),
+        };
         _downloadCap = limits.GetProperty("download").GetInt32();
         _uploadCap = limits.GetProperty("upload").GetInt32();
         _pause = limits.GetProperty("pause").GetString() switch

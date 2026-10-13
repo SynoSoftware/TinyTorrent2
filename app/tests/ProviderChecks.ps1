@@ -10,7 +10,9 @@ $httpType = $assembly.GetType('Syno.TinyTorrent.Services.ProviderHttp', $true)
 $routeType = $assembly.GetType('Syno.TinyTorrent.Services.HttpRoute', $true)
 $proxyType = $assembly.GetType('Syno.TinyTorrent.Models.ProxyType', $true)
 $configure = $httpType.GetMethod('Configure', $flags)
-$send = $httpType.GetMethod('Send', $flags)
+$send = $httpType.GetMethod('Send', $flags, $null, [type[]]@(
+    [Net.Http.HttpRequestMessage], [int], [Threading.CancellationToken],
+    $assembly.GetType('Syno.TinyTorrent.Services.ProviderCall', $true)), $null)
 $destination = 'provider-route.invalid'
 
 function Require([bool] $Condition, [string] $Failure) {
@@ -53,7 +55,7 @@ foreach ($case in @('Http', 'Socks4', 'Socks5', 'UnavailableAdapter')) {
         $configure.Invoke($http.PSObject.BaseObject, [object[]]@($route.PSObject.BaseObject)) | Out-Null
         $request = [Net.Http.HttpRequestMessage]::new([Net.Http.HttpMethod]::Get, $uri)
         $pending = $send.Invoke($http.PSObject.BaseObject,
-            [object[]]@($request.PSObject.BaseObject, [int]1024, $deadline.Token.PSObject.BaseObject))
+            [object[]]@($request.PSObject.BaseObject, [int]1024, $deadline.Token.PSObject.BaseObject, $null))
 
         if ($case -ne 'UnavailableAdapter') {
             $client = $listener.AcceptTcpClientAsync().WaitAsync([TimeSpan]::FromSeconds(3)).GetAwaiter().GetResult()

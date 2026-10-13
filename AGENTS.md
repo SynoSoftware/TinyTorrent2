@@ -147,7 +147,8 @@ the code, without a map of the architecture.
 2. **Clarity over cleverness.** Write for the reader, because code is read and
    changed far more often than it is written. Intent is obvious without
    tracing abstractions or indirection.
-   - Use straight-line control flow, early returns where they clarify a
+   - Choose the simplest algorithm and data shape the requirement allows.
+     Use straight-line control flow, early returns where they clarify a
      decision, and names, types and structure that say what the code does. One
      operation reads from its command to its stored change without crossing
      pass-through layers.

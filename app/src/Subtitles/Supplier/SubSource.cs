@@ -7,15 +7,25 @@ using Syno.TinyTorrent.Services;
 
 namespace Syno.TinyTorrent.Subtitles;
 
-internal sealed partial class SubSource : Supplier
+internal sealed partial class SubSource(RequestPolicy policy) : Supplier(policy)
 {
     private static readonly Uri Origin = new("https://api.subsource.net");
-    private readonly Dictionary<string, Queue<DateTimeOffset>> _usage = [];
+    protected override IReadOnlyList<RateWindow> RateWindows { get; } =
+    [
+        new(TimeSpan.FromMinutes(1), 60),
+        new(TimeSpan.FromHours(1), 1800),
+        new(TimeSpan.FromDays(1), 7200),
+    ];
 
     internal override SubtitleSupplier SupplierId => SubtitleSupplier.SubSource;
     internal override Uri Privacy { get; } = new("https://subsource.net/policy");
     internal override Uri Terms { get; } = new("https://subsource.net/terms");
     protected override IReadOnlyDictionary<string, string> Codes => LanguageCodes;
+    internal override string Question(SubtitleLookup lookup)
+    {
+        var release = FileName.Interpret(lookup.FileName);
+        return JsonSerializer.Serialize(new { release.Title, release.Year, release.Season, release.Episodes });
+    }
     protected override string? BuiltInKey { get; } =
         typeof(SubSource)
             .Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
@@ -43,7 +53,7 @@ internal sealed partial class SubSource : Supplier
         Data(document.RootElement);
     }
 
-    protected override async Task<IReadOnlyList<SubtitleCandidate>> Search(
+    protected override async Task<SubtitleSearch> Search(
         Operation operation,
         SubtitleLookup lookup,
         Release release,
@@ -52,6 +62,7 @@ internal sealed partial class SubSource : Supplier
     )
     {
         var candidates = new List<SubtitleCandidate>();
+        var total = 0;
         var query =
             "/api/v1/movies/search?searchType=text&q=" + Uri.EscapeDataString(release.Title);
         if (release.Season is { } season)
@@ -76,11 +87,11 @@ internal sealed partial class SubSource : Supplier
             )
                 continue;
             if (movieId is not null && movieId != id)
-                return candidates;
+                return new(candidates);
             movieId = id;
         }
         if (movieId is null)
-            return candidates;
+            return new(candidates, Data(movies.RootElement).GetArrayLength() == 0);
 
         for (var page = 1; ; page++)
         {
@@ -96,6 +107,7 @@ internal sealed partial class SubSource : Supplier
             using var subtitles = Parse(response.Bytes);
             foreach (var subtitle in Data(subtitles.RootElement).EnumerateArray())
             {
+                total++;
                 if (
                     Number(subtitle, "movieId") != movieId
                     || Text(subtitle, "language") != language
@@ -116,12 +128,8 @@ internal sealed partial class SubSource : Supplier
                     .ToArray();
                 if (names.Length == 0)
                     continue;
-                // One subtitle serves several releases; it carries the one
-                // naming this file, so release matching can find it.
-                var name = names.FirstOrDefault(value => SameRelease(release, value)) ?? names[0];
-                candidates.Add(
-                    new(lookup.Language, name, name, id.ToString(CultureInfo.InvariantCulture))
-                );
+                foreach (var name in names)
+                    candidates.Add(new(lookup.Language, name, name, id.ToString(CultureInfo.InvariantCulture)));
             }
             if (
                 !subtitles.RootElement.TryGetProperty("pagination", out var pagination)
@@ -130,7 +138,7 @@ internal sealed partial class SubSource : Supplier
             )
                 throw new SubtitleException(SubtitleFailure.Format);
             if (page >= pages)
-                return candidates;
+                return new(candidates, total == 0);
         }
     }
 
@@ -160,35 +168,4 @@ internal sealed partial class SubSource : Supplier
         return data;
     }
 
-    protected override void Reserve(string key)
-    {
-        var now = DateTimeOffset.UtcNow;
-        if (!_usage.TryGetValue(key, out var requests))
-            _usage[key] = requests = new();
-        while (requests.TryPeek(out var oldest) && oldest <= now.AddDays(-1))
-            requests.Dequeue();
-        DateTimeOffset? retry = null;
-        foreach (
-            var (duration, maximum) in new[]
-            {
-                (TimeSpan.FromMinutes(1), 60),
-                (TimeSpan.FromHours(1), 1800),
-                (TimeSpan.FromDays(1), 7200),
-            }
-        )
-        {
-            var recent = requests.Where(time => time > now - duration).ToArray();
-            if (recent.Length < maximum)
-                continue;
-            var reset = recent[recent.Length - maximum] + duration;
-            if (retry is null || reset > retry)
-                retry = reset;
-        }
-        if (retry is { } deadline)
-        {
-            Wait(key, deadline);
-            throw new SubtitleException(SubtitleFailure.Quota, deadline);
-        }
-        requests.Enqueue(now);
-    }
 }

@@ -1,22 +1,26 @@
 using Syno.TinyTorrent.Models;
+using Syno.TinyTorrent.Services;
 
 namespace Syno.TinyTorrent.Library;
 
-internal sealed class VideoLookup(Store store, Task settled, IReadOnlyList<ProviderOption> options)
-    : IAsyncDisposable
+internal sealed class VideoLookup(
+    Store store,
+    Task settled,
+    IReadOnlyList<ProviderOption> options,
+    RequestPolicy policy,
+    ProviderHttp http
+) : IAsyncDisposable
 {
     private readonly SemaphoreSlim _access = new(1);
     private readonly SemaphoreSlim _changes = new(1);
     private readonly CancellationTokenSource _lifetime = new();
     private readonly object _gate = new();
     private readonly HashSet<Task> _requests = [];
-    private readonly Dictionary<string, ProviderException> _failures = [];
+    private ProviderException? _failure;
+    private RetryCommand? _recheck;
     private Dictionary<string, string> _keys = [];
-    private readonly Dictionary<
-        (string Catalog, string Query, string Language),
-        IReadOnlyList<VideoChoice>
-    > _searches = [];
-    private readonly Queue<(Entry Entry, ProviderOption Source)> _batch = [];
+    private readonly Queue<BatchItem> _batch = [];
+    private readonly SemaphoreSlim _batchWake = new(0, 1);
     private readonly HashSet<long> _batched = [];
     private CancellationTokenSource _batchStop = new();
     private Task _batchWork = Task.CompletedTask;
@@ -31,7 +35,6 @@ internal sealed class VideoLookup(Store store, Task settled, IReadOnlyList<Provi
     private bool _closed;
     private bool _again;
     internal bool Enabled { get; private set; }
-    internal int LookupLimit { get; private set; } = Store.DefaultLookupLimit;
     internal IReadOnlyList<ProviderOption> Options => options;
     internal ProviderOption? Option { get; private set; }
     internal IProvider? Provider { get; private set; }
@@ -40,12 +43,17 @@ internal sealed class VideoLookup(Store store, Task settled, IReadOnlyList<Provi
         get
         {
             lock (_gate)
-                return Provider is { } provider
-                    ? _failures.GetValueOrDefault(provider.CatalogId)
-                    : null;
+                return _failure;
         }
     }
-    internal bool IsAvailable => Provider?.IsAvailable == true;
+    internal bool IsAvailable
+    {
+        get
+        {
+            lock (_gate)
+                return Option is { } option && Available(option);
+        }
+    }
 
     /// <summary>The files Fetch metadata is identifying, or null when it is idle.</summary>
     internal VideoBatch? Batch
@@ -86,25 +94,20 @@ internal sealed class VideoLookup(Store store, Task settled, IReadOnlyList<Provi
         {
             var selected = await store.Provider(cancellation).ConfigureAwait(false);
             var enabled = await store.Enabled(cancellation).ConfigureAwait(false);
-            var limit = await store.LookupLimit(cancellation).ConfigureAwait(false);
+            await policy.Initialize(cancellation).ConfigureAwait(false);
             var keys = await store.Keys(cancellation).ConfigureAwait(false);
             var option = selected is null
                 ? options.FirstOrDefault()
                 : options.FirstOrDefault(option => option.ProviderId == selected);
-            IProvider? provider;
-            lock (_gate)
-            {
-                _keys = keys;
-                provider = option is null ? null : Create(option);
-            }
-            if (enabled && provider is null)
+            // A saved provider that this version lacks turns lookups off.
+            if (enabled && option is null)
                 await store.DisableProvider(cancellation).ConfigureAwait(false);
             lock (_gate)
             {
+                _keys = keys;
                 Option = option;
-                Provider = provider;
-                Enabled = enabled && provider is not null;
-                LookupLimit = limit;
+                Provider = option is null ? null : option.Create(Key(option));
+                Enabled = enabled && option is not null;
                 _language = language;
             }
         });
@@ -113,26 +116,34 @@ internal sealed class VideoLookup(Store store, Task settled, IReadOnlyList<Provi
     /// Saves <paramref name="providerId"/> as the provider and turns lookups on.
     /// An unavailable provider changes nothing and throws.
     /// </summary>
-    internal Task Enable(string providerId) =>
-        Change(async cancellation =>
+    internal Task Enable(string providerId, bool preserveBatch = false) =>
+        Change(cancellation => Select(
+            options.FirstOrDefault(option => option.ProviderId == providerId)
+                ?? throw new ArgumentOutOfRangeException(nameof(providerId)), cancellation), preserveBatch);
+
+    private async Task Select(ProviderOption option, CancellationToken cancellation)
+    {
+        IProvider provider;
+        lock (_gate)
         {
-            var option =
-                options.FirstOrDefault(option => option.ProviderId == providerId)
-                ?? throw new ArgumentOutOfRangeException(nameof(providerId));
-            IProvider provider;
-            lock (_gate)
-                provider = option == Option && Provider is { } current ? current : Create(option);
-            if (!provider.IsAvailable)
-                throw new VideoException("library", "provider_unavailable");
-            await store.EnableProvider(providerId, cancellation).ConfigureAwait(false);
-            lock (_gate)
+            if (!Available(option))
+                throw new VideoException(VideoFailure.ProviderUnavailable) { Provider = option };
+            provider = option == Option && Provider is { } current ? current : option.Create(Key(option));
+        }
+        await store.EnableProvider(option.ProviderId, cancellation).ConfigureAwait(false);
+        lock (_gate)
+        {
+            if (!ReferenceEquals(Provider, provider))
             {
-                Option = option;
-                Provider = provider;
-                Enabled = true;
-                Resume();
+                _failure = null;
+                _recheck = null;
             }
-        });
+            Option = option;
+            Provider = provider;
+            Enabled = true;
+            Resume();
+        }
+    }
 
     /// <summary>Whether the person saved their own API key for <paramref name="providerId"/>.</summary>
     internal bool HasKey(string providerId)
@@ -158,17 +169,70 @@ internal sealed class VideoLookup(Store store, Task settled, IReadOnlyList<Provi
                     _keys[providerId] = key;
                 if (Option is { } option && option.ProviderId == providerId)
                 {
-                    Provider = Create(option);
-                    _failures.Remove(Provider.CatalogId);
+                    Restart(option);
+                    _recheck = new(DateTimeOffset.UtcNow.UtcTicks) { Recheck = true };
                 }
             }
         });
 
-    // Callers hold _gate, which guards the saved keys.
-    private IProvider Create(ProviderOption option) =>
-        option.Create(_keys.GetValueOrDefault(option.ProviderId));
+    /// <summary>
+    /// Runs <paramref name="replace"/> while no lookup reads the provider's
+    /// downloaded data, such as a new IMDb data file replacing the old one.
+    /// Clears local attempts so unresolved files can use the new dataset.
+    /// </summary>
+    internal Task Reload(ProviderOption option, Action replace, Func<bool>? enable = null) =>
+        Change(async cancellation =>
+        {
+            // Replacing a file can wait for a read in progress, so it never
+            // runs on the calling window thread.
+            await Task.Run(replace).ConfigureAwait(false);
+            lock (_gate)
+                Restart(option);
+            await store.ClearAttempts(option.ProviderId, cancellation).ConfigureAwait(false);
+            if (enable?.Invoke() == true)
+                await Select(option, cancellation).ConfigureAwait(false);
+        }, preserveBatch: true);
 
-    internal Task Disable() =>
+    // Callers hold _gate. The provider in use that starts again with a new
+    // key or new data forgets the failures of the old one; another
+    // provider's start leaves them.
+    private void Restart(ProviderOption option)
+    {
+        if (Option != option)
+            return;
+        Provider = option.Create(Key(option));
+        _failure = null;
+        _recheck = null;
+    }
+
+    // Callers hold _gate, which guards the saved keys. A provider sends the
+    // person's own key, else the one built into the release.
+    private string Key(ProviderOption option) =>
+        _keys.GetValueOrDefault(option.ProviderId) ?? option.BuiltInKey ?? string.Empty;
+
+    // Callers hold _gate. A provider that needs an API key works only with
+    // one, and one that answers from downloaded data only once it is installed.
+    private bool Available(ProviderOption option) =>
+        option.Dataset?.IsInstalled
+        ?? (option.Access != Access.Key || !string.IsNullOrWhiteSpace(Key(option)));
+
+    // Callers hold _gate. The saved provider serves its own option, so the
+    // failure a lookup records belongs to the provider the person sees.
+    private Context Bind(ProviderOption option, CancellationToken token)
+    {
+        var key = Key(option);
+        return new(
+            option,
+            option == Option && Provider is { } saved ? saved : option.Create(key),
+            _language,
+            token
+        )
+        {
+            Access = option.IsOnline ? new(option.ProviderId, RequestKey.Digest(key), string.Empty) : null,
+        };
+    }
+
+    internal Task Disable(bool preserveBatch = false) =>
         Change(async cancellation =>
         {
             await store.DisableProvider(cancellation).ConfigureAwait(false);
@@ -177,18 +241,21 @@ internal sealed class VideoLookup(Store store, Task settled, IReadOnlyList<Provi
                 Enabled = false;
                 Resume();
             }
-        });
+        }, preserveBatch);
 
-    /// <summary>Saves the search limit that Library and subtitles share; later searches use it.</summary>
-    internal async Task SaveLookupLimit(int limit)
+    internal Task Suspend(Func<Task> apply) => Change(async cancellation =>
     {
-        ArgumentOutOfRangeException.ThrowIfLessThan(limit, 1);
-        await store.SaveLookupLimit(limit, _lifetime.Token).ConfigureAwait(false);
-        LookupLimit = limit;
-        Changed?.Invoke(this, EventArgs.Empty);
-    }
+        await apply().ConfigureAwait(false);
+        Context? current;
+        lock (_gate)
+            current = Option is { } option ? Bind(option, cancellation) : null;
+        if (current is { Access: not null }
+            && await AccessProtection(current, cancellation).ConfigureAwait(false) is null)
+            lock (_gate)
+                _failure = null;
+    }, preserveBatch: true);
 
-    private async Task Change(Func<CancellationToken, Task> apply)
+    private async Task Change(Func<CancellationToken, Task> apply, bool preserveBatch = false)
     {
         await _changes.WaitAsync(_lifetime.Token).ConfigureAwait(false);
         try
@@ -196,8 +263,10 @@ internal sealed class VideoLookup(Store store, Task settled, IReadOnlyList<Provi
             lock (_gate)
             {
                 ObjectDisposedException.ThrowIf(_closed, this);
-                CancelContext();
+                CancelContext(preserveBatch);
             }
+            if (preserveBatch)
+                await _batchWork.ConfigureAwait(false);
             await _access.WaitAsync(_lifetime.Token).ConfigureAwait(false);
             try
             {
@@ -212,20 +281,28 @@ internal sealed class VideoLookup(Store store, Task settled, IReadOnlyList<Provi
         {
             _changes.Release();
             lock (_gate)
+            {
+                // Reset can release a hold before its scheduled retry.
+                if (preserveBatch)
+                    for (var remaining = _batch.Count; remaining > 0; remaining--)
+                        _batch.Enqueue(_batch.Dequeue() with { RetryAt = null });
+                StartBatch();
                 Refresh(_connected, _language);
+            }
             Changed?.Invoke(this, EventArgs.Empty);
         }
     }
 
     // A changed provider, switch, route, connection or language ends the
     // batch too, wherever its loop is.
-    private void CancelContext()
+    private void CancelContext(bool preserveBatch = false)
     {
         _context.Cancel();
         _context.Dispose();
         _context = new();
         _background?.Cancel();
-        EndBatch();
+        if (!preserveBatch)
+            EndBatch();
     }
 
     internal void Refresh(bool connected, string language)
@@ -242,10 +319,9 @@ internal sealed class VideoLookup(Store store, Task settled, IReadOnlyList<Provi
             if (
                 !connected
                 || !Enabled
-                || Provider
-                    is not { Schedule: VideoSchedule.Background, IsAvailable: true } provider
+                || Option is not { } option
+                || !Available(option)
                 || _changes.CurrentCount == 0
-                || Failure is { RetryAt: null }
             )
             {
                 _background?.Cancel();
@@ -259,7 +335,7 @@ internal sealed class VideoLookup(Store store, Task settled, IReadOnlyList<Provi
                 _lifetime.Token,
                 _context.Token
             );
-            var context = new Context(provider, _language, cancellation.Token);
+            var context = Bind(option, cancellation.Token) with { Command = _recheck };
             _background = cancellation;
             _work = Task.Run(() => Run(context, cancellation));
         }
@@ -271,6 +347,7 @@ internal sealed class VideoLookup(Store store, Task settled, IReadOnlyList<Provi
         lock (_gate)
         {
             ObjectDisposedException.ThrowIf(_closed, this);
+            _recheck = new(DateTimeOffset.UtcNow.UtcTicks) { Recheck = true };
             Resume();
             Refresh(_connected, _language);
         }
@@ -279,31 +356,9 @@ internal sealed class VideoLookup(Store store, Task settled, IReadOnlyList<Provi
 
     private void Resume()
     {
-        if (Provider is not { } provider || Failure?.RetryAt > DateTimeOffset.UtcNow)
+        if (Failure?.RetryAt > DateTimeOffset.UtcNow)
             return;
-        _failures.Remove(provider.CatalogId);
-    }
-
-    /// <summary>
-    /// Applies a new network route through <paramref name="configure"/>.
-    /// Lookups on the old route are cancelled first, so their cancellation is
-    /// not saved as a provider failure. Failures without a retry time are
-    /// cleared, so lookups start again on the new route.
-    /// </summary>
-    internal void ChangeRoute(Action configure)
-    {
-        lock (_gate)
-        {
-            ObjectDisposedException.ThrowIf(_closed, this);
-            CancelContext();
-            configure();
-            foreach (
-                var (catalog, _) in _failures.Where(pair => pair.Value.RetryAt is null).ToArray()
-            )
-                _failures.Remove(catalog);
-            Refresh(_connected, _language);
-        }
-        Changed?.Invoke(this, EventArgs.Empty);
+        _failure = null;
     }
 
     /// <summary>
@@ -314,27 +369,33 @@ internal sealed class VideoLookup(Store store, Task settled, IReadOnlyList<Provi
     /// </summary>
     internal Task<IReadOnlyList<VideoChoice>> Search(
         string query,
+        string fileName,
         ProviderOption source,
-        CancellationToken cancellation
+        CancellationToken cancellation,
+        FetchScope scope = FetchScope.New
     ) =>
         Request<IReadOnlyList<VideoChoice>>(
             async context =>
             {
                 var saved = await store
-                    .Choices(context.Provider.CatalogId, query, context.Token)
+                    .Choices(context.Option.ProviderId, query, context.Token)
                     .ConfigureAwait(false);
                 IReadOnlyList<VideoChoice> found;
-                // The person searches again after an empty or failed answer, so
-                // this search never reuses the session's earlier result.
                 try
                 {
                     found = await Execute(
                             context,
-                            current => Search(current, query, reuse: false, limited: false)
+                            async current =>
+                            {
+                                var choices = await Search(current, query).ConfigureAwait(false);
+                                if (Matches(FileName.Interpret(fileName), choices).Length != 1)
+                                    await store.RejectSearch(SearchRequest(current, query).Key).ConfigureAwait(false);
+                                return choices;
+                            }
                         )
                         .ConfigureAwait(false);
                 }
-                catch (ProviderException) when (saved.Count > 0)
+                catch (ProviderException) when (scope == FetchScope.New && saved.Count > 0)
                 {
                     return saved;
                 }
@@ -345,7 +406,8 @@ internal sealed class VideoLookup(Store store, Task settled, IReadOnlyList<Provi
                 ];
             },
             cancellation,
-            source
+            source,
+            scope
         );
 
     /// <summary>
@@ -356,7 +418,8 @@ internal sealed class VideoLookup(Store store, Task settled, IReadOnlyList<Provi
         Entry entry,
         VideoChoice choice,
         ProviderOption source,
-        CancellationToken cancellation
+        CancellationToken cancellation,
+        FetchScope scope = FetchScope.New
     ) =>
         Request(
             context =>
@@ -365,13 +428,14 @@ internal sealed class VideoLookup(Store store, Task settled, IReadOnlyList<Provi
                     current =>
                         Collect(
                             current,
-                            new VideoTarget(entry, current.Provider.CatalogId, LookupKind.Explicit),
+                            new VideoTarget(entry, current.Option.ProviderId, LookupKind.Explicit),
                             choice,
-                            false
+                            scope != FetchScope.New
                         )
                 ),
             cancellation,
-            source
+            source,
+            scope
         );
 
     /// <summary>
@@ -386,7 +450,7 @@ internal sealed class VideoLookup(Store store, Task settled, IReadOnlyList<Provi
                     current =>
                         Collect(
                             current,
-                            new VideoTarget(entry, current.Provider.CatalogId, LookupKind.Explicit),
+                            new VideoTarget(entry, current.Option.ProviderId, LookupKind.Explicit),
                             null,
                             entry.HasMetadata
                         )
@@ -394,28 +458,83 @@ internal sealed class VideoLookup(Store store, Task settled, IReadOnlyList<Provi
             cancellation
         );
 
+    internal async Task<RequestBlock?> Protection(string query, string fileName, ProviderOption source, CancellationToken cancellation)
+    {
+        Context context;
+        lock (_gate)
+            context = Bind(source, cancellation);
+        return await AccessProtection(context, cancellation).ConfigureAwait(false)
+            ?? await SearchProtection(SearchRequest(context, query), FileName.Interpret(fileName), cancellation).ConfigureAwait(false);
+    }
+
+    private async Task<RequestBlock?> SearchProtection(LookupRequest request, Release release, CancellationToken cancellation)
+    {
+        var saved = await store.Search(request.Key, cancellation).ConfigureAwait(false);
+        if (saved is null || saved.Count == 0)
+            return await policy.Read(request, cancellation).ConfigureAwait(false);
+        return Matches(release, saved).Length == 1 ? null : new(RequestBlockKind.NoMatch);
+    }
+
+    private Task<RequestBlock?> AccessProtection(Context context, CancellationToken cancellation) =>
+        context.Access is { } access
+            ? policy.Read([access with { Operation = "search" }, access with { Operation = "detail" }], cancellation)
+            : Task.FromResult<RequestBlock?>(null);
+
+    internal async Task<IReadOnlyList<VideoFetch>> Plan(IReadOnlyCollection<Entry> entries, ProviderOption source, CancellationToken cancellation)
+    {
+        if (!source.IsOnline)
+            return [];
+        Context context;
+        lock (_gate)
+            context = Bind(source, cancellation);
+        var candidates = await store.Fetchable(entries, source.ProviderId, cancellation).ConfigureAwait(false);
+        var wait = await AccessProtection(context, cancellation).ConfigureAwait(false);
+        var result = new List<VideoFetch>();
+        foreach (var candidate in candidates)
+        {
+            var entry = candidate.Entry;
+            var release = FileName.Interpret(entry.Name);
+            if (!entry.HasMetadata && !CanMatch(source, release))
+                continue;
+            var request = SearchRequest(context, release.Title);
+            var block = candidate.Block ?? await SearchProtection(request, release, cancellation).ConfigureAwait(false);
+            result.Add(new(entry, block, wait));
+        }
+        return result;
+    }
+
     /// <summary>
     /// Adds <paramref name="entries"/> to the batch, which identifies them one
     /// at a time with <paramref name="source"/>. Automatic lookups wait until
     /// the batch ends. A file already waiting is not added again.
     /// </summary>
-    internal void Fetch(IReadOnlyCollection<Entry> entries, ProviderOption source)
+    internal void Fetch(IReadOnlyCollection<Entry> entries, ProviderOption source, FetchScope scope = FetchScope.New)
     {
+        if (!source.IsOnline)
+            throw new VideoException(VideoFailure.ProviderUnavailable) { Provider = source };
         lock (_gate)
         {
             ObjectDisposedException.ThrowIf(_closed, this);
+            var command = scope == FetchScope.New ? null : new RetryCommand(DateTimeOffset.UtcNow.UtcTicks);
             foreach (var entry in entries)
                 if (_batched.Add(entry.EntryId))
-                    _batch.Enqueue((entry, source));
+                    _batch.Enqueue(new(entry, source, scope, command));
+            if (_batchWake.CurrentCount == 0)
+                _batchWake.Release();
             // The background sweep finishes its current file, so a page read
             // already under way is not wasted, and then waits for the batch.
-            if (!_batchRunning && _batch.Count > 0)
-            {
-                _batchRunning = true;
-                _batchWork = Task.Run(RunBatch);
-            }
+            StartBatch();
         }
         Changed?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void StartBatch()
+    {
+        if (!_closed && _connected && _changes.CurrentCount > 0 && !_batchRunning && _batch.Count > 0)
+        {
+            _batchRunning = true;
+            _batchWork = Task.Run(RunBatch);
+        }
     }
 
     /// <summary>Empties the batch and cancels its request in progress.</summary>
@@ -447,7 +566,8 @@ internal sealed class VideoLookup(Store store, Task settled, IReadOnlyList<Provi
         var limited = 0;
         while (true)
         {
-            (Entry Entry, ProviderOption Source) item;
+            BatchItem? item;
+            DateTimeOffset? next = null;
             CancellationToken stop;
             CancellationTokenSource request;
             Context context;
@@ -463,7 +583,8 @@ internal sealed class VideoLookup(Store store, Task settled, IReadOnlyList<Provi
                     || !_batch.TryPeek(out item)
                 )
                 {
-                    ClearBatch();
+                    if (_changes.CurrentCount != 0)
+                        ClearBatch();
                     _batchRunning = false;
                     Refresh(_connected, _language);
                     break;
@@ -474,15 +595,41 @@ internal sealed class VideoLookup(Store store, Task settled, IReadOnlyList<Provi
                     _lifetime.Token,
                     _context.Token
                 );
-                context = new Context(
-                    item.Source == Option && Provider is { } saved ? saved : Create(item.Source),
-                    _language,
-                    request.Token
-                );
+                var now = DateTimeOffset.UtcNow;
+                for (var remaining = _batch.Count; remaining > 0; remaining--)
+                {
+                    item = _batch.Peek();
+                    if (item.RetryAt is not { } due || due <= now)
+                    {
+                        next = null;
+                        break;
+                    }
+                    next = next is null || due < next ? due : next;
+                    _batch.Enqueue(_batch.Dequeue());
+                }
+                context = Bind(item.Source, request.Token) with
+                {
+                    Scope = item.Scope,
+                    Accepted = item.Accepted,
+                    Command = item.Command,
+                };
             }
             bool identified;
             using (request)
             {
+                if (next is { } due)
+                {
+                    var delay = due - DateTimeOffset.UtcNow;
+                    if (delay > TimeSpan.Zero)
+                    {
+                        try
+                        {
+                            await _batchWake.WaitAsync(delay < TimeSpan.FromDays(1) ? delay : TimeSpan.FromDays(1), request.Token).ConfigureAwait(false);
+                        }
+                        catch (OperationCanceledException) { }
+                    }
+                    continue;
+                }
                 try
                 {
                     identified = await Execute(
@@ -492,11 +639,11 @@ internal sealed class VideoLookup(Store store, Task settled, IReadOnlyList<Provi
                                     current,
                                     new VideoTarget(
                                         item.Entry,
-                                        current.Provider.CatalogId,
-                                        LookupKind.Batch
+                                        current.Option.ProviderId,
+                                        item.Scope == FetchScope.All ? LookupKind.Refresh : LookupKind.Batch
                                     ),
                                     null,
-                                    false
+                                    item.Scope == FetchScope.All
                                 )
                         )
                         .ConfigureAwait(false);
@@ -508,6 +655,25 @@ internal sealed class VideoLookup(Store store, Task settled, IReadOnlyList<Provi
                     if (limited > 0)
                         BatchLimited?.Invoke(this, limited);
                     limited = 0;
+                    continue;
+                }
+                catch (OperationCanceledException) when (_changes.CurrentCount == 0)
+                {
+                    continue;
+                }
+                catch (Exception error) when (error is ProviderException { RetryAt: not null }
+                    or RequestBlockedException { Block.RetryAt: not null })
+                {
+                    var retry = error is ProviderException providerError
+                        ? providerError.RetryAt : ((RequestBlockedException)error).Block.RetryAt;
+                    lock (_gate)
+                        if (_batch.TryPeek(out var failed) && failed.Entry.EntryId == item.Entry.EntryId)
+                        {
+                            _batch.Dequeue();
+                            _batch.Enqueue(error is ProviderException
+                                ? failed with { RetryAt = retry, Command = null }
+                                : failed with { RetryAt = retry });
+                        }
                     continue;
                 }
                 // A file's own failure is a miss, so what reaches here is a
@@ -527,7 +693,7 @@ internal sealed class VideoLookup(Store store, Task settled, IReadOnlyList<Provi
                     _batch.Dequeue();
                     _batched.Remove(item.Entry.EntryId);
                     _batchDone++;
-                    if (!identified && context.Limited)
+                    if (!identified && context.Block?.Kind == RequestBlockKind.Limit)
                         limited++;
                 }
             Stored?.Invoke(this, EventArgs.Empty);
@@ -537,28 +703,33 @@ internal sealed class VideoLookup(Store store, Task settled, IReadOnlyList<Provi
             BatchLimited?.Invoke(this, limited);
     }
 
+    private sealed record BatchItem(Entry Entry, ProviderOption Source, FetchScope Scope, RetryCommand? Command)
+    {
+        internal long? Accepted { get; } = Command?.Accepted;
+        internal DateTimeOffset? RetryAt { get; init; }
+    }
+
     private Task<T> Request<T>(
         Func<Context, Task<T>> action,
         CancellationToken cancellation,
-        ProviderOption? source = null
+        ProviderOption? source = null,
+        FetchScope scope = FetchScope.New
     )
     {
         lock (_gate)
         {
             ObjectDisposedException.ThrowIf(_closed, this);
-            var provider = Provider;
-            if (source is not null && (source != Option || provider is null))
-                provider = Create(source);
+            var option = source ?? Option;
             // Choosing a provider in Fetch metadata is the person's request,
             // which Off does not stop; Off stops only the downloads Library
             // starts itself.
             if (
                 !_connected
-                || provider is null
+                || option is not { IsOnline: true }
                 || _changes.CurrentCount == 0
                 || !Enabled && source is null
             )
-                throw new VideoException("library", "lookup_stopped");
+                throw new VideoException(VideoFailure.LookupStopped);
             var request = CancellationTokenSource.CreateLinkedTokenSource(
                 cancellation,
                 _lifetime.Token,
@@ -566,7 +737,15 @@ internal sealed class VideoLookup(Store store, Task settled, IReadOnlyList<Provi
             );
             _interactive++;
             _background?.Cancel();
-            var context = new Context(provider, _language, request.Token);
+            var bound = Bind(option, request.Token);
+            var command = scope == FetchScope.New && ReferenceEquals(bound.Provider, Provider) && _recheck is not null
+                ? _recheck : new RetryCommand(DateTimeOffset.UtcNow.UtcTicks);
+            var context = bound with
+            {
+                Scope = scope,
+                Accepted = command.Accepted,
+                Command = command,
+            };
             var task = Perform();
             _requests.Add(task);
             _ = task.ContinueWith(
@@ -594,7 +773,7 @@ internal sealed class VideoLookup(Store store, Task settled, IReadOnlyList<Provi
                         && !_lifetime.IsCancellationRequested
                     )
                 {
-                    throw new VideoException("library", "lookup_stopped");
+                    throw new VideoException(VideoFailure.LookupStopped);
                 }
                 finally
                 {
@@ -615,36 +794,39 @@ internal sealed class VideoLookup(Store store, Task settled, IReadOnlyList<Provi
         try
         {
             context.Token.ThrowIfCancellationRequested();
+            bool available;
             lock (_gate)
-            {
-                if (
-                    _failures.GetValueOrDefault(context.Provider.CatalogId) is { } failure
-                    && failure.RetryAt > DateTimeOffset.UtcNow
-                )
-                    throw failure;
-            }
-            if (!context.Provider.IsAvailable)
-                throw new ProviderException("library", "provider_unavailable");
+                available = Available(context.Option);
+            if (!available)
+                throw new ProviderException(VideoFailure.ProviderUnavailable);
             var result = await action(context).ConfigureAwait(false);
-            bool recovered;
-            lock (_gate)
-                recovered =
-                    !context.Token.IsCancellationRequested
-                    && ReferenceEquals(Provider, context.Provider)
-                    && _failures.Remove(context.Provider.CatalogId);
-            if (recovered)
-                Changed?.Invoke(this, EventArgs.Empty);
             return result;
         }
-        catch (ProviderException error)
+        catch (VideoException error)
         {
-            lock (_gate)
-                if (
-                    !context.Token.IsCancellationRequested
-                    && ReferenceEquals(Provider, context.Provider)
-                )
-                    _failures[context.Provider.CatalogId] = error;
-            Changed?.Invoke(this, EventArgs.Empty);
+            error.Provider ??= context.Option;
+            if (error is ProviderException failure)
+            {
+                lock (_gate)
+                    if (
+                        !context.Token.IsCancellationRequested
+                        && ReferenceEquals(Provider, context.Provider)
+                    )
+                        _failure = failure;
+                Changed?.Invoke(this, EventArgs.Empty);
+            }
+            throw;
+        }
+        catch (RequestBlockedException error)
+        {
+            if (error.Block.Kind is RequestBlockKind.Attention or RequestBlockKind.RemoteWait
+                or RequestBlockKind.Allowance or RequestBlockKind.Backoff)
+            {
+                lock (_gate)
+                    if (ReferenceEquals(Provider, context.Provider))
+                        _failure = new ProviderException(error.Block) { Provider = context.Option };
+                Changed?.Invoke(this, EventArgs.Empty);
+            }
             throw;
         }
         finally
@@ -660,21 +842,18 @@ internal sealed class VideoLookup(Store store, Task settled, IReadOnlyList<Provi
         bool refresh
     )
     {
-        var language = context.Provider.IsLocalized ? context.Language : null;
+        var language = context.Option.IsLocalized ? context.Language : null;
         // A refused explicit request says so, because its caller would
         // otherwise report that no match exists.
         var attempt = await store.Begin(target, language, context.Token).ConfigureAwait(false);
         if (attempt is null)
             return target.Kind == LookupKind.Explicit
-                ? throw new VideoException("library", "file_changed")
+                ? throw new VideoException(VideoFailure.FileChanged)
                 : false;
         VideoInformation? video = null;
-        // Library remembers only a provider's own no-match answer. A file the
-        // provider was never asked about, the search limit and an unusable
-        // page end the lookup without one.
         var unanswered = false;
-        context.Limited = false;
-        context.Answered = false;
+        context.Block = null;
+        context.BlockedRequest = null;
         bool accepted;
         try
         {
@@ -683,16 +862,16 @@ internal sealed class VideoLookup(Store store, Task settled, IReadOnlyList<Provi
                 || target.Kind == LookupKind.Explicit
                     && choice is null
                     && attempt.Choice is not null;
+            var release = FileName.Interpret(target.Entry.Name);
             var request = new VideoRequest(
-                FileName.Interpret(target.Entry.Name),
+                release,
                 context.Language,
-                refresh
-                    ? (_, _) => Task.FromResult<VideoRecord?>(null)
-                    : (path, token) => store.Record(target.CatalogId, path, attempt.Language, token)
+                (path, download, token) => Read(context, path, download, refresh, token),
+                Get(context, "detail", context.Fresh(SearchRequest(context, release.Title).Key))
             );
             try
             {
-                if (choice is null && attempt.Choice is null && !refresh)
+                if (context.Option.IsOnline && choice is null && attempt.Choice is null && !refresh)
                     video = await store
                         .Saved(target, context.Language, context.Token)
                         .ConfigureAwait(false);
@@ -702,7 +881,7 @@ internal sealed class VideoLookup(Store store, Task settled, IReadOnlyList<Provi
                     if (choice is not null)
                     {
                         if (choice.Kind == VideoKind.Series && request.Release.Episodes.Count == 0)
-                            throw new VideoException("library", "episode_required");
+                            throw new VideoException(VideoFailure.EpisodeRequired);
                         video = await Describe(context, choice, request).ConfigureAwait(false);
                     }
                     else
@@ -712,18 +891,16 @@ internal sealed class VideoLookup(Store store, Task settled, IReadOnlyList<Provi
                                 .Series(target, request.Release, context.Token)
                                 .ConfigureAwait(false)
                             : null;
-                        video = await Match(
-                                context,
-                                request,
-                                series,
-                                limited: target.Kind != LookupKind.Explicit
-                            )
-                            .ConfigureAwait(false);
+                        video = await Match(context, request, series).ConfigureAwait(false);
                     }
                 }
             }
-            // Unusable information ends an automatic or batch lookup as a miss without
-            // preventing the provider from serving other videos.
+            catch (RequestBlockedException error) when (target.Kind != LookupKind.Explicit
+                && error.Block.Kind is RequestBlockKind.Missing or RequestBlockKind.Unusable or RequestBlockKind.Limit or RequestBlockKind.NoMatch)
+            {
+                context.Block = error.Block;
+            }
+            // An individual unusable record must not stop unrelated lookups.
             catch (VideoException error)
                 when (error is not ProviderException && target.Kind != LookupKind.Explicit)
             {
@@ -731,10 +908,11 @@ internal sealed class VideoLookup(Store store, Task settled, IReadOnlyList<Provi
             }
             var outcome =
                 video is not null ? "complete"
-                : unanswered || context.Limited || !context.Answered ? "unanswered"
+                : context.Block is { Kind: not RequestBlockKind.Missing } ? "blocked"
+                : unanswered ? "unanswered"
                 : "no_match";
             accepted = await store
-                .Complete(attempt, video, outcome, context.Token)
+                .Complete(attempt with { BlockedRequest = context.BlockedRequest }, video, outcome, context.Token)
                 .ConfigureAwait(false);
         }
         catch (Exception error)
@@ -743,18 +921,18 @@ internal sealed class VideoLookup(Store store, Task settled, IReadOnlyList<Provi
             // this file, so the attempt leaves it eligible for a later lookup.
             var outcome =
                 context.Token.IsCancellationRequested
-                || error is OperationCanceledException or ProviderException
+                || error is OperationCanceledException or ProviderException or RequestBlockedException
                     ? "cancelled"
                     : "failed";
             await store
-                .Complete(attempt, null, outcome, CancellationToken.None)
+                .Complete(attempt with { BlockedRequest = context.BlockedRequest }, null, outcome, CancellationToken.None)
                 .ConfigureAwait(false);
             context.Token.ThrowIfCancellationRequested();
             throw;
         }
         if (!accepted)
             return target.Kind == LookupKind.Explicit
-                ? throw new VideoException("library", "file_changed")
+                ? throw new VideoException(VideoFailure.FileChanged)
                 : false;
         Stored?.Invoke(this, EventArgs.Empty);
         return video is not null;
@@ -767,93 +945,154 @@ internal sealed class VideoLookup(Store store, Task settled, IReadOnlyList<Provi
     private async Task<VideoInformation?> Match(
         Context context,
         VideoRequest request,
-        VideoChoice? series,
-        bool limited
+        VideoChoice? series
     )
     {
         var release = request.Release;
         var kind = release.Season is null ? VideoKind.Movie : VideoKind.Series;
-        // A season without an episode number, such as "Season 1", names no
-        // episode a provider can describe.
-        if (release.IsExtra || release.Title.Length == 0 || !context.Provider.Kinds.Contains(kind) ||
-            kind == VideoKind.Series && release.Episodes.Count == 0)
+        if (!CanMatch(context.Option, release))
             return null;
         if (series is not null)
             return await Describe(context, series, request).ConfigureAwait(false);
-        VideoChoice[] Matches(IEnumerable<VideoChoice> choices) =>
-            choices
-                .Where(choice => choice.Kind == kind && Confidence(release, choice) > 0.8)
-                .ToArray();
-        // A saved choice replaces the search only with the release's year,
-        // because the search could list a same-titled video no page has shown
-        // yet. When the search finds nothing, a lone saved choice still answers.
-        var saved = Matches(
-            await store
-                .Choices(context.Provider.CatalogId, release.Title, context.Token)
-                .ConfigureAwait(false)
-        );
-        var dated = saved
-            .Where(choice => release.Year is not null && choice.Year == release.Year)
-            .ToArray();
-        var matches =
-            dated.Length == 1
-                ? dated
-                : Matches(
-                    await Search(context, release.Title, reuse: true, limited).ConfigureAwait(false)
-                );
-        if (matches.Length == 0)
-            matches = saved;
+        var matches = Matches(release, await Search(context, release.Title).ConfigureAwait(false));
         if (matches.Length != 1)
+        {
+            if (context.Option.IsOnline)
+                await store.RejectSearch(SearchRequest(context, release.Title).Key).ConfigureAwait(false);
             return null;
+        }
         var match = matches[0];
         var video = await Describe(context, match, request).ConfigureAwait(false);
         var year = kind == VideoKind.Movie ? video.Year ?? match.Year : match.Year ?? video.Year;
-        return
-            FileName.Normalize(video.Title) == FileName.Normalize(match.Title)
-            && (release.Year is null || year == release.Year)
-            ? video
-            : null;
+        if (FileName.Normalize(video.Title) == FileName.Normalize(match.Title)
+            && (release.Year is null || year == release.Year))
+            return video;
+        if (context.Option.IsOnline)
+            await store.RejectSearch(SearchRequest(context, release.Title).Key).ConfigureAwait(false);
+        return null;
     }
 
-    // Every provider result is saved as a choice, so a later lookup of the
-    // same video can skip the provider's search or page. A search made once
-    // this session is answered again without a request, so the files of one
-    // movie search the provider once. A limited search finds nothing once the
-    // provider has answered the same text as often as the limit allows.
     private async Task<IReadOnlyList<VideoChoice>> Search(
         Context context,
-        string query,
-        bool reuse,
-        bool limited
+        string query
     )
     {
-        var key = (context.Provider.CatalogId, FileName.Normalize(query), context.Language);
-        lock (_gate)
-            if (reuse && _searches.TryGetValue(key, out var known))
-            {
-                context.Answered = true;
-                return known;
-            }
-        if (
-            limited
-            && await store.Searches(key.CatalogId, query, context.Token).ConfigureAwait(false)
-                >= LookupLimit
-        )
-        {
-            context.Limited = true;
+        query = context.Provider.Prepare(query);
+        if (query.Length == 0)
             return [];
+        if (context.Access is not { } access)
+            return (await context.Provider.Search(new(query, context.Language, Offline), context.Token).ConfigureAwait(false)).Choices;
+        var request = SearchRequest(context, query);
+        var since = context.Scope == FetchScope.New ? 0 : context.Accepted ?? 0;
+        if (await store.Search(request.Key, context.Token, since).ConfigureAwait(false) is { } saved)
+            return saved;
+        if (context.Scope == FetchScope.New || context.Command is null)
+        {
+            if (await policy.Read(request, context.Token).ConfigureAwait(false) is { } block)
+                throw new RequestBlockedException(block);
         }
-        var choices = await context
-            .Provider.Search(query, context.Language, context.Token)
-            .ConfigureAwait(false);
+        VideoSearch answer;
+        try
+        {
+            answer = await context.Provider
+                .Search(new(query, context.Language, Get(context, "search", context.Fresh(request.Key))), context.Token)
+                .ConfigureAwait(false);
+        }
+        catch (VideoException error) when (error is not ProviderException)
+        {
+            var hold = await policy.Fail(access with { Operation = "search" },
+                new(RequestBlockKind.Backoff)).ConfigureAwait(false);
+            throw new ProviderException(VideoFailure.InvalidResult, hold.RetryAt, error);
+        }
         await store
-            .SaveSearch(key.CatalogId, query, choices, CancellationToken.None)
+            .SaveSearch(request, answer, CancellationToken.None)
             .ConfigureAwait(false);
+        await policy.Succeed(access with { Operation = "search" }).ConfigureAwait(false);
+        await Recovered(context, access).ConfigureAwait(false);
         context.Token.ThrowIfCancellationRequested();
+        return answer.Choices;
+    }
+
+    private static LookupRequest SearchRequest(Context context, string query)
+    {
+        var option = context.Option;
+        query = context.Provider.Prepare(query);
+        return new(
+            RequestKey.Create(option.ProviderId, "search", [query, option.IsLocalized ? context.Language : string.Empty]),
+            RequestKey.Create(option.ProviderId, "search-count", [FileName.Normalize(query)])
+        );
+    }
+
+    // Sends an online provider's request with the protection of its key and
+    // the operation Library runs; a 404 for a detail means the video is gone.
+    private ProviderGet Get(Context context, string operation, FreshRequest? fresh) =>
+        context.Access is not { } access
+            ? Offline
+            : (message, cancellation, refusal) =>
+                ProviderJson.Get(
+                    http,
+                    new ProviderCall(message, policy, new(access with { Operation = operation })) { Fresh = fresh },
+                    cancellation,
+                    missingResource: operation == "detail",
+                    refusal
+                );
+
+    // A provider that answers from downloaded data sends no request.
+    private static readonly ProviderGet Offline = (_, _, _) => throw new InvalidOperationException();
+
+    private async Task<VideoRecord> Read(
+        Context context,
+        string path,
+        Func<CancellationToken, Task<VideoRecord>> download,
+        bool refresh,
+        CancellationToken cancellation
+    )
+    {
+        var catalog = context.Option.ProviderId;
+        var language = context.Option.IsLocalized ? context.Language : null;
+        var request = new LookupRequest(RequestKey.Create(catalog, "detail", [path, language ?? string.Empty]));
+        var since = context.Scope == FetchScope.New ? 0 : context.Command?.Accepted ?? 0;
+        if (await store.Record(catalog, path, language, cancellation,
+                refresh ? context.Accepted ?? long.MaxValue : 0).ConfigureAwait(false) is { } saved)
+            return saved;
+        if (await policy.Read(request, cancellation, since).ConfigureAwait(false) is { } block)
+        {
+            context.BlockedRequest = request.Key;
+            throw new RequestBlockedException(block);
+        }
+        VideoRecord record;
+        try
+        {
+            record = await download(cancellation).ConfigureAwait(false);
+        }
+        catch (VideoException error) when (error is not ProviderException)
+        {
+            var outcome = error is MissingVideoException ? RequestOutcome.Missing : RequestOutcome.Unusable;
+            await policy.Record(request, outcome)
+                .ConfigureAwait(false);
+            context.BlockedRequest = request.Key;
+            throw new RequestBlockedException(new(outcome == RequestOutcome.Missing ? RequestBlockKind.Missing : RequestBlockKind.Unusable));
+        }
+        await store.SaveRecord(request, record, language).ConfigureAwait(false);
+        if (context.Access is { } access)
+        {
+            await policy.Succeed(access with { Operation = "detail" }).ConfigureAwait(false);
+            await Recovered(context, access).ConfigureAwait(false);
+        }
+        return record;
+    }
+
+    private async Task Recovered(Context context, ProviderAccess access)
+    {
+        if (context.Command?.Recheck == true)
+            await policy.Succeed(access).ConfigureAwait(false);
         lock (_gate)
-            _searches[key] = choices;
-        context.Answered = true;
-        return choices;
+            if (ReferenceEquals(Provider, context.Provider))
+            {
+                _failure = null;
+                _recheck = null;
+            }
+        Changed?.Invoke(this, EventArgs.Empty);
     }
 
     private async Task<VideoInformation> Describe(
@@ -865,17 +1104,20 @@ internal sealed class VideoLookup(Store store, Task settled, IReadOnlyList<Provi
         var video = await context
             .Provider.Describe(choice, request, context.Token)
             .ConfigureAwait(false);
-        await store
-            .SaveResponse(
-                video,
-                context.Provider.IsLocalized ? context.Language : null,
-                CancellationToken.None
-            )
-            .ConfigureAwait(false);
+        await store.SaveChoices(video, CancellationToken.None).ConfigureAwait(false);
         context.Token.ThrowIfCancellationRequested();
-        context.Answered = true;
         return video;
     }
+
+    // A season without an episode number names no episode a provider can describe.
+    private static bool CanMatch(ProviderOption option, Release release) =>
+        !release.IsExtra && release.Title.Length > 0
+        && option.Kinds.Contains(release.Season is null ? VideoKind.Movie : VideoKind.Series)
+        && (release.Season is null || release.Episodes.Count > 0);
+
+    private static VideoChoice[] Matches(Release release, IEnumerable<VideoChoice> choices) =>
+        choices.Where(choice => choice.Kind == (release.Season is null ? VideoKind.Movie : VideoKind.Series)
+            && Confidence(release, choice) > 0.8).ToArray();
 
     private static double Confidence(Release release, VideoChoice choice)
     {
@@ -919,25 +1161,8 @@ internal sealed class VideoLookup(Store store, Task settled, IReadOnlyList<Provi
                         return;
                     _again = false;
                 }
-                if (Failure is { RetryAt: { } retry })
-                {
-                    var delay = retry - DateTimeOffset.UtcNow;
-                    if (delay > TimeSpan.Zero)
-                    {
-                        await Task.Delay(
-                                delay < TimeSpan.FromDays(1) ? delay : TimeSpan.FromDays(1),
-                                context.Token
-                            )
-                            .ConfigureAwait(false);
-                        continue;
-                    }
-                    // The wait is over, so Library stops showing it.
-                    lock (_gate)
-                        Resume();
-                    Changed?.Invoke(this, EventArgs.Empty);
-                }
                 var target = await store
-                    .Next(context.Provider.CatalogId, context.Token)
+                    .Next(context.Option.ProviderId, context.Token)
                     .ConfigureAwait(false);
                 if (target is null)
                     return;
@@ -946,11 +1171,23 @@ internal sealed class VideoLookup(Store store, Task settled, IReadOnlyList<Provi
                     await Execute(context, current => Collect(current, target, null, false))
                         .ConfigureAwait(false);
                 }
-                catch (ProviderException error) when (error.RetryAt is not null) { }
+                catch (ProviderException error) when (error.RetryAt is { } retry)
+                {
+                    var delay = retry - DateTimeOffset.UtcNow;
+                    if (delay > TimeSpan.Zero)
+                        await Task.Delay(delay < TimeSpan.FromDays(1) ? delay : TimeSpan.FromDays(1), context.Token).ConfigureAwait(false);
+                }
+                catch (RequestBlockedException error) when (error.Block.RetryAt is { } retry)
+                {
+                    var delay = retry - DateTimeOffset.UtcNow;
+                    if (delay > TimeSpan.Zero)
+                        await Task.Delay(delay < TimeSpan.FromDays(1) ? delay : TimeSpan.FromDays(1), context.Token).ConfigureAwait(false);
+                }
             }
         }
         catch (OperationCanceledException) { }
         catch (ProviderException) { }
+        catch (RequestBlockedException) { }
         catch (Exception error)
         {
             Failed?.Invoke(this, error);
@@ -995,13 +1232,19 @@ internal sealed class VideoLookup(Store store, Task settled, IReadOnlyList<Provi
         _lifetime.Dispose();
     }
 
-    private sealed record Context(IProvider Provider, string Language, CancellationToken Token)
+    private sealed record Context(ProviderOption Option, IProvider Provider, string Language, CancellationToken Token)
     {
-        // The search limit refused a search, so a miss may not be the provider's answer.
-        internal bool Limited { get; set; }
+        /// <summary>The protection that an online provider's requests with this key share.</summary>
+        internal ProviderAccess? Access { get; init; }
+        internal RequestBlock? Block { get; set; }
+        internal RequestKey? BlockedRequest { get; set; }
+        internal FetchScope Scope { get; init; }
+        internal long? Accepted { get; init; }
+        internal RetryCommand? Command { get; init; }
 
-        // The provider searched or described something for the current file.
-        internal bool Answered { get; set; }
+        internal FreshRequest? Fresh(RequestKey key) =>
+            Command is { } command && (Scope != FetchScope.New || command.Recheck)
+                ? new(command, key) : null;
     }
 }
 
@@ -1010,3 +1253,9 @@ internal sealed class VideoLookup(Store store, Task settled, IReadOnlyList<Provi
 /// where <see cref="Total"/> includes the file in progress, from <see cref="Source"/>.
 /// </summary>
 internal sealed record VideoBatch(int Done, int Total, ProviderOption Source);
+
+internal sealed record VideoFetch(Entry Entry, RequestBlock? Block, RequestBlock? Wait)
+{
+    internal bool Includes(FetchScope scope) => scope == FetchScope.All
+        || !Entry.HasMetadata && (scope == FetchScope.Missing || Block?.CanForce != true);
+}

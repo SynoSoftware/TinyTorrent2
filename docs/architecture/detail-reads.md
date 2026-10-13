@@ -1,7 +1,8 @@
 # Inspector detail reads
 
-Working design document. The owner requires inspector and command requests to
-answer without waiting for libtorrent, including cold and invalidated reads.
+**Implementation done; verification partial.** The owner requires inspector and
+command requests to answer without waiting for libtorrent, including cold and
+invalidated reads.
 Status: **sampled Release pipe latency passes Q1's references; completion,
 startup-query and queue-replay fixes pass source review, Debug compilation and
 focused engine checks**. The measurement below states its scope; WinUI rendering

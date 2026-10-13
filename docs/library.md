@@ -379,25 +379,48 @@ not match strings shorter than three characters, as documented in the
 
 ## Identification and early enrichment
 
-Choose one provider: TMDB, Wikidata, OMDb, MDBList, IMDb or Rotten Tomatoes.
+Choose one provider: TMDB, Wikidata, OMDb, MDBList or IMDb.
 Provider selection is exclusive, so changing it cancels work belonging to the
-previous provider. For the IMDb and Rotten Tomatoes request triggers, cache
-rules and browser access, read the [website provider contract](movie-websites.md).
-That plugin supports movies from the selected website. Each enabled provider
-uses the same background identification workflow; TMDB also supports series
-and episodes, and the others support movies only.
+previous provider. Each enabled provider uses the same background
+identification workflow; TMDB also supports series and episodes, and the others
+support movies only.
 
-The API providers differ in what they return:
+The providers differ in what they return:
 
 | Provider | Access | Information |
 | --- | --- | --- |
-| TMDB | Built-in key, or the person's own | Localized titles, synopsis, genres, cast, keywords, TMDB rating, and recommended titles that Fetch metadata offers as choices |
-| Wikidata | No key | Localized titles, genres and cast, a one-line description as the synopsis, and the IMDb rating that Wikidata editors last recorded |
-| OMDb | Built-in key, or the person's own | English titles, full plot, genres, main cast and IMDb rating |
-| MDBList | Built-in key, or the person's own | English titles, synopsis, genres, and IMDb and TMDB ratings; no cast |
+| TMDB | Built-in key, or the person's own | Localized titles, synopsis, genres, cast, keywords, TMDB rating, directors, box office, and recommended titles that Fetch metadata offers as choices |
+| Wikidata | No key | Localized titles, genres and cast, a one-line description as the synopsis, and the IMDb, Rotten Tomatoes and Metacritic scores that Wikidata editors last recorded |
+| OMDb | Built-in key, or the person's own | English titles, full plot, genres, main cast, directors, age rating, box office, and IMDb, Rotten Tomatoes and Metacritic scores |
+| MDBList | Built-in key, or the person's own | English titles, synopsis, genres, age rating, box office, and IMDb, TMDB, Rotten Tomatoes, Popcornmeter and Metacritic scores; no cast |
+| IMDb | No key; the person first downloads IMDb's movie and TV data, about 290 MB | Movies and series with English titles, original titles, episode names, genres and IMDb rating, read from the [IMDb data](imdb-datasets.md) on this computer; no synopsis or cast |
 
-Each saved response also keeps the Rotten Tomatoes and Metacritic scores that
-Wikidata, OMDb and MDBList return, although Library does not show them.
+**Owner ruling: ratings and title facts belong to the title, not to the
+provider that found them.** Library saves each site's score, the directors,
+the age rating and the box office once per IMDb ID. A provider that names the
+same IMDb ID adds to that record, so an IMDb rating from OMDb and one from
+MDBList fill the same IMDb slot. The sites stay separate, because a Rotten
+Tomatoes percentage and an IMDb score measure different things. A value the
+provider lacks never removes a saved one. A site's rating is replaced unless
+the saved rating has more votes: a site's vote count only grows, so this keeps
+the newer rating, and an editor's old Wikidata score without a count does not
+replace a current one. The larger box office stays, because TMDB and MDBList
+report worldwide takings and OMDb only US takings, and a total only grows. A
+video without an IMDb ID keeps its provider's own ratings and shows no title
+facts. Titles stay with each provider, because they differ in language. A
+movie whose provider lacks a synopsis, cast or genres keeps the ones saved for
+the same IMDb ID, so fetching from the IMDb data after TMDB keeps TMDB's
+synopsis and cast.
+
+When the IMDb data is downloaded, every movie whose provider returned its IMDb
+ID shows the IMDb rating from that data, which is newer than a provider's
+saved rating. TMDB returns no IMDb rating, so its movies get one this way or
+from another provider's metadata for the same IMDb ID.
+
+A rating shows its vote count when the source reports one, as `7.8 (2.7K)`,
+because a high score from a few votes means little. The tooltip gives the
+exact count. The IMDb data, TMDB, OMDb and MDBList report votes; Wikidata
+reports them only when an editor recorded the number of ratings.
 
 Use names and structured clues such as title, year, season and episode numbers
 without reading video contents.
@@ -427,16 +450,24 @@ entry uses it. Everything else a provider returned, its raw pages and every
 movie its pages listed, stays saved, so a later lookup of the same movie needs
 no request ([keep everything a provider returns](library-implementation.md#replaceable-movie-providers)).
 
-With multiple movies selected, Fetch metadata processes only missing
-identifications using the automatic matching policy and opens no dialogs.
+With multiple movies selected, Fetch metadata opens a scope selector with
+New, Missing data and All selected, showing nested movie counts. New respects
+local protection; Missing data requests fresh answers for unresolved movies;
+All selected also refreshes accepted identities. Explicit clears remain untouched.
+The [request protection contract](request-protection.md) defines recovery and reset.
 It works in the background: the status bar shows "Fetching metadata 3 of 7"
 until it finishes, on every page, with an X that stops it and cancels the
 request in progress. Fetching more files while it runs adds them to the same
 count, and a file already waiting is not added twice. Automatic lookups wait
-until the batch ends. A provider failure ends the rest of the batch and reports
-the failure as other Library commands do.
-Library remembers each automatic search for the session, so files of one movie
-search the provider once.
+until the batch ends. Timed provider holds release the execution gate while
+accepted work waits. Other failures are reported like other Library commands.
+Retries preserve the accepted scope and freshness cutoff: an All request still
+refreshes existing information after a wait. Permission to override local
+protection ends when its attempt fails; retaining the requested work does not
+grant that permission again. Replacing the selected provider clears the old
+provider's displayed failure, while its saved request protection stays with it.
+Library retains completed remote query answers across sessions, so equivalent
+files reuse an answer without another request.
 Library retains the complete selection across result refreshes and remembers
 it separately for each configuration.
 
@@ -449,10 +480,10 @@ and storing a separate copy per file. Bound background work, honor provider
 throttling, and prioritize explicit identification over routine enrichment.
 Try an unidentified video once per session, with the persistent per-provider
 search allowance limiting requests across restarts. **Owner ruling: a
-provider's no-match answer is remembered.** Background lookups never ask that
-provider about the file again while its name is unchanged, because the answer
-will not change and each request costs the person's provider allowance. Fetch
-metadata and the Fetch metadata dialog still search, because the person asked.
+provider's no-match answer is remembered.** Background lookups never ask
+the same remote question again until the inputs change or the person requests
+Force fetch or resets search protection. An individual Fetch shows its local
+block before offering Force fetch. Remote waits cannot be forced.
 The table shows an em dash in that file's empty provider cells, so a file the
 provider does not have differs from one not looked up yet. Provider failure must not
 block local search, torrent operations or shutdown.
@@ -587,8 +618,8 @@ items forward rather than asking the owner to rediscover them.
   context beneath it. Series and Season are filter links; episode numbers remain
   readable context. Multi-episode files must not repeat the same series/season
   information for every episode.
-- [ ] Put video metadata in this order: available IMDb and TMDB ratings, Year,
-  Genres. Music uses Track, Duration, Year, Genres. Year appears only in this
+- [ ] Put video metadata in this order: Ratings, Box office, Age rating,
+  Director, Year, Genres. Music uses Track, Duration, Year, Genres. Year appears only in this
   metadata group. This supersedes the earlier Genres-before-Year arrangement.
 - [ ] Keep genres last and allow all their filter links to wrap into the space
   below. Keep each genre name together. No clipped links, hidden remainder or
@@ -769,14 +800,17 @@ are hidden by default and appear at the end when the person adds them.
   the file name.
 - Released is a movie's release year or an episode's air year, or else the
   year in the file name.
-- **Owner ruling: IMDb and TMDB have separate columns in Videos and both
-  available scores appear in the Info details.** Each column holds only the
-  number; the header identifies its source. Details group the scores with
-  their source labels and scale, so they read as related facts. A series rating
+- **Owner ruling: each rating site has its own column in Videos, and every
+  available score appears in the Info details.** The sites are IMDb, TMDB,
+  Rotten Tomatoes, Popcornmeter and Metacritic; Metacritic's column starts
+  hidden. Each column holds only the score on the site's own scale, as
+  `6.7`, `59%` or `50`; the header identifies its source. Details list the
+  scores in one Ratings field with their source names, so they read as
+  related facts. A series rating
   is identified as such rather than presented as an episode rating. A missing
   score stays empty; it is not zero.
-  The selected provider supplies the scores it knows through its existing
-  metadata response; showing ratings does not start another provider lookup.
+  The scores come from metadata responses Library already saved for the same
+  IMDb ID; showing ratings does not start another provider lookup.
 - Kind, in Files, is the file's kind from its extension, as Explorer names it:
   Video, Audio, Picture, Document, Archive or Other.
 - Date modified is the file's modified date from its
@@ -794,6 +828,10 @@ lists choices that have rows. Counts apply the query and other sections' choices
 they ignore their own section's choice, so a person can see the alternatives.
 Keep a selected choice visible even when its count reaches zero, so it can be
 cleared. Clear resets every section.
+Each section uses one compact row: a neutral Inline Lucide icon, its label and
+a native ComboBox. Library gives the shared drawer enough width for these
+rows, so labels do not consume a second line above each selector. Full selected
+values remain available through tooltips and the native selector's automation.
 
 | Configuration | Sections |
 | --- | --- |
@@ -851,17 +889,24 @@ searching for it. Back then returns to Library with the
 same row selected.
 
 **Metadata.** In the Library menu, the row context menu and the card's More
-menu, Fetch metadata is a submenu that lists every provider, so the person
+menu, Fetch metadata is a submenu that lists providers declaring per-movie downloads, so the person
 chooses the provider for this request; the card's Fetch button uses the one
 saved in Settings. Fetch metadata opens the same dialog for one file with or without
 an existing match, starting at the chosen provider. It is titled "Fetch metadata", with Save and Cancel.
-With multiple movies selected, the command silently fetches confident missing
-identifications from the chosen provider and leaves existing matches and
-ambiguous results unchanged.
+With multiple movies selected, the command offers the three scopes above and
+uses the same classification for counts and accepted work.
 While it searches or saves, an indeterminate progress bar under the search box
 shows that the provider request is running.
-A Provider choice above the search box lists every provider and starts at the
-one saved in Settings. Choosing another searches it again; the search and the
+The labelled query and its neutral Fetch ActionButton share one row, so the
+request action stays beside its input. Fetch has the shared download icon and
+a tooltip distinguishing finding matches from saving one; there is no second
+search button inside the field. Enter in the query follows Fetch's enabled
+state. Empty queries and an in-flight request disable Fetch. A permitted
+override reads Force, with the protection reason in its tooltip. Save remains
+the dialog's default commit and applies only the selected match.
+A Provider choice above the search box lists per-movie download providers and
+starts at the chosen provider. IMDb dataset management appears only in Settings.
+Choosing another checks protection before searching; the search and the
 saved match use that provider for this file only, and Settings stays unchanged.
 When a provider cannot use the saved network route, the error offers a Settings
 link that closes the dialog and opens Network settings. Other provider errors
@@ -884,7 +929,8 @@ The page has no loading state; see the owner ruling under
 | Provider failure | "Waiting for TMDB" in the card and the status bar. No dialog. |
 | Failed Open | The title-cell and card glyph show the failure, and the card shows an error InfoBar with Missing, Unavailable or Couldn't open, the time it was checked, and Retry. |
 
-TMDB's attribution is under Credits on the About page, not on the Library page.
+TMDB's and IMDb's attributions are under Credits on the About page, not on the
+Library page.
 
 ### Interaction
 
@@ -922,9 +968,15 @@ button beside it opens the [account dialog](architecture.md#third-party-provider
 where the person enters their own key or, when the release has one, keeps the
 built-in key. Choosing such a provider when it has no usable key opens that
 dialog: Save stores the key and turns the provider on, and Cancel leaves the
-choice unchanged. Any other provider that is unavailable when chosen
-changes nothing and shows its error in the row. Library's Settings button opens
-this row.
+choice unchanged. Choosing IMDb before its data is downloaded asks to download
+it: Download starts the download and turns IMDb on when it finishes, unless
+the person chose another setting meanwhile, and Cancel leaves the choice
+unchanged. Below it, the IMDb data row shows the data's size and date and
+offers Download or Update and Delete data, whichever provider is chosen,
+because every provider's movies use its ratings. While the data downloads, the
+row shows its progress and a button that stops it. Any other provider
+that is unavailable when chosen changes nothing and shows its error in the row.
+Library's Settings button opens this row.
 
 Send only the matching inputs a request needs. Do not upload a Library
 inventory, absolute paths, torrent info hashes, trackers, peers or movie bytes.
@@ -932,8 +984,7 @@ Use HTTPS and keep credentials and search contents out of routine logs. State
 the actual network route before enablement. The shared
 [network-route rule](architecture.md#network-route) governs every provider;
 disclosure never permits a direct fallback. A provider that cannot honor the
-configured route remains unavailable. The current website reader runs
-only with confirmed unrestricted direct access and stops when that route changes.
+configured route remains unavailable.
 
 Follow [third-party provider access](architecture.md#third-party-provider-access).
 TMDB, OMDb and MDBList use the free application keys supplied with the
@@ -943,9 +994,9 @@ provider. No paid access is part of this feature. Without a key, local Library
 search and saved information remain usable, but no requests to that provider
 run. Provider limits use the existing wait and retry behavior rather than a
 paid fallback; a refused key stops that provider's lookups until the person
-changes the key. Wikidata needs no key. IMDb and Rotten Tomatoes
-availability is independent of these keys; its [request policy](movie-websites.md#requests-and-saved-information)
-owns retries and saved data.
+changes the key. Wikidata needs no key. IMDb needs no key; it is available
+while its downloaded data is on this computer, and its lookups send no
+requests.
 
 Verify applicable API/content permission, attribution, credential distribution,
 quotas, retention and cache-use requirements. Do not substitute an arbitrary

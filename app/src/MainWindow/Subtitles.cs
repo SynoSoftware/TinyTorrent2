@@ -23,6 +23,7 @@ public sealed partial class MainWindow
                 MinWidth = 480,
             };
             content.Attach(subtitles);
+            content.SetVisible(true);
             var dialog = new Dialog { Content = content, Glyph = Lucide.Captions };
             content.PropertyChanged += (_, _) =>
             {
@@ -52,6 +53,7 @@ public sealed partial class MainWindow
             }
             finally
             {
+                content.SetVisible(false);
                 content.Attach(null);
             }
             return true;

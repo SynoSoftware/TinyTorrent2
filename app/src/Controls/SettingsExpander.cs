@@ -1,6 +1,5 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Animation;
 using Windows.Foundation;
 using Windows.UI.ViewManagement;
@@ -37,26 +36,14 @@ public sealed partial class SettingsExpander : Expander
         Stop();
         if (_body is not null)
             _body.SizeChanged -= OnBodySize;
+        _drawer = null;
+        _body = null;
         base.OnApplyTemplate();
         _drawer = GetTemplateChild("ExpanderContentClip") as Border;
         _body = GetTemplateChild("ExpanderContent") as Border;
         if (_drawer is null || _body is null)
             return;
 
-        // Keep the native header and automation; height owns the body reveal.
-        var root = (FrameworkElement)VisualTreeHelper.GetParent(_drawer);
-        var states = VisualStateManager.GetVisualStateGroups(root)
-            .First(group => group.Name == "ExpandStates");
-        foreach (var state in states.States)
-        {
-            state.Storyboard?.Stop();
-            state.Storyboard = null;
-        }
-        _body.RenderTransform = new CompositeTransform();
-        _body.VerticalAlignment = VerticalAlignment.Top;
-        _drawer.Child = null;
-        // A vertical panel measures the full body while the clipped drawer shrinks.
-        _drawer.Child = new StackPanel { Children = { _body } };
         _body.SizeChanged += OnBodySize;
         Settle();
     }
@@ -65,7 +52,7 @@ public sealed partial class SettingsExpander : Expander
     {
         if (IsExpanded && _animation is not null
             && Math.Abs(args.NewSize.Height - _target) > 0.5)
-            Change();
+            DispatcherQueue.TryEnqueue(Change);
     }
 
     private void Change()

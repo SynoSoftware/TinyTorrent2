@@ -44,6 +44,11 @@ public sealed partial class MainViewModel
         MissingAdapter.Length > 0 ? Syno.Lucide.Unplug
         : Settings.Proxy.IsInUse ? Syno.Lucide.Route
         : Syno.Lucide.Network;
+    // A proxy route says nothing about the port, so only a direct connection
+    // reports the port as open or closed.
+    public bool IsIncomingProxied => MissingAdapter.Length == 0 && Settings.Proxy.IsInUse;
+    public bool IsIncomingOpen => MissingAdapter.Length == 0 && !Settings.Proxy.IsInUse && HasIncoming;
+    public bool IsIncomingClosed => !IsIncomingProxied && !IsIncomingOpen;
     public string SelectionText => Text.Format("window", "selected", _selected.Length);
     public string TorrentCount =>
         _selected.Length == 0

@@ -1,5 +1,9 @@
 # Proposed architecture
 
+**Historical implementation done.** All eight delivery slices are recorded in
+the [implementation checkpoint](evidence.md#historical-implementation-checkpoint).
+Later findings and verification limits remain separate from that completed plan.
+
 Consolidated on 2026-10-06 from twelve architecture review documents and the
 owner's subsequent decisions. This folder is self-contained: it preserves the
 selected architecture, useful evidence, rejected alternatives and delivery work

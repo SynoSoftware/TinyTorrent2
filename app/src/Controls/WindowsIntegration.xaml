@@ -78,7 +78,7 @@
             </Grid>
             <Grid ColumnSpacing="8" Visibility="{x:Bind controls:WindowsIntegration.HasText(Model.HandlersCaution), Mode=OneWay}">
               <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-              <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.TriangleAlert}" FontSize="16"
+              <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.TriangleAlert}" FontSize="{StaticResource TinyTorrentInlineIconSize}"
                 Foreground="{ThemeResource SystemFillColorCautionBrush}" />
               <TextBlock Grid.Column="1" Text="{x:Bind Model.HandlersCaution, Mode=OneWay}"
                 TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{x:Bind Model.HandlersCaution, Mode=OneWay}"
@@ -120,7 +120,7 @@
         <controls:SettingsRow.Detail>
           <Grid ColumnSpacing="8" Visibility="{x:Bind Model.StartupUsesOtherCopy, Mode=OneWay}">
             <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-            <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.TriangleAlert}" FontSize="16"
+            <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.TriangleAlert}" FontSize="{StaticResource TinyTorrentInlineIconSize}"
               Foreground="{ThemeResource SystemFillColorCautionBrush}" />
             <TextBlock Grid.Column="1" Text="{x:Bind Model.StartupOtherMessage, Mode=OneWay}"
               TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{x:Bind Model.StartupOtherMessage, Mode=OneWay}"

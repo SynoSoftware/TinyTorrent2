@@ -632,19 +632,26 @@ public sealed partial class MainWindow
                 PrimaryGlyph = Syno.Lucide.Check,
             };
             dialog.SizeToContent();
-            await ShowEditor(
-                interaction,
-                dialog,
-                proxy,
-                () =>
-                {
-                    dialog.Title = Model.Text.Get("settings", "proxy_title");
-                    dialog.PrimaryButtonText = Model.Text.Get("dialog", "save");
-                    dialog.PrimaryToolTip = Model.Text.Get("settings", "proxy_save_tip");
-                    dialog.CloseToolTip = Model.Text.Get("settings", "proxy_cancel_tip");
-                    content.RefreshText();
-                }
-            );
+            try
+            {
+                await ShowEditor(
+                    interaction,
+                    dialog,
+                    proxy,
+                    () =>
+                    {
+                        dialog.Title = Model.Text.Get("settings", "proxy_title");
+                        dialog.PrimaryButtonText = Model.Text.Get("dialog", "save");
+                        dialog.PrimaryToolTip = Model.Text.Get("settings", "proxy_save_tip");
+                        dialog.CloseToolTip = Model.Text.Get("settings", "proxy_cancel_tip");
+                        content.RefreshText();
+                    }
+                );
+            }
+            finally
+            {
+                content.Detach();
+            }
             return true;
         });
     }
@@ -673,7 +680,7 @@ public sealed partial class MainWindow
         if (!Model.CloseInspector())
             return;
         if (Model.Page == WindowPage.Library)
-            _libraryTable.FocusRows();
+            _libraryTable?.FocusRows();
         else
             Torrents.Focus(FocusState.Programmatic);
     }

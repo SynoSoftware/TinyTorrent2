@@ -16,8 +16,11 @@ public sealed record Entry(long EntryId, string Path, string Name, long Size)
     // The selected provider searched for the file and found no match.
     public bool IsUnmatched { get; init; }
     public int? Year { get; init; }
-    public Rating? ImdbRating { get; init; }
-    public Rating? TmdbRating { get; init; }
+    public Ratings Ratings { get; init; } = new();
+
+    // The IMDb number of the movie or the episode's series, which gives its
+    // rating from the downloaded IMDb data.
+    internal long? ImdbId { get; init; }
     public string Genres { get; init; } = string.Empty;
     public string Cast { get; init; } = string.Empty;
     public string Artist { get; init; } = string.Empty;
@@ -84,6 +87,9 @@ internal sealed record Detail(
 {
     internal VideoChoice? Series { get; init; }
     internal IReadOnlyList<Episode> Episodes { get; init; } = [];
+    internal string Directors { get; init; } = string.Empty;
+    internal string Certification { get; init; } = string.Empty;
+    internal long? BoxOffice { get; init; }
 }
 
 public sealed record Origin(string OriginId, string Name, int FileIndex);

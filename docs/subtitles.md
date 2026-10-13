@@ -75,7 +75,7 @@ manual downloads never requires enabling automatic work.
 | API key | OpenSubtitles uses the free application key without customer setup. SubDL and SubSource use the free application key built into the release, and the person may enter their own key instead, following [third-party provider access](architecture.md#third-party-provider-access). |
 | User name and password | OpenSubtitles optionally accepts a personal login alongside the application key. Both blank omits user login; entering either requires the complete pair. Other suppliers show only the key. |
 | Wanted languages | When unset, use the interface language. An explicit choice downloads one suitable subtitle for **each** selected language, so this is not an ordered fallback list. |
-| Batch download | Movies: Not searched, No exact match, All movies. Download: Exact match only, Best match, Up to 2, 3, or 4 subtitles. These choices apply only to the requested batch. |
+| Batch download | Movies: New, Missing data, All selected, with nested movie counts. Download: Exact match only, Best match, Up to 2, 3, or 4 subtitles. These choices apply only to the requested batch. |
 | Scan torrent folders for subtitles | Finds bundled subtitles again without supplier access or changes to files. Reports files found and read errors. |
 
 **Owner ruling: when subtitle languages are unset, use the current interface
@@ -163,10 +163,11 @@ previously finished torrents while retaining their search history. Accepted
 manual jobs resume, and torrents not previously seen finished remain new.
 
 **Owner ruling: Batch download works while automatic downloading is Off.**
-Scope refers to completed supplier searches, not files on disk: Not searched
-includes movies without a completed search; No exact match includes completed
-searches that found no exact match, including downloaded likely matches.
-All movies revisits the collection. The Library selection dialog uses the same
+Scope refers to the selected matching goal, not simply files on disk. New
+includes unresolved questions without local protection. Missing data adds
+locally blocked questions, including earlier searches with no exact match and
+downloaded likely matches. All selected also revisits satisfied movies.
+The Library selection dialog uses the same
 batch control, limiting both counts and requests to its captured selection.
 Find is the dialog's primary action beside Close. The host owns attaching the
 batch control to acquisition, so a visual reload preserves its selection and counts.
@@ -185,7 +186,9 @@ next search. Status counts movies, not languages or output paths.
 Manual jobs retain their matching choice and authorization across restarts.
 Switching automatic downloading Off cancels automatic pending work only.
 Allowance and retries remain shared with automatic work. The default scope
-never retries a completed miss; that requires No exact match or All movies.
+never repeats a saved miss; Missing data, All selected or an individual Force
+fetch authorize one fresh attempt. Reset search protection is a separate
+Settings action and enqueues no searches.
 
 **Owner ruling: C# owns subtitle records in its SQLite database.** A record
 identifies a subtitle file's actual path and language, its created/found origin and
@@ -203,6 +206,15 @@ output/language, with its accepted source associations. Removing one source
 cannot cancel work still needed by another accepted source. Different video
 paths that produce the same subtitle name are ambiguous; leave that collision
 alone rather than acquiring or relabeling a subtitle for the wrong video.
+
+A request refused by local search protection leaves a blocked, unfinished job,
+not a failed download or a completed search with no match. It waits without
+polling; Reset search protection reopens blocked work, including manual jobs.
+A changed supplier or account reconsiders blocked work against the new request
+identity without clearing the old identity's protection. Stop cancels blocked
+work and a new Find accepts it through the usual path. A real download failure
+remains failed, and only a completed matching answer can record no match and
+advance the evidence stage. Reset does not restart completed or failed jobs.
 
 Batch counts use distinct movies, and work uses unambiguous output
 paths/languages, so two torrents sharing a video do not double the displayed
@@ -251,10 +263,12 @@ job resets, moves, removal of the torrent and reopening.
 A completed search counts once, including a miss; connection, access and quota
 failures do not count. Downloads of the returned alternatives reuse the saved
 supplier references and do not search again. Supplier pacing remains shared
-across all requests. Automatic work, Find and its counts skip capped searches
-in every scope, including All movies; each lookup rechecks the limit. A search
-in the choice dialog is the person's explicit request: it counts but is never
-blocked.
+across all requests. Automatic work and New respect the cap. Missing data,
+All selected and an individual Force fetch can override local protection for
+the captured question; remote holds and pacing still apply. The choice dialog
+shows the block and changes its single Fetch action to Force fetch. A cached
+answer or rejected admission does not consume another search. RequestPolicy
+owns the cap and access holds in the existing database.
 
 ### Discovery and permission
 

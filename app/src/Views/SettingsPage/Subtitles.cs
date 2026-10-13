@@ -1,4 +1,3 @@
-using System.ComponentModel;
 using System.Globalization;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
@@ -15,7 +14,7 @@ public sealed partial class SettingsPage
 
     private async void RefreshCoverage()
     {
-        if (!IsLoaded || Main.Page != WindowPage.Settings || _category != PluginsCategory || _readingCoverage)
+        if (!IsLoaded || Main.Navigation.Current != WindowPage.Settings || _category != PluginsCategory || Plugins is null || _readingCoverage)
             return;
         _readingCoverage = true;
         try
@@ -69,26 +68,16 @@ public sealed partial class SettingsPage
             value?.ToString("N0", CultureInfo.CurrentCulture) ?? "—";
     }
 
-    private void OnSubtitleMain(object? sender, PropertyChangedEventArgs args)
-    {
-        if (args.PropertyName is nameof(MainViewModel.CurrentStatus) or nameof(MainViewModel.Page) or "")
-            RefreshCoverage();
-        if (
-            args.PropertyName is nameof(MainViewModel.Subtitles) or ""
-            && SubtitlesContent.Content is SubtitleSettings subtitles
-        )
-            subtitles.Attach(Main.Subtitles);
-        if (args.PropertyName is nameof(MainViewModel.CurrentStatus) or nameof(MainViewModel.Page)
-            or nameof(MainViewModel.Subtitles) or nameof(MainViewModel.FreeSpaceStatus)
-            or nameof(MainViewModel.ShowsFreeSpace) or "")
-            RefreshHome();
-    }
-
     private void RefreshSubtitles()
     {
         RefreshCoverage();
-        if (IsLoaded && SubtitlesContent.Content is SubtitleSettings content)
+        var visible = IsLoaded && Main.Navigation.Current == WindowPage.Settings;
+        _automatic?.Attach(visible && _category is null ? Main.Subtitles : null);
+        if (SubtitlesContent?.Content is SubtitleSettings content)
+        {
+            content.SetVisible(visible && _category == PluginsCategory);
             content.Attach(Main.Subtitles);
+        }
     }
 
 }

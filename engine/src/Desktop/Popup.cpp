@@ -6,6 +6,9 @@
 #include <filesystem>
 #include <sstream>
 #include <windowsx.h>
+#include <oleacc.h>
+#include <oleauto.h>
+#include <wrl.h>
 
 namespace tt::desktop
 {
@@ -94,6 +97,213 @@ std::filesystem::path IconFont()
     return std::filesystem::path(Executable()).parent_path() / L"Lucide" / L"Fonts" / L"lucide.ttf";
 }
 }
+
+// MSAA's simple children expose the painted rows without a second control tree;
+// Windows' MSAA-to-UIA proxy makes them available to UI Automation clients too.
+class Popup::MenuAccessibility final : public Microsoft::WRL::RuntimeClass<
+    Microsoft::WRL::RuntimeClassFlags<Microsoft::WRL::ClassicCom>,
+    Microsoft::WRL::ChainInterfaces<IAccessible, IDispatch>>
+{
+public:
+    explicit MenuAccessibility(Popup& popup) : popup_(&popup)
+    {
+        CreateStdAccessibleObject(popup.menu_, OBJID_CLIENT, IID_PPV_ARGS(&standard_));
+    }
+
+    void Disconnect() { popup_ = nullptr; }
+
+    HRESULT STDMETHODCALLTYPE GetTypeInfoCount(UINT* count) override
+    {
+        return standard_ ? standard_->GetTypeInfoCount(count) : E_NOTIMPL;
+    }
+    HRESULT STDMETHODCALLTYPE GetTypeInfo(UINT index, LCID locale, ITypeInfo** info) override
+    {
+        return standard_ ? standard_->GetTypeInfo(index, locale, info) : E_NOTIMPL;
+    }
+    HRESULT STDMETHODCALLTYPE GetIDsOfNames(REFIID iid, LPOLESTR* names, UINT count, LCID locale,
+        DISPID* ids) override
+    {
+        return standard_ ? standard_->GetIDsOfNames(iid, names, count, locale, ids) : E_NOTIMPL;
+    }
+    HRESULT STDMETHODCALLTYPE Invoke(DISPID id, REFIID iid, LCID locale, WORD flags,
+        DISPPARAMS* parameters, VARIANT* result, EXCEPINFO* exception, UINT* error) override
+    {
+        Microsoft::WRL::ComPtr<ITypeInfo> info;
+        auto status = GetTypeInfo(0, locale, &info);
+        return SUCCEEDED(status) ? DispInvoke(static_cast<IAccessible*>(this), info.Get(), id, flags,
+            parameters, result, exception, error) : status;
+    }
+    HRESULT STDMETHODCALLTYPE get_accParent(IDispatch** parent) override
+    {
+        if (!parent) return E_POINTER;
+        *parent = nullptr;
+        if (!popup_) return CO_E_OBJNOTCONNECTED;
+        return standard_ ? standard_->get_accParent(parent) : S_FALSE;
+    }
+    HRESULT STDMETHODCALLTYPE get_accChildCount(long* count) override
+    {
+        if (!count) return E_POINTER;
+        *count = popup_ ? static_cast<long>(popup_->content_.menu.size()) : 0;
+        return popup_ ? S_OK : CO_E_OBJNOTCONNECTED;
+    }
+    HRESULT STDMETHODCALLTYPE get_accChild(VARIANT child, IDispatch** object) override
+    {
+        if (!object) return E_POINTER;
+        *object = nullptr;
+        if (!Valid(child)) return E_INVALIDARG;
+        return child.lVal == CHILDID_SELF ? QueryInterface(IID_PPV_ARGS(object)) : S_FALSE;
+    }
+    HRESULT STDMETHODCALLTYPE get_accName(VARIANT child, BSTR* name) override
+    {
+        if (!name) return E_POINTER;
+        *name = nullptr;
+        if (!Valid(child)) return E_INVALIDARG;
+        auto const& text = child.lVal == CHILDID_SELF ? popup_->content_.menuTitle :
+            popup_->content_.menu[child.lVal - 1].text;
+        *name = SysAllocString(text.c_str());
+        return *name ? S_OK : E_OUTOFMEMORY;
+    }
+    HRESULT STDMETHODCALLTYPE get_accValue(VARIANT, BSTR* value) override { return Empty(value); }
+    HRESULT STDMETHODCALLTYPE get_accDescription(VARIANT, BSTR* text) override { return Empty(text); }
+    HRESULT STDMETHODCALLTYPE get_accHelp(VARIANT, BSTR* text) override { return Empty(text); }
+    HRESULT STDMETHODCALLTYPE get_accKeyboardShortcut(VARIANT, BSTR* text) override { return Empty(text); }
+    HRESULT STDMETHODCALLTYPE get_accHelpTopic(BSTR* file, VARIANT, long* topic) override
+    {
+        if (!topic) return E_POINTER;
+        *topic = -1;
+        return Empty(file);
+    }
+    HRESULT STDMETHODCALLTYPE get_accRole(VARIANT child, VARIANT* role) override
+    {
+        if (!role) return E_POINTER;
+        VariantInit(role);
+        if (!Valid(child)) return E_INVALIDARG;
+        role->vt = VT_I4;
+        role->lVal = child.lVal == CHILDID_SELF ? ROLE_SYSTEM_MENUPOPUP : ROLE_SYSTEM_MENUITEM;
+        return S_OK;
+    }
+    HRESULT STDMETHODCALLTYPE get_accState(VARIANT child, VARIANT* state) override
+    {
+        if (!state) return E_POINTER;
+        VariantInit(state);
+        if (!Valid(child)) return E_INVALIDARG;
+        state->vt = VT_I4;
+        state->lVal = STATE_SYSTEM_FOCUSABLE;
+        if (child.lVal != CHILDID_SELF) state->lVal |= STATE_SYSTEM_SELECTABLE;
+        auto focused = popup_->menuHover_ ? static_cast<long>(*popup_->menuHover_ + 1) : CHILDID_SELF;
+        if (GetFocus() == popup_->menu_ && child.lVal == focused)
+        {
+            state->lVal |= STATE_SYSTEM_FOCUSED;
+            if (child.lVal != CHILDID_SELF) state->lVal |= STATE_SYSTEM_SELECTED;
+        }
+        if (!IsWindowVisible(popup_->menu_)) state->lVal |= STATE_SYSTEM_INVISIBLE;
+        return S_OK;
+    }
+    HRESULT STDMETHODCALLTYPE get_accFocus(VARIANT* focus) override
+    {
+        if (!focus) return E_POINTER;
+        VariantInit(focus);
+        if (!popup_) return CO_E_OBJNOTCONNECTED;
+        if (GetFocus() != popup_->menu_) return S_FALSE;
+        focus->vt = VT_I4;
+        focus->lVal = popup_->menuHover_ ? static_cast<long>(*popup_->menuHover_ + 1) : CHILDID_SELF;
+        return S_OK;
+    }
+    HRESULT STDMETHODCALLTYPE get_accSelection(VARIANT* selection) override
+    {
+        if (!selection) return E_POINTER;
+        VariantInit(selection);
+        if (!popup_) return CO_E_OBJNOTCONNECTED;
+        if (!popup_->menuHover_) return S_FALSE;
+        selection->vt = VT_I4;
+        selection->lVal = static_cast<long>(*popup_->menuHover_ + 1);
+        return S_OK;
+    }
+    HRESULT STDMETHODCALLTYPE get_accDefaultAction(VARIANT child, BSTR* action) override
+    {
+        return child.vt == VT_I4 && child.lVal == CHILDID_SELF ? Empty(action) : get_accName(child, action);
+    }
+    HRESULT STDMETHODCALLTYPE accSelect(long flags, VARIANT child) override
+    {
+        if (!Valid(child) || !flags || (flags & ~(SELFLAG_TAKEFOCUS | SELFLAG_TAKESELECTION)))
+            return E_INVALIDARG;
+        SetFocus(popup_->menu_);
+        popup_->HoverMenu(child.lVal == CHILDID_SELF ? std::nullopt :
+            std::optional<std::size_t>(child.lVal - 1));
+        return S_OK;
+    }
+    HRESULT STDMETHODCALLTYPE accLocation(long* left, long* top, long* width, long* height,
+        VARIANT child) override
+    {
+        if (!left || !top || !width || !height) return E_POINTER;
+        *left = *top = *width = *height = 0;
+        if (!Valid(child)) return E_INVALIDARG;
+        RECT bounds{};
+        if (child.lVal == CHILDID_SELF) GetClientRect(popup_->menu_, &bounds);
+        else bounds = popup_->MenuBounds(child.lVal - 1);
+        MapWindowPoints(popup_->menu_, nullptr, reinterpret_cast<POINT*>(&bounds), 2);
+        *left = bounds.left;
+        *top = bounds.top;
+        *width = bounds.right - bounds.left;
+        *height = bounds.bottom - bounds.top;
+        return S_OK;
+    }
+    HRESULT STDMETHODCALLTYPE accNavigate(long direction, VARIANT start, VARIANT* destination) override
+    {
+        if (!destination) return E_POINTER;
+        VariantInit(destination);
+        if (!Valid(start)) return E_INVALIDARG;
+        long child = 0;
+        auto count = static_cast<long>(popup_->content_.menu.size());
+        if (start.lVal == CHILDID_SELF && direction == NAVDIR_FIRSTCHILD) child = 1;
+        else if (start.lVal == CHILDID_SELF && direction == NAVDIR_LASTCHILD) child = count;
+        else if (start.lVal && (direction == NAVDIR_NEXT || direction == NAVDIR_DOWN)) child = start.lVal + 1;
+        else if (start.lVal && (direction == NAVDIR_PREVIOUS || direction == NAVDIR_UP)) child = start.lVal - 1;
+        if (child < 1 || child > count) return S_FALSE;
+        destination->vt = VT_I4;
+        destination->lVal = child;
+        return S_OK;
+    }
+    HRESULT STDMETHODCALLTYPE accHitTest(long x, long y, VARIANT* child) override
+    {
+        if (!child) return E_POINTER;
+        VariantInit(child);
+        if (!popup_) return CO_E_OBJNOTCONNECTED;
+        POINT point{x, y};
+        ScreenToClient(popup_->menu_, &point);
+        RECT bounds{};
+        GetClientRect(popup_->menu_, &bounds);
+        if (!PtInRect(&bounds, point)) return S_FALSE;
+        auto item = popup_->MenuItemAt(point);
+        child->vt = VT_I4;
+        child->lVal = item ? static_cast<long>(*item + 1) : CHILDID_SELF;
+        return S_OK;
+    }
+    HRESULT STDMETHODCALLTYPE accDoDefaultAction(VARIANT child) override
+    {
+        if (!Valid(child) || child.lVal == CHILDID_SELF) return E_INVALIDARG;
+        // Let the accessibility call return before destroying its window.
+        PostMessageW(popup_->menu_, WM_COMMAND, static_cast<WPARAM>(child.lVal), 0);
+        return S_OK;
+    }
+    HRESULT STDMETHODCALLTYPE put_accName(VARIANT, BSTR) override { return E_NOTIMPL; }
+    HRESULT STDMETHODCALLTYPE put_accValue(VARIANT, BSTR) override { return E_NOTIMPL; }
+
+private:
+    bool Valid(VARIANT child) const
+    {
+        return popup_ && child.vt == VT_I4 && child.lVal >= CHILDID_SELF &&
+            static_cast<std::size_t>(child.lVal) <= popup_->content_.menu.size();
+    }
+    static HRESULT Empty(BSTR* text)
+    {
+        if (!text) return E_POINTER;
+        *text = nullptr;
+        return S_FALSE;
+    }
+    Popup* popup_;
+    Microsoft::WRL::ComPtr<IAccessible> standard_;
+};
 
 Popup::Popup(HWND window, UINT selected) : owner_(window), selected_(selected)
 {
@@ -566,6 +776,9 @@ void Popup::OpenMenu()
     acrylic_.Apply(menu_, theme_);
     ShowWindow(menu_, SW_SHOW);
     SetForegroundWindow(menu_);
+    SetFocus(menu_);
+    NotifyWinEvent(EVENT_SYSTEM_MENUPOPUPSTART, menu_, OBJID_CLIENT, CHILDID_SELF);
+    NotifyWinEvent(EVENT_OBJECT_FOCUS, menu_, OBJID_CLIENT, CHILDID_SELF);
     InvalidateRect(window_, nullptr, FALSE);
 }
 
@@ -581,12 +794,10 @@ void Popup::PaintMenu(HWND window)
     canvas.Text(content_.menuTitle, title, labelFormat, font_);
     auto line = title.bottom + Scale(menuSeparator, dpi) / 2;
     canvas.Fill({0, line, width, line + Scale(1, dpi)}, acrylic_.Foreground(), dividerOpacity, 0);
-    auto itemsTop = MenuItemsTop(dpi);
     for (std::size_t index = 0; index < content_.menu.size(); ++index)
     {
         auto const& item = content_.menu[index];
-        auto top = itemsTop + static_cast<int>(index) * menuRow_;
-        RECT row{padding, top, width - padding, top + menuRow_};
+        auto row = MenuBounds(index);
         if (menuHover_ == index)
         {
             canvas.Fill(row, acrylic_.Foreground(), hoverOpacity, Scale(radius, dpi));
@@ -631,19 +842,33 @@ std::optional<std::size_t> Popup::MenuItemAt(POINT point) const
     return item;
 }
 
+RECT Popup::MenuBounds(std::size_t item) const
+{
+    RECT bounds{};
+    GetClientRect(menu_, &bounds);
+    auto dpi = GetDpiForWindow(menu_);
+    auto padding = Scale(menuPadding, dpi);
+    auto top = MenuItemsTop(dpi) + static_cast<int>(item) * menuRow_;
+    return {padding, top, bounds.right - padding, top + menuRow_};
+}
+
 void Popup::HoverMenu(std::optional<std::size_t> item)
 {
     if (item != menuHover_)
     {
         menuHover_ = item;
         InvalidateRect(menu_, nullptr, FALSE);
+        NotifyWinEvent(EVENT_OBJECT_FOCUS, menu_, OBJID_CLIENT,
+            item ? static_cast<LONG>(*item + 1) : CHILDID_SELF);
     }
 }
 
 void Popup::Choose(std::size_t item)
 {
-    PostMessageW(owner_, selected_, static_cast<WPARAM>(PopupPart::More), content_.menu[item].id);
+    auto command = content_.menu[item].id;
     Close();
+    // Consume the shown switch before another queued notice can replace it.
+    SendMessageW(owner_, selected_, static_cast<WPARAM>(PopupPart::More), command);
 }
 
 LRESULT CALLBACK Popup::MenuProcedure(HWND window, UINT message, WPARAM first, LPARAM second)
@@ -663,6 +888,22 @@ LRESULT Popup::HandleMenu(HWND window, UINT message, WPARAM first, LPARAM second
 {
     switch (message)
     {
+    case WM_GETOBJECT:
+        if (static_cast<LONG>(second) == OBJID_CLIENT)
+        {
+            if (!accessibility_)
+            {
+                accessibility_ = Microsoft::WRL::Make<MenuAccessibility>(*this).Detach();
+            }
+            return accessibility_ ? LresultFromObject(IID_IAccessible, first, accessibility_) : 0;
+        }
+        break;
+    case WM_COMMAND:
+        if (first > 0 && first <= content_.menu.size())
+        {
+            Choose(first - 1);
+        }
+        return 0;
     case WM_MOUSEMOVE:
     {
         TRACKMOUSEEVENT track{sizeof(track), TME_LEAVE, window, 0};
@@ -723,6 +964,13 @@ LRESULT Popup::HandleMenu(HWND window, UINT message, WPARAM first, LPARAM second
         acrylic_.Apply(window, theme_);
         return 0;
     case WM_NCDESTROY:
+        NotifyWinEvent(EVENT_SYSTEM_MENUPOPUPEND, window, OBJID_CLIENT, CHILDID_SELF);
+        if (accessibility_)
+        {
+            accessibility_->Disconnect();
+            accessibility_->Release();
+            accessibility_ = nullptr;
+        }
         menu_ = nullptr;
         menuHover_.reset();
         if (window_)

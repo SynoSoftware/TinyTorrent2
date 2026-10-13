@@ -829,6 +829,8 @@ void Torrent::ApplyIntent()
     {
         handle.unset_flags(lt::torrent_flags::auto_managed);
         handle.pause();
+        // A stopped torrent keeps no peers, in memory or in its resume file.
+        handle.clear_peers();
     }
     else
     {

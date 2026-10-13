@@ -92,10 +92,15 @@ Every torrent takes the same import path: its files are read and listed. When
 movie information download is on, every video without a match is identified,
 from saved information first and from the provider only when needed, because
 a file nobody identified cannot be used in Library. A video without a match is
-tried once in each session. Automatic and batch searches stop at the search
-limit, counted per provider and search text over all sessions, because a second
-copy of a movie sends the same search to the provider. Movie lookups and
-subtitle searches share that limit, one setting on the Plugins page.
+tried once in each session. Automatic work and Fetch new respect remembered
+empty results, unusable resources and the search limit across sessions, because
+a second copy of a movie sends the same question to the provider. Movie lookups
+and subtitle searches share that limit, one setting on the Plugins page.
+Force fetch and the batch scopes Fetch missing and Fetch all authorize a fresh
+request for the selected data, including locally blocked data. Provider waits
+and pacing still apply. Reset in Settings clears local protection without
+starting work; the [request protection plan](request-protection.md) records
+the precise counting, retry and reset rules.
 Automatic subtitle searches run only for new torrents, because a subtitle
 search spends the supplier's allowance. A torrent is new when the database's list of known
 torrents does not contain it: it was added in this session or while the window
@@ -104,7 +109,7 @@ download that finishes after a restart still gets its subtitles. A database with
 known, so their subtitles wait for Find. Removing a torrent while the window is
 open forgets it, so adding it again makes it new. Automatic work starts 30
 seconds after the window first connects to the engine, so it does not compete
-with startup. Requests the person makes have no such limit.
+with startup. Only an explicit fresh request overrides local protection.
 
 ### Product boundaries
 
@@ -156,9 +161,6 @@ intended endpoint across redirects.
 
 The product window configures its shared HTTP owner from one confirmed settings
 snapshot before starting requests, independently of Library storage readiness.
-The current external browser reader cannot enforce a proxy or adapter, so it
-runs only when unrestricted direct access is confirmed. Its operation uses the
-route's cancellation lifetime, so a route change stops the browser operation.
 
 C# HTTP uses SOCKS4a for a SOCKS4 proxy: plain SOCKS4 carries an IPv4 address,
 whereas SOCKS4a carries the destination name without a direct DNS lookup. A proxy

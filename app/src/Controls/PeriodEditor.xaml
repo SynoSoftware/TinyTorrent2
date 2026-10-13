@@ -74,14 +74,14 @@
           AutomationProperties.Name="{x:Bind Model.Text.Get('settings', 'end_time'), Mode=OneWay}"
           AutomationProperties.AutomationId="PeriodEnd" />
       </StackPanel>
-      <local:ActionButton x:Name="Remove" Grid.Column="2" HorizontalAlignment="Right" VerticalAlignment="Bottom"
+      <local:ActionButton x:Name="Delete" Grid.Column="2" HorizontalAlignment="Right" VerticalAlignment="Bottom"
         Glyph="{x:Bind icons:Lucide.Trash2}"
-        Text="{x:Bind Model.Text.Get('settings', 'remove'), Mode=OneWay}"
+        Text="{x:Bind Model.Text.Get('settings', 'delete'), Mode=OneWay}"
         IsEnabled="{x:Bind Model.CanEdit, Mode=OneWay}"
-        ToolTipService.ToolTip="{x:Bind Model.OpenPeriod.RemoveName, Mode=OneWay}"
-        Click="OnRemove"
-        AutomationProperties.Name="{x:Bind Model.OpenPeriod.RemoveName, Mode=OneWay}"
-        AutomationProperties.AutomationId="RemovePeriod" />
+        ToolTipService.ToolTip="{x:Bind Model.OpenPeriod.DeleteName, Mode=OneWay}"
+        Click="OnDelete"
+        AutomationProperties.Name="{x:Bind Model.OpenPeriod.DeleteName, Mode=OneWay}"
+        AutomationProperties.AutomationId="DeletePeriod" />
     </Grid>
   </StackPanel>
 </UserControl>

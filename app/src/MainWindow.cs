@@ -75,7 +75,7 @@ public sealed partial class MainWindow : Window
         {
             FontFamily = Syno.Lucide.Font,
             Glyph = Syno.Lucide.X,
-            FontSize = 16,
+            FontSize = (double)Application.Current.Resources["TinyTorrentButtonIconSize"],
         };
         ExtendsContentIntoTitleBar = true;
         AppWindow.TitleBar.PreferredHeightOption = TitleBarHeightOption.Tall;

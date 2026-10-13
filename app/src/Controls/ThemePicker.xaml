@@ -50,7 +50,7 @@
               <Grid>
                 <ContentPresenter Content="{TemplateBinding Content}" HorizontalContentAlignment="Stretch" />
                 <FontIcon x:Name="Selected" FontFamily="{ThemeResource LucideFont}"
-                  Glyph="{x:Bind icons:Lucide.Check}" FontSize="16" Opacity="0"
+                  Glyph="{x:Bind icons:Lucide.Check}" FontSize="{StaticResource TinyTorrentInlineIconSize}" Opacity="0"
                   AutomationProperties.AccessibilityView="Raw" IsHitTestVisible="False"
                   Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
                   HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="6,0,6,6" />

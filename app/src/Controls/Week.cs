@@ -76,6 +76,7 @@ public sealed partial class Week : UserControl
             Invalidate();
         };
         ActualThemeChanged += (_, _) => Invalidate();
+        ContextRequested += OnContextRequested;
     }
 
     // Requests wait for the next frame and draw once, so a fast pointer
@@ -129,6 +130,8 @@ public sealed partial class Week : UserControl
 
     private int Minute(double x) =>
         Math.Clamp(PeriodSpan.Snap((x - Gutter) / TrackWidth * 1440), 0, 1425);
+
+    private int Day(double y) => Math.Clamp((int)((y - Ruler) / RowHeight), 0, 6);
 
     private void Place(FrameworkElement element, double x, double y)
     {
@@ -278,7 +281,10 @@ public sealed partial class Week : UserControl
             AutomationProperties.SetHelpText(this, string.Empty);
             return;
         }
-        var preview = _drag is { HasMoved: true } drag ? drag.Period.WithSpan(drag.Span) : null;
+        var preview =
+            _drag is not { HasMoved: true } drag ? null
+            : drag.Action == PeriodAction.Create ? _model.NewPeriod(drag.Days, drag.Span)
+            : drag.Period.WithSpan(drag.Span);
         var original = _drag is { Action: not PeriodAction.Create } moving ? moving.Period : null;
         var selected = preview ?? _model.OpenPeriod;
         var blocks = 0;
@@ -330,7 +336,8 @@ public sealed partial class Week : UserControl
                     _model.Day(_day),
                     Schedule.Time(_minute)
                 ),
-                X(_minute)
+                X(_minute),
+                _day
             );
         }
         var position = _model.Text.Format(
@@ -354,7 +361,13 @@ public sealed partial class Week : UserControl
         UpdateTip(description);
         if (_drag is { HasMoved: true } active && preview is not null)
         {
-            ShowTip(preview.TimeLabel, active.Current.X);
+            // A new period's tip sits above its first day, clear of the
+            // days the drag covers.
+            ShowTip(
+                preview.TimeLabel,
+                active.Current.X,
+                active.Action == PeriodAction.Create ? active.Days[0] : _day
+            );
         }
         Trim(Blocks, blocks);
         Trim(Outlines, outlines);
@@ -396,7 +409,7 @@ public sealed partial class Week : UserControl
         Position(block, X(range.Start), Y(day) + 4);
     }
 
-    private void ShowTip(string text, double x)
+    private void ShowTip(string text, double x, int day)
     {
         TipText.Text = text;
         Tip.MaxWidth = Math.Min(360, ActualWidth);
@@ -405,7 +418,7 @@ public sealed partial class Week : UserControl
         Position(
             Tip,
             Math.Clamp(x + 12, 0, Math.Max(0, ActualWidth - Tip.DesiredSize.Width)),
-            Math.Max(0, Y(_day) - Tip.DesiredSize.Height - 2)
+            Math.Max(0, Y(day) - Tip.DesiredSize.Height - 2)
         );
     }
 
@@ -464,7 +477,7 @@ public sealed partial class Week : UserControl
             || point.Y >= Height
         )
             return;
-        _day = Math.Clamp((int)((point.Y - Ruler) / RowHeight), 0, 6);
+        _day = Day(point.Y);
         _hoverDay = _day;
         _minute = Minute(point.X);
         var hit = Hit(point, _day);
@@ -494,7 +507,7 @@ public sealed partial class Week : UserControl
         }
         int? day =
             point.X >= Gutter && point.Y >= Ruler && point.Y < Height
-                ? Math.Clamp((int)((point.Y - Ruler) / RowHeight), 0, 6)
+                ? Day(point.Y)
                 : null;
         if (_hoverDay != day)
         {
@@ -546,7 +559,7 @@ public sealed partial class Week : UserControl
         if (drag.HasMoved)
         {
             if (drag.Action == PeriodAction.Create)
-                await _model.CreatePeriod(_day, drag.Span);
+                await _model.CreatePeriod(drag.Days, drag.Span);
             else
                 await _model.Reschedule(drag.Period, drag.Span);
         }
@@ -563,17 +576,33 @@ public sealed partial class Week : UserControl
             return false;
         drag.Current = point;
         var moved = drag.HasMoved;
-        if (Math.Abs(point.X - drag.Origin.X) >= 4)
-            drag.HasMoved = true;
-        if (!drag.HasMoved)
-            return false;
         var span = drag.Period.Span.Adjust(
             drag.Action,
             (int)Math.Round((point.X - drag.Origin.X) / TrackWidth * 1440)
         );
-        if (span == drag.Span)
+        // A drag over empty time counts only while it covers an hour, so a
+        // short accidental drag stays a click and creates nothing.
+        drag.HasMoved =
+            drag.Action == PeriodAction.Create
+                ? span.Duration >= 60
+                : moved || Math.Abs(point.X - drag.Origin.X) >= 4;
+        if (!drag.HasMoved)
+            return moved;
+        var days = drag.Days;
+        // Dragging up or down extends a new period to every day between the
+        // pressed row and the pointer's row.
+        if (drag.Action == PeriodAction.Create)
+        {
+            var row = Day(point.Y);
+            var first = Math.Min(_day, row);
+            var last = Math.Max(_day, row);
+            if (first != days[0] || last != days[^1])
+                days = Enumerable.Range(first, last - first + 1).ToArray();
+        }
+        if (span == drag.Span && ReferenceEquals(days, drag.Days))
             return !moved;
         drag.Span = span;
+        drag.Days = days;
         return true;
     }
 
@@ -621,6 +650,43 @@ public sealed partial class Week : UserControl
         Invalidate();
     }
 
+    // A pointer finds the period under it; the menu key and Shift+F10 use the
+    // keyboard cursor.
+    private void OnContextRequested(UIElement sender, ContextRequestedEventArgs args)
+    {
+        if (!_model.CanSchedule || _drag is not null)
+            return;
+        SchedulePeriod? period;
+        if (args.TryGetPosition(this, out var position))
+        {
+            if (position.X < Gutter || position.Y < Ruler || position.Y >= Height)
+                return;
+            period = Hit(position, Day(position.Y)).Period;
+        }
+        else
+        {
+            period = _model
+                .Ranges(_day)
+                .First(range => _minute >= range.Start && _minute < range.End)
+                .Period;
+            position = new Point(X(_minute), Y(_day) + RowHeight - 4);
+        }
+        if (period is null)
+            return;
+        var delete = new MenuFlyoutItem
+        {
+            Text = _model.Text.Get("settings", "delete"),
+            Icon = new FontIcon { FontFamily = Lucide.Font, Glyph = Lucide.Trash2 },
+        };
+        AutomationProperties.SetName(delete, period.DeleteName);
+        delete.Click += async (_, _) => await _model.Delete(period);
+        var menu = new MenuFlyout();
+        menu.Items.Add(delete);
+        HoverTip.IsOpen = false;
+        args.Handled = true;
+        menu.ShowAt(this, position);
+    }
+
     protected override async void OnKeyDown(KeyRoutedEventArgs args)
     {
         base.OnKeyDown(args);
@@ -666,7 +732,7 @@ public sealed partial class Week : UserControl
                 await _model.Close();
                 break;
             case VirtualKey.Enter:
-                _ = _model.CreatePeriod(_day, new(_minute, Math.Min(60, 1440 - _minute)));
+                _ = _model.CreatePeriod([_day], new(_minute, Math.Min(60, 1440 - _minute)));
                 break;
             default:
                 return;
@@ -691,6 +757,7 @@ public sealed partial class Week : UserControl
         internal uint Pointer { get; } = pointer;
         internal Point Current { get; set; } = origin;
         internal PeriodSpan Span { get; set; } = period.Span;
+        internal IReadOnlyList<int> Days { get; set; } = period.Days;
         internal bool HasMoved { get; set; }
     }
 }

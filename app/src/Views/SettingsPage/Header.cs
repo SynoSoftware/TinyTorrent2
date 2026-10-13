@@ -12,14 +12,16 @@ namespace Syno.TinyTorrent.Views;
 public sealed partial class SettingsPage
 {
     private string VideoProvider => Main.Library.IsEnrichmentEnabled && Main.Library.Option is { } option
-        ? option.Label(Model.Text) : Model.OffText;
+        ? option.Name : Model.OffText;
     private TextBlock Heading => _category is null ? IdentityTitle : PageTitle;
 
     private void RefreshHeader()
     {
+        if (!IsLoaded || Main.Navigation.Current != WindowPage.Settings)
+            return;
         var category = _category is null ? (SettingsCategory?)null
             : (SettingsCategory)Array.IndexOf(CategoryItems, _category);
-        PageTitle.Text = (string)(_category ?? HomeCategory).Content;
+        PageTitle.Text = ((TextBlock)(_category ?? HomeCategory).Content).Text;
         ToolTipService.SetToolTip(PageTitle, PageTitle.Text);
         PageTitle.Visibility = category is null ? Visibility.Collapsed : Visibility.Visible;
         var (subject, summary) = category switch
@@ -84,7 +86,7 @@ public sealed partial class SettingsPage
                 break;
             case SettingsCategory.Network:
                 first = (Lucide.Globe, Model.Text.Get("settings", "proxy_server"), Model.Proxy.Summary);
-                second = (Lucide.Shield, Model.Text.Get("settings", "encryption"), Model.Text.Get("settings", "encryption_" + Model.Encryption.ConfirmedText));
+                second = (Lucide.Shield, Model.Text.Get("settings", "encryption"), Model.EncryptionSummary);
                 break;
             case SettingsCategory.Plugins:
                 first = (Lucide.Film, Model.Text.Get("settings", "video_information"), VideoProvider);

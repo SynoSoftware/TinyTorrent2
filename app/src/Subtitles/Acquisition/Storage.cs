@@ -33,14 +33,14 @@ internal sealed partial class Acquisition
                     Resume(connection);
                     using var command = connection.CreateCommand();
                     command.CommandText =
-                        "SELECT enabled,supplier,username,secret,languages,request_reset,download_reset,extras FROM subtitle_settings WHERE singleton=1;";
+                        "SELECT enabled,supplier,username,secret,languages,extras FROM subtitle_settings WHERE singleton=1;";
                     using var reader = command.ExecuteReader();
                     if (!reader.Read())
                         return null;
                     var enabled = reader[0] is long flag && flag == 1;
                     var repairEnabled = !Equals(reader[0], enabled ? 1L : 0L);
-                    var extras = reader[7] is long count ? (int)Math.Clamp(count, 0, MaximumExtras) : 1;
-                    var repairExtras = !Equals(reader[7], (long)extras);
+                    var extras = reader[5] is long count ? (int)Math.Clamp(count, 0, MaximumExtras) : 1;
+                    var repairExtras = !Equals(reader[5], (long)extras);
                     var secret = string.Empty;
                     var repairSecret = false;
                     if (!reader.IsDBNull(3))
@@ -83,29 +83,19 @@ internal sealed partial class Acquisition
                         languages = [];
                         repairLanguages = true;
                     }
-                    var repairResets = false;
-                    var allowance = new Allowance(
-                        ReadReset(reader, 5, ref repairResets),
-                        ReadReset(reader, 6, ref repairResets)
-                    );
                     reader.Close();
-                    if (repairEnabled || repairSecret || repairLanguages || repairResets || repairExtras)
+                    if (repairEnabled || repairSecret || repairLanguages || repairExtras)
                         Execute(
                             connection,
                             """
                             UPDATE subtitle_settings SET enabled=$enabled,secret=CASE WHEN $secret THEN NULL ELSE secret END,
                                 languages=CASE WHEN $languages THEN $values ELSE languages END,
-                                request_reset=CASE WHEN $resets THEN $request ELSE request_reset END,
-                                download_reset=CASE WHEN $resets THEN $download ELSE download_reset END,
                                 extras=$extras WHERE singleton=1;
                             """,
                             ("$enabled", enabled),
                             ("$secret", repairSecret),
                             ("$languages", repairLanguages),
                             ("$values", JsonSerializer.Serialize(languages)),
-                            ("$resets", repairResets),
-                            ("$request", allowance.RequestReset?.ToUnixTimeMilliseconds()),
-                            ("$download", allowance.DownloadReset?.ToUnixTimeMilliseconds()),
                             ("$extras", extras)
                         );
                     return new
@@ -114,7 +104,6 @@ internal sealed partial class Acquisition
                         Extras = extras,
                         Account = account,
                         Languages = languages,
-                        Allowance = allowance,
                     };
                 },
                 _lifetime.Token
@@ -126,44 +115,11 @@ internal sealed partial class Acquisition
         Extras = settings.Extras;
         _account = settings.Account;
         Languages = settings.Languages;
-        _allowance = settings.Allowance;
-        Supplier?.Restore(_account, _allowance);
+        await RefreshAllowance().ConfigureAwait(false);
     }
 
-    private static DateTimeOffset? ReadReset(
-        SqliteDataReader reader,
-        int ordinal,
-        ref bool repaired
-    )
-    {
-        if (reader.IsDBNull(ordinal))
-            return null;
-        if (reader[ordinal] is long value && value is >= -62135596800000 and <= 253402300799999)
-            return DateTimeOffset.FromUnixTimeMilliseconds(value);
-        repaired = true;
-        return null;
-    }
-
-    private async Task SaveAllowance(Allowance allowance)
-    {
-        if (_allowance == allowance)
-            return;
-        await Run(
-                connection =>
-                {
-                    Execute(
-                        connection,
-                        "UPDATE subtitle_settings SET request_reset=$request,download_reset=$download WHERE singleton=1;",
-                        ("$request", allowance.RequestReset?.ToUnixTimeMilliseconds()),
-                        ("$download", allowance.DownloadReset?.ToUnixTimeMilliseconds())
-                    );
-                    return true;
-                },
-                CancellationToken.None
-            )
-            .ConfigureAwait(false);
-        _allowance = allowance;
-    }
+    private async Task RefreshAllowance() => _allowance = Supplier is { } supplier
+        ? await supplier.Allowance(_account).ConfigureAwait(false) : new();
 
     private Task<Target[]> Targets(CancellationToken cancellation) =>
         Run(
@@ -357,6 +313,11 @@ internal sealed partial class Acquisition
             );
     }
 
+    private static void Unblock(SqliteConnection connection) =>
+        Execute(connection,
+            "UPDATE subtitle_jobs SET outcome=$pending,retry_at=0 WHERE outcome=$blocked;",
+            ("$pending", (int)SubtitleOutcome.Pending), ("$blocked", (int)SubtitleOutcome.Blocked));
+
     private static void Resume(SqliteConnection connection) =>
         Execute(
             connection,
@@ -377,12 +338,13 @@ internal sealed partial class Acquisition
             connection,
             """
             UPDATE subtitle_jobs SET outcome=$cancelled,retry_at=0
-            WHERE outcome IN ($pending,$unavailable) AND ($manual IS NULL OR manual=$manual)
+            WHERE outcome IN ($pending,$unavailable,$blocked) AND ($manual IS NULL OR manual=$manual)
                 AND ($language IS NULL OR language=$language) AND ($path IS NULL OR path=$path);
             """,
             ("$pending", (int)SubtitleOutcome.Pending),
             ("$unavailable", (int)SubtitleOutcome.Unavailable),
             ("$cancelled", (int)SubtitleOutcome.Cancelled),
+            ("$blocked", (int)SubtitleOutcome.Blocked),
             ("$manual", manual),
             ("$language", language),
             ("$path", path)
@@ -431,10 +393,10 @@ internal sealed partial class Acquisition
         Execute(
             connection,
             """
-            INSERT INTO subtitle_jobs(path,language,stage,outcome,manual,guesses)
-            VALUES($path,$language,$stage,$pending,$manual,$guesses)
+            INSERT INTO subtitle_jobs(path,language,stage,outcome,manual,guesses,fresh)
+            VALUES($path,$language,$stage,$pending,$manual,$guesses,$fresh)
             ON CONFLICT(path,language) DO UPDATE SET stage=excluded.stage,outcome=excluded.outcome,
-                retry_at=0,attempts=0,manual=excluded.manual,guesses=excluded.guesses,
+                retry_at=0,attempts=0,manual=excluded.manual,guesses=excluded.guesses,fresh=excluded.fresh,
                 reference=CASE WHEN $manual OR subtitle_jobs.manual=1 THEN NULL ELSE subtitle_jobs.reference END
                 WHERE $manual OR (subtitle_jobs.outcome=$cancelled
                     AND (subtitle_jobs.manual=1 OR $unfinished));
@@ -452,6 +414,7 @@ internal sealed partial class Acquisition
             ("$pending", (int)SubtitleOutcome.Pending),
             ("$manual", manual),
             ("$guesses", guesses),
+            ("$fresh", target.Fresh is null ? null : JsonSerializer.Serialize(target.Fresh)),
             ("$unfinished", target.Videos.Any(video => video.Eligible && video.IsNew && !video.Complete)),
             ("$cancelled", (int)SubtitleOutcome.Cancelled)
         );
@@ -610,7 +573,7 @@ internal sealed partial class Acquisition
             && target.Complete
             && (entries is null || target.Videos.Any(video => entries.Contains(video.EntryId)))
             && Includes(history, target, scope)
-            && CanLookup(connection, target)
+            && (scope != SubtitleScope.New || CanLookup(connection, target))
         );
     }
 
@@ -622,21 +585,46 @@ internal sealed partial class Acquisition
         scope == SubtitleScope.All
         || (
             history.TryGetValue(target.Path, out var outcome)
-                ? scope == SubtitleScope.NoExactMatch && outcome != SubtitleMatch.Exact
-                : scope == SubtitleScope.New
+                ? outcome != SubtitleMatch.Exact
+                : true
         );
 
-    // The shared search limit, which automatic and batch searches respect;
-    // a search in the choice dialog counts but is never refused.
     private bool CanLookup(SqliteConnection connection, Target target)
     {
-        using var command = connection.CreateCommand();
-        command.CommandText =
-            "SELECT total FROM subtitle_lookups WHERE supplier=$supplier AND query=$query AND language=$language;";
-        command.Parameters.AddWithValue("$supplier", (int)SupplierId);
-        command.Parameters.AddWithValue("$query", Query(target.Videos[0].FinalPath));
-        command.Parameters.AddWithValue("$language", target.Language);
-        return Convert.ToInt64(command.ExecuteScalar()) < lookupLimit();
+        var lookup = new SubtitleLookup(Path.GetFileName(target.Videos[0].FinalPath), target.Language, _ => Task.CompletedTask) { Stage = Stage(target) };
+        var counter = SearchCount(lookup.FileName, lookup.Language);
+        if (SearchProtection(connection, lookup) is null)
+            return true;
+        if (Supplier?.SupportsHash == true && lookup.Stage == SubtitleStage.Complete)
+        {
+            using var command = connection.CreateCommand();
+            command.CommandText = "SELECT EXISTS(SELECT 1 FROM subtitle_jobs WHERE path=$path AND language=$language AND stage=$stage AND outcome IN ($nomatch,$complete));";
+            command.Parameters.AddWithValue("$path", target.Path);
+            command.Parameters.AddWithValue("$language", target.Language);
+            command.Parameters.AddWithValue("$stage", (int)SubtitleStage.Complete);
+            command.Parameters.AddWithValue("$nomatch", (int)SubtitleOutcome.NoMatch);
+            command.Parameters.AddWithValue("$complete", (int)SubtitleOutcome.Complete);
+            if (Convert.ToInt32(command.ExecuteScalar()) == 0)
+                return policy.Read(connection, new LookupRequest(counter, counter))?.CanForce != true;
+        }
+        return false;
+    }
+
+    private RequestBlock? SearchProtection(SqliteConnection connection, SubtitleLookup lookup)
+    {
+        var key = SearchKey(lookup);
+        var saved = SavedSearch(connection, key);
+        if (saved is null || saved.Candidates.Count == 0)
+            return policy.Read(connection, new LookupRequest(key, SearchCount(lookup.FileName, lookup.Language)));
+        return Exact(FileName.Interpret(lookup.FileName), saved.Candidates) is null ? new(RequestBlockKind.NoMatch) : null;
+    }
+
+    private RequestBlock? Protection(SqliteConnection connection, SubtitleLookup lookup)
+    {
+        var supplier = RequireSupplier(SupplierId);
+        return policy.Read(connection,
+            [supplier.QuotaScope(_account), supplier.Scope(_account, "search"), supplier.Authentication(_account)])
+            ?? SearchProtection(connection, lookup);
     }
 
     // What the search limit counts for a video: its title and year, with the
@@ -663,15 +651,18 @@ internal sealed partial class Acquisition
                     using var command = connection.CreateCommand();
                     command.CommandText = "SELECT path,outcome,manual FROM subtitle_jobs;";
                     var finding = false;
+                    var blocked = 0;
                     var completed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                     using (var reader = command.ExecuteReader())
                         while (reader.Read())
                         {
                             var outcome = (SubtitleOutcome)reader.GetInt32(1);
-                            if (outcome is SubtitleOutcome.Pending or SubtitleOutcome.Unavailable)
+                            if (outcome is SubtitleOutcome.Pending or SubtitleOutcome.Unavailable or SubtitleOutcome.Blocked)
                                 finding |= reader.GetBoolean(2);
                             else if (outcome == SubtitleOutcome.Complete)
                                 completed.Add(reader.GetString(0));
+                            if (outcome == SubtitleOutcome.Blocked && reader.GetBoolean(2))
+                                blocked++;
                         }
                     var found = targets
                         .Where(target =>
@@ -691,6 +682,7 @@ internal sealed partial class Acquisition
                     command.Parameters.AddWithValue("$video", (int)FileKind.Video);
                     return (
                         Finding: finding,
+                        Blocked: blocked,
                         Found: found,
                         Subtitled: Convert.ToInt32(command.ExecuteScalar())
                     );
@@ -700,6 +692,7 @@ internal sealed partial class Acquisition
             .ConfigureAwait(false);
         WithSubtitles = counts.Subtitled;
         Finding = counts.Finding;
+        Blocked = counts.Blocked;
         if (_batch.Count > 0)
             Found = counts.Found;
         Notify();
@@ -740,6 +733,7 @@ internal sealed partial class Acquisition
     // guesses downloaded only when no subtitle matches the exact release.
     private sealed record Target(string Path, string Language, Video[] Videos)
     {
+        internal SearchIntent? Fresh { get; init; }
         internal int Rank { get; init; } = 1;
         internal bool Manual { get; init; }
         internal int Guesses { get; init; } = 2;

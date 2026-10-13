@@ -1,6 +1,8 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.Data.Sqlite;
 using Syno.TinyTorrent.Models;
+using Syno.TinyTorrent.Services;
 
 namespace Syno.TinyTorrent.Library;
 
@@ -19,13 +21,11 @@ internal sealed partial class Store
         // The name columns hold normalized titles, so Choices finds a title
         // through an index.
         command.CommandText = """
-            INSERT INTO video_choices(catalog_id,video_id,type,title,original,year,content,name,original_name)
-            VALUES ($catalog,$video,$type,$title,$original,$year,$content,$name,$original_name)
+            INSERT INTO video_choices(catalog_id,video_id,type,title,original,year,name,original_name)
+            VALUES ($catalog,$video,$type,$title,$original,$year,$name,$original_name)
             ON CONFLICT(catalog_id,video_id) DO UPDATE SET type=excluded.type,title=excluded.title,name=excluded.name,
                 original=COALESCE(excluded.original,original),original_name=COALESCE(excluded.original_name,original_name),
-                year=COALESCE(excluded.year,year),
-                content=CASE WHEN content IS NULL THEN excluded.content WHEN excluded.content IS NULL THEN content
-                    ELSE json_patch(content,excluded.content) END;
+                year=COALESCE(excluded.year,year);
             """;
         foreach (
             var name in new[]
@@ -35,7 +35,6 @@ internal sealed partial class Store
                 "type",
                 "title",
                 "original",
-                "content",
                 "name",
                 "original_name",
             }
@@ -55,8 +54,6 @@ internal sealed partial class Store
                 ? FileName.Normalize(original)
                 : DBNull.Value;
             command.Parameters["$year"].Value = (object?)choice.Year ?? DBNull.Value;
-            command.Parameters["$content"].Value =
-                (object?)choice.Content?.GetRawText() ?? DBNull.Value;
             command.ExecuteNonQuery();
         }
     }
@@ -72,9 +69,9 @@ internal sealed partial class Store
             {
                 using var command = connection.CreateCommand();
                 command.CommandText = """
-                    SELECT video_id,type,title,original,year,content FROM video_choices WHERE catalog_id=$catalog AND name=$name
+                    SELECT video_id,type,title,original,year FROM video_choices WHERE catalog_id=$catalog AND name=$name
                     UNION ALL
-                    SELECT video_id,type,title,original,year,content FROM video_choices
+                    SELECT video_id,type,title,original,year FROM video_choices
                     WHERE catalog_id=$catalog AND original_name=$name AND name<>$name;
                     """;
                 command.Parameters.AddWithValue("$catalog", catalogId);
@@ -84,36 +81,26 @@ internal sealed partial class Store
                 while (reader.Read())
                 {
                     cancellation.ThrowIfCancellationRequested();
-                    JsonElement? content = null;
-                    if (!reader.IsDBNull(5))
-                    {
-                        using var document = JsonDocument.Parse(reader.GetString(5));
-                        content = document.RootElement.Clone();
-                    }
-                    choices.Add(
-                        new VideoChoice(
-                            catalogId,
-                            reader.GetString(0),
-                            Kind(reader.GetString(1)),
-                            reader.GetString(2)
-                        )
-                        {
-                            Original = reader.IsDBNull(3) ? null : reader.GetString(3),
-                            Year = reader.IsDBNull(4) ? null : reader.GetInt32(4),
-                            Content = content,
-                        }
-                    );
+                    choices.Add(ReadChoice(reader, catalogId));
                 }
                 return choices;
             },
             cancellation
         );
 
+    private static VideoChoice ReadChoice(SqliteDataReader reader, string catalogId) =>
+        new(catalogId, reader.GetString(0), Kind(reader.GetString(1)), reader.GetString(2))
+        {
+            Original = reader.IsDBNull(3) ? null : reader.GetString(3),
+            Year = reader.IsDBNull(4) ? null : reader.GetInt32(4),
+        };
+
     internal Task<VideoRecord?> Record(
         string catalogId,
         string path,
         string? language,
-        CancellationToken cancellation
+        CancellationToken cancellation,
+        long since = 0
     ) =>
         database.Run(
             connection =>
@@ -121,7 +108,8 @@ internal sealed partial class Store
                 using var command = connection.CreateCommand();
                 command.CommandText =
                     "SELECT content,retrieved FROM video_records "
-                    + "WHERE catalog_id=$catalog AND path=$path AND language=$language;";
+                    + "WHERE catalog_id=$catalog AND path=$path AND language=$language AND checked>=$since;";
+                command.Parameters.AddWithValue("$since", since);
                 command.Parameters.AddWithValue("$catalog", catalogId);
                 command.Parameters.AddWithValue("$path", path);
                 command.Parameters.AddWithValue("$language", Stored(language));
@@ -133,6 +121,25 @@ internal sealed partial class Store
             },
             cancellation
         );
+
+    internal Task SaveRecord(LookupRequest request, VideoRecord record, string? language) =>
+        database.Run(connection =>
+        {
+            using var command = connection.CreateCommand();
+            command.CommandText = """
+                INSERT INTO video_records VALUES ($catalog,$path,$language,$content,$retrieved,$checked)
+                ON CONFLICT(catalog_id,path,language) DO UPDATE SET content=excluded.content,retrieved=excluded.retrieved,checked=excluded.checked;
+                """;
+            command.Parameters.AddWithValue("$catalog", request.Key.ProviderId);
+            command.Parameters.AddWithValue("$path", record.Path);
+            command.Parameters.AddWithValue("$language", Stored(language));
+            command.Parameters.AddWithValue("$content", record.Content.GetRawText());
+            command.Parameters.AddWithValue("$retrieved", record.Retrieved);
+            command.Parameters.AddWithValue("$checked", DateTimeOffset.UtcNow.UtcTicks);
+            command.ExecuteNonQuery();
+            RequestPolicy.Record(connection, request, RequestOutcome.Answered);
+            return true;
+        });
 
     internal Task<VideoInformation?> Saved(
         VideoTarget target,
@@ -148,7 +155,7 @@ internal sealed partial class Store
                 using var command = connection.CreateCommand();
                 command.CommandText = """
                     SELECT v.video_id,v.title,v.type,v.year,v.genres,v.cast,v.synopsis,v.keywords,
-                        v.imdb_rating,v.imdb_kind,v.tmdb_rating,v.tmdb_kind
+                        v.ratings,v.imdb_id
                     FROM video_information v WHERE catalog_id=$catalog AND type='movie' AND year=$year
                         AND (language=$language OR language='');
                     """;
@@ -177,8 +184,8 @@ internal sealed partial class Store
                             Cast = Split(reader.GetString(5)),
                             Synopsis = reader.GetString(6),
                             Keywords = Split(reader.GetString(7)),
-                            ImdbRating = ReadRating(reader, "imdb_rating", "imdb_kind"),
-                            TmdbRating = ReadRating(reader, "tmdb_rating", "tmdb_kind"),
+                            Ratings = ReadRatings(reader.GetString(8)),
+                            ImdbId = reader.IsDBNull(9) ? null : reader.GetInt64(9),
                         };
                     }
                 if (saved is null)
@@ -208,16 +215,16 @@ internal sealed partial class Store
             cancellation
         );
 
-    private static Rating? ReadRating(SqliteDataReader reader, string value, string kind)
+    private static readonly JsonSerializerOptions RatingsJson = new()
     {
-        var ordinal = reader.GetOrdinal(value);
-        return reader.IsDBNull(ordinal)
-            ? null
-            : new Rating(
-                reader.GetDouble(ordinal),
-                Kind(reader.GetString(reader.GetOrdinal(kind)))
-            );
-    }
+        Converters = { new JsonStringEnumConverter() },
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+    };
+
+    private static string WriteRatings(Ratings ratings) => JsonSerializer.Serialize(ratings, RatingsJson);
+
+    private static Ratings ReadRatings(string stored) =>
+        JsonSerializer.Deserialize<Ratings>(stored, RatingsJson) ?? new();
 
     // Library rows and filters read these words from the database.
     private static string Stored(VideoKind kind) =>
@@ -245,17 +252,14 @@ internal sealed partial class Store
     private static IReadOnlyList<string> Split(string stored) =>
         stored.Split(Separator, StringSplitOptions.RemoveEmptyEntries);
 
-    // Keep the response and its choices even when matching rejects the video,
-    // so a later lookup can reuse everything the provider returned.
-    internal Task SaveResponse(
+    // Choices remain reusable even when matching rejects the described video.
+    internal Task SaveChoices(
         VideoInformation video,
-        string? language,
         CancellationToken cancellation
     ) =>
         database.Run(
             connection =>
             {
-                KeepRecords(connection, video, language);
                 IReadOnlyCollection<VideoChoice> choices =
                     video.Kind == VideoKind.Episode
                         ? video.Related
@@ -273,38 +277,12 @@ internal sealed partial class Store
             cancellation
         );
 
-    private static void KeepRecords(
+    private static void SaveReferences(
         SqliteConnection connection,
         VideoInformation video,
         string? language
     )
     {
-        using var command = connection.CreateCommand();
-        command.CommandText = """
-            INSERT INTO video_records VALUES ($catalog,$path,$language,$content,$retrieved)
-            ON CONFLICT(catalog_id,path,language) DO UPDATE SET content=excluded.content,retrieved=excluded.retrieved;
-            """;
-        command.Parameters.AddWithValue("$catalog", video.CatalogId);
-        foreach (var name in new[] { "path", "language", "content" })
-            command.Parameters.Add("$" + name, SqliteType.Text);
-        command.Parameters.Add("$retrieved", SqliteType.Integer);
-        command.Parameters["$language"].Value = Stored(language);
-        foreach (var record in video.Records)
-        {
-            command.Parameters["$path"].Value = record.Path;
-            command.Parameters["$content"].Value = record.Content.GetRawText();
-            command.Parameters["$retrieved"].Value = record.Retrieved;
-            command.ExecuteNonQuery();
-        }
-    }
-
-    private static void SaveRecords(
-        SqliteConnection connection,
-        VideoInformation video,
-        string? language
-    )
-    {
-        KeepRecords(connection, video, language);
         using var command = connection.CreateCommand();
         command.CommandText =
             "DELETE FROM video_references WHERE catalog_id=$catalog AND video_id=$video;";

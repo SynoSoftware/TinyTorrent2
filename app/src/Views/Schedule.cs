@@ -32,12 +32,12 @@ public sealed class Schedule : INotifyPropertyChanged
         _owner.FixedLimits switch
         {
             null => null,
-            LimitMode.Alternative => ScheduleMode.Alternative,
+            LimitProfile.Alternative => ScheduleMode.Alternative,
             _ => ScheduleMode.Normal,
         };
 
     internal string FormatFixedLimits(ScheduleMode mode) =>
-        _owner.FixedLimits == LimitMode.None
+        _owner.FixedLimits == LimitProfile.None
             ? Text.Get("transfer_limits", "none")
             : FormatMode(mode);
 
@@ -152,7 +152,8 @@ public sealed class Schedule : INotifyPropertyChanged
 
     internal Task Add() => Create(NewPeriod([0, 1, 2, 3, 4], new PeriodSpan(9 * 60, 8 * 60)));
 
-    internal Task CreatePeriod(int day, PeriodSpan span) => Create(NewPeriod([day], span));
+    internal Task CreatePeriod(IReadOnlyList<int> days, PeriodSpan span) =>
+        Create(NewPeriod(days, span));
 
     // A new period saves at once and opens. When the schedule already holds
     // the same period, that one opens instead.
@@ -251,7 +252,7 @@ public sealed class Schedule : INotifyPropertyChanged
 
     // Changes run one at a time in the order asked for, so a click made
     // during another change still acts. Period positions survive an edit, but
-    // not another Add or Remove.
+    // not another Add or Delete.
     private async Task ChangePeriod(Func<Task> change)
     {
         while (_changing is { } running)
@@ -288,9 +289,9 @@ public sealed class Schedule : INotifyPropertyChanged
         return await SubmitSchedule(periods);
     }
 
-    // A save in progress replaces every period, so the period to remove is
+    // A save in progress replaces every period, so the period to delete is
     // found again by its position.
-    internal Task Remove(SchedulePeriod period)
+    internal Task Delete(SchedulePeriod period)
     {
         if (!CanEdit)
             return Task.CompletedTask;
@@ -526,7 +527,7 @@ public sealed class SchedulePeriod
             TimeRange,
             _owner.FormatMode(Mode)
         );
-    public string RemoveName => _owner.Text.Format("settings", "remove_period", Description);
+    public string DeleteName => _owner.Text.Format("settings", "delete_period", Description);
 
     private SchedulePeriod(Schedule owner) => _owner = owner;
 

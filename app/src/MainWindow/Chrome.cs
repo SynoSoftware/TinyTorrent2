@@ -166,8 +166,8 @@ public sealed partial class MainWindow
         LeftInset.Width = new GridLength(left);
         RightInset.Width = new GridLength(right);
         UpdateMinimum(scale);
-        TitleDownload.Width = TitleUpload.Width = 128 * _uiSettings.TextScaleFactor;
-        var speedWidth = TitleDownload.Width + TitleUpload.Width + TitleSpeeds.Spacing;
+        var speedWidth = 192 * _uiSettings.TextScaleFactor + TitleSpeeds.ColumnSpacing;
+        TitleSpeeds.Width = speedWidth;
         var available =
             Caption.ActualWidth
             - left

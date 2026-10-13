@@ -192,7 +192,7 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
     {
         get
         {
-            if (_main.FixedLimits != LimitMode.None)
+            if (_main.FixedLimits != LimitProfile.None)
                 return [];
             var enables = Propose()?.EnablesLimits == true;
             return
@@ -436,7 +436,7 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
         // A new install starts with No limits, so Apply turns on the standard
         // limits it sets. Any other choice is the person's and stays.
         var enables =
-            _main.FixedLimits == LimitMode.None
+            _main.FixedLimits == LimitProfile.None
             && nextStandard != SavedStandard
             && nextStandard is not { Download: 0, Upload: 0 };
         return new(

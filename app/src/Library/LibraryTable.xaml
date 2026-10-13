@@ -22,7 +22,7 @@
         <TextBlock
           Grid.Column="1"
           Text="{x:Bind Name, Mode=OneWay}"
-          Style="{StaticResource TinyTorrentBodyTextStyle}"
+          Style="{StaticResource TinyTorrentIdentityTextStyle}"
           FlowDirection="LeftToRight"
         />
       </Grid>
@@ -31,6 +31,7 @@
       <TextBlock
         Text="{x:Bind Folder, Mode=OneWay}"
         Style="{StaticResource TinyTorrentBodyTextStyle}"
+        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
         FlowDirection="LeftToRight"
       />
     </DataTemplate>
@@ -50,7 +51,7 @@
         <TextBlock
           Grid.Column="1"
           Text="{x:Bind Title, Mode=OneWay}"
-          Style="{StaticResource TinyTorrentBodyTextStyle}"
+          Style="{StaticResource TinyTorrentIdentityTextStyle}"
         />
       </Grid>
     </DataTemplate>
@@ -58,12 +59,14 @@
       <TextBlock
         Text="{x:Bind Type, Mode=OneWay}"
         Style="{StaticResource TinyTorrentBodyTextStyle}"
+        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
       />
     </DataTemplate>
     <DataTemplate x:Key="Year" x:DataType="local:LibraryRow">
       <TextBlock
         Text="{x:Bind YearCell, Mode=OneWay}"
         Style="{StaticResource TinyTorrentBodyTextStyle}"
+        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
       />
     </DataTemplate>
     <DataTemplate x:Key="Subtitles" x:DataType="local:LibraryRow">
@@ -84,6 +87,27 @@
       <TextBlock
         Text="{x:Bind TmdbRating, Mode=OneWay}"
         ToolTipService.ToolTip="{x:Bind TmdbTip, Mode=OneWay}"
+        Style="{StaticResource TinyTorrentBodyTextStyle}"
+      />
+    </DataTemplate>
+    <DataTemplate x:Key="RottenTomatoesRating" x:DataType="local:LibraryRow">
+      <TextBlock
+        Text="{x:Bind RottenTomatoesRating, Mode=OneWay}"
+        ToolTipService.ToolTip="{x:Bind RottenTomatoesTip, Mode=OneWay}"
+        Style="{StaticResource TinyTorrentBodyTextStyle}"
+      />
+    </DataTemplate>
+    <DataTemplate x:Key="PopcornmeterRating" x:DataType="local:LibraryRow">
+      <TextBlock
+        Text="{x:Bind PopcornmeterRating, Mode=OneWay}"
+        ToolTipService.ToolTip="{x:Bind PopcornmeterTip, Mode=OneWay}"
+        Style="{StaticResource TinyTorrentBodyTextStyle}"
+      />
+    </DataTemplate>
+    <DataTemplate x:Key="MetacriticRating" x:DataType="local:LibraryRow">
+      <TextBlock
+        Text="{x:Bind MetacriticRating, Mode=OneWay}"
+        ToolTipService.ToolTip="{x:Bind MetacriticTip, Mode=OneWay}"
         Style="{StaticResource TinyTorrentBodyTextStyle}"
       />
     </DataTemplate>
@@ -145,12 +169,14 @@
       <TextBlock
         Text="{x:Bind Modified, Mode=OneWay}"
         Style="{StaticResource TinyTorrentBodyTextStyle}"
+        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
       />
     </DataTemplate>
     <DataTemplate x:Key="Kind" x:DataType="local:LibraryRow">
       <TextBlock
         Text="{x:Bind Kind, Mode=OneWay}"
         Style="{StaticResource TinyTorrentBodyTextStyle}"
+        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
       />
     </DataTemplate>
     <DataTemplate x:Key="LibraryVideosTable">
@@ -180,14 +206,33 @@
           <table:Column
             Id="imdb"
             CellTemplate="{StaticResource ImdbRating}"
-            Width="80"
+            Width="110"
             CellAlignment="Right"
           />
           <table:Column
             Id="tmdb"
             CellTemplate="{StaticResource TmdbRating}"
-            Width="80"
+            Width="110"
             CellAlignment="Right"
+          />
+          <table:Column
+            Id="rottentomatoes"
+            CellTemplate="{StaticResource RottenTomatoesRating}"
+            Width="140"
+            CellAlignment="Right"
+          />
+          <table:Column
+            Id="popcornmeter"
+            CellTemplate="{StaticResource PopcornmeterRating}"
+            Width="120"
+            CellAlignment="Right"
+          />
+          <table:Column
+            Id="metacritic"
+            CellTemplate="{StaticResource MetacriticRating}"
+            Width="110"
+            CellAlignment="Right"
+            IsVisible="False"
           />
           <table:Column Id="genres" CellTemplate="{StaticResource Genres}" />
           <table:Column Id="cast" CellTemplate="{StaticResource Cast}" IsVisible="False" />

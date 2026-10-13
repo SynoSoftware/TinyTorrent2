@@ -202,6 +202,8 @@ public sealed class Settings : INotifyPropertyChanged
 
     public string StandardSummary => LimitSummary(Download, Upload);
     public string AlternativeSummary => LimitSummary(AlternativeDownload, AlternativeUpload);
+    public string EncryptionSummary => Encryption.ConfirmedText.Length == 0
+        ? "—" : Text.Get("settings", "encryption_" + Encryption.ConfirmedText);
 
     private string LimitSummary(Setting download, Setting upload) =>
         Text.Format("settings", "caps_summary", LimitText(download), LimitText(upload));
@@ -220,7 +222,7 @@ public sealed class Settings : INotifyPropertyChanged
     internal bool CanSave => _owner.CanSave;
     internal void Report(Exception error) =>
         _owner.Report(error, "failed_settings", string.Empty, null);
-    internal LimitMode? FixedLimits => _owner.FixedLimits;
+    internal LimitProfile? FixedLimits => _owner.FixedLimits;
     public bool CanRegister => CanEdit && !_registering;
     public bool HasRegistration => _registration.ValueKind == JsonValueKind.Object;
 
@@ -627,7 +629,7 @@ public sealed class Settings : INotifyPropertyChanged
             SettingsCategory.Limits
         );
         LimitLan = new(this, "limit_lan", SettingKind.Boolean, SettingsCategory.Limits);
-        Proxy = new(this, client);
+        Proxy = new(this, owner, client);
         Proxy.PropertyChanged += (_, _) =>
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsPending)));
         Ratio = new(this, "ratio_limit", SettingKind.Number, SettingsCategory.Transfers);

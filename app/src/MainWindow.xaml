@@ -44,7 +44,7 @@
           <FontIcon
             FontFamily="{x:Bind icons:Lucide.Font}"
             Glyph="{x:Bind icons:Lucide.ArrowLeft}"
-            FontSize="16"
+            FontSize="{StaticResource TinyTorrentInlineIconSize}"
           />
         </Button>
         <Button
@@ -64,8 +64,8 @@
             <SolidColorBrush x:Key="TinyTorrentCaptionPressedBrush" Color="Transparent" />
           </Button.Resources>
           <Grid
-            Width="24"
-            Height="24"
+            Width="{StaticResource TinyTorrentSurfaceIconSize}"
+            Height="{StaticResource TinyTorrentSurfaceIconSize}"
             IsHitTestVisible="False"
             AutomationProperties.AccessibilityView="Raw"
           >
@@ -74,19 +74,19 @@
             </Grid.Projection>
             <Image
               x:Name="TorrentsFace"
-              Width="24"
-              Height="24"
+              Width="{StaticResource TinyTorrentSurfaceIconSize}"
+              Height="{StaticResource TinyTorrentSurfaceIconSize}"
               AutomationProperties.AccessibilityView="Raw"
             >
               <Image.Source>
                 <SvgImageSource UriSource="ms-appx:///Assets/tinyTorrent.svg" />
               </Image.Source>
             </Image>
-            <FontIcon
+            <Image
               x:Name="LibraryFace"
-              FontFamily="{x:Bind icons:Lucide.Font}"
-              Glyph="{x:Bind icons:Lucide.Library}"
-              FontSize="24"
+              Source="ms-appx:///Assets/Settings/library.svg"
+              Width="{StaticResource TinyTorrentSurfaceIconSize}"
+              Height="{StaticResource TinyTorrentSurfaceIconSize}"
               Visibility="Collapsed"
               AutomationProperties.AccessibilityView="Raw"
             />
@@ -140,17 +140,21 @@
             </DataTemplate>
           </AutoSuggestBox.ItemTemplate>
         </AutoSuggestBox>
-        <StackPanel
+        <Grid
           x:Name="TitleSpeeds"
           Grid.Column="1"
-          Margin="24,0,0,0"
-          Orientation="Horizontal"
-          Spacing="16"
+          Margin="16,0,0,0"
+          ColumnSpacing="12"
           VerticalAlignment="Center"
           Visibility="Collapsed"
         >
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
           <StackPanel
             x:Name="TitleDownload"
+            HorizontalAlignment="Right"
             Orientation="Horizontal"
             Spacing="6"
             ToolTipService.ToolTip="{x:Bind Model.DownloadTip, Mode=OneWay}"
@@ -159,15 +163,18 @@
               FontFamily="{x:Bind icons:Lucide.Font}"
               Glyph="{x:Bind icons:Lucide.ArrowDown}"
               Style="{StaticResource TinyTorrentStatusIconStyle}"
+              Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
             />
             <TextBlock
               Text="{x:Bind Model.DownloadSpeed, Mode=OneWay}"
+              Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
               AutomationProperties.Name="{x:Bind Model.DownloadTip, Mode=OneWay}"
               Style="{StaticResource TinyTorrentStatusTextStyle}"
             />
           </StackPanel>
           <StackPanel
             x:Name="TitleUpload"
+            Grid.Column="1"
             Orientation="Horizontal"
             Spacing="6"
             ToolTipService.ToolTip="{x:Bind Model.UploadTip, Mode=OneWay}"
@@ -176,14 +183,16 @@
               FontFamily="{x:Bind icons:Lucide.Font}"
               Glyph="{x:Bind icons:Lucide.ArrowUp}"
               Style="{StaticResource TinyTorrentStatusIconStyle}"
+              Foreground="{ThemeResource TinyTorrentUploadBrush}"
             />
             <TextBlock
               Text="{x:Bind Model.UploadSpeed, Mode=OneWay}"
+              Foreground="{ThemeResource TinyTorrentUploadBrush}"
               AutomationProperties.Name="{x:Bind Model.UploadTip, Mode=OneWay}"
               Style="{StaticResource TinyTorrentStatusTextStyle}"
             />
           </StackPanel>
-        </StackPanel>
+        </Grid>
       </Grid>
       <Button
         x:Name="SettingsButton"
@@ -194,7 +203,7 @@
         <FontIcon
           FontFamily="{x:Bind icons:Lucide.Font}"
           Glyph="{x:Bind icons:Lucide.Settings}"
-          FontSize="16"
+          FontSize="{StaticResource TinyTorrentInlineIconSize}"
         />
       </Button>
       <Button
@@ -203,7 +212,7 @@
         Style="{StaticResource TinyTorrentCaptionButtonStyle}"
         Command="{x:Bind Model.SwitchTheme}"
       >
-        <FontIcon x:Name="ThemeIcon" FontFamily="{x:Bind icons:Lucide.Font}" FontSize="16" />
+        <FontIcon x:Name="ThemeIcon" FontFamily="{x:Bind icons:Lucide.Font}" FontSize="{StaticResource TinyTorrentInlineIconSize}" />
       </Button>
     </Grid>
     <Grid x:Name="PageContent" Grid.Row="1">
@@ -268,7 +277,7 @@
                       <FontIcon
                         FontFamily="{x:Bind icons:Lucide.Font}"
                         Glyph="{x:Bind icons:Lucide.Pin}"
-                        FontSize="16"
+                        FontSize="{StaticResource TinyTorrentButtonIconSize}"
                       />
                     </Button>
                     <Button
@@ -293,14 +302,35 @@
                     <DataTemplate x:DataType="local:FilterChoice">
                       <Grid ColumnSpacing="8">
                         <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="Auto" />
                           <ColumnDefinition Width="*" />
                           <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
-                        <TextBlock Text="{x:Bind Label, Mode=OneWay}" TextWrapping="Wrap" />
+                        <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind Glyph}"
+                          Style="{StaticResource TinyTorrentStatusIconStyle}"
+                          AutomationProperties.AccessibilityView="Raw" />
+                        <TextBlock Grid.Column="1" Text="{x:Bind Label, Mode=OneWay}" TextWrapping="Wrap"
+                          Style="{StaticResource TinyTorrentStatusTextStyle}" />
                         <TextBlock
-                          Grid.Column="1"
+                          Grid.Column="2"
                           Text="{x:Bind Count, Mode=OneWay}"
+                          Style="{StaticResource TinyTorrentStatusTextStyle}"
                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                          Visibility="{x:Bind IsCountNeutral, Mode=OneWay}"
+                        />
+                        <TextBlock
+                          Grid.Column="2"
+                          Text="{x:Bind Count, Mode=OneWay}"
+                          Style="{StaticResource TinyTorrentStatusTextStyle}"
+                          Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
+                          Visibility="{x:Bind IsCountAccent, Mode=OneWay}"
+                        />
+                        <TextBlock
+                          Grid.Column="2"
+                          Text="{x:Bind Count, Mode=OneWay}"
+                          Style="{StaticResource TinyTorrentStatusTextStyle}"
+                          Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                          Visibility="{x:Bind IsCountCritical, Mode=OneWay}"
                         />
                       </Grid>
                     </DataTemplate>
@@ -335,11 +365,22 @@
                 x:Name="Toolbar"
                 HorizontalAlignment="Left"
                 Background="Transparent"
-                DefaultLabelPosition="Right"
+                DefaultLabelPosition="Collapsed"
                 TabFocusNavigation="Once"
                 XYFocusKeyboardNavigation="Enabled"
                 Visibility="{x:Bind Model.IsToolbarOpen, Mode=OneWay}"
               >
+                <!-- AppBarButton scales its icon to AppBarButtonContentHeight
+                     and is 68 wide by default. The margin centres the toolbar
+                     icon in the bar's compact height, on a square button. -->
+                <CommandBar.Resources>
+                  <StaticResource x:Key="AppBarButtonContentHeight" ResourceKey="TinyTorrentToolbarIconSize" />
+                  <Thickness x:Key="AppBarButtonContentViewboxCollapsedMargin">0,12,0,12</Thickness>
+                  <Thickness x:Key="AppBarButtonInnerBorderMargin">2</Thickness>
+                  <Style TargetType="AppBarButton" BasedOn="{StaticResource DefaultAppBarButtonStyle}">
+                    <Setter Property="Width" Value="48" />
+                  </Style>
+                </CommandBar.Resources>
                 <AppBarButton x:Name="AddButton" Command="{x:Bind Model.Add}">
                   <AppBarButton.Icon>
                     <FontIcon
@@ -463,6 +504,7 @@
                       <DataTemplate x:DataType="models:Torrent">
                         <TextBlock
                           Text="{x:Bind QueueText, Mode=OneWay}"
+                          Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                           VerticalAlignment="Center"
                         />
                       </DataTemplate>
@@ -478,6 +520,7 @@
                       <DataTemplate x:DataType="models:Torrent">
                         <TextBlock
                           Text="{x:Bind Name, Mode=OneWay}"
+                          Style="{StaticResource TinyTorrentIdentityTextStyle}"
                           VerticalAlignment="Center"
                           AutomationProperties.HelpText="{x:Bind ErrorText, Mode=OneWay}"
                           TextTrimming="CharacterEllipsis"
@@ -510,28 +553,21 @@
                             <RowDefinition Height="Auto" />
                           </Grid.RowDefinitions>
                           <ProgressBar
-                            Minimum="0"
-                            Maximum="1"
-                            Height="4"
+                            Style="{StaticResource TinyTorrentProgressStyle}"
                             Value="{x:Bind Progress, Mode=OneWay}"
                             Visibility="{x:Bind IsProgressNormal, Mode=OneWay}"
                             AutomationProperties.AccessibilityView="Raw"
                           />
                           <ProgressBar
-                            Minimum="0"
-                            Maximum="1"
-                            Height="4"
+                            Style="{StaticResource TinyTorrentMutedProgressStyle}"
                             Value="{x:Bind Progress, Mode=OneWay}"
-                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                            Visibility="{x:Bind IsPaused, Mode=OneWay}"
+                            Visibility="{x:Bind IsProgressMuted, Mode=OneWay}"
                             AutomationProperties.AccessibilityView="Raw"
                           />
                           <ProgressBar
-                            Minimum="0"
-                            Maximum="1"
-                            Height="4"
+                            Style="{StaticResource TinyTorrentProgressStyle}"
                             Value="{x:Bind Progress, Mode=OneWay}"
-                            Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                            ShowError="True"
                             Visibility="{x:Bind IsError, Mode=OneWay}"
                             AutomationProperties.AccessibilityView="Raw"
                           />
@@ -539,6 +575,7 @@
                             Grid.Row="1"
                             Text="{x:Bind ProgressText, Mode=OneWay}"
                             Style="{StaticResource CaptionTextBlockStyle}"
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                           />
                         </Grid>
                       </DataTemplate>
@@ -555,7 +592,24 @@
                           <FontIcon
                             FontFamily="{x:Bind icons:Lucide.Font}"
                             Glyph="{x:Bind StatusGlyph, Mode=OneWay}"
-                            FontSize="14"
+                            FontSize="{StaticResource TinyTorrentInlineIconSize}"
+                            Visibility="{x:Bind IsStatusNeutral, Mode=OneWay}"
+                            AutomationProperties.AccessibilityView="Raw"
+                          />
+                          <FontIcon
+                            FontFamily="{x:Bind icons:Lucide.Font}"
+                            Glyph="{x:Bind StatusGlyph, Mode=OneWay}"
+                            FontSize="{StaticResource TinyTorrentInlineIconSize}"
+                            Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
+                            Visibility="{x:Bind IsDownloading, Mode=OneWay}"
+                            AutomationProperties.AccessibilityView="Raw"
+                          />
+                          <FontIcon
+                            FontFamily="{x:Bind icons:Lucide.Font}"
+                            Glyph="{x:Bind StatusGlyph, Mode=OneWay}"
+                            FontSize="{StaticResource TinyTorrentInlineIconSize}"
+                            Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                            Visibility="{x:Bind IsError, Mode=OneWay}"
                             AutomationProperties.AccessibilityView="Raw"
                           />
                           <TextBlock
@@ -573,6 +627,7 @@
                       <DataTemplate x:DataType="models:Torrent">
                         <TextBlock
                           Text="{x:Bind DownloadText, Mode=OneWay}"
+                          Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
                           VerticalAlignment="Center"
                           TextAlignment="Right"
                         />
@@ -584,6 +639,7 @@
                       <DataTemplate x:DataType="models:Torrent">
                         <TextBlock
                           Text="{x:Bind UploadText, Mode=OneWay}"
+                          Foreground="{ThemeResource TinyTorrentUploadBrush}"
                           VerticalAlignment="Center"
                           TextAlignment="Right"
                         />
@@ -753,6 +809,12 @@
           <HyperlinkButton Content="TMDB" NavigateUri="https://www.themoviedb.org/" Padding="0" />
           <TextBlock
             Text="{x:Bind Model.TmdbCredit, Mode=OneWay}"
+            TextWrapping="Wrap"
+            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+          />
+          <HyperlinkButton Content="IMDb" NavigateUri="https://www.imdb.com/" Padding="0" Margin="0,8,0,0" />
+          <TextBlock
+            Text="{x:Bind Model.ImdbCredit, Mode=OneWay}"
             TextWrapping="Wrap"
             Foreground="{ThemeResource TextFillColorSecondaryBrush}"
           />
@@ -946,7 +1008,7 @@
                 <FontIcon
                   FontFamily="{x:Bind icons:Lucide.Font}"
                   Glyph="{x:Bind icons:Lucide.X}"
-                  FontSize="16"
+                  FontSize="{StaticResource TinyTorrentButtonIconSize}"
                 />
               </Button>
             </Grid>
@@ -983,9 +1045,11 @@
             Style="{StaticResource TinyTorrentStatusIconStyle}"
             FontFamily="{x:Bind icons:Lucide.Font}"
             Glyph="{x:Bind icons:Lucide.ArrowDown}"
+            Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
           />
           <TextBlock
             Text="{x:Bind Model.DownloadStatus, Mode=OneWay}"
+            Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
             AutomationProperties.Name="{x:Bind Model.DownloadTip, Mode=OneWay}"
             Style="{StaticResource TinyTorrentStatusTextStyle}"
           />
@@ -1002,9 +1066,11 @@
             Style="{StaticResource TinyTorrentStatusIconStyle}"
             FontFamily="{x:Bind icons:Lucide.Font}"
             Glyph="{x:Bind icons:Lucide.ArrowUp}"
+            Foreground="{ThemeResource TinyTorrentUploadBrush}"
           />
           <TextBlock
             Text="{x:Bind Model.UploadStatus, Mode=OneWay}"
+            Foreground="{ThemeResource TinyTorrentUploadBrush}"
             AutomationProperties.Name="{x:Bind Model.UploadTip, Mode=OneWay}"
             Style="{StaticResource TinyTorrentStatusTextStyle}"
           />
@@ -1017,11 +1083,21 @@
           Visibility="{x:Bind Model.HasRestriction, Mode=OneWay}"
           ToolTipService.ToolTip="{x:Bind Model.RestrictionTip, Mode=OneWay}"
         >
-          <FontIcon
-            Style="{StaticResource TinyTorrentStatusIconStyle}"
-            FontFamily="{x:Bind icons:Lucide.Font}"
-            Glyph="{x:Bind Model.RestrictionGlyph, Mode=OneWay}"
-          />
+          <Grid>
+            <FontIcon
+              Style="{StaticResource TinyTorrentStatusIconStyle}"
+              FontFamily="{x:Bind icons:Lucide.Font}"
+              Glyph="{x:Bind icons:Lucide.Pause}"
+              Visibility="{x:Bind Model.IsSessionPaused, Mode=OneWay}"
+            />
+            <FontIcon
+              Style="{StaticResource TinyTorrentStatusIconStyle}"
+              FontFamily="{x:Bind icons:Lucide.Font}"
+              Glyph="{x:Bind icons:Lucide.Turtle}"
+              Foreground="{ThemeResource SystemFillColorCautionBrush}"
+              Visibility="{x:Bind Model.ShowsAlternativeLimits, Mode=OneWay}"
+            />
+          </Grid>
           <TextBlock
             x:Name="RestrictionLabel"
             Text="{x:Bind Model.RestrictionStatus, Mode=OneWay}"
@@ -1066,7 +1142,7 @@
             AutomationProperties.Name="{x:Bind Model.Text.Get('library', 'stop_batch'), Mode=OneWay}"
           >
             <FontIcon
-              FontSize="12"
+              FontSize="{StaticResource TinyTorrentInlineIconSize}"
               FontFamily="{x:Bind icons:Lucide.Font}"
               Glyph="{x:Bind icons:Lucide.X}"
             />
@@ -1176,11 +1252,28 @@
           DoubleTapped="OnIncoming"
           ToolTipService.ToolTip="{x:Bind Model.Incoming, Mode=OneWay}"
         >
-          <FontIcon
-            Style="{StaticResource TinyTorrentStatusIconStyle}"
-            FontFamily="{x:Bind icons:Lucide.Font}"
-            Glyph="{x:Bind Model.IncomingGlyph, Mode=OneWay}"
-          />
+          <Grid>
+            <FontIcon
+              Style="{StaticResource TinyTorrentStatusIconStyle}"
+              FontFamily="{x:Bind icons:Lucide.Font}"
+              Glyph="{x:Bind Model.IncomingGlyph, Mode=OneWay}"
+              Visibility="{x:Bind Model.IsIncomingProxied, Mode=OneWay}"
+            />
+            <FontIcon
+              Style="{StaticResource TinyTorrentStatusIconStyle}"
+              FontFamily="{x:Bind icons:Lucide.Font}"
+              Glyph="{x:Bind Model.IncomingGlyph, Mode=OneWay}"
+              Foreground="{ThemeResource SystemFillColorSuccessBrush}"
+              Visibility="{x:Bind Model.IsIncomingOpen, Mode=OneWay}"
+            />
+            <FontIcon
+              Style="{StaticResource TinyTorrentStatusIconStyle}"
+              FontFamily="{x:Bind icons:Lucide.Font}"
+              Glyph="{x:Bind Model.IncomingGlyph, Mode=OneWay}"
+              Foreground="{ThemeResource SystemFillColorCautionBrush}"
+              Visibility="{x:Bind Model.IsIncomingClosed, Mode=OneWay}"
+            />
+          </Grid>
           <TextBlock
             x:Name="IncomingLabel"
             Text="{x:Bind Model.IncomingStatus, Mode=OneWay}"

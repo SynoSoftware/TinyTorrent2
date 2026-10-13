@@ -12,11 +12,11 @@
     <VisualStateManager.VisualStateGroups>
       <VisualStateGroup x:Name="TransferStates">
         <VisualState x:Name="Transferring" />
-        <VisualState x:Name="Paused">
+        <VisualState x:Name="Muted">
           <VisualState.Setters>
             <Setter
-              Target="Progress.Foreground"
-              Value="{ThemeResource TextFillColorSecondaryBrush}"
+              Target="Progress.Style"
+              Value="{StaticResource TinyTorrentMutedProgressStyle}"
             />
           </VisualState.Setters>
         </VisualState>
@@ -48,7 +48,7 @@
         </Grid.ColumnDefinitions>
         <FontIcon
           x:Name="HeadingGlyph"
-          Style="{StaticResource TinyTorrentGroupIconStyle}"
+          Style="{StaticResource TinyTorrentSurfaceIconStyle}"
           FontFamily="{x:Bind icons:Lucide.Font}"
           Glyph="{x:Bind Model.Target.StatusGlyph, Mode=OneWay, FallbackValue=''}"
         />
@@ -111,7 +111,7 @@
               <FontIcon
                 FontFamily="{x:Bind icons:Lucide.Font}"
                 Glyph="{x:Bind icons:Lucide.Play}"
-                Style="{StaticResource TinyTorrentStatusIconStyle}"
+                FontSize="{StaticResource TinyTorrentButtonIconSize}"
               />
             </Button>
             <Button
@@ -122,7 +122,7 @@
               <FontIcon
                 FontFamily="{x:Bind icons:Lucide.Font}"
                 Glyph="{x:Bind icons:Lucide.LocateFixed}"
-                Style="{StaticResource TinyTorrentStatusIconStyle}"
+                FontSize="{StaticResource TinyTorrentButtonIconSize}"
               />
             </Button>
           </StackPanel>
@@ -134,6 +134,7 @@
             <FontIcon
               FontFamily="{x:Bind icons:Lucide.Font}"
               Glyph="{x:Bind icons:Lucide.Ellipsis}"
+              FontSize="{StaticResource TinyTorrentButtonIconSize}"
             />
           </Button>
           <Border
@@ -155,7 +156,7 @@
             <FontIcon
               FontFamily="{x:Bind icons:Lucide.Font}"
               Glyph="{x:Bind icons:Lucide.Pin}"
-              Style="{StaticResource TinyTorrentStatusIconStyle}"
+              FontSize="{StaticResource TinyTorrentButtonIconSize}"
             />
           </Button>
           <Button
@@ -165,7 +166,7 @@
             VerticalAlignment="Center"
           >
             <FontIcon
-              Style="{StaticResource TinyTorrentStatusIconStyle}"
+              FontSize="{StaticResource TinyTorrentButtonIconSize}"
               FontFamily="{x:Bind icons:Lucide.Font}"
               Glyph="{x:Bind icons:Lucide.X}"
             />
@@ -176,7 +177,7 @@
     <Grid x:Name="SectionContent">
       <Grid x:Name="SectionViews">
         <ScrollViewer
-          x:Name="General"
+          x:Name="General" x:Load="False"
           Margin="16,12"
           Visibility="Collapsed"
           HorizontalScrollMode="Disabled"
@@ -207,8 +208,7 @@
                 </Grid>
                 <ProgressBar
                   x:Name="Progress"
-                  Minimum="0"
-                  Maximum="1"
+                  Style="{StaticResource TinyTorrentProgressStyle}"
                   Margin="0,8,0,8"
                   Value="{x:Bind Model.Target.Progress, Mode=OneWay}"
                   IsIndeterminate="{x:Bind Model.IsIndeterminate, Mode=OneWay}"
@@ -240,11 +240,13 @@
                       Style="{StaticResource TinyTorrentStatusIconStyle}"
                       FontFamily="{x:Bind icons:Lucide.Font}"
                       Glyph="{x:Bind icons:Lucide.ArrowDown}"
+                      Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
                       AutomationProperties.AccessibilityView="Raw"
                     />
                     <TextBlock
                       Text="{x:Bind Model.Target.DownloadText, Mode=OneWay}"
                       Style="{StaticResource InspectorValueStyle}"
+                      Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
                       AutomationProperties.Name="{x:Bind Model.Target.DownloadName, Mode=OneWay}"
                       ToolTipService.ToolTip="{x:Bind Model.Target.DownloadText, Mode=OneWay}"
                     />
@@ -262,11 +264,13 @@
                       Style="{StaticResource TinyTorrentStatusIconStyle}"
                       FontFamily="{x:Bind icons:Lucide.Font}"
                       Glyph="{x:Bind icons:Lucide.ArrowUp}"
+                      Foreground="{ThemeResource TinyTorrentUploadBrush}"
                       AutomationProperties.AccessibilityView="Raw"
                     />
                     <TextBlock
                       Text="{x:Bind Model.Target.UploadText, Mode=OneWay}"
                       Style="{StaticResource InspectorValueStyle}"
+                      Foreground="{ThemeResource TinyTorrentUploadBrush}"
                       AutomationProperties.Name="{x:Bind Model.Target.UploadName, Mode=OneWay}"
                       ToolTipService.ToolTip="{x:Bind Model.Target.UploadText, Mode=OneWay}"
                     />
@@ -365,7 +369,7 @@
                           ToolTipService.ToolTip="{x:Bind Model.Text.Get('commands', 'open_folder'), Mode=OneWay}"
                         >
                           <FontIcon
-                            Style="{StaticResource TinyTorrentStatusIconStyle}"
+                            FontSize="{StaticResource TinyTorrentButtonIconSize}"
                             FontFamily="{x:Bind icons:Lucide.Font}"
                             Glyph="{x:Bind icons:Lucide.FolderOpen}"
                           />
@@ -392,7 +396,7 @@
                           ToolTipService.ToolTip="{x:Bind Model.Text.Get('commands', 'copy_hash'), Mode=OneWay}"
                         >
                           <FontIcon
-                            Style="{StaticResource TinyTorrentStatusIconStyle}"
+                            FontSize="{StaticResource TinyTorrentButtonIconSize}"
                             FontFamily="{x:Bind icons:Lucide.Font}"
                             Glyph="{x:Bind icons:Lucide.Copy}"
                           />
@@ -417,7 +421,7 @@
                           ToolTipService.ToolTip="{x:Bind Model.Text.Get('commands', 'copy_hash'), Mode=OneWay}"
                         >
                           <FontIcon
-                            Style="{StaticResource TinyTorrentStatusIconStyle}"
+                            FontSize="{StaticResource TinyTorrentButtonIconSize}"
                             FontFamily="{x:Bind icons:Lucide.Font}"
                             Glyph="{x:Bind icons:Lucide.Copy}"
                           />
@@ -441,7 +445,7 @@
                           ToolTipService.ToolTip="{x:Bind Model.Text.Get('commands', 'copy_magnet'), Mode=OneWay}"
                         >
                           <FontIcon
-                            Style="{StaticResource TinyTorrentStatusIconStyle}"
+                            FontSize="{StaticResource TinyTorrentButtonIconSize}"
                             FontFamily="{x:Bind icons:Lucide.Font}"
                             Glyph="{x:Bind icons:Lucide.Copy}"
                           />
@@ -523,7 +527,7 @@
             </controls:Section>
           </StackPanel>
         </ScrollViewer>
-        <Grid x:Name="Files" Visibility="Collapsed">
+        <Grid x:Name="Files" x:Load="False" Visibility="Collapsed">
           <ContentPresenter
             x:Name="FileContent"
             Visibility="{x:Bind Model.HasFiles, Mode=OneWay}"
@@ -538,7 +542,7 @@
           />
         </Grid>
         <table:Table
-          x:Name="Peers"
+          x:Name="Peers" x:Load="False"
           Margin="0,8,0,0"
           Visibility="Collapsed"
           ItemsSource="{x:Bind Model.Peers, Mode=OneWay}"
@@ -600,14 +604,22 @@
             <table:Column x:Name="PeerDownColumn" Id="down" Width="120" CellAlignment="Right">
               <table:Column.CellTemplate>
                 <DataTemplate x:DataType="models:Peer">
-                  <TextBlock Text="{x:Bind DownloadText, Mode=OneWay}" VerticalAlignment="Center" />
+                  <TextBlock
+                    Text="{x:Bind DownloadText, Mode=OneWay}"
+                    Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
+                    VerticalAlignment="Center"
+                  />
                 </DataTemplate>
               </table:Column.CellTemplate>
             </table:Column>
             <table:Column x:Name="PeerUpColumn" Id="up" Width="120" CellAlignment="Right">
               <table:Column.CellTemplate>
                 <DataTemplate x:DataType="models:Peer">
-                  <TextBlock Text="{x:Bind UploadText, Mode=OneWay}" VerticalAlignment="Center" />
+                  <TextBlock
+                    Text="{x:Bind UploadText, Mode=OneWay}"
+                    Foreground="{ThemeResource TinyTorrentUploadBrush}"
+                    VerticalAlignment="Center"
+                  />
                 </DataTemplate>
               </table:Column.CellTemplate>
             </table:Column>
@@ -640,7 +652,7 @@
             </table:Column>
           </table:Table.Columns>
         </table:Table>
-        <Grid x:Name="Trackers" Visibility="Collapsed" RowSpacing="12">
+        <Grid x:Name="Trackers" x:Load="False" Visibility="Collapsed" RowSpacing="12">
           <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
@@ -705,7 +717,13 @@
               <table:Column x:Name="TrackerStatusColumn" Id="status" Width="120">
                 <table:Column.CellTemplate>
                   <DataTemplate x:DataType="models:Tracker">
-                    <TextBlock Text="{x:Bind StatusText, Mode=OneWay}" VerticalAlignment="Center" />
+                    <Grid>
+                      <TextBlock Text="{x:Bind StatusText, Mode=OneWay}" VerticalAlignment="Center"
+                        Visibility="{x:Bind local:InspectorPane.Hidden(IsError), Mode=OneWay}" />
+                      <TextBlock Text="{x:Bind StatusText, Mode=OneWay}" VerticalAlignment="Center"
+                        Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                        Visibility="{x:Bind IsError, Mode=OneWay}" />
+                    </Grid>
                   </DataTemplate>
                 </table:Column.CellTemplate>
               </table:Column>
@@ -801,12 +819,12 @@
           </Grid>
         </Grid>
         <controls:SpeedGraph
-          x:Name="Speed"
+          x:Name="Speed" x:Load="False"
           Margin="16,12"
           Visibility="Collapsed"
           Samples="{x:Bind Model.History, Mode=OneWay}"
         />
-        <controls:PiecesMap x:Name="Map" Margin="16,12" Visibility="Collapsed" />
+        <controls:PiecesMap x:Name="Map" x:Load="False" Margin="16,12" Visibility="Collapsed" />
         <StackPanel
           x:Name="EmptyState"
           Margin="16,12"
@@ -818,7 +836,7 @@
           <FontIcon
             FontFamily="{x:Bind icons:Lucide.Font}"
             Glyph="{x:Bind icons:Lucide.SquareDashedMousePointer}"
-            FontSize="32"
+            FontSize="{StaticResource TinyTorrentLargeIconSize}"
             Foreground="{ThemeResource TextFillColorTertiaryBrush}"
             AutomationProperties.AccessibilityView="Raw"
           />

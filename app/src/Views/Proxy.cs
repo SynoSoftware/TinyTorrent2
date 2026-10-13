@@ -8,10 +8,12 @@ namespace Syno.TinyTorrent.Views;
 
 // The proxy server setting, and the Edit proxy server dialog's draft of it.
 // The dialog saves all five values together, because a proxy works only with
-// its type, address and port.
+// its type, address and port. A check's result and a failed save are toasts,
+// as the supplier dialog's are, so they show above the open dialog.
 public sealed class Proxy : IDraft
 {
     private readonly Settings _owner;
+    private readonly MainViewModel _main;
     private readonly PipeClient _client;
     private Server _saved = new(ProxyType.None, string.Empty, 0, string.Empty, string.Empty);
     private ProxyOutcome? _status;
@@ -23,7 +25,6 @@ public sealed class Proxy : IDraft
 
     // Field errors show once Save or Check has read the fields.
     private bool _validated;
-    private Answer? _answer;
 
     // Counts checks and edits, so an answer that an edit made out of date is
     // dropped.
@@ -32,10 +33,6 @@ public sealed class Proxy : IDraft
     // The check that the engine runs for the dialog. The snapshot reports its
     // result, because a check can take longer than a request may wait.
     private (string CheckId, Server Server)? _requested;
-
-    // A save or check that could not complete: the key of its short text, and
-    // the reason.
-    private (string Key, string Reason)? _failure;
     private Strings Text => _owner.Text;
     private string SavedPort =>
         _saved.Port > 0 ? _saved.Port.ToString(CultureInfo.CurrentCulture) : string.Empty;
@@ -52,10 +49,7 @@ public sealed class Proxy : IDraft
             Adapter = adapter,
         };
 
-    public string Summary =>
-        IsInUse
-            ? Text.Format("settings", "proxy_summary", Name(_saved.Type), _saved.Host, _saved.Port)
-            : Text.Get("settings", "off");
+    public string Summary => IsInUse ? Label(_saved) : Text.Get("settings", "off");
     public string Route =>
         Text.Format("window", "proxy", Name(_saved.Type), _saved.Host, _saved.Port);
 
@@ -64,7 +58,7 @@ public sealed class Proxy : IDraft
     public bool IsFailing => IsInUse && _status is { } status && status != ProxyOutcome.Connected;
     public string StatusText =>
         _status is { } status && status != ProxyOutcome.Connected
-            ? Reason(status, _saved, null)
+            ? Reason(status, _saved)
             : Text.Get("settings", "proxy_working");
     public int TypeIndex
     {
@@ -150,23 +144,12 @@ public sealed class Proxy : IDraft
         _validated && _type != ProxyType.None && ParsePort() is null
             ? Text.Get("settings", "invalid_port")
             : string.Empty;
-    public bool HasResult => _answer is not null || _failure is not null;
-    public bool Succeeded => _answer?.Outcome == ProxyOutcome.Connected && _failure is null;
-    public bool Failed => HasResult && !Succeeded;
-    public string Result =>
-        IsChecking ? Text.Get("settings", "proxy_checking")
-        : _failure is { } failure ? Text.Get("settings", failure.Key)
-        : _answer is { } answer ? Text.Get("settings", "proxy_" + Word(answer.Outcome))
-        : string.Empty;
-    public string ResultTip =>
-        _failure is { } failure ? failure.Reason
-        : _answer is { } answer ? Reason(answer.Outcome, answer.Server, answer.Elapsed)
-        : string.Empty;
     public event PropertyChangedEventHandler? PropertyChanged;
 
-    internal Proxy(Settings owner, PipeClient client)
+    internal Proxy(Settings owner, MainViewModel main, PipeClient client)
     {
         _owner = owner;
+        _main = main;
         _client = client;
     }
 
@@ -200,8 +183,6 @@ public sealed class Proxy : IDraft
         _username = _saved.Username;
         _password = _saved.Password;
         _validated = false;
-        _answer = null;
-        _failure = null;
         _requested = null;
         _checks++;
         IsChecking = false;
@@ -226,7 +207,7 @@ public sealed class Proxy : IDraft
         }
         catch (Exception error)
         {
-            _failure = ("proxy_not_saved", Text.Error(error));
+            _owner.Report(error);
             return false;
         }
         finally
@@ -244,8 +225,6 @@ public sealed class Proxy : IDraft
             return;
         var current = ++_checks;
         IsChecking = true;
-        _answer = null;
-        _failure = null;
         Refresh();
         try
         {
@@ -257,9 +236,9 @@ public sealed class Proxy : IDraft
         {
             if (current != _checks)
                 return;
-            _failure = ("proxy_not_checked", Text.Error(error));
             IsChecking = false;
             Refresh();
+            _main.Report(error, "failed_proxy_check", Label(server), null);
         }
     }
 
@@ -306,33 +285,51 @@ public sealed class Proxy : IDraft
         var outcome = reported ? check.GetProperty("outcome") : default;
         if (reported && outcome.ValueKind == JsonValueKind.Null)
             return;
-        if (reported)
-            _answer = new(
-                ParseOutcome(outcome.GetString()) ?? ProxyOutcome.WrongType,
-                requested.Server,
-                check.GetProperty("milliseconds").GetInt64()
-            );
-        else
-            _failure = ("proxy_not_checked", Text.Error("unknown", null));
         _requested = null;
         IsChecking = false;
         Refresh();
+        var server = requested.Server;
+        if (!reported)
+        {
+            _main.Report(
+                new CommandException("unknown", null, Text),
+                "failed_proxy_check",
+                Label(server),
+                null
+            );
+            return;
+        }
+        var result = ParseOutcome(outcome.GetString()) ?? ProxyOutcome.WrongType;
+        if (result == ProxyOutcome.Connected)
+        {
+            _main.ShowOutcome(Text.Get("settings", "proxy_connected"), Label(server));
+            return;
+        }
+        // The engine reports an outcome rather than an error, so the outcome's
+        // reason is the toast's text.
+        _main.Report(
+            new CommandException(Word(result), null, Text, "check_proxy"),
+            "failed_proxy_check",
+            Label(server),
+            Reason(result, server)
+        );
     }
 
     private void Edit()
     {
-        _answer = null;
-        _failure = null;
         _requested = null;
         _checks++;
         IsChecking = false;
         Refresh();
     }
 
-    private string Reason(ProxyOutcome outcome, Server server, long? elapsed) =>
+    private string Label(Server server) =>
+        Text.Format("settings", "proxy_summary", Name(server.Type), server.Host, server.Port);
+
+    // Why a check of server failed.
+    private string Reason(ProxyOutcome outcome, Server server) =>
         outcome switch
         {
-            ProxyOutcome.Connected => Text.Format("settings", "proxy_connected_tip", elapsed ?? 0),
             ProxyOutcome.SignInFailed => Text.Get("settings", "proxy_sign_in_failed_tip"),
             ProxyOutcome.Unreachable => Text.Format(
                 "settings",
@@ -409,6 +406,4 @@ public sealed class Proxy : IDraft
         string Username,
         string Password
     );
-
-    private sealed record Answer(ProxyOutcome Outcome, Server Server, long Elapsed);
 }

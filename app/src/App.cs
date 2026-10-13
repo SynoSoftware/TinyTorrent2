@@ -88,7 +88,7 @@ public partial class App : Application
         }
 
         _strings = await Task.Run(() =>
-            new Strings(Supplier.CreateAll().SelectMany(supplier => supplier.Languages))
+            new Strings(Supplier.AllLanguages)
         );
         _window = new MainWindow(_strings);
         _windowHandle = WinRT.Interop.WindowNative.GetWindowHandle(_window);

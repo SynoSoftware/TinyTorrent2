@@ -98,7 +98,11 @@ Windows still owns minimize, maximize and close; never simulate those controls.
 Inset the app-icon page switch. Search centres on the whole title bar where space
 permits, clamped between the menus and optional transfer speeds and caption actions
 at narrower widths. Spare space remains draggable. Reserve Windows' caption insets plus
-a command buffer. Search is at most 320 effective pixels wide. The minimum window
+a command buffer. The optional transfer speeds form one compact, right-aligned
+group: the gap between download and upload is smaller than the gap from Search.
+Reserve width for the whole group, so shorter rates stay together and live
+updates do not move Search or the caption actions.
+Search is at most 320 effective pixels wide. The minimum window
 width accommodates the measured menus, the app-icon page switch, a 200-pixel
 search and the caption buttons, including translated labels. Unused title-bar space retains native dragging,
 double-click maximize/restore and the system menu; controls receive client input.
@@ -114,8 +118,9 @@ owner.
 **Owner ruling: Torrents and [Library](library.md#presentation-and-interaction)
 are peer pages.** The app-icon position is their direct switch, with no separate
 selector or extra row. At rest it shows the current page: the canonical
-TinyTorrent logo for Torrents and the Library glyph for Library. Hover or keyboard
-focus flips to the destination; clicking commits that destination and holds its
+TinyTorrent logo for Torrents and the existing Library colour SVG for Library.
+Hover or keyboard focus flips to the destination; clicking commits that
+destination and holds its
 face for that interaction. Pointer exit ends a mouse interaction even if keyboard
 focus remains; a fresh pointer entry or keyboard focus previews the other page.
 Its background stays transparent during hover and press; the
@@ -174,6 +179,26 @@ A new semantic resource needs demonstrated reuse. A one-place spacing default
 does not need a global token. TableView's stricter resource rules stay with its
 contract. Do not add a palette, spacing framework, icon runtime, or parallel
 styling system.
+
+**Owner ruling: colour marks transfer direction and the states that need
+attention, so the window is not uniformly grey.** Every transfer rate and its
+arrow take its direction's colour: download the accent text brush, upload the
+upload brush in `App.xaml`, which has Light and Dark values and a system text
+colour in High Contrast. The speed graph's lines, markers and legends use the
+same two colours. A downloading torrent's state icon takes the accent, and an
+errored torrent's state icon and progress bar take the critical colour. The
+Downloading and Errors filter counts take the same colours while they are above
+zero. The port icon is success green
+when the port is open and caution amber when it is not confirmed or the saved
+adapter is missing; a proxy route stays neutral. Active alternative limits show
+a caution amber icon. Seeding and complete torrents stay neutral, because they
+are the normal state of most rows and Fluent reserves semantic colour for
+information that matters. Arrows, labels, icon shapes and line patterns keep
+every meaning without colour. Text, surfaces, commands and other severity
+feedback keep the platform resources.
+The native list selection fill uses a restrained system-accent tint from the
+same theme dictionaries, so selected rows stand apart from neutral surfaces
+without extra row chrome. High Contrast retains the system selection colours.
 
 Build surfaces with Fluent layering: the window's base material, the platform
 content layer above it, and platform card surfaces where a Windows pattern
@@ -244,6 +269,25 @@ buttons with icons keep the same height and alignment as those without.
 Platform-owned glyphs, such as menu-item icons and control chevrons, keep their
 native size.
 
+<a id="icon-sizes"></a>Icon sizes come from seven role tokens in `App.xaml`, so one
+role has one size and a size changes in one place:
+
+- **Chevron**, 12: chevrons the application draws in place of a platform one.
+- **Inline**, 16: an icon in a line of body text, including status bar, fields,
+  table cells, notices, labelled buttons and title-bar buttons, whose
+  neighbours are the window's small caption glyphs.
+- **Button**, 20: the glyph of an icon-only button.
+- **Header**, 20: the icon that leads a group, section, card or statistic.
+- **Surface**, 24: the icon that identifies a surface, such as a dialog title,
+  the inspector heading, the workspace switch or Settings navigation.
+- **Toolbar**, 24: toolbar buttons.
+- **Large**, 32: empty states.
+
+Each role takes the largest size its containers hold without growing. The
+filter and inspector strips keep their sixteen-pixel glyph, because their clip
+is part of the strip's geometry. Pictures, such as the logo, page artwork and
+application icons from Windows, are not icons and keep their own sizes.
+
 **Owner ruling: everything on one line shares one vertical centre, and shared
 styles decide it, not individual elements.** Text is centred by the middle of
 its letters, halfway between the baseline and the top of the capitals, whatever
@@ -265,6 +309,13 @@ dialog and pane titles use Subtitle; group headings use Body
 Strong; field labels, values, commands and status text use Body. Secondary facts
 such as free space keep that body size and use the secondary text brush instead
 of smaller type. App.xaml owns the shared title and body styles.
+Torrent and file names and Library titles use the shared semibold identity
+style, so the subject leads each row. Paths, types, years and timestamps use
+the secondary text brush; rates and operational state retain ordinary body text.
+The inspector's inline filename uses Body Strong so it identifies the subject
+without competing with its tab navigation. Informational surface and section
+icons use the secondary text brush; transfer and severity indicators keep their
+semantic colours.
 The approved Inspector General composition in variant H retains its statistic
 captions, larger values, state heading and monospaced identifiers; those roles
 make its summary distinct from the detailed property rows. Shared Body and Status
@@ -523,7 +574,7 @@ A picker or an operation already in progress finishes before close continues.
 **Owner ruling: leaving an editor applies its input, and only Add and Move
 ask.** Fluent 2 applies a change without a confirmation step, so leaving a
 schedule period or a tracker list applies it, as leaving a setting does, and
-failed file choices are sent again. Schedule save, Add and Remove failures use
+failed file choices are sent again. Schedule save, Add and Delete failures use
 notifications and never hold Settings navigation; leaving drops an incomplete
 or duplicate period. Nothing changes under the person's hands:
 an edit that cannot be applied, because it is incomplete, invalid or refused,
@@ -625,7 +676,9 @@ Each caller supplies its header, navigation, actions and body content, so changi
 chrome changes both surfaces together. Titles share `TinyTorrentGroupTitleTextStyle`.
 
 The Filters toggle opens a collapsible native pane with All, Downloading,
-Seeding, Stopped, Queued and Errors choices and live counts. Closing the drawer
+Seeding, Stopped, Queued and Errors choices and live counts. Each choice has one
+monochrome Inline Lucide icon; its label and count retain native row alignment.
+Closing the drawer
 keeps the chosen criteria, identified by the status label.
 Escape closes the drawer when focus is inside it. Clear filters lives inside
 the drawer and calls the existing filter owner. Downloading includes metadata
@@ -751,10 +804,12 @@ an ascending sort lists the limited torrents first.
 The toolbar, a row above the table that View shows or hides, is a CommandBar
 holding Add, Magnet, Start, Stop, Open, Properties, Verify, Remove and
 Delete as AppBarButtons in
-groups split by AppBarSeparators. Each button shows its label beside its icon,
-so a person knows what it does without hovering; when the window is too narrow
-for every label, the CommandBar moves the commands that do not fit into its
-More menu instead of clipping them. The menus keep every command. Copy magnet
+groups split by AppBarSeparators. **Owner ruling: the toolbar buttons are
+icon-only,** because text labels make the interface look cheap. Each button
+keeps its label as its accessible name and its text in the More menu, and its
+tooltip names it with its shortcut. When
+the window is too narrow, the CommandBar moves the commands that do not fit
+into its More menu instead of clipping them. The menus keep every command. Copy magnet
 link stays off it because its link icon is Add magnet link's. Add comes first and stays enabled
 without a selection; with the toolbar hidden, the File menu, its
 shortcuts, drag-and-drop and paste still add torrents. The other buttons
@@ -900,9 +955,14 @@ Retain recognizable identity and last-known read-only values on disconnect, mark
 them stale, and disable writes until the engine is available. Current speed is
 unknown while disconnected and displays an em dash; old rates must not appear
 current. Show loading separately from an empty list. Progress fills its column
-and uses distinct stopped-or-paused and error brushes alongside the written status, so state
-is visible without depending on color. Routine outcomes are announced to assistive
-technology without a visible toast; actionable failures follow the
+through the shared active and muted styles in `App.xaml`. Torrent rows, the
+inspector summary and file rows consume those styles rather than choosing their
+own progress colours. File and folder bars are muted at 100%; incomplete bars
+retain the platform accent. Stopped, paused and finished torrent bars are muted,
+verification remains prominent, and native progress error states retain their
+severity resources. Written status preserves the meaning without colour.
+Routine outcomes are announced to assistive technology without a visible toast;
+actionable failures follow the
 [feedback placement policy](#feedback-placement). Pending operations
 and failures remain visible without exposing internal protocol machinery.
 Reconnection preserves presentation state according to the protocol contract.
@@ -1186,7 +1246,7 @@ both; only the owner removes them.
 Use the [commit rules](#committing-edits): ordinary settings apply individually,
 with no page-wide Save step or confirmation on close. Keep dependent fields
 visible and disable them while inapplicable, so changing a switch does not move
-later rows. One Show advanced settings switch reveals advanced rows and cards
+later rows. One Advanced mode switch reveals advanced rows and cards
 across categories. Search includes those settings and reveals the chosen row.
 **Owner ruling: Settings uses the title-bar search and has no search box of its
 own.** The title-bar search already finds settings, including advanced settings;
@@ -1195,25 +1255,48 @@ the title-bar search's existing scope of torrents, commands and settings.
 Settings uses the approved Windows Settings composition in
 `app/settings-windows-prototype.html`, variant C, and its accompanying notes.
 Its sidebar contains Home, General, Transfers, Speed limits, Schedule,
-Appearance, Network, Library & subtitles, and Advanced. Advanced appears with
-the existing disclosure switch. The sidebar's TinyTorrent logo and name form a
+Appearance, Network, Library & subtitles, and Advanced. Advanced appears while
+Advanced mode is on. The sidebar's TinyTorrent logo and name form a
 native button that returns directly to the workspace Settings was opened from.
-The footer puts Advanced, its On/Off state and its switch above the same return
-action, last in the pane. Advanced uses the category icon and label insets; its
-state and switch align at the right. The return label names Torrents or Library
-from the navigation owner's workspace, and both return buttons use that workspace's existing command and departure
+The sidebar's footer items are Advanced mode and then the same return action,
+last in the pane. Both are navigation items that act instead of opening a page,
+so they render and respond like the categories. Advanced mode's icon is a
+checked square for On and an empty square for Off, keeping the state visible
+in the compact rail. The return label names Torrents or Library
+from the navigation owner's workspace, and both return actions use that workspace's existing command and departure
 guards, so browsing Settings does not trap the person in its history.
 The sidebar uses a compact icon rail at smaller widths
 without a hamburger button; it does not set the window minimum
 from translated category labels. Content is bounded at 1200 DIPs.
 
-Settings category icons use Microsoft's Fluent color SVGs in a 28-DIP icon box,
-with 16-DIP labels, to make the categories easier to recognize. This is the sidebar exception to Lucide
-iconography; High Contrast uses the existing Lucide glyphs and native colors.
-Only the nine used assets and their MIT license ship with the app.
+<a id="settings-navigation"></a>
 
-**Owner ruling: Settings tab headers put artwork first, the title next, and two
-compact facts with Lucide icons at the end.** One shared header keeps the tabs
+**Owner ruling: every Settings navigation icon is 24 DIPs, including Advanced
+mode and the return action.** The 16-DIP label's visible letters are vertically
+centred against the icon; centring the font's line box leaves the text visibly
+off-centre. The shared navigation text style owns tight line bounds and vertical
+alignment. Labels are text elements in the native content slot and icons use
+the native icon slot, so styling labels cannot hide the icons. Keep this
+appearance in expanded and compact navigation and after live language or theme
+changes.
+
+Settings category icons use Microsoft's Fluent color SVGs at that
+[Surface](#icon-sizes) size, to make the categories easier to recognize. This is
+the sidebar exception to Lucide iconography; High Contrast uses the existing
+Lucide glyphs at the same size and native colors. Only the used assets and their
+MIT license ship with the app.
+
+**Owner ruling: both footer actions use neutral Lucide icons.** Advanced mode
+uses checked and empty squares; the return action uses a plain left arrow.
+These familiar symbols make the actions and their state immediately readable.
+Both retain the shared 24-DIP size and inherit the native navigation foreground,
+including in High Contrast. Their backgrounds are transparent.
+Transfers uses paired up/down arrows on a transparent background, because its
+settings cover both downloading and uploading.
+
+**Owner ruling: Settings tab headers put the category title above a summary row
+with artwork, identity and status, and two compact facts with Lucide icons at
+the end.** One shared header keeps the tabs
 consistent. Facts describe the selected tab using its existing owners, so they
 remain current without another query or stored summary. Measured content widths
 move facts below the title, then into separate rows when necessary. Captions and
@@ -1277,7 +1360,7 @@ Light and Dark. All previews share a compact 21:9 crop with 8-DIP clipped
 corners; System splits the same Light/Dark artwork. Display language remains
 a separate row below. There is no redundant theme dropdown. Free space,
 external IP and title-bar speeds use three directly accessible switch cards.
-The external-IP card follows Show advanced settings; hiding it keeps its saved
+The external-IP card follows Advanced mode; hiding it keeps its saved
 value and removes its whole card from the layout.
 
 Home, search and related links use one reveal-expand-scroll-focus path. A
@@ -1347,7 +1430,7 @@ controls restore suppressed dialogs without needing advanced options. Transfers
 keeps the defaults applied by Add rather than a second control for showing its
 dialog. The background-running notice is restored by its Notifications switch,
 so all notification preferences stay together.
-Show advanced settings reveals deliberate tuning and diagnostics, not merely
+Advanced mode reveals deliberate tuning and diagnostics, not merely
 less-used features. Startup behavior, bringing Add to the front, queue position,
 folder layout, incomplete filename suffixes, duplicate handling, seeding limits (including inactivity), watched
 folders, and title-bar speeds are ordinary preferences. Download locations,
@@ -1384,8 +1467,11 @@ engine's check of the proxy in use, once it has ended, the proxy's type and
 address or Off, and Edit. Edit opens the Edit proxy server dialog, because the
 proxy's five values save together and a half-made proxy would stop every
 connection. The dialog's Check connects with the typed values without saving
-them; Check and its one-line result sit in the Footer at the left, and Save
-and Cancel at the right. Save does not require a check. Choosing None or SOCKS4 disables the fields that it does not
+them; Check and its progress sit in the Footer at the left, and Save and
+Cancel at the right. As in the supplier dialog, the result is a toast:
+Connected closes by itself, and a failure stays with its reason. A failed
+Save is the toast of every unsaved setting, and the dialog stays open. Save
+does not require a check. Choosing None or SOCKS4 disables the fields that it does not
 use instead of hiding them, so the dialog keeps its size. While a proxy is in
 use, the port and port-mapping rows are disabled, because peers cannot connect
 in through a proxy.
@@ -1418,14 +1504,14 @@ at a time: opening a period closes the one open before, as one expander at a
 time stays open, so the page never holds two unfinished periods. Each period's
 header describes its days, times and mode. The native expander owns its arrow
 and content visibility; opening a period does not replace the control. Its
-content holds the mode ComboBox, days, start and end times, duration and Remove,
+content holds the mode ComboBox, days, start and end times, duration and Delete,
 so editing controls do not compete with the header's expand gesture.
 Every change applies at once, like every other setting, so the
 editor has no Save or Cancel. Input the schedule cannot take, such as a period
 with no day or a duplicate of another period, stays on screen beside its error.
 Closing the period or leaving Settings drops that invalid input. Settings
 navigation continues immediately while valid input saves in the background.
-Closing or switching periods, Add and Remove apply valid input made during an
+Closing or switching periods, Add and Delete apply valid input made during an
 earlier save before replacing the editor, so save timing cannot discard a change.
 Period changes
 run in the order they are asked for, so a click made during one is never lost.
@@ -1434,8 +1520,12 @@ it; when the schedule already holds that period, Add opens it instead.
 The scheduler is one control embedded in Settings, sharing its period and
 save owner with the period editor rather than implementing scheduling rules twice.
 
-Dragging empty time saves a period for that day and range and opens it. A click
-on a period opens it; a click on empty time closes the open period. Dragging a
+Dragging at least an hour of empty time saves a period for that range and opens
+it; a shorter drag counts as a click, so a slip of the pointer creates nothing.
+Dragging up or down extends the new period to every day between the pressed row
+and the pointer's row. A click on a period opens it; a click on empty time closes the open
+period. Right-click, the menu key or Shift+F10 on a period offers Delete.
+Dragging a
 period horizontally preserves its duration; the open period's start/end edges
 resize it. Thin inset grips appear on the hovered or dragged occurrence, while
 every occurrence keeps its outline, so recurring periods do not fill the week
@@ -1458,7 +1548,7 @@ covered by Pause, so moving one occurrence cannot silently change other days.
 An overnight period shows its following-day portion and handles at its actual
 endpoints. The fill still shows the effective mode, with Pause taking precedence.
 Reject exact duplicate submissions; preserve distinct overlapping rules so a
-later Edit or Remove retains its meaning. A fixed choice stops application of
+later Edit or Delete retains its meaning. A fixed choice stops application of
 the periods and keeps them for the next time Weekly schedule is chosen. A refused
 save keeps the attempted values in the open period and reports the failure through
 the application notification, so the person can correct them or close the period
@@ -1533,7 +1623,9 @@ column, keyboard, and scrolling behavior with the main torrent table. Files and
 the Add dialog's file browser use TableView's
 [hierarchical rows extension](../lib/TableView/docs/hierarchy.md#files-browser-integration)
 for wanted, size, progress, and priority content, because folders require
-hierarchy. Torrent-specific file commands stay in the application.
+hierarchy. Torrent-specific file commands stay in the application. Tracker error
+status text uses the critical brush; other tracker states remain neutral, so
+failed trackers stand out without colouring every healthy row.
 
 **Owner ruling:** the six inspector sections use a native SelectorBar at the
 start of one header row. The torrent name is centred in the space between the

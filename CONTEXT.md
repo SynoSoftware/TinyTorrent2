@@ -120,6 +120,9 @@ torrents or peers may be active.
 **Limit mode**: the choice of Standard limits, Alternative limits, No limits or
 Weekly schedule that determines which bandwidth limits apply.
 
+**Limit profile**: the bandwidth limits currently applied: Standard limits,
+Alternative limits or No limits. A weekly schedule selects a profile.
+
 **Standard limits**: the ordinary download and upload caps, also used outside
 alternative or pause periods in the weekly schedule.
 
@@ -189,9 +192,15 @@ the term is metadata; torrent metadata describes the download's contents.
 **Video information**: Library metadata about a movie, series or episode,
 from the provider.
 
-**Provider**: the online service the person chose to supply video information,
-such as TMDB, IMDb or Rotten Tomatoes.
+**Provider**: what the person chose to supply video information: an online
+service, such as TMDB, or IMDb, which answers from IMDb data.
 _Avoid_: source, which means a torrent file or magnet.
+
+**IMDb data**: IMDb's movie and TV data, downloaded when the person asks and
+kept on this computer as a replaceable copy. The IMDb provider answers from it
+without sending requests, and movies from every provider show their IMDb rating
+from it.
+_Avoid_: IMDb database, which suggests the person's own saved information.
 
 **Series**: a TV show whose files Library identifies by season and episode
 number.
@@ -234,6 +243,23 @@ recognition does not give TinyTorrent ownership of the file.
 
 **Subtitle job**: accepted work to find subtitles for one movie location and
 language, together with its progress and outcome.
+
+**Blocked subtitle job**: unfinished accepted work waiting for search protection
+to permit its request. It has not established that no matching subtitle exists.
+
+**Search protection**: saved local request holds and completed-search counts
+that prevent repeated requests for the same unresolved question. Remote waits
+and outbound pacing remain binding after a local reset.
+
+**Force fetch**: the person's request for one fresh answer despite local
+protection. It does not clear history or bypass a provider's remote wait.
+
+**Missing data**: unresolved questions, including both New and locally blocked
+ones. Subtitle matching options still determine what satisfies the request.
+
+**Reset search protection**: a Settings action for one provider or all providers.
+It clears local suppression and counts without fetching data or deleting
+metadata, subtitle files, user decisions, credentials or remote waits.
 
 ### Engine work and presentation
 

@@ -30,15 +30,14 @@ public sealed partial class ProxyDialog : UserControl
             }
         );
         Status.Check.Click += OnCheck;
-        Status.Loaded += (_, _) =>
-        {
-            Proxy.PropertyChanged += OnProxyChanged;
-            RefreshStatus();
-        };
-        Status.Unloaded += (_, _) => Proxy.PropertyChanged -= OnProxyChanged;
+        Proxy.PropertyChanged += OnProxyChanged;
         Password.Loaded += (_, _) => RefreshText();
         RefreshStatus();
     }
+
+    // The proxy outlives the dialog, so the dialog's opener detaches it when
+    // the dialog closes.
+    internal void Detach() => Proxy.PropertyChanged -= OnProxyChanged;
 
     internal void RefreshText()
     {
@@ -53,12 +52,8 @@ public sealed partial class ProxyDialog : UserControl
     {
         Status.Check.Text = Model.Text.Get("settings", "check");
         ToolTipService.SetToolTip(Status.Check, Model.Text.Get("settings", "check_tip"));
-        Status.Refresh(
-            Proxy.IsChecking,
-            Proxy.HasResult ? Proxy.Succeeded : null,
-            Proxy.Result,
-            Proxy.ResultTip
-        );
+        var feedback = Proxy.IsChecking ? Model.Text.Get("settings", "proxy_checking") : string.Empty;
+        Status.Refresh(Proxy.IsChecking, null, feedback, feedback);
     }
 
     private async void OnCheck(object sender, RoutedEventArgs args) => await Proxy.Check();

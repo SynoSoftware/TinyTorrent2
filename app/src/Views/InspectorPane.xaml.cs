@@ -11,7 +11,8 @@ namespace Syno.TinyTorrent.Views;
 
 public sealed partial class InspectorPane : UserControl
 {
-    private readonly FileBrowser _files;
+    private FileBrowser? _files;
+    private InspectorLayout _layout = new(null, null);
     private readonly SelectorBarItem[] _torrentSections;
     private readonly Motion _motion = new();
     private readonly Motion _arrival = new();
@@ -25,12 +26,13 @@ public sealed partial class InspectorPane : UserControl
     internal double HeaderHeight => Surface.HeaderHeight;
     internal InspectorLayout Layout
     {
-        get => new(Peers.Layout, TrackerTable.Layout);
+        get => new(Peers?.Layout ?? _layout.Peers, TrackerTable?.Layout ?? _layout.Trackers);
         set
         {
-            if (value.Peers is { } peers)
+            _layout = value;
+            if (Peers is not null && value.Peers is { } peers)
                 Peers.Layout = peers;
-            if (value.Trackers is { } trackers)
+            if (TrackerTable is not null && value.Trackers is { } trackers)
                 TrackerTable.Layout = trackers;
         }
     }
@@ -40,36 +42,6 @@ public sealed partial class InspectorPane : UserControl
         Model = model;
         InitializeComponent();
         SectionContent.SizeChanged += Motion.Clip;
-        _files = new FileBrowser(model.Files) { ToolbarPadding = new Thickness(16, 12, 16, 0) };
-        FileContent.Content = _files;
-        TrackerInput.TextCompositionStarted += (_, _) => _composing = true;
-        TrackerInput.TextCompositionEnded += (_, _) => _composing = false;
-        TrackerInput.KeyDown += (_, args) =>
-        {
-            if (
-                args.Key != Windows.System.VirtualKey.Escape
-                || _composing
-                || !Model.CancelTrackers.CanExecute(null)
-            )
-                return;
-            Model.CancelTrackers.Execute(null);
-            DispatcherQueue.TryEnqueue(() => EditTrackers.Focus(FocusState.Programmatic));
-            args.Handled = true;
-        };
-        // Focus moves after the click, once the editor has opened or closed.
-        EditTrackers.Click += (_, _) =>
-            DispatcherQueue.TryEnqueue(() => TrackerInput.Focus(FocusState.Programmatic));
-        CancelTrackers.Click += (_, _) =>
-            DispatcherQueue.TryEnqueue(() => EditTrackers.Focus(FocusState.Programmatic));
-        SaveTrackers.Click += async (_, _) =>
-        {
-            if (_composing || !Model.CanSaveTrackers)
-                return;
-            await Model.CommitTrackers();
-            // Someone who moved on during the request keeps their place.
-            if (!Model.IsEditingTrackers && HasTrackerEditorFocus())
-                DispatcherQueue.TryEnqueue(() => EditTrackers.Focus(FocusState.Programmatic));
-        };
         _torrentSections = new[]
         {
             GeneralSection,
@@ -82,48 +54,6 @@ public sealed partial class InspectorPane : UserControl
         for (var index = 0; index < _torrentSections.Length; index++)
             _torrentSections[index].Tag = (InspectorSection)index;
         Sections.SelectedItem = _torrentSections[(int)model.Section];
-        // The values are selectable text, so a double-click can arrive already handled.
-        foreach (
-            var (element, command) in new (UIElement, ICommand)[]
-            {
-                (DownloadRate, model.LimitSpeed),
-                (UploadRate, model.LimitSpeed),
-                (Limit, model.LimitSpeed),
-                (Ratio, model.ShowRatioLimit),
-                (SeedCount, model.ShowConnectionLimit),
-                (PeerCount, model.ShowConnectionLimit),
-                (FolderPath, model.MoveFiles),
-            }
-        )
-            element.AddHandler(
-                DoubleTappedEvent,
-                new Microsoft.UI.Xaml.Input.DoubleTappedEventHandler(
-                    (_, _) => command.Execute(null)
-                ),
-                true
-            );
-        Peers
-            .Schema<Peer>()
-            .Key(peer => peer.Endpoint)
-            .SortKey(EndpointColumn, peer => peer.Endpoint)
-            .SortKey(ClientColumn, peer => peer.Client)
-            .SortKey(ConnectionColumn, peer => peer.ConnectionText)
-            .SortKey(PeerProgressColumn, peer => peer.Progress)
-            .SortKey(PeerDownColumn, peer => peer.DownloadRate)
-            .SortKey(PeerUpColumn, peer => peer.UploadRate)
-            .SortKey(PeerDownloadedColumn, peer => peer.Downloaded)
-            .SortKey(PeerUploadedColumn, peer => peer.Uploaded);
-        TrackerTable
-            .Schema<Tracker>()
-            .Key(tracker => tracker.Url)
-            .SortKey(UrlColumn, tracker => tracker.Url)
-            .SortKey(TierColumn, tracker => tracker.Tier)
-            .SortKey(TrackerStatusColumn, tracker => tracker.StatusText)
-            .SortKey(SeedsColumn, tracker => tracker.SeedCount)
-            .SortKey(LeechersColumn, tracker => tracker.LeecherCount)
-            .SortKey(DownloadsColumn, tracker => tracker.DownloadCount)
-            .SortKey(NextColumn, tracker => tracker.NextAnnounce)
-            .SortKey(MessageColumn, tracker => tracker.Message);
         Loaded += (_, _) =>
         {
             Model.TextChanged += OnText;
@@ -142,13 +72,123 @@ public sealed partial class InspectorPane : UserControl
             Model.PropertyChanged -= OnModel;
             Model.RowsUpdated -= OnRows;
             Model.RecoveryRequested -= OnRecovery;
-            Map.Show(null, Model.Text);
+            Map?.Show(null, Model.Text);
         };
         RefreshText();
         Refresh();
     }
 
-    private void OnText(object? sender, EventArgs args) => RefreshText();
+    private FrameworkElement LoadSection(InspectorSection section)
+    {
+        var content = section switch
+        {
+            InspectorSection.General => (FrameworkElement?)General,
+            InspectorSection.Files => Files,
+            InspectorSection.Peers => Peers,
+            InspectorSection.Trackers => Trackers,
+            InspectorSection.Speed => Speed,
+            InspectorSection.Pieces => Map,
+            _ => throw new ArgumentOutOfRangeException(nameof(section)),
+        };
+        if (content is not null)
+            return content;
+        content = (FrameworkElement)FindName(section == InspectorSection.Pieces ? nameof(Map) : section.ToString());
+        switch (section)
+        {
+            case InspectorSection.General:
+                // The values are selectable text, so a double-click can arrive already handled.
+                foreach (
+                    var (element, command) in new (UIElement, ICommand)[]
+                    {
+                        (DownloadRate, Model.LimitSpeed),
+                        (UploadRate, Model.LimitSpeed),
+                        (Limit, Model.LimitSpeed),
+                        (Ratio, Model.ShowRatioLimit),
+                        (SeedCount, Model.ShowConnectionLimit),
+                        (PeerCount, Model.ShowConnectionLimit),
+                        (FolderPath, Model.MoveFiles),
+                    }
+                )
+                    element.AddHandler(
+                        DoubleTappedEvent,
+                        new Microsoft.UI.Xaml.Input.DoubleTappedEventHandler(
+                            (_, _) => command.Execute(null)
+                        ),
+                        true
+                    );
+                break;
+            case InspectorSection.Files:
+                _files = new FileBrowser(Model.Files) { ToolbarPadding = new Thickness(16, 12, 16, 0) };
+                FileContent.Content = _files;
+                break;
+            case InspectorSection.Peers:
+                Peers
+                    .Schema<Peer>()
+                    .Key(peer => peer.Endpoint)
+                    .SortKey(EndpointColumn, peer => peer.Endpoint)
+                    .SortKey(ClientColumn, peer => peer.Client)
+                    .SortKey(ConnectionColumn, peer => peer.ConnectionText)
+                    .SortKey(PeerProgressColumn, peer => peer.Progress)
+                    .SortKey(PeerDownColumn, peer => peer.DownloadRate)
+                    .SortKey(PeerUpColumn, peer => peer.UploadRate)
+                    .SortKey(PeerDownloadedColumn, peer => peer.Downloaded)
+                    .SortKey(PeerUploadedColumn, peer => peer.Uploaded);
+                if (_layout.Peers is { } peers)
+                    Peers.Layout = peers;
+                break;
+            case InspectorSection.Trackers:
+                TrackerInput.TextCompositionStarted += (_, _) => _composing = true;
+                TrackerInput.TextCompositionEnded += (_, _) => _composing = false;
+                TrackerInput.KeyDown += (_, args) =>
+                {
+                    if (
+                        args.Key != Windows.System.VirtualKey.Escape
+                        || _composing
+                        || !Model.CancelTrackers.CanExecute(null)
+                    )
+                        return;
+                    Model.CancelTrackers.Execute(null);
+                    DispatcherQueue.TryEnqueue(() => EditTrackers.Focus(FocusState.Programmatic));
+                    args.Handled = true;
+                };
+                // Focus moves after the click, once the editor has opened or closed.
+                EditTrackers.Click += (_, _) =>
+                    DispatcherQueue.TryEnqueue(() => TrackerInput.Focus(FocusState.Programmatic));
+                CancelTrackers.Click += (_, _) =>
+                    DispatcherQueue.TryEnqueue(() => EditTrackers.Focus(FocusState.Programmatic));
+                SaveTrackers.Click += async (_, _) =>
+                {
+                    if (_composing || !Model.CanSaveTrackers)
+                        return;
+                    await Model.CommitTrackers();
+                    // Someone who moved on during the request keeps their place.
+                    if (!Model.IsEditingTrackers && HasTrackerEditorFocus())
+                        DispatcherQueue.TryEnqueue(() => EditTrackers.Focus(FocusState.Programmatic));
+                };
+                TrackerTable
+                    .Schema<Tracker>()
+                    .Key(tracker => tracker.Url)
+                    .SortKey(UrlColumn, tracker => tracker.Url)
+                    .SortKey(TierColumn, tracker => tracker.Tier)
+                    .SortKey(TrackerStatusColumn, tracker => tracker.StatusText)
+                    .SortKey(SeedsColumn, tracker => tracker.SeedCount)
+                    .SortKey(LeechersColumn, tracker => tracker.LeecherCount)
+                    .SortKey(DownloadsColumn, tracker => tracker.DownloadCount)
+                    .SortKey(NextColumn, tracker => tracker.NextAnnounce)
+                    .SortKey(MessageColumn, tracker => tracker.Message);
+                if (_layout.Trackers is { } trackers)
+                    TrackerTable.Layout = trackers;
+                break;
+        }
+        RefreshText();
+        return content;
+    }
+
+    private void OnText(object? sender, EventArgs args)
+    {
+        RefreshText();
+        Refresh();
+    }
 
     // Focus still belongs to the editor when it sits inside it, or when the
     // editor has collapsed under it and nothing holds focus.
@@ -173,6 +213,7 @@ public sealed partial class InspectorPane : UserControl
     internal Control Recover()
     {
         Model.Select(Model.IsEditingTrackers ? InspectorSection.Trackers : InspectorSection.Files);
+        LoadSection(Model.Section);
         return Model.IsEditingTrackers ? TrackerInput : Retry;
     }
 
@@ -192,9 +233,9 @@ public sealed partial class InspectorPane : UserControl
     private void OnRows(object? sender, InspectorSection section)
     {
         if (section == InspectorSection.Peers)
-            Peers.RefreshView();
+            Peers?.RefreshView();
         else if (section == InspectorSection.Trackers)
-            TrackerTable.RefreshView();
+            TrackerTable?.RefreshView();
     }
 
     private void OnModel(object? sender, PropertyChangedEventArgs args)
@@ -209,15 +250,17 @@ public sealed partial class InspectorPane : UserControl
             return;
         CancelReveal();
         _fileReveal = (target, index);
-        _files.LayoutUpdated += OnFileLayout;
         Model.Select(InspectorSection.Files);
+        LoadSection(InspectorSection.Files);
+        _files!.LayoutUpdated += OnFileLayout;
         Refresh();
     }
 
     internal void CancelReveal()
     {
         _fileReveal = null;
-        _files.LayoutUpdated -= OnFileLayout;
+        if (_files is not null)
+            _files.LayoutUpdated -= OnFileLayout;
     }
 
     private void OnFileLayout(object? sender, object args) => RevealFile();
@@ -239,7 +282,7 @@ public sealed partial class InspectorPane : UserControl
         }
         if (!IsLoaded || !Model.HasFiles)
             return;
-        if (_files.Reveal(reveal.Index))
+        if (_files?.Reveal(reveal.Index) == true)
             CancelReveal();
     }
 
@@ -271,9 +314,8 @@ public sealed partial class InspectorPane : UserControl
             return;
         }
         EmptyText.Text = Model.EmptyText;
-        var inspecting = Model.Target is not null;
-        FrameworkElement[] views = [General, Files, Peers, Trackers, Speed, Map];
-        var content = inspecting ? views[(int)Model.Section] : EmptyState;
+        var inspecting = Model.Target is not null && Model.IsVisible;
+        var content = inspecting ? LoadSection(Model.Section) : EmptyState;
         if (!workspace && inspecting && _section != Model.Section)
             _motion.Show(content, Model.Section >= _section ? 1 : -1);
         else
@@ -300,31 +342,35 @@ public sealed partial class InspectorPane : UserControl
         Sections.SelectedItem = Sections.Items.First(item => Equals(item.Tag, Model.Section));
         _refreshing = false;
         var loading = Model.IsAvailable && Model.IsLoading;
-        Peers.Placeholder =
-            Model.Peers is null && loading
-                ? Syno.TableView.Placeholder.Loading
-                : Syno.TableView.Placeholder.Empty;
-        TrackerTable.Placeholder =
-            Model.Trackers is null && loading
-                ? Syno.TableView.Placeholder.Loading
-                : Syno.TableView.Placeholder.Empty;
-        NoPeers.Visibility = Model.Peers is null ? Visibility.Collapsed : Visibility.Visible;
-        NoTrackers.Visibility = Model.Trackers is null ? Visibility.Collapsed : Visibility.Visible;
-        Map.Show(Model.Pieces, Model.Text);
-        VisualStateManager.GoToState(
-            this,
-            Model.Target is { IsError: true } ? "Error"
-                : Model.Target is { IsPaused: true } ? "Paused"
-                : "Transferring",
-            false
-        );
+        if (Peers is not null)
+        {
+            Peers.Placeholder = Model.Peers is null && loading
+                ? Syno.TableView.Placeholder.Loading : Syno.TableView.Placeholder.Empty;
+            NoPeers.Visibility = Model.Peers is null ? Visibility.Collapsed : Visibility.Visible;
+        }
+        if (TrackerTable is not null)
+        {
+            TrackerTable.Placeholder = Model.Trackers is null && loading
+                ? Syno.TableView.Placeholder.Loading : Syno.TableView.Placeholder.Empty;
+            NoTrackers.Visibility = Model.Trackers is null ? Visibility.Collapsed : Visibility.Visible;
+        }
+        Map?.Show(Model.Pieces, Model.Text);
+        if (General is not null)
+            VisualStateManager.GoToState(
+                this,
+                Model.Target is { IsError: true } ? "Error"
+                    : Model.Target is { IsProgressMuted: true } ? "Muted"
+                    : "Transferring",
+                false
+            );
         RevealFile();
     }
 
     internal void RefreshText()
     {
         Bindings.Update();
-        ActionButton.Align([EditTrackers, Reannounce]);
+        if (Trackers is not null)
+            ActionButton.Align([EditTrackers, Reannounce]);
         if (_library is not null)
             Bindings.StopTracking();
         var text = Model.Text;
@@ -341,29 +387,35 @@ public sealed partial class InspectorPane : UserControl
         ToolTipService.SetToolTip(Close, text.Get("inspector", "close"));
         AutomationProperties.SetName(Minimize, text.Get("inspector", "minimize"));
         ToolTipService.SetToolTip(Minimize, text.Get("inspector", "minimize"));
-        AutomationProperties.SetName(TrackerInput, text.Get("inspector", "trackers"));
-        Peers.Strings = TrackerTable.Strings = text.Table;
-        EndpointColumn.DisplayName = text.Get("peers", "endpoint");
-        ClientColumn.DisplayName = text.Get("peers", "client");
-        ConnectionColumn.DisplayName = text.Get("peers", "connection_label");
-        PeerProgressColumn.DisplayName = text.Get("columns", "progress");
-        PeerDownColumn.DisplayName = text.Get("columns", "down");
-        PeerUpColumn.DisplayName = text.Get("columns", "up");
-        PeerDownloadedColumn.DisplayName = text.Get("inspector", "downloaded");
-        PeerUploadedColumn.DisplayName = text.Get("peers", "uploaded");
-        UrlColumn.DisplayName = text.Get("trackers", "url");
-        TierColumn.DisplayName = text.Get("trackers", "tier");
-        TrackerStatusColumn.DisplayName = text.Get("columns", "status");
-        SeedsColumn.DisplayName = text.Get("trackers", "seeds");
-        LeechersColumn.DisplayName = text.Get("trackers", "leechers");
-        DownloadsColumn.DisplayName = text.Get("trackers", "downloads");
-        NextColumn.DisplayName = text.Get("trackers", "next");
-        MessageColumn.DisplayName = text.Get("trackers", "message");
-        Speed.RefreshText(text);
-        _files.RefreshText();
-        Peers.RefreshView();
-        TrackerTable.RefreshView();
-        Refresh();
+        if (Peers is not null)
+        {
+            Peers.Strings = text.Table;
+            EndpointColumn.DisplayName = text.Get("peers", "endpoint");
+            ClientColumn.DisplayName = text.Get("peers", "client");
+            ConnectionColumn.DisplayName = text.Get("peers", "connection_label");
+            PeerProgressColumn.DisplayName = text.Get("columns", "progress");
+            PeerDownColumn.DisplayName = text.Get("columns", "down");
+            PeerUpColumn.DisplayName = text.Get("columns", "up");
+            PeerDownloadedColumn.DisplayName = text.Get("inspector", "downloaded");
+            PeerUploadedColumn.DisplayName = text.Get("peers", "uploaded");
+        }
+        if (Trackers is not null)
+        {
+            TrackerTable.Strings = text.Table;
+            AutomationProperties.SetName(TrackerInput, text.Get("inspector", "trackers"));
+            UrlColumn.DisplayName = text.Get("trackers", "url");
+            TierColumn.DisplayName = text.Get("trackers", "tier");
+            TrackerStatusColumn.DisplayName = text.Get("columns", "status");
+            SeedsColumn.DisplayName = text.Get("trackers", "seeds");
+            LeechersColumn.DisplayName = text.Get("trackers", "leechers");
+            DownloadsColumn.DisplayName = text.Get("trackers", "downloads");
+            NextColumn.DisplayName = text.Get("trackers", "next");
+            MessageColumn.DisplayName = text.Get("trackers", "message");
+        }
+        Speed?.RefreshText(text);
+        _files?.RefreshText();
+        Peers?.RefreshView();
+        TrackerTable?.RefreshView();
     }
 }
 

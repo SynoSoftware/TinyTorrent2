@@ -1,4 +1,3 @@
-using System.ComponentModel;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
@@ -12,11 +11,10 @@ namespace Syno.TinyTorrent.Controls;
 public sealed partial class SpeedLimits : UserControl
 {
     private readonly Windows.UI.ViewManagement.UISettings _display = new();
-    private readonly Dictionary<TextBox, SettingsRow> _rows = [];
+    private readonly SettingsRow[] _rows;
     public MainViewModel Main { get; }
     public Settings Model => Main.Settings;
     internal LimitSelector Selector { get; }
-    internal IReadOnlyList<TextBox> Editors { get; }
     internal event EventHandler? ConnectionRequested;
 
     internal SpeedLimits(MainViewModel main, Action<TextBox> register, bool inline = false)
@@ -25,14 +23,14 @@ public sealed partial class SpeedLimits : UserControl
         InitializeComponent();
         Selector = new(main);
         ModeRow.Content = Selector;
-        Editors = [
+        _rows = [
             AddRate(StandardRows, Model.Download, "DownloadLimit"),
             AddRate(StandardRows, Model.Upload, "UploadLimit"),
             AddRate(AlternativeRows, Model.AlternativeDownload, "AlternativeDownload"),
             AddRate(AlternativeRows, Model.AlternativeUpload, "AlternativeUpload"),
         ];
-        foreach (var editor in Editors)
-            register(editor);
+        foreach (var row in _rows)
+            register((TextBox)row.Content);
         if (inline)
         {
             ModeCard.Visibility = Visibility.Collapsed;
@@ -42,27 +40,25 @@ public sealed partial class SpeedLimits : UserControl
                 card.BorderThickness = new Thickness(0);
                 card.Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
             }
-            _rows[Editors[1]].BorderThickness = new Thickness(0);
-            _rows[Editors[3]].BorderThickness = new Thickness(0);
+            _rows[1].BorderThickness = new Thickness(0);
+            _rows[3].BorderThickness = new Thickness(0);
             Connection.BorderThickness = new Thickness(0);
         }
         Loaded += (_, _) =>
         {
             _display.TextScaleFactorChanged += OnTextScale;
             UpdateProfiles();
-            Model.PropertyChanged += OnModel;
-            Main.PropertyChanged += OnModel;
-            Bindings.Update();
+            Model.TextChanged += OnText;
+            OnText(this, EventArgs.Empty);
         };
         Unloaded += (_, _) =>
         {
             _display.TextScaleFactorChanged -= OnTextScale;
-            Model.PropertyChanged -= OnModel;
-            Main.PropertyChanged -= OnModel;
+            Model.TextChanged -= OnText;
         };
     }
 
-    private TextBox AddRate(StackPanel panel, Setting setting, string automationId)
+    private SettingsRow AddRate(StackPanel panel, Setting setting, string automationId)
     {
         var editor = new TextBox
         {
@@ -79,29 +75,29 @@ public sealed partial class SpeedLimits : UserControl
         {
             Source = setting, Path = new PropertyPath(nameof(Setting.CanEdit)),
         });
-        var row = new SettingsRow { Content = editor, Unit = setting.RateUnit };
-        _rows.Add(editor, row);
+        var row = new SettingsRow { Content = editor };
         row.SetBinding(SettingsRow.ErrorProperty, new Binding
         {
             Source = setting, Path = new PropertyPath(nameof(Setting.Message)),
         });
         panel.Children.Add(row);
         AutomationProperties.SetAutomationId(editor, automationId);
-        RefreshRate(editor);
-        return editor;
+        RefreshRate(row);
+        return row;
     }
 
-    private void OnModel(object? sender, PropertyChangedEventArgs args)
+    private void OnText(object? sender, EventArgs args)
     {
         Bindings.Update();
-        foreach (var editor in Editors)
-            RefreshRate(editor);
+        foreach (var row in _rows)
+            RefreshRate(row);
     }
 
-    private void RefreshRate(TextBox editor)
+    private void RefreshRate(SettingsRow row)
     {
+        var editor = (TextBox)row.Content;
         var setting = (Setting)editor.Tag;
-        var row = _rows[editor];
+        row.Unit = setting.RateUnit;
         row.Header = setting == Model.Download || setting == Model.AlternativeDownload
             ? Model.Text.Get("settings", "download_speed") : Model.Text.Get("settings", "upload_speed");
         editor.PlaceholderText = Model.Text.Get("transfer_limits", "unlimited");
@@ -112,7 +108,8 @@ public sealed partial class SpeedLimits : UserControl
     {
         "limit_mode" => Selector,
         "connection_setup" => Connection,
-        _ => Editors.FirstOrDefault(editor => ((Setting)editor.Tag).Name == name),
+        _ => _rows.Select(row => (TextBox)row.Content)
+            .FirstOrDefault(editor => ((Setting)editor.Tag).Name == name),
     };
 
     internal void FocusConnection() => Connection.Focus(FocusState.Programmatic);

@@ -25,8 +25,12 @@ internal sealed class Batch : UserControl, INotifyPropertyChanged
     private bool _busy;
     private bool _refreshing;
     private long? _batchId;
-    private int _count;
+    private int[] _counts = [0, 0, 0];
+    private int Count => _counts[Math.Max(0, _scope.SelectedIndex)];
     private int _recount;
+    private bool _visible;
+    private bool _reading;
+    private int _queued;
     private SettingsSection? _section;
     private SettingsRow? _scopeRow;
     private SettingsRow? _downloadRow;
@@ -45,7 +49,7 @@ internal sealed class Batch : UserControl, INotifyPropertyChanged
 
     // Each host draws one button for the batch: Find while none runs and Stop
     // while one does, so the pressed button stays enabled and keeps focus.
-    public bool CanAct => Finding ? _model is not null : _model is { CanFind: true } && _count > 0;
+    public bool CanAct => Finding ? _model is not null : _model is { CanFind: true } && Count > 0;
     internal string ActionGlyph => Finding ? Lucide.Square : Lucide.Search;
     internal string ActionText => T(Finding ? "stop" : "find");
     internal string ActionHint => T(Finding ? "stop_hint" : "batch_hint");
@@ -63,6 +67,9 @@ internal sealed class Batch : UserControl, INotifyPropertyChanged
         AutomationProperties.SetAutomationId(_scope, "SubtitleScope");
         AutomationProperties.SetAutomationId(_download, "SubtitleDownload");
         AutomationProperties.SetLiveSetting(_status, AutomationLiveSetting.Polite);
+        for (var index = 0; index < _counts.Length; index++)
+            _scope.Items.Add(new ComboBoxItem());
+        _scope.SelectedIndex = 0;
         var choices = new Grid { ColumnSpacing = 12 };
         choices.ColumnDefinitions.Add(new ColumnDefinition());
         choices.ColumnDefinitions.Add(new ColumnDefinition());
@@ -82,12 +89,39 @@ internal sealed class Batch : UserControl, INotifyPropertyChanged
         if (_model is not null)
             _model.Changed -= OnChanged;
         _model = model;
-        if (_model is not null)
+        _counts = [0, 0, 0];
+        _batchId = null;
+        if (_visible && _model is not null)
             _model.Changed += OnChanged;
         Refresh();
     }
 
-    private void OnChanged(object? sender, EventArgs args) => DispatcherQueue.TryEnqueue(Refresh);
+    internal void SetVisible(bool visible)
+    {
+        if (_visible == visible)
+            return;
+        _visible = visible;
+        if (_model is not null)
+        {
+            if (visible)
+                _model.Changed += OnChanged;
+            else
+                _model.Changed -= OnChanged;
+        }
+        Refresh();
+    }
+
+    private void OnChanged(object? sender, EventArgs args)
+    {
+        if (Interlocked.Exchange(ref _queued, 1) != 0)
+            return;
+        if (!DispatcherQueue.TryEnqueue(() =>
+        {
+            Interlocked.Exchange(ref _queued, 0);
+            Refresh();
+        }))
+            Interlocked.Exchange(ref _queued, 0);
+    }
 
     internal void ShowSettings(ActionButton action)
     {
@@ -122,28 +156,41 @@ internal sealed class Batch : UserControl, INotifyPropertyChanged
 
     internal void Refresh()
     {
+        _recount++;
+        if (!_visible)
+            return;
         Present();
-        _ = Recount();
+        if (!_reading)
+            _ = Recount();
     }
 
-    // The count is a database read, so the text shows at once and the
-    // number follows; a newer Refresh discards an older read's result.
     private async Task Recount()
     {
-        var version = ++_recount;
-        var count = _model is { } model
-            ? await model.Count((SubtitleScope)Math.Max(0, _scope.SelectedIndex), _entries)
-            : 0;
-        if (version != _recount || count == _count)
-            return;
-        _count = count;
-        Present();
+        _reading = true;
+        try
+        {
+            while (_visible && _model is { } model)
+            {
+                var version = _recount;
+                var counts = new int[3];
+                for (var scope = 0; scope < counts.Length && version == _recount; scope++)
+                    counts[scope] = await model.Count((SubtitleScope)scope, _entries);
+                if (version != _recount)
+                    continue;
+                _counts = counts;
+                Present();
+                break;
+            }
+        }
+        finally
+        {
+            _reading = false;
+        }
     }
 
     private void Present()
     {
         _refreshing = true;
-        var scope = Math.Max(0, _scope.SelectedIndex);
         var download = _download.SelectedIndex < 0 ? 2 : _download.SelectedIndex;
         if (_scopeRow is not null && _downloadRow is not null && _section is not null)
         {
@@ -161,7 +208,6 @@ internal sealed class Batch : UserControl, INotifyPropertyChanged
         if (_language != _text.Language)
         {
             _language = _text.Language;
-            _scope.ItemsSource = new[] { T("not_searched"), T("no_exact"), T("all_movies") };
             _download.ItemsSource = new[]
             {
                 T("exact_only"),
@@ -170,9 +216,12 @@ internal sealed class Batch : UserControl, INotifyPropertyChanged
                 _text.Format("subtitles", "up_to", 3),
                 _text.Format("subtitles", "up_to", 4),
             };
-            _scope.SelectedIndex = scope;
             _download.SelectedIndex = download;
         }
+        var keys = new[] { "new", "missing_data", "all" };
+        for (var index = 0; index < keys.Length; index++)
+            ((ComboBoxItem)_scope.Items[index]).Content =
+                _text.Format("filters", "count", _text.Get("request_protection", keys[index]), _counts[index]);
         AutomationProperties.SetName(_scope, T("movies_to_search"));
         AutomationProperties.SetName(_download, T("matches_to_download"));
         _scope.IsEnabled = _download.IsEnabled = !_busy && _model?.Finding != true;
@@ -180,7 +229,7 @@ internal sealed class Batch : UserControl, INotifyPropertyChanged
             _model is { Finding: true } finding ? Waiting(finding)
             : _model is { Found: { } found } completed && _batchId == completed.BatchId
                 ? _text.Format("subtitles", "batch_found", found, completed.FindTotal)
-            : _text.Format("subtitles", "to_search", _count);
+            : _text.Format("subtitles", "to_search", Count);
         ToolTipService.SetToolTip(_status, _status.Text);
         _refreshing = false;
         PropertyChanged?.Invoke(this, new(nameof(CanAct)));
@@ -191,6 +240,7 @@ internal sealed class Batch : UserControl, INotifyPropertyChanged
     private string Waiting(Acquisition model) =>
         model.Failure switch
         {
+            SubtitleFailure.None when model.Blocked > 0 => T("blocked"),
             SubtitleFailure.None => T("searching"),
             SubtitleFailure.Quota when model.RetryAt is { } reset => _text.Format(
                 "subtitles",

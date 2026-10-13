@@ -11,6 +11,9 @@ internal sealed partial class ProviderHttp : IDisposable
 {
     internal const int JsonLimit = 2 * 1024 * 1024;
     internal const int FileLimit = 16 * 1024 * 1024;
+    // How long a request waits for its reply; a download restarts the wait
+    // with each block it receives.
+    private static readonly TimeSpan WaitLimit = TimeSpan.FromSeconds(60);
     private readonly object _sync = new();
     private HttpRoute? _route;
     private HttpClient? _client;
@@ -33,42 +36,141 @@ internal sealed partial class ProviderHttp : IDisposable
         }
     }
 
-    internal CancellationTokenSource BeginDirect(CancellationToken cancellation)
-    {
-        lock (_sync)
-        {
-            ObjectDisposedException.ThrowIf(_disposed, this);
-            cancellation.ThrowIfCancellationRequested();
-            if (
-                _route is null
-                || _lifetime is null
-                || _route.Type != ProxyType.None
-                || _route.Adapter.Length > 0
-            )
-                throw new HttpRouteException(
-                    "The confirmed network route does not allow a direct browser request."
-                );
-            return CancellationTokenSource.CreateLinkedTokenSource(cancellation, _lifetime.Token);
-        }
-    }
-
     // Redirects return to the supplier, which authorizes the next origin and
     // creates fresh headers; credentials never follow a redirect implicitly.
+    internal Task<ProviderReply> Send(ProviderCall call, int maximum, CancellationToken cancellation) =>
+        Send(call.Message, maximum, cancellation, call);
+
     internal async Task<ProviderReply> Send(
         HttpRequestMessage request,
         int maximum,
+        CancellationToken cancellation,
+        ProviderCall? call = null
+    )
+    {
+        if (maximum <= 0 || maximum > FileLimit)
+            throw new ArgumentOutOfRangeException(nameof(maximum));
+        return await Exchange(
+            request,
+            async (response, deadline) =>
+            {
+                var headers = Headers(response);
+                if (call?.Observe is { } observe)
+                    await observe(new(response.StatusCode, [], headers)).ConfigureAwait(false);
+                if (response.Content.Headers.ContentLength > maximum)
+                    throw new InvalidDataException("Provider response exceeds its size limit.");
+                await using var stream = await response
+                    .Content.ReadAsStreamAsync(deadline.Token)
+                    .ConfigureAwait(false);
+                byte[] bytes;
+                try
+                {
+                    bytes = await Read(stream, maximum, deadline.Token).ConfigureAwait(false);
+                }
+                catch (IOException) when (call is not null)
+                {
+                    await call.Policy.Fail(call.Request.Access, new(RequestBlockKind.Backoff)).ConfigureAwait(false);
+                    throw;
+                }
+                return new ProviderReply(response.StatusCode, bytes, headers);
+            },
+            cancellation,
+            call
+        ).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Downloads a large file to <paramref name="path"/>, reports the bytes
+    /// received so far and returns the file's length. Unlike
+    /// <see cref="Send"/>, it fails only when no bytes arrive for a minute, so
+    /// a slow line can finish a large file.
+    /// </summary>
+    internal async Task<long> Download(
+        ProviderCall call,
+        string path,
+        Action<long> received,
         CancellationToken cancellation
+    )
+    {
+        return await Exchange(
+                call.Message,
+                async (response, deadline) =>
+                {
+                    if (call.Observe is { } observe)
+                        await observe(new(response.StatusCode, [], Headers(response))).ConfigureAwait(false);
+                    if (response.StatusCode != HttpStatusCode.OK)
+                        throw new HttpRequestException(
+                            "The download was refused.",
+                            null,
+                            response.StatusCode
+                        );
+                    await using var source = await response
+                        .Content.ReadAsStreamAsync(deadline.Token)
+                        .ConfigureAwait(false);
+                    await using var target = new FileStream(
+                        path,
+                        FileMode.Create,
+                        FileAccess.Write,
+                        FileShare.None,
+                        1 << 16,
+                        useAsync: true
+                    );
+                    var buffer = new byte[1 << 16];
+                    long total = 0;
+                    while (true)
+                    {
+                        int count;
+                        try
+                        {
+                            count = await source.ReadAsync(buffer, deadline.Token).ConfigureAwait(false);
+                        }
+                        catch (IOException)
+                        {
+                            await call.Policy.Fail(call.Request.Access, new(RequestBlockKind.Backoff)).ConfigureAwait(false);
+                            throw;
+                        }
+                        if (count == 0)
+                            break;
+                        deadline.CancelAfter(WaitLimit);
+                        await target
+                            .WriteAsync(buffer.AsMemory(0, count), deadline.Token)
+                            .ConfigureAwait(false);
+                        total += count;
+                        received(total);
+                    }
+                    await call.Policy.Succeed(call.Request.Access).ConfigureAwait(false);
+                    return total;
+                },
+                cancellation,
+                call
+            )
+            .ConfigureAwait(false);
+    }
+
+    // Sends on the confirmed route and lets read consume the response before
+    // the deadline, which a timeout, the caller or a route change cancels.
+    private async Task<T> Exchange<T>(
+        HttpRequestMessage request,
+        Func<HttpResponseMessage, CancellationTokenSource, Task<T>> read,
+        CancellationToken cancellation,
+        ProviderCall? call = null
     )
     {
         if (request.RequestUri is not { IsAbsoluteUri: true, Scheme: "https", UserInfo: "" })
             throw new InvalidOperationException(
                 "Provider requests require HTTPS without URL credentials."
             );
-        if (maximum <= 0 || maximum > FileLimit)
-            throw new ArgumentOutOfRangeException(nameof(maximum));
-
+        lock (_sync)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (_route is null || _lifetime is null)
+                throw new HttpRouteException("The confirmed network route is not available.");
+        }
+        if (call is not null)
+            await call.Policy.Reserve(call.Request, call.Fresh, cancellation).ConfigureAwait(false);
         Task<HttpResponseMessage> pending;
         CancellationTokenSource deadline;
+        CancellationToken route = default;
         try
         {
             lock (_sync)
@@ -77,11 +179,12 @@ internal sealed partial class ProviderHttp : IDisposable
                 if (_route is null || _lifetime is null)
                     throw new HttpRouteException("The confirmed network route is not available.");
                 _client ??= Create(_route);
+                route = _lifetime.Token;
                 deadline = CancellationTokenSource.CreateLinkedTokenSource(
                     cancellation,
                     _lifetime.Token
                 );
-                deadline.CancelAfter(TimeSpan.FromSeconds(60));
+                deadline.CancelAfter(WaitLimit);
                 try
                 {
                     pending = _client.SendAsync(
@@ -99,20 +202,7 @@ internal sealed partial class ProviderHttp : IDisposable
             using (deadline)
             using (var response = await pending.ConfigureAwait(false))
             {
-                if (response.Content.Headers.ContentLength > maximum)
-                    throw new InvalidDataException("Provider response exceeds its size limit.");
-                await using var stream = await response
-                    .Content.ReadAsStreamAsync(deadline.Token)
-                    .ConfigureAwait(false);
-                var bytes = await Read(stream, maximum, deadline.Token).ConfigureAwait(false);
-                var headers = response
-                    .Headers.Concat(response.Content.Headers)
-                    .ToDictionary(
-                        pair => pair.Key,
-                        pair => string.Join(", ", pair.Value),
-                        StringComparer.OrdinalIgnoreCase
-                    );
-                return new ProviderReply(response.StatusCode, bytes, headers);
+                return await read(response, deadline).ConfigureAwait(false);
             }
         }
         catch (HttpRequestException error) when (error.InnerException is HttpRouteException)
@@ -121,9 +211,23 @@ internal sealed partial class ProviderHttp : IDisposable
         }
         catch (OperationCanceledException error) when (!cancellation.IsCancellationRequested)
         {
+            if (route.IsCancellationRequested)
+                throw new HttpRouteException("The selected network route changed.", error);
+            if (call is not null)
+                await call.Policy.Fail(call.Request.Access, new(RequestBlockKind.Backoff)).ConfigureAwait(false);
             throw new HttpRequestException("Provider request was interrupted.", error);
         }
+        catch (HttpRequestException error) when (error.StatusCode is null)
+        {
+            if (call is not null)
+                await call.Policy.Fail(call.Request.Access, new(RequestBlockKind.Backoff)).ConfigureAwait(false);
+            throw;
+        }
     }
+
+    private static Dictionary<string, string> Headers(HttpResponseMessage response) =>
+        response.Headers.Concat(response.Content.Headers).ToDictionary(
+            pair => pair.Key, pair => string.Join(", ", pair.Value), StringComparer.OrdinalIgnoreCase);
 
     internal static async Task<byte[]> Read(
         Stream stream,
@@ -309,6 +413,12 @@ internal sealed record HttpRoute
 
 internal sealed class HttpRouteException(string message, Exception? inner = null)
     : IOException(message, inner);
+
+internal sealed record ProviderCall(HttpRequestMessage Message, RequestPolicy Policy, OutboundRequest Request)
+{
+    internal FreshRequest? Fresh { get; init; }
+    internal Func<ProviderReply, Task>? Observe { get; init; }
+}
 
 internal sealed record ProviderReply(
     HttpStatusCode Status,

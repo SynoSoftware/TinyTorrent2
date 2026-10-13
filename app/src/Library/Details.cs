@@ -279,8 +279,26 @@ internal sealed partial class Details : UserControl, IDisposable
                         foreach (var name in library.Cast.Split(Store.Separator, StringSplitOptions.RemoveEmptyEntries))
                             castNames.Children.Add(Listed(Value(name)));
                     });
-                    AddField(right, "imdb", row.ImdbTip, Lucide.Star);
-                    AddField(right, "tmdb", row.TmdbTip, Lucide.Star);
+                    AddRatings();
+                    var boxOffice = AddFact("box_office", Lucide.Ticket);
+                    var certification = AddFact("certification", Lucide.ShieldCheck);
+                    var directors = AddFact("directors_one", Lucide.Clapperboard);
+                    _refresh.Add(() =>
+                    {
+                        SetValue(boxOffice, library.BoxOffice);
+                        SetValue(certification, library.Certification);
+                        SetValue(directors, library.Directors);
+                        directors.Label = text.FormatCount(
+                            "library",
+                            "directors",
+                            library.Directors.Split(Store.Separator, StringSplitOptions.RemoveEmptyEntries).Length
+                        );
+                        // The facts wait hidden for the detail read, so the
+                        // column shows only once one of its fields has a value.
+                        var secondary = right.Children.Any(child => child.Visibility == Visibility.Visible) ? right : null;
+                        if (!ReferenceEquals(fields.Secondary, secondary))
+                            fields.Secondary = secondary;
+                    });
                 }
                 if (library.IsEnrichmentEnabled)
                 {
@@ -380,6 +398,47 @@ internal sealed partial class Details : UserControl, IDisposable
             return field;
         }
 
+        // Each site's score sits on its own scale, so the sites stay separate
+        // values in one field rather than being combined.
+        void AddRatings()
+        {
+            var ratings = new WrapPanel { ColumnSpacing = 12, RowSpacing = 4 };
+            foreach (var source in RatingSource.All)
+            {
+                var rating = row.RatingText(source);
+                if (rating.Length == 0)
+                    continue;
+                var block = Listed(Value(text.Format("library", "site_rating", text.Get("library", source.Id), rating)));
+                ToolTipService.SetToolTip(block, row.RatingTip(source));
+                ratings.Children.Add(block);
+            }
+            if (ratings.Children.Count > 0)
+                right.Children.Add(
+                    new Field
+                    {
+                        Label = text.Get("library", "ratings"),
+                        Glyph = Lucide.Star,
+                        Content = ratings,
+                        VerticalContentAlignment = VerticalAlignment.Top,
+                    }
+                );
+        }
+
+        // The Inspector reads these facts after it opens, so each field waits
+        // collapsed until the refresh gives it a value.
+        Field AddFact(string key, string glyph)
+        {
+            var field = new Field
+            {
+                Label = text.Get("library", key),
+                Glyph = glyph,
+                Content = Value(string.Empty),
+                Visibility = Visibility.Collapsed,
+            };
+            right.Children.Add(field);
+            return field;
+        }
+
         // Listed values keep the full line box, as a confirmation's fact lines
         // do, so the list's four-pixel gap separates whole lines. The tight
         // bounds of a single value leave stacked lines almost touching.
@@ -425,7 +484,7 @@ internal sealed partial class Details : UserControl, IDisposable
                 {
                     FontFamily = Lucide.Font,
                     Glyph = glyph,
-                    Style = (Style)Application.Current.Resources["TinyTorrentStatusIconStyle"],
+                    FontSize = (double)Application.Current.Resources["TinyTorrentButtonIconSize"],
                 },
             };
             AutomationProperties.SetName(button, label);

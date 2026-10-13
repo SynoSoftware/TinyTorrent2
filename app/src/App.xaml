@@ -11,6 +11,20 @@
       </ResourceDictionary.MergedDictionaries>
       <ResourceDictionary.ThemeDictionaries>
         <ResourceDictionary x:Key="Light">
+          <SolidColorBrush x:Key="TinyTorrentUploadBrush" Color="#7756A3" />
+          <SolidColorBrush
+            x:Key="ListViewItemBackgroundSelected"
+            Color="{ThemeResource SystemAccentColorDark1}"
+            Opacity="0.16"
+          />
+          <StaticResource
+            x:Key="ListViewItemBackgroundSelectedPointerOver"
+            ResourceKey="ListViewItemBackgroundSelected"
+          />
+          <StaticResource
+            x:Key="ListViewItemBackgroundSelectedPressed"
+            ResourceKey="ListViewItemBackgroundSelected"
+          />
           <SolidColorBrush x:Key="TinyTorrentChromeBrush" Color="#66FFFFFF" />
           <SolidColorBrush x:Key="TinyTorrentCaptionHoverBrush" Color="#FFE5E5E5" />
           <StaticResource
@@ -34,6 +48,20 @@
           />
         </ResourceDictionary>
         <ResourceDictionary x:Key="Dark">
+          <SolidColorBrush x:Key="TinyTorrentUploadBrush" Color="#C5A3E6" />
+          <SolidColorBrush
+            x:Key="ListViewItemBackgroundSelected"
+            Color="{ThemeResource SystemAccentColorLight2}"
+            Opacity="0.22"
+          />
+          <StaticResource
+            x:Key="ListViewItemBackgroundSelectedPointerOver"
+            ResourceKey="ListViewItemBackgroundSelected"
+          />
+          <StaticResource
+            x:Key="ListViewItemBackgroundSelectedPressed"
+            ResourceKey="ListViewItemBackgroundSelected"
+          />
           <SolidColorBrush
             x:Key="TinyTorrentChromeBrush"
             Color="{StaticResource SolidBackgroundFillColorBase}"
@@ -61,6 +89,22 @@
           />
         </ResourceDictionary>
         <ResourceDictionary x:Key="HighContrast">
+          <SolidColorBrush
+            x:Key="TinyTorrentUploadBrush"
+            Color="{ThemeResource SystemColorWindowTextColor}"
+          />
+          <SolidColorBrush
+            x:Key="ListViewItemBackgroundSelected"
+            Color="{ThemeResource SystemColorHighlightColor}"
+          />
+          <StaticResource
+            x:Key="ListViewItemBackgroundSelectedPointerOver"
+            ResourceKey="ListViewItemBackgroundSelected"
+          />
+          <StaticResource
+            x:Key="ListViewItemBackgroundSelectedPressed"
+            ResourceKey="ListViewItemBackgroundSelected"
+          />
           <SolidColorBrush
             x:Key="TinyTorrentChromeBrush"
             Color="{ThemeResource SystemColorWindowColor}"
@@ -95,6 +139,15 @@
       <x:Double x:Key="TinyTorrentCaptionHeight">48</x:Double>
       <x:Double x:Key="TinyTorrentSettingsWidth">1200</x:Double>
       <x:Double x:Key="TinyTorrentCaptionButtonWidth">48</x:Double>
+      <!-- Every application-authored icon takes its size from one of these
+           roles; Icon sizes in docs/interface.md assigns them. -->
+      <x:Double x:Key="TinyTorrentChevronIconSize">12</x:Double>
+      <x:Double x:Key="TinyTorrentInlineIconSize">16</x:Double>
+      <x:Double x:Key="TinyTorrentButtonIconSize">20</x:Double>
+      <x:Double x:Key="TinyTorrentHeaderIconSize">20</x:Double>
+      <x:Double x:Key="TinyTorrentSurfaceIconSize">24</x:Double>
+      <x:Double x:Key="TinyTorrentToolbarIconSize">24</x:Double>
+      <x:Double x:Key="TinyTorrentLargeIconSize">32</x:Double>
       <Style
         x:Key="TinyTorrentCaptionButtonStyle"
         TargetType="Button"
@@ -712,6 +765,23 @@
         <Setter Property="VerticalAlignment" Value="Center" />
       </Style>
       <Style
+        x:Key="TinyTorrentIdentityTextStyle"
+        TargetType="TextBlock"
+        BasedOn="{StaticResource TinyTorrentBodyTextStyle}"
+      >
+        <Setter Property="FontWeight" Value="SemiBold" />
+      </Style>
+      <Style x:Key="TinyTorrentNavigationTextStyle" TargetType="TextBlock"
+        BasedOn="{StaticResource TinyTorrentBodyTextStyle}">
+        <Setter Property="FontSize" Value="16" />
+        <Setter Property="TextLineBounds" Value="Tight" />
+      </Style>
+      <Style TargetType="NavigationViewItem">
+        <Setter Property="FontSize" Value="16" />
+        <Setter Property="MinHeight" Value="40" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+      </Style>
+      <Style
         x:Key="TinyTorrentStatusTextStyle"
         TargetType="TextBlock"
         BasedOn="{StaticResource TinyTorrentBodyTextStyle}"
@@ -720,10 +790,9 @@
         <Setter Property="VerticalAlignment" Value="Center" />
       </Style>
       <Style x:Key="TinyTorrentStatusIconStyle" TargetType="FontIcon">
-        <Setter Property="FontSize" Value="16" />
+        <Setter Property="FontSize" Value="{StaticResource TinyTorrentInlineIconSize}" />
         <Setter Property="VerticalAlignment" Value="Center" />
-      </Style>
-      <Style
+      </Style>      <Style
         x:Key="TinyTorrentTitleDetailTextStyle"
         TargetType="TextBlock"
         BasedOn="{StaticResource BodyTextBlockStyle}"
@@ -733,9 +802,19 @@
         <Setter Property="TextWrapping" Value="NoWrap" />
         <Setter Property="VerticalAlignment" Value="Center" />
       </Style>
+      <Style x:Key="TinyTorrentProgressStyle" TargetType="ProgressBar"
+        BasedOn="{StaticResource DefaultProgressBarStyle}">
+        <Setter Property="Minimum" Value="0" />
+        <Setter Property="Maximum" Value="1" />
+        <Setter Property="Height" Value="4" />
+      </Style>
+      <Style x:Key="TinyTorrentMutedProgressStyle" TargetType="ProgressBar"
+        BasedOn="{StaticResource TinyTorrentProgressStyle}">
+        <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+      </Style>
       <Style x:Key="TinyTorrentSurfaceIconStyle" TargetType="FontIcon">
-        <Setter Property="FontSize" Value="24" />
-        <Setter Property="Foreground" Value="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+        <Setter Property="FontSize" Value="{StaticResource TinyTorrentSurfaceIconSize}" />
+        <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
         <Setter Property="VerticalAlignment" Value="Center" />
         <Setter Property="AutomationProperties.AccessibilityView" Value="Raw" />
       </Style>
@@ -744,7 +823,7 @@
         TargetType="FontIcon"
         BasedOn="{StaticResource TinyTorrentSurfaceIconStyle}"
       >
-        <Setter Property="FontSize" Value="20" />
+        <Setter Property="FontSize" Value="{StaticResource TinyTorrentHeaderIconSize}" />
       </Style>
       <Style TargetType="controls:Pane">
         <Setter
@@ -859,6 +938,85 @@
         <Setter Property="MinHeight" Value="68" />
         <Setter Property="Padding" Value="16" />
       </Style>
+      <Style TargetType="controls:SettingsExpander">
+        <Setter Property="Template">
+          <Setter.Value>
+            <ControlTemplate TargetType="controls:SettingsExpander">
+              <Grid MinWidth="{TemplateBinding MinWidth}" MaxWidth="{TemplateBinding MaxWidth}">
+                <!-- Native states own the header; SettingsExpander owns the drawer height. -->
+                <VisualStateManager.VisualStateGroups>
+                  <VisualStateGroup x:Name="ExpandStates">
+                    <VisualState x:Name="ExpandDown">
+                      <VisualState.Setters>
+                        <Setter Target="ExpanderHeader.CornerRadius"
+                          Value="{Binding CornerRadius, RelativeSource={RelativeSource TemplatedParent}, Converter={StaticResource TopCornerRadiusFilterConverter}}" />
+                      </VisualState.Setters>
+                    </VisualState>
+                    <VisualState x:Name="CollapseUp" />
+                    <VisualState x:Name="ExpandUp">
+                      <VisualState.Setters>
+                        <Setter Target="ExpanderHeader.CornerRadius"
+                          Value="{Binding CornerRadius, RelativeSource={RelativeSource TemplatedParent}, Converter={StaticResource BottomCornerRadiusFilterConverter}}" />
+                      </VisualState.Setters>
+                    </VisualState>
+                    <VisualState x:Name="CollapseDown" />
+                  </VisualStateGroup>
+                  <VisualStateGroup x:Name="ExpandDirectionStates">
+                    <VisualState x:Name="Down" />
+                    <VisualState x:Name="Up">
+                      <VisualState.Setters>
+                        <Setter Target="ExpanderHeader.Style" Value="{StaticResource ExpanderHeaderUpStyle}" />
+                        <Setter Target="ExpanderContent.BorderThickness" Value="{StaticResource ExpanderContentUpBorderThickness}" />
+                        <Setter Target="ExpanderContent.CornerRadius"
+                          Value="{Binding CornerRadius, RelativeSource={RelativeSource TemplatedParent}, Converter={StaticResource TopCornerRadiusFilterConverter}}" />
+                        <Setter Target="ExpanderHeader.(Grid.Row)" Value="1" />
+                        <Setter Target="ExpanderContentClip.(Grid.Row)" Value="0" />
+                      </VisualState.Setters>
+                    </VisualState>
+                  </VisualStateGroup>
+                </VisualStateManager.VisualStateGroups>
+                <Grid.RowDefinitions>
+                  <RowDefinition Height="Auto" />
+                  <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <ToggleButton x:Name="ExpanderHeader"
+                  AutomationProperties.AutomationId="ExpanderToggleButton"
+                  Style="{StaticResource ExpanderHeaderDownStyle}"
+                  Background="{ThemeResource ExpanderHeaderBackground}"
+                  BackgroundSizing="{TemplateBinding BackgroundSizing}"
+                  BorderBrush="{ThemeResource ExpanderHeaderBorderBrush}"
+                  BorderThickness="{ThemeResource ExpanderHeaderBorderThickness}"
+                  CornerRadius="{TemplateBinding CornerRadius}"
+                  MinHeight="{TemplateBinding MinHeight}" IsEnabled="{TemplateBinding IsEnabled}"
+                  Padding="{StaticResource ExpanderHeaderPadding}" HorizontalAlignment="Stretch"
+                  HorizontalContentAlignment="{StaticResource ExpanderHeaderHorizontalContentAlignment}"
+                  VerticalContentAlignment="{StaticResource ExpanderHeaderVerticalContentAlignment}"
+                  Content="{TemplateBinding Header}" ContentTemplate="{TemplateBinding HeaderTemplate}"
+                  ContentTemplateSelector="{TemplateBinding HeaderTemplateSelector}"
+                  IsChecked="{Binding IsExpanded, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}" />
+                <Border x:Name="ExpanderContentClip" Grid.Row="1" Height="0" Visibility="Collapsed">
+                  <!-- Measure the full body independently of the animated clip height. -->
+                  <StackPanel>
+                    <Border x:Name="ExpanderContent"
+                      Background="{TemplateBinding Background}" BackgroundSizing="{TemplateBinding BackgroundSizing}"
+                      BorderBrush="{TemplateBinding BorderBrush}"
+                      BorderThickness="{StaticResource ExpanderContentDownBorderThickness}"
+                      CornerRadius="{Binding CornerRadius, RelativeSource={RelativeSource TemplatedParent}, Converter={StaticResource BottomCornerRadiusFilterConverter}}"
+                      MinHeight="{TemplateBinding MinHeight}" Padding="{TemplateBinding Padding}"
+                      HorizontalAlignment="Stretch" VerticalAlignment="Top">
+                      <ContentPresenter Content="{TemplateBinding Content}"
+                        ContentTemplate="{TemplateBinding ContentTemplate}"
+                        ContentTemplateSelector="{TemplateBinding ContentTemplateSelector}"
+                        HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                        VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}" />
+                    </Border>
+                  </StackPanel>
+                </Border>
+              </Grid>
+            </ControlTemplate>
+          </Setter.Value>
+        </Setter>
+      </Style>
       <Style TargetType="controls:SettingsSection">
         <Setter Property="Padding" Value="16,0" />
         <Setter Property="HorizontalAlignment" Value="Stretch" />
@@ -880,7 +1038,7 @@
                       <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
                     <FontIcon FontFamily="{ThemeResource LucideFont}" Glyph="{TemplateBinding Glyph}"
-                      FontSize="20" AutomationProperties.AccessibilityView="Raw" />
+                      FontSize="{StaticResource TinyTorrentHeaderIconSize}" AutomationProperties.AccessibilityView="Raw" />
                     <StackPanel Grid.Column="1" Spacing="4" VerticalAlignment="Center">
                       <TextBlock Text="{TemplateBinding Header}"
                         Style="{StaticResource TinyTorrentBodyTextStyle}"
@@ -1208,7 +1366,7 @@
                   FontFamily="{ThemeResource LucideFont}"
                   Glyph="{TemplateBinding Glyph}"
                   Style="{StaticResource InspectorIconStyle}"
-                  FontSize="20"
+                  FontSize="{StaticResource TinyTorrentHeaderIconSize}"
                 />
                 <StackPanel>
                   <TextBlock

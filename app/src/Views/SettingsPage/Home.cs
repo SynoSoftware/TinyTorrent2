@@ -3,7 +3,6 @@ using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Syno.TinyTorrent.Controls;
 using Syno.TinyTorrent.Models;
-using SubtitleSettings = Syno.TinyTorrent.Subtitles.Settings;
 
 namespace Syno.TinyTorrent.Views;
 
@@ -11,9 +10,12 @@ public sealed partial class SettingsPage
 {
     private readonly List<(Button Button, TextBlock Title, TextBlock Summary, string Key, Func<string> Value)> _links = [];
 
-    private void InitializeHome(SubtitleSettings subtitles)
+    private void InitializeHome()
     {
-        _homeIntegration.Section.Style = (Style)Resources["SettingsHomeGroupStyle"];
+        var integration = new WindowsIntegration(Model);
+        integration.Section.Style = (Style)Resources["SettingsHomeGroupStyle"];
+        HomeIntegrationContent.Content = integration;
+        HomeThemeContent.Content = new ThemePicker(Model);
         AddLink(HomeDownloads, "files", () => Main.ShowsFreeSpace
             ? Model.Destination.ConfirmedText + " · " + Main.FreeSpaceStatus
             : Model.Destination.ConfirmedText,
@@ -26,9 +28,11 @@ public sealed partial class SettingsPage
             new(SettingsCategory.Appearance, "language"), Syno.Lucide.Languages);
         AddLink(HomeLibrary, "video_information", () => VideoProvider,
             new(SettingsCategory.Plugins, "video_information"), Syno.Lucide.Film);
-        var automatic = subtitles.CreateAutomaticRow();
-        automatic.Margin = new Thickness(16, 0, 16, 0);
-        HomeLibrary.Children.Add(automatic);
+        _automatic = new Syno.TinyTorrent.Subtitles.Automatic(Model.Text, ReportSubtitles, home: true)
+        {
+            Margin = new Thickness(16, 0, 16, 0),
+        };
+        HomeLibrary.Children.Add(_automatic);
         AddLink(HomeLibrary, "subtitles", () => Main.Subtitles is { } acquisition
             ? acquisition.SupplierId + " · " + string.Join(", ", acquisition.EffectiveLanguages.Select(Model.Text.LanguageName)) : "—",
             new(SettingsCategory.Plugins, "subtitle_supplier"), Syno.Lucide.Captions);
@@ -36,14 +40,10 @@ public sealed partial class SettingsPage
             new(SettingsCategory.Network, "network_interface"), Syno.Lucide.Network);
         AddLink(HomeNetwork, "proxy_server", () => Model.Proxy.Summary,
             new(SettingsCategory.Network, "proxy"), Syno.Lucide.Globe);
-        AddLink(HomeNetwork, "encryption", () => Model.Text.Get("settings", "encryption_" + Model.Encryption.ConfirmedText),
+        AddLink(HomeNetwork, "encryption", () => Model.EncryptionSummary,
             new(SettingsCategory.Network, "connection_encryption"), Syno.Lucide.Shield);
         AddLink(HomeSchedule, "weekly_schedule", () => Main.ScheduleSummary,
             new(SettingsCategory.Schedule, "weekly_schedule"), Syno.Lucide.CalendarClock);
-        AddLink(RelatedLinks, "schedule", () => Main.ScheduleSummary,
-            new(SettingsCategory.Schedule, "weekly_schedule"), Syno.Lucide.CalendarClock);
-        AddLink(RelatedLinks, "queue", () => Model.QueueSummary,
-            new(SettingsCategory.Transfers, "queue"), Syno.Lucide.ListOrdered);
         var corners = (CornerRadius)Application.Current.Resources["ControlCornerRadius"];
         foreach (var panel in new[] { HomeDownloads, HomeAppearance, HomeLibrary, HomeNetwork, HomeSchedule })
         {
@@ -62,8 +62,8 @@ public sealed partial class SettingsPage
             TextTrimming = TextTrimming.CharacterEllipsis,
         };
         var text = new StackPanel { Spacing = 4, Children = { title, summary } };
-        var icon = new FontIcon { FontFamily = Syno.Lucide.Font, Glyph = glyph, FontSize = 20 };
-        var chevron = new FontIcon { FontFamily = Syno.Lucide.Font, Glyph = Syno.Lucide.ChevronRight, FontSize = 12 };
+        var icon = new FontIcon { FontFamily = Syno.Lucide.Font, Glyph = glyph, FontSize = (double)Application.Current.Resources["TinyTorrentHeaderIconSize"] };
+        var chevron = new FontIcon { FontFamily = Syno.Lucide.Font, Glyph = Syno.Lucide.ChevronRight, FontSize = (double)Application.Current.Resources["TinyTorrentChevronIconSize"] };
         var content = new Grid { ColumnSpacing = 16 };
         content.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         content.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -87,8 +87,12 @@ public sealed partial class SettingsPage
 
     private void RefreshHome()
     {
+        if (!IsLoaded || Main.Navigation.Current != WindowPage.Settings)
+            return;
         foreach (var (button, title, summary, key, value) in _links)
         {
+            if (_category is null ? button.Parent == RelatedLinks : _category != LimitsCategory || button.Parent != RelatedLinks)
+                continue;
             title.Text = Model.Text.Get("settings", key);
             summary.Text = value();
             ToolTipService.SetToolTip(title, title.Text);
@@ -103,6 +107,8 @@ public sealed partial class SettingsPage
 
     private void UpdateHomeLayout()
     {
+        if (HomeGrid is null)
+            return;
         var stacked = HomeGrid.ActualWidth < 900 * _display.TextScaleFactor;
         HomeGrid.ColumnSpacing = stacked ? 0 : 8;
         HomeGrid.RowSpacing = stacked ? 8 : 0;

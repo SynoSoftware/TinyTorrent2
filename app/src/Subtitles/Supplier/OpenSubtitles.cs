@@ -9,7 +9,7 @@ using Syno.TinyTorrent.Services;
 
 namespace Syno.TinyTorrent.Subtitles;
 
-internal sealed partial class OpenSubtitles : Supplier
+internal sealed partial class OpenSubtitles(RequestPolicy policy) : Supplier(policy)
 {
     private static readonly Uri Origin = new("https://api.opensubtitles.com");
     private static readonly string? Key = typeof(OpenSubtitles)
@@ -22,9 +22,17 @@ internal sealed partial class OpenSubtitles : Supplier
     internal override bool Available => !string.IsNullOrWhiteSpace(Key);
     internal override Access Access => Access.Password;
     internal override bool SupportsHash => true;
+    internal override ProviderAccess QuotaScope(Account account) =>
+        new("opensubtitles", RequestKey.Digest(Key ?? string.Empty), string.Empty);
     internal override Uri Privacy { get; } = new("https://www.opensubtitles.com/en/privacy");
     internal override Uri Terms { get; } = new("https://www.opensubtitles.com/en/tos");
     protected override IReadOnlyDictionary<string, string> Codes => LanguageCodes;
+    internal override string Question(SubtitleLookup lookup)
+    {
+        var release = FileName.Interpret(lookup.FileName);
+        var query = (release.Season is null ? release.Name : release.Title).ToLowerInvariant();
+        return JsonSerializer.Serialize(new { query, release.Year, release.Season, release.Episodes });
+    }
 
     protected override void Authenticate(HttpRequestMessage request, Account account) =>
         request.Headers.Add("Api-Key", Key);
@@ -69,7 +77,7 @@ internal sealed partial class OpenSubtitles : Supplier
             throw new SubtitleException(SubtitleFailure.Format);
     }
 
-    protected override async Task<IReadOnlyList<SubtitleCandidate>> Search(
+    protected override async Task<SubtitleSearch> Search(
         Operation operation,
         SubtitleLookup lookup,
         Release release,
@@ -78,6 +86,7 @@ internal sealed partial class OpenSubtitles : Supplier
     )
     {
         var candidates = new List<SubtitleCandidate>();
+        var total = 0;
         var filter = new SortedDictionary<string, string>(StringComparer.Ordinal);
         if (lookup.Hash is { } hash)
         {
@@ -92,7 +101,7 @@ internal sealed partial class OpenSubtitles : Supplier
                 await Feature(operation, release, cancellation).ConfigureAwait(false)
                 is not { } feature
             )
-                return candidates;
+                return new(candidates);
             filter[release.Season is null ? "id" : "parent_feature_id"] = feature.ToString(
                 CultureInfo.InvariantCulture
             );
@@ -123,6 +132,7 @@ internal sealed partial class OpenSubtitles : Supplier
             using var document = Parse(response.Bytes);
             foreach (var subtitle in Data(document.RootElement).EnumerateArray())
             {
+                total++;
                 if (
                     subtitle.ValueKind != JsonValueKind.Object
                     || !subtitle.TryGetProperty("attributes", out var attributes)
@@ -157,7 +167,7 @@ internal sealed partial class OpenSubtitles : Supplier
             if (Number(document.RootElement, "total_pages") is not { } pages || pages < 0)
                 throw new SubtitleException(SubtitleFailure.Format);
             if (page >= pages)
-                return candidates;
+                return new(candidates, total == 0);
         }
     }
 
@@ -360,10 +370,6 @@ internal sealed partial class OpenSubtitles : Supplier
     {
         var account = operation.Account;
         var key = AccountKey(account);
-        if (path == "/api/v1/download")
-            lock (_sync)
-                if (_downloads.TryGetValue(key, out var reset) && reset > DateTimeOffset.UtcNow)
-                    throw new SubtitleException(SubtitleFailure.Quota, reset);
         var session = await Login(operation, cancellation).ConfigureAwait(false);
         for (var attempt = 0; ; attempt++)
         {
@@ -390,7 +396,8 @@ internal sealed partial class OpenSubtitles : Supplier
                             Encoding.UTF8,
                             "application/json"
                         );
-                    var response = await Send(operation, request, cancellation)
+                    var response = await Send(operation, request, cancellation,
+                            canRenew: session.Token.Length > 0 && attempt == 0)
                         .ConfigureAwait(false);
                     if ((int)response.Status is < 300 or >= 400)
                         return response;
@@ -457,6 +464,7 @@ internal sealed partial class OpenSubtitles : Supplier
             origin = new Uri("https://" + host);
         }
         var authenticated = new Session(token, origin);
+        await Authenticated(account).ConfigureAwait(false);
         lock (_sync)
             _sessions[key] = authenticated;
         return authenticated;

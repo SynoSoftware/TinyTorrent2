@@ -139,7 +139,7 @@ public sealed class Strings
     public string Format(string group, string key, params object[] values) =>
         string.Format(CultureInfo.CurrentCulture, Get(group, key), values);
 
-    internal string FormatCount(string group, string key, int count, params object[] values) =>
+    internal string FormatCount(string group, string key, long count, params object[] values) =>
         Format(group, key + (count == 1 ? "_one" : "_other"), [count, .. values]);
 
     public string Status(string code) =>
@@ -165,8 +165,10 @@ public sealed class Strings
         {
             CommandException => error.Message,
             DatabaseVersionException => Get("errors", "database_incompatible"),
-            Library.VideoException { Detail: { } detail } video => Format(video.Section, video.Reason, detail),
-            Library.VideoException video => Get(video.Section, video.Reason),
+            RequestBlockedException blocked => Protection(blocked.Block),
+            Library.ProviderException { Block: { } block } =>
+                Get("request_protection", block.Kind.ToString().ToLowerInvariant()),
+            Library.VideoException video => Failure(video),
             Subtitles.SubtitleException subtitle => Get(
                 "subtitles",
                 "failure_" + subtitle.Reason.ToString().ToLowerInvariant()
@@ -177,6 +179,22 @@ public sealed class Strings
                 ? Get("errors", "unknown")
                 : error.Message,
         };
+
+    // A provider without an API key refused the request, not a key.
+    private string Failure(Library.VideoException error)
+    {
+        var reason = error is { Failure: VideoFailure.Refused, Provider.Access: not Access.Key }
+            ? "refused_request"
+            : error.Failure.ToString().ToLowerInvariant();
+        return Format("library", "failure_" + reason, error.Provider?.Name ?? string.Empty);
+    }
+
+    internal string Protection(RequestBlock block)
+    {
+        var reason = Get("request_protection", block.Kind.ToString().ToLowerInvariant());
+        return block.RetryAt is { } retry
+            ? Format("request_protection", "retry_at", reason, Time(retry)) : reason;
+    }
 
     public string RateUnit(RateScale scale) =>
         Get("units", scale == RateScale.KibPerSecond ? "kib_per_second" : "mb_per_second");
@@ -202,6 +220,19 @@ public sealed class Strings
             unit++;
         }
         return Format("units", units[unit], value);
+    }
+
+    /// <summary>Shortens a large number as IMDb does: 950, 2.7K, 12K, 2.7M.</summary>
+    public string Compact(long value)
+    {
+        // One decimal below ten, as 2.7, and none above, as 12.
+        static double Shorten(double value) => Math.Round(value, value < 10 ? 1 : 0);
+        return value switch
+        {
+            >= 1_000_000 => Format("units", "millions", Shorten(value / 1e6)),
+            >= 1_000 => Format("units", "thousands", Shorten(value / 1e3)),
+            _ => value.ToString("N0"),
+        };
     }
 
     /// <summary>Formats a remaining time in its two largest units; 100 days or more reads as never.</summary>

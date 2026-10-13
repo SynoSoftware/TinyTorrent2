@@ -146,18 +146,10 @@ public sealed partial class MainWindow
                 source = "existing pipe, verified fixture files, production SQLite",
             }
         );
-        if (
-            Model.Library.Providers.FirstOrDefault(entry => entry.ProviderId == "imdb")
-            is not { } option
-        )
-            return;
-        // A capture build's website provider asks only on request, so the review sends no requests.
-        await Model.Library.Enable(option.ProviderId);
+        // An online provider looks up videos in the background once it is
+        // on, so the review keeps video information off and sends no requests.
         Model.Library.Configuration = LibraryConfiguration.Videos;
-        await CaptureReady(
-            Model.Library,
-            () => Model.Library.Rows.Count == 2 && Model.Library.IsEnrichmentEnabled
-        );
+        await CaptureReady(Model.Library, () => Model.Library.Rows.Count == 2);
         await Model.Navigation.Navigate(WindowPage.Torrents);
         await Model.Navigation.Navigate(WindowPage.Library);
         Model.Library.Select(
@@ -181,21 +173,8 @@ public sealed partial class MainWindow
             );
             sections.SelectedItem = information;
             await CaptureLayout();
-            var more = CaptureElements(InspectorContent)
-                .OfType<Button>()
-                .Single(button => AutomationProperties.GetAutomationId(button) == "LibraryMore");
-            var refresh = (more.Flyout as MenuFlyout)
-                ?.Items.OfType<MenuFlyoutItem>()
-                .SingleOrDefault(item => ReferenceEquals(item.Command, Model.Library.FetchDetails));
-            if (
-                !ReferenceEquals(sections.SelectedItem, information)
-                || sections.ActualWidth <= 0
-                || refresh is null
-                || !Model.Library.FetchDetails.CanExecute(null)
-            )
-                throw new InvalidOperationException(
-                    "Library information did not show its sections and Refresh metadata."
-                );
+            if (!ReferenceEquals(sections.SelectedItem, information) || sections.ActualWidth <= 0)
+                throw new InvalidOperationException("Library information did not show its sections.");
             await CapturePage(name);
             completed.Add(name);
         }
@@ -203,7 +182,7 @@ public sealed partial class MainWindow
             new
             {
                 journey = "Information source controls",
-                source = option.ProviderId,
+                source = "off",
                 networkRequests = "none; capture reviews presentation only",
             }
         );
@@ -460,7 +439,7 @@ public sealed partial class MainWindow
     private async Task CaptureLibrarySelection(List<object> outcomes, List<string> completed)
     {
         var table =
-            _libraryTable.Table ?? throw new InvalidOperationException("Library has no table.");
+            _libraryTable?.Table ?? throw new InvalidOperationException("Library has no table.");
         table.Selection = new Syno.TableView.Selection(
             Model.Library.Rows.ToArray(),
             Model.Library.Rows[0]
@@ -488,8 +467,7 @@ public sealed partial class MainWindow
             ?? throw new InvalidOperationException("Library has no subtitle acquisition.");
         await subtitles.SetEnabled(false);
         await subtitles.SelectSupplier(SubtitleSupplier.SubDL);
-        var account = subtitles.Edit(SubtitleSupplier.SubDL);
-        account.Secret = "offline-capture";
+        var account = subtitles.Edit(SubtitleSupplier.SubDL) with { Secret = "offline-capture" };
         await subtitles.Save(account);
         await subtitles.SetLanguages(["en"]);
         var entries = Model
@@ -504,7 +482,7 @@ public sealed partial class MainWindow
             Model.SelectLanguage(language);
             await CaptureReady(Model, () => Model.Text.Language == language);
             await Model.Settings.SelectTheme(theme);
-            table = _libraryTable.Table!;
+            table = _libraryTable!.Table!;
             foreach (var count in new[] { 1, 2 })
             {
                 table.Selection = new Syno.TableView.Selection(
@@ -864,7 +842,7 @@ public sealed partial class MainWindow
     private void VerifyLibrary()
     {
         if (
-            _libraryTable.Table is not { ActualWidth: > 0, ActualHeight: > 0 } table
+            _libraryTable?.Table is not { ActualWidth: > 0, ActualHeight: > 0 } table
             || !ReferenceEquals(table.ItemsSource, Model.Library.Rows)
         )
             throw new InvalidOperationException(

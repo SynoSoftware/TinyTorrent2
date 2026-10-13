@@ -75,7 +75,7 @@ public sealed partial class MainWindow
         if (Model.Navigation.Current == WindowPage.Torrents)
             Torrents.Focus(FocusState.Programmatic);
         else if (Model.Navigation.Current == WindowPage.Library)
-            _libraryTable.FocusRows();
+            _libraryTable?.FocusRows();
         else
             BackButton.Focus(FocusState.Programmatic);
     }
@@ -158,6 +158,8 @@ public sealed partial class MainWindow
             _settingsPage.SupplierRequested += async (_, supplierId) =>
                 await ShowSupplier(supplierId);
             _settingsPage.KeyRequested += async (_, option) => await ShowKey(option);
+            _settingsPage.DownloadRequested += async (_, option) => await ConfirmDownload(option);
+            _settingsPage.DeleteRequested += async (_, option) => await ConfirmDataDeletion(option);
             _settingsPage.ConnectionRequested += async (_, _) => await ShowConnection();
             _settingsPage.LayoutChanged += (_, _) => UpdateChrome();
         }
@@ -345,7 +347,7 @@ public sealed partial class MainWindow
     {
         Model.IsFilterOpen = false;
         if (Model.Page == WindowPage.Library)
-            _libraryTable.FocusRows();
+            _libraryTable?.FocusRows();
         else
             Torrents.Focus(FocusState.Keyboard);
     }
@@ -397,7 +399,7 @@ public sealed partial class MainWindow
             return;
         if (Model.Page == WindowPage.Library)
         {
-            _libraryTable.FocusRows();
+            _libraryTable?.FocusRows();
             return;
         }
         var suggestion =

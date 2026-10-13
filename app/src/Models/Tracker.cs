@@ -11,6 +11,7 @@ public sealed class Tracker : INotifyPropertyChanged
     public string Url { get; }
     public int Tier { get; private set; }
     public TrackerStatus Status { get; private set; }
+    public bool IsError => Status == TrackerStatus.Error;
     public int SeedCount { get; private set; }
     public int LeecherCount { get; private set; }
     public int DownloadCount { get; private set; }

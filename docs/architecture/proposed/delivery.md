@@ -1,5 +1,9 @@
 # Delivery plan
 
+**Historical implementation done.** The eight slices below have implementation
+evidence in the [checkpoint](evidence.md#historical-implementation-checkpoint).
+Current GitHub follow-ups are separate work, not unimplemented delivery slices.
+
 Implement the [selected architecture](README.md) in complete slices. This plan
 does not request immediate product changes, authorize desktop launches, or turn
 the historical review reports into additional contracts.

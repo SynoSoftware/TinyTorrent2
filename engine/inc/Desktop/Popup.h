@@ -21,7 +21,7 @@ public:
         // the engine.
         wchar_t glyph;
         std::wstring text;
-        // The LPARAM posted when the person chooses the item.
+        // The LPARAM sent when the person chooses the item.
         UINT id;
     };
 
@@ -42,7 +42,7 @@ public:
     };
 
     // Selecting the body posts `selected` to `window` with PopupPart::Body as
-    // its WPARAM; choosing an item of the More menu posts PopupPart::More with
+    // its WPARAM; choosing an item of the More menu sends PopupPart::More with
     // the item's id as its LPARAM. Either closes the popup.
     Popup(HWND window, UINT selected);
     ~Popup();
@@ -52,9 +52,11 @@ public:
     void Show(Content content);
     void Close();
     void SetTheme(std::string theme);
+    bool IsOpen() const { return window_ != nullptr; }
     bool IsPersistent() const { return window_ && content_.persistent; }
     bool IsMenuOpen() const { return menu_ != nullptr; }
 private:
+    class MenuAccessibility;
     static LRESULT CALLBACK Procedure(HWND window, UINT message, WPARAM first, LPARAM second);
     LRESULT Handle(HWND window, UINT message, WPARAM first, LPARAM second);
     static LRESULT CALLBACK MenuProcedure(HWND window, UINT message, WPARAM first, LPARAM second);
@@ -67,6 +69,7 @@ private:
     // without the Lucide font.
     int MenuIconsWidth(UINT dpi) const;
     std::optional<std::size_t> MenuItemAt(POINT point) const;
+    RECT MenuBounds(std::size_t item) const;
     void HoverMenu(std::optional<std::size_t> item);
     void Choose(std::size_t item);
     void Layout();
@@ -110,6 +113,7 @@ private:
     // The pointer is over the popup, which then stays open.
     bool tracking_ = false;
     HWND menu_ = nullptr;
+    MenuAccessibility* accessibility_ = nullptr;
     // The height of one menu item, set when the menu opens.
     int menuRow_ = 0;
     std::optional<std::size_t> menuHover_;

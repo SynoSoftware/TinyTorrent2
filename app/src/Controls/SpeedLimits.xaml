@@ -9,7 +9,7 @@
       <Grid ColumnSpacing="24">
         <Grid.ColumnDefinitions><ColumnDefinition Width="20" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
         <FontIcon FontFamily="{x:Bind icons:Lucide.Font}"
-          Glyph="{x:Bind icons:Lucide.SlidersHorizontal}" FontSize="20" />
+          Glyph="{x:Bind icons:Lucide.SlidersHorizontal}" FontSize="{StaticResource TinyTorrentHeaderIconSize}" />
         <controls:SettingsRow x:Name="ModeRow" Grid.Column="1"
           Header="{x:Bind Main.Text.Get('transfer_limits', 'control'), Mode=OneWay}"
           Description="{x:Bind Main.LimitsSummary, Mode=OneWay}"
@@ -52,7 +52,7 @@
           <ColumnDefinition Width="*" />
           <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
-        <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Gauge}" FontSize="20" />
+        <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Gauge}" FontSize="{StaticResource TinyTorrentHeaderIconSize}" />
         <StackPanel Grid.Column="1" Spacing="4">
           <TextBlock Text="{x:Bind Model.Text.Get('settings', 'connection_setup'), Mode=OneWay}"
             Style="{StaticResource TinyTorrentBodyTextStyle}" TextTrimming="CharacterEllipsis"
@@ -61,7 +61,7 @@
             Style="{StaticResource TinyTorrentTitleDetailTextStyle}" TextTrimming="CharacterEllipsis"
             ToolTipService.ToolTip="{x:Bind Model.Text.Get('settings', 'setup_hint'), Mode=OneWay}" />
         </StackPanel>
-        <FontIcon Grid.Column="2" FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.ChevronRight}" FontSize="12" />
+        <FontIcon Grid.Column="2" FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.ChevronRight}" FontSize="{StaticResource TinyTorrentChevronIconSize}" />
       </Grid>
     </Button>
   </StackPanel>

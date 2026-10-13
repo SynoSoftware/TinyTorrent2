@@ -1,9 +1,8 @@
 # Library implementation plan
 
-The earlier Library delivery is complete. The newly approved C — Sections and
-title-bar changes are being implemented; their build and runtime review remain
-pending owner authorization. [Current status](#current-status) distinguishes that
-work from earlier evidence. Release permissions remain in the
+**Implementation done**, including C — Sections and the title-bar changes.
+[Current status](#current-status) records the evidence and remaining verification
+limits. Release permissions remain in the
 [release assessment](subtitles-release.md).
 
 ## Delivery ruling — 2026-10-09
@@ -30,12 +29,13 @@ behavior; this plan does not repeat their requirements.
 ## Current status
 
 On 2026-10-10 the owner approved **C — Sections**, the single Library prototype
-and the app-icon page switch, and authorized native implementation. The
+and the app-icon page switch. Their native implementation is done. The
 [acceptance checklist](library.md#prototype-implementation-review) records the
 current target and outstanding evidence. The earlier B build and captures below
-do not validate these new changes. Builds, tests and native launches remain
-paused at the owner's instruction; the reported filter-opening jump still needs
-runtime diagnosis.
+do not validate these new changes. Later authorized builds and app checks are
+recorded in the [Settings implementation record](settings-implementation.md#authorized-compilation-and-checks--13-october-2026).
+The reported filter-opening jump remains a runtime follow-up, not unfinished
+implementation of the selected composition.
 
 The earlier delivery selected **B · Inspector** from the details prototype: one shared
 identity header, descriptive fields on the left and media facts on the right,
@@ -147,9 +147,10 @@ single 1,083 ms observation, not a percentile. Memory observations were not a
 controlled before-feature comparison. Cancellation does not make these targets
 passed, and this delivery makes no “instant at 10,000 files” claim.
 
-The IMDb and Rotten Tomatoes providers remain optional and removable. Its recorded
-browser-access limitations remain in [its status](movie-websites.md#implementation-status).
-The owner stopped further browser experiments; do not reopen them.
+The owner removed the IMDb and Rotten Tomatoes providers that read web pages
+through an installed browser, because a browser costs too much memory and time
+for one score; do not reopen browser experiments. IMDb now reads
+[IMDb data](imdb-datasets.md) downloaded to this computer.
 
 ## Owners and reuse
 
@@ -166,7 +167,7 @@ determines whether background population is available.
 | Library | Query finished entries from SQLite; own identification decisions, enrichment acceptance and SQL search/filter/count queries. |
 | C# database owner | One connection, authoritative schema, initialization and versioning, serialized transactions and shared consistency rules. Library and subtitles keep domain queries with their behavior. See the [database contract](database.md). |
 | Filename interpretation | One file-kind classification and filename interpretation used by both features, without provider or scheduling decisions. |
-| Video lookup | Selected-provider requests, cancellation and background eligibility; Library accepts identification evidence and saves video information. TMDB, Wikidata, OMDb and MDBList each own their API decoding; Public owns website extraction and installed-browser access for IMDb and Rotten Tomatoes. |
+| Video lookup | Selected-provider requests, cancellation and background eligibility; Library accepts identification evidence and saves video information. TMDB, Wikidata, OMDb and MDBList each own their API decoding; Imdb owns the download, import and local search of IMDb data. |
 | File facts reader | One-time Windows property reads for dates, audio tags, media duration, bitrate and video dimensions; Library accepts and saves the returned facts. |
 | Library Browser | Query/configuration input, stable row objects, selection, navigation and opening outcomes; Library initialization, worker events, failure pause, retry and worker drain. TableView performs the only sort. |
 | Existing Inspector and opening owners | Shared card mechanics and Windows file execution. Library supplies a target and consumes the outcome. |
@@ -191,42 +192,45 @@ common enrichment interface, new host class, service layer or repository.
 ## Replaceable movie providers
 
 The owner requires optional providers to be removable and new providers to use
-the same Library workflow. The following seam replaces concrete TMDB/Public
+the same Library workflow. The following seam replaces concrete provider
 branches. The source implements this seam; existing evidence is summarized in
 [Current status](#current-status).
 This is compile-time composition in the existing app, because no runtime plugin
 installation or discovery is required.
 
-A provider owns only what differs between providers: how it searches, how it
-describes a choice, which kinds it knows and when Library may ask it. It knows neither current torrent membership nor whether an answer may
-be saved, and it receives no `Store`:
+A provider owns only what differs between providers: how it builds its
+requests and reads their answers. It knows neither current torrent membership
+nor whether an answer may be saved, and it receives no `Store`, request
+protection or network route:
 
 ```csharp
 internal interface IProvider
 {
-    string CatalogId { get; }
-    bool IsAvailable { get; }
-    VideoSchedule Schedule { get; }
-    bool IsLocalized { get; }
-    IReadOnlySet<VideoKind> Kinds { get; }
-
-    Task<IReadOnlyList<VideoChoice>> Search(
-        string query, string language, CancellationToken cancellation);
+    string Prepare(string query) => query.Trim();
+    Task<VideoSearch> Search(VideoQuery query, CancellationToken cancellation);
     Task<VideoInformation> Describe(
         VideoChoice choice, VideoRequest request, CancellationToken cancellation);
 }
 
-internal sealed record ProviderOption(string ProviderId, string Name, string TextSection,
-    Uri Privacy, Uri Terms, Func<IProvider> Create);
+internal sealed record ProviderOption(string ProviderId, string Name,
+    Uri Privacy, Uri Terms, Func<string, IProvider> Create);
 
-internal sealed record VideoRequest(Release Release, string Language, SavedRecord Saved);
+internal sealed record VideoQuery(string Text, string Language, ProviderGet Get);
+internal sealed record VideoRequest(Release Release, string Language, ReadRecord Read, ProviderGet Get);
 ```
 
-A choice carries `Content`, the facts its listing showed, in the provider's
-record format, and `VideoInformation` carries `Related`, the other choices its
-page listed. Website pages are expensive to read, so a provider returns
-everything a page names and Library keeps it: a later lookup then reuses the
-listing instead of reading the page again.
+Each provider folder declares its own `ProviderOption`: the provider ID, which
+also names its catalogue and its text section, the name, the policy links,
+`Access`, `BuiltInKey`, `Kinds`, `IsLocalized` and, for a provider that
+answers from downloaded data, `Dataset`. Library owns what every provider
+shares. It chooses the key, the person's own or else the built-in one, and
+passes it to `Create`. It decides whether a provider is available. It sends a
+request through `ProviderGet`, which applies the saved network route and the
+request protection of the key and of the operation Library runs; a 404 for a
+detail means the video is missing. A provider reports a failure as a
+`VideoFailure`, and Library writes its text with the provider's name.
+`VideoInformation` carries `Related`, the other choices its page listed, and
+Library keeps them.
 
 Library owns automatic identification, and SQLite answers before the provider.
 It first reads the saved choices of the provider's catalogue whose normalized
@@ -249,7 +253,7 @@ The series hint comes from Library's current, accepted sibling decisions, and
 Library describes it directly. No unique match ends the attempt as a miss, so
 restarting does not repeat the lookup. `Describe` returns information or a
 failure; it does not return null. Library describes a series choice only for a
-file whose name gives a season, and refuses any other as `episode_required`.
+file whose name gives a season, and refuses any other as `EpisodeRequired`.
 
 `VideoKind` names a movie, a series or an episode; Library stores the existing
 words for them. `VideoInformation` carries facts: genres, cast and keywords are
@@ -257,23 +261,17 @@ lists, and an episode carries its series title and each episode's number, name
 and synopsis. Library composes the stored title, such as
 `Show · S01E01 Pilot`, and the joined text its search and filters read.
 
-`VideoSchedule` is `Background` or `Manual`. The provider ID persists selection, such as
-`imdb`; `CatalogId` qualifies information, such as `public/imdb`. These
-IDs are implementation-owned stable strings, because removing a provider must
-not require changing central enum ordinals. A saved provider ID that no option
-matches turns downloading off rather than refusing to start.
+The provider ID persists selection and qualifies information, such as `imdb`
+or `tmdb`. It is an implementation-owned stable string, because removing a
+provider must not require changing central enum ordinals. A saved provider ID
+that no option matches turns downloading off rather than refusing to start.
 
-`ProviderOption` carries the provider's name and policy links; its text section
-holds the disclosure and errors. Settings binds to the provider options; details
-reads the schedule. MainWindow imports no provider implementation.
+The provider's text section holds its disclosure. Settings binds to the
+provider options. MainWindow imports no provider implementation.
 
-Providers have no settings of their own. Public owns its page readers and
-website implementations inside `Library/Public/`; registration creates its
-options. Both providers reuse
-saved raw records through the request's `Saved` lookup, which returns none when
-refreshing. Public also describes a choice from its `Content` when the listing
-already holds the synopsis, as an IMDb search result does; Refresh reads the
-page, because it describes the saved choice without its listing.
+Providers have no settings of their own. A provider that answers from
+downloaded data, such as IMDb, declares it on its `ProviderOption`, and
+Settings offers the download, update and deletion.
 
 VideoLookup has one guarded execution/commit path for background work, the
 batch, Fetch, Refresh and explicit identification. It captures the provider,
@@ -293,8 +291,8 @@ as the provider, its failure or the batch. Saved data can answer many files a
 second, so the view refreshes its rows at once and then at most once a second
 while such results arrive. Visibility and dwell remain with Library Browser;
 providers do not subscribe to the window. Expected provider failures carry a
-localized message reference. A failure of one video, such as an unreadable page
-or record, uses `VideoException`; it ends an automatic or batch lookup as a
+`VideoFailure`. A failure of one video, such as an unreadable page or record,
+uses `VideoException`; it ends an automatic or batch lookup as a
 miss and an explicit one with its error. A provider that cannot serve any
 request now uses
 `ProviderException` with an optional retry time. So one bad page cannot suspend
@@ -330,10 +328,9 @@ waits; adapters own no retry loop.
 
 VideoLookup cancels and drains background and interactive requests before the
 application disposes storage or shared HTTP access. Library Browser cancels its
-dwell and selection requests. Each adapter observes the supplied cancellation;
-Public's browser reader finishes its per-call process, stream and temporary
-profile cleanup before completing. The current adapters need no separate
-provider lifetime interface, because resources are shared or scoped to a call.
+dwell and selection requests. Each adapter observes the supplied cancellation.
+The current adapters need no separate provider lifetime interface, because
+resources are shared or scoped to a call.
 
 Normalized videos, identification associations and attempts carry catalogue
 identity. Raw records use catalogue, record key and language; providers interpret
@@ -344,27 +341,27 @@ everything a provider returns.** Raw records and saved choices stay after
 their files leave the Library, because reading a page again costs seconds and
 risks the website refusing the person's address. Library saves every search
 result, every related choice and every described video as a saved choice, with
-title, original title, year, kind and the listing's `Content`; a later listing
-of the same choice keeps a known year and content that the new one lacks. Library supplies the language: it saves
-information from a provider that is not `IsLocalized`, such as a website page,
-as valid for every language. Cached normalized facts remain readable
+title, original title, year and kind; a later listing of the same choice keeps
+a known year that the new one lacks. Library supplies the language: it saves
+information from a provider that is not `IsLocalized`, such as OMDb, as valid
+for every language. Cached normalized facts remain readable
 after a provider is removed. Episode information records its reusable series
 choice explicitly, so the live shared Series query does not decode TMDB's
 `tv/...` identifier. That query retains its contribution/directory/evidence and
 conflict checks and restricts the hint to the captured catalogue.
 
 The existing feature construction is the only registration location. Adding an
-independent provider adds its folder, text section and one `ProviderOption`;
-Public owns the implementations of its two websites; adding a website there
-changes only that provider's implementation and choices.
-Removing Public deletes its folder, construction entry, resources and dedicated
-checks. Shared lookup, storage, settings, details and dialog code require no edits.
+independent provider adds its folder, its text section and its option to that
+list. Removing an online provider deletes its folder, list entry, resources and
+dedicated checks; shared lookup, storage, settings, details and dialog code
+require no edits. IMDb is the exception: its data also gives every provider's
+movies their IMDb rating, so `Store` and the Library view know `Imdb.Dataset`,
+and removing IMDb changes them too.
 When a saved provider is absent, enrichment is durably disabled with no selected
 provider; silently falling back would change the person's disclosed network
 behavior.
 
-The provider refactoring replaces concrete provider enums/branches and the three
-shared-owner partials under Public. Ratings are part of the first-version schema.
+The provider refactoring replaces concrete provider enums and branches. Ratings are part of the first-version schema.
 Preserve current decisions, cached facts, failed-refresh retention, stale-result
 rejection and cancellation through this change. Runtime loaders,
 new projects, pluggable databases and provider-specific schedulers add no required

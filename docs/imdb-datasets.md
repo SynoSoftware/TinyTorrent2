@@ -1,7 +1,9 @@
 # IMDb datasets plan
 
-This is a design for review. It is not implemented yet. The
-[Library master plan](library.md) stays the authority for Library behavior.
+**Phases 1 and 2: implementation done.** Dataset download/import measurements
+and live-data validation remain outstanding. **Phase 3: not implemented; design
+for review.** The [Library master plan](library.md) stays the authority
+for Library behavior.
 
 ## Summary
 
@@ -11,12 +13,26 @@ Import the IMDb data into SQLite, in a separate file, `imdb.db`, beside
 - The person selects **Download** in Settings. The app downloads the IMDb files
   once and builds `imdb.db` from them. After that, every lookup reads the local
   file and sends no request.
-- A new **IMDb** provider searches and describes movies from `imdb.db`. Library
+- A new **IMDb** provider searches and describes movies and series from `imdb.db`. Library
   matching, saving and display stay as they are.
 - The same change removes the Public plugin, which reads the IMDb and Rotten
   Tomatoes websites through a browser.
 - The person selects **Update** to get newer data. Nothing downloads unless the
   person asks for it.
+
+**Owner ruling: IMDb offline is available only in Settings.** Do not offer it
+in a movie context menu, a Fetch/Force fetch chooser, or a batch fetch action.
+Download and Update obtain the complete dataset as one Settings operation;
+there are no small per-movie IMDb downloads. Phase 1 builds the one installed
+database from the basics, ratings and episode archives described below. Lookups
+only read that database. Dataset transfers follow the shared request protection
+without an IMDb-specific bypass.
+
+A provider's `ProviderOption` declares the data it answers from, `Dataset`, or
+none for a provider that answers over the network. Only a provider that answers
+over the network fetches an individual movie, so Settings lists either kind,
+while movie actions and their execution checks use only the network kind.
+Installing IMDb data does not enable per-movie downloads.
 
 The result: IMDb titles, years, genres and ratings for every movie, read in
 milliseconds from a local file instead of about ten seconds of browser work for
@@ -66,9 +82,12 @@ Reasons for the separate file:
    manual matches, which the app cannot rebuild.
 2. **A failed update leaves the old data.** The import writes `imdb.db.tmp`.
    Only a complete import replaces `imdb.db`.
-3. **The schema needs no migrations.** `imdb.db` records its own
-   `PRAGMA user_version`. A file with another version counts as missing, and
-   the person downloads again. `library.db` versioning does not change.
+3. **The schema needs no migrations.** The file name carries the schema
+   version: `imdb-3.db`. A schema change uses a new name, so a file with
+   another version counts as missing, and the person downloads again. The name
+   lets the provider check for the file without opening it. `library.db`
+   versioning does not change. The rest of this plan calls the file
+   `imdb.db`.
 4. **Deleting it is simple.** Deleting the file frees all the space. Delete
    database in Settings does not touch it.
 
@@ -76,57 +95,88 @@ Reasons for the separate file:
 `Database.Run` treats `SQLITE_CORRUPT` and `SQLITE_NOTADB` as damage to the
 Library database, and the app then offers to delete `library.db`. An error
 from the IMDb file must never reach that path, because it would offer to
-delete the person's manual matches because of a cache file. Phase 1 keeps the
-two files on separate connections for this reason. Phase 2 adds one rule for
-the join.
+delete the person's manual matches because of a cache file. Both phases keep
+the two files on separate connections for this reason.
 
 ## Phase 1: the IMDb provider
 
-Phase 1 downloads `title.basics` and `title.ratings`: about 237 MB.
+Phase 1 downloads `title.basics`, `title.ratings` and `title.episode`: about
+290 MB.
 
 ### Download and import
 
-1. A leftover `imdb.db.tmp` from an earlier crash is deleted first.
+1. A build that an earlier crash left behind is deleted when the import
+   starts.
 2. Each file downloads through the HTTP owner, so the saved proxy and network
    adapter apply ([network route](architecture.md#network-route)).
    `ProviderHttp.Send` reads a whole reply into memory, up to 16 MB, and cancels
-   any request that takes more than 60 seconds. The HTTP owner therefore gets
-   one streaming method. Its timeout counts from the last bytes received, so a
-   228 MB file on a slow line does not fail. A separate `HttpClient` would
-   bypass the saved route, so it is not an option.
-3. `GZipStream` decompresses the file while it downloads. No `.gz` file is kept
-   on disk. A failed download starts again from zero.
-4. The import reads one line at a time and keeps only the rows Library can use:
-   - `titleType` is `movie` or `tvMovie`.
-   - `isAdult` is `0`. TMDB lookups also exclude adult titles.
-   - `startYear` is set. A title without a year is announced but not released,
-     so no file of it can exist. Without this filter, those titles would match
-     on title alone and make real matches ambiguous.
+   any request that takes more than 60 seconds. The HTTP owner therefore has a
+   `Download` method that writes the reply to a file. Its timeout counts from
+   the last bytes received, so a 228 MB file on a slow line does not fail. A
+   separate `HttpClient` would bypass the saved route, so it is not an option.
+3. Both compressed files download beside the data, each to a `.part` file
+   that is renamed when it is complete. The import then reads them, through
+   `GZipStream` when they start with the gzip signature and as plain text when
+   the network already unpacked them. The progress therefore has two clear
+   stages, download and import. An install deletes the archives. A failed
+   import keeps them, and a build within a day imports them again without a
+   download, because IMDb updates the files once a day and must not see the
+   same download twice. A damaged archive, or one whose format changed, is
+   deleted, because it would fail again. **Delete data** deletes kept archives
+   too. A failed download starts again from zero.
+4. The import checks that each file's header names the columns it reads, and
+   reads one line at a time. It keeps only the rows Library can use:
+   - `titleType` is `movie`, `tvMovie` or `tvSpecial`, kept as movies, or
+     `tvSeries` or `tvMiniSeries`, kept as series. `video` stays out,
+     although it holds direct-to-video films, because IMDb files music videos
+     under the same type. Adult titles stay in.
+   - A movie or series has a `startYear`, so matching can distinguish releases
+     with the same name. Missing or populated years do not establish release
+     status; IMDb also gives planned films a year, so some unreleased titles
+     stay.
+   - A `tvEpisode` has a series, a season and an episode number in
+     `title.episode`, because a file names an episode only by those. The
+     import reads `title.episode` first into a temporary table, so the one
+     pass over `title.basics` stores each episode under its numbers.
+
+   An import that keeps no title, no rating or no episode fails, so data that
+   IMDb changed never replaces the installed copy with an empty one.
 5. The rows go in one transaction, with prepared commands and with
    `journal_mode=OFF` and `synchronous=OFF`. These settings are safe because
    the file is temporary until step 7.
 6. After the insert, the import fills the full-text index with its `rebuild`
-   command and runs `PRAGMA optimize`.
+   command and merges the index with its `optimize` command.
 7. The import closes its connection, flushes the file to disk, and moves it over
    `imdb.db` with `File.Move` and overwrite. `File.Replace` fails when
    `imdb.db` does not exist yet. The flush prevents a power cut from leaving a
    renamed file with missing data.
 
-Estimated result: under a million movies and a file of about 150–250 MB. Step 1
-of the work measures this.
+Estimated result: about a million movies and series, up to 9 million episodes,
+and a file of several hundred MB. Step 1 of the work measures this.
 
 ### Schema
 
 ```sql
 CREATE TABLE titles (
     title_id INTEGER PRIMARY KEY,   -- tt0133093 is saved as 133093
+    kind TEXT NOT NULL,             -- 'movie' or 'series'
     title TEXT NOT NULL,
     original TEXT,                  -- NULL when it equals title
+    title_key TEXT NOT NULL,        -- title as FileName.Normalize writes it
+    original_key TEXT,              -- original as FileName.Normalize writes it
     year INTEGER NOT NULL,
     genres TEXT,                    -- IMDb's genre names, comma-separated
     rating REAL,
     votes INTEGER
 );
+CREATE TABLE episodes (
+    series_id INTEGER NOT NULL,     -- the series' title_id
+    season INTEGER NOT NULL,
+    number INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    year INTEGER,
+    PRIMARY KEY(series_id,season,number)
+) WITHOUT ROWID;
 CREATE VIRTUAL TABLE title_search USING fts5(
     title, original, content='titles', content_rowid='title_id',
     tokenize='unicode61 remove_diacritics 2'
@@ -143,9 +193,9 @@ a text key would. The full-text index searches words, with accents removed, so
 The folder is `app/src/Library/Imdb/`. The Public plugin's `Public.Imdb` class
 goes in the same change, so no type shares the name of the namespace.
 
-- `Provider` implements `IProvider` with the provider ID `imdb` and the catalog
-  ID `imdb`. The settings are `Background`, movies only, and
-  `IsLocalized = false`.
+- `Provider` implements `IProvider`, and its `ProviderOption` has the provider
+  ID `imdb`, which also names its catalogue, and the `Dataset`. It answers
+  movies and series, and its information does not depend on the language.
 - The provider reads `imdb.db` on its own read-only connection, not on the
   Library connection, so a damaged file fails as a provider failure, with the
   text "The IMDb data is damaged. Download it again.", and never touches
@@ -156,65 +206,63 @@ goes in the same change, so no type shares the name of the namespace.
   the file open, and Windows would refuse to replace or delete it. This
   connection and the import's connection use `Pooling=false` for the same
   reason: a pooled connection keeps the file open after it is closed.
-- `IsAvailable` reads a flag that `Dataset` keeps: whether `imdb.db` exists and
-  has the expected version. `Dataset` checks the file once at startup, off the
-  UI thread, and again after each install or deletion. The UI reads
-  `IsAvailable` on every refresh, so it must not open the file. When the
-  startup check ends, `Dataset` asks `VideoLookup` to refresh. Background
-  lookups start only on a refresh, so without this request they would not run
-  in a session whose check ended after Library's first refresh.
+- Library counts IMDb as available while `Dataset.IsInstalled` is true, a flag
+  that `Dataset` keeps: whether `imdb.db` exists. `Dataset` sets it with one
+  `File.Exists` check when it is created, before Library starts, and again
+  after each install or deletion. The UI reads availability on every refresh,
+  so it must not open the file.
 - `Search` puts each word of the query in quotes before the full-text query.
   Without quotes, ordinary names fail: `Spider-Man` and `Mission: Impossible`
   are full-text syntax errors.
-- `Search` reads the 500 full-text matches with the most votes: the SQL orders
-  by votes before its limit. Without that order, the full-text index returns
-  matches by ascending IMDb ID, so a common word would give the 500 oldest
-  entries and miss a well-known newer film. C# then puts first the titles whose
+- `Search` returns 50 full-text matches. The SQL puts first the titles whose
   title or original title equals the query under `FileName.Normalize`, the
-  comparison that Library's confidence rules use, keeps the vote order inside
-  each group, and returns the first 50. SQLite's `lower()` cannot do this
-  comparison, because it changes only ASCII letters and keeps accents.
-  The full-text rank alone puts famous films below obscure ones: for "the
-  matrix" it ranked a 2010 film with 20 votes above the 1999 film. Library's
-  existing confidence rules then choose the match, as they do for every
-  provider. Step 1 counts how many films share a common title. If a correct
-  film can fall outside the first 50, `Search` also needs the release year.
-- `Describe` reads one row and returns the title, year, genres and
-  `ImdbRating`. The synopsis and cast are empty. Genres stay in English, as
-  OMDb and MDBList already store them.
+  comparison that Library's confidence rules use, and orders each group by
+  votes before the limit. The import stores each title in that form, because
+  SQLite's `lower()` changes only ASCII letters and keeps accents. Ranking
+  exact titles before the limit keeps an obscure film with a common title,
+  such as "Home". Without the vote order, the full-text index returns matches
+  by ascending IMDb ID, so a common word would give the oldest entries and miss
+  a well-known newer film. The full-text rank alone puts famous films below
+  obscure ones: for "the matrix" it ranked a 2010 film with 20 votes above the
+  1999 film. Library's existing confidence rules then choose the match, as
+  they do for every provider. Step 1 counts how many films share a common
+  title. If a correct film can fall outside the first 50, `Search` also needs
+  the release year.
+- `Describe` reads one row and returns the title, year, genres and the IMDb
+  rating with its votes. For a series it also returns the release's
+  episodes with their names, as TMDB does, and the series' rating. An episode
+  that the data lacks makes the description missing. The synopsis and cast
+  are empty. Genres stay in English, as OMDb and MDBList already store them.
 - `Dataset` owns the download, the import, the file replacement and the
   deletion. It replaces or deletes the file inside `VideoLookup`'s change, so
   no lookup has the file open at that moment.
 - Cancel interrupts the import's connection, as the Library connection's
   progress handler already does, so a cancel during the long full-text `rebuild`
   statement does not wait for it to finish.
-- Installing new data goes through `VideoLookup`, which recreates the
-  provider, as saving an API key does, and clears its failures. Today that
-  change also ends a running Fetch metadata batch, as saving a key does. When
-  [request protection](request-protection.md) adds pause and drain, the install
-  uses it instead, so a batch keeps its waiting files.
+- Installing new data goes through `VideoLookup.Reload`, which replaces the
+  file off the window thread and, when IMDb is the selected provider,
+  recreates it, as saving an API key does, and forgets its failures. Another
+  selected provider keeps its failure. A running batch keeps its waiting
+  files.
 
-**Remembered no-matches.** Until request protection lands, the IMDb provider
-follows today's rules like every provider: Library remembers its no-match
-answers, and an update does not clear them. The person tries the new data
-with Fetch metadata. `VideoLookup` also keeps search results for the session,
-so the install drops those for the `imdb` catalog.
+The [request-protection plan](request-protection.md#imdb-datasets-and-local-answers)
+applies to remote requests. Local dataset reads are not remote requests and
+need no bypass or force permission. After installation, local matching must
+use the new dataset rather than stale query results, learned choices or the
+saved title/year shortcut for unresolved files. Accepted matches and useful
+saved metadata remain intact. A session's attempt markers prevent an empty
+answer from starting a busy loop; installing new data clears IMDb's unresolved
+markers so eligible unfinished work can use it immediately.
 
-Request protection changes this. It counts only remote answers: "Only a
-validated remote response establishes missing data", and its search limit
-charges "completed remote lookup outcomes". An IMDb search reads a local file,
-so it creates no remembered no-match and no search count. After an empty
-answer, Library searches `imdb.db` again in the next session, which costs
-nothing and finds titles that an update added. Its pacing applies at the
-outbound send path, which IMDb lookups never reach, so they get no wait.
-
-Request protection also saves answered searches with their candidates and
-reuses them across restarts. An ambiguous IMDb answer has candidates, so its
-next search would reuse them instead of reading `imdb.db`, and would not find
-a title that an update added. **Owner decision:** whether request protection
-exempts a local provider from that reuse. Recommended: exempt it, because
-reading `imdb.db` costs nothing and the saved candidates go stale with each
-update.
+Settings' dataset Download and Update use the same request protection as every
+other remote transfer: pacing, saved remote waits and standard retry/reset
+rules. There is no IMDb-specific override or movie-search charge. A refusal,
+401 or 403, needs attention; each Download or Update click tries once past it
+and past a backoff, as Retry does for lookups. Reset clears local download
+protection without deleting installed data or starting a download; it cancels
+and drains the whole download/install command before taking Library's lookup
+gates or clearing its policy writes. Local searches
+remain usable while a remote dataset download is waiting.
 
 ### Settings
 
@@ -223,21 +271,62 @@ provider declares that it needs a key, and Settings owns the flow. It is a new
 branch beside the key flow, which applies only to `Access.Key` providers:
 
 1. The person chooses **IMDb** in Video information when `imdb.db` does not
-   exist. A dialog states the download size, which a HEAD request reads, and
-   asks **Download** or **Cancel**. Cancel leaves the choice as it was.
-2. The Video information row shows the download progress in MB, then
-   "Building" without a percentage while the import runs, with a Cancel button.
-   When the import is complete, the provider turns on.
-3. A button beside the provider, where the key button is for API providers,
-   opens a flyout. The flyout shows the date and size of the data and has two
-   commands: **Update** downloads and replaces the data, and **Delete data**
-   removes `imdb.db` and turns Video information off.
-4. When IMDb is chosen but `imdb.db` is missing, for example after an app update
-   changed the file version, the row shows the Download button. The Library
-   page shows the existing message for an unavailable provider, whose button
-   opens Settings.
+   exist. A dialog states the download size, about 290 MB, and asks
+   **Download** or **Cancel**. Cancel leaves the choice as it was. The size is
+   fixed text, because it changes slowly and reading it would cost a request.
+2. The **IMDb data** row under Video information (phase 2, point 5) shows the
+   download progress in MB, then "Preparing IMDb data" without a percentage
+   while the import runs, with a button that stops it. Narrator hears each new
+   stage. When the import is complete, the provider turns on, unless the
+   person chose another setting meanwhile, because that choice is newer. Only
+   this flow turns IMDb on; the row's own Download and Update never change the
+   provider.
+   Library owns this pending activation. A later accepted provider choice
+   revokes it even when the final setting equals the original one. Installation
+   and conditional activation use the existing serialized provider-change path
+   and preserve accepted API batches. If activation fails after installation,
+   the data stays installed and the activation error is reported.
+3. The row shows the size and date of the data and has two commands:
+   **Update** downloads and replaces the data. It first opens the download
+   dialog of point 1 as Update IMDb data?, which states the data's age,
+   because the person cannot otherwise judge whether about 290 MB is worth
+   transferring. For data less than a day old, the body warns that the person
+   likely has the latest data, because IMDb publishes once a day and the
+   download would most likely transfer the same files. Data less than a week
+   old adds that little has changed. Older data only states its age.
+   That download does not change the provider.
+   **Delete data** asks first,
+   naming the size, then removes `imdb.db` and turns Video information off
+   when IMDb is the selected provider.
+   Delete retained archives before removing the installed file, so an archive
+   error leaves the usable data and selected provider intact.
+4. When IMDb is chosen but `imdb.db` is missing, for example after an app
+   update changed the file version, the row's **Download** gets it, because a
+   provider that is already chosen cannot be chosen again. Library shows IMDb
+   as it shows any unavailable provider: the Details card says "Provider
+   unavailable", and its Fetch button offers Settings.
 
-Closing the window cancels a running import and deletes `imdb.db.tmp`.
+### Ending a download
+
+A running download ends in one way, whatever ends it: the person's Cancel, a
+protection reset or route change, a feature reset, or closing the window. The
+caller cancels the download and waits until it has finished before Library
+releases anything. The download's end then deletes a build that was not
+installed. So no exit leaves `imdb.db.tmp` behind, and the Settings row returns
+to its idle state while Library is still attached. Complete archives stay, as
+step 3 of [Download and import](#download-and-import) describes. A protection
+reset or a route change that stops the download is reported, because the
+person did not ask for it.
+
+The overall operation invokes staged-file cleanup once; import does not have a
+second cleanup path that can replace the original failure. Completion is signalled
+after cleanup even if a final UI notification fails. Once installation commits,
+cancellation does not discard the installed data or hide a later failure.
+
+Waiting cannot deadlock. The caller holds none of Library's gates while it
+waits, and the cancelled download either stops before `VideoLookup.Reload` or
+lets `Reload` drain the lookups and then refuses the install. A protection
+reset already relies on this path.
 
 ### Removing the Public plugin
 
@@ -269,10 +358,9 @@ Every fact has another source, but not always in one provider, because the
 person chooses one provider at a time. The IMDb provider alone gives no cast
 or synopsis; TMDB gives both, and phase 2 adds the IMDb rating to it.
 
-The removal deletes:
+The removal deleted:
 
-- the website reader, its browser control and
-  [movie-websites.md](movie-websites.md);
+- the website reader, its browser control and `movie-websites.md`;
 - `ProviderHttp.BeginDirect`, which only the browser reader uses;
 - the external-browser paragraph under
   [network route](architecture.md#network-route);
@@ -283,119 +371,80 @@ The removal deletes:
   `Public.Provider.Options` and run the website parsers. The store checks
   "late reply overwrote a newer Clear" and "late reply overwrote a merged
   identification" use the Rotten Tomatoes result as their fixture, and one
-  check expects `rottentomatoes` to survive as the saved provider. These
-  checks need another provider's saved record, such as a TMDB response.
+  check expected `rottentomatoes` to survive as the saved provider. These
+  checks now build an IMDb record in the check itself.
 
-The removal makes parts of [request protection](request-protection.md), the
-owner's plan in progress, out of date. The owner updates them: the provider
-list, the `Public.Provider` row, the website reader as a transport, the Rotten
-Tomatoes readers' use of Library's execution owner, the shared Rotten Tomatoes
-reader history, the browser launch failure, the website readers paragraph, and
-step 2's "Integrate all API and website paths".
+The removal also deleted `VideoSchedule`, `IProvider.Schedule` and
+`VideoChoice.Content`. The `Manual` schedule existed only for the website
+options, which sent requests only when the person asked, and the saved choice
+content only for website pages, which are expensive to read. `VideoLookup`
+keeps scheduling.
 
-What existing users see:
+The [request-protection plan](request-protection.md) now covers the API providers
+and streaming dataset downloads. It removes the former website-reader rules
+and preserves the local/remote distinction above. It is implemented; the
+phase 2 rating join must preserve its reset and lookup-drain rules.
 
-- A person whose saved provider is `imdb` keeps that choice, which now names
-  the IMDb provider. Without `imdb.db`, background lookups skip an unavailable
-  provider without a word, so Library shows, in the workspace notification:
-  "IMDb information now comes from downloaded IMDb data. Download it in
-  Settings." Its button opens Settings. The notice appears at each start while
-  IMDb is chosen and the data is missing, because lookups stay stopped until
-  the person downloads the data or chooses another provider. The new provider gives no
-  synopsis, cast or keywords, which the website gave; TMDB gives all three.
-- While IMDb is chosen and `imdb.db` is missing, the Details card's
-  unavailable-provider tooltip says that the IMDb data is not downloaded. The
-  general text, "Choose another provider, or try again later", is wrong here,
-  because waiting never helps.
-- A person whose saved provider is a Rotten Tomatoes option finds video
-  information turned off at the next start. `VideoLookup.Initialize` finds no
-  provider with that ID and turns it off. Today this happens without a word, so
-  Library also shows once, in the workspace notification: "The video
-  information provider you chose was removed. Choose another in Settings."
-  `Initialize` turns lookups off only while they are on, so the notice appears
-  once.
-- Saved information from the removed options stays in `library.db` and stays
-  visible.
+What existing users see: phase 2 raised `Database.Version` to 6, so every
+older `library.db` is recreated, and no saved provider choice or saved
+information from the removed options survives the update. The person chooses a
+provider again. The IMDb provider gives no synopsis, cast or keywords, which
+the website gave; TMDB gives all three.
 
 ## Phase 2: IMDb ratings for every provider
 
 TMDB, Wikidata, OMDb and MDBList all return the IMDb ID of a movie. Library
-saves that ID in a new `video_information.imdb_id` column and joins it with the
-IMDb ratings when it reads the rows. The rating is not copied into
+saves that ID in the `video_information.imdb_id` column and, when it reads the
+rows, takes each movie's rating from `imdb.db`. The rating is not copied into
 `library.db`:
 
 - Wikidata's IMDb rating is the value an editor last recorded, often years old.
   The local rating is at most as old as the last update.
 - TMDB returns no IMDb rating. With this change, the IMDb column fills for TMDB
   matches too.
-- Without `imdb.db`, the rating that the provider returned stays in use.
+- Without `imdb.db`, or when it cannot be read, the rating that the provider
+  returned stays in use.
 
-**The join.** The Library connection runs
-`ATTACH DATABASE '<path>\imdb.db' AS imdb`, but only when the file exists,
-because ATTACH of a missing file creates an empty one. A TEMP view,
-`imdb_ratings`, reads `imdb.titles`. Without the file, the same view has no
-rows, so the Library query does not change. SQLite rejects a view stored in
-`library.db` that names an attached file. The Library's `library_entries` view
-is already a TEMP view, so it can join `imdb_ratings`:
+**The ratings are read in C#, not joined in SQL.** `Store` reads the rows from
+`library.db`, then asks `Dataset` for the ratings of their IMDb IDs in one query
+on `imdb.db`. The table and the Details card use the same rule. Library sorts
+ratings in C# and no SQL filter reads them, so a SQL join would gain nothing.
+Attaching `imdb.db` to the Library connection would need four new mechanisms in
+the shared Database owner: attaching, telling a damaged `imdb.db` from a
+damaged `library.db`, a file swap outside transactions, and invalidating the
+row snapshot. The C# read needs none of them:
 
-```sql
-LEFT JOIN imdb_ratings r ON r.title_id = v.imdb_id
--- shown rating: COALESCE(r.rating, v.imdb_rating)
-```
+1. **Damage.** `Dataset` reads on its own connection, so an error from
+   `imdb.db` never reaches the Database owner. A rating read that fails returns
+   no ratings.
+2. **Replacement and deletion.** Reads share a reader-writer lock, and Install
+   and Delete hold it alone while they replace the file, because Windows
+   refuses to replace an open file.
+3. **Refresh.** After an install or a deletion, Library refreshes its rows and
+   Settings shows the data's new state.
+4. **Existing matches.** Before V1, the [database contract](database.md)'s
+   owner ruling edits the initial schema instead of migrating it. The new
+   column raised `Database.Version` to 6, so an older `library.db` is
+   recreated, and matches made after that carry their IMDb IDs.
+5. **Managing the data.** A TMDB user also uses `imdb.db`, so the data has its
+   own row, **IMDb data**, under Video information. It shows the size and
+   date, or what the data is for and its size, and has **Download** or
+   **Update** and **Delete data**. While the data downloads, the row shows the
+   progress and a button that stops it. **Delete data** asks first, and turns
+   video information off only when IMDb is the selected provider. Choosing IMDb without the data
+   still asks to download it, as phase 1 describes.
 
-SQLite looks up the attached table by its primary key, as tested.
+Library owns this rule, because it applies to every provider.
 
-**Rules for the attached file:**
-
-1. **Damage.** A damaged `imdb.db` can fail in two places: `ATTACH` itself
-   fails with `SQLITE_NOTADB`, and a later query can fail with
-   `SQLITE_CORRUPT`. The Database owner handles both before its general catch,
-   which would mark `library.db` incompatible:
-   - An error from `ATTACH` leaves the file detached and the no-rows
-     `imdb_ratings` view in place.
-   - On `SQLITE_CORRUPT` or `SQLITE_NOTADB` while the file is attached, it
-     recreates `imdb_ratings` as the no-rows view, detaches the file, and runs
-     the action once more. The view comes first, because a view that names
-     `imdb.titles` fails with "no such table" after `DETACH`.
-   - If the retry succeeds, the IMDb file was at fault, and the provider
-     reports it as damaged. Only an error that remains marks `library.db`
-     incompatible.
-2. **Replacement and deletion.** `DETACH` fails in a transaction that has read
-   the attached file, and `Database.Run` wraps every action in a transaction. The Database owner therefore gets
-   one method that takes its access lock without a transaction, detaches the
-   file, lets `Dataset` move or delete it, attaches it again and recreates the
-   TEMP view.
-3. **Refresh.** `library_rows` is a snapshot of `library_entries`. After a
-   replacement, the Database owner invalidates it and Library refreshes, so the
-   new ratings appear.
-4. **Existing matches.** The `imdb_id` column starts empty for saved
-   information. The saved provider responses already hold the IDs: TMDB's
-   `imdb_id`, OMDb's `imdbID`, MDBList's `ids.imdb`, Wikidata's IMDb ID, and the
-   addresses of the removed `public/imdb` matches. The schema change fills the
-   column from them once.
-5. **Managing the data.** With phase 2, a TMDB user also uses `imdb.db`, so the
-   date, size, **Update** and **Delete data** move from the provider's flyout to
-   their own row under Video information. **Delete data** turns video
-   information off only when IMDb is the selected provider.
-6. **Schema.** Rule 4 needs a migration, because an edit of the initial schema
-   raises the version and makes every existing `library.db` incompatible,
-   which leaves no saved rows to fill. The [database contract](database.md)'s
-   owner ruling says to edit the initial schema before the V1 release, while
-   the code already migrates versions 2 and 3. The owner decides which applies
-   when phase 2 starts.
-
-Library owns this rule, because it applies to every provider. Do phase 2 only
-after phase 1 has been used.
-
-## Phase 3, only if needed: cast, series and localized titles
+## Phase 3, only if needed: cast and localized titles
 
 Each addition is a large download for a smaller benefit, so none is in the
-plan until someone asks for it.
+plan until someone asks for it. Series and episodes, which phase 3 also
+listed, are part of phase 1.
 
 | Addition | Extra download | Benefit |
 | --- | --- | --- |
 | Cast | about 1 GB (`title.principals` and `name.basics`) | The Cast column. Keep the first five actors for each kept title, and only the names they reference. |
-| Series and episodes | about 50 MB (`title.episode`) and about 9 million rows | Matches for episode files. TMDB already covers series. |
 | Localized titles | about 450 MB (`title.akas`) | Spanish titles. TMDB and Wikidata already supply them. |
 
 ## Risks
@@ -418,12 +467,17 @@ plan until someone asks for it.
 - **Import time.** The estimate is under a minute after the download. Measure
   it on the owner's computer.
 - **Disk space.** The import briefly needs space for both `imdb.db` and
-  `imdb.db.tmp`. If the disk is full, the import fails with its error and the
-  old file stays.
+  `imdb.db.tmp`. If the disk is full, the import fails with a message that
+  says so, and the old file and the downloaded archives stay, so the person
+  frees space and tries again without a new download.
 
 ## Work order
 
-1. Download `title.basics` and `title.ratings` once and save them locally for
+Steps 2 to 9 are done. Step 1 is not, so the sizes, counts and times in this
+plan are still estimates. The owner's first download in the app provides them:
+the measurements read the installed file, so IMDb sees no extra download.
+
+1. Download `title.basics`, `title.ratings` and `title.episode` once and save them locally for
    development. Do not download them repeatedly from IMDb. From the saved
    files, measure the row counts, the import time, the file size, and how many
    films share a common title.
@@ -434,5 +488,8 @@ plan until someone asks for it.
    [Removing the Public plugin](#removing-the-public-plugin).
 6. Add the Settings flow and its strings.
 7. Update `library.md`, `architecture.md` and the About credits.
-8. Phase 2, after phase 1 has been used, including the changes to
-   [database.md](database.md) for the attached file.
+8. Phase 2.
+9. Finish the download lifetime as [Ending a download](#ending-a-download)
+   describes, and delete `VideoSchedule`, as
+   [Removing the Public plugin](#removing-the-public-plugin) lists, with its
+   description in [library-implementation.md](library-implementation.md).

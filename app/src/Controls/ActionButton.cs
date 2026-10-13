@@ -14,7 +14,7 @@ public sealed partial class ActionButton : Button
     private readonly FontIcon _icon = new()
     {
         FontFamily = Lucide.Font,
-        FontSize = 16,
+        FontSize = (double)Application.Current.Resources["TinyTorrentInlineIconSize"],
         VerticalAlignment = VerticalAlignment.Center,
     };
     private readonly TextBlock _text = new()
@@ -27,7 +27,7 @@ public sealed partial class ActionButton : Button
     private readonly FontIcon _chevron = new()
     {
         FontFamily = Lucide.Font,
-        FontSize = 12,
+        FontSize = (double)Application.Current.Resources["TinyTorrentChevronIconSize"],
         Glyph = Lucide.ChevronDown,
         VerticalAlignment = VerticalAlignment.Center,
         Visibility = Visibility.Collapsed,

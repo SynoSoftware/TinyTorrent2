@@ -5,7 +5,7 @@ namespace Syno.TinyTorrent.Library;
 
 internal static class MetadataActions
 {
-    /// <summary>The Fetch metadata submenu, which lists every provider.</summary>
+    /// <summary>The Fetch metadata submenu, which lists providers with per-movie downloads.</summary>
     internal static MenuFlyoutSubItem Create(Browser browser)
     {
         var menu = new MenuFlyoutSubItem
@@ -20,7 +20,7 @@ internal static class MetadataActions
     }
 
     /// <summary>
-    /// The Info page's Fetch button: every provider, then Settings, where
+    /// The Info page's Fetch button: per-movie providers, then Settings, where
     /// downloading turns on. The menu is built each time it opens, because
     /// providers and their availability change after the page is built.
     /// </summary>
@@ -57,9 +57,9 @@ internal static class MetadataActions
     }
 
     private static IEnumerable<MenuFlyoutItem> Providers(Browser browser) =>
-        browser.Providers.Select(option =>
+        browser.DownloadProviders.Select(option =>
         {
-            var item = new MenuFlyoutItem { Text = option.Label(browser.Text) };
+            var item = new MenuFlyoutItem { Text = option.Name };
             item.Click += (_, _) => browser.Fetch(option);
             return item;
         });

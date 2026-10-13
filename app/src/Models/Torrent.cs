@@ -52,7 +52,11 @@ public sealed class Torrent(string torrentId, Strings strings) : INotifyProperty
     public string Status => strings.Status(StatusCode);
     public bool IsPaused => StatusCode is "paused" or "all_paused";
     public bool IsError => StatusCode == "error" || ErrorCode.Length > 0;
-    public bool IsProgressNormal => !IsPaused && !IsError && !IsMoving;
+    public bool IsProgressMuted =>
+        !IsError && !IsMoving && (IsPaused || (Progress >= 1 && StatusCode != "checking"));
+    public bool IsProgressNormal => !IsProgressMuted && !IsError && !IsMoving;
+    public bool IsDownloading => StatusCode == "downloading" && !IsError;
+    public bool IsStatusNeutral => !IsDownloading && !IsError;
     public string StatusGlyph =>
         StatusCode switch
         {

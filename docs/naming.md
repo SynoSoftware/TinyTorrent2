@@ -232,7 +232,7 @@ through the torrent app. They remain in the existing project. There is no
 `Plugins/` wrapper: these features have no independent installation or loading
 mechanism for that name to describe.
 
-Library's `Public/`, `Tmdb/`, `Wikidata/`, `Omdb/` and `MdbList/` folders own their respective metadata providers;
+Library's `Imdb/`, `Tmdb/`, `Wikidata/`, `Omdb/` and `MdbList/` folders own their respective metadata providers;
 Library owns the shared lookup, identity and cache decisions. Subtitles owns its
 supplier implementations and acquisition workflow. Shared file membership,
 database transactions, network routing and window/dialog coordination remain

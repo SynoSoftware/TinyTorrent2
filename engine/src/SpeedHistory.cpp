@@ -12,6 +12,9 @@ void SpeedHistory::Configure(int recentInterval, int dayInterval)
 {
     recent.Configure(recentInterval);
     day.Configure(dayInterval);
+    // Recent zero runs then end where day samples end, which is where the
+    // Speed view joins the two ranges.
+    recent.span = dayInterval;
 }
 
 void SpeedHistory::Range::Configure(int value)
@@ -28,7 +31,7 @@ void SpeedHistory::Range::Sample(std::int64_t time, double download, double uplo
 {
     if (bucket.count || !points.empty())
     {
-        auto previous = bucket.count ? bucket.time : points.back().time;
+        auto previous = bucket.count ? bucket.time : std::int64_t(points.back().time);
         if (time <= previous)
         {
             points.clear();
@@ -58,21 +61,44 @@ void SpeedHistory::Range::Finish()
     {
         return;
     }
+    if (bucket.download == 0 && bucket.upload == 0 && !points.empty())
+    {
+        auto& last = points.back();
+        auto start = std::int64_t(last.time) - last.length;
+        if (last.download == 0 && last.upload == 0 && bucket.start - last.time <= sampleGap &&
+            start / span == bucket.time / span)
+        {
+            last.time = std::uint32_t(bucket.time);
+            last.length = std::uint16_t(bucket.time - start);
+            last.count = std::uint16_t(last.count + bucket.count);
+            bucket = {};
+            return;
+        }
+    }
     points.push_back(Average());
     bucket = {};
 }
 
 SpeedHistory::Point SpeedHistory::Range::Average() const
 {
-    return {bucket.time, bucket.download / bucket.count, bucket.upload / bucket.count, bucket.start, bucket.count};
+    return {std::uint32_t(bucket.time), float(bucket.download / bucket.count), float(bucket.upload / bucket.count),
+        std::uint16_t(bucket.time - bucket.start), std::uint16_t(bucket.count)};
 }
 
 void SpeedHistory::Range::Prune(std::int64_t time)
 {
-    while (!points.empty() && (points.size() + (bucket.count ? 1 : 0) > capacity ||
-        points.front().time <= time - duration))
+    std::size_t kept = points.size() + (bucket.count ? 1 : 0);
+    auto first = points.begin();
+    while (first != points.end() && (kept > capacity || first->time <= time - duration))
     {
-        points.pop_front();
+        ++first;
+        --kept;
+    }
+    points.erase(points.begin(), first);
+    // Return the memory of a torrent whose activity stopped.
+    if (points.capacity() > 2 * points.size())
+    {
+        points.shrink_to_fit();
     }
 }
 
@@ -88,7 +114,8 @@ Json SpeedHistory::Read(bool day) const
     auto append = [&samples](Point const& sample)
     {
         samples.push_back({{"time", sample.time}, {"download_rate", sample.download},
-            {"upload_rate", sample.upload}, {"start", sample.start}, {"count", sample.count}});
+            {"upload_rate", sample.upload}, {"start", std::int64_t(sample.time) - sample.length},
+            {"count", sample.count}});
     };
     auto const& range = day ? this->day : recent;
     for (auto const& sample : range.points)

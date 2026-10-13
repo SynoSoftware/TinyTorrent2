@@ -14,6 +14,10 @@ Before changing product screens, read the [interface contract](../docs/interface
 Text and formatting follow [localisation](../docs/localisation.md); test scope
 follows [testing](../docs/testing.md).
 
+Before changing Settings navigation, read its
+[icon and label owner ruling](../docs/interface.md#settings-navigation), so the shared
+24-DIP icons and visually centred labels survive styling and template changes.
+
 Reference [TableView.csproj](../lib/TableView/src/TableView.csproj). Keep torrent
 commands, persistence, and product settings in their product owners; the
 library owns generic table mechanics. For authorized builds, use Visual Studio

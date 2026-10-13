@@ -190,17 +190,9 @@ internal sealed partial class Database : IAsyncDisposable
                 {
                     command.CommandText = "PRAGMA user_version;";
                     var version = Convert.ToInt32(command.ExecuteScalar());
-                    _incompatible = version is not (0 or 2 or 3 or Version);
+                    _incompatible = version is not (0 or Version);
                     if (_incompatible)
                         throw new DatabaseVersionException();
-                    if (version is 2 or 3)
-                    {
-                        command.CommandText =
-                            (version == 2 ? VideoMisses : string.Empty)
-                            + ProviderKeys
-                            + $"PRAGMA user_version={Version};";
-                        command.ExecuteNonQuery();
-                    }
                     if (version == 0)
                     {
                         command.CommandText =

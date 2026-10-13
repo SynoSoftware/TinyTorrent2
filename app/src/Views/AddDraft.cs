@@ -146,6 +146,7 @@ public sealed class AddDraft : IDraft
         : Needed > free
             ? _strings.Format("add", "short", _strings.Bytes(Needed), _strings.Bytes(free))
         : _strings.Format("add", "free", _strings.Bytes(free));
+    public bool HasSpace => DiskSpace.Read(_destination) is not null;
     public bool LacksSpace => DiskSpace.Read(_destination) is { } free && Needed > free;
     private long Needed =>
         Sources
@@ -168,6 +169,7 @@ public sealed class AddDraft : IDraft
             Environment.NewLine,
             Sources.Select(source => source.Shared).Where(text => text.Length > 0)
         );
+    public bool IsShared => Shared.Length > 0;
     private IEnumerable<Exception> Failures =>
         Sources.Select(source => source.Failure).Prepend(_failure).OfType<Exception>();
     internal Exception? Failure => Failures.FirstOrDefault();

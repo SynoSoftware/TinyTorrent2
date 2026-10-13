@@ -10,14 +10,15 @@ using Syno.TinyTorrent.Services;
 
 namespace Syno.TinyTorrent.Subtitles;
 
-internal abstract class Supplier
+internal abstract class Supplier(RequestPolicy policy)
 {
-    private readonly Dictionary<string, DateTimeOffset> _waits = [];
-    protected readonly Dictionary<string, DateTimeOffset> _downloads = [];
     protected readonly object _sync = new();
 
-    internal static IReadOnlyList<Supplier> CreateAll() =>
-        [new OpenSubtitles(), new SubDL(), new SubSource()];
+    internal static IReadOnlyList<Supplier> CreateAll(RequestPolicy policy) =>
+        [new OpenSubtitles(policy), new SubDL(policy), new SubSource(policy)];
+
+    internal static IEnumerable<string> AllLanguages =>
+        OpenSubtitles.LanguageCodes.Keys.Concat(SubDL.LanguageCodes.Keys).Concat(SubSource.LanguageCodes.Keys);
 
     internal abstract SubtitleSupplier SupplierId { get; }
     internal virtual bool Available => true;
@@ -36,6 +37,8 @@ internal abstract class Supplier
     internal IReadOnlyList<string> Languages => Codes.Keys.ToArray();
 
     internal bool Supports(string language) => Codes.ContainsKey(language);
+
+    internal virtual string Question(SubtitleLookup lookup) => lookup.FileName;
 
     internal bool Configured(Account account) =>
         Available
@@ -60,53 +63,67 @@ internal abstract class Supplier
         return new(SupplierId, username, secret);
     }
 
-    internal Allowance Allowance(Account account)
+    internal async Task<Allowance> Allowance(Account account)
     {
-        var key = AccountKey(account);
-        lock (_sync)
-        {
-            return new Allowance(
-                _waits.TryGetValue(key, out var rate) ? rate : null,
-                _downloads.TryGetValue(key, out var download) ? download : null
-            );
-        }
+        var search = await policy.Read([QuotaScope(account), Scope(account, "search")], CancellationToken.None).ConfigureAwait(false);
+        var download = await policy.Read(Scope(account, "download"), CancellationToken.None).ConfigureAwait(false);
+        return new(Reset(search), Reset(download));
+
+        static DateTimeOffset? Reset(RequestBlock? block) =>
+            block is { Kind: RequestBlockKind.RemoteWait or RequestBlockKind.Allowance } ? block.RetryAt : null;
     }
 
-    internal void Restore(Account account, Allowance allowance)
-    {
-        var key = AccountKey(account);
-        if (allowance.RequestReset is { } rate)
-            Wait(key, rate);
-        if (allowance.DownloadReset is { } download)
-            lock (_sync)
-                if (!_downloads.TryGetValue(key, out var current) || download > current)
-                    _downloads[key] = download;
-    }
+    internal ProviderAccess Scope(Account account, string operation) => new(
+        SupplierId.ToString().ToLowerInvariant(),
+        RequestKey.Digest(Access == Access.Password ? account.Username : ApiKey(account)),
+        operation);
 
-    internal Task Check(
+    internal virtual ProviderAccess QuotaScope(Account account) => Scope(account, string.Empty);
+
+    internal async Task Check(
         ProviderHttp http,
         Account account,
         CancellationToken cancellation
-    ) => Check(new(http, account, _ => Task.CompletedTask), cancellation);
+    )
+    {
+        var command = new RetryCommand(DateTimeOffset.UtcNow.UtcTicks) { Recheck = true };
+        await Check(new(http, account, _ => Task.CompletedTask)
+        {
+            Purpose = "check",
+            Fresh = new(command, RequestKey.Create(Scope(account, "check").ProviderId, "check", [])),
+        }, cancellation).ConfigureAwait(false);
+        await policy.Succeed(Scope(account, "check")).ConfigureAwait(false);
+        await policy.Succeed(Authentication(account)).ConfigureAwait(false);
+    }
+
+    internal ProviderAccess Authentication(Account account) => Scope(account, string.Empty);
+
+    protected Task Authenticated(Account account) => policy.Succeed(Scope(account, "authentication"));
 
     protected abstract Task Check(Operation operation, CancellationToken cancellation);
 
     // Lists the full SRT subtitles in the supplier's language code for the
     // title the lookup names, or, with a hash, for that exact file.
-    protected abstract Task<IReadOnlyList<SubtitleCandidate>> Search(
+    protected abstract Task<SubtitleSearch> Search(
         Operation operation,
         SubtitleLookup lookup,
         Release release,
         string code,
         CancellationToken cancellation
     );
-    internal Task<byte[]> Download(
+    internal async Task<byte[]> Download(
         ProviderHttp http,
         Account account,
         SubtitleLookup lookup,
         SubtitleCandidate candidate,
         CancellationToken cancellation
-    ) => Download(new(http, account, lookup.Validate), candidate, cancellation);
+    )
+    {
+        var bytes = await Download(new(http, account, lookup.Validate) { Purpose = "download", Fresh = lookup.Fresh },
+            candidate, cancellation).ConfigureAwait(false);
+        await policy.Succeed(Scope(account, "download")).ConfigureAwait(false);
+        return bytes;
+    }
 
     protected abstract Task<byte[]> Download(
         Operation operation,
@@ -119,7 +136,7 @@ internal abstract class Supplier
     protected string ApiKey(Account account) =>
         account.Secret.Length > 0 ? account.Secret : BuiltInKey ?? string.Empty;
 
-    protected virtual void Reserve(string key) { }
+    protected virtual IReadOnlyList<RateWindow> RateWindows => [];
 
     protected virtual DateTimeOffset? DownloadReset(
         HttpRequestMessage request,
@@ -128,115 +145,41 @@ internal abstract class Supplier
 
     protected virtual bool CanRedirect(HttpRequestMessage request) => false;
 
-    internal Task<IReadOnlyList<SubtitleCandidate>> Match(
-        ProviderHttp http,
-        Account account,
-        SubtitleLookup lookup,
-        CancellationToken cancellation
-    ) =>
-        Timed(
-            token => Match(
-                new(http, account, lookup.Validate),
-                lookup,
-                FileName.Interpret(lookup.FileName),
-                token
-            ),
-            cancellation
-        );
-
-    private async Task<IReadOnlyList<SubtitleCandidate>> Match(
-        Operation operation,
-        SubtitleLookup lookup,
-        Release release,
-        CancellationToken cancellation
-    )
-    {
-        var candidates = await Find(operation, lookup, release, cancellation)
-            .ConfigureAwait(false);
-        var exact = candidates.FirstOrDefault(candidate =>
-            candidate.HashMatch || SameRelease(release, candidate.Release)
-        );
-        if (exact is null && lookup.Hash is not null)
-        {
-            // A hash search lists that file's subtitles; a guess needs the title's.
-            candidates = await Find(
-                    operation,
-                    lookup with
-                    {
-                        Hash = null,
-                    },
-                    release,
-                    cancellation
-                )
-                .ConfigureAwait(false);
-            exact = candidates.FirstOrDefault(candidate => SameRelease(release, candidate.Release));
-        }
-        if (exact is not null)
-            return [exact with { Exact = true }];
-        if (SupportsHash && lookup.Hash is null)
-            // The hash search after the download completes can still find the
-            // exact file, so guessing waits for it.
-            return [];
-        return candidates
-            .OrderByDescending(candidate => Likeness(release, candidate.Release))
-            .DistinctBy(candidate => FileName.Normalize(candidate.Release))
-            .Take(lookup.Guesses)
-            .ToArray();
-    }
-
     // Lists every subtitle for the file's title, for the person to choose
     // one when no release matches.
-    internal Task<IReadOnlyList<SubtitleCandidate>> Candidates(
+    internal async Task<SubtitleSearch> Candidates(
         ProviderHttp http,
         Account account,
         SubtitleLookup lookup,
-        CancellationToken cancellation
-    ) =>
-        Timed(
-            token => Find(
-                new(http, account, lookup.Validate),
-                lookup,
-                FileName.Interpret(lookup.FileName),
-                token
-            ),
-            cancellation
-        );
-
-    // A search that takes longer than a minute fails as a network failure,
-    // so callers report it like any other supplier they could not reach.
-    private static async Task<IReadOnlyList<SubtitleCandidate>> Timed(
-        Func<CancellationToken, Task<IReadOnlyList<SubtitleCandidate>>> search,
-        CancellationToken cancellation
-    )
-    {
-        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
-        deadline.CancelAfter(TimeSpan.FromSeconds(60));
-        try
-        {
-            return await search(deadline.Token).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException)
-            when (deadline.IsCancellationRequested && !cancellation.IsCancellationRequested)
-        {
-            throw new SubtitleException(SubtitleFailure.Network);
-        }
-    }
-
-    private async Task<IReadOnlyList<SubtitleCandidate>> Find(
-        Operation operation,
-        SubtitleLookup lookup,
-        Release release,
         CancellationToken cancellation
     )
     {
         if (!Available)
             throw new SubtitleException(SubtitleFailure.Unavailable);
+        var release = FileName.Interpret(lookup.FileName);
         if (release.Title.Length == 0 || release.IsExtra)
-            return [];
+            return new([]);
         if (!Codes.TryGetValue(lookup.Language, out var code))
             throw new SubtitleException(SubtitleFailure.Unavailable);
-        return await Search(operation, lookup, release, code, cancellation)
-            .ConfigureAwait(false);
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
+        deadline.CancelAfter(TimeSpan.FromSeconds(60));
+        try
+        {
+            return await Search(
+                new(http, account, lookup.Validate) { Fresh = lookup.Fresh },
+                lookup,
+                release,
+                code,
+                deadline.Token
+            ).ConfigureAwait(false);
+        }
+        catch (Exception error) when (
+            error is OperationCanceledException && deadline.IsCancellationRequested && !cancellation.IsCancellationRequested
+            || error is SubtitleException { Reason: SubtitleFailure.Network, RetryAt: null })
+        {
+            var hold = await policy.Fail(Scope(account, "search"), new(RequestBlockKind.Backoff)).ConfigureAwait(false);
+            throw new SubtitleException(SubtitleFailure.Network, hold.RetryAt);
+        }
     }
 
     protected static Task<byte[]> Decode(ProviderReply response, CancellationToken cancellation)
@@ -280,7 +223,8 @@ internal abstract class Supplier
         HttpRequestMessage request,
         CancellationToken cancellation,
         int maximum = ProviderHttp.JsonLimit,
-        bool authenticate = true
+        bool authenticate = true,
+        bool canRenew = false
     )
     {
         cancellation.ThrowIfCancellationRequested();
@@ -289,53 +233,72 @@ internal abstract class Supplier
         var account = operation.Account;
         if (authenticate && !Configured(account))
             throw new SubtitleException(SubtitleFailure.Unconfigured);
-        var key = AccountKey(account);
         if (authenticate)
-        {
-            lock (_sync)
-            {
-                if (_waits.TryGetValue(key, out var wait) && wait > DateTimeOffset.UtcNow)
-                    throw new SubtitleException(SubtitleFailure.Quota, wait);
-                Reserve(key);
-            }
             Authenticate(request, account);
-        }
-        try
+        var scope = Scope(account, request.RequestUri?.AbsolutePath.EndsWith("/login", StringComparison.Ordinal) == true
+            ? "authentication" : operation.Purpose);
+        if (!authenticate)
+            scope = scope with { Identity = RequestKey.Digest(request.RequestUri!.Host), Operation = "file" };
+        var call = new ProviderCall(request, policy, new(scope)
         {
-            var response = await operation.Http.Send(request, maximum, cancellation)
-                .ConfigureAwait(false);
+            Windows = authenticate ? RateWindows : [],
+            Authentication = authenticate ? Authentication(account) : null,
+            Allowance = authenticate ? QuotaScope(account) : null,
+        }) { Fresh = operation.Fresh, Observe = Observe };
+        async Task Observe(ProviderReply response)
+        {
             var retry = Retry(response);
-            var downloadReset = authenticate ? DownloadReset(request, response) : null;
-            if (downloadReset is { } reset)
-            {
-                lock (_sync)
-                    _downloads[key] = reset;
-            }
             if (
                 response.Header("X-RateLimit-Remaining") == "0"
                 || response.Status == HttpStatusCode.TooManyRequests
-                || response.Status == HttpStatusCode.PaymentRequired && downloadReset is null
             )
             {
-                Wait(key, retry ?? DateTimeOffset.UtcNow.AddHours(1));
+                await policy.Fail(authenticate ? QuotaScope(account) : scope, new(RequestBlockKind.RemoteWait, retry))
+                    .ConfigureAwait(false);
             }
-            if (downloadReset is { } allowance && (int)response.Status >= 400)
-                throw new SubtitleException(SubtitleFailure.Quota, allowance);
+            if (response.Status == HttpStatusCode.PaymentRequired && retry is not null)
+                await policy.Fail(operation.Purpose == "download" ? Scope(account, "download") : scope,
+                    new(RequestBlockKind.RemoteWait, retry)).ConfigureAwait(false);
             if (response.Status is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
-                throw new SubtitleException(
-                    authenticate ? SubtitleFailure.Authentication : SubtitleFailure.Network
-                );
-            if (response.Status is HttpStatusCode.TooManyRequests or HttpStatusCode.PaymentRequired)
+            {
+                if (!authenticate)
+                {
+                    var hold = await policy.Fail(scope, new(RequestBlockKind.Backoff, retry)).ConfigureAwait(false);
+                    throw new SubtitleException(SubtitleFailure.Network, hold.RetryAt);
+                }
+                if (!canRenew)
+                    await policy.Fail(Authentication(account), new(RequestBlockKind.Attention))
+                        .ConfigureAwait(false);
+                throw new SubtitleException(SubtitleFailure.Authentication);
+            }
+            if (response.Status == HttpStatusCode.TooManyRequests)
                 throw new SubtitleException(
                     SubtitleFailure.Quota,
                     retry ?? DateTimeOffset.UtcNow.AddHours(1)
                 );
             if ((int)response.Status >= 500)
-                throw new SubtitleException(SubtitleFailure.Network, retry);
+            {
+                var hold = await policy.Fail(scope, new(RequestBlockKind.Backoff, retry)).ConfigureAwait(false);
+                throw new SubtitleException(SubtitleFailure.Network, hold.RetryAt);
+            }
+        }
+        try
+        {
+            var response = await operation.Http.Send(call, maximum, cancellation).ConfigureAwait(false);
+            var reset = authenticate ? DownloadReset(request, response) : null;
+            if (reset is not null || response.Status == HttpStatusCode.PaymentRequired)
+            {
+                var hold = await policy.Fail(operation.Purpose == "download" ? Scope(account, "download") : scope,
+                    new(RequestBlockKind.RemoteWait, reset ?? Retry(response))).ConfigureAwait(false);
+                if ((int)response.Status >= 400)
+                    throw new SubtitleException(SubtitleFailure.Quota, hold.RetryAt);
+            }
             if ((int)response.Status is >= 300 and < 400 && (!authenticate || CanRedirect(request)))
                 return response;
             if ((int)response.Status is < 200 or >= 300)
                 throw new SubtitleException(SubtitleFailure.Format);
+            if (!authenticate)
+                await policy.Succeed(scope).ConfigureAwait(false);
             return response;
         }
         catch (HttpRouteException)
@@ -344,10 +307,12 @@ internal abstract class Supplier
         }
         catch (HttpRequestException error)
         {
+            var hold = await policy.Read(scope, CancellationToken.None).ConfigureAwait(false);
             throw new SubtitleException(
                 error.GetBaseException() is InvalidOperationException
                     ? SubtitleFailure.Route
-                    : SubtitleFailure.Network
+                    : SubtitleFailure.Network,
+                hold?.RetryAt
             );
         }
         catch (InvalidDataException)
@@ -356,7 +321,9 @@ internal abstract class Supplier
         }
         catch (IOException)
         {
-            throw new SubtitleException(SubtitleFailure.Network);
+            var hold = await policy.Read(scope, CancellationToken.None).ConfigureAwait(false)
+                ?? await policy.Fail(scope, new(RequestBlockKind.Backoff)).ConfigureAwait(false);
+            throw new SubtitleException(SubtitleFailure.Network, hold.RetryAt);
         }
         catch (InvalidOperationException)
         {
@@ -364,18 +331,15 @@ internal abstract class Supplier
         }
     }
 
-    protected void Wait(string key, DateTimeOffset reset)
-    {
-        lock (_sync)
-            if (!_waits.TryGetValue(key, out var current) || reset > current)
-                _waits[key] = reset;
-    }
-
     protected sealed record Operation(
         ProviderHttp Http,
         Account Account,
         Func<CancellationToken, Task> Validate
-    );
+    )
+    {
+        internal string Purpose { get; init; } = "search";
+        internal FreshRequest? Fresh { get; init; }
+    }
 
     protected static bool Matches(
         Release release,
@@ -426,7 +390,7 @@ internal abstract class Supplier
     // A subtitle made for another release of the title fits best when it
     // shares the edition, which decides the cut, then the source and release
     // tags, which decide the timing.
-    private static int Likeness(Release release, string name)
+    internal static int Likeness(Release release, string name)
     {
         var file = Words(release.Name).ToHashSet();
         var other = Words(name).ToHashSet();
@@ -464,7 +428,7 @@ internal abstract class Supplier
             ? number
             : null;
 
-    protected static bool SameRelease(Release release, string name)
+    internal static bool SameRelease(Release release, string name)
     {
         var candidate = FileName.Interpret(
             FileName.Kind(name) == FileKind.Video ? name : name + ".mkv"
@@ -528,6 +492,8 @@ internal sealed record SubtitleLookup(
     Func<CancellationToken, Task> Validate
 )
 {
+    internal FreshRequest? Fresh { get; init; }
+    internal SubtitleStage Stage { get; init; }
     internal string? Hash { get; init; }
     internal long Size { get; init; }
     internal int Guesses { get; init; } = 2;
@@ -542,9 +508,11 @@ internal sealed record SubtitleCandidate(
     string Reference
 )
 {
-    internal bool HashMatch { get; init; }
-    internal bool Exact { get; init; }
+    public bool HashMatch { get; init; }
+    public bool Exact { get; init; }
 }
+
+internal sealed record SubtitleSearch(IReadOnlyList<SubtitleCandidate> Candidates, bool Empty = false);
 
 internal sealed record Allowance(
     DateTimeOffset? RequestReset = null,

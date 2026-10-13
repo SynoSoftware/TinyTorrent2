@@ -84,11 +84,10 @@ public sealed partial class MainWindow
             await ShowSettings(new());
             var page =
                 _settingsPage ?? throw new InvalidOperationException("Settings did not open.");
-            var advanced = (ToggleSwitch)page.FindName("AdvancedSwitch");
             var prefix = $"settings-{language}-{theme}-{width}";
             foreach (var showAdvanced in new[] { false, true })
             {
-                advanced.IsOn = showAdvanced;
+                page.ShowAdvanced(showAdvanced);
                 await ShowSettings(new());
                 await CaptureReady(Model.Settings, () => !Model.Settings.IsPending);
                 var state = showAdvanced ? "advanced" : "standard";
@@ -161,7 +160,7 @@ public sealed partial class MainWindow
             await CaptureUi(prefix + "-queue-destination");
             outcomes.Add(new { journey = "settings links and Back", restored = true });
 
-            CaptureInvoke((Button)page.FindName("ReturnWorkspace"));
+            CaptureInvoke((Control)page.FindName("ReturnWorkspace"));
             await CaptureReady(Model.Navigation, () => Model.Navigation.Current == WindowPage.Torrents);
             await ShowSettings(new());
             var categories = (NavigationView)page.FindName("Categories");
@@ -322,7 +321,7 @@ public sealed partial class MainWindow
                 );
 
             await ShowSettings(new());
-            advanced.IsOn = false;
+            page.ShowAdvanced(false);
             var search = Search;
             await CaptureLayout();
             var editor =

@@ -111,7 +111,7 @@
                   <FontIcon
                     FontFamily="{x:Bind icons:Lucide.Font}"
                     Glyph="{x:Bind icons:Lucide.Info}"
-                    FontSize="16"
+                    FontSize="{StaticResource TinyTorrentButtonIconSize}"
                   />
                   <Button.Flyout>
                     <Flyout Placement="Bottom">
@@ -348,7 +348,7 @@
                 <FontIcon
                   FontFamily="{x:Bind icons:Lucide.Font}"
                   Glyph="{x:Bind icons:Lucide.Gauge}"
-                  FontSize="16"
+                  FontSize="{StaticResource TinyTorrentInlineIconSize}"
                   AutomationProperties.AccessibilityView="Raw"
                 />
                 <TextBlock
@@ -378,7 +378,7 @@
                 <FontIcon
                   FontFamily="{x:Bind icons:Lucide.Font}"
                   Glyph="{x:Bind icons:Lucide.ArrowLeftRight}"
-                  FontSize="16"
+                  FontSize="{StaticResource TinyTorrentInlineIconSize}"
                   AutomationProperties.AccessibilityView="Raw"
                 />
                 <TextBlock
@@ -408,7 +408,7 @@
                 <FontIcon
                   FontFamily="{x:Bind icons:Lucide.Font}"
                   Glyph="{x:Bind icons:Lucide.ListOrdered}"
-                  FontSize="16"
+                  FontSize="{StaticResource TinyTorrentInlineIconSize}"
                   AutomationProperties.AccessibilityView="Raw"
                 />
                 <TextBlock

@@ -2,7 +2,7 @@ namespace Syno.TinyTorrent.Subtitles;
 
 internal sealed partial class OpenSubtitles
 {
-    private static readonly IReadOnlyDictionary<string, string> LanguageCodes = new Dictionary<
+    internal static readonly IReadOnlyDictionary<string, string> LanguageCodes = new Dictionary<
         string,
         string
     >(StringComparer.OrdinalIgnoreCase)

@@ -39,7 +39,7 @@
           <FontIcon
             FontFamily="{x:Bind icons:Lucide.Font}"
             Glyph="{x:Bind icons:Lucide.ChevronsUpDown}"
-            FontSize="16"
+            FontSize="{StaticResource TinyTorrentButtonIconSize}"
           />
         </Button>
         <Button
@@ -52,7 +52,7 @@
           <FontIcon
             FontFamily="{x:Bind icons:Lucide.Font}"
             Glyph="{x:Bind icons:Lucide.ChevronsDownUp}"
-            FontSize="16"
+            FontSize="{StaticResource TinyTorrentButtonIconSize}"
           />
         </Button>
       </StackPanel>
@@ -104,13 +104,14 @@
                   Grid.Column="1"
                   FontFamily="{x:Bind icons:Lucide.Font}"
                   Glyph="{x:Bind Glyph}"
-                  FontSize="16"
+                  FontSize="{StaticResource TinyTorrentInlineIconSize}"
                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                   AutomationProperties.AccessibilityView="Raw"
                 />
                 <TextBlock
                   Grid.Column="2"
                   Text="{x:Bind Name}"
+                  Style="{StaticResource TinyTorrentIdentityTextStyle}"
                   VerticalAlignment="Center"
                   TextTrimming="CharacterEllipsis"
                 />
@@ -134,11 +135,16 @@
                   <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
                 <ProgressBar
-                  Minimum="0"
-                  Maximum="1"
+                  Style="{StaticResource TinyTorrentProgressStyle}"
                   Value="{x:Bind ProgressValue, Mode=OneWay}"
                   IsIndeterminate="{x:Bind IsIndeterminate, Mode=OneWay}"
-                  Height="4"
+                  Visibility="{x:Bind IsIncomplete, Mode=OneWay}"
+                  AutomationProperties.AccessibilityView="Raw"
+                />
+                <ProgressBar
+                  Style="{StaticResource TinyTorrentMutedProgressStyle}"
+                  Value="{x:Bind ProgressValue, Mode=OneWay}"
+                  Visibility="{x:Bind IsComplete, Mode=OneWay}"
                   AutomationProperties.AccessibilityView="Raw"
                 />
                 <TextBlock

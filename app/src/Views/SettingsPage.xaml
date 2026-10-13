@@ -91,11 +91,7 @@
       <NavigationView.Resources>
         <SolidColorBrush x:Key="NavigationViewContentBackground" Color="Transparent" />
         <SolidColorBrush x:Key="NavigationViewContentGridBorderBrush" Color="Transparent" />
-        <x:Double x:Key="NavigationViewItemOnLeftIconBoxHeight">28</x:Double>
-        <Style TargetType="NavigationViewItem">
-          <Setter Property="FontSize" Value="16" />
-          <Setter Property="MinHeight" Value="40" />
-        </Style>
+        <StaticResource x:Key="NavigationViewItemOnLeftIconBoxHeight" ResourceKey="TinyTorrentSurfaceIconSize" />
       </NavigationView.Resources>
       <NavigationView.PaneHeader>
         <Button x:Name="Brand" Command="{x:Bind Main.ReturnWorkspace, Mode=OneWay}"
@@ -155,49 +151,27 @@
             AutomationProperties.AutomationId="AdvancedCategory"
           />
       </NavigationView.MenuItems>
-      <NavigationView.PaneFooter>
-        <StackPanel Margin="0,16" Spacing="12">
-          <Grid MinHeight="40">
-            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-            <NavigationViewItem SelectsOnInvoked="False" IsTabStop="False" IsHitTestVisible="False"
-              AutomationProperties.AccessibilityView="Raw"
-              Visibility="{x:Bind Categories.IsPaneOpen, Mode=OneWay}">
-              <NavigationViewItem.Icon>
-                <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Wrench}"
-                  FontSize="{StaticResource NavigationViewItemOnLeftIconBoxHeight}" />
-              </NavigationViewItem.Icon>
-              <TextBlock x:Name="AdvancedLabel" TextTrimming="CharacterEllipsis" />
-            </NavigationViewItem>
-            <TextBlock Grid.Column="1" Margin="0,0,12,0" VerticalAlignment="Center"
-              Text="{x:Bind controls:SettingsRow.State(AdvancedSwitch.IsOn, Model.OnText, Model.OffText), Mode=OneWay}"
-              Visibility="{x:Bind Categories.IsPaneOpen, Mode=OneWay}"
-              AutomationProperties.AccessibilityView="Raw" />
-            <ToggleSwitch
-              x:Name="AdvancedSwitch"
-              Grid.Column="2"
-              Margin="0,0,16,0"
-              VerticalAlignment="Center"
-              ToolTipService.ToolTip="{x:Bind Model.Text.Get('settings', 'show_advanced'), Mode=OneWay}"
-              Toggled="OnAdvanced"
-            />
-          </Grid>
-          <Button x:Name="ReturnWorkspace" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
-            Margin="8,0" Padding="8,8" FontSize="16" MinWidth="0" MinHeight="40" BorderThickness="0"
-            Background="{ThemeResource SubtleFillColorTransparentBrush}"
-            Command="{x:Bind Main.ReturnWorkspace, Mode=OneWay}"
-            ToolTipService.ToolTip="{x:Bind Main.ReturnText, Mode=OneWay}"
+      <NavigationView.FooterMenuItems>
+          <NavigationViewItem x:Name="AdvancedMode" SelectsOnInvoked="False"
+            AutomationProperties.AutomationId="AdvancedMode">
+            <NavigationViewItem.Icon>
+              <FontIcon x:Name="AdvancedModeIcon" FontFamily="{x:Bind icons:Lucide.Font}"
+                FontSize="{StaticResource NavigationViewItemOnLeftIconBoxHeight}" />
+            </NavigationViewItem.Icon>
+          </NavigationViewItem>
+          <NavigationViewItem x:Name="ReturnWorkspace" SelectsOnInvoked="False"
             AutomationProperties.Name="{x:Bind Main.ReturnText, Mode=OneWay}"
             AutomationProperties.AutomationId="ReturnWorkspace">
-            <Grid>
-              <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+            <NavigationViewItem.Content>
+              <TextBlock Text="{x:Bind Main.ReturnText, Mode=OneWay}"
+                Style="{StaticResource TinyTorrentNavigationTextStyle}" />
+            </NavigationViewItem.Content>
+            <NavigationViewItem.Icon>
               <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.ArrowLeft}"
                 FontSize="{StaticResource NavigationViewItemOnLeftIconBoxHeight}" />
-              <TextBlock Grid.Column="1" Margin="12,0,0,0" Text="{x:Bind Main.ReturnText, Mode=OneWay}"
-                Visibility="{x:Bind Categories.IsPaneOpen, Mode=OneWay}" TextTrimming="CharacterEllipsis" />
-            </Grid>
-          </Button>
-        </StackPanel>
-      </NavigationView.PaneFooter>
+            </NavigationViewItem.Icon>
+          </NavigationViewItem>
+      </NavigationView.FooterMenuItems>
       <Grid x:Name="PageHost">
       <Grid x:Name="PageContent" Margin="0,16,0,0">
         <Grid.RowDefinitions>
@@ -227,7 +201,7 @@
             <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
             <Grid x:Name="FirstFact" ColumnSpacing="12">
               <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-              <FontIcon x:Name="FirstIcon" FontFamily="{x:Bind icons:Lucide.Font}" FontSize="20" VerticalAlignment="Center"
+              <FontIcon x:Name="FirstIcon" FontFamily="{x:Bind icons:Lucide.Font}" FontSize="{StaticResource TinyTorrentHeaderIconSize}" VerticalAlignment="Center"
                 AutomationProperties.AccessibilityView="Raw" />
               <StackPanel Grid.Column="1" Spacing="4">
                 <TextBlock x:Name="FirstCaption" Style="{StaticResource TinyTorrentTitleDetailTextStyle}" TextTrimming="CharacterEllipsis" />
@@ -236,7 +210,7 @@
             </Grid>
             <Grid x:Name="SecondFact" Grid.Column="1" ColumnSpacing="12">
               <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-              <FontIcon x:Name="SecondIcon" FontFamily="{x:Bind icons:Lucide.Font}" FontSize="20" VerticalAlignment="Center"
+              <FontIcon x:Name="SecondIcon" FontFamily="{x:Bind icons:Lucide.Font}" FontSize="{StaticResource TinyTorrentHeaderIconSize}" VerticalAlignment="Center"
                 AutomationProperties.AccessibilityView="Raw" />
               <StackPanel Grid.Column="1" Spacing="4">
                 <TextBlock x:Name="SecondCaption" Style="{StaticResource TinyTorrentTitleDetailTextStyle}" TextTrimming="CharacterEllipsis" />
@@ -255,7 +229,7 @@
       >
         <Grid Margin="24,8,24,32">
           <Grid x:Name="BodyContent" MaxWidth="{StaticResource TinyTorrentSettingsWidth}">
-            <StackPanel x:Name="IndexContent" Spacing="24">
+            <StackPanel x:Name="IndexContent" x:Load="False" Spacing="24">
               <Grid x:Name="HomeGrid" ColumnSpacing="8" RowSpacing="8" SizeChanged="OnHomeSize">
                 <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                 <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
@@ -295,7 +269,7 @@
               </Grid>
             </StackPanel>
             <Grid x:Name="CategoryContent">
-              <StackPanel x:Name="Plugins" Spacing="24" Visibility="Collapsed">
+              <StackPanel x:Name="Plugins" x:Load="False" Spacing="24" Visibility="Collapsed">
 
                 <controls:SettingsSection
                   Header="{x:Bind Model.Text.Get('settings', 'video_information'), Mode=OneWay}"
@@ -327,7 +301,7 @@
                           <FontIcon
                             FontFamily="{x:Bind icons:Lucide.Font}"
                             Glyph="{x:Bind icons:Lucide.Info}"
-                            FontSize="16"
+                            FontSize="{StaticResource TinyTorrentButtonIconSize}"
                           />
                         </Button>
                         <Button
@@ -341,9 +315,63 @@
                           <FontIcon
                             FontFamily="{x:Bind icons:Lucide.Font}"
                             Glyph="{x:Bind icons:Lucide.KeyRound}"
-                            FontSize="16"
+                            FontSize="{StaticResource TinyTorrentButtonIconSize}"
                           />
                         </Button>
+                      </StackPanel>
+                    </controls:SettingsRow>
+                    <controls:SettingsRow
+                      x:Name="ImdbRow"
+                      Header="{x:Bind Model.Text.Get('imdb', 'data'), Mode=OneWay}"
+                      Visibility="Collapsed"
+                    >
+                      <!-- Download, not Delete, takes the place that Cancel
+                           leaves when a download ends, so a late click on
+                           Cancel cannot delete the data. -->
+                      <StackPanel Orientation="Horizontal" Spacing="8">
+                        <TextBlock
+                          x:Name="DownloadStatus"
+                          VerticalAlignment="Center"
+                          Style="{StaticResource TinyTorrentTitleDetailTextStyle}"
+                          Visibility="Collapsed"
+                          AutomationProperties.LiveSetting="Polite"
+                        />
+                        <Button
+                          x:Name="DownloadCancel"
+                          Style="{StaticResource TinyTorrentSubtleButtonStyle}"
+                          Click="OnDownloadCancel"
+                          Visibility="Collapsed"
+                          ToolTipService.ToolTip="{x:Bind Model.Text.Get('imdb', 'cancel_tip'), Mode=OneWay}"
+                          AutomationProperties.Name="{x:Bind Model.Text.Get('imdb', 'cancel_tip'), Mode=OneWay}"
+                          AutomationProperties.AutomationId="DownloadCancel"
+                        >
+                          <FontIcon
+                            FontFamily="{x:Bind icons:Lucide.Font}"
+                            Glyph="{x:Bind icons:Lucide.X}"
+                            FontSize="{StaticResource TinyTorrentButtonIconSize}"
+                          />
+                        </Button>
+                        <Button
+                          x:Name="DataDelete"
+                          Style="{StaticResource TinyTorrentSubtleButtonStyle}"
+                          Click="OnDataDelete"
+                          Visibility="Collapsed"
+                          ToolTipService.ToolTip="{x:Bind Model.Text.Get('imdb', 'delete_tip'), Mode=OneWay}"
+                          AutomationProperties.Name="{x:Bind Model.Text.Get('imdb', 'delete'), Mode=OneWay}"
+                          AutomationProperties.AutomationId="DataDelete"
+                        >
+                          <FontIcon
+                            FontFamily="{x:Bind icons:Lucide.Font}"
+                            Glyph="{x:Bind icons:Lucide.Trash2}"
+                            FontSize="{StaticResource TinyTorrentButtonIconSize}"
+                          />
+                        </Button>
+                        <controls:ActionButton
+                          x:Name="DataDownload"
+                          Glyph="{x:Bind icons:Lucide.Download}"
+                          Click="OnDataDownload"
+                          AutomationProperties.AutomationId="DataDownload"
+                        />
                       </StackPanel>
                     </controls:SettingsRow>
                     <controls:SettingsRow Header="{x:Bind Model.Text.Get('plugins', 'movies_with_information'), Mode=OneWay}" BorderThickness="0">
@@ -370,6 +398,19 @@
                     </controls:SettingsRow>
                   </Grid>
                 </Border>
+                <controls:SettingsRow x:Name="ProtectionRow"
+                  Header="{x:Bind Model.Text.Get('request_protection', 'reset'), Mode=OneWay}"
+                  Description="{x:Bind Model.Text.Get('request_protection', 'reset_hint'), Mode=OneWay}">
+                  <StackPanel Orientation="Horizontal" Spacing="12">
+                    <ComboBox x:Name="ProtectionScope" Width="210" Loaded="OnProtectionLoaded"
+                      AutomationProperties.Name="{x:Bind Model.Text.Get('library', 'provider'), Mode=OneWay}"
+                      AutomationProperties.AutomationId="ProtectionScope" />
+                    <controls:ActionButton x:Name="ProtectionReset" Click="OnProtectionReset"
+                      Glyph="{x:Bind icons:Lucide.RotateCcw}"
+                      Text="{x:Bind Model.Text.Get('request_protection', 'reset'), Mode=OneWay}"
+                      AutomationProperties.AutomationId="ProtectionReset" />
+                  </StackPanel>
+                </controls:SettingsRow>
                 <controls:SettingsExpander x:Name="DatabaseSummary" Visibility="Collapsed"
                   HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Padding="16,0"
                   Expanding="OnDatabaseExpanding"
@@ -424,7 +465,7 @@
                   </StackPanel>
                 </controls:SettingsExpander>
               </StackPanel>
-              <StackPanel x:Name="General" Spacing="8" Visibility="Collapsed">
+              <StackPanel x:Name="General" x:Load="False" Spacing="8" Visibility="Collapsed">
                 <ContentControl x:Name="IntegrationContent" HorizontalContentAlignment="Stretch" IsTabStop="False" />
                 <controls:SettingsSection
                   x:Name="LifecycleSection" Margin="0,16,0,0"
@@ -682,7 +723,7 @@
                       <ColumnDefinition Width="20" />
                       <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
-                    <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.RefreshCw}" FontSize="20" />
+                    <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.RefreshCw}" FontSize="{StaticResource TinyTorrentHeaderIconSize}" />
                     <controls:SettingsRow Grid.Column="1" BorderThickness="0"
                       Header="{x:Bind Model.Updates.Label, Mode=OneWay}"
                       Error="{x:Bind Model.Updates.Message, Mode=OneWay}"
@@ -700,7 +741,7 @@
                   </Grid>
                 </Border>
               </StackPanel>
-              <StackPanel x:Name="Transfers" Spacing="8" Visibility="Collapsed">
+              <StackPanel x:Name="Transfers" x:Load="False" Spacing="8" Visibility="Collapsed">
                 <controls:SettingsSection
                   x:Name="DownloadsSection"
                   Style="{StaticResource TinyTorrentSettingsGroupStyle}"
@@ -1360,7 +1401,7 @@
                     </controls:SettingsRow>
                 </Border>
               </StackPanel>
-              <StackPanel x:Name="Limits" Spacing="24" Visibility="Collapsed">
+              <StackPanel x:Name="Limits" x:Load="False" Spacing="24" Visibility="Collapsed">
                 <ContentControl x:Name="SpeedContent" HorizontalContentAlignment="Stretch" IsTabStop="False" />
                 <controls:SettingsSection
                   x:Name="AccountingSection"
@@ -1409,7 +1450,7 @@
                   <StackPanel x:Name="RelatedLinks" Spacing="8" />
                 </StackPanel>
               </StackPanel>
-              <StackPanel x:Name="Schedule" Spacing="24" Visibility="Collapsed">
+              <StackPanel x:Name="Schedule" x:Load="False" Spacing="24" Visibility="Collapsed">
                 <controls:SettingsSection x:Name="ScheduleSpeedSection"
                   Header="{x:Bind Model.Text.Get('settings', 'limits'), Mode=OneWay}"
                   Summary="{x:Bind Main.LimitsSummary, Mode=OneWay}"
@@ -1418,14 +1459,14 @@
                 </controls:SettingsSection>
                 <ContentControl x:Name="ScheduleContent" HorizontalContentAlignment="Stretch" IsTabStop="False" />
               </StackPanel>
-              <StackPanel x:Name="Network" Spacing="8" Visibility="Collapsed">
+              <StackPanel x:Name="Network" x:Load="False" Spacing="8" Visibility="Collapsed">
                 <Border Style="{StaticResource TinyTorrentSettingsCardStyle}">
                   <Grid ColumnSpacing="24">
                     <Grid.ColumnDefinitions>
                       <ColumnDefinition Width="20" />
                       <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
-                    <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Network}" FontSize="20" />
+                    <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Network}" FontSize="{StaticResource TinyTorrentHeaderIconSize}" />
                     <controls:SettingsRow Grid.Column="1" BorderThickness="0"
                       x:Name="AdapterRow"
                       Header="{x:Bind Model.Adapter.Label, Mode=OneWay}"
@@ -1456,13 +1497,13 @@
                       <ColumnDefinition Width="20" />
                       <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
-                    <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Globe}" FontSize="20" />
+                    <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Globe}" FontSize="{StaticResource TinyTorrentHeaderIconSize}" />
                     <controls:SettingsRow Grid.Column="1" BorderThickness="0" x:Name="ProxyRow">
                       <StackPanel Orientation="Horizontal" Spacing="12">
                         <FontIcon
                           FontFamily="{x:Bind icons:Lucide.Font}"
                           Glyph="{x:Bind icons:Lucide.CircleCheck}"
-                          FontSize="16"
+                          FontSize="{StaticResource TinyTorrentInlineIconSize}"
                           Foreground="{ThemeResource SystemFillColorSuccessBrush}"
                           Visibility="{x:Bind Model.Proxy.IsWorking, Mode=OneWay}"
                           ToolTipService.ToolTip="{x:Bind Model.Proxy.StatusText, Mode=OneWay}"
@@ -1471,7 +1512,7 @@
                         <FontIcon
                           FontFamily="{x:Bind icons:Lucide.Font}"
                           Glyph="{x:Bind icons:Lucide.CircleX}"
-                          FontSize="16"
+                          FontSize="{StaticResource TinyTorrentInlineIconSize}"
                           Foreground="{ThemeResource SystemFillColorCriticalBrush}"
                           Visibility="{x:Bind Model.Proxy.IsFailing, Mode=OneWay}"
                           ToolTipService.ToolTip="{x:Bind Model.Proxy.StatusText, Mode=OneWay}"
@@ -1773,7 +1814,7 @@
                   </StackPanel>
                 </controls:SettingsSection>
               </StackPanel>
-              <StackPanel x:Name="Advanced" Spacing="8" Visibility="Collapsed">
+              <StackPanel x:Name="Advanced" x:Load="False" Spacing="8" Visibility="Collapsed">
                 <controls:SettingsSection
                   x:Name="RefreshSection"
                   Glyph="{x:Bind icons:Lucide.RefreshCw}"
@@ -1971,7 +2012,7 @@
                   </StackPanel>
                 </controls:SettingsSection>
               </StackPanel>
-              <StackPanel x:Name="Appearance" Spacing="8" Visibility="Collapsed">
+              <StackPanel x:Name="Appearance" x:Load="False" Spacing="8" Visibility="Collapsed">
                 <controls:SettingsSection
                   x:Name="AppearanceSection"
                   Style="{StaticResource TinyTorrentSettingsGroupStyle}"

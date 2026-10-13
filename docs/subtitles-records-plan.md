@@ -1,6 +1,6 @@
 # Subtitle records and acquisition plan
 
-Review and implementation in the working tree on 2026-10-11.
+**Implementation done.** Review and implementation in the working tree on 2026-10-11.
 The owner asked for these changes:
 
 - find bundled subtitles once, including in nested folders;
@@ -247,6 +247,8 @@ view directly, without upgrades for earlier development databases:
 - Engine, protocol or native changes.
 
 ## Implementation order
+
+All seven steps are done; the descriptions below record the delivered scope.
 
 1. **Contracts.** Add the two owner rulings and the discovery, identification
    and lookup rules to `subtitles.md`. Amend its subtitle-record ruling, which

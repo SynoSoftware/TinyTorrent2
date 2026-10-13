@@ -161,9 +161,15 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
     public string Synopsis => _loadedDetail?.Synopsis ?? string.Empty;
     internal VideoChoice? Series => _loadedDetail?.Series;
     internal IReadOnlyList<Episode> Episodes => _loadedDetail?.Episodes ?? [];
+    internal string Directors => _loadedDetail?.Directors ?? string.Empty;
+    internal string Certification => _loadedDetail?.Certification ?? string.Empty;
+    internal string BoxOffice =>
+        _loadedDetail?.BoxOffice is { } takings
+            ? Text.Format("library", "dollars", Text.Compact(takings))
+            : string.Empty;
     public bool IsProviderAvailable => _videos?.IsAvailable == true;
     public bool IsEnrichmentEnabled => _videos?.Enabled == true;
-    private string? LookupCatalog => IsEnrichmentEnabled ? Provider?.CatalogId : null;
+    private string? LookupCatalog => IsEnrichmentEnabled ? Option?.ProviderId : null;
     public string DownloadLabel => Text.Get("library", "download_information");
     public string FetchMetadataLabel => Text.Get("library", "fetch_metadata");
     public string FetchMetadataGlyph => Lucide.Download;
@@ -278,7 +284,7 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
         FetchMetadata = new RelayCommand(
             () =>
             {
-                if (Option is { } option)
+                if ((Option is { IsOnline: true } current ? current : DownloadProviders.FirstOrDefault()) is { } option)
                     Fetch(option);
                 return Task.CompletedTask;
             },
@@ -288,7 +294,6 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
                     .Items.Cast<LibraryRow>()
                     .Any(row =>
                         row.Entry.Kind == FileKind.Video
-                        && (Selection.Items.Count == 1 || !row.Entry.HasMetadata)
                     )
         );
         ShowSettings = new RelayCommand(
@@ -435,24 +440,37 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
 
     internal Task<IReadOnlyList<VideoChoice>> FindVideo(
         string query,
+        string fileName,
         ProviderOption source,
-        CancellationToken cancellation
+        CancellationToken cancellation,
+        FetchScope scope = FetchScope.New
     ) =>
         _videos is null
             ? Task.FromResult<IReadOnlyList<VideoChoice>>([])
-            : _videos.Search(query, source, cancellation);
+            : _videos.Search(query, fileName, source, cancellation, scope);
+
+    internal Task<Services.RequestBlock?> Protection(string query, string fileName, ProviderOption source, CancellationToken cancellation) =>
+        _videos is null ? Task.FromResult<Services.RequestBlock?>(null) : _videos.Protection(query, fileName, source, cancellation);
+
+    internal Task<IReadOnlyList<VideoFetch>> Plan(IReadOnlyCollection<Entry> entries, ProviderOption source, CancellationToken cancellation) =>
+        _videos is null ? Task.FromResult<IReadOnlyList<VideoFetch>>([]) : _videos.Plan(entries, source, cancellation);
+
+    internal void Fetch(IReadOnlyCollection<VideoFetch> entries, ProviderOption source, FetchScope scope) =>
+        _videos?.Fetch(entries.Where(entry => entry.Includes(scope)).Select(entry => entry.Entry).ToArray(), source, scope);
 
     internal Task SaveMetadata(
         Entry entry,
         VideoChoice choice,
         ProviderOption source,
-        CancellationToken cancellation
+        CancellationToken cancellation,
+        FetchScope scope = FetchScope.New
     ) =>
         (_videos ?? throw new InvalidOperationException("Library has no video lookup.")).Identify(
             entry,
             choice,
             source,
-            cancellation
+            cancellation,
+            scope
         );
 
     internal async Task Recover()
@@ -817,6 +835,9 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
                 || Cast != (detail?.Cast ?? string.Empty)
                 || Synopsis != (detail?.Synopsis ?? string.Empty)
                 || Series != detail?.Series
+                || Directors != (detail?.Directors ?? string.Empty)
+                || Certification != (detail?.Certification ?? string.Empty)
+                || _loadedDetail?.BoxOffice != detail?.BoxOffice
                 || !Episodes.SequenceEqual(detail?.Episodes ?? [])
                 || !Origins.SequenceEqual(detail?.Origins ?? []);
             _loadedDetail = detail;
@@ -963,6 +984,7 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
             _videos.BatchLimited -= OnBatchLimited;
             _videos.Failed -= OnWorkerFailed;
         }
+        _ = CancelDownload();
         if (_facts is not null)
         {
             _facts.Changed -= OnStored;
@@ -989,6 +1011,7 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
         _store = null;
         _facts = null;
         _videos = null;
+        await CancelDownload();
         _rows.Clear();
         _selections.Clear();
         Select(Selection.Empty);
@@ -1047,10 +1070,16 @@ public sealed class LibraryRow(Entry entry, Browser library) : INotifyPropertyCh
     public string Title => Entry.Title;
     public string Type => Text.Get("library", Entry.Type.Length > 0 ? Entry.Type : "unidentified");
     public string Year => Entry.Year?.ToString() ?? string.Empty;
-    public string ImdbRating => Provided(Score(Entry.ImdbRating));
-    public string TmdbRating => Provided(Score(Entry.TmdbRating));
-    public string ImdbTip => RatingTip(Entry.ImdbRating);
-    public string TmdbTip => RatingTip(Entry.TmdbRating);
+    public string ImdbRating => Provided(RatingText(RatingSource.Imdb));
+    public string TmdbRating => Provided(RatingText(RatingSource.Tmdb));
+    public string RottenTomatoesRating => Provided(RatingText(RatingSource.RottenTomatoes));
+    public string PopcornmeterRating => Provided(RatingText(RatingSource.Popcornmeter));
+    public string MetacriticRating => Provided(RatingText(RatingSource.Metacritic));
+    public string ImdbTip => RatingTip(RatingSource.Imdb);
+    public string TmdbTip => RatingTip(RatingSource.Tmdb);
+    public string RottenTomatoesTip => RatingTip(RatingSource.RottenTomatoes);
+    public string PopcornmeterTip => RatingTip(RatingSource.Popcornmeter);
+    public string MetacriticTip => RatingTip(RatingSource.Metacritic);
     public string Genres => Entry.Genres;
     public string Cast => Entry.Cast;
 
@@ -1092,22 +1121,45 @@ public sealed class LibraryRow(Entry entry, Browser library) : INotifyPropertyCh
             : string.Empty;
     public string Kind => Text.Get("library", Entry.Kind.ToString().ToLowerInvariant());
 
-    private static string Score(Rating? rating) => rating?.Value.ToString("0.0") ?? string.Empty;
+    /// <summary>
+    /// The score on the site's own scale, as IMDb's 6.7, Rotten Tomatoes' 59%
+    /// or Metacritic's 50, followed by the vote count, because a high score
+    /// from a few votes means little. Empty when the site has no rating.
+    /// </summary>
+    internal string RatingText(RatingSource source) =>
+        source.Read(Entry.Ratings) is not { } rating ? string.Empty
+        : rating.Votes is { } votes
+            ? Text.Format("library", "rating_votes", Score(source, rating), Text.Compact(votes))
+        : Score(source, rating);
+
+    private string Score(RatingSource source, Rating rating)
+    {
+        var value = rating.Value / 10 * source.Maximum;
+        return source.IsPercent ? Text.Format("units", "percent", value / 100)
+            : source.Maximum == 10 ? value.ToString("0.0")
+            : value.ToString("0");
+    }
 
     // An empty provider cell of an unmatched file shows a dash, so a file the
     // provider does not have differs from one not looked up yet. Only table
-    // cells use it; the rating texts appear nowhere else.
+    // cells use it.
     private string Provided(string value) => value.Length == 0 && Entry.IsUnmatched ? "—" : value;
 
-    private string RatingTip(Rating? rating) =>
-        rating is null
-            ? string.Empty
-            : Text.Format("library", "rating", Score(rating))
-                + (
-                    rating.Kind == VideoKind.Series
-                        ? " · " + Text.Get("library", "series_rating")
-                        : string.Empty
-                );
+    internal string RatingTip(RatingSource source)
+    {
+        if (source.Read(Entry.Ratings) is not { } rating)
+            return string.Empty;
+        var score = Score(source, rating);
+        var parts = new List<string>
+        {
+            source.IsPercent ? score : Text.Format("library", "rating", score, source.Maximum),
+        };
+        if (rating.Votes is { } votes)
+            parts.Add(Text.FormatCount("library", "votes", votes));
+        if (rating.Kind == VideoKind.Series)
+            parts.Add(Text.Get("library", "series_rating"));
+        return string.Join(" · ", parts);
+    }
 
     public event PropertyChangedEventHandler? PropertyChanged;
 

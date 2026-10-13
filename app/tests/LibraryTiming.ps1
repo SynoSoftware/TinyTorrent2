@@ -7,7 +7,7 @@ param(
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot/SourceChecks.ps1" -BinaryDirectory $BinaryDirectory
 $database = New-Value 'Services.Database' @($directory)
-$store = New-Value 'Library.Store' @($database)
+$store = New-Value 'Library.Store' @($database, $imdb)
 $measurements = [Collections.Generic.List[object]]::new()
 $collections = [Collections.Generic.List[object]]::new()
 if ($Profile) {

@@ -16,7 +16,7 @@
         </Grid.ColumnDefinitions>
         <TextBlock
           Text="{x:Bind Name, Mode=OneWay}"
-          Style="{StaticResource TinyTorrentBodyTextStyle}"
+          Style="{StaticResource TinyTorrentIdentityTextStyle}"
           TextWrapping="NoWrap"
           TextTrimming="CharacterEllipsis"
           IsTextSelectionEnabled="True"
@@ -78,7 +78,7 @@
                   <FontIcon
                     FontFamily="{x:Bind icons:Lucide.Font}"
                     Glyph="{x:Bind icons:Lucide.Folder}"
-                    FontSize="16"
+                    FontSize="{StaticResource TinyTorrentInlineIconSize}"
                     VerticalAlignment="Center"
                   />
                   <TextBlock

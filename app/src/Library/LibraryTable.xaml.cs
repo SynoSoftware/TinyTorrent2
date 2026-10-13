@@ -118,6 +118,11 @@ public sealed partial class LibraryTable : UserControl
         var schema = table.Schema<LibraryRow>().Key(row => row.Entry.EntryId);
         foreach (var column in table.Columns)
         {
+            if (RatingSource.All.FirstOrDefault(source => source.Id == column.Id) is { } rating)
+            {
+                schema.SortKey(column, row => rating.Read(row.Entry.Ratings)?.Value);
+                continue;
+            }
             switch (column.Id)
             {
                 case "size":
@@ -125,12 +130,6 @@ public sealed partial class LibraryTable : UserControl
                     break;
                 case "year":
                     schema.SortKey(column, row => row.Entry.Year);
-                    break;
-                case "imdb":
-                    schema.SortKey(column, row => row.Entry.ImdbRating?.Value);
-                    break;
-                case "tmdb":
-                    schema.SortKey(column, row => row.Entry.TmdbRating?.Value);
                     break;
                 case "track":
                     schema.SortKey(column, row => row.Entry.Track);

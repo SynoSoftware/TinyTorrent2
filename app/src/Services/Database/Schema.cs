@@ -2,27 +2,38 @@ namespace Syno.TinyTorrent.Services;
 
 internal sealed partial class Database
 {
-    private const int Version = 4;
-
-    // A provider searched for the file under the name in evidence and found
-    // no match, so background lookups skip it while the name is unchanged.
-    // Version 3 added this table; Open adds it to a version 2 file.
-    private const string VideoMisses = """
-        CREATE TABLE video_misses (
-            origin TEXT NOT NULL, file_index INTEGER NOT NULL, catalog_id TEXT NOT NULL,
-            evidence TEXT NOT NULL,
-            PRIMARY KEY(origin,file_index,catalog_id)
-        );
-        """;
+    private const int Version = 8;
 
     // The person's own API key for a Library provider, protected by
-    // Credentials, which replaces the key built into the release. Version 4
-    // added this table; Open adds it to an older file.
+    // Credentials, which replaces the key built into the release.
     private const string ProviderKeys = """
         CREATE TABLE provider_keys (provider_id TEXT NOT NULL PRIMARY KEY, secret BLOB NOT NULL);
         """;
 
-    private const string Schema = VideoMisses + ProviderKeys + """
+    private const string Schema = ProviderKeys + """
+        CREATE TABLE request_settings (
+            singleton INTEGER PRIMARY KEY CHECK(singleton=1), lookups INTEGER NOT NULL DEFAULT 5
+        );
+        INSERT INTO request_settings(singleton) VALUES(1);
+        CREATE TABLE request_blocks (
+            provider_id TEXT NOT NULL, question_id TEXT NOT NULL, reason INTEGER NOT NULL CHECK(reason IN (0,1,7)),
+            checked INTEGER NOT NULL, PRIMARY KEY(provider_id,question_id)
+        );
+        CREATE TABLE request_counts (
+            provider_id TEXT NOT NULL, question_id TEXT NOT NULL, total INTEGER NOT NULL CHECK(total>=0),
+            PRIMARY KEY(provider_id,question_id)
+        );
+        CREATE TABLE request_holds (
+            provider_id TEXT NOT NULL, identity TEXT NOT NULL, operation TEXT NOT NULL,
+            reason INTEGER NOT NULL CHECK(reason IN (3,4,5)), retry_at INTEGER,
+            failures INTEGER NOT NULL DEFAULT 0 CHECK(failures>=0), checked INTEGER NOT NULL,
+            PRIMARY KEY(provider_id,identity,operation,reason),
+            CHECK(reason=5 OR retry_at IS NOT NULL)
+        );
+        CREATE TABLE request_usage (
+            provider_id TEXT NOT NULL, identity TEXT NOT NULL, started INTEGER NOT NULL
+        );
+        CREATE INDEX request_usage_scope ON request_usage(provider_id,identity,started);
         CREATE TABLE source_state (
             singleton INTEGER PRIMARY KEY CHECK(singleton=1),
             initialized INTEGER NOT NULL CHECK(initialized IN (0,1))
@@ -34,11 +45,12 @@ internal sealed partial class Database
             title TEXT NOT NULL, type TEXT NOT NULL, year INTEGER, genres TEXT NOT NULL,
             cast TEXT NOT NULL, synopsis TEXT NOT NULL, keywords TEXT NOT NULL, search TEXT NOT NULL,
             series_catalog TEXT, series_id TEXT, series_type TEXT, series_title TEXT, series_year INTEGER,
-            imdb_rating REAL CHECK(imdb_rating BETWEEN 0 AND 10),
-            imdb_kind TEXT CHECK(imdb_kind IN ('movie','tv')),
-            tmdb_rating REAL CHECK(tmdb_rating BETWEEN 0 AND 10),
-            tmdb_kind TEXT CHECK(tmdb_kind IN ('movie','tv')), episodes TEXT,
+            ratings TEXT NOT NULL DEFAULT '{}' CHECK(json_valid(ratings)), episodes TEXT, imdb_id INTEGER,
             PRIMARY KEY(catalog_id,video_id)
+        );
+        CREATE TABLE title_facts (
+            imdb_id INTEGER PRIMARY KEY, ratings TEXT NOT NULL DEFAULT '{}' CHECK(json_valid(ratings)),
+            directors TEXT NOT NULL DEFAULT '', certification TEXT NOT NULL DEFAULT '', box_office INTEGER
         );
         CREATE TABLE identifications (
             origin TEXT NOT NULL, file_index INTEGER NOT NULL, catalog_id TEXT, video_id TEXT,
@@ -49,7 +61,7 @@ internal sealed partial class Database
         );
         CREATE TABLE video_records (
             catalog_id TEXT NOT NULL, path TEXT NOT NULL, language TEXT NOT NULL,
-            content TEXT NOT NULL, retrieved INTEGER NOT NULL,
+            content TEXT NOT NULL, retrieved INTEGER NOT NULL, checked INTEGER NOT NULL,
             PRIMARY KEY(catalog_id,path,language)
         );
         CREATE TABLE video_references (
@@ -60,7 +72,7 @@ internal sealed partial class Database
         );
         CREATE TABLE video_choices (
             catalog_id TEXT NOT NULL, video_id TEXT NOT NULL, type TEXT NOT NULL,
-            title TEXT NOT NULL, original TEXT, year INTEGER, content TEXT,
+            title TEXT NOT NULL, original TEXT, year INTEGER,
             name TEXT NOT NULL, original_name TEXT,
             PRIMARY KEY(catalog_id,video_id)
         );
@@ -75,20 +87,21 @@ internal sealed partial class Database
         );
         CREATE TABLE library_settings (
             singleton INTEGER PRIMARY KEY CHECK(singleton=1),
-            enabled INTEGER NOT NULL DEFAULT 0, source TEXT, lookups INTEGER NOT NULL DEFAULT 5
+            enabled INTEGER NOT NULL DEFAULT 0, source TEXT
         );
         INSERT INTO library_settings(singleton) VALUES(1);
-        CREATE TABLE video_lookups (
-            catalog_id TEXT NOT NULL, query TEXT NOT NULL, total INTEGER NOT NULL,
-            PRIMARY KEY(catalog_id,query)
+        CREATE TABLE video_searches (
+            catalog_id TEXT NOT NULL, question_id TEXT NOT NULL, choices TEXT NOT NULL,
+            rejected INTEGER NOT NULL DEFAULT 0, checked INTEGER NOT NULL,
+            PRIMARY KEY(catalog_id,question_id), CHECK(json_valid(choices))
         );
         CREATE INDEX identifications_video ON identifications(catalog_id,video_id);
         CREATE INDEX video_information_movie ON video_information(catalog_id,year,language) WHERE type='movie';
+        CREATE INDEX video_information_imdb ON video_information(imdb_id) WHERE imdb_id IS NOT NULL;
         CREATE TABLE subtitle_settings (
             singleton INTEGER PRIMARY KEY CHECK(singleton=1), enabled INTEGER NOT NULL DEFAULT 0,
             supplier INTEGER NOT NULL DEFAULT 0, username TEXT NOT NULL DEFAULT '', secret BLOB,
-            languages TEXT NOT NULL DEFAULT '[]', extras INTEGER NOT NULL DEFAULT 1,
-            request_reset INTEGER, download_reset INTEGER
+            languages TEXT NOT NULL DEFAULT '[]', extras INTEGER NOT NULL DEFAULT 1
         );
         INSERT INTO subtitle_settings(singleton) VALUES(1);
         CREATE TABLE subtitle_outputs (
@@ -99,6 +112,7 @@ internal sealed partial class Database
             path TEXT COLLATE PATH NOT NULL, language TEXT NOT NULL, stage INTEGER NOT NULL,
             outcome INTEGER NOT NULL, retry_at INTEGER NOT NULL DEFAULT 0, attempts INTEGER NOT NULL DEFAULT 0,
             manual INTEGER NOT NULL DEFAULT 0, guesses INTEGER NOT NULL DEFAULT 2, match INTEGER, reference TEXT,
+            fresh TEXT CHECK(fresh IS NULL OR json_valid(fresh)),
             PRIMARY KEY(path,language)
         );
         CREATE TABLE subtitle_output_sources (
@@ -120,9 +134,10 @@ internal sealed partial class Database
             stamp TEXT NOT NULL DEFAULT '',
             PRIMARY KEY(origin,file_index)
         );
-        CREATE TABLE subtitle_lookups (
-            supplier INTEGER NOT NULL, query TEXT NOT NULL, language TEXT NOT NULL,
-            total INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(supplier,query,language)
+        CREATE TABLE subtitle_searches (
+            provider_id TEXT NOT NULL, question_id TEXT NOT NULL, answer TEXT NOT NULL CHECK(json_valid(answer)),
+            rejected INTEGER NOT NULL DEFAULT 0, reusable INTEGER NOT NULL DEFAULT 1, checked INTEGER NOT NULL,
+            PRIMARY KEY(provider_id,question_id)
         );
         """;
 
@@ -160,7 +175,7 @@ internal sealed partial class Database
         CREATE TEMP TABLE received (file_index INTEGER PRIMARY KEY);
         CREATE TEMP TABLE video_attempts (
             origin TEXT NOT NULL, file_index INTEGER NOT NULL, catalog_id TEXT NOT NULL,
-            evidence TEXT NOT NULL, request TEXT NOT NULL, outcome TEXT,
+            evidence TEXT NOT NULL, request TEXT NOT NULL, outcome TEXT, question_id TEXT,
             PRIMARY KEY(origin,file_index,catalog_id)
         );
         CREATE INDEX video_attempts_request ON video_attempts(catalog_id,request) WHERE outcome IS NULL;
@@ -181,7 +196,7 @@ internal sealed partial class Database
             p.track, p.duration, p.created, p.modified,
             f.search AS file_search,
             v.video_id, COALESCE(p.search,'') AS music_search, v.catalog_id,
-            v.imdb_rating, v.imdb_kind, v.tmdb_rating, v.tmdb_kind,
+            COALESCE(t.ratings,v.ratings) AS ratings, v.imdb_id,
             v.series_catalog, v.series_id, v.series_type, v.series_title, v.episodes,
             p.bitrate, p.width, p.height,
             COALESCE((SELECT group_concat(DISTINCT a.language) FROM subtitle_languages a
@@ -193,6 +208,7 @@ internal sealed partial class Database
             WHERE s.entry_id=f.entry_id AND (d.explicit=1 OR d.evidence=s.name)
             ORDER BY d.explicit DESC,d.decided DESC LIMIT 1)
         LEFT JOIN video_information v ON v.catalog_id=i.catalog_id AND v.video_id=i.video_id
+        LEFT JOIN title_facts t ON t.imdb_id=v.imdb_id
         LEFT JOIN file_facts p ON (p.origin,p.file_index) = (
             SELECT d.origin,d.file_index FROM file_facts d
             JOIN source_files s ON s.origin=d.origin AND s.file_index=d.file_index
