@@ -5,7 +5,7 @@ using Windows.Storage;
 
 namespace Syno.TinyTorrent.Library;
 
-internal sealed class FileFacts(Database database) : IAsyncDisposable
+internal sealed class FileFacts(Database database, BackgroundWork work) : IAsyncDisposable
 {
     private readonly CancellationTokenSource _lifetime = new();
     private readonly object _gate = new();
@@ -13,6 +13,7 @@ internal sealed class FileFacts(Database database) : IAsyncDisposable
     private bool _again;
     private bool _connected;
     private CancellationTokenSource _connection = new();
+    private readonly HashSet<Target> _cancelled = [];
     internal event EventHandler? Changed;
     internal event EventHandler<Exception>? Failed;
 
@@ -39,60 +40,76 @@ internal sealed class FileFacts(Database database) : IAsyncDisposable
 
     private async Task Run()
     {
-        CancellationToken cancellation;
+        CancellationTokenSource request;
         lock (_gate)
-            cancellation = _connection.Token;
+        {
+            if (!_connected)
+            {
+                _work = null;
+                return;
+            }
+            _again = false;
+            request = CancellationTokenSource.CreateLinkedTokenSource(_connection.Token);
+        }
+        var cancellation = request.Token;
+        BackgroundWork.Operation? operation = null;
+        var signalling = Task.CompletedTask;
+        var ended = false;
+        var done = 0;
+        var observation = new WorkObservation(new WorkDescription.FileProperties(),
+            new WorkProgress.Unknown(), new WorkExecution.Running());
         try
         {
-            while (!cancellation.IsCancellationRequested)
+            var pending = await database.Run(connection =>
             {
-                lock (_gate)
-                {
-                    if (!_connected)
+                using var command = connection.CreateCommand();
+                command.CommandText = """
+                    SELECT f.entry_id,f.path,f.kind,f.size FROM current_files f
+                    WHERE f.readable=1
+                    AND NOT EXISTS(SELECT 1 FROM file_facts p
+                        JOIN source_files owner USING(origin,file_index) WHERE owner.entry_id=f.entry_id)
+                    AND NOT EXISTS(SELECT 1 FROM fact_attempts a WHERE a.entry_id=f.entry_id AND a.path=f.path COLLATE PATH);
+                    """;
+                using var reader = command.ExecuteReader();
+                var targets = new List<Target>();
+                while (reader.Read())
+                    targets.Add(new(reader.GetInt64(0), reader.GetString(1))
                     {
-                        return;
-                    }
-                    _again = false;
-                }
-                var target = await database
-                    .Run(
-                        connection =>
-                        {
-                            using var command = connection.CreateCommand();
-                            command.CommandText = """
-                                SELECT f.entry_id,f.path,f.kind,s.origin,s.file_index FROM current_files f
-                                JOIN source_files s USING(entry_id)
-                                WHERE f.readable=1
-                                AND NOT EXISTS(SELECT 1 FROM file_facts p
-                                    JOIN source_files owner USING(origin,file_index) WHERE owner.entry_id=f.entry_id)
-                                AND NOT EXISTS(SELECT 1 FROM fact_attempts a WHERE a.entry_id=f.entry_id AND a.path=f.path COLLATE PATH)
-                                LIMIT 1;
-                                """;
-                            using var reader = command.ExecuteReader();
-                            return reader.Read()
-                                ? new Target(
-                                    reader.GetInt64(0),
-                                    reader.GetString(1),
-                                    reader.GetString(3),
-                                    reader.GetInt32(4)
-                                )
-                                {
-                                    Kind = (FileKind)reader.GetInt32(2),
-                                }
-                                : null;
-                        },
-                        cancellation
-                    )
-                    .ConfigureAwait(false);
-                if (target is null)
+                        Kind = (FileKind)reader.GetInt32(2),
+                        Size = reader.GetInt64(3),
+                    });
+                return targets;
+            }, cancellation).ConfigureAwait(false);
+            Target[] accepted;
+            lock (_gate)
+                accepted = pending.Where(target => !_cancelled.Contains(target)).ToArray();
+            if (accepted.Length == 0)
+                return;
+            lock (_gate)
+            {
+                observation = observation with
+                {
+                    Progress = new WorkProgress.Fraction(0, accepted.Length, WorkUnit.Files),
+                };
+                operation = work.Begin(observation, () =>
                 {
                     lock (_gate)
                     {
-                        if (_again)
-                            continue;
+                        if (!ended && !request.IsCancellationRequested)
+                        {
+                            foreach (var target in accepted.Skip(done))
+                                _cancelled.Add(target);
+                            observation = observation with { Execution = new WorkExecution.Cancelling() };
+                            operation?.Report(observation);
+                            signalling = request.CancelAsync();
+                        }
+                        return signalling;
                     }
-                    return;
-                }
+                });
+            }
+            foreach (var target in accepted)
+            {
+                cancellation.ThrowIfCancellationRequested();
                 Facts? facts = null;
                 try
                 {
@@ -161,6 +178,18 @@ internal sealed class FileFacts(Database database) : IAsyncDisposable
                     .ConfigureAwait(false);
                 if (facts is not null)
                     Changed?.Invoke(this, EventArgs.Empty);
+                lock (_gate)
+                {
+                    done++;
+                    if (!request.IsCancellationRequested)
+                    {
+                        observation = observation with
+                        {
+                            Progress = new WorkProgress.Fraction(done, accepted.Length, WorkUnit.Files),
+                        };
+                        operation.Report(observation);
+                    }
+                }
             }
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
@@ -170,6 +199,13 @@ internal sealed class FileFacts(Database database) : IAsyncDisposable
         }
         finally
         {
+            lock (_gate) ended = true;
+            try { await signalling.ConfigureAwait(false); }
+            finally
+            {
+                operation?.Dispose();
+                request.Dispose();
+            }
             lock (_gate)
             {
                 _work = null;
@@ -183,14 +219,12 @@ internal sealed class FileFacts(Database database) : IAsyncDisposable
     {
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT EXISTS(SELECT 1 FROM source_files s JOIN current_files f USING(entry_id)
-                WHERE s.origin=$origin AND s.file_index=$index AND f.entry_id=$entry
-                AND f.path=$path COLLATE PATH AND f.readable=1);
+            SELECT EXISTS(SELECT 1 FROM current_files f WHERE f.entry_id=$entry
+                AND f.path=$path COLLATE PATH AND f.size=$size AND f.readable=1);
             """;
-        command.Parameters.AddWithValue("$origin", target.Origin);
-        command.Parameters.AddWithValue("$index", target.Index);
         command.Parameters.AddWithValue("$entry", target.EntryId);
         command.Parameters.AddWithValue("$path", target.Path);
+        command.Parameters.AddWithValue("$size", target.Size);
         if (Convert.ToInt64(command.ExecuteScalar()) == 0)
             return false;
         command.CommandText = "INSERT OR REPLACE INTO fact_attempts VALUES ($entry,$path);";
@@ -239,9 +273,10 @@ internal sealed class FileFacts(Database database) : IAsyncDisposable
         _connection.Dispose();
     }
 
-    private sealed record Target(long EntryId, string Path, string Origin, int Index)
+    private sealed record Target(long EntryId, string Path)
     {
         internal FileKind Kind { get; init; }
+        internal long Size { get; init; }
     }
 
     private sealed record Facts(long Created, long Modified)

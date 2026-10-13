@@ -5,14 +5,22 @@ namespace Syno.TinyTorrent.Subtitles;
 
 internal sealed partial class Acquisition
 {
+    private readonly HashSet<Discovery> _cancelledScans = [];
+
     internal async Task<ScanResult> Rescan()
     {
+        var run = new WorkRun(this, SubtitleWork.Discovery);
         CancellationToken cancellation;
         lock (_requestSync)
             cancellation = _requests.Token;
-        await _operation.WaitAsync(cancellation).ConfigureAwait(false);
+        using var request = CancellationTokenSource.CreateLinkedTokenSource(cancellation, run.Cancellation.Token);
+        cancellation = request.Token;
+        var entered = false;
         try
         {
+            await _operation.WaitAsync(cancellation).ConfigureAwait(false);
+            entered = true;
+            run.Report(new WorkProgress.Unknown(), new WorkExecution.Running());
             var paths = await Run(
                     connection =>
                     {
@@ -69,18 +77,19 @@ internal sealed partial class Acquisition
                     .ConfigureAwait(false);
                 LanguagesChanged?.Invoke(this, EventArgs.Empty);
             }
-            var result = await Discover(cancellation, force: true).ConfigureAwait(false);
+            var result = await Discover(cancellation, true, run).ConfigureAwait(false);
             await RefreshCounts().ConfigureAwait(false);
             return result with { Unreadable = result.Unreadable + unreadable };
         }
         finally
         {
-            _operation.Release();
+            try { await run.Finish().ConfigureAwait(false); }
+            finally { if (entered) _operation.Release(); }
             Notify();
         }
     }
 
-    private async Task<ScanResult> Discover(CancellationToken cancellation, bool force = false)
+    private async Task<ScanResult> Discover(CancellationToken cancellation, bool force = false, WorkRun? owner = null)
     {
         var movies = await Run(
                 connection =>
@@ -148,153 +157,171 @@ internal sealed partial class Acquisition
                 cancellation
             )
             .ConfigureAwait(false);
-        var found = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var tags = Suppliers
-            .SelectMany(supplier => supplier.Languages)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var failures = 0;
+        HashSet<Discovery> accepted;
+        lock (_requestSync)
+            accepted = movies.Where(movie => movie.Video.Eligible && movie.Video.Readable
+                && (force || !movie.Scanned && !_cancelledScans.Contains(movie))).ToHashSet();
+        if (accepted.Count == 0)
+            return new(0, 0);
+        var run = owner ?? new WorkRun(this, SubtitleWork.Discovery);
+        lock (_requestSync) run.Scans = accepted.ToArray();
+        using var request = owner is null
+            ? CancellationTokenSource.CreateLinkedTokenSource(cancellation, run.Cancellation.Token) : null;
+        cancellation = request?.Token ?? cancellation;
         var changed = false;
-        foreach (var folder in movies.GroupBy(movie => (movie.Folder, movie.Recursive)))
+        try
         {
-            var pending = folder
-                .Where(movie =>
-                    movie.Video.Eligible && movie.Video.Readable && (force || !movie.Scanned)
-                )
-                .ToArray();
-            if (pending.Length == 0)
-                continue;
-            // Samples and unselected files are not movies, so a Sample folder
-            // leaves Subs/English.srt to the one movie beside it.
-            var sole =
-                movies
-                    .Where(movie =>
-                        movie.Video.Eligible && Within(movie.Video.FinalPath, folder.Key.Folder)
-                    )
-                    .Select(movie => movie.Video.EntryId)
-                    .Distinct()
-                    .Count() == 1;
-            List<(Discovery Movie, string Path, string Language)> records;
-            try
+            var found = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var tags = Suppliers
+                .SelectMany(supplier => supplier.Languages)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var failures = 0;
+            var folders = movies.GroupBy(movie => (movie.Folder, movie.Recursive))
+                .Where(folder => folder.Any(accepted.Contains)).ToArray();
+            var done = 0;
+            foreach (var folder in folders)
             {
-                records = await Task.Run(
-                        async () =>
-                        {
-                            var result = new List<(Discovery, string, string)>();
-                            foreach (
-                                var file in SubtitleFiles(folder.Key.Folder, folder.Key.Recursive)
-                            )
+                cancellation.ThrowIfCancellationRequested();
+                run.Report(new WorkProgress.Fraction(done++, folders.Length, WorkUnit.Folders), new WorkExecution.Running());
+                var pending = folder.Where(accepted.Contains).ToArray();
+                // Samples and unselected files are not movies, so a Sample folder
+                // leaves Subs/English.srt to the one movie beside it.
+                var sole =
+                    movies
+                        .Where(movie =>
+                            movie.Video.Eligible && Within(movie.Video.FinalPath, folder.Key.Folder)
+                        )
+                        .Select(movie => movie.Video.EntryId)
+                        .Distinct()
+                        .Count() == 1;
+                List<(Discovery Movie, string Path, string Language)> records;
+                try
+                {
+                    records = await Task.Run(
+                            async () =>
                             {
-                                cancellation.ThrowIfCancellationRequested();
-                                var matches = folder
-                                    .Where(movie =>
-                                        movie.Video.Eligible
-                                        && SubtitleFile.BelongsTo(
-                                            file,
-                                            movie.Video.FinalPath,
-                                            folder.Key.Folder,
-                                            sole
-                                        )
-                                    )
-                                    .ToArray();
-                                if (
-                                    matches.Select(movie => movie.Video.EntryId).Distinct().Count()
-                                    != 1
+                                var result = new List<(Discovery, string, string)>();
+                                foreach (
+                                    var file in SubtitleFiles(folder.Key.Folder, folder.Key.Recursive)
                                 )
-                                    continue;
-                                if (!matches.Any(pending.Contains))
-                                    continue;
-                                var language = await SubtitleFile
-                                    .Identify(
-                                        file,
-                                        matches[0].Video.FinalPath,
-                                        folder.Key.Folder,
-                                        tags,
-                                        cancellation
+                                {
+                                    cancellation.ThrowIfCancellationRequested();
+                                    var matches = folder
+                                        .Where(movie =>
+                                            movie.Video.Eligible
+                                            && SubtitleFile.BelongsTo(
+                                                file,
+                                                movie.Video.FinalPath,
+                                                folder.Key.Folder,
+                                                sole
+                                            )
+                                        )
+                                        .ToArray();
+                                    if (
+                                        matches.Select(movie => movie.Video.EntryId).Distinct().Count()
+                                        != 1
                                     )
-                                    .ConfigureAwait(false);
-                                if (language is not null)
-                                    foreach (var movie in matches.Where(pending.Contains))
-                                        result.Add((movie, file, language));
+                                        continue;
+                                    if (!matches.Any(pending.Contains))
+                                        continue;
+                                    var language = await SubtitleFile
+                                        .Identify(
+                                            file,
+                                            matches[0].Video.FinalPath,
+                                            folder.Key.Folder,
+                                            tags,
+                                            cancellation
+                                        )
+                                        .ConfigureAwait(false);
+                                    if (language is not null)
+                                        foreach (var movie in matches.Where(pending.Contains))
+                                            result.Add((movie, file, language));
+                                }
+                                return result;
+                            },
+                            cancellation
+                        )
+                        .ConfigureAwait(false);
+                }
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+                {
+                    failures++;
+                    continue;
+                }
+                changed |= await Run(
+                        connection =>
+                        {
+                            var recorded = false;
+                            foreach (var movie in pending)
+                            {
+                                var video = movie.Video;
+                                if (!Current(connection, [video], readable: true))
+                                    continue;
+                                using var stamp = connection.CreateCommand();
+                                stamp.CommandText =
+                                    "SELECT stamp FROM contributions WHERE origin=$origin;";
+                                stamp.Parameters.AddWithValue("$origin", video.Origin);
+                                if (!Equals(stamp.ExecuteScalar(), movie.Stamp))
+                                    continue;
+                                Execute(
+                                    connection,
+                                    """
+                                    DELETE FROM subtitle_output_sources WHERE origin=$origin AND file_index=$index AND EXISTS (
+                                        SELECT 1 FROM subtitle_outputs o WHERE o.path=subtitle_output_sources.path COLLATE PATH
+                                            AND o.language=subtitle_output_sources.language AND o.created=0);
+                                    """,
+                                    ("$origin", video.Origin),
+                                    ("$index", video.Index)
+                                );
+                                foreach (var record in records.Where(record => record.Movie == movie))
+                                {
+                                    Execute(
+                                        connection,
+                                        "INSERT OR IGNORE INTO subtitle_outputs(path,language,created) VALUES($path,$language,0);",
+                                        ("$path", record.Path),
+                                        ("$language", record.Language)
+                                    );
+                                    Execute(
+                                        connection,
+                                        "INSERT INTO subtitle_output_sources(path,language,origin,file_index,movie_path) VALUES($path,$language,$origin,$index,$movie) ON CONFLICT(path,language,origin,file_index) DO UPDATE SET movie_path=excluded.movie_path;",
+                                        ("$path", record.Path),
+                                        ("$language", record.Language),
+                                        ("$origin", video.Origin),
+                                        ("$index", video.Index),
+                                        ("$movie", video.FinalPath)
+                                    );
+                                    found.Add(record.Path);
+                                }
+                                Execute(
+                                    connection,
+                                    "INSERT OR REPLACE INTO subtitle_scans(origin,file_index,path,stamp) VALUES($origin,$index,$path,$stamp);",
+                                    ("$origin", video.Origin),
+                                    ("$index", video.Index),
+                                    ("$path", video.FinalPath),
+                                    ("$stamp", movie.Stamp)
+                                );
+                                recorded = true;
                             }
-                            return result;
+                            if (recorded)
+                            {
+                                Execute(connection, Database.Cleanup);
+                                Execute(connection, Database.Invalidate);
+                            }
+                            return recorded;
                         },
                         cancellation
                     )
                     .ConfigureAwait(false);
             }
-            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
-            {
-                failures++;
-                continue;
-            }
-            changed |= await Run(
-                    connection =>
-                    {
-                        var recorded = false;
-                        foreach (var movie in pending)
-                        {
-                            var video = movie.Video;
-                            if (!Current(connection, [video], readable: true))
-                                continue;
-                            using var stamp = connection.CreateCommand();
-                            stamp.CommandText =
-                                "SELECT stamp FROM contributions WHERE origin=$origin;";
-                            stamp.Parameters.AddWithValue("$origin", video.Origin);
-                            if (!Equals(stamp.ExecuteScalar(), movie.Stamp))
-                                continue;
-                            Execute(
-                                connection,
-                                """
-                                DELETE FROM subtitle_output_sources WHERE origin=$origin AND file_index=$index AND EXISTS (
-                                    SELECT 1 FROM subtitle_outputs o WHERE o.path=subtitle_output_sources.path COLLATE PATH
-                                        AND o.language=subtitle_output_sources.language AND o.created=0);
-                                """,
-                                ("$origin", video.Origin),
-                                ("$index", video.Index)
-                            );
-                            foreach (var record in records.Where(record => record.Movie == movie))
-                            {
-                                Execute(
-                                    connection,
-                                    "INSERT OR IGNORE INTO subtitle_outputs(path,language,created) VALUES($path,$language,0);",
-                                    ("$path", record.Path),
-                                    ("$language", record.Language)
-                                );
-                                Execute(
-                                    connection,
-                                    "INSERT INTO subtitle_output_sources(path,language,origin,file_index,movie_path) VALUES($path,$language,$origin,$index,$movie) ON CONFLICT(path,language,origin,file_index) DO UPDATE SET movie_path=excluded.movie_path;",
-                                    ("$path", record.Path),
-                                    ("$language", record.Language),
-                                    ("$origin", video.Origin),
-                                    ("$index", video.Index),
-                                    ("$movie", video.FinalPath)
-                                );
-                                found.Add(record.Path);
-                            }
-                            Execute(
-                                connection,
-                                "INSERT OR REPLACE INTO subtitle_scans(origin,file_index,path,stamp) VALUES($origin,$index,$path,$stamp);",
-                                ("$origin", video.Origin),
-                                ("$index", video.Index),
-                                ("$path", video.FinalPath),
-                                ("$stamp", movie.Stamp)
-                            );
-                            recorded = true;
-                        }
-                        if (recorded)
-                        {
-                            Execute(connection, Database.Cleanup);
-                            Execute(connection, Database.Invalidate);
-                        }
-                        return recorded;
-                    },
-                    cancellation
-                )
-                .ConfigureAwait(false);
+            return new(found.Count, failures);
         }
-        if (changed)
-            LanguagesChanged?.Invoke(this, EventArgs.Empty);
-        return new(found.Count, failures);
+        finally
+        {
+            if (owner is null)
+                await run.Finish().ConfigureAwait(false);
+            if (changed)
+                LanguagesChanged?.Invoke(this, EventArgs.Empty);
+        }
     }
 
     private static bool Within(string path, string folder) =>

@@ -143,19 +143,20 @@ internal sealed partial class Store
             return command.ExecuteNonQuery();
         }, cancellation);
 
-    internal Task<VideoTarget?> Next(string catalogId, CancellationToken cancellation) =>
-        database.Run(
+    internal Task<IReadOnlyList<VideoTarget>> Pending(string catalogId, CancellationToken cancellation) =>
+        database.Run<IReadOnlyList<VideoTarget>>(
             connection =>
             {
                 using var command = connection.CreateCommand();
                 command.CommandText = $"""
                     SELECT f.entry_id,f.path,f.name,f.size FROM collected_files f
-                    WHERE f.kind=0 AND {Eligible} LIMIT 1;
+                    WHERE f.kind=0 AND {Eligible};
                     """;
                 command.Parameters.AddWithValue("$catalog", catalogId);
                 using var reader = command.ExecuteReader();
-                return reader.Read()
-                    ? new VideoTarget(
+                var targets = new List<VideoTarget>();
+                while (reader.Read())
+                    targets.Add(new VideoTarget(
                         new Entry(
                             reader.GetInt64(0),
                             reader.GetString(1),
@@ -167,8 +168,8 @@ internal sealed partial class Store
                         },
                         catalogId,
                         LookupKind.Automatic
-                    )
-                    : null;
+                    ));
+                return targets.DistinctBy(target => target.Entry.EntryId).ToArray();
             },
             cancellation
         );

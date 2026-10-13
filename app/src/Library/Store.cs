@@ -81,7 +81,9 @@ internal sealed partial class Store(Database database, Imdb.Dataset imdb)
     }
 
     // An IMDb rating comes from the downloaded IMDb data when that has it,
-    // because the data is newer than the provider's saved rating.
+    // because the data is newer than the provider's saved rating. A video
+    // without an IMDb ID is found in the data by its file name, so every
+    // video the data can name has a rating, matched or not.
     private async Task<IReadOnlyList<Entry>> Rate(
         IReadOnlyList<Entry> entries,
         CancellationToken cancellation
@@ -92,11 +94,24 @@ internal sealed partial class Store(Database database, Imdb.Dataset imdb)
                 cancellation
             )
             .ConfigureAwait(false);
-        return ratings.Count == 0
+        var withoutId = entries.Where(entry => entry.ImdbId is null && entry.Kind == FileKind.Video).ToArray();
+        var fileNameRatings = await imdb
+            .RatingsByName([.. withoutId.Select(entry => FileName.Interpret(entry.Name))], cancellation)
+            .ConfigureAwait(false);
+        var byName = new Dictionary<long, Rating>();
+        for (var index = 0; index < withoutId.Length; index++)
+        {
+            if (fileNameRatings[index] is { } found)
+            {
+                byName[withoutId[index].EntryId] = found;
+            }
+        }
+        return ratings.Count == 0 && byName.Count == 0
             ? entries
             : entries
                 .Select(entry =>
                     entry.ImdbId is { } id && ratings.TryGetValue(id, out var rating)
+                    || byName.TryGetValue(entry.EntryId, out rating)
                         ? entry with { Ratings = entry.Ratings with { Imdb = rating } }
                         : entry
                 )
@@ -162,26 +177,11 @@ internal sealed partial class Store(Database database, Imdb.Dataset imdb)
                 var facets = new List<Facet>();
                 var sections = query.Configuration switch
                 {
-                    LibraryConfiguration.Videos => new[] { "type", "genres", "year" }
-                        .Concat(
-                            query.Filters.Keys.Where(section => section is "series" or "season")
-                        )
-                        .ToArray(),
-                    LibraryConfiguration.Music => new[] { "genres", "year" }
-                        .Concat(query.Filters.Keys.Where(section => section is "artist" or "album"))
-                        .ToArray(),
-                    _ => new[] { "kind", "modified", "size" }
-                        .Concat(
-                            query.Filters.Keys.Where(section =>
-                                section
-                                    is "year"
-                                        or "genres"
-                                        or "artist"
-                                        or "album"
-                                        or "series"
-                                        or "season"
-                            )
-                        )
+                    LibraryConfiguration.Videos => new[] { "type", "series", "genres", "year", "resolution", "subtitles", "metadata" },
+                    LibraryConfiguration.Music => new[] { "artist", "album", "genres", "year" },
+                    _ => new[] { "kind", "size", "modified" }
+                        .Concat(new[] { "series", "season", "artist", "album", "genres", "year" }
+                            .Where(query.Filters.ContainsKey))
                         .ToArray(),
                 };
                 if (query.Filters.ContainsKey("series"))
@@ -196,9 +196,16 @@ internal sealed partial class Store(Database database, Imdb.Dataset imdb)
                     cancellation.ThrowIfCancellationRequested();
                     using var command = connection.CreateCommand();
                     var predicate = Match(command, query, section);
-                    if (section is "modified" or "size")
+                    if (section is "modified" or "size" or "resolution" or "subtitles" or "metadata")
                     {
-                        var values = section == "modified" ? Dates : Sizes;
+                        var values = section switch
+                        {
+                            "modified" => Dates,
+                            "size" => Sizes,
+                            "resolution" => new[] { "uhd", "qhd", "fhd", "hd", "sd", "unknown_resolution" },
+                            "metadata" => new[] { "identified", "unidentified" },
+                            _ => new[] { "with_subtitles", "without_subtitles" },
+                        };
                         command.CommandText =
                             "SELECT "
                             + string.Join(
@@ -223,7 +230,8 @@ internal sealed partial class Store(Database database, Imdb.Dataset imdb)
                         command.CommandText = $"""
                             SELECT r.series_catalog,r.series_id,r.series_type,r.series_title,COUNT(*)
                             FROM {matches} WHERE {predicate} AND r.series_id IS NOT NULL
-                            GROUP BY r.series_catalog,r.series_id,r.series_type;
+                            GROUP BY r.series_catalog,r.series_id,r.series_type
+                            ORDER BY r.series_title COLLATE NOCASE;
                             """;
                         using var reader = command.ExecuteReader();
                         while (reader.Read())
@@ -280,6 +288,7 @@ internal sealed partial class Store(Database database, Imdb.Dataset imdb)
                             "year" => " ORDER BY year DESC",
                             "type" =>
                                 " ORDER BY CASE type WHEN 'movie' THEN 0 WHEN 'episode' THEN 1 ELSE 2 END",
+                            "artist" or "album" => $" ORDER BY {section} COLLATE NOCASE",
                             _ => string.Empty,
                         };
                         command.CommandText =
@@ -633,7 +642,7 @@ internal sealed partial class Store(Database database, Imdb.Dataset imdb)
                 );
                 command.Parameters.AddWithValue(parameter, value);
             }
-            else if (section is "size" or "modified")
+            else if (section is "size" or "modified" or "resolution" or "subtitles" or "metadata")
                 sql.Append(" AND " + Filter(section, value));
             else if (section is "type" or "kind" or "year" or "genres" or "artist" or "album")
             {
@@ -697,6 +706,33 @@ internal sealed partial class Store(Database database, Imdb.Dataset imdb)
 
     private static string Filter(string section, string value)
     {
+        if (section == "metadata")
+            return value switch
+            {
+                "identified" => "r.video_id IS NOT NULL",
+                "unidentified" => "r.video_id IS NULL",
+                _ => "0=1",
+            };
+        if (section == "subtitles")
+            return value switch
+            {
+                "with_subtitles" => "r.subtitles<>''",
+                "without_subtitles" => "r.subtitles=''",
+                _ => "0=1",
+            };
+        if (section == "resolution")
+            return value switch
+            {
+                "uhd" or "qhd" or "fhd" or "hd" or "sd" or "unknown_resolution" => $"""
+                    (CASE WHEN r.width IS NULL OR r.height IS NULL OR r.width<=0 OR r.height<=0 THEN 'unknown_resolution'
+                        WHEN MAX(r.width,r.height)>=3840 THEN 'uhd'
+                        WHEN MAX(r.width,r.height)>=2560 THEN 'qhd'
+                        WHEN MAX(r.width,r.height)>=1920 THEN 'fhd'
+                        WHEN MAX(r.width,r.height)>=1280 THEN 'hd'
+                        ELSE 'sd' END)='{value}'
+                    """,
+                _ => "0=1",
+            };
         if (section == "size")
             return value switch
             {

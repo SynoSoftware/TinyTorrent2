@@ -1,22 +1,28 @@
-using System.Windows.Input;
 using Syno.TinyTorrent.Models;
+using Syno.TinyTorrent.Services;
 using Syno.TinyTorrent.Views;
 
 namespace Syno.TinyTorrent.Library;
 
 public sealed partial class Browser
 {
-    private CancellationTokenSource? _informationRequest;
-    private bool _inspectorVisible;
-    private bool _noVideoMatch;
-    private VideoException? _fetchFailure;
+    private InformationRequest? _informationRequest;
+    // What the last Inspector lookup for the selected file left to show.
+    private FetchOutcome? _outcome;
     private IProvider? _viewProvider;
     private bool _viewEnabled;
     private string? _viewWaiting;
     private DataDownload? _download;
     private bool _resettingProtection;
 
-    public bool IsFetching { get; private set; }
+    private abstract record FetchOutcome
+    {
+        private FetchOutcome() { }
+        internal sealed record NoMatch : FetchOutcome;
+        internal sealed record Failed(VideoException Error) : FetchOutcome;
+    }
+
+    public bool IsFetching => _informationRequest is not null;
     internal IReadOnlyList<ProviderOption> Providers => _videos?.Options ?? [];
     internal IReadOnlyList<ProviderOption> DownloadProviders =>
         Providers.Where(option => option.IsOnline).ToArray();
@@ -27,31 +33,16 @@ public sealed partial class Browser
     internal IProvider? Provider => _videos?.Provider;
     public string FetchMessage =>
         IsFetching ? Text.Get("library", "fetching")
-        : _noVideoMatch ? Text.Get("library", "no_video_match")
+        : _outcome is FetchOutcome.NoMatch ? Text.Get("library", "no_video_match")
         : string.Empty;
-    public ICommand FetchDetails { get; private set; } = null!;
 
     // VideoLookup serves requests only once the source is ready, so the
-    // commands that ask it wait for the same readiness. Fetch metadata names
-    // its provider, so it works while downloading is Off; refreshing uses the
-    // provider in Settings, so it needs downloading on.
-    private bool CanLookup => IsAvailable && _ready;
+    // commands that ask it wait for the same readiness. Explicit requests
+    // remain available while automatic downloading is off.
+    private bool CanLookup => IsAvailable && _readiness == LibraryReadiness.Ready;
     private bool CanFetch =>
-        CanLookup && IsEnrichmentEnabled && Option is { IsOnline: true }
+        CanLookup && Option is { IsOnline: true }
         && !IsFetching && Selected?.Entry.Kind == FileKind.Video;
-
-    private VideoBatch? Batch => _videos?.Batch;
-    public bool HasBatch => Batch is not null;
-
-    // The status counts the file in progress; the tooltip counts finished files.
-    public string BatchStatus =>
-        Batch is { } batch
-            ? Text.Format("library", "batch_status", batch.Done + 1, batch.Total)
-            : string.Empty;
-    public string BatchTip =>
-        Batch is { } batch
-            ? Text.Format("library", "batch_tip", batch.Done, batch.Total, batch.Source.Name)
-            : string.Empty;
 
     /// <summary>
     /// Fetches metadata for the selection from <paramref name="source"/>: one
@@ -62,22 +53,6 @@ public sealed partial class Browser
         if (!source.IsOnline || !FetchMetadata.CanExecute(null) || _videos is null)
             return;
         FetchMetadataRequested?.Invoke(this, source);
-    }
-
-    internal void StopBatch() => _videos?.StopBatch();
-
-    private void ConfigureInformation()
-    {
-        FetchDetails = new RelayCommand(
-            async () =>
-            {
-                if (!CanFetch)
-                    return;
-                CancelInformation();
-                await RequestInformation();
-            },
-            () => CanFetch
-        );
     }
 
     internal async Task Enable(string providerId)
@@ -101,29 +76,96 @@ public sealed partial class Browser
         await _videos.SaveKey(providerId, key);
     }
 
-    /// <summary>The progress of the running data download, or null when none runs.</summary>
-    internal Imdb.Dataset.Progress? Downloading => _download?.Progress;
+    internal BackgroundWork.Operation? DataWork => _download?.Operation;
+    public bool HasDataWork => _download is not null;
 
-    // One running data download. A stop says whether the person asked for
-    // it, because only a stop they did not ask for is reported.
     private sealed class DataDownload
     {
+        private readonly object _gate = new();
+        private WorkObservation _observation = new(
+            new WorkDescription.Imdb(ImdbPhase.Downloading), new WorkProgress.Unknown(),
+            new WorkExecution.Running());
+        private Task _signalling = Task.CompletedTask;
+        private bool _ended;
+        internal BackgroundWork.Operation Operation { get; }
         internal CancellationTokenSource Cancellation { get; } = new();
         internal TaskCompletionSource Finished { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        internal Imdb.Dataset.Progress Progress { get; set; } = new(0, false);
         internal bool Interrupted { get; private set; }
-        // A later choice revokes activation while replacement waits for lookups.
         internal volatile bool CanEnable;
 
-        // The download's end deletes a build it did not install, so a caller
-        // that stops it waits for the returned task before Library lets go of
-        // anything.
+        internal DataDownload(BackgroundWork work)
+        {
+            Operation = work.Begin(_observation, () => Stop(false));
+        }
+
+        internal void Report(Imdb.Dataset.Progress progress)
+        {
+            lock (_gate)
+            {
+                if (_ended || _observation.Execution is not WorkExecution.Running)
+                    return;
+                _observation = _observation with
+                {
+                    Description = new WorkDescription.Imdb(progress.Phase),
+                    Progress = progress.Phase == ImdbPhase.Downloading
+                        ? new WorkProgress.Amount(progress.Received, WorkUnit.Bytes)
+                        : progress.Percent is { } percent
+                            ? new WorkProgress.Fraction(percent, 100, WorkUnit.Percent, true)
+                            : new WorkProgress.Unknown(),
+                };
+                Operation.Report(_observation);
+            }
+        }
+
+        internal void Install(Action install)
+        {
+            lock (_gate)
+            {
+                Cancellation.Token.ThrowIfCancellationRequested();
+                _observation = new(new WorkDescription.Imdb(ImdbPhase.Installing),
+                    new WorkProgress.Unknown(), new WorkExecution.Finishing());
+                Operation.Report(_observation);
+            }
+            install();
+        }
+
         internal Task Stop(bool interrupted)
         {
-            CanEnable = false;
-            Interrupted |= interrupted;
-            Cancellation.Cancel();
-            return Finished.Task;
+            lock (_gate)
+            {
+                CanEnable = false;
+                if (_ended || _observation.Execution is WorkExecution.Finishing)
+                    return Finished.Task;
+                Interrupted |= interrupted;
+                if (_observation.Execution is not WorkExecution.Cancelling)
+                {
+                    _observation = _observation with { Execution = new WorkExecution.Cancelling() };
+                    Operation.Report(_observation);
+                    // CancelAsync sets the token immediately and runs callbacks off this gate.
+                    _signalling = Cancellation.CancelAsync();
+                }
+                return Finished.Task;
+            }
+        }
+
+        internal async Task Finish()
+        {
+            Task signalling;
+            lock (_gate)
+            {
+                _ended = true;
+                signalling = _signalling;
+            }
+            try
+            {
+                await signalling.ConfigureAwait(false);
+            }
+            finally
+            {
+                Cancellation.Dispose();
+                Operation.Dispose();
+                Finished.TrySetResult();
+            }
         }
     }
 
@@ -143,39 +185,19 @@ public sealed partial class Browser
     {
         if (!CanDownload || DataProvider is not { Dataset: { } dataset } option || _videos is not { } videos)
             return false;
-        var download = new DataDownload { CanEnable = enable };
+        var download = new DataDownload(_work) { CanEnable = enable };
         var cancellation = download.Cancellation.Token;
         _download = download;
         var installed = false;
         try
         {
             ShowDownload();
-            var shown = 0L;
-            await dataset.Build(
-                progress =>
-                {
-                    // Progress arrives for each block of the file; the row shows
-                    // whole megabytes, so it changes at most once for each.
-                    var megabytes = progress.Received >> 20;
-                    if (megabytes == shown && !progress.Importing)
-                        return;
-                    shown = megabytes;
-                    _dispatcher.TryEnqueue(() =>
-                    {
-                        if (!ReferenceEquals(_download, download))
-                            return;
-                        download.Progress = progress;
-                        ShowDownload();
-                    });
-                },
-                cancellation
-            );
+            await dataset.Build(download.Report, cancellation);
             cancellation.ThrowIfCancellationRequested();
             CancelInformation();
             await ReplaceData(videos, option, () =>
             {
-                cancellation.ThrowIfCancellationRequested();
-                dataset.Install();
+                download.Install(dataset.Install);
                 installed = true;
             }, () => download.CanEnable);
         }
@@ -202,28 +224,35 @@ public sealed partial class Browser
             finally
             {
                 _download = null;
-                download.Cancellation.Dispose();
-                try
-                {
-                    ShowDownload();
-                }
-                finally
-                {
-                    download.Finished.TrySetResult();
-                }
+                await download.Finish();
+                ShowDownload();
             }
         }
         return installed;
     }
 
     /// <summary>Stops the running data download at the person's request, and completes when it has ended.</summary>
-    internal Task CancelDownload() => _download?.Stop(interrupted: false) ?? Task.CompletedTask;
+    internal Task CancelDownload()
+    {
+        if (_download is not { } download)
+            return Task.CompletedTask;
+        var stopped = download.Stop(interrupted: false);
+        ShowDownload();
+        return stopped;
+    }
 
     /// <summary>
     /// Stops the running data download as one the person did not ask for,
     /// which reports it, and completes when the download has ended.
     /// </summary>
-    internal Task InterruptDownload() => _download?.Stop(interrupted: true) ?? Task.CompletedTask;
+    internal Task InterruptDownload()
+    {
+        if (_download is not { } download)
+            return Task.CompletedTask;
+        var stopped = download.Stop(interrupted: true);
+        ShowDownload();
+        return stopped;
+    }
 
     internal async Task SuspendProtection(Func<Task> apply, bool includeDataset)
     {
@@ -246,7 +275,7 @@ public sealed partial class Browser
 
     /// <summary>
     /// Deletes <see cref="DataProvider"/>'s downloaded data, and turns
-    /// information off when the provider is the one in use. This reports a
+    /// automatic downloading off when the provider is the one in use. This reports a
     /// failure.
     /// </summary>
     internal async Task DeleteData()
@@ -254,6 +283,8 @@ public sealed partial class Browser
         if (_download is not null || DataProvider is not { Dataset: { } dataset } option || _videos is not { } videos)
             return;
         CancelInformation();
+        using var operation = _work.Begin(new(new WorkDescription.Maintenance(MaintenanceWork.DeleteDataset),
+            new WorkProgress.Unknown(), new WorkExecution.Finishing()));
         try
         {
             await ReplaceData(videos, option, dataset.Delete);
@@ -285,7 +316,8 @@ public sealed partial class Browser
 
     private void ShowDownload()
     {
-        Changed(nameof(Downloading));
+        Changed(nameof(DataWork));
+        Changed(nameof(HasDataWork));
         Changed(nameof(CanDownload));
     }
 
@@ -301,9 +333,9 @@ public sealed partial class Browser
 
     internal void WatchInspector(bool visible)
     {
-        if (_inspectorVisible == visible)
+        if (IsInspectorVisible == visible)
             return;
-        _inspectorVisible = visible;
+        IsInspectorVisible = visible;
         if (!visible)
             CancelInformation();
         else
@@ -311,7 +343,7 @@ public sealed partial class Browser
         Changed(nameof(IsInspectorVisible));
     }
 
-    internal bool IsInspectorVisible => _inspectorVisible;
+    internal bool IsInspectorVisible { get; private set; }
 
     private void RefreshInformation()
     {
@@ -323,8 +355,7 @@ public sealed partial class Browser
             {
                 CancelInformation();
                 _viewProvider = Provider;
-                _noVideoMatch = false;
-                _fetchFailure = null;
+                _outcome = null;
             }
             _viewEnabled = IsEnrichmentEnabled;
             Changed(nameof(IsEnrichmentEnabled));
@@ -340,15 +371,67 @@ public sealed partial class Browser
         Changed(nameof(FetchMessage));
         Changed(nameof(Status));
         Changed(nameof(Message));
-        ChangedBatch();
         RefreshCommands();
     }
 
-    private void ChangedBatch()
+    private sealed class InformationRequest : IAsyncDisposable
     {
-        Changed(nameof(HasBatch));
-        Changed(nameof(BatchStatus));
-        Changed(nameof(BatchTip));
+        private static readonly WorkObservation Started = new(
+            new WorkDescription.Metadata(MetadataScope.Inspector),
+            new WorkProgress.Unknown(), new WorkExecution.Running());
+        private readonly CancellationTokenSource _cancellation = new();
+        private readonly BackgroundWork.Operation _operation;
+        private readonly object _gate = new();
+        private Task _signalling = Task.CompletedTask;
+        private bool _ended;
+
+        internal InformationRequest(BackgroundWork work)
+        {
+            _operation = work.Begin(Started, Cancel);
+        }
+
+        internal CancellationToken Token => _cancellation.Token;
+
+        internal void Report(WorkExecution execution)
+        {
+            lock (_gate)
+                if (!_ended && !_cancellation.IsCancellationRequested)
+                    _operation.Report(Started with { Execution = execution });
+        }
+
+        internal Task Cancel()
+        {
+            lock (_gate)
+            {
+                if (!_ended && !_cancellation.IsCancellationRequested)
+                {
+                    _operation.Report(Started with { Execution = new WorkExecution.Cancelling() });
+                    _signalling = _cancellation.CancelAsync();
+                }
+                return _signalling;
+            }
+        }
+
+        // CancelAsync runs the token's callbacks on the thread pool, so the
+        // source is disposed only after they finish.
+        public async ValueTask DisposeAsync()
+        {
+            Task signalling;
+            lock (_gate)
+            {
+                _ended = true;
+                signalling = _signalling;
+            }
+            try
+            {
+                await signalling;
+            }
+            finally
+            {
+                _operation.Dispose();
+                _cancellation.Dispose();
+            }
+        }
     }
 
     private async Task RequestInformation()
@@ -356,65 +439,61 @@ public sealed partial class Browser
         if (_videos is not { } videos || Selected is not { } row)
             return;
         var entry = row.Entry;
-        using var cancellation = new CancellationTokenSource();
-        _informationRequest = cancellation;
+        await using var request = new InformationRequest(_work);
+        _informationRequest = request;
+        _outcome = null;
+        ShowInformation();
         try
         {
-            cancellation.Token.ThrowIfCancellationRequested();
             if (Option is { } source && await videos.Protection(FileName.Interpret(entry.Name).Title,
-                    entry.Name, source, cancellation.Token) is not null)
+                    entry.Name, source, request.Token) is not null)
             {
+                request.Token.ThrowIfCancellationRequested();
                 Fetch(source);
                 return;
             }
-            IsFetching = true;
-            _noVideoMatch = false;
-            _fetchFailure = null;
-            Changed(nameof(IsFetching));
-            Changed(nameof(FetchMessage));
-            Changed(nameof(Message));
-            RefreshCommands();
-            var found = await videos.Lookup(entry, cancellation.Token);
-            if (!cancellation.IsCancellationRequested)
-                _noVideoMatch = !found;
+            var found = await videos.Lookup(entry, request.Token, request.Report);
+            request.Token.ThrowIfCancellationRequested();
+            if (!found)
+                _outcome = new FetchOutcome.NoMatch();
         }
+        catch (Exception) when (request.Token.IsCancellationRequested) { }
         catch (OperationCanceledException) { }
+        // The provider's own failure shows through VideoLookup.Failure.
+        catch (ProviderException) { }
         catch (VideoException error)
         {
-            if (!cancellation.IsCancellationRequested)
-            {
-                if (error is not ProviderException)
-                    _fetchFailure = error;
-                Changed(nameof(Message));
-            }
+            _outcome = new FetchOutcome.Failed(error);
         }
         catch (Exception error)
         {
-            if (!cancellation.IsCancellationRequested && ReferenceEquals(videos, _videos))
+            if (ReferenceEquals(videos, _videos))
                 Report(error);
         }
         finally
         {
-            if (ReferenceEquals(_informationRequest, cancellation))
+            if (ReferenceEquals(_informationRequest, request))
             {
                 _informationRequest = null;
-                IsFetching = false;
-                Changed(nameof(IsFetching));
-                Changed(nameof(FetchMessage));
-                RefreshCommands();
+                ShowInformation();
             }
         }
     }
 
     internal void CancelInformation()
     {
-        if (_informationRequest is null)
+        if (_informationRequest is not { } request)
             return;
-        _informationRequest.Cancel();
+        _ = request.Cancel();
         _informationRequest = null;
-        IsFetching = false;
+        ShowInformation();
+    }
+
+    private void ShowInformation()
+    {
         Changed(nameof(IsFetching));
         Changed(nameof(FetchMessage));
+        Changed(nameof(Message));
         RefreshCommands();
     }
 }

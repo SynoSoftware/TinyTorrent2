@@ -207,22 +207,25 @@ internal sealed partial class PipeClient : IDisposable
                 using var pipe = CreatePipe();
                 try
                 {
+                    // Without a running engine, waiting for its pipe only
+                    // delays the start.
+                    if (launchedAt is null && !_hasConnected && !IsEngineRunning())
+                        Launch();
+                    // An engine this window started is awaited for the rest of
+                    // its grace, so the window connects once the pipe exists.
+                    var timeout = 1000;
+                    if (launchedAt is { } started && !_hasConnected)
+                        timeout = Math.Max(
+                            timeout,
+                            (int)(StartGrace.TotalMilliseconds - (Environment.TickCount64 - started))
+                        );
                     try
                     {
-                        await pipe.ConnectAsync(1000, token);
+                        await pipe.ConnectAsync(timeout, token);
                     }
                     catch (TimeoutException) when (launchedAt is null && !_hasConnected)
                     {
-                        launchedAt = Environment.TickCount64;
-                        try
-                        {
-                            LaunchEngine();
-                        }
-                        catch (Exception error)
-                        {
-                            launchFailure = error;
-                            throw;
-                        }
+                        Launch();
                         throw;
                     }
                     var hello = await ReadGreeting(pipe, _strings, token);
@@ -287,6 +290,20 @@ internal sealed partial class PipeClient : IDisposable
             _lifetime.Cancel();
             Disconnect();
             await refresh;
+        }
+
+        void Launch()
+        {
+            launchedAt = Environment.TickCount64;
+            try
+            {
+                LaunchEngine();
+            }
+            catch (Exception error)
+            {
+                launchFailure = error;
+                throw;
+            }
         }
     }
 
@@ -497,6 +514,16 @@ internal sealed partial class PipeClient : IDisposable
             _reply?.TrySetException(error);
             throw;
         }
+    }
+
+    // Every engine process opens this mutex, so when it does not exist no
+    // engine is running.
+    private static bool IsEngineRunning()
+    {
+        if (!Mutex.TryOpenExisting("Local\\TinyTorrent.Engine." + LogonSid, out var mutex))
+            return false;
+        mutex.Dispose();
+        return true;
     }
 
     private static NamedPipeClientStream CreatePipe() =>

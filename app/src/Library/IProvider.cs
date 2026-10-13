@@ -226,6 +226,17 @@ public sealed record Ratings
 /// </summary>
 public sealed record RatingSource(string Id, double Maximum, bool IsPercent, Func<Ratings, Rating?> Read)
 {
+    internal RatingSample Sample(Ratings ratings)
+    {
+        if (Read(ratings)?.Votes is not { } votes)
+            return RatingSample.Unknown;
+        var (moderate, large) = this == RottenTomatoes ? (20, 100)
+            : this == Metacritic ? (10, 40)
+            : (200, 2_000);
+        return votes < moderate ? RatingSample.Small
+            : votes < large ? RatingSample.Moderate : RatingSample.Large;
+    }
+
     public static RatingSource Imdb { get; } = new("imdb", 10, false, ratings => ratings.Imdb);
     public static RatingSource Tmdb { get; } = new("tmdb", 10, false, ratings => ratings.Tmdb);
     public static RatingSource RottenTomatoes { get; } =

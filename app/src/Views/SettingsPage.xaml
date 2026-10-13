@@ -329,28 +329,7 @@
                            leaves when a download ends, so a late click on
                            Cancel cannot delete the data. -->
                       <StackPanel Orientation="Horizontal" Spacing="8">
-                        <TextBlock
-                          x:Name="DownloadStatus"
-                          VerticalAlignment="Center"
-                          Style="{StaticResource TinyTorrentTitleDetailTextStyle}"
-                          Visibility="Collapsed"
-                          AutomationProperties.LiveSetting="Polite"
-                        />
-                        <Button
-                          x:Name="DownloadCancel"
-                          Style="{StaticResource TinyTorrentSubtleButtonStyle}"
-                          Click="OnDownloadCancel"
-                          Visibility="Collapsed"
-                          ToolTipService.ToolTip="{x:Bind Model.Text.Get('imdb', 'cancel_tip'), Mode=OneWay}"
-                          AutomationProperties.Name="{x:Bind Model.Text.Get('imdb', 'cancel_tip'), Mode=OneWay}"
-                          AutomationProperties.AutomationId="DownloadCancel"
-                        >
-                          <FontIcon
-                            FontFamily="{x:Bind icons:Lucide.Font}"
-                            Glyph="{x:Bind icons:Lucide.X}"
-                            FontSize="{StaticResource TinyTorrentButtonIconSize}"
-                          />
-                        </Button>
+                        <controls:WorkStatus x:Name="DataWork" MaxWidth="380" IsExpanded="True" Visibility="Collapsed" />
                         <Button
                           x:Name="DataDelete"
                           Style="{StaticResource TinyTorrentSubtleButtonStyle}"
@@ -422,45 +401,20 @@
                         Style="{StaticResource TinyTorrentGroupIconStyle}" />
                       <StackPanel Grid.Column="1" Spacing="4" VerticalAlignment="Center">
                         <TextBlock Text="{x:Bind Model.Text.Get('plugins', 'database'), Mode=OneWay}" />
-                        <TextBlock Text="{Binding Text, ElementName=DatabaseSize}"
+                        <TextBlock x:Name="DatabaseSize" Text="—"
                           Style="{StaticResource TinyTorrentTitleDetailTextStyle}" />
                       </StackPanel>
                     </Grid>
                   </controls:SettingsExpander.Header>
                   <StackPanel>
-                    <controls:SettingsRow Header="{x:Bind Model.Text.Get('plugins', 'database_size'), Mode=OneWay}">
-                      <TextBlock x:Name="DatabaseSize" Text="—" TextTrimming="CharacterEllipsis" />
-                    </controls:SettingsRow>
-                    <controls:SettingsRow Header="{x:Bind Model.Text.Get('plugins', 'movies'), Mode=OneWay}">
-                      <TextBlock x:Name="StoredMovies" Text="—" TextTrimming="CharacterEllipsis" />
-                    </controls:SettingsRow>
-                    <controls:SettingsRow Header="{x:Bind Model.Text.Get('plugins', 'tracked_subtitles'), Mode=OneWay}">
-                      <TextBlock x:Name="TrackedSubtitles" Text="—" TextTrimming="CharacterEllipsis" />
-                    </controls:SettingsRow>
-                    <controls:SettingsRow Header="{x:Bind Model.Text.Get('plugins', 'series'), Mode=OneWay}">
-                      <TextBlock x:Name="StoredSeries" Text="—" TextTrimming="CharacterEllipsis" />
-                    </controls:SettingsRow>
-                    <controls:SettingsRow Header="{x:Bind Model.Text.Get('plugins', 'episodes'), Mode=OneWay}">
-                      <TextBlock x:Name="StoredEpisodes" Text="—" TextTrimming="CharacterEllipsis" />
-                    </controls:SettingsRow>
                     <controls:SettingsRow Header="{x:Bind Model.Text.Get('plugins', 'files'), Mode=OneWay}">
                       <TextBlock x:Name="LibraryFiles" Text="—" TextTrimming="CharacterEllipsis" />
                     </controls:SettingsRow>
-                    <controls:SettingsRow Header="{x:Bind Model.Text.Get('plugins', 'responses'), Mode=OneWay}">
-                      <TextBlock x:Name="CachedResponses" Text="—" TextTrimming="CharacterEllipsis" />
+                    <controls:SettingsRow Header="{x:Bind Model.Text.Get('plugins', 'information'), Mode=OneWay}">
+                      <TextBlock x:Name="StoredInformation" Text="—" TextTrimming="CharacterEllipsis" />
                     </controls:SettingsRow>
-                    <controls:SettingsRow Header="{x:Bind Model.Text.Get('plugins', 'created'), Mode=OneWay}">
-                      <TextBlock x:Name="CreatedSubtitles" Text="—" TextTrimming="CharacterEllipsis" />
-                    </controls:SettingsRow>
-                    <controls:SettingsRow Header="{x:Bind Model.Text.Get('plugins', 'found'), Mode=OneWay}">
-                      <TextBlock x:Name="FoundSubtitles" Text="—" TextTrimming="CharacterEllipsis" />
-                    </controls:SettingsRow>
-                    <controls:SettingsRow Header="{x:Bind Model.Text.Get('plugins', 'languages'), Mode=OneWay}">
-                      <TextBlock x:Name="SubtitleLanguages" Text="—" TextTrimming="CharacterEllipsis" />
-                    </controls:SettingsRow>
-                    <controls:SettingsRow Header="{x:Bind Model.Text.Get('plugins', 'reusable'), Mode=OneWay}"
-                      Description="{x:Bind Model.Text.Get('plugins', 'reusable_hint'), Mode=OneWay}" BorderThickness="0">
-                      <TextBlock x:Name="ReusableSpace" Text="—" TextTrimming="CharacterEllipsis" />
+                    <controls:SettingsRow Header="{x:Bind Model.Text.Get('plugins', 'subtitles'), Mode=OneWay}" BorderThickness="0">
+                      <TextBlock x:Name="StoredSubtitles" Text="—" TextTrimming="CharacterEllipsis" />
                     </controls:SettingsRow>
                   </StackPanel>
                 </controls:SettingsExpander>

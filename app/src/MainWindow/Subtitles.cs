@@ -1,3 +1,5 @@
+using System.ComponentModel;
+using Microsoft.UI.Xaml.Controls;
 using Syno.TinyTorrent.Controls;
 using Syno.TinyTorrent.Models;
 using Syno.TinyTorrent.Subtitles;
@@ -130,7 +132,24 @@ public sealed partial class MainWindow
             {
                 Content = content,
                 Glyph = Lucide.Captions,
-                PrimaryGlyph = Lucide.Check,
+                PrimaryGlyph = Lucide.Download,
+                SecondaryGlyph = Lucide.Search,
+            };
+            void RefreshActions(object? sender, PropertyChangedEventArgs args)
+            {
+                dialog.PrimaryButtonText = content.HasResults ? Model.Text.Get("subtitles", "download_choice") : string.Empty;
+                dialog.PrimaryToolTip = Model.Text.Get("subtitles", "choose_tip");
+                dialog.SecondaryButtonText = content.CanSearch ? Model.Text.Get("subtitles", "search_again") : string.Empty;
+                dialog.SecondaryToolTip = content.SearchHint;
+                dialog.CloseButtonText = Model.Text.Get(content.IsSearching ? "dialog" : "commands", content.IsSearching ? "cancel" : "close");
+                dialog.DefaultButton = content.HasResults ? ContentDialogButton.Primary
+                    : content.CanSearch ? ContentDialogButton.Secondary : ContentDialogButton.Close;
+            }
+            content.PropertyChanged += RefreshActions;
+            dialog.SecondaryButtonClick += async (_, args) =>
+            {
+                args.Cancel = true;
+                await content.Find(true);
             };
             dialog.Opened += async (_, _) =>
             {
@@ -146,14 +165,13 @@ public sealed partial class MainWindow
                     () =>
                     {
                         dialog.Title = Model.Text.Get("subtitles", "choose");
-                        dialog.PrimaryButtonText = Model.Text.Get("dialog", "save");
-                        dialog.PrimaryToolTip = Model.Text.Get("subtitles", "choose_tip");
                         content.RefreshText();
                     }
                 );
             }
             finally
             {
+                content.PropertyChanged -= RefreshActions;
                 content.Cancel();
             }
             return true;

@@ -407,23 +407,49 @@ the newer rating, and an editor's old Wikidata score without a count does not
 replace a current one. The larger box office stays, because TMDB and MDBList
 report worldwide takings and OMDb only US takings, and a total only grows. A
 video without an IMDb ID keeps its provider's own ratings and shows no title
-facts. Titles stay with each provider, because they differ in language. A
+facts; only its IMDb rating can come from the IMDb data, as the next paragraph
+describes. Titles stay with each provider, because they differ in language. A
 movie whose provider lacks a synopsis, cast or genres keeps the ones saved for
 the same IMDb ID, so fetching from the IMDb data after TMDB keeps TMDB's
 synopsis and cast.
 
-When the IMDb data is downloaded, every movie whose provider returned its IMDb
-ID shows the IMDb rating from that data, which is newer than a provider's
-saved rating. TMDB returns no IMDb rating, so its movies get one this way or
-from another provider's metadata for the same IMDb ID.
+**Owner ruling: downloaded IMDb data rates every video it can name, whatever
+the provider.** A movie or episode whose provider returned its IMDb ID shows
+the IMDb rating from that data, which is newer than a provider's saved rating.
+TMDB returns no IMDb rating, so its movies get one this way. A video without
+an IMDb ID, because no provider matched it, automatic downloads are off, or the
+provider gave none, is found in the data by its file name, as
+[rating by file name](imdb-datasets.md#rating-by-file-name) describes. That
+lookup gives only the rating; the video stays unidentified, and nothing is
+saved. Both the table and Inspector display an available rating, even without
+a full provider match. Stored information is read independently of automatic
+downloading; changes to the selected row refresh the Inspector as well as its
+table bindings.
 
-A rating shows its vote count when the source reports one, as `7.8 (2.7K)`,
-because a high score from a few votes means little. The tooltip gives the
-exact count. The IMDb data, TMDB, OMDb and MDBList report votes; Wikidata
-reports them only when an editor recorded the number of ratings.
+Table rating cells show only the score. Neutral foreground prominence communicates
+the sample size, independently of whether the score is high or low:
+
+| Rating site | Small · Subdued (tertiary) | Moderate · Secondary | Large · Primary |
+| --- | --- | --- | --- |
+| IMDb, TMDB, Popcornmeter | Under 200 | 200–1,999 | 2,000+ |
+| Rotten Tomatoes critics | Under 20 | 20–99 | 100+ |
+| Metacritic critics | Under 10 | 10–39 | 40+ |
+
+These are display thresholds, not statistical confidence or provider certification.
+Unknown counts use secondary foreground; they are not treated as zero. Tooltips
+and accessibility help give the exact count on the first line and Small,
+Moderate or Large sample on the second. They distinguish critic reviews from
+audience votes, or state that sample size is unavailable. The source owns the
+sample thresholds once for the style and tooltip. Native theme brushes keep
+the scores readable in Light, Dark and High Contrast without warning/error colors.
+Inspector ratings retain their compact counts. The IMDb data, TMDB, OMDb and
+MDBList report votes; Wikidata reports them only when an editor recorded the count.
 
 Use names and structured clues such as title, year, season and episode numbers
 without reading video contents.
+If an online provider finds no candidates for a punctuated title, search once
+more with punctuation separated into words, because some catalogues miss that
+spelling. Both searches count toward the same per-title limit.
 
 Associate automatically only when the available evidence supports an
 unambiguous match with title similarity greater than 80%, consistent sequel
@@ -455,7 +481,7 @@ New, Missing data and All selected, showing nested movie counts. New respects
 local protection; Missing data requests fresh answers for unresolved movies;
 All selected also refreshes accepted identities. Explicit clears remain untouched.
 The [request protection contract](request-protection.md) defines recovery and reset.
-It works in the background: the status bar shows "Fetching metadata 3 of 7"
+It works in the background: the status bar shows "Metadata · 3 of 7 processed"
 until it finishes, on every page, with an X that stops it and cancels the
 request in progress. Fetching more files while it runs adds them to the same
 count, and a file already waiting is not added twice. Automatic lookups wait
@@ -816,8 +842,9 @@ are hidden by default and appear at the end when the person adds them.
 - Date modified is the file's modified date from its
   [file facts](#file-facts-and-music-information).
 
-The status footer names the configuration and its row count, for example
-"Videos · 19", and the active filters.
+The status footer names the published configuration and file count, for example
+"Videos · 19 files", applied filtering and selection. Its composition and
+background-work presentation follow the [interface contract](interface.md).
 
 ### Filters
 
@@ -835,9 +862,18 @@ values remain available through tooltips and the native selector's automation.
 
 | Configuration | Sections |
 | --- | --- |
-| Videos | Type: All, Movies, TV episodes. Genre: the genres present. Year: the years present, newest first. |
-| Music | Genre and Year, from the tags. |
-| Files | Kind: the kinds present. Date modified: Today, Yesterday, This week, Last week, This month, Last month, This year, Older. Size: Explorer's ranges, Empty (0 KB) to Gigantic (> 4 GB). |
+| Videos | Content: Type, Series, Season when a series is chosen, Genre, Year newest first. Playback: Resolution, Subtitles. Organisation: Metadata identified or not identified. |
+| Music | Content: Artist, Album, Genre, Year newest first, from the tags. |
+| Files | File properties: Kind, Size in Explorer's ranges from Empty (0 KB) to Gigantic (> 4 GB), Date modified from Today to Older. Content criteria followed through metadata links remain available below them. |
+
+Only populated choices appear, along with any selected zero-count choice.
+Resolution uses measured dimensions and the longer edge, so cropped widescreen
+and rotated videos retain their useful size class: below 720p, 720p, 1080p,
+1440p, and 4K or higher. Unknown dimensions have their own choice. The Subtitles
+filter describes associated subtitle files; its tooltip distinguishes these
+from embedded tracks, which the database does not catalogue. Metadata means an
+accepted identification, not a promise that every descriptive field is filled.
+These criteria use the existing joined row projection and need no schema change.
 
 The date choices use calendar boundaries and can overlap: This week includes
 Today but can begin in the previous month or year. A file counts in every range
@@ -904,6 +940,11 @@ search button inside the field. Enter in the query follows Fetch's enabled
 state. Empty queries and an in-flight request disable Fetch. A permitted
 override reads Force, with the protection reason in its tooltip. Save remains
 the dialog's default commit and applies only the selected match.
+Request status and the resulting match count appear above the results and are
+announced accessibly. No matches and errors remain inside the dialog; a failed
+Save keeps the query and results available for correction. Successful Save closes
+the dialog, refreshes Library and announces the outcome without a duplicate
+success toast, following the interface's feedback-placement rule.
 A Provider choice above the search box lists per-movie download providers and
 starts at the chosen provider. IMDb dataset management appears only in Settings.
 Choosing another checks protection before searching; the search and the
@@ -925,7 +966,7 @@ The page has no loading state; see the owner ruling under
 | No matches | "No videos match" and the query (or music, or files), with one button for each other configuration that has matches, and its count, plus Clear search. The action buttons share the widest button's natural width through the shared ActionButton alignment. |
 | Engine disconnected | The window's [message bar](interface.md#message-bar). Open and Identify are disabled. |
 | Database unavailable | The window's [message bar](interface.md#message-bar) reports the failure and offers Retry. Any last view stays non-actionable; normal torrent work remains available. |
-| Download off | Saved video information stays visible and can be erased. Fetch metadata names its provider, so it works; Refresh metadata uses the provider in Settings, so it is unavailable. A file without information shows "Download off" in its Metadata field. Its Fetch button lists every provider, then Settings, which opens Settings with focus on Download video information. The status bar names the state. There is no notice above the table. |
+| Automatic downloads off | Saved video information and lookup outcomes stay visible. Fetch metadata works with an explicitly chosen provider; Refresh metadata works with the saved online provider. Neither enables automatic downloading. A file without information and the status bar say "Automatic video information downloads off". Its Fetch button lists every provider, then Settings. There is no notice above the table. |
 | Provider failure | "Waiting for TMDB" in the card and the status bar. No dialog. |
 | Failed Open | The title-cell and card glyph show the failure, and the card shows an error InfoBar with Missing, Unavailable or Couldn't open, the time it was checked, and Retry. |
 
@@ -956,12 +997,13 @@ dialog and no per-file consent, because the choice is already the person's
 decision, as with Windows' own online settings. Choosing another provider in
 Fetch metadata is the person's explicit request for that one file and needs no
 further consent. Choosing Off stops further
-provider work and cancels pending requests where possible. Cached information
+automatic provider work and cancels pending requests where possible. Later manual
+Fetch and Refresh requests remain available without enabling automatic work. Cached information
 remains usable only as permitted by the applicable terms; source entries and
 filename search remain usable regardless.
 
-Settings presents Download video information as one choice: Off, then the
-providers. Off stops downloading only; saved information stays. Its information button opens the selected provider's disclosure, the
+Settings presents Download video information automatically as one choice: Off, then the
+providers. Off stops automatic downloading only; saved information stays. Its information button opens the selected provider's disclosure, the
 inputs it receives, and links to its privacy policy and terms, in the same
 flyout as the subtitle supplier's. For a provider that takes an API key, a key
 button beside it opens the [account dialog](architecture.md#third-party-provider-access),

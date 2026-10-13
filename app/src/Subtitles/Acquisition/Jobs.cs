@@ -46,7 +46,7 @@ internal sealed partial class Acquisition
                                     reader.GetInt32(3)
                                 )
                             );
-                    var moved = new List<(string Previous, string Path, long EntryId)>();
+                    var moved = new List<(string Previous, string Path, string Language, long EntryId)>();
                     foreach (var source in sources)
                     {
                         var target = targets.FirstOrDefault(target =>
@@ -101,7 +101,7 @@ internal sealed partial class Acquisition
                             ("$origin", source.Origin),
                             ("$index", source.Index)
                         );
-                        moved.Add((source.Path, target.Path, target.Videos[0].EntryId));
+                        moved.Add((source.Path, target.Path, source.Language, target.Videos[0].EntryId));
                     }
                     if (moved.Count > 0)
                         Execute(connection, Database.Cleanup);
@@ -110,6 +110,24 @@ internal sealed partial class Acquisition
                 cancellation
             )
             .ConfigureAwait(false);
+        lock (_requestSync)
+            foreach (var run in new[] { _manualWork, _automaticWork })
+            {
+                if (run is null || run.Ended)
+                    continue;
+                foreach (var job in run.Jobs.ToArray())
+                {
+                    var destinations = transfers.Where(transfer => transfer.Language == job.Language
+                        && StringComparer.OrdinalIgnoreCase.Equals(transfer.Previous, job.Path)).ToArray();
+                    if (destinations.Length == 0)
+                        continue;
+                    foreach (var destination in destinations)
+                        run.Jobs.Add(job with { Path = destination.Path });
+                    if (!targets.Any(target => target.Language == job.Language
+                        && StringComparer.OrdinalIgnoreCase.Equals(target.Path, job.Path)))
+                        run.Jobs.Remove(job);
+                }
+            }
         foreach (var transfer in transfers)
             if (_batch.ContainsKey(transfer.Previous))
                 _batch[transfer.Path] = transfer.EntryId;

@@ -83,8 +83,10 @@ Reasons for the separate file:
 2. **A failed update leaves the old data.** The import writes `imdb.db.tmp`.
    Only a complete import replaces `imdb.db`.
 3. **The schema needs no migrations.** The file name carries the schema
-   version: `imdb-3.db`. A schema change uses a new name, so a file with
-   another version counts as missing, and the person downloads again. The name
+   version: `imdb-1.db`. A schema change uses a new name, so a file with
+   another version counts as missing, and the person downloads again. The
+   install deletes data that an earlier version built, because nothing reads
+   it again. The name
    lets the provider check for the file without opening it. `library.db`
    versioning does not change. The rest of this plan calls the file
    `imdb.db`.
@@ -145,7 +147,11 @@ Phase 1 downloads `title.basics`, `title.ratings` and `title.episode`: about
    `journal_mode=OFF` and `synchronous=OFF`. These settings are safe because
    the file is temporary until step 7.
 6. After the insert, the import fills the full-text index with its `rebuild`
-   command and merges the index with its `optimize` command.
+   command, then immediately runs `optimize`. Each command has its own named,
+   indeterminate, cancellable phase in the shared reporting owner. The
+   [background-work plan](background-work.md#imdb-execution-and-sql-design)
+   owns scheduling and cancellation. Both index commands are implemented;
+   runtime cancellation and performance remain unverified.
 7. The import closes its connection, flushes the file to disk, and moves it over
    `imdb.db` with `File.Move` and overwrite. `File.Replace` fails when
    `imdb.db` does not exist yet. The flush prevents a power cut from leaving a
@@ -162,8 +168,8 @@ CREATE TABLE titles (
     kind TEXT NOT NULL,             -- 'movie' or 'series'
     title TEXT NOT NULL,
     original TEXT,                  -- NULL when it equals title
-    title_key TEXT NOT NULL,        -- title as FileName.Normalize writes it
-    original_key TEXT,              -- original as FileName.Normalize writes it
+    title_key TEXT NOT NULL,        -- title as Dataset.Key writes it
+    original_key TEXT,              -- original as Dataset.Key writes it
     year INTEGER NOT NULL,
     genres TEXT,                    -- IMDb's genre names, comma-separated
     rating REAL,
@@ -181,7 +187,15 @@ CREATE VIRTUAL TABLE title_search USING fts5(
     title, original, content='titles', content_rowid='title_id',
     tokenize='unicode61 remove_diacritics 2'
 );
+CREATE INDEX titles_by_key ON titles(title_key);
+CREATE INDEX titles_by_original ON titles(original_key) WHERE original_key IS NOT NULL;
 ```
+
+`Dataset.Key` writes a title in lower case without accents, apostrophes or
+other punctuation, because a file name lacks them: `Ocean's Eleven` and
+`Oceans.Eleven` both give `oceans eleven`. The two indexes serve
+[rating by file name](#rating-by-file-name); the import builds them after the
+rows, which is faster than updating them for each row.
 
 `title_id` saves the number from the IMDb ID as an integer, and the provider
 writes it back with the `tt` prefix. An integer key makes the file smaller than
@@ -275,8 +289,13 @@ branch beside the key flow, which applies only to `Access.Key` providers:
    **Download** or **Cancel**. Cancel leaves the choice as it was. The size is
    fixed text, because it changes slowly and reading it would cost a request.
 2. The **IMDb data** row under Video information (phase 2, point 5) shows the
-   download progress in MB, then "Preparing IMDb data" without a percentage
-   while the import runs, with a button that stops it. Narrator hears each new
+   download progress in MB, then the current preparation stage and approximate
+   percentage while parsing each source. Search-index construction, optimization
+   and final disk flush stay indeterminate. Each stage restarts the percentage,
+   so the row names the current stage, for example "Reading titles · approximately
+   45%"; it leaves out "IMDb", which the row's name already says. The shared
+   observation supplies Settings and the status bar with the same phase and
+   cancellation command. The status bar names IMDb on every page. Narrator hears each new
    stage. When the import is complete, the provider turns on, unless the
    person chose another setting meanwhile, because that choice is newer. Only
    this flow turns IMDb on; the row's own Download and Update never change the
@@ -286,7 +305,10 @@ branch beside the key flow, which applies only to `Access.Key` providers:
    and conditional activation use the existing serialized provider-change path
    and preserve accepted API batches. If activation fails after installation,
    the data stays installed and the activation error is reported.
-3. The row shows the size and date of the data and has two commands:
+3. The row shows the number of titles, the size and the age of the data, for
+   example "912,345 titles · 438.0 MiB · 1 day old", and has two commands.
+   Counting reads the whole titles table, so the count is kept until the file
+   is replaced, and the row adds it when the count arrives:
    **Update** downloads and replaces the data. It first opens the download
    dialog of point 1 as Update IMDb data?, which states the data's age,
    because the person cannot otherwise judge whether about 290 MB is worth
@@ -427,14 +449,38 @@ row snapshot. The C# read needs none of them:
    column raised `Database.Version` to 6, so an older `library.db` is
    recreated, and matches made after that carry their IMDb IDs.
 5. **Managing the data.** A TMDB user also uses `imdb.db`, so the data has its
-   own row, **IMDb data**, under Video information. It shows the size and
-   date, or what the data is for and its size, and has **Download** or
+   own row, **IMDb data**, under Video information. It shows the title count,
+   size and age, or what the data is for and its size, and has **Download** or
    **Update** and **Delete data**. While the data downloads, the row shows the
    progress and a button that stops it. **Delete data** asks first, and turns
    video information off only when IMDb is the selected provider. Choosing IMDb without the data
    still asks to download it, as phase 1 describes.
 
 Library owns this rule, because it applies to every provider.
+
+### Rating by file name
+
+**Owner ruling: downloaded IMDb data rates every video it can name, whatever
+the provider** ([Library](library.md#identification-and-early-enrichment)).
+A video without an IMDb ID gets its IMDb rating from the title, year, season
+and episode that its file name gives. Nothing is saved: `Store.Rate` asks
+`Dataset.RatingsByName` each time it reads the rows, in one query for all of
+them, and the video stays unidentified.
+
+A rating is shown only when the name fits exactly one title, because a wrong
+score would look as trustworthy as a right one:
+
+- **A movie** needs the exact title and the year. Two films with one title and
+  one year give no rating, and a name without a year gives none, because a
+  title alone often names several films.
+- **An episode** gets its series' rating, as an IMDb match gives it. The
+  series has the exact title and lists that season and episode; a season pack
+  needs only the season. When several series still fit, the year in the name
+  decides, and otherwise no rating shows.
+- The title is compared by `Dataset.Key`, not by the word similarity of
+  automatic matching, because the lookup runs on every read: an exact key is
+  one index lookup, and a similarity search for each file would slow every
+  refresh.
 
 ## Phase 3, only if needed: cast and localized titles
 

@@ -45,6 +45,7 @@ public sealed partial class MainWindow : Window
 #endif
         Back = new RelayCommand(GoBack, () => Model.Navigation.CanGoBack);
         InitializeComponent();
+        ConfigureWork();
         Model.Navigation.PropertyChanged += (_, _) => UpdateBack();
         ConfigureLibrary();
         PageContent.SizeChanged += Motion.Clip;
@@ -66,10 +67,6 @@ public sealed partial class MainWindow : Window
         Workspace.SizeChanged += (_, _) => UpdateInspectorSize();
         Toolbar.SizeChanged += (_, _) => UpdateInspectorSize();
         StatusBar.SizeChanged += (_, _) => UpdateStatus();
-        FilterLabel.RegisterPropertyChangedCallback(
-            TextBlock.TextProperty,
-            (_, _) => UpdateStatus()
-        );
         _uiSettings.TextScaleFactorChanged += OnTextScaling;
         FiltersClose.Content = new FontIcon
         {
@@ -403,6 +400,7 @@ public sealed partial class MainWindow : Window
 
     private void OnModelChanged(object? sender, PropertyChangedEventArgs args)
     {
+        QueueStatus();
         if (
             string.IsNullOrEmpty(args.PropertyName)
             || args.PropertyName == nameof(MainViewModel.ShowsTitleSpeeds)

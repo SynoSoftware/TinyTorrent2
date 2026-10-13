@@ -62,6 +62,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     private bool _showsSettingsIndex = true;
 
     public Strings Text { get; }
+    internal BackgroundWork Work { get; }
     public IReadOnlyList<Torrent> Torrents => _torrents;
     public AddDraft AddDraft { get; }
     public Settings Settings { get; }
@@ -87,13 +88,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         _connected
         && !_loading
         && !_storageFailed
-        && Settings.ShowFreeSpace.IsOn
-        && _spacePath == Settings.Destination.ConfirmedText
-        && _freeSpace is not null;
+        && Settings.ShowFreeSpace.IsOn;
     public string FreeSpaceStatus =>
-        _freeSpace is { } space
+        _spacePath == Settings.Destination.ConfirmedText && _freeSpace is { } space
             ? Text.Format("window", "free_space", Text.Bytes(space))
-            : string.Empty;
+            : Text.Get("window", "space_unknown");
     public string DownloadSpeed => Rate(_downloadRate);
     public string UploadSpeed => Rate(_uploadRate);
     public bool IsConnected => _connected;
@@ -329,13 +328,14 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         };
         Text = strings;
         _dispatcher = dispatcher;
+        Work = new(dispatcher);
         _client = new PipeClient(strings);
         Settings = new Settings(this, _client);
         AddDraft = new AddDraft(this, _client, strings);
         FileDraft = new FileDraft(this, _client);
         SpeedLimit = new SpeedLimit(this, _client);
         Inspector = new Inspector(this, _client);
-        Library = new LibraryBrowser(strings, dispatcher);
+        Library = new LibraryBrowser(strings, dispatcher, Work);
         Library.RetryRequested += (_, _) => RequestSnapshot();
         Library.FiltersRequested += (_, _) => IsFilterOpen = true;
         Library.PropertiesRequested += (_, _) => OpenInspector();
@@ -1272,6 +1272,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         _updateRequest?.Cancel();
         AddDraft.StopPolling();
         Library.Dispose();
+        Work.Dispose();
         _client.Dispose();
         lock (_snapshotGate)
             _latest = null;

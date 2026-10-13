@@ -3,7 +3,6 @@ using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Input;
 using Syno.TinyTorrent.Models;
 using Windows.Foundation;
 using Windows.Graphics;
@@ -22,138 +21,192 @@ public sealed partial class MainWindow
             UpdateChrome();
         });
 
-    private void OnStatusSize(object sender, SizeChangedEventArgs args) => UpdateStatus();
+    private bool _statusPending;
 
-    private void OnLimitsStatus(object sender, DoubleTappedRoutedEventArgs args) =>
-        Run(Model.Limits);
-
-    private void OnUpdateAvailable(object sender, DoubleTappedRoutedEventArgs args) =>
-        Run(Model.OpenUpdate);
-
-    // Stopping hides the X with its status item, so its focus moves to the
-    // page first instead of being lost.
-    private void OnStopBatch(object sender, RoutedEventArgs args)
+    private void QueueStatus()
     {
-        if (sender is Button { FocusState: not FocusState.Unfocused })
-            FocusPage();
-        Model.Library.StopBatch();
-    }
-
-    // Resume all is a command, which a double-click on status must not run, so
-    // the person's own pause opens nothing.
-    private void OnRestriction(object sender, DoubleTappedRoutedEventArgs args)
-    {
-        if (Model.PausedBy == PauseReason.Adapter)
-            Model.ShowSetting(Model.Settings.Adapter);
-        else if (Model.PausedBy != PauseReason.Manual)
-            Run(Model.Limits);
-    }
-
-    private void OnIncoming(object sender, DoubleTappedRoutedEventArgs args)
-    {
-        if (Model.MissingAdapter.Length > 0)
-            Model.ShowSetting(Model.Settings.Adapter);
-        else if (Model.Settings.Proxy.IsInUse)
-            Model.ShowProxySetting();
-        else
-            Model.ShowSetting(Model.Settings.Port);
-    }
-
-    private async void OnFilterStatus(object sender, DoubleTappedRoutedEventArgs args)
-    {
-        if (Model.Page == WindowPage.Library)
+        if (_statusPending || _allowClose)
+            return;
+        _statusPending = DispatcherQueue.TryEnqueue(() =>
         {
-            Model.IsFilterOpen = true;
-            LibraryFilters.Focus(FocusState.Programmatic);
-            return;
-        }
-        if (!await ShowTorrents())
-            return;
-        Model.IsFilterOpen = true;
-        DispatcherQueue.TryEnqueue(
-            Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,
-            () => Filters.Focus(FocusState.Programmatic)
-        );
+            _statusPending = false;
+            if (!_allowClose)
+                UpdateStatus();
+        });
     }
 
-    // A rate keeps room for its longest text, so live rates never move the
-    // items after it. Other labels shorten to their icons, least important
-    // first, until the line fits.
     private void UpdateStatus()
     {
-        if (StatusBar.ActualWidth <= 0)
+        if (_allowClose || StatusBar.ActualWidth <= 0)
             return;
-        DownloadRate.Width = UploadRate.Width = 216 * _uiSettings.TextScaleFactor;
-        ReserveIncoming();
-        ReserveFilter();
-        TextBlock[] labels =
-        [
-            UpdateLabel,
-            FreeSpaceLabel,
-            FilterLabel,
-            ExternalIpLabel,
-            IncomingLabel,
-            RestrictionLabel,
-            BatchLabel,
-            CountLabel,
-        ];
-        foreach (var label in labels)
-            label.Visibility = Visibility.Visible;
-        foreach (var label in labels)
+        RefreshWork();
+        try { LayoutStatus(); }
+        finally
         {
+            var context = ContextStatus.Visibility == Visibility.Visible;
+            var activity = WorkButton.Visibility == Visibility.Visible
+                || InformationStatus.Visibility == Visibility.Visible
+                || _workViews.Values.Any(views => views.Inline.Visibility == Visibility.Visible);
+            var transfer = TransferStatus.Children.OfType<FrameworkElement>()
+                .Any(control => control.Visibility == Visibility.Visible);
+            ContextGap.MinWidth = context && (activity || transfer) ? 16 : 0;
+            ContextGap.Width = activity || transfer ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
+            TransferGap.MinWidth = activity && transfer ? 16 : 0;
+            TransferGap.Width = activity ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
+            RecoverWorkFocus();
+        }
+    }
+
+    private void LayoutStatus()
+    {
+        var library = Model.Page == WindowPage.Library;
+        var current = !Model.IsLoading && !Model.IsStorageFailed;
+        var transfers = Model.Torrents.Count > 0 || Model.IsLoading;
+        var work = Model.Work.Items.Count > 0;
+        var selected = library ? Model.Library.Selection.Items.Count : Model.Selected.Count;
+        foreach (var label in new[] { CountLabel, InformationLabel, RestrictionLabel })
+            label.MaxWidth = double.PositiveInfinity;
+        TransferStatus.Spacing = 16;
+        ContextIcon.Glyph = library ? Model.Library.StatusGlyph
+            : Model.Page == WindowPage.Settings ? Syno.Lucide.Settings : Syno.Lucide.List;
+        SetStatus(CountLabel, Model.CountStatus);
+        SetStatus(InformationLabel, Model.Library.InformationStatus);
+        SetStatus(DownloadLabel, Model.DownloadStatus, Model.DownloadTip);
+        SetStatus(UploadLabel, Model.UploadStatus, Model.UploadTip);
+        SetStatus(TransferLabel, Model.Text.Get("window", "torrents"));
+        SetStatus(RestrictionLabel, Model.RestrictionStatus, Model.RestrictionTip);
+        SetStatus(LimitsLabel, Model.Text.Get("window", "limits_on"));
+        SetStatus(FreeSpaceLabel, Model.FreeSpaceStatus,
+            Model.Text.Format("window", "space_path", Model.Settings.Destination.ConfirmedText, Model.FreeSpaceStatus));
+        SetStatus(ExternalIpLabel, Model.ExternalIp);
+        SetStatus(IncomingLabel, Model.IncomingStatus, Model.Incoming);
+        SetStatus(UpdateLabel, Model.Text.Get("about", "available"), Model.Text.Get("about", "available_tip"));
+
+        ShowStatus(ContextStatus, Model.CountStatus.Length > 0);
+        ShowStatus(ContextIcon, true);
+        ShowStatus(InformationStatus, library && current && !work && Model.Library.InformationStatus.Length > 0);
+        ShowStatus(DownloadRate, transfers);
+        ShowStatus(UploadRate, transfers);
+        ShowStatus(RestrictionStatus, current && Model.HasRestriction);
+        ShowStatus(TransferLabel, library && (transfers || current && Model.HasRestriction));
+        ShowStatus(LimitsLabel, false);
+        ShowStatus(FreeSpaceStatus, Model.ShowsFreeSpace);
+        ShowStatus(ExternalIpStatus, current && Model.ShowsExternalIp);
+        ShowStatus(Incoming, current && Model.Page == WindowPage.Torrents);
+        ShowStatus(UpdateAvailable, Model.HasUpdate);
+        ReserveRate(DownloadRate, DownloadLabel);
+        ReserveRate(UploadRate, UploadLabel);
+        if (StatusFits())
+            return;
+
+        foreach (var control in new FrameworkElement[] { UpdateAvailable, FreeSpaceStatus, ExternalIpStatus, Incoming, InformationStatus })
+        {
+            ShowStatus(control, false);
             if (StatusFits())
                 return;
-            label.Visibility = Visibility.Collapsed;
         }
-    }
+        FitWork();
+        SetStatus(DownloadLabel, Model.DownloadSpeed, Model.DownloadTip);
+        SetStatus(UploadLabel, Model.UploadSpeed, Model.UploadTip);
+        ShowStatus(LimitsLabel, transfers && Model.HasCaps && !Model.ShowsAlternativeLimits);
+        ReserveRate(DownloadRate, DownloadLabel);
+        ReserveRate(UploadRate, UploadLabel);
+        if (StatusFits())
+            return;
 
-    // The connection label changes text with the connection state, and the
-    // labels before it would move with it, so it keeps room for its longest text.
-    private void ReserveIncoming()
-    {
-        var width = 0.0;
-        foreach (
-            var key in new[]
-            {
-                "incoming_status",
-                "no_incoming_status",
-                "proxy_status",
-                "no_adapter_status",
-            }
-        )
+        ShowStatus(DownloadRate, false);
+        ShowStatus(UploadRate, false);
+        ShowStatus(LimitsLabel, false);
+        ShowStatus(TransferLabel, library && RestrictionStatus.Visibility == Visibility.Visible);
+        if (StatusFits())
+            return;
+
+        FitWork(minimal: true);
+        ShowStatus(ContextIcon, false);
+        if (StatusFits())
+            return;
+
+        if (!work)
         {
-            var probe = new TextBlock
-            {
-                Style = IncomingLabel.Style,
-                Text = Model.Text.Get("window", key),
-            };
-            probe.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-            width = Math.Max(width, probe.DesiredSize.Width);
+            CountLabel.MaxWidth = Math.Max(0, MeasureText(CountLabel, CountLabel.Text)
+                - Math.Max(0, StatusWidth() - StatusBar.ActualWidth));
+            if (StatusFits())
+                return;
         }
-        if (IncomingLabel.MinWidth != width)
-            IncomingLabel.MinWidth = width;
+
+        if (selected > 0 && Model.Page is WindowPage.Library or WindowPage.Torrents)
+            SetStatus(CountLabel, Model.Text.Format("window", "selected", selected), Model.CountStatus);
+        else
+            ShowStatus(ContextStatus, false);
+        if (StatusFits())
+            return;
+
+        ShowStatus(ContextStatus, false);
+        ShowWork(overflow: true);
+        if (StatusFits())
+            return;
+
+        TransferStatus.Spacing = 8;
+        ShowStatus(TransferLabel, false);
+        if (RestrictionStatus.Visibility == Visibility.Visible)
+        {
+            var compact = Model.IsSessionPaused ? Model.Text.Get("status", "paused")
+                : Model.Text.Get("window", "alternative");
+            SetStatus(RestrictionLabel,
+                library ? Model.Text.Format("window", "torrent_status", compact) : compact,
+                library ? Model.Text.Format("window", "torrent_status", Model.RestrictionTip) : Model.RestrictionTip);
+        }
+        if (StatusFits())
+            return;
+
+        foreach (var views in _workViews.Values.Where(views => views.Inline.Visibility == Visibility.Visible))
+        {
+            var excess = Math.Max(0, StatusWidth() - StatusBar.ActualWidth);
+            views.Inline.MaxWidth = Math.Max(0, views.Inline.DesiredSize.Width - excess);
+        }
+        if (!work && ContextStatus.Visibility == Visibility.Collapsed && RestrictionStatus.Visibility == Visibility.Collapsed)
+        {
+            ShowStatus(ContextStatus, true);
+            CountLabel.MaxWidth = StatusBar.ActualWidth;
+        }
     }
 
-    // The filter's count changes as torrents change state, and the labels
-    // before it would move with it, so it keeps room for its largest count.
-    private void ReserveFilter()
+    private static void ShowStatus(FrameworkElement control, bool visible) =>
+        control.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+
+    private static void SetStatus(TextBlock label, string text, string? description = null)
     {
-        var probe = new TextBlock { Style = FilterLabel.Style, Text = Model.WidestFilterStatus };
-        probe.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-        var width = Math.Min(probe.DesiredSize.Width, FilterLabel.MaxWidth);
-        if (FilterLabel.MinWidth != width)
-            FilterLabel.MinWidth = width;
+        label.Text = text;
+        AutomationProperties.SetName(label, description ?? text);
+        ToolTipService.SetToolTip(label, description ?? text);
     }
 
-    private bool StatusFits()
+    private static void ReserveRate(StackPanel panel, TextBlock label)
+    {
+        var text = new string(label.Text.Select(character => char.IsDigit(character) ? '8' : character).ToArray());
+        var icon = (FrameworkElement)panel.Children[0];
+        icon.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        panel.Width = MeasureText(label, text) + panel.Spacing + icon.DesiredSize.Width;
+    }
+
+    private static double MeasureText(TextBlock label, string text)
+    {
+        var probe = new TextBlock { Style = label.Style, Text = text };
+        probe.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        return probe.DesiredSize.Width;
+    }
+
+    private bool StatusFits() => StatusWidth() <= StatusBar.ActualWidth;
+
+    private double StatusWidth()
     {
         var unlimited = new Size(double.PositiveInfinity, double.PositiveInfinity);
+        ContextStatus.Measure(unlimited);
+        ActivityStatus.Measure(unlimited);
         TransferStatus.Measure(unlimited);
-        ListStatus.Measure(unlimited);
-        return TransferStatus.DesiredSize.Width
-                + StatusBar.ColumnSpacing
-                + ListStatus.DesiredSize.Width
-            <= StatusBar.ActualWidth;
+        var groups = new[] { ContextStatus.DesiredSize.Width, ActivityStatus.DesiredSize.Width,
+            TransferStatus.DesiredSize.Width }.Where(width => width > 0).ToArray();
+        return groups.Sum() + Math.Max(0, groups.Length - 1) * 16;
     }
 
     private void UpdateChrome()
@@ -342,6 +395,7 @@ public sealed partial class MainWindow
             )
         );
         RefreshMenus();
+        QueueStatus();
         AutomationProperties.SetName(Torrents, Model.Text.Get("window", "torrents"));
         NameColumn.DisplayName = Model.Text.Get("columns", "name");
         SizeColumn.DisplayName = Model.Text.Get("columns", "size");
@@ -391,5 +445,7 @@ public sealed partial class MainWindow
         }
         NoticeStack.RequestedTheme = Root.ActualTheme;
         NoticeStack.FlowDirection = Root.FlowDirection;
+        WorkContent.RequestedTheme = Root.ActualTheme;
+        WorkContent.FlowDirection = Root.FlowDirection;
     }
 }

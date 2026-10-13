@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Net.Http;
 using System.Reflection;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Syno.TinyTorrent.Models;
 
 namespace Syno.TinyTorrent.Library.Omdb;
@@ -27,6 +28,10 @@ internal sealed class Provider(string key) : IProvider
                 .FirstOrDefault(value => value.Key == "OmdbKey")
                 ?.Value,
         };
+
+    // OMDb misses Rogue Nation when the search query includes its dash.
+    public string Prepare(string query) =>
+        Regex.Replace(query, @"[^\p{L}\p{N}]+", " ").Trim();
 
     public async Task<VideoSearch> Search(
         VideoQuery query,

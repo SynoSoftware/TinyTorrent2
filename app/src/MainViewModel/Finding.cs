@@ -26,8 +26,6 @@ public sealed partial class MainViewModel
         Changed(nameof(ReturnWorkspace));
         Changed(nameof(ReturnText));
         Changed(nameof(Query));
-        Changed(nameof(FilterStatus));
-        Changed(nameof(HasFilter));
         Changed(nameof(CountStatus));
         Changed(nameof(ShowsToolbar));
         ((RelayCommand)ClearFilters).Refresh();
@@ -110,17 +108,32 @@ public sealed partial class MainViewModel
     }
     public ICommand SwitchFilters { get; }
     public IReadOnlyList<FilterChoice> Filters { get; }
-    public bool HasFilter => Page != WindowPage.Library && Filter != TorrentFilter.All;
-    public string CountStatus => Page == WindowPage.Library ? Library.Status : TorrentCount;
-    public string FilterLabel =>
-        Filter == TorrentFilter.All
-            ? Text.Get("filters", "title")
-            : Text.Format("filters", "active", FilterName, VisibleTorrents.Count);
-    public string FilterStatus =>
-        Text.Format("filters", "count", FilterName, VisibleTorrents.Count);
-
-    // The filter status at the largest count it can reach, every torrent in the list.
-    public string WidestFilterStatus => Text.Format("filters", "count", FilterName, Torrents.Count);
+    public string CountStatus
+    {
+        get
+        {
+            if (Page == WindowPage.Library)
+                return Library.Status;
+            if (Page == WindowPage.Settings)
+            {
+                var category = Navigation.Current == WindowPage.Connection ? "connection_setup"
+                    : Navigation.Settings?.Category?.ToString().ToLowerInvariant() ?? "home";
+                return Text.Get("commands", "settings") + " · " + Text.Get("settings", category);
+            }
+            if (Page != WindowPage.Torrents)
+                return string.Empty;
+            if (_storageFailed && Torrents.Count == 0)
+                return Text.Get("window", "torrents_unavailable");
+            if (_sessionId.Length == 0 || _loading)
+                return Text.Get("window", "connecting");
+            var count = Filter == TorrentFilter.All
+                ? Text.FormatCount("window", "torrents", Torrents.Count)
+                : Text.Format("window", "filtered_torrents", VisibleTorrents.Count, Torrents.Count, FilterName);
+            if (_selected.Length > 0)
+                count = Text.Format("window", "torrents_selected", count, _selected.Length);
+            return !_connected || _storageFailed ? Text.Format("window", "last_known", count) : count;
+        }
+    }
     private string FilterName => Text.Get("filters", Filter.ToString().ToLowerInvariant());
     public ICommand ShowSettings { get; }
     public ICommand ShowTorrents { get; }

@@ -205,19 +205,21 @@ public sealed partial class MainViewModel
                 ],
                 policy,
                 http
-            );
-            Library.Attach(store, videos, new FileFacts(_database));
+            ) { Work = Work };
+            Library.Attach(store, videos, new FileFacts(_database, Work));
             var subtitles = new SubtitleAcquisition(
                 _database,
                 _providerHttp,
                 settled,
                 policy
-            );
+            ) { Work = Work };
             Subtitles = subtitles;
             subtitles.Changed += (_, _) => _dispatcher.TryEnqueue(() =>
             {
                 if (ReferenceEquals(Subtitles, subtitles))
+                {
                     RefreshFeedback();
+                }
             });
             subtitles.LanguagesChanged += (_, _) => _dispatcher.TryEnqueue(() =>
             {
@@ -334,8 +336,9 @@ public sealed partial class MainViewModel
                 )
                     return;
                 observing = Library.Observe(
-                    _fileSource is { IsReady: true },
-                    IsConnected && _fileSource is { IsCurrent: true }
+                    !IsConnected || _fileSource is not { IsCurrent: true } ? LibraryReadiness.Offline
+                    : _fileSource.IsReady ? LibraryReadiness.Ready
+                    : LibraryReadiness.Current
                 );
             }
             await observing;
@@ -395,6 +398,8 @@ public sealed partial class MainViewModel
                 await ResetFeatures(false);
                 return;
             }
+            using var operation = Work.Begin(new(new WorkDescription.Maintenance(MaintenanceWork.Recovery),
+                new WorkProgress.Unknown(), new WorkExecution.Finishing()));
             if (Library.HasFailure)
                 await Library.Recover();
             else
@@ -430,6 +435,8 @@ public sealed partial class MainViewModel
             )
                 return;
             _resetting = true;
+            using var operation = Work.Begin(new(new WorkDescription.Maintenance(MaintenanceWork.Recovery),
+                new WorkProgress.Unknown(), new WorkExecution.Finishing()));
             DisconnectFeatures();
             await DetachFeatures();
             if (delete)
@@ -485,6 +492,8 @@ public sealed partial class MainViewModel
         {
             if (_closed || _featuresClosed || _database is not { } database || Subtitles is not { } subtitles)
                 return;
+            using var operation = Work.Begin(new(new WorkDescription.Maintenance(MaintenanceWork.ResetProtection),
+                new WorkProgress.Unknown(), new WorkExecution.Finishing()));
             await Library.SuspendProtection(() => subtitles.Suspend(() => database.Run(connection =>
             {
                 Store.ResetProtection(connection, providerId);
@@ -531,6 +540,8 @@ public sealed partial class MainViewModel
         await _featureAccess.WaitAsync();
         try
         {
+            if (_updateCheck is { } update)
+                await update;
             await DetachFeatures();
             await Library.DisposeAsync();
             _providerHttp.Dispose();

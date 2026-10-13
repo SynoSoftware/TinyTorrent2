@@ -12,6 +12,7 @@ internal sealed partial class Acquisition(
     RequestPolicy policy
 ) : IAsyncDisposable
 {
+    internal required BackgroundWork Work { get; init; }
     internal const int MaximumExtras = 3;
 
     private readonly SemaphoreSlim _operation = new(1);
@@ -519,6 +520,9 @@ internal sealed partial class Acquisition(
     {
         lock (_requestSync)
         {
+            foreach (var run in new[] { _manualWork, _automaticWork })
+                if (run is not null)
+                    run.Report(run.Observation.Progress, new WorkExecution.Waiting());
             _requests.Cancel();
             _requests.Dispose();
             _requests = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
@@ -564,6 +568,12 @@ internal sealed partial class Acquisition(
             _requests.Cancel();
         if (_worker is not null)
             await _worker.ConfigureAwait(false);
+        foreach (var run in new[] { _manualWork, _automaticWork })
+            if (run is not null)
+            {
+                await run.Stopped.ConfigureAwait(false);
+                await run.Finish().ConfigureAwait(false);
+            }
         await _operation.WaitAsync().ConfigureAwait(false);
         _operation.Release();
         _requests.Dispose();

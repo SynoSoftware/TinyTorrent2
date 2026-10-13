@@ -19,6 +19,17 @@
     DragOver="OnDragOver"
     Drop="OnDrop"
   >
+    <Grid.Resources>
+      <Style x:Key="DataCautionIconStyle" TargetType="FontIcon" BasedOn="{StaticResource TinyTorrentStatusIconStyle}">
+        <Setter Property="Foreground" Value="{ThemeResource SystemFillColorCautionBrush}" />
+      </Style>
+      <Style x:Key="TinyTorrentWorkDividerStyle" TargetType="Border">
+        <Setter Property="Background" Value="{ThemeResource DividerStrokeColorDefaultBrush}" />
+        <Setter Property="Width" Value="1" />
+        <Setter Property="Height" Value="16" />
+        <Setter Property="Margin" Value="10,0" />
+      </Style>
+    </Grid.Resources>
     <Grid.RowDefinitions>
       <RowDefinition Height="{ThemeResource TinyTorrentCaptionHeight}" />
       <RowDefinition Height="*" />
@@ -290,11 +301,20 @@
               </controls:Pane.Header>
               <Grid RowSpacing="8" Padding="0,8,0,0">
                 <Grid.RowDefinitions>
-                  <RowDefinition Height="*" />
                   <RowDefinition Height="Auto" />
+                  <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
+                <controls:ActionButton
+                  x:Name="ClearFiltersButton"
+                  Glyph="{x:Bind icons:Lucide.FunnelX}"
+                  Margin="16,0"
+                  Padding="8,4"
+                  Command="{x:Bind Model.ClearFilters}"
+                  HorizontalAlignment="Stretch"
+                />
                 <ListView
                   x:Name="Filters"
+                  Grid.Row="1"
                   SelectionMode="Single"
                   SelectionChanged="OnFilterChanged"
                 >
@@ -336,15 +356,7 @@
                     </DataTemplate>
                   </ListView.ItemTemplate>
                 </ListView>
-                <ScrollViewer x:Name="LibraryFilters" Margin="16,0" Visibility="Collapsed" />
-                <controls:ActionButton
-                  x:Name="ClearFiltersButton"
-                  Glyph="{x:Bind icons:Lucide.FunnelX}"
-                  Grid.Row="1"
-                  Margin="16,8"
-                  Command="{x:Bind Model.ClearFilters}"
-                  HorizontalAlignment="Stretch"
-                />
+                <ScrollViewer x:Name="LibraryFilters" Grid.Row="1" Margin="16,0" Visibility="Collapsed" />
               </Grid>
             </controls:Pane>
           </Grid>
@@ -1016,270 +1028,132 @@
         </ItemsControl.ItemTemplate>
       </ItemsControl>
     </Popup>
-    <!-- Transfer state at the left, the list and the environment at the
-             right, on one line. UpdateStatus shortens labels to their icons when
-             the line is too narrow; each tooltip still names its item. The right
-             group is right-aligned, so the items that appear and change on their
-             own come first in it, where they move no other item. -->
-    <Grid x:Name="StatusBar" Grid.Row="2" Margin="16,8,16,12" MinHeight="20" ColumnSpacing="24">
+    <Border
+      Grid.Row="2"
+      Height="1"
+      VerticalAlignment="Top"
+      Background="{ThemeResource DividerStrokeColorDefaultBrush}"
+      IsHitTestVisible="False"
+      AutomationProperties.AccessibilityView="Raw"
+    />
+    <Grid x:Name="StatusBar" Grid.Row="2" Margin="16,6,16,6" MinHeight="32">
       <Grid.ColumnDefinitions>
         <ColumnDefinition Width="Auto" />
-        <ColumnDefinition Width="*" />
+        <ColumnDefinition x:Name="ContextGap" Width="*" />
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition x:Name="TransferGap" Width="*" />
+        <ColumnDefinition Width="Auto" />
       </Grid.ColumnDefinitions>
-      <StackPanel
-        x:Name="TransferStatus"
-        Orientation="Horizontal"
-        Spacing="20"
-        VerticalAlignment="Center"
-        SizeChanged="OnStatusSize"
-      >
-        <StackPanel
-          x:Name="DownloadRate"
-          Orientation="Horizontal"
-          Spacing="6"
-          Background="Transparent"
-          DoubleTapped="OnLimitsStatus"
-          ToolTipService.ToolTip="{x:Bind Model.DownloadTip, Mode=OneWay}"
-        >
-          <FontIcon
-            Style="{StaticResource TinyTorrentStatusIconStyle}"
-            FontFamily="{x:Bind icons:Lucide.Font}"
-            Glyph="{x:Bind icons:Lucide.ArrowDown}"
-            Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
-          />
-          <TextBlock
-            Text="{x:Bind Model.DownloadStatus, Mode=OneWay}"
-            Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
-            AutomationProperties.Name="{x:Bind Model.DownloadTip, Mode=OneWay}"
-            Style="{StaticResource TinyTorrentStatusTextStyle}"
-          />
+      <StackPanel x:Name="ContextStatus" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+          <FontIcon x:Name="ContextIcon" Style="{StaticResource TinyTorrentStatusIconStyle}"
+            FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.List}"
+            AutomationProperties.AccessibilityView="Raw" />
+          <TextBlock x:Name="CountLabel" Style="{StaticResource TinyTorrentStatusTextStyle}"
+            TextTrimming="CharacterEllipsis" />
         </StackPanel>
-        <StackPanel
-          x:Name="UploadRate"
-          Orientation="Horizontal"
-          Spacing="6"
-          Background="Transparent"
-          DoubleTapped="OnLimitsStatus"
-          ToolTipService.ToolTip="{x:Bind Model.UploadTip, Mode=OneWay}"
-        >
-          <FontIcon
-            Style="{StaticResource TinyTorrentStatusIconStyle}"
-            FontFamily="{x:Bind icons:Lucide.Font}"
-            Glyph="{x:Bind icons:Lucide.ArrowUp}"
-            Foreground="{ThemeResource TinyTorrentUploadBrush}"
-          />
-          <TextBlock
-            Text="{x:Bind Model.UploadStatus, Mode=OneWay}"
-            Foreground="{ThemeResource TinyTorrentUploadBrush}"
-            AutomationProperties.Name="{x:Bind Model.UploadTip, Mode=OneWay}"
-            Style="{StaticResource TinyTorrentStatusTextStyle}"
-          />
-        </StackPanel>
-        <StackPanel
-          Orientation="Horizontal"
-          Spacing="6"
-          Background="Transparent"
-          DoubleTapped="OnRestriction"
-          Visibility="{x:Bind Model.HasRestriction, Mode=OneWay}"
-          ToolTipService.ToolTip="{x:Bind Model.RestrictionTip, Mode=OneWay}"
-        >
-          <Grid>
-            <FontIcon
-              Style="{StaticResource TinyTorrentStatusIconStyle}"
-              FontFamily="{x:Bind icons:Lucide.Font}"
-              Glyph="{x:Bind icons:Lucide.Pause}"
-              Visibility="{x:Bind Model.IsSessionPaused, Mode=OneWay}"
-            />
-            <FontIcon
-              Style="{StaticResource TinyTorrentStatusIconStyle}"
-              FontFamily="{x:Bind icons:Lucide.Font}"
-              Glyph="{x:Bind icons:Lucide.Turtle}"
-              Foreground="{ThemeResource SystemFillColorCautionBrush}"
-              Visibility="{x:Bind Model.ShowsAlternativeLimits, Mode=OneWay}"
-            />
-          </Grid>
-          <TextBlock
-            x:Name="RestrictionLabel"
-            Text="{x:Bind Model.RestrictionStatus, Mode=OneWay}"
-            AutomationProperties.Name="{x:Bind Model.RestrictionTip, Mode=OneWay}"
-            Style="{StaticResource TinyTorrentStatusTextStyle}"
-          />
+      <StackPanel x:Name="ActivityStatus" Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+        <StackPanel x:Name="WorkItems" Orientation="Horizontal" VerticalAlignment="Center" />
+        <Border x:Name="WorkSeparator" Width="1" Height="16" Margin="10,0"
+          Background="{ThemeResource DividerStrokeColorDefaultBrush}" Visibility="Collapsed"
+          AutomationProperties.AccessibilityView="Raw" />
+        <controls:ActionButton x:Name="WorkButton" Glyph="{x:Bind icons:Lucide.ListTodo}"
+          Padding="6,0" MinHeight="32" Visibility="Collapsed">
+          <controls:ActionButton.Flyout>
+            <Flyout x:Name="WorkFlyout" Placement="Top" Opening="OnWorkOpening" Closed="OnWorkClosed">
+              <StackPanel x:Name="WorkContent" Spacing="12" Width="420">
+                <TextBlock x:Name="WorkTitle" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                <ListView x:Name="WorkList" MaxHeight="360" SelectionMode="None"
+                  HorizontalContentAlignment="Stretch" IsItemClickEnabled="False">
+                  <ListView.ItemContainerStyle>
+                    <Style TargetType="ListViewItem">
+                      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                      <Setter Property="Padding" Value="0,6" />
+                      <Setter Property="IsTabStop" Value="False" />
+                    </Style>
+                  </ListView.ItemContainerStyle>
+                </ListView>
+              </StackPanel>
+            </Flyout>
+          </controls:ActionButton.Flyout>
+        </controls:ActionButton>
+        <StackPanel x:Name="InformationStatus" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+          <FontIcon x:Name="InformationIcon" Style="{StaticResource TinyTorrentStatusIconStyle}"
+            FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Info}"
+            AutomationProperties.AccessibilityView="Raw" />
+          <TextBlock x:Name="InformationLabel" Style="{StaticResource TinyTorrentStatusTextStyle}"
+            TextTrimming="CharacterEllipsis" />
         </StackPanel>
       </StackPanel>
-      <StackPanel
-        x:Name="ListStatus"
-        Grid.Column="1"
-        Orientation="Horizontal"
-        Spacing="20"
-        HorizontalAlignment="Right"
-        VerticalAlignment="Center"
-        SizeChanged="OnStatusSize"
-      >
-        <StackPanel
-          Orientation="Horizontal"
-          Spacing="6"
-          Visibility="{x:Bind Model.Library.HasBatch, Mode=OneWay}"
-          ToolTipService.ToolTip="{x:Bind Model.Library.BatchTip, Mode=OneWay}"
-        >
-          <FontIcon
-            Style="{StaticResource TinyTorrentStatusIconStyle}"
-            FontFamily="{x:Bind icons:Lucide.Font}"
-            Glyph="{x:Bind icons:Lucide.Download}"
-          />
-          <TextBlock
-            x:Name="BatchLabel"
-            Text="{x:Bind Model.Library.BatchStatus, Mode=OneWay}"
-            AutomationProperties.Name="{x:Bind Model.Library.BatchTip, Mode=OneWay}"
-            Style="{StaticResource TinyTorrentStatusTextStyle}"
-          />
-          <!-- Owner ruling: a batch stops from its own status item. -->
-          <Button
-            Width="20"
-            Height="20"
-            Style="{StaticResource TinyTorrentSubtleButtonStyle}"
-            Click="OnStopBatch"
-            ToolTipService.ToolTip="{x:Bind Model.Text.Get('library', 'stop_batch'), Mode=OneWay}"
-            AutomationProperties.Name="{x:Bind Model.Text.Get('library', 'stop_batch'), Mode=OneWay}"
-          >
-            <FontIcon
-              FontSize="{StaticResource TinyTorrentInlineIconSize}"
-              FontFamily="{x:Bind icons:Lucide.Font}"
-              Glyph="{x:Bind icons:Lucide.X}"
-            />
-          </Button>
+      <StackPanel x:Name="TransferStatus" Grid.Column="4" Orientation="Horizontal" Spacing="16"
+        HorizontalAlignment="Right" VerticalAlignment="Center">
+        <TextBlock x:Name="TransferLabel" Style="{StaticResource TinyTorrentStatusTextStyle}"
+            TextTrimming="CharacterEllipsis" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+        <StackPanel x:Name="DownloadRate" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+          <FontIcon Style="{StaticResource TinyTorrentStatusIconStyle}"
+            FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.ArrowDown}"
+            Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" AutomationProperties.AccessibilityView="Raw" />
+          <TextBlock x:Name="DownloadLabel" Style="{StaticResource TinyTorrentStatusTextStyle}"
+            TextTrimming="CharacterEllipsis" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
         </StackPanel>
-        <StackPanel
-          x:Name="UpdateAvailable"
-          Orientation="Horizontal"
-          Spacing="6"
-          Background="Transparent"
-          DoubleTapped="OnUpdateAvailable"
-          Visibility="{x:Bind Model.HasUpdate, Mode=OneWay}"
-          ToolTipService.ToolTip="{x:Bind Model.Text.Get('about', 'available_tip'), Mode=OneWay}"
-        >
-          <FontIcon
-            Style="{StaticResource TinyTorrentStatusIconStyle}"
-            FontFamily="{x:Bind icons:Lucide.Font}"
-            Glyph="{x:Bind icons:Lucide.CircleFadingArrowUp}"
-          />
-          <TextBlock
-            x:Name="UpdateLabel"
-            Text="{x:Bind Model.Text.Get('about', 'available'), Mode=OneWay}"
-            Style="{StaticResource TinyTorrentStatusTextStyle}"
-          />
+        <StackPanel x:Name="UploadRate" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+          <FontIcon Style="{StaticResource TinyTorrentStatusIconStyle}"
+            FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.ArrowUp}"
+            Foreground="{ThemeResource TinyTorrentUploadBrush}" AutomationProperties.AccessibilityView="Raw" />
+          <TextBlock x:Name="UploadLabel" Style="{StaticResource TinyTorrentStatusTextStyle}"
+            TextTrimming="CharacterEllipsis" Foreground="{ThemeResource TinyTorrentUploadBrush}" />
         </StackPanel>
-        <StackPanel
-          Orientation="Horizontal"
-          Spacing="6"
-          Visibility="{x:Bind Model.ShowsFreeSpace, Mode=OneWay}"
-          ToolTipService.ToolTip="{x:Bind Model.FreeSpaceStatus, Mode=OneWay}"
-        >
-          <FontIcon
-            Style="{StaticResource TinyTorrentStatusIconStyle}"
-            FontFamily="{x:Bind icons:Lucide.Font}"
-            Glyph="{x:Bind icons:Lucide.HardDrive}"
-          />
-          <TextBlock
-            x:Name="FreeSpaceLabel"
-            Text="{x:Bind Model.FreeSpaceStatus, Mode=OneWay}"
-            Style="{StaticResource TinyTorrentStatusTextStyle}"
-          />
-        </StackPanel>
-        <StackPanel
-          Orientation="Horizontal"
-          Spacing="6"
-          Background="Transparent"
-          Visibility="{x:Bind Model.ShowsExternalIp, Mode=OneWay}"
-          ToolTipService.ToolTip="{x:Bind Model.ExternalIp, Mode=OneWay}"
-        >
-          <FontIcon
-            Style="{StaticResource TinyTorrentStatusIconStyle}"
-            FontFamily="{x:Bind icons:Lucide.Font}"
-            Glyph="{x:Bind icons:Lucide.Globe}"
-          />
-          <TextBlock
-            x:Name="ExternalIpLabel"
-            Text="{x:Bind Model.ExternalIp, Mode=OneWay}"
-            IsTextSelectionEnabled="True"
-            AutomationProperties.Name="{x:Bind Model.ExternalIp, Mode=OneWay}"
-            Style="{StaticResource TinyTorrentStatusTextStyle}"
-          />
-        </StackPanel>
-        <StackPanel
-          Orientation="Horizontal"
-          Spacing="6"
-          Background="Transparent"
-          ToolTipService.ToolTip="{x:Bind Model.CountStatus, Mode=OneWay}"
-        >
-          <FontIcon
-            Style="{StaticResource TinyTorrentStatusIconStyle}"
-            FontFamily="{x:Bind icons:Lucide.Font}"
-            Glyph="{x:Bind icons:Lucide.Files}"
-          />
-          <TextBlock
-            x:Name="CountLabel"
-            Text="{x:Bind Model.CountStatus, Mode=OneWay}"
-            AutomationProperties.Name="{x:Bind Model.CountStatus, Mode=OneWay}"
-            Style="{StaticResource TinyTorrentStatusTextStyle}"
-          />
-        </StackPanel>
-        <StackPanel
-          Orientation="Horizontal"
-          Spacing="6"
-          Background="Transparent"
-          DoubleTapped="OnFilterStatus"
-          Visibility="{x:Bind Model.HasFilter, Mode=OneWay}"
-          ToolTipService.ToolTip="{x:Bind Model.FilterLabel, Mode=OneWay}"
-        >
-          <FontIcon
-            Style="{StaticResource TinyTorrentStatusIconStyle}"
-            FontFamily="{x:Bind icons:Lucide.Font}"
-            Glyph="{x:Bind icons:Lucide.Funnel}"
-          />
-          <TextBlock
-            x:Name="FilterLabel"
-            MaxWidth="160"
-            Text="{x:Bind Model.FilterStatus, Mode=OneWay}"
-            AutomationProperties.Name="{x:Bind Model.FilterLabel, Mode=OneWay}"
-            Style="{StaticResource TinyTorrentStatusTextStyle}"
-          />
-        </StackPanel>
-        <StackPanel
-          x:Name="Incoming"
-          Orientation="Horizontal"
-          Spacing="6"
-          Background="Transparent"
-          DoubleTapped="OnIncoming"
-          ToolTipService.ToolTip="{x:Bind Model.Incoming, Mode=OneWay}"
-        >
+        <StackPanel x:Name="RestrictionStatus" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
           <Grid>
-            <FontIcon
-              Style="{StaticResource TinyTorrentStatusIconStyle}"
-              FontFamily="{x:Bind icons:Lucide.Font}"
-              Glyph="{x:Bind Model.IncomingGlyph, Mode=OneWay}"
-              Visibility="{x:Bind Model.IsIncomingProxied, Mode=OneWay}"
-            />
-            <FontIcon
-              Style="{StaticResource TinyTorrentStatusIconStyle}"
-              FontFamily="{x:Bind icons:Lucide.Font}"
-              Glyph="{x:Bind Model.IncomingGlyph, Mode=OneWay}"
-              Foreground="{ThemeResource SystemFillColorSuccessBrush}"
-              Visibility="{x:Bind Model.IsIncomingOpen, Mode=OneWay}"
-            />
-            <FontIcon
-              Style="{StaticResource TinyTorrentStatusIconStyle}"
-              FontFamily="{x:Bind icons:Lucide.Font}"
-              Glyph="{x:Bind Model.IncomingGlyph, Mode=OneWay}"
+            <FontIcon Style="{StaticResource TinyTorrentStatusIconStyle}"
+              FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Pause}"
+              Visibility="{x:Bind Model.IsSessionPaused, Mode=OneWay}" AutomationProperties.AccessibilityView="Raw" />
+            <FontIcon Style="{StaticResource TinyTorrentStatusIconStyle}"
+              FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Turtle}"
               Foreground="{ThemeResource SystemFillColorCautionBrush}"
-              Visibility="{x:Bind Model.IsIncomingClosed, Mode=OneWay}"
-            />
+              Visibility="{x:Bind Model.ShowsAlternativeLimits, Mode=OneWay}" AutomationProperties.AccessibilityView="Raw" />
           </Grid>
-          <TextBlock
-            x:Name="IncomingLabel"
-            Text="{x:Bind Model.IncomingStatus, Mode=OneWay}"
-            AutomationProperties.Name="{x:Bind Model.Incoming, Mode=OneWay}"
-            Style="{StaticResource TinyTorrentStatusTextStyle}"
-          />
+          <TextBlock x:Name="RestrictionLabel" Style="{StaticResource TinyTorrentStatusTextStyle}"
+            TextTrimming="CharacterEllipsis" />
+        </StackPanel>
+        <TextBlock x:Name="LimitsLabel" Style="{StaticResource TinyTorrentStatusTextStyle}"
+            TextTrimming="CharacterEllipsis" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+        <StackPanel x:Name="FreeSpaceStatus" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+          <FontIcon Style="{StaticResource TinyTorrentStatusIconStyle}"
+            FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.HardDrive}"
+            AutomationProperties.AccessibilityView="Raw" />
+          <TextBlock x:Name="FreeSpaceLabel" Style="{StaticResource TinyTorrentStatusTextStyle}"
+            TextTrimming="CharacterEllipsis" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+        </StackPanel>
+        <StackPanel x:Name="ExternalIpStatus" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+          <FontIcon Style="{StaticResource TinyTorrentStatusIconStyle}"
+            FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Globe}"
+            AutomationProperties.AccessibilityView="Raw" />
+          <TextBlock x:Name="ExternalIpLabel" Style="{StaticResource TinyTorrentStatusTextStyle}"
+            TextTrimming="CharacterEllipsis" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+        </StackPanel>
+        <StackPanel x:Name="Incoming" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+          <Grid>
+            <FontIcon Style="{StaticResource TinyTorrentStatusIconStyle}"
+              FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind Model.IncomingGlyph, Mode=OneWay}"
+              Visibility="{x:Bind Model.IsIncomingProxied, Mode=OneWay}" AutomationProperties.AccessibilityView="Raw" />
+            <FontIcon Style="{StaticResource TinyTorrentStatusIconStyle}"
+              FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind Model.IncomingGlyph, Mode=OneWay}"
+              Foreground="{ThemeResource SystemFillColorSuccessBrush}"
+              Visibility="{x:Bind Model.IsIncomingOpen, Mode=OneWay}" AutomationProperties.AccessibilityView="Raw" />
+            <FontIcon Style="{StaticResource TinyTorrentStatusIconStyle}"
+              FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind Model.IncomingGlyph, Mode=OneWay}"
+              Foreground="{ThemeResource SystemFillColorCautionBrush}"
+              Visibility="{x:Bind Model.IsIncomingClosed, Mode=OneWay}" AutomationProperties.AccessibilityView="Raw" />
+          </Grid>
+          <TextBlock x:Name="IncomingLabel" Style="{StaticResource TinyTorrentStatusTextStyle}"
+            TextTrimming="CharacterEllipsis" />
+        </StackPanel>
+        <StackPanel x:Name="UpdateAvailable" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+          <FontIcon Style="{StaticResource TinyTorrentStatusIconStyle}"
+            FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.CircleFadingArrowUp}"
+            AutomationProperties.AccessibilityView="Raw" />
+          <TextBlock x:Name="UpdateLabel" Style="{StaticResource TinyTorrentStatusTextStyle}"
+            TextTrimming="CharacterEllipsis" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
         </StackPanel>
       </StackPanel>
     </Grid>

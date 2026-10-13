@@ -1,5 +1,55 @@
 namespace Syno.TinyTorrent.Models;
 
+internal enum ImdbPhase
+{
+    Downloading,
+    Episodes,
+    Titles,
+    Ratings,
+    Committing,
+    Indexing,
+    Optimizing,
+    Flushing,
+    Installing,
+}
+
+internal enum RatingSample
+{
+    Unknown,
+    Small,
+    Moderate,
+    Large,
+}
+
+internal enum MetadataScope
+{
+    Batch,
+    Automatic,
+    Inspector,
+}
+
+internal enum SubtitleWork
+{
+    Manual,
+    Automatic,
+    Discovery,
+}
+
+internal enum WorkUnit
+{
+    Files,
+    Folders,
+    Bytes,
+    Percent,
+}
+
+internal enum MaintenanceWork
+{
+    Recovery,
+    ResetProtection,
+    DeleteDataset,
+}
+
 public enum FileKind
 {
     Video,
@@ -335,6 +385,18 @@ internal enum LookupKind
     Refresh,
     // An individual request reports errors and saves an explicit decision.
     Explicit,
+}
+
+internal enum LibraryReadiness
+{
+    // The engine is disconnected or its data sources are not current, so
+    // Library shows the last known rows.
+    Offline,
+    // The data sources match the engine, so rows can be searched while their
+    // files are still being read.
+    Current,
+    // Every file has been read, so lookups and file facts can run.
+    Ready,
 }
 
 internal enum PauseReason

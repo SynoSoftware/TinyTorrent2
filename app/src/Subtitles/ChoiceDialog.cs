@@ -1,11 +1,11 @@
 using System.ComponentModel;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
+using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Controls;
 using Syno.TinyTorrent.Models;
 using Syno.TinyTorrent.Services;
 using Syno.TinyTorrent.Views;
-using Syno.TinyTorrent.Controls;
 
 namespace Syno.TinyTorrent.Subtitles;
 
@@ -16,7 +16,6 @@ internal sealed class ChoiceDialog : UserControl, IDraft
     private readonly Acquisition _model;
     private readonly long _entryId;
     private readonly ComboBox _language;
-    private readonly ActionButton _fetch = new();
     private RetryCommand? _command;
     private RequestBlock? _block;
     private readonly ListView _results = new()
@@ -26,6 +25,8 @@ internal sealed class ChoiceDialog : UserControl, IDraft
         SelectionMode = ListViewSelectionMode.Single,
     };
     private readonly TextBlock _state = new() { TextWrapping = TextWrapping.Wrap };
+    private readonly TextBlock _description = new() { TextWrapping = TextWrapping.Wrap };
+    private readonly ProgressBar _progress = new();
     private readonly InfoBar _error = new()
     {
         Severity = InfoBarSeverity.Error,
@@ -35,8 +36,15 @@ internal sealed class ChoiceDialog : UserControl, IDraft
     private Exception? _failure;
     private Strings Text { get; }
     public bool IsPending { get; private set; }
-    public bool CanSubmit => !IsPending && HasDraft;
-    public bool HasDraft => _results.SelectedItem is SubtitleCandidate;
+    internal bool IsSearching => _request is not null && !IsPending;
+    internal bool HasResults => !IsSearching && !TargetChanged
+        && _results.ItemsSource is IReadOnlyList<SubtitleCandidate> { Count: > 0 };
+    private bool TargetChanged => _failure is SubtitleException { Reason: SubtitleFailure.Changed };
+    public bool CanSubmit => !IsPending && !IsSearching && HasDraft;
+    public bool HasDraft => !TargetChanged && _results.SelectedItem is SubtitleCandidate;
+    internal bool CanSearch => !IsSearching && !IsPending && !TargetChanged
+        && _language.SelectedItem is ComboBoxItem && (_block is null || _block.CanForce);
+    internal string SearchHint => _block is null ? Text.Get("subtitles", "search_again_hint") : Text.Protection(_block);
     public event PropertyChangedEventHandler? PropertyChanged;
 
     internal ChoiceDialog(Strings text, Acquisition model, long entryId)
@@ -50,7 +58,7 @@ internal sealed class ChoiceDialog : UserControl, IDraft
         _language = new ComboBox
         {
             ItemsSource = languages
-                .Select(tag => new Choice(tag, text.LanguageName(tag)))
+                .Select(tag => new ComboBoxItem { Tag = tag, Content = text.LanguageName(tag) })
                 .ToArray(),
             SelectedIndex = 0,
             HorizontalAlignment = HorizontalAlignment.Stretch,
@@ -59,43 +67,61 @@ internal sealed class ChoiceDialog : UserControl, IDraft
         };
         AutomationProperties.SetAutomationId(_language, "SubtitleChoiceLanguage");
         AutomationProperties.SetAutomationId(_results, "SubtitleChoices");
+        AutomationProperties.SetLiveSetting(_state, AutomationLiveSetting.Polite);
+        _state.Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"];
         Content = new StackPanel
         {
             Spacing = 12,
-            MinWidth = 380,
-            Children = { _language, _fetch, _state, _results, _error },
+            Children = { _language, _state, _description, _progress, _results, _error },
         };
         _language.SelectionChanged += async (_, _) => await Find();
-        _fetch.Click += async (_, _) => await Find(true);
         _results.SelectionChanged += (_, _) =>
             PropertyChanged?.Invoke(this, new(nameof(CanSubmit)));
     }
 
     internal void RefreshText()
     {
-        var searching = _request is not null && !IsPending;
+        var busy = IsSearching || IsPending;
+        var empty = !busy && _failure is null
+            && _results.ItemsSource is IReadOnlyList<SubtitleCandidate> { Count: 0 };
+        foreach (var item in _language.Items.OfType<ComboBoxItem>())
+            item.Content = Text.LanguageName((string)item.Tag);
         _language.Header = Text.Get("subtitles", "language");
         AutomationProperties.SetName(_language, Text.Get("subtitles", "language"));
         AutomationProperties.SetName(_results, Text.Get("subtitles", "candidates"));
-        _state.Text =
-            searching ? Text.Get("subtitles", "searching")
-            : _failure is null
-            && _results.ItemsSource is IReadOnlyList<SubtitleCandidate> { Count: 0 }
-                ? Text.Get("subtitles", "no_candidates")
+        _state.Text = IsPending ? Text.Get("subtitles", "downloading_choice")
+            : IsSearching ? Text.Get("subtitles", "searching")
+            : empty ? Text.Get("subtitles", "no_candidates")
+            : HasResults ? Text.Get("subtitles", "select_candidate")
             : string.Empty;
         _state.Visibility = _state.Text.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
+        _description.Text = !busy && _failure is null && _block is { CanForce: false }
+            ? Text.Protection(_block)
+            : empty ? Text.Get("subtitles", _language.Items.Count > 1 ? "no_candidates_languages" : "no_candidates_hint")
+            : string.Empty;
+        _description.Visibility = _description.Text.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
+        _progress.IsIndeterminate = busy;
+        _progress.Visibility = busy ? Visibility.Visible : Visibility.Collapsed;
+        AutomationProperties.SetName(_progress, _state.Text);
+        _results.Visibility = HasResults ? Visibility.Visible : Visibility.Collapsed;
+        _results.IsEnabled = !busy && !TargetChanged;
+        _language.IsEnabled = !IsPending && !TargetChanged;
         _error.Message = _failure is null ? string.Empty : Text.Error(_failure);
         _error.IsOpen = _failure is not null;
-        _fetch.Text = _block?.CanForce == true ? Text.Get("request_protection", "force") : Text.Get("library", "fetch");
-        var changed = _failure is SubtitleException { Reason: SubtitleFailure.Changed } failure ? failure : null;
-        _fetch.IsEnabled = !searching && !IsPending && changed is null && (_block is null || _block.CanForce);
-        ToolTipService.SetToolTip(_fetch, changed is not null ? Text.Error(changed) : _block is null ? null : Text.Protection(_block));
+        _error.Visibility = _failure is not null ? Visibility.Visible : Visibility.Collapsed;
+        PropertyChanged?.Invoke(this, new(string.Empty));
     }
 
     internal async Task Find(bool user = false)
     {
-        if (_language.SelectedItem is not Choice language)
+        if (IsPending)
             return;
+        if (_language.SelectedItem is not ComboBoxItem { Tag: string language })
+        {
+            _failure = new SubtitleException(SubtitleFailure.Unconfigured);
+            RefreshText();
+            return;
+        }
         var command = user && _block?.CanForce == true ? new RetryCommand(DateTimeOffset.UtcNow.UtcTicks) : null;
         _command = command;
         Cancel();
@@ -109,11 +135,11 @@ internal sealed class ChoiceDialog : UserControl, IDraft
         {
             if (!user)
             {
-                var block = await _model.Protection(_entryId, language.Tag, request.Token);
+                var block = await _model.Protection(_entryId, language, request.Token);
                 request.Token.ThrowIfCancellationRequested();
                 _block = block;
             }
-            var candidates = await _model.Candidates(_entryId, language.Tag, request.Token, command);
+            var candidates = await _model.Candidates(_entryId, language, request.Token, command);
             if (!request.IsCancellationRequested)
                 _results.ItemsSource = candidates;
         }
@@ -130,7 +156,7 @@ internal sealed class ChoiceDialog : UserControl, IDraft
                 {
                     try
                     {
-                        var block = await _model.Protection(_entryId, language.Tag, request.Token);
+                        var block = await _model.Protection(_entryId, language, request.Token);
                         if (!request.IsCancellationRequested)
                             _block = block;
                     }
@@ -151,15 +177,14 @@ internal sealed class ChoiceDialog : UserControl, IDraft
 
     public async Task<bool> Submit()
     {
-        if (_results.SelectedItem is not SubtitleCandidate candidate || IsPending)
+        if (!CanSubmit || _results.SelectedItem is not SubtitleCandidate candidate)
             return false;
         Cancel();
         using var request = new CancellationTokenSource();
         _request = request;
         IsPending = true;
-        _language.IsEnabled = _results.IsEnabled = false;
+        _failure = null;
         RefreshText();
-        PropertyChanged?.Invoke(this, new(nameof(CanSubmit)));
         var command = _command;
         _command = null;
         try
@@ -181,11 +206,9 @@ internal sealed class ChoiceDialog : UserControl, IDraft
         finally
         {
             IsPending = false;
-            _language.IsEnabled = _results.IsEnabled = true;
             if (ReferenceEquals(_request, request))
                 _request = null;
             RefreshText();
-            PropertyChanged?.Invoke(this, new(nameof(CanSubmit)));
         }
     }
 
@@ -198,8 +221,4 @@ internal sealed class ChoiceDialog : UserControl, IDraft
             ? new SubtitleException(SubtitleFailure.Changed)
             : error;
 
-    private sealed record Choice(string Tag, string Name)
-    {
-        public override string ToString() => Name;
-    }
 }

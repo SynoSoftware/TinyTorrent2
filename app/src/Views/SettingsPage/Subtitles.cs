@@ -47,25 +47,30 @@ public sealed partial class SettingsPage
         _readingStatistics = true;
         try
         {
-            var statistics = await Main.ReadStatistics();
-            ReusableSpace.Text = statistics is null ? "—" : Model.Text.Bytes(statistics.Reusable);
-            StoredMovies.Text = Number(statistics?.Movies);
-            StoredSeries.Text = Number(statistics?.Series);
-            StoredEpisodes.Text = Number(statistics?.Episodes);
-            LibraryFiles.Text = Number(statistics?.Files);
-            CachedResponses.Text = Number(statistics?.Responses);
-            TrackedSubtitles.Text = Number(statistics?.Subtitles);
-            CreatedSubtitles.Text = Number(statistics?.Created);
-            FoundSubtitles.Text = Number(statistics?.Found);
-            SubtitleLanguages.Text = Number(statistics?.Languages);
+            if (await Main.ReadStatistics() is not { } statistics)
+            {
+                LibraryFiles.Text = StoredInformation.Text = StoredSubtitles.Text = "—";
+                return;
+            }
+            LibraryFiles.Text = statistics.Files.ToString("N0", CultureInfo.CurrentCulture);
+            StoredInformation.Text = Model.Text.Format(
+                "plugins",
+                "information_counts",
+                Model.Text.FormatCount("plugins", "movie_count", statistics.Movies),
+                Model.Text.FormatCount("plugins", "series_count", statistics.Series),
+                Model.Text.FormatCount("plugins", "episode_count", statistics.Episodes)
+            );
+            StoredSubtitles.Text = Model.Text.Format(
+                "plugins",
+                "subtitle_counts",
+                Model.Text.FormatCount("plugins", "file_count", statistics.Subtitles),
+                Model.Text.FormatCount("plugins", "language_count", statistics.Languages)
+            );
         }
         finally
         {
             _readingStatistics = false;
         }
-
-        static string Number(long? value) =>
-            value?.ToString("N0", CultureInfo.CurrentCulture) ?? "—";
     }
 
     private void RefreshSubtitles()

@@ -33,10 +33,10 @@ internal sealed class MetadataDialog : UserControl, IDraft
         IsClosable = false,
     };
     private readonly ProgressBar _progress = new() { Opacity = 0 };
-    private readonly TextBlock _empty = new()
+    private readonly TextBlock _state = new()
     {
         Visibility = Visibility.Collapsed,
-        TextWrapping = TextWrapping.Wrap,
+        Style = (Style)Application.Current.Resources["TinyTorrentBodyTextStyle"],
     };
     private CancellationTokenSource? _request;
     private Exception? _failure;
@@ -44,6 +44,8 @@ internal sealed class MetadataDialog : UserControl, IDraft
     public bool CanSubmit => !IsPending && HasDraft && (_detailBlock is null || _detailBlock.CanForce);
     internal bool RequiresForce => _detailBlock?.CanForce == true;
     internal string SubmitText => _library.Text.Get(RequiresForce ? "request_protection" : "dialog", RequiresForce ? "force_button" : "save");
+    internal string SubmitTip => _detailBlock is { CanForce: true } block
+        ? _library.Text.Protection(block) : _library.Text.Get("library", "save_metadata_tip");
     public bool HasDraft => _results.SelectedItem is VideoChoice;
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -74,7 +76,7 @@ internal sealed class MetadataDialog : UserControl, IDraft
         AutomationProperties.SetAutomationId(_input, "MetadataSearch");
         AutomationProperties.SetAutomationId(_fetch, "MetadataFetch");
         AutomationProperties.SetAutomationId(_results, "MetadataMatches");
-        AutomationProperties.SetLiveSetting(_empty, AutomationLiveSetting.Polite);
+        AutomationProperties.SetLiveSetting(_state, AutomationLiveSetting.Polite);
         AutomationProperties.SetAccessibilityView(
             _progress,
             Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw
@@ -95,7 +97,7 @@ internal sealed class MetadataDialog : UserControl, IDraft
         {
             Spacing = 12,
             MinWidth = 380,
-            Children = { _source, search, _results, _empty, _error },
+            Children = { _source, search, _state, _results, _error },
         };
         _source.SelectionChanged += async (_, _) => await Find();
         _settings.Click += (_, _) => SettingsRequested?.Invoke(this, new(SettingsCategory.Network));
@@ -111,9 +113,14 @@ internal sealed class MetadataDialog : UserControl, IDraft
                 return;
             Cancel();
             _block = null;
+            _failure = null;
             _fetch.IsEnabled = false;
-            _empty.Visibility = Visibility.Collapsed;
             _results.ItemsSource = null;
+            if (string.IsNullOrWhiteSpace(_input.Text))
+            {
+                RefreshText();
+                return;
+            }
             await ReadProtection();
         };
         _results.SelectionChanged += (_, _) =>
@@ -137,8 +144,22 @@ internal sealed class MetadataDialog : UserControl, IDraft
         AutomationProperties.SetName(_input, _input.PlaceholderText);
         AutomationProperties.SetName(_results, _library.Text.Get("library", "matches"));
         _error.Message = _failure is null ? string.Empty : _library.Error(_failure);
+        _error.Severity = _failure is RequestBlockedException ? InfoBarSeverity.Warning : InfoBarSeverity.Error;
         _error.IsOpen = _failure is not null;
-        _empty.Text = _library.Text.Get("library", "no_metadata_matches");
+        var count = (_results.ItemsSource as IReadOnlyList<VideoChoice>)?.Count;
+        var state = IsPending ? _library.Text.Get("library", "saving_metadata")
+            : _request is not null ? _library.Text.Format("library", "searching_metadata", Source?.Name ?? string.Empty)
+            : _failure is not null || count is null ? string.Empty
+            : count == 0 ? _library.Text.Get("library", "no_metadata_matches")
+            : _library.Text.Format("library", count == 1 ? "match_one" : "match_other", count);
+        if (_state.Text != state)
+        {
+            _state.Text = state;
+            _state.Visibility = state.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
+            ToolTipService.SetToolTip(_state, state);
+            FrameworkElementAutomationPeer.CreatePeerForElement(_state)
+                ?.RaiseAutomationEvent(AutomationEvents.LiveRegionChanged);
+        }
         _fetch.Text = _block?.CanForce == true ? _library.Text.Get("request_protection", "force_button")
             : _library.Text.Get("library", "fetch");
         _fetch.IsEnabled = _request is null && Source is not null
@@ -173,7 +194,7 @@ internal sealed class MetadataDialog : UserControl, IDraft
         if (cancellation.IsCancellationRequested || Source != source || _input.Text != query)
             return;
         _block = block;
-        if (block is not null || _failure is RequestBlockedException)
+        if (_failure is RequestBlockedException || block is not null && _results.ItemsSource is null)
             _failure = block is null ? null : new RequestBlockedException(block);
         RefreshText();
     }
@@ -187,23 +208,19 @@ internal sealed class MetadataDialog : UserControl, IDraft
         var query = _input.Text;
         Cancel();
         using var request = new CancellationTokenSource();
+        _failure = null;
+        _results.ItemsSource = null;
         Track(request);
         try
         {
             if (!user)
                 await ReadProtection(request.Token);
             request.Token.ThrowIfCancellationRequested();
-            _empty.Visibility = Visibility.Collapsed;
-            _results.ItemsSource = null;
-            Report(null);
             var choices = await _library.FindVideo(query, _entry.Name, source, request.Token, scope);
             if (!request.IsCancellationRequested)
             {
+                _failure = null;
                 _results.ItemsSource = choices;
-                _empty.Visibility = choices.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-                if (choices.Count == 0)
-                    FrameworkElementAutomationPeer.CreatePeerForElement(_empty)
-                        ?.RaiseAutomationEvent(AutomationEvents.LiveRegionChanged);
             }
         }
         catch (OperationCanceledException) { }
@@ -234,8 +251,9 @@ internal sealed class MetadataDialog : UserControl, IDraft
             return false;
         Cancel();
         using var request = new CancellationTokenSource();
-        Track(request);
         IsPending = true;
+        _failure = null;
+        Track(request);
         _source.IsEnabled = _input.IsEnabled = _results.IsEnabled = false;
         PropertyChanged?.Invoke(this, new(nameof(CanSubmit)));
         try

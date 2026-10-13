@@ -28,6 +28,7 @@ public sealed class AddDraft : IDraft
     private Task _pass = Task.CompletedTask;
     private readonly FileSelection _emptyFiles;
     private AdditionPhase _phase;
+    private Addition? _addition;
 
     // A submit holds the dialog open; preparing a source does not, because
     // AcceptMagnet releases a preview whose dialog has closed. Closing the
@@ -306,14 +307,95 @@ public sealed class AddDraft : IDraft
         try
         {
             await _pass;
+            _addition?.Report();
             foreach (var source in Sources.Where(source => source.PreviewId is null).ToArray())
+            {
+                if (IsAdditionCancelled)
+                    break;
                 await Acquire(source);
+            }
             _failure = null;
         }
         finally
         {
             _phase = AdditionPhase.Idle;
             Refresh();
+        }
+    }
+
+    internal bool IsAdditionCancelled => _addition?.IsCancelled == true;
+
+    internal Addition? BeginAddition() =>
+        _owner.IsAddOpen || Sources.Count == 0 ? null : _addition = new Addition(this);
+
+    internal sealed class Addition : IAsyncDisposable
+    {
+        private readonly AddDraft _draft;
+        private readonly AddSource[] _accepted;
+        private readonly BackgroundWork.Operation _operation;
+        private WorkObservation _observation = new(new WorkDescription.Sources(),
+            new WorkProgress.Unknown(), new WorkExecution.Waiting());
+        private bool _ended;
+        internal bool IsCancelled => _observation.Execution is WorkExecution.Cancelling;
+
+        internal Addition(AddDraft draft)
+        {
+            _draft = draft;
+            _accepted = draft.Sources.ToArray();
+            _operation = draft._owner.Work.Begin(_observation, Cancel);
+        }
+
+        internal void Report(AddSource? submitting = null)
+        {
+            if (IsCancelled || _ended)
+                return;
+            var remaining = _accepted.Where(_draft.Sources.Contains).ToArray();
+            _observation = _observation with
+            {
+                Progress = new WorkProgress.Fraction(_accepted.Length - remaining.Length,
+                    _accepted.Length, WorkUnit.Files),
+                Execution = submitting is not null && remaining.All(source => source == submitting)
+                    ? new WorkExecution.Finishing() : new WorkExecution.Running(),
+            };
+            _operation.Report(_observation);
+        }
+
+        private Task Cancel()
+        {
+            if (!_ended && !IsCancelled && _observation.Execution.CanCancel)
+            {
+                _observation = _observation with { Execution = new WorkExecution.Cancelling() };
+                _operation.Report(_observation);
+            }
+            return Task.CompletedTask;
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            _ended = true;
+            try
+            {
+                // An in-flight add is reconciled before this cleanup. An uncertain
+                // reply stays in the draft so cancellation cannot hide an added torrent.
+                if (IsCancelled)
+                {
+                    await _draft.Cancel(_accepted.Where(source =>
+                        _draft.Sources.Contains(source) && !source.Uncertain).ToArray());
+                    var failure = _accepted.FirstOrDefault(source =>
+                        _draft.Sources.Contains(source) && source.Uncertain)?.Failure;
+                    if (failure is not null)
+                        _draft._owner.Report(failure);
+                }
+            }
+            catch (Exception error)
+            {
+                _draft._owner.Report(error);
+            }
+            finally
+            {
+                _draft._addition = null;
+                _operation.Dispose();
+            }
         }
     }
 
@@ -370,7 +452,7 @@ public sealed class AddDraft : IDraft
 
     public async Task<bool> Submit()
     {
-        if (!CanSave || !IsValid)
+        if (!CanSave || !IsValid || IsAdditionCancelled)
             return false;
         var sharing = Sources.ToDictionary(
             source => source,
@@ -402,6 +484,8 @@ public sealed class AddDraft : IDraft
             // Newly acquired shared-file warnings need another confirmation.
             foreach (var source in captured)
             {
+                if (IsAdditionCancelled)
+                    return false;
                 if (source.Uncertain && _owner.Find(source.Hashes) is { } existing)
                 {
                     Sources.Remove(source);
@@ -439,8 +523,11 @@ public sealed class AddDraft : IDraft
             );
             foreach (var source in captured)
             {
+                if (IsAdditionCancelled)
+                    break;
                 if (!Sources.Contains(source) || source.PreviewId is null)
                     continue;
+                _addition?.Report(source);
                 if (source.IsDuplicate)
                 {
                     if (source.Merge)

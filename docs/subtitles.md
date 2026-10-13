@@ -264,9 +264,9 @@ A completed search counts once, including a miss; connection, access and quota
 failures do not count. Downloads of the returned alternatives reuse the saved
 supplier references and do not search again. Supplier pacing remains shared
 across all requests. Automatic work and New respect the cap. Missing data,
-All selected and an individual Force fetch can override local protection for
+All selected and an individual Search again can override local protection for
 the captured question; remote holds and pacing still apply. The choice dialog
-shows the block and changes its single Fetch action to Force fetch. A cached
+shows the block and offers Search again when that block allows a fresh attempt. A cached
 answer or rejected admission does not consume another search. RequestPolicy
 owns the cap and access holds in the existing database.
 
@@ -382,12 +382,29 @@ subtitle due, so they never delay one. Batch status counts movies across request
 The person can also choose a subtitle on request. Download Subtitle, in the Library menu, the row's context menu and the Inspector's
 More menu for a video, opens a dialog like Fetch metadata. It lists every full
 subtitle the supplier offers for that video's title in a wanted language, with a
-language choice when several are wanted. Save downloads the selected subtitle
+language choice when several are wanted. Download downloads the selected subtitle
 beside the video under the [saving rules](#saving-and-following-the-movie),
 records its supplier reference and created ownership together, and never replaces a file already there. Chosen and batch downloads share
 one download, destination-validation and publication owner; a movie moved or removed during the request receives no file at its old destination.
 The explicit action authorizes the request independently of automatic
 downloading. Nothing opens without the person's request.
+
+The dialog adapts to its current result instead of leaving an empty selection
+form on screen. Searching shows a status and native indeterminate progress bar;
+Cancel closes the dialog and cancels that search. Results show the selectable
+list, bounded by a maximum height, with Download enabled after selection, Search
+again when allowed, and Close. Downloading retains the selection and shows
+progress under the existing editor's pending-operation close guard.
+
+An empty result shows a short, prominent “No subtitles found” outcome and an
+explanation, followed by Search again and Close in the footer. No disabled
+Download or Save appears without candidates. The unused list and progress control
+collapse, so content determines the height. Errors use the existing inline
+InfoBar; a failed download retains its results and selection for retry. A target
+invalidated by changed settings or a removed video offers only Close. Supplier
+holds remain visible, and Search again never overrides remote waits or pacing.
+The next available footer action is the default; asynchronous results do not
+move keyboard focus.
 
 There are no subtitle piece priorities, early-byte requests or read_piece hooks
 in C++. Early arrival uses filename/release matching; hash matching waits for

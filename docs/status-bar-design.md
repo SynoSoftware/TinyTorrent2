@@ -1,8 +1,8 @@
 # Status bar design proposal
 
-Proposed on 2026-10-13. Design study, not an implemented contract. The existing
-[interface contract](interface.md) remains authoritative until implementation
-adopts this design there. The [interactive study](../app/status-bar-prototype.html)
+Designed on 2026-10-13. The UI and shared-service integration are implemented
+in the working tree; native validation remains outstanding. The [interface contract](interface.md)
+owns the adopted behavior. The [interactive study](../app/status-bar-prototype.html)
 uses simulated data; it is not a native WinUI rendering.
 
 ## Purpose and hierarchy
@@ -14,13 +14,15 @@ Library share the composition, but each supplies its own context.
 | Position | Torrents | Library |
 | --- | --- | --- |
 | Left, anchored | Shown/total torrent count, active filter, selection | Applied configuration, file count, selection, active finding |
-| Middle, flexible | Explicit Library metadata batch, only while one exists | Explicit metadata batch; otherwise accepted subtitle work or relevant video-information state |
+| Middle, flexible | Accepted background operations | The same operations, or ambient video-information state when space permits |
 | Right, anchored | Session rates, applied caps, pause or alternative-limit state, torrent connection | Compact, labelled background torrent rates; explicit torrent hold |
 
 Counts refer to the table. Rates always refer to **all torrents**, never the
 selection or filtered rows. Library counts files, not distinct movies: two
 files of the same movie count twice. Settings and About have no table context;
-omit counts and selection there, retaining global transfers and active batch.
+omit counts and selection there, retaining global transfers and accepted work.
+Settings uses the left group for its current section, such as `Settings · Network`,
+with a Settings icon, so page context remains in the same place on every section.
 
 The left anchor deliberately replaces the current speeds-first arrangement.
 The person should recognize the scope before interpreting a changing number.
@@ -74,7 +76,7 @@ last known, and the existing message owner explains the problem.
 | No matches | `Videos · 0 files · Filtered`; distinguish this from an empty Library |
 | A search is pending | Keep count and configuration tied to the last published rows; publish new count, configuration and applied-finding indication together |
 | Before any usable result | Configuration only until a count is known; `Library unavailable` on a real failure, never an invented zero or a loading message |
-| Videos, automatic video information is off | `Video information off`; neutral, because this is the person's choice |
+| Videos, automatic video information downloads are off | `Automatic video information downloads off`; neutral, because this is the person's choice. Saved information and manual fetching remain available. |
 | Videos, default provider has failed and prevents enrichment | `Waiting for TMDB`, naming the actual provider; detailed reason and recovery stay with the existing feature surface |
 | Music or Files | No ambient video-provider state; an explicit metadata batch still appears |
 | Managed torrents exist | Right group: `Torrents  ↓ 1.2 MB/s  ↑ 84 KB/s`; keep it present across zero-rate samples |
@@ -124,25 +126,91 @@ a confirmed wait. The icon distinguishes the activity group while its text
 explains the exact work. No perpetual spinner or invented percentage is needed.
 The X means **Stop fetching metadata**, not dismiss. Keep its native button
 focus/hover/pressed states, a full accessible name and a matching tooltip.
-Move keyboard focus to the active page before that button disappears, as the
-current implementation does. Completion and failure use existing outcomes;
+Recover keyboard focus to the next usable task control, work-list button or
+active page when that button becomes unavailable. Completion and failure use existing outcomes;
 the footer returns to its resting context without a lingering “Ready.”
 
-On Library, accepted unfinished subtitle work appears with Lucide Captions
-when no explicit metadata batch occupies the activity slot. Use `Subtitle work`
+Accepted unfinished subtitle work appears with Lucide Captions on every page,
+including alongside metadata and IMDb operations. Use `Subtitle work`
 when only accepted unfinished work is known; `Subtitles waiting` for a confirmed
 blocker. `Finding subtitles` is valid only when its owner establishes active
 searching. Acquisition.Finding includes resumed persisted jobs and is not proof
 of live network work. Reuse the distinction already expressed by Subtitles.Batch
 rather than deriving a second one. Found is successful outcomes, not processed
-attempts: do not turn Found/FindTotal into a progress fraction. Cancellation and
-details stay on the existing subtitle surface; no second Stop X is introduced.
-An explicit metadata batch outranks subtitle status; subtitles outrank ambient
-video-information settings. Do not cycle competing work on a timer.
+attempts: do not turn Found/FindTotal into a progress fraction. The footer and
+existing subtitle surface use the same operation cancellation command; the
+background-work plan separates manual and automatic cancellation scopes.
+All explicit operations outrank ambient video-information settings. Do not
+cycle competing work on a timer.
 
-IMDb downloads retain their current progress surface. Library opening and
-import are not labelled as loading: the page-readiness owner ruling remains.
-No new cross-feature scheduler, counters or polling is part of this refinement.
+### Long-running work: IMDb data
+
+The owner extended the footer to long-running operations, including IMDb
+download/import with progress and cancellation. This supersedes the earlier
+metadata-only Cancel exception. Ordinary settings stay outside the footer.
+
+Each operation has its own icon, stage text, compact native ProgressBar and
+adjacent Cancel X when cancellable. The 24-DIP icon spans the label and progress
+rows; the bar sits below the label and count, with Cancel centred beside both.
+It remains visible on every page. Stages
+change in place; download completion must not make the ongoing import vanish.
+
+Use Microsoft.UI.Xaml.Controls.ProgressBar with its native template, theme
+brushes and animation. IMDb uses IsIndeterminate=True for unmeasured phases and
+its reported percentage for measured phases; metadata uses its known Value and
+Maximum. The HTML study's browser progress control and the static
+illustration are layout placeholders, not references for the native appearance.
+Do not replace the bar with a ProgressRing because the placeholder looks like
+an empty line: [Windows progress guidance](https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/progress-controls)
+recommends the indeterminate bar for work that lets the user continue using
+the app while completion time is unknown.
+
+| Owner state | Presentation |
+| --- | --- |
+| Download | `Downloading IMDb data · 284 MB`, determinate only with a trustworthy byte total, otherwise indeterminate; Cancel download |
+| Parse source | Name episodes, titles or ratings and its approximate percentage, determinate bar, Cancel preparation |
+| Build or optimize search index | Name the current IMDb phase, indeterminate bar, Cancel preparation |
+| Install | `Finishing IMDb preparation`, indeterminate bar; cancellation unavailable after publication begins |
+| Cancellation requested | `Cancelling IMDb import`, disabled Cancel; retain the activity until cleanup finishes |
+| Success | Remove the activity; existing completion feedback owns the outcome |
+| Requested cancellation | Remove after cleanup; no failure warning for the requested cancellation |
+| Failure | Existing actionable failure feedback, never an endlessly busy bar |
+
+The shared observation normalizes the existing IMDb phase and numeric facts.
+Parsing episodes, titles and ratings reports approximate compressed-source
+progress; indexing and optimization have no denominator. The background-work
+plan owns phase and cancellation details. Show each phase honestly, without
+inventing ETA or an overall percentage across stages. Metadata's processed/total supports a
+determinate processed-attempt bar. A known wait freezes that fraction and uses
+its waiting label; no busy animation implies active requests during a wait.
+
+Cancellation uses the shared operation command routed to its accepted run.
+Keep `Cancelling…` until the executing owner confirms cleanup; it retains old data
+before install and decides when installation has committed. Do not promise
+rollback after installation. The prototype's Cancel immediately simulates a
+completed cancellation; its separate cancelling scenario depicts the pending
+state.
+
+Concurrent operations form one content-sized activity group in stable
+registration order, with subtle vertical separators between processes. Each
+process keeps its icon, label, native progress bar and Cancel close together.
+Only the gaps between the top-level context, activity and transfer groups take
+the remaining width. The explicit metadata batch remains inline under the
+narrow-width rule.
+Each cancel affects only its own operation. Do not rotate messages. When narrow,
+use `Library metadata · 2/7` and `IMDb import`. Remove routine diagnostics,
+normal rates and collection count first. The metadata progress bar can yield
+before its exact processed fraction; decorative icons can yield before the
+operation identities and Cancel controls. Keep IMDb's indeterminate indicator.
+
+Subtitle work remains a separate compact labelled state while unfinished; do
+not silently hide it behind other active work. The current specimen demonstrates
+metadata plus IMDb concurrency, not all three jobs simultaneously. That layout
+needs review before implementation can claim complete concurrency coverage.
+Compose existing owners; no new generic scheduler or polling is needed.
+
+This explicit IMDb import differs from opening Library. Opening the page does
+not acquire a loading/preparing state; its readiness ruling remains.
 
 ## What yields and what belongs elsewhere
 
@@ -169,8 +237,8 @@ No new cross-feature scheduler, counters or polling is part of this refinement.
   Fluent's usual below-command-bar placement. Do not relocate it in this task.
 - Eliminate hidden double-click navigation from passive footer text. Settings,
   filters and update commands already have visible keyboard-accessible homes.
-  The Stop X is the sole footer command. No overflow menu, toggle or settings
-  flyout is added just to retain marginal information.
+  Footer commands cancel tasks or open their list when concurrent work cannot
+  fit. No overflow menu, toggle or settings flyout retains marginal diagnostics.
 
 ## Visual composition
 
@@ -198,7 +266,8 @@ Do not size the entire right group for every hypothetical longest status.
 
 ## Narrow widths and accessibility
 
-The bar remains **one line**. Measure content in the active language and text
+The groups remain in **one horizontal row**, with each process's progress bar
+below its text. Measure content in the active language and text
 scale; do not hide labels to icons at guessed window breakpoints.
 
 1. Remove the update notice, routine port/proxy, optional IP/free space and expanded filter criteria;
@@ -218,10 +287,10 @@ scale; do not hide labels to icons at guessed window breakpoints.
    batch and its X or an active hold. Retain the page/configuration and any
    selection count if they fit. The table remains the collection itself.
    Never convert the batch, selection or pause to an unexplained glyph.
-   If remaining wording still exceeds the available width, constrain the
-   activity/hold text with ellipsis while preserving the batch count and X;
-   its semantic group's accessible name retains the full meaning. Do not
-   treat the last reduction step as proof that content fits: verify it.
+   If task groups still cannot fit readably, use the native work-list fallback
+   in [Interface](interface.md): preserve the explicit metadata batch and X
+   inline, and expose all operations through one labelled work-count button.
+   Never treat the last reduction step as proof that content fits: verify it.
 
 Keep the batch's Stop target stable while its processed count changes, using
 the actual total's digit width. An activity group follows context rather than
@@ -247,9 +316,30 @@ available without hovering; tooltips supplement visible text and UI Automation.
 
 ## Implementation ownership and acceptance
 
+### Background-operation integration
+
+The owner assigned implementation of the shared service and status-bar UI to
+this chat after accepting the architecture review. The
+[background-work contract](background-work.md) owns the reviewed service
+contract and inventory, replacing the preliminary handoff here. The UI owns
+localized full/compact text, Lucide icons, stock WinUI 3 ProgressBar, accessible
+names, native Cancel buttons, focus recovery and responsive presentation.
+Feature owners retain execution and lifecycle decisions; the shared module
+publishes coherent observations and one cancellation command per operation.
+Direct chat delivery failed with Transport closed; review was exchanged through
+the shared document. The service author accepted the revised interface with
+the cancellation-lifetime clarifications recorded in that contract.
+
+The working-tree implementation replaces direct task presentation properties
+with coherent `BackgroundWork` observations. `WorkStatus` renders each operation
+in the footer and native overflow flyout; Settings consumes the same IMDb
+operation and cancellation command. Detail surfaces wrap the full description,
+while the footer remains one compact row. Builds and native validation remain
+outstanding.
+
 Keep one composition in MainWindow. The existing MainViewModel supplies
 torrent/session facts; Library.Browser supplies its applied rows, selection and
-ambient state; VideoLookup supplies truthful batch state. The bar derives
+ambient state; BackgroundWork supplies operation observations. The bar derives
 display phrases without caching a second copy of engine or Library state.
 No new engine messages, polling, provider requests, settings, generic status
 framework or activity scheduler is warranted.

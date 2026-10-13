@@ -67,7 +67,13 @@ $policy = New-Value 'Services.RequestPolicy' @($database)
 # No IMDb data is downloaded in the evidence folder, so ratings stay the providers'.
 $imdb = New-Value 'Library.Imdb.Dataset' @($null, $directory, $policy)
 $http = $null
+$dispatcher = $null
+$work = $null
 try {
+    $projection = [Reflection.Assembly]::LoadFrom((Join-Path $binary 'Microsoft.InteractiveExperiences.Projection.dll'))
+    $controller = $projection.GetType('Microsoft.UI.Dispatching.DispatcherQueueController', $true)
+    $dispatcher = $controller.GetMethod('CreateOnDedicatedThread').Invoke($null, @())
+    $work = New-Value 'Services.BackgroundWork' @($dispatcher.DispatcherQueue)
     $staticFlags = [Reflection.BindingFlags]'Static,NonPublic'
     $confidence = $assembly.GetType('Syno.TinyTorrent.Library.VideoLookup').GetMethod('Confidence', $staticFlags)
     foreach ($case in @(
@@ -82,6 +88,9 @@ try {
         $score = $confidence.Invoke($null, (Unwrap @($release, $choice)))
         Require (($score -gt 0.8) -eq $case[3]) ('Unsafe automatic metadata confidence for ' + $case[0] + ' / ' + $case[1])
     }
+    $release = New-Value 'Models.Release' @('Mission Impossible - Rogue Nation', 'Mission Impossible - Rogue Nation') @{ Year = 2015 }
+    $choice = New-Value 'Library.VideoChoice' @('fixture', 'movie', $movieKind, 'Mission: Impossible - Rogue Nation') @{ Year = 2015 }
+    Require ($confidence.Invoke($null, (Unwrap @($release, $choice))) -gt 0.8) 'Punctuation prevented Rogue Nation from matching.'
     $store = New-Value 'Library.Store' @($database, $imdb)
     $sources = New-Value 'Services.FileSources' @($database)
     $configuration = [Enum]::Parse($assembly.GetType('Syno.TinyTorrent.Models.LibraryConfiguration'), 'Videos')
@@ -187,7 +196,7 @@ try {
     $missTarget = New-Value 'Library.VideoTarget' @($entry, 'tmdb', $automatic)
     $miss = Invoke-Value $store 'Begin' @($missTarget, $null, $cancel)
     Require ($null -ne $miss -and (Invoke-Value $store 'Complete' @($miss, $null, 'no_match', $cancel))) 'An ordinary miss was not recorded.'
-    Require ($null -eq (Invoke-Value $store 'Next' @('tmdb', $cancel))) 'A miss was tried again in the same session.'
+    Require (@(Invoke-Value $store 'Pending' @('tmdb', $cancel)).Count -eq 0) 'A miss was tried again in the same session.'
     $target = New-Value 'Library.VideoTarget' @($entry, $catalog, $automatic)
     $request = Invoke-Value $store 'Begin' @($target, $null, $cancel)
     Require ($null -ne $request) 'An unattempted empty movie could not start its lookup.'
@@ -201,7 +210,7 @@ try {
     Invoke-Value $sources 'Replace' @($first, $files, $cancel) | Out-Null
     $matches = Invoke-Value $store 'Search' @($query, $cancel)
     $entry = $matches.Entries[0]
-    Require ($null -ne (Invoke-Value $store 'Next' @('tmdb', $cancel))) 'Session attempts survived reopening instead of consulting durable request protection.'
+    Require (@(Invoke-Value $store 'Pending' @('tmdb', $cancel)).Count -gt 0) 'Session attempts survived reopening instead of consulting durable request protection.'
     $retryTarget = New-Value 'Library.VideoTarget' @($entry, 'tmdb', $explicit)
     $retry = Invoke-Value $store 'Begin' @($retryTarget, $null, $cancel)
     Require ($null -ne $retry) 'A remembered no-match prevented an explicit retry.'
@@ -379,7 +388,8 @@ try {
         Access = $omdb.GetType().GetProperty('Access', $flags).GetValue($omdb); BuiltInKey = 'offline-fixture'
     }
     $provider = $option.Create.Invoke('offline-fixture')
-    $videos = New-Value 'Library.VideoLookup' @($store, [Threading.Tasks.Task]::CompletedTask, (New-Values 'Library.ProviderOption' @($option)), $policy, $http)
+    Require ((Invoke-Value $provider 'Prepare' @('Mission Impossible - Rogue Nation')) -eq 'Mission Impossible Rogue Nation') 'OMDb search kept punctuation that hides the movie.'
+    $videos = New-Value 'Library.VideoLookup' @($store, [Threading.Tasks.Task]::CompletedTask, (New-Values 'Library.ProviderOption' @($option)), $policy, $http) @{ Work = $work }
     try {
         $remakes = @(2000, 2024) | ForEach-Object {
             $movie = Join-Path $directory "Remake.$_.mkv"
@@ -428,6 +438,19 @@ try {
         $prepared = $searchRequest.Invoke($null, (Unwrap @((New-Value 'Library.VideoLookup+Context' @($wikidataOption, $wikidata, 'es', $cancel)),
             (Invoke-Value $wikidata 'Prepare' @('Spider-Man')))))
         Require ($raw.Counter -eq $prepared.Counter) 'Preflight and execution charged different search counters for provider-normalized text.'
+        $tmdbOption = $assembly.GetType('Syno.TinyTorrent.Library.Tmdb.Provider', $true).GetProperty('Option', $staticFlags).GetValue($null)
+        $tmdb = $tmdbOption.Create.Invoke('offline-fixture')
+        $tmdbContext = New-Value 'Library.VideoLookup+Context' @($tmdbOption, $tmdb, 'en', $cancel)
+        $tmdbContext.GetType().GetProperty('Access', $flags).SetValue($tmdbContext,
+            (New-Value 'Services.ProviderAccess' @('tmdb', 'offline-fixture', 'search')))
+        $variants = [Collections.Generic.List[string]]::new()
+        foreach ($variant in $videos.GetType().GetMethod('Queries', $staticFlags).Invoke($null,
+            (Unwrap @($tmdbContext, 'Mission: Impossible - Rogue Nation')))) { $variants.Add($variant) }
+        Require ($variants.Count -eq 2 -and $variants[0] -eq 'Mission: Impossible - Rogue Nation' -and
+            $variants[1] -eq 'Mission Impossible Rogue Nation') 'An empty title search had no clean fallback.'
+        $raw = $searchRequest.Invoke($null, (Unwrap @($tmdbContext, 'Mission: Impossible - Rogue Nation')))
+        $plain = $searchRequest.Invoke($null, (Unwrap @($tmdbContext, 'Mission Impossible Rogue Nation')))
+        Require ($raw.Key -ne $plain.Key -and $raw.Counter -eq $plain.Counter) 'A fallback search reused the wrong answer or evaded the movie limit.'
         $reasonType = $assembly.GetType('Syno.TinyTorrent.Models.RequestBlockKind')
         $backoff = New-Value 'Services.RequestBlock' @([Enum]::Parse($reasonType, 'Backoff'), $null)
         $remote = New-Value 'Services.RequestBlock' @([Enum]::Parse($reasonType, 'RemoteWait'), [DateTimeOffset]::UtcNow.AddHours(1))
@@ -450,7 +473,7 @@ try {
     }
     finally { $videos.DisposeAsync().AsTask().GetAwaiter().GetResult() | Out-Null }
 
-    $batch = New-Value 'Subtitles.Acquisition' @($database, $http, [Threading.Tasks.Task]::CompletedTask, $policy)
+    $batch = New-Value 'Subtitles.Acquisition' @($database, $http, [Threading.Tasks.Task]::CompletedTask, $policy) @{ Work = $work }
     try {
         Invoke-Value $batch 'Load' @() | Out-Null
         $supplierType = $assembly.GetType('Syno.TinyTorrent.Models.SubtitleSupplier')
@@ -694,7 +717,7 @@ public sealed class SubtitleSearchReply : HttpMessageHandler {
     }
 }
 '@
-    $search = New-Value 'Subtitles.Acquisition' @($database, $http, [Threading.Tasks.Task]::CompletedTask, $policy)
+    $search = New-Value 'Subtitles.Acquisition' @($database, $http, [Threading.Tasks.Task]::CompletedTask, $policy) @{ Work = $work }
     $reply = [SubtitleSearchReply]::new()
     $client = [Net.Http.HttpClient]::new($reply)
     try {
@@ -843,7 +866,7 @@ public sealed class SubtitleSearchReply : HttpMessageHandler {
         }
         Require ($reply.Downloads -eq $before + 1) 'A malformed detail endpoint was requested again for another movie during backoff.'
         $waiting = [Threading.Tasks.TaskCompletionSource]::new()
-        $videos = New-Value 'Library.VideoLookup' @($store, $waiting.Task, (New-Values 'Library.ProviderOption' @($option)), $policy, $http)
+        $videos = New-Value 'Library.VideoLookup' @($store, $waiting.Task, (New-Values 'Library.ProviderOption' @($option)), $policy, $http) @{ Work = $work }
         try {
             Invoke-Value $videos 'Enable' @('omdb', $false) | Out-Null
             Invoke-Value $videos 'Refresh' @($true, 'en') | Out-Null
@@ -883,15 +906,21 @@ public sealed class SubtitleSearchReply : HttpMessageHandler {
             $reply.OmdbError = $null
             Invoke-Value $videos 'Refresh' @($false, 'en') | Out-Null
             Invoke-Value $videos 'Fetch' @((New-Values 'Library.Entry' @($entry)), $option, $fetchNew) | Out-Null
+            $batchField = $videos.GetType().GetField('_batch', $flags)
+            $accepted = $batchField.GetValue($videos)
+            $queued = $accepted.GetType().GetProperty('Queue', $flags).GetValue($accepted)
+            $observation = $accepted.GetType().GetProperty('Observation', $flags).GetValue($accepted)
+            $progress = $observation.GetType().GetProperty('Progress', $flags).GetValue($observation)
+            Require ($progress.GetType().GetProperty('Total', $flags).GetValue($progress) -eq 1) 'The metadata batch did not accept its file.'
             # Reload runs the replacement on a worker thread, where a script block has no runspace.
             $replace = [Linq.Expressions.Expression]::Lambda([Action], [Linq.Expressions.Expression]::Empty()).Compile()
             Invoke-Value $videos 'Reload' @($option, $replace, $null) | Out-Null
             Invoke-Value $videos 'Enable' @('omdb', $true) | Out-Null
-            Require ($videos.GetType().GetProperty('Batch', $flags).GetValue($videos).Total -eq 1) 'Enabling a newly installed dataset discarded an accepted API batch.'
+            Require ([object]::ReferenceEquals($accepted, $batchField.GetValue($videos)) -and $queued.Count -eq 1) 'Enabling a newly installed dataset discarded an accepted API batch.'
             Invoke-Value $videos 'Disable' @($true) | Out-Null
-            Require ($videos.GetType().GetProperty('Batch', $flags).GetValue($videos).Total -eq 1) 'Disabling a deleted dataset discarded an accepted API batch.'
+            Require ([object]::ReferenceEquals($accepted, $batchField.GetValue($videos)) -and $queued.Count -eq 1) 'Disabling a deleted dataset discarded an accepted API batch.'
             Invoke-Value $videos 'Enable' @('omdb', $false) | Out-Null
-            Require ($null -eq $videos.GetType().GetProperty('Batch', $flags).GetValue($videos)) 'An explicit provider change stopped cancelling its previous batch.'
+            Require ($null -eq $batchField.GetValue($videos)) 'An explicit provider change stopped cancelling its previous batch.'
         }
         finally { $videos.DisposeAsync().AsTask().GetAwaiter().GetResult() | Out-Null }
     }
@@ -904,7 +933,7 @@ public sealed class SubtitleSearchReply : HttpMessageHandler {
         Get-ChildItem -LiteralPath $directory -Filter 'Search.Once.2024*' | Remove-Item
     }
     Invoke-Value $sources 'Replace' @($first, $files, $cancel) | Out-Null
-    $inventory = New-Value 'Subtitles.Acquisition' @($database, $http, [Threading.Tasks.Task]::CompletedTask, $policy)
+    $inventory = New-Value 'Subtitles.Acquisition' @($database, $http, [Threading.Tasks.Task]::CompletedTask, $policy) @{ Work = $work }
     try {
         $french = [IO.Path]::ChangeExtension($path, '.fr.srt')
         $movieFolder = [IO.Path]::GetDirectoryName($path)
@@ -999,8 +1028,7 @@ public sealed class SubtitleSearchReply : HttpMessageHandler {
         Invoke-Value $sources 'Replace' @($first, $files, $cancel) | Out-Null
     }
     finally { $inventory.DisposeAsync().AsTask().GetAwaiter().GetResult() | Out-Null }
-    $subtitles = New-Value 'Subtitles.Acquisition' @($database, $http, [Threading.Tasks.Task]::CompletedTask, $policy)
-    Invoke-Value $subtitles 'Initialize' @('en') | Out-Null
+    $subtitles = New-Value 'Subtitles.Acquisition' @($database, $http, [Threading.Tasks.Task]::CompletedTask, $policy) @{ Work = $work }
     $caption = [IO.Path]::ChangeExtension($path, '.en.srt')
     [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($caption)) | Out-Null
     [IO.File]::WriteAllText($caption, "1`n00:00:00,000 --> 00:00:01,000`nFixture`n")
@@ -1015,11 +1043,45 @@ public sealed class SubtitleSearchReply : HttpMessageHandler {
     Invoke-Value $subtitles 'SetConnected' @($true) | Out-Null
     Invoke-Value $subtitles 'Reconcile' @() | Out-Null
     Require ([IO.File]::Exists($caption)) 'An unknown current payload mapping permitted deletion.'
-    Invoke-Value $sources 'Reconcile' @((New-Values 'Services.Contribution' @()), $cancel) | Out-Null
-    Invoke-Value $subtitles 'Reconcile' @() | Out-Null
+    Sql 'UPDATE contributions SET collected=1;' | Out-Null
+    Add-Type @'
+using System;
+using System.Threading;
+public static class DeletionGate {
+    public static readonly ManualResetEventSlim Entered = new(false);
+    public static readonly ManualResetEventSlim Continue = new(false);
+    public static readonly Comparison<string> Compare = StringComparer.OrdinalIgnoreCase.Compare;
+    private static int armed = 1;
+    public static readonly Comparison<string> Callback = (left, right) => {
+        if (Interlocked.Exchange(ref armed, 0) == 1) {
+            Entered.Set();
+            if (!Continue.Wait(10000)) throw new TimeoutException("Deletion gate was not released");
+        }
+        return Compare(left, right);
+    };
+}
+'@
+    $connection = $database.GetType().GetField('_connection', $flags).GetValue($database)
+    $connection.CreateCollation('PATH', [DeletionGate]::Callback)
+    try {
+        # Withdraw the source between the deletion's path and membership reads.
+        $reconciling = $subtitles.GetType().GetMethod('Reconcile', $flags).Invoke($subtitles, @())
+        Require ([DeletionGate]::Entered.Wait(10000)) 'Deletion did not inspect its path.'
+        $empty = New-Values 'Services.Contribution' @()
+        $withdrawing = $sources.GetType().GetMethod('Reconcile', $flags).Invoke($sources, (Unwrap @($empty, $cancel)))
+        [DeletionGate]::Continue.Set()
+        $withdrawing.GetAwaiter().GetResult() | Out-Null
+        $reconciling.GetAwaiter().GetResult() | Out-Null
+    }
+    finally {
+        [DeletionGate]::Continue.Set()
+        if ($null -ne $reconciling) { $reconciling.GetAwaiter().GetResult() | Out-Null }
+        $connection.CreateCollation('PATH', [DeletionGate]::Compare)
+    }
     Require (![IO.File]::Exists($caption)) ('The accepted deletion was lost during source invalidation. Queued={0}; pending={1}; sources={2}.' -f
         $subtitles.GetType().GetField('_deletions', $flags).GetValue($subtitles).Count,
         (Sql 'SELECT COUNT(*) FROM pending_origins;'), (Sql 'SELECT COUNT(*) FROM contributions;'))
+    Invoke-Value $subtitles 'Initialize' @('en') | Out-Null
 
     Invoke-Value $sources 'Reconcile' @((New-Values 'Services.Contribution' @($first)), $cancel) | Out-Null
     Invoke-Value $sources 'Replace' @($first, $files, $cancel) | Out-Null
@@ -1134,7 +1196,7 @@ INSERT INTO subtitle_output_sources(path,language,origin,file_index,movie_path) 
     $database.DisposeAsync().AsTask().GetAwaiter().GetResult() | Out-Null
     $database = New-Value 'Services.Database' @($directory)
     $policy = New-Value 'Services.RequestPolicy' @($database)
-    $subtitles = New-Value 'Subtitles.Acquisition' @($database, $http, [Threading.Tasks.Task]::CompletedTask, $policy)
+    $subtitles = New-Value 'Subtitles.Acquisition' @($database, $http, [Threading.Tasks.Task]::CompletedTask, $policy) @{ Work = $work }
     Invoke-Value $subtitles 'Initialize' @('en') | Out-Null
     Require (!$subtitles.GetType().GetProperty('HasSecret', $flags).GetValue($subtitles)) 'An unreadable protected secret was retained.'
     Require ($subtitles.GetType().GetProperty('Username', $flags).GetValue($subtitles) -eq 'Restored user') 'Secret recovery discarded the saved account name.'
@@ -1198,7 +1260,22 @@ INSERT INTO subtitle_output_sources(path,language,origin,file_index,movie_path) 
     Write-Output 'PASS: source membership, cached payload, stale replies, deletion recovery, subtitle ownership, one-search alternatives, saved lookup limits, failure exclusion, recursive inventory, local language detection, scan markers, moves and allowance restoration.'
 }
 finally {
-    if ($null -ne $subtitles) { $subtitles.DisposeAsync().AsTask().GetAwaiter().GetResult() | Out-Null }
-    if ($null -ne $http) { $http.Dispose() }
-    $database.DisposeAsync().AsTask().GetAwaiter().GetResult() | Out-Null
+    try {
+        if ($null -ne $subtitles) { $subtitles.DisposeAsync().AsTask().GetAwaiter().GetResult() | Out-Null }
+        if ($null -ne $http) { $http.Dispose() }
+        $database.DisposeAsync().AsTask().GetAwaiter().GetResult() | Out-Null
+    }
+    finally {
+        # A queue on its own thread is shut down from another thread only
+        # asynchronously.
+        try {
+            if ($null -ne $dispatcher) {
+                $sdk = [Reflection.Assembly]::LoadFrom((Join-Path $binary 'Microsoft.Windows.SDK.NET.dll'))
+                $asTask = $sdk.GetType('System.WindowsRuntimeSystemExtensions', $true).GetMethod(
+                    'AsTask', [type[]]@($sdk.GetType('Windows.Foundation.IAsyncAction', $true)))
+                $asTask.Invoke($null, @($dispatcher.ShutdownQueueAsync())).GetAwaiter().GetResult() | Out-Null
+            }
+        }
+        finally { if ($null -ne $work) { $work.Dispose() } }
+    }
 }

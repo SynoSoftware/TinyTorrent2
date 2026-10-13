@@ -223,8 +223,7 @@ internal sealed partial class Details : UserControl, IDisposable
                     left.Children.Add(metadata);
                     _refresh.Add(() =>
                     {
-                        // Download off offers Settings whatever the provider's state,
-                        // because the person turns downloading on by choosing a provider there.
+                        // Manual Fetch offers every provider even while automatic downloading is off.
                         var enabled = !library.IsEnrichmentEnabled || library.IsProviderAvailable;
                         var message = !library.IsEnrichmentEnabled ? text.Get("library", "download_off")
                             : !enabled ? text.Get("library", "source_unavailable")
@@ -236,6 +235,7 @@ internal sealed partial class Details : UserControl, IDisposable
                 }
                 first = null;
                 second = null;
+                AddRatings();
                 if (row.Entry.HasMetadata)
                 {
                     first = new Controls.Section
@@ -279,7 +279,6 @@ internal sealed partial class Details : UserControl, IDisposable
                         foreach (var name in library.Cast.Split(Store.Separator, StringSplitOptions.RemoveEmptyEntries))
                             castNames.Children.Add(Listed(Value(name)));
                     });
-                    AddRatings();
                     var boxOffice = AddFact("box_office", Lucide.Ticket);
                     var certification = AddFact("certification", Lucide.ShieldCheck);
                     var directors = AddFact("directors_one", Lucide.Clapperboard);
@@ -300,16 +299,13 @@ internal sealed partial class Details : UserControl, IDisposable
                             fields.Secondary = secondary;
                     });
                 }
-                if (library.IsEnrichmentEnabled)
+                _fetchMessage = new Field
                 {
-                    _fetchMessage = new Field
-                    {
-                        Label = text.Get("library", "metadata"),
-                        Glyph = Lucide.ScanSearch,
-                        Content = Value(library.FetchMessage),
-                    };
-                    left.Children.Add(_fetchMessage);
-                }
+                    Label = text.Get("library", "metadata"),
+                    Glyph = Lucide.ScanSearch,
+                    Content = Value(library.FetchMessage),
+                };
+                left.Children.Add(_fetchMessage);
             }
             AddField(right, "year", row.Year, Lucide.Calendar);
             AddField(right, "genres", row.Genres, Lucide.Tag);

@@ -26,7 +26,7 @@ public sealed partial class SettingsPage : UserControl
     private bool _refreshingProviders;
     private bool _showAdvanced;
     private FileInfo? _data;
-    private Library.Imdb.Dataset.Progress? _shown;
+    private Task<long>? _titles;
     private Task _providerSave = Task.CompletedTask;
     private Task _lookupSave = Task.CompletedTask;
     private bool _lookupEdited;
@@ -231,9 +231,6 @@ public sealed partial class SettingsPage : UserControl
             DeleteRequested?.Invoke(this, option);
     }
 
-    private void OnDownloadCancel(object sender, RoutedEventArgs args) =>
-        _ = Main.Library.CancelDownload();
-
     private void OnProviderInformation(object sender, RoutedEventArgs args)
     {
         if (Main.Library.Option is { } option)
@@ -432,7 +429,7 @@ public sealed partial class SettingsPage : UserControl
             RefreshCoverage();
         if (args.PropertyName is nameof(Main.Library.Providers) or "")
             RefreshProviders();
-        else if (args.PropertyName is nameof(Main.Library.Downloading) or nameof(Main.Library.CanDownload))
+        else if (args.PropertyName is nameof(Main.Library.DataWork) or nameof(Main.Library.CanDownload))
             RefreshData();
     }
 
@@ -458,7 +455,13 @@ public sealed partial class SettingsPage : UserControl
             InformationIndex > 0 && Main.Library.Option is { Access: Access.Key }
                 ? Visibility.Visible
                 : Visibility.Collapsed;
-        _data = Main.Library.DataProvider?.Dataset?.Inspect();
+        var dataset = Main.Library.DataProvider?.Dataset;
+        _data = dataset?.Inspect();
+        _titles = _data is null ? null : dataset?.CountTitles();
+        if (_titles is { IsCompleted: false } counting)
+        {
+            ShowTitles(counting);
+        }
         RefreshData();
         if (!_providerSave.IsCompleted)
             return;
@@ -483,14 +486,12 @@ public sealed partial class SettingsPage : UserControl
         }
         ImdbRow.Visibility = Visibility.Visible;
         var section = option.ProviderId;
-        var progress = Main.Library.Downloading;
+        var progress = Main.Library.DataWork;
+        var focused = XamlRoot is null ? null : FocusManager.GetFocusedElement(XamlRoot) as Control;
+        var focus = focused?.FocusState ?? FocusState.Unfocused;
+        var workFocused = DataWork.HasFocus;
         ImdbRow.Description = _data is { } installed
-            ? Model.Text.Format(
-                section,
-                "data_summary",
-                Model.Text.Bytes(installed.Length),
-                Model.Text.Time(installed.LastWriteTimeUtc)
-            )
+            ? DescribeData(section, installed)
             : Model.Text.Get(section, "data_hint");
         DataDownload.Text = Model.Text.Get(section, _data is null ? "download" : "update");
         ToolTipService.SetToolTip(
@@ -498,29 +499,48 @@ public sealed partial class SettingsPage : UserControl
             Model.Text.Get(section, _data is null ? "download_tip" : "update_tip")
         );
         DataDownload.IsEnabled = Main.Library.CanDownload;
-        // A button that hides while it has focus hands focus to the button
-        // that takes its place, so the keyboard position is not lost.
-        var focused = new Control[] { DataDownload, DataDelete, DownloadCancel }
-            .FirstOrDefault(button => button.FocusState != FocusState.Unfocused);
-        var focus = focused?.FocusState ?? FocusState.Unfocused;
         DataDownload.Visibility = progress is null ? Visibility.Visible : Visibility.Collapsed;
         DataDelete.Visibility =
             progress is null && _data is not null ? Visibility.Visible : Visibility.Collapsed;
-        DownloadStatus.Visibility = DownloadCancel.Visibility =
-            progress is null ? Visibility.Collapsed : Visibility.Visible;
-        if (focused is { Visibility: Visibility.Collapsed })
-            (progress is null ? (Control)DataDownload : DownloadCancel).Focus(focus);
-        var shown = _shown;
-        _shown = progress;
-        if (progress is null)
+        DataWork.Show(progress, Model.Text);
+        if (focused is not null
+            && (workFocused || ReferenceEquals(focused, DataDownload) || ReferenceEquals(focused, DataDelete))
+            && (focused.Visibility == Visibility.Collapsed || !focused.IsEnabled || workFocused && !DataWork.CanFocus))
+        {
+            if (progress is null && DataDownload.IsEnabled)
+                DataDownload.Focus(focus);
+            else if (!DataWork.FocusCancel(focus))
+                ImdbRow.Focus(FocusState.Programmatic);
+        }
+    }
+
+    // The age is in whole days, as the update dialog states it.
+    private string DescribeData(string section, FileInfo installed)
+    {
+        var size = Model.Text.Bytes(installed.Length);
+        var days = (int)(DateTime.UtcNow - installed.LastWriteTimeUtc).TotalDays;
+        var age = days == 0 ? Model.Text.Get(section, "age_new") : Model.Text.FormatCount(section, "age", days);
+        return _titles is { IsCompletedSuccessfully: true } titles
+            ? Model.Text.Format(section, "data_titles", Model.Text.FormatCount(section, "title_count", titles.Result), size, age)
+            : Model.Text.Format(section, "data_summary", size, age);
+    }
+
+    // Counting reads the whole data, so the row adds the count when it
+    // arrives. Data that cannot be read keeps its size and age.
+    private async void ShowTitles(Task<long> titles)
+    {
+        try
+        {
+            await titles;
+        }
+        catch (Library.ProviderException)
+        {
             return;
-        DownloadStatus.Text = progress.Importing
-            ? Model.Text.Get(section, "importing")
-            : Model.Text.Format(section, "downloading", Model.Text.Bytes(progress.Received));
-        // The status changes with each megabyte, so Narrator hears only a new stage.
-        if (shown?.Importing != progress.Importing)
-            FrameworkElementAutomationPeer.CreatePeerForElement(DownloadStatus)
-                ?.RaiseAutomationEvent(AutomationEvents.LiveRegionChanged);
+        }
+        if (titles == _titles)
+        {
+            RefreshData();
+        }
     }
 
     private void OnTextScale(UISettings sender, object args) =>
@@ -789,6 +809,7 @@ public sealed partial class SettingsPage : UserControl
         }
         else if (_category == PluginsCategory)
         {
+            DataWork.FocusInvalidated += (_, _) => ImdbRow.Focus(FocusState.Programmatic);
             var subtitles = new SubtitleSettings(Model.Text, Main.RetrySubtitles, ReportSubtitles);
             subtitles.SupplierRequested += (_, supplier) => SupplierRequested?.Invoke(this, supplier);
             SubtitlesContent.Content = subtitles;

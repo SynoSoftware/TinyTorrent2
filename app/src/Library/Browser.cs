@@ -27,24 +27,24 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
     private Task? _searching;
     private int _revision;
     private bool _refresh;
-    private bool _refreshDetail;
     private bool _stored;
     private bool _pacing;
-    private bool _searched;
     private bool _available;
     private string _emptyText = string.Empty;
     private bool _visible;
-    private volatile bool _ready;
-    private bool _connected;
+    private volatile LibraryReadiness _readiness;
     private bool _disposed;
     private string _query = string.Empty;
     private Exception? _failure;
     private LibraryConfiguration _configuration;
 
+    // The search whose results Rows shows, or null before the first one.
+    private Query? _rowsQuery;
+
     public Strings Text { get; }
     public IReadOnlyList<LibraryRow> Rows { get; private set; } = [];
     // Results keep their configuration while a search for another one is pending.
-    internal LibraryConfiguration RowsConfiguration { get; private set; }
+    internal LibraryConfiguration RowsConfiguration => _rowsQuery?.Configuration ?? Configuration;
 
     internal async Task<Coverage?> ReadCoverage()
     {
@@ -80,7 +80,7 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
         Selection.Items.Count == 1 ? Selection.Items[0] as LibraryRow : null;
     public bool IsAvailable =>
         !_disposed
-        && _connected
+        && _readiness != LibraryReadiness.Offline
         && _failure is null
         && _starting is { IsCompletedSuccessfully: true };
     public string Failure => _failure is null ? string.Empty : Text.Error(_failure);
@@ -90,9 +90,8 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
     // Retry and RetryTip act on the failure that Message shows.
     public string Message =>
         Selected?.OpeningFailure is not null ? Selected.Failure
-        : IsEnrichmentEnabled && _fetchFailure is { } fetchFailure ? Error(fetchFailure)
-        : IsEnrichmentEnabled
-        && Selected?.Entry.Kind == FileKind.Video
+        : _outcome is FetchOutcome.Failed fetch ? Error(fetch.Error)
+        : Selected?.Entry.Kind == FileKind.Video
         && _videos?.Failure is { } failure
             ? Error(failure)
         : string.Empty;
@@ -118,32 +117,44 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
             : message;
     }
 
-    public string Status =>
-        Text.Format(
-            "filters",
-            "count",
-            Text.Get("library", Configuration.ToString().ToLowerInvariant()),
-            Rows.Count
-        )
-        + (
-            Filters.Count == 0
-                ? string.Empty
-                : " · "
-                    + string.Join(" · ", Filters.Select(pair => FilterText(pair.Key, pair.Value)))
-        )
-        + (
-            Configuration != LibraryConfiguration.Videos ? string.Empty
-            : !IsEnrichmentEnabled ? " · " + Text.Get("library", "download_off")
-            : Waiting is { } waiting ? " · " + waiting
-            : string.Empty
-        );
+    public string Status
+    {
+        get
+        {
+            if (HasFailure)
+                return Text.Get("notifications", "library_unavailable");
+            var label = Text.Get("library", RowsConfiguration.ToString().ToLowerInvariant());
+            if (_rowsQuery is not { } query)
+                return label;
+            var count = Text.FormatCount("library", "files", Rows.Count);
+            if (query.Configuration != LibraryConfiguration.Files)
+                count = label + " · " + count;
+            if (query.Text.Length > 0 || query.Filters.Count > 0)
+                count += " · " + Text.Get("window", "filtered");
+            if (Selection.Items.Count > 0)
+                count = Text.Format("window", "torrents_selected", count, Selection.Items.Count);
+            return _readiness == LibraryReadiness.Offline
+                ? Text.Format("window", "last_known", count)
+                : count;
+        }
+    }
+    internal string StatusGlyph => RowsConfiguration switch
+    {
+        LibraryConfiguration.Videos => Lucide.Film,
+        LibraryConfiguration.Music => Lucide.Music,
+        _ => Lucide.Files,
+    };
+    internal string InformationStatus => _rowsQuery?.Configuration != LibraryConfiguration.Videos || !IsAvailable
+        ? string.Empty
+        : !IsEnrichmentEnabled ? Text.Get("library", "download_off")
+        : Waiting ?? string.Empty;
     public bool IsEmpty =>
         Query.Length == 0 && Filters.Count == 0 && !Counts.Values.Any(count => count > 0);
 
     // Only a completed search of an available collection shows that nothing
     // matched; otherwise the table stays blank.
     public string EmptyText =>
-        !_searched || !IsAvailable
+        _rowsQuery is null || !IsAvailable
             ? string.Empty
             : Text.Get(
                 "library",
@@ -169,7 +180,7 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
             : string.Empty;
     public bool IsProviderAvailable => _videos?.IsAvailable == true;
     public bool IsEnrichmentEnabled => _videos?.Enabled == true;
-    private string? LookupCatalog => IsEnrichmentEnabled ? Option?.ProviderId : null;
+    private string? LookupCatalog => Option?.ProviderId;
     public string DownloadLabel => Text.Get("library", "download_information");
     public string FetchMetadataLabel => Text.Get("library", "fetch_metadata");
     public string FetchMetadataGlyph => Lucide.Download;
@@ -219,6 +230,7 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
     public ICommand FetchMetadata { get; }
     public ICommand ShowSettings { get; }
     public ICommand Retry { get; }
+    public ICommand FetchDetails { get; }
     public ICommand ClearFilters { get; }
     public ICommand ShowTorrents { get; }
     internal event EventHandler<LibraryRow>? OpenRequested;
@@ -237,8 +249,11 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
     internal event EventHandler<int>? BatchLimited;
     public event PropertyChangedEventHandler? PropertyChanged;
 
-    internal Browser(Strings text, DispatcherQueue dispatcher)
+    private readonly BackgroundWork _work;
+
+    internal Browser(Strings text, DispatcherQueue dispatcher, BackgroundWork work)
     {
+        _work = work;
         Text = text;
         _dispatcher = dispatcher;
         ShowTorrents = new RelayCommand(
@@ -333,20 +348,25 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
             () =>
                 IsAvailable && Selection.Items.Cast<LibraryRow>().Any(row => row.Entry.HasMetadata)
         );
+        FetchDetails = new RelayCommand(RequestInformation, () => CanFetch);
         Retry = new RelayCommand(
             () =>
             {
                 if (Selected?.OpeningFailure is not null)
                     Open.Execute(null);
-                else if (_fetchFailure is not null)
+                else if (_outcome is FetchOutcome.Failed)
                     FetchDetails.Execute(null);
                 else
+                {
                     _videos?.Retry();
+                    if (!IsEnrichmentEnabled)
+                        FetchDetails.Execute(null);
+                }
                 return Task.CompletedTask;
             },
             () =>
                 Selected?.OpeningFailure is not null ? Open.CanExecute(null)
-                : _fetchFailure is not null ? FetchDetails.CanExecute(null)
+                : _outcome is FetchOutcome.Failed ? FetchDetails.CanExecute(null)
                 : _videos?.Failure is { } failure && !(failure.RetryAt > DateTimeOffset.UtcNow)
         );
         ClearFilters = new RelayCommand(
@@ -359,7 +379,6 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
             },
             () => Filters.Count > 0
         );
-        ConfigureInformation();
     }
 
     internal void Attach(Store store, VideoLookup videos, FileFacts facts)
@@ -416,8 +435,6 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
     // Lookups and file facts can store many files a second, and each refresh
     // searches the Library again and replaces the table's rows. Their changes
     // refresh the rows at once, then at most once a second while they arrive.
-    // The batch raises the same event for each file it finishes, so this also
-    // shows its progress.
     private void StoredChanged()
     {
         _stored = true;
@@ -432,7 +449,6 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
         {
             _stored = false;
             Refresh();
-            ChangedBatch();
             await Task.Delay(TimeSpan.FromSeconds(1));
         }
         _pacing = false;
@@ -458,20 +474,28 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
     internal void Fetch(IReadOnlyCollection<VideoFetch> entries, ProviderOption source, FetchScope scope) =>
         _videos?.Fetch(entries.Where(entry => entry.Includes(scope)).Select(entry => entry.Entry).ToArray(), source, scope);
 
-    internal Task SaveMetadata(
+    internal async Task SaveMetadata(
         Entry entry,
         VideoChoice choice,
         ProviderOption source,
         CancellationToken cancellation,
         FetchScope scope = FetchScope.New
-    ) =>
-        (_videos ?? throw new InvalidOperationException("Library has no video lookup.")).Identify(
+    )
+    {
+        await (_videos ?? throw new InvalidOperationException("Library has no video lookup.")).Identify(
             entry,
             choice,
             source,
             cancellation,
             scope
         );
+        // The person's choice answers what the Inspector's last lookup reported.
+        if (Selected?.Entry.EntryId == entry.EntryId)
+        {
+            _outcome = null;
+            ShowInformation();
+        }
+    }
 
     internal async Task Recover()
     {
@@ -490,14 +514,13 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
             _videos.Retry();
     }
 
-    internal Task Observe(bool ready, bool connected)
+    internal Task Observe(LibraryReadiness readiness)
     {
         lock (_gate)
         {
             if (_disposed)
                 return Task.CompletedTask;
-            _ready = ready;
-            _connected = connected;
+            _readiness = readiness;
         }
         return Observe();
     }
@@ -527,8 +550,7 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
     {
         lock (_gate)
         {
-            _ready = false;
-            _connected = false;
+            _readiness = LibraryReadiness.Offline;
             Pause();
         }
         _dispatcher.TryEnqueue(() =>
@@ -550,7 +572,7 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
     {
         lock (_gate)
         {
-            if (_ready && IsAvailable)
+            if (_readiness == LibraryReadiness.Ready && IsAvailable)
             {
                 _facts?.SetConnected(true);
                 _videos?.Refresh(true, Text.Language);
@@ -559,13 +581,16 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
                 Pause();
         }
         if (!IsAvailable)
-        {
-            _revision++;
-            _search?.Cancel();
-            _detail?.Cancel();
-            CancelInformation();
-        }
+            CancelRequests();
         Refresh();
+    }
+
+    private void CancelRequests()
+    {
+        _revision++;
+        _search?.Cancel();
+        _detail?.Cancel();
+        CancelInformation();
     }
 
     // Their listeners rebuild menus and the empty state, which closes what
@@ -588,11 +613,7 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
     {
         _visible = visible;
         if (!visible)
-        {
-            _search?.Cancel();
-            _detail?.Cancel();
-            CancelInformation();
-        }
+            CancelRequests();
         else
             Refresh();
     }
@@ -633,7 +654,7 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
             "kind" when int.TryParse(value, out var kind) && Enum.IsDefined((FileKind)kind) =>
                 Text.Get("library", ((FileKind)kind).ToString().ToLowerInvariant()),
             "type" => Text.Get("library", value.Length == 0 ? "unidentified" : value),
-            "modified" or "size" => Text.Get(
+            "modified" or "size" or "resolution" or "subtitles" or "metadata" => Text.Get(
                 "library",
                 value switch
                 {
@@ -649,8 +670,8 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
     {
         if (_disposed)
             return;
-        _refreshDetail = true;
         RefreshRows();
+        _ = ReadDetail();
         RefreshState();
         RefreshCommands();
     }
@@ -702,11 +723,9 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
                     continue;
                 var previous = Selected;
                 var previousEntry = previous?.Entry;
-                var refreshDetail = _refreshDetail;
-                _refreshDetail = false;
                 var retained = new HashSet<long>();
                 var rows = new List<LibraryRow>(matches.Entries.Count);
-                var rowsChanged = RowsConfiguration != query.Configuration;
+                var rowsChanged = _rowsQuery?.Configuration != query.Configuration;
                 foreach (var entry in matches.Entries)
                 {
                     retained.Add(entry.EntryId);
@@ -722,15 +741,14 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
                 foreach (var key in _rows.Keys.Where(key => !retained.Contains(key)).ToArray())
                     _rows.Remove(key);
                 rowsChanged |= !Rows.SequenceEqual(rows);
-                var facetsChanged = RowsConfiguration != query.Configuration || !Facets.SequenceEqual(matches.Facets);
+                var facetsChanged = _rowsQuery?.Configuration != query.Configuration || !Facets.SequenceEqual(matches.Facets);
                 var countsChanged = Counts.Count != matches.Counts.Count
                     || Counts.Any(pair => !matches.Counts.TryGetValue(pair.Key, out var count) || count != pair.Value);
                 if (rowsChanged)
                     Rows = rows;
-                RowsConfiguration = query.Configuration;
+                _rowsQuery = query;
                 Facets = matches.Facets;
                 Counts = matches.Counts;
-                _searched = true;
                 var selection =
                     _selections.Remove(Configuration, out var remembered)
                     && Selection.Items.Count == 0
@@ -750,7 +768,7 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
                 if (
                     Selected is not null
                     && ReferenceEquals(previous, Selected)
-                    && (refreshDetail || previousEntry != Selected.Entry)
+                    && previousEntry != Selected.Entry
                 )
                     _ = ReadDetail();
                 if (Selected is not null && previousEntry?.Path != Selected.Entry.Path)
@@ -798,8 +816,7 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
             _detail?.Cancel();
             CancelInformation();
             _loadedDetail = null;
-            _noVideoMatch = false;
-            _fetchFailure = null;
+            _outcome = null;
             FileType = Application = string.Empty;
             ApplicationIcon = null;
             if (Selected is not null)
@@ -808,12 +825,13 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
             Changed(nameof(Message));
         }
         Changed(nameof(Selection));
+        Changed(nameof(Status));
         RefreshCommands();
     }
 
     private async Task ReadDetail()
     {
-        if (_store is null || Selected is not { } selected || !IsAvailable)
+        if (_store is null || Selected is not { } selected || !IsAvailable || !_visible)
             return;
         _detail?.Cancel();
         var entry = selected.Entry;
@@ -972,10 +990,7 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
     private void Stop()
     {
         Disconnect();
-        _revision++;
-        _search?.Cancel();
-        _detail?.Cancel();
-        CancelInformation();
+        CancelRequests();
         if (_videos is not null)
         {
             _videos.Changed -= OnVideosChanged;
@@ -1016,10 +1031,9 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
         _selections.Clear();
         Select(Selection.Empty);
         Rows = [];
-        RowsConfiguration = Configuration;
+        _rowsQuery = null;
         Facets = [];
         Counts = new Dictionary<LibraryConfiguration, int>();
-        _searched = false;
         _failure = null;
         Changed(string.Empty);
         RefreshState();
@@ -1070,11 +1084,11 @@ public sealed class LibraryRow(Entry entry, Browser library) : INotifyPropertyCh
     public string Title => Entry.Title;
     public string Type => Text.Get("library", Entry.Type.Length > 0 ? Entry.Type : "unidentified");
     public string Year => Entry.Year?.ToString() ?? string.Empty;
-    public string ImdbRating => Provided(RatingText(RatingSource.Imdb));
-    public string TmdbRating => Provided(RatingText(RatingSource.Tmdb));
-    public string RottenTomatoesRating => Provided(RatingText(RatingSource.RottenTomatoes));
-    public string PopcornmeterRating => Provided(RatingText(RatingSource.Popcornmeter));
-    public string MetacriticRating => Provided(RatingText(RatingSource.Metacritic));
+    public string ImdbRating => RatingCell(RatingSource.Imdb);
+    public string TmdbRating => RatingCell(RatingSource.Tmdb);
+    public string RottenTomatoesRating => RatingCell(RatingSource.RottenTomatoes);
+    public string PopcornmeterRating => RatingCell(RatingSource.Popcornmeter);
+    public string MetacriticRating => RatingCell(RatingSource.Metacritic);
     public string ImdbTip => RatingTip(RatingSource.Imdb);
     public string TmdbTip => RatingTip(RatingSource.Tmdb);
     public string RottenTomatoesTip => RatingTip(RatingSource.RottenTomatoes);
@@ -1140,6 +1154,9 @@ public sealed class LibraryRow(Entry entry, Browser library) : INotifyPropertyCh
             : value.ToString("0");
     }
 
+    private string RatingCell(RatingSource source) =>
+        Provided(source.Read(Entry.Ratings) is { } rating ? Score(source, rating) : string.Empty);
+
     // An empty provider cell of an unmatched file shows a dash, so a file the
     // provider does not have differs from one not looked up yet. Only table
     // cells use it.
@@ -1149,16 +1166,14 @@ public sealed class LibraryRow(Entry entry, Browser library) : INotifyPropertyCh
     {
         if (source.Read(Entry.Ratings) is not { } rating)
             return string.Empty;
-        var score = Score(source, rating);
-        var parts = new List<string>
-        {
-            source.IsPercent ? score : Text.Format("library", "rating", score, source.Maximum),
-        };
-        if (rating.Votes is { } votes)
-            parts.Add(Text.FormatCount("library", "votes", votes));
+        var sample = Text.Get("library", "sample_" + source.Sample(Entry.Ratings).ToString().ToLowerInvariant());
         if (rating.Kind == VideoKind.Series)
-            parts.Add(Text.Get("library", "series_rating"));
-        return string.Join(" · ", parts);
+            sample += " · " + Text.Get("library", "series_rating");
+        if (rating.Votes is not { } votes)
+            return sample;
+        var count = Text.FormatCount("library",
+            source == RatingSource.RottenTomatoes || source == RatingSource.Metacritic ? "reviews" : "votes", votes);
+        return count + "\n" + sample;
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;

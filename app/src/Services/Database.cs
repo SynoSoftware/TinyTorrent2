@@ -34,33 +34,25 @@ internal sealed partial class Database : IAsyncDisposable
         {
             using var command = connection.CreateCommand();
             command.CommandText = """
-                SELECT freelist_count*page_size,
-                    movies,series,episodes,
+                SELECT movies,series,episodes,
                     (SELECT COUNT(*) FROM current_files WHERE complete=1),
-                    (SELECT COUNT(*) FROM video_records),
-                    subtitles,created,found,languages
-                FROM pragma_page_size(),pragma_freelist_count(),
-                    (SELECT COUNT(CASE WHEN type='movie' THEN 1 END) AS movies,
+                    subtitles,languages
+                FROM (SELECT COUNT(CASE WHEN type='movie' THEN 1 END) AS movies,
                         COUNT(CASE WHEN type='tv' THEN 1 END) AS series,
                         COUNT(CASE WHEN type='episode' THEN 1 END) AS episodes FROM video_information),
-                    (SELECT COUNT(*) AS subtitles,COUNT(CASE WHEN created=1 THEN 1 END) AS created,
-                        COUNT(CASE WHEN created=0 THEN 1 END) AS found,
+                    (SELECT COUNT(*) AS subtitles,
                         COUNT(DISTINCT language COLLATE NOCASE) AS languages FROM subtitle_outputs);
                 """;
             using var reader = command.ExecuteReader();
             reader.Read();
             return new Statistics
             {
-                Reusable = reader.GetInt64(0),
-                Movies = reader.GetInt64(1),
-                Series = reader.GetInt64(2),
-                Episodes = reader.GetInt64(3),
-                Files = reader.GetInt64(4),
-                Responses = reader.GetInt64(5),
-                Subtitles = reader.GetInt64(6),
-                Created = reader.GetInt64(7),
-                Found = reader.GetInt64(8),
-                Languages = reader.GetInt64(9),
+                Movies = reader.GetInt64(0),
+                Series = reader.GetInt64(1),
+                Episodes = reader.GetInt64(2),
+                Files = reader.GetInt64(3),
+                Subtitles = reader.GetInt64(4),
+                Languages = reader.GetInt64(5),
             };
         });
 
@@ -299,14 +291,10 @@ internal sealed class DatabaseVersionException : SqliteException
 
 internal sealed record Statistics
 {
-    internal required long Reusable { get; init; }
     internal required long Movies { get; init; }
     internal required long Series { get; init; }
     internal required long Episodes { get; init; }
     internal required long Files { get; init; }
-    internal required long Responses { get; init; }
     internal required long Subtitles { get; init; }
-    internal required long Created { get; init; }
-    internal required long Found { get; init; }
     internal required long Languages { get; init; }
 }

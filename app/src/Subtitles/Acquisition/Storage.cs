@@ -203,7 +203,8 @@ internal sealed partial class Acquisition
             var targets = await Targets(cancellation).ConfigureAwait(false);
             await ReconcileJobs(targets, cancellation).ConfigureAwait(false);
             await ReconcileFiles(targets, cancellation).ConfigureAwait(false);
-            await Discover(cancellation).ConfigureAwait(false);
+            try { await Discover(cancellation).ConfigureAwait(false); }
+            catch (OperationCanceledException) when (!cancellation.IsCancellationRequested) { }
             var reconciled = await Run(
                     connection =>
                     {
@@ -399,7 +400,7 @@ internal sealed partial class Acquisition
                 retry_at=0,attempts=0,manual=excluded.manual,guesses=excluded.guesses,fresh=excluded.fresh,
                 reference=CASE WHEN $manual OR subtitle_jobs.manual=1 THEN NULL ELSE subtitle_jobs.reference END
                 WHERE $manual OR (subtitle_jobs.outcome=$cancelled
-                    AND (subtitle_jobs.manual=1 OR $unfinished));
+                    AND subtitle_jobs.manual=1);
             """,
             ("$path", target.Path),
             ("$language", target.Language),
@@ -415,7 +416,6 @@ internal sealed partial class Acquisition
             ("$manual", manual),
             ("$guesses", guesses),
             ("$fresh", target.Fresh is null ? null : JsonSerializer.Serialize(target.Fresh)),
-            ("$unfinished", target.Videos.Any(video => video.Eligible && video.IsNew && !video.Complete)),
             ("$cancelled", (int)SubtitleOutcome.Cancelled)
         );
         AssociateJob(connection, target);
@@ -695,6 +695,7 @@ internal sealed partial class Acquisition
         Blocked = counts.Blocked;
         if (_batch.Count > 0)
             Found = counts.Found;
+        await RefreshWork().ConfigureAwait(false);
         Notify();
     }
 

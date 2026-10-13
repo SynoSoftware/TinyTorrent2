@@ -50,15 +50,6 @@ public sealed partial class MainViewModel
     public bool IsIncomingOpen => MissingAdapter.Length == 0 && !Settings.Proxy.IsInUse && HasIncoming;
     public bool IsIncomingClosed => !IsIncomingProxied && !IsIncomingOpen;
     public string SelectionText => Text.Format("window", "selected", _selected.Length);
-    public string TorrentCount =>
-        _selected.Length == 0
-            ? Text.FormatCount("window", "torrents", Torrents.Count)
-            : Text.Format(
-                "window",
-                "torrents_selected",
-                Text.FormatCount("window", "torrents", Torrents.Count),
-                _selected.Length
-            );
     public bool HasSelection => _selected.Length > 0;
     public bool CanReorder => CanEdit;
     private bool CanMove => CanEdit && _selected.Any(torrent => torrent.IsQueued);
@@ -217,8 +208,9 @@ public sealed partial class MainViewModel
     // tried stay in the draft, so none is lost silently.
     private async Task AddTogether()
     {
+        await using var addition = AddDraft.BeginAddition();
         await AddDraft.PrepareAll();
-        if (!AddDraft.CanEdit || IsAddOpen)
+        if (!AddDraft.CanEdit || IsAddOpen || AddDraft.IsAdditionCancelled)
             return;
         Exception? failure = null;
         var rejected = AddDraft.Sources.Where(source => source.NeedsFiles).ToArray();
@@ -255,8 +247,10 @@ public sealed partial class MainViewModel
             await AddDraft.PrepareAll();
             return;
         }
+        showDialog |= AddDraft.Sources.Any(source => Settings.AddPreference(source.Source).ConfirmedOn);
+        await using var addition = showDialog ? null : AddDraft.BeginAddition();
         await AddDraft.PrepareAll();
-        if (IsAddOpen)
+        if (IsAddOpen || AddDraft.IsAdditionCancelled)
             return;
         // A torrent already in the list needs no Add dialog: Submit shows it where
         // it is, and only trackers it lacks are worth a question.
@@ -268,16 +262,15 @@ public sealed partial class MainViewModel
                 Announce(Text.Get("errors", "duplicate"));
             return;
         }
-        if (
-            showDialog
-            || AddDraft.Sources.Any(source => Settings.AddPreference(source.Source).ConfirmedOn)
-        )
+        if (showDialog)
         {
             AddRequested?.Invoke(this, EventArgs.Empty);
             return;
         }
         if (!AddDraft.Sources.Any(source => source.MergeAvailable))
             await AddDraft.Submit();
+        if (AddDraft.IsAdditionCancelled)
+            return;
         if (AddDraft.Sources.Count > 0)
             AddRequested?.Invoke(this, EventArgs.Empty);
     }

@@ -436,6 +436,20 @@ try {
             $destination = Join-Path $directory 'moved'
             $reply = Send-Command @{ command = 'move'; torrent_ids = @($identities[0]); destination = $destination }
             Assert (-not $reply.ok -and $reply.error.code -eq 'shared_files') 'A partial scope moved another torrent file'
+            $settingsFile = Join-Path $directory 'settings.json'
+            $backup = Join-Path $directory 'settings.saved.json'
+            Move-Item -LiteralPath $settingsFile -Destination $backup
+            $null = New-Item -ItemType Directory -Path $settingsFile
+            try {
+                $reply = Send-Command @{ command = 'delete_files'; torrent_ids = @($identities[0]) }
+                Assert (-not $reply.ok -and $reply.error.code -eq 'storage_failed') 'A refused deletion commit was reported as accepted'
+                $snapshot = (Send-Command @{ command = 'snapshot' }).data
+                Assert ($snapshot.torrents.Count -eq 2 -and (Payload-Hash $sourceFile) -eq $originalHash) 'A refused deletion changed membership or shared payload'
+            }
+            finally {
+                Remove-Item -LiteralPath $settingsFile
+                Move-Item -LiteralPath $backup -Destination $settingsFile
+            }
             $reply = Send-Command @{ command = 'delete_files'; torrent_ids = @($identities[0]) }
             Assert ($reply.ok -and $reply.data.kept_files -eq 1) 'Deletion did not report its outside-shared file'
             Stop-Engine
@@ -506,6 +520,21 @@ try {
             Stop-Engine
             $snapshot = Start-Engine
             Assert ($snapshot.torrents.Count -eq 0 -and -not (Test-Path -LiteralPath $movedFile) -and (Payload-Hash $collisionFile) -eq $collisionHash -and (Test-Path -LiteralPath $unrelated)) 'Group deletion reached the held destination, restored membership or damaged unrelated files'
+            [IO.File]::WriteAllBytes($sourceFile, $content)
+            $identities = @()
+            foreach ($fixture in $fixtures) {
+                $preview = Send-Command @{ command = 'preview'; source = $fixture; destination = $payload }
+                $reply = Send-Command @{ command = 'add'; preview_id = $preview.data.preview_id; destination = $payload; paused = $true }
+                Assert $reply.ok 'The remove-and-delete fixture could not be added'
+                $identities += $reply.data.torrent_id
+            }
+            $reply = Send-Command @{ command = 'remove'; torrent_ids = @($identities[0]) }
+            Assert ($reply.ok -and (Payload-Hash $sourceFile) -eq $originalHash) 'Ordinary removal damaged the surviving shared payload'
+            $reply = Send-Command @{ command = 'delete_files'; torrent_ids = @($identities[1]) }
+            Assert $reply.ok 'Deletion after ordinary removal was refused'
+            Stop-Engine
+            $snapshot = Start-Engine
+            Assert ($snapshot.torrents.Count -eq 0 -and -not (Test-Path -LiteralPath $sourceFile) -and (Test-Path -LiteralPath $unrelated)) 'Deferred shared-file cleanup lost deletion or restored removed membership'
         }
         'CommittedFiles' {
             $reply = Send-Command @{ command = 'session_pause'; paused = $true }

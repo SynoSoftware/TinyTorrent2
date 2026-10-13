@@ -20,7 +20,6 @@ public sealed partial class InspectorPane
     private ICommand? _downloadSubtitles;
     private Entry? _libraryEntry;
     private bool _libraryFile;
-    private bool _libraryEnrichment;
 
     internal void ShowLibrary(LibraryBrowser? library, ICommand? downloadSubtitles)
     {
@@ -133,6 +132,7 @@ public sealed partial class InspectorPane
         if (
             args.PropertyName
             is nameof(LibraryBrowser.Selected)
+                or nameof(LibraryBrowser.Rows)
                 or nameof(LibraryBrowser.Synopsis)
                 or nameof(LibraryBrowser.IsEnrichmentEnabled)
                 or nameof(LibraryBrowser.Waiting)
@@ -178,7 +178,6 @@ public sealed partial class InspectorPane
         if (rebuild || targetChanged || LibraryMore.Flyout is null)
             RefreshLibraryActions();
         if (!rebuild && _libraryEntry == row?.Entry && _libraryFile == showsFile
-            && _libraryEnrichment == library.IsEnrichmentEnabled
             && _libraryContent.Content is Details details)
             details.Refresh(library);
         else
@@ -188,7 +187,6 @@ public sealed partial class InspectorPane
         }
         _libraryEntry = row?.Entry;
         _libraryFile = showsFile;
-        _libraryEnrichment = library.IsEnrichmentEnabled;
         _motion.CrossFade(row is null ? EmptyState : _libraryContent);
     }
 

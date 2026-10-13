@@ -17,6 +17,17 @@ public sealed partial class LibraryTable : UserControl
     internal Dictionary<LibraryConfiguration, ColumnLayout> Layouts { get; } = [];
     internal event EventHandler<ItemContextRequestedEventArgs>? ItemContextRequested;
 
+    public static Style RatingStyle(Ratings ratings, RatingSource source)
+    {
+        var key = source.Sample(ratings) switch
+        {
+            RatingSample.Small => "TinyTorrentRatingSubduedStyle",
+            RatingSample.Large => "TinyTorrentRatingPrimaryStyle",
+            _ => "TinyTorrentRatingSecondaryStyle",
+        };
+        return (Style)Application.Current.Resources[key];
+    }
+
     public LibraryTable(Browser model)
     {
         _model = model;

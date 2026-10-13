@@ -36,6 +36,7 @@ public sealed partial class MainWindow
         };
         Model.Library.PropertyChanged += (_, args) =>
         {
+            QueueStatus();
             if (args.PropertyName == nameof(LibraryBrowser.Selected))
                 UpdateAssociation();
             if (
@@ -518,7 +519,7 @@ public sealed partial class MainWindow
                     if (installed is null)
                     {
                         dialog.Title = Model.Text.Get(id, "download_title");
-                        dialog.Content = Model.Text.Get(id, "download_body");
+                        dialog.Content = DataConfirmation(Model.Text.Get(id, "download_body"), Model.Text.Get(id, "preparation_time"));
                         dialog.PrimaryButtonText = Model.Text.Get(id, "download");
                         dialog.PrimaryToolTip = Model.Text.Get(id, "download_tip");
                         return;
@@ -527,10 +528,11 @@ public sealed partial class MainWindow
                     // less than a week old notes that little has changed.
                     var days = (int)(DateTime.UtcNow - installed.LastWriteTimeUtc).TotalDays;
                     dialog.Title = Model.Text.Get(id, "update_title");
-                    dialog.Content =
+                    var body =
                         current ? Model.Text.Get(id, "update_current")
                         : days < 7 ? Model.Text.FormatCount(id, "update_recent", days)
                         : Model.Text.Format(id, "update_age", days);
+                    dialog.Content = DataConfirmation(body, Model.Text.Get(id, "preparation_time"));
                     dialog.PrimaryButtonText = Model.Text.Get(id, "update");
                     dialog.PrimaryToolTip = Model.Text.Get(id, "update_tip");
                 }
@@ -552,7 +554,9 @@ public sealed partial class MainWindow
                 () =>
                 {
                     dialog.Title = Model.Text.Get(option.ProviderId, "delete_title");
-                    dialog.Content = Model.Text.Format(option.ProviderId, "delete_body", Model.Text.Bytes(data.Length));
+                    dialog.Content = DataConfirmation(
+                        Model.Text.Format(option.ProviderId, "delete_body", Model.Text.Bytes(data.Length)),
+                        Model.Text.Get(option.ProviderId, "restore_time"));
                     dialog.PrimaryButtonText = Model.Text.Get("file_action", "delete");
                     dialog.PrimaryToolTip = Model.Text.Get(option.ProviderId, "delete_tip");
                 }
@@ -562,6 +566,38 @@ public sealed partial class MainWindow
             await Model.Library.DeleteData();
             return true;
         });
+    }
+
+    private StackPanel DataConfirmation(string body, string caution)
+    {
+        var icon = new FontIcon
+        {
+            FontFamily = Lucide.Font,
+            Glyph = Lucide.TriangleAlert,
+            Style = (Style)Root.Resources["DataCautionIconStyle"],
+        };
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetAccessibilityView(
+            icon, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
+        var message = new TextBlock { Text = caution, TextWrapping = TextWrapping.Wrap };
+        Grid.SetColumn(message, 1);
+        return new StackPanel
+        {
+            Spacing = 12,
+            Children =
+            {
+                new TextBlock { Text = body, TextWrapping = TextWrapping.Wrap },
+                new Grid
+                {
+                    ColumnSpacing = 8,
+                    ColumnDefinitions =
+                    {
+                        new ColumnDefinition { Width = GridLength.Auto },
+                        new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) },
+                    },
+                    Children = { icon, message },
+                },
+            },
+        };
     }
 
     private async Task FetchBatch(ProviderOption source)
@@ -613,8 +649,11 @@ public sealed partial class MainWindow
                 dialog.Hide();
             }
             content.SettingsRequested += OpenSettings;
-            void UpdateSubmit(object? sender, System.ComponentModel.PropertyChangedEventArgs args) =>
+            void UpdateSubmit(object? sender, System.ComponentModel.PropertyChangedEventArgs args)
+            {
                 dialog.PrimaryButtonText = content.SubmitText;
+                dialog.PrimaryToolTip = content.SubmitTip;
+            }
             content.PropertyChanged += UpdateSubmit;
             try
             {
@@ -626,8 +665,15 @@ public sealed partial class MainWindow
                     {
                         dialog.Title = Model.Text.Get("library", "fetch_metadata");
                         dialog.PrimaryButtonText = content.SubmitText;
-                        dialog.PrimaryToolTip = Model.Text.Get("library", "save_metadata_tip");
+                        dialog.PrimaryToolTip = content.SubmitTip;
                         content.RefreshText();
+                    },
+                    async () =>
+                    {
+                        if (!await content.Submit())
+                            return false;
+                        Model.Announce(Model.Text.Get("library", "metadata_saved"));
+                        return true;
                     }
                 );
             }
@@ -656,12 +702,34 @@ public sealed partial class MainWindow
             LibraryFilters.Content = panel;
         }
         var rows = panel.Children.OfType<Grid>().ToDictionary(row => (string)row.Tag);
+        var headings = panel.Children.OfType<TextBlock>().ToDictionary(heading => (string)heading.Tag);
         _refreshingFilters = true;
         try
         {
             var position = 0;
+            string? previousGroup = null;
             foreach (var section in Model.Library.Facets.GroupBy(facet => facet.Section))
             {
+                var group = section.Key switch
+                {
+                    "resolution" or "subtitles" => "playback_filters",
+                    "metadata" => "organisation_filters",
+                    "kind" or "size" or "modified" => "file_filters",
+                    _ => "content_filters",
+                };
+                if (group != previousGroup)
+                {
+                    if (!headings.TryGetValue(group, out var title))
+                        title = new TextBlock
+                        {
+                            Tag = group,
+                            Style = (Style)Application.Current.Resources["TinyTorrentGroupTitleTextStyle"],
+                        };
+                    title.Text = Model.Text.Get("library", group);
+                    title.Margin = new Thickness(0, position == 0 ? 0 : 8, 0, 0);
+                    Place(title);
+                    previousGroup = group;
+                }
                 if (!rows.TryGetValue(section.Key, out var row))
                 {
                     var icon = new FontIcon
@@ -677,6 +745,9 @@ public sealed partial class MainWindow
                             "artist" => Lucide.Users,
                             "album" => Lucide.Disc,
                             "size" => Lucide.HardDrive,
+                            "resolution" => Lucide.Monitor,
+                            "subtitles" => Lucide.Captions,
+                            "metadata" => Lucide.FileSearch,
                             _ => Lucide.File,
                         },
                         Style = (Style)Application.Current.Resources["TinyTorrentStatusIconStyle"],
@@ -765,19 +836,25 @@ public sealed partial class MainWindow
                 while (choices.Items.Count > items.Count)
                     choices.Items.RemoveAt(choices.Items.Count - 1);
                 choices.SelectedItem = selected;
-                ToolTipService.SetToolTip(choices, selected.Content);
-                if (
-                    position >= panel.Children.Count
-                    || !ReferenceEquals(panel.Children[position], row)
-                )
-                {
-                    panel.Children.Remove(row);
-                    panel.Children.Insert(position, row);
-                }
-                position++;
+                var tip = section.Key == "subtitles"
+                    ? Model.Text.Format("library", "subtitle_filter_tip", selected.Content)
+                    : selected.Content;
+                ToolTipService.SetToolTip(choices, tip);
+                Microsoft.UI.Xaml.Automation.AutomationProperties.SetHelpText(choices, tip?.ToString() ?? string.Empty);
+                Place(row);
             }
             while (panel.Children.Count > position)
                 panel.Children.RemoveAt(panel.Children.Count - 1);
+
+            void Place(UIElement element)
+            {
+                if (position >= panel.Children.Count || !ReferenceEquals(panel.Children[position], element))
+                {
+                    panel.Children.Remove(element);
+                    panel.Children.Insert(position, element);
+                }
+                position++;
+            }
         }
         finally
         {

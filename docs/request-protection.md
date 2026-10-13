@@ -355,6 +355,10 @@ commands or require a failed Fetch followed by another confirmation. The command
 captures the item, provider and query. Changed input uses ordinary admission,
 and a newly discovered block is explained rather than silently overridden.
 
+The subtitle choice dialog labels its retry **Search again**, so the action
+describes the person's task. It retains the same scoped override of local
+protection and explains the current block; supplier waits are never overridden.
+
 Search feedback covers that captured query. Selecting a candidate identifies
 its detail or subtitle-download resource; a hold on that resource is shown at
 the selection action, which offers its own scoped Force fetch. A different

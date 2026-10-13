@@ -55,12 +55,11 @@ public sealed partial class MainViewModel
     // pause, or else the alternative limits, which change nothing while paused.
     public bool HasRestriction => IsSessionPaused || HasAlternativeLimits;
 
-    // The connection item already names a missing adapter, so this one says only
-    // that transfers are paused.
     public string RestrictionStatus =>
         !IsSessionPaused ? AlternativeStatus
-        : _pause == PauseReason.Adapter ? Text.Get("status", "paused")
+        : _pause == PauseReason.Adapter ? Text.Get("window", "adapter_pause")
         : PauseStatus;
+    internal bool HasCaps => HasLimits && !IsSessionPaused && (_downloadCap > 0 || _uploadCap > 0);
     public string RestrictionTip => IsSessionPaused ? PauseStatus : AlternativeTip;
     public bool ShowsAlternativeLimits => !IsSessionPaused && HasAlternativeLimits;
     private string AlternativeStatus =>

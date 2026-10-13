@@ -665,8 +665,14 @@ Filters adds no horizontal padding around its native list rows, so their text
 aligns with the header. The platform owns the
 fill and its theme and contrast fallbacks; the pane needs no separate
 palette or floating shadow. Both panes share this material so their surfaces stay
-consistent across Torrents and Library. The Filters title, scrollable choices and bottom Clear action
-retain their existing layout in both modes.
+consistent across Torrents and Library. In both modes, Clear sits directly below
+the Filters header and above the scrollable choices. It is a compact,
+full-width icon-and-text action aligned with the filter rows, using the shared
+ActionButton's native neutral fill and outline in both modes. The button remains
+visibly a button when enabled or disabled, rather than switching between a
+transparent action and a filled disabled surface. It retains native interaction
+states and stays visible but disabled when the existing command has no active
+filters to clear, so the layout never shifts.
 The same template owns the header's minimum height of 40 pixels, padding and bottom
 divider. Pane also owns header composition: identity at the left, navigation
 centered in the remaining space, actions at the right. Identity yields space to
@@ -823,62 +829,105 @@ while the table has focus, follows the [Add policy](#add): several sources are
 added directly; a single source follows its torrent-file or magnet dialog preference.
 An empty list says how to add a torrent.
 
-The status bar shows status only, on one line, and holds no buttons, because
-a control there is easy to miss and mixes acting with reading. **Owner ruling,
-2026-10-11:** Fetching metadata is the one exception; a small X after its count
-stops the batch, because the person who watches the count is the one who wants
-to stop it. Each label is
-short and starts with a Lucide icon so the person finds it at a glance; its
-tooltip and accessible name give the full sentence. The left group answers how
-fast transfers go and what holds them back. It shows the total download and
-upload speed, each followed by its cap while one applies, such as "1.2 MB/s of
-5 MB/s", so a download that a limit holds back explains itself. A rate's tooltip
-names its limit and the pair it comes from, or says that no limit applies.
-After the speeds, one item says what holds transfers back, and changes in place:
+The status bar answers, in order, what the current view contains, which
+background operations are underway, and what is happening to torrent transfers.
+A full-width, one-DIP top divider uses `DividerStrokeColorDefaultBrush` to
+separate it from the workspace while retaining the continuous acrylic surface.
+Its groups stay in one horizontal row, with collection context anchored left,
+work in the middle, and the torrent session anchored right. It uses shared Body text, Lucide
+icons and the established direction/state brushes. Its commands cancel tasks
+or open their list when concurrent work cannot fit; settings, filters and
+updates retain their visible command homes.
 
-| Situation | Item |
-| --- | --- |
-| Nothing holds transfers back | None |
-| The alternative pair applies | Alternative limits, with "until" and the time when the schedule ends them; the caps and what turned them on are in its tooltip |
-| The person paused transfers | All paused |
-| The schedule paused transfers | Paused by schedule, with "until" and the time when known |
-| Only the absent network adapter pauses transfers | Paused; the connection item names the missing adapter, so this item does not repeat it, and the full sentence is in its tooltip |
+Context, background activity, and transfers are content-sized top-level groups.
+Distribute spare width between those groups only. Within the activity group,
+keep processes together in registration order, with subtle vertical separators.
+Each process keeps its icon, label, progress and Cancel close together; neither
+processes nor their internal controls consume distributed spare width.
+Progress sits below the label and count. A 24-DIP icon spans both rows, with
+Cancel centred alongside them, so the icon identifies the whole process.
+The shared work presenter uses this layout in the footer, work list and Settings.
+Keep flexible space on both sides of the activity group even when collection
+context is absent, so work stays in the middle on Settings and About too.
 
-A pause wins over the alternative limits, because limits change nothing while
-nothing moves; for the same reason, the speeds show no cap while transfers are
-paused. The item tells a person whose torrent resume a global pause blocks why
-nothing moves. When the item changes on its own, such as when the schedule
-pauses transfers, screen readers announce the new state, because nothing else
-tells a person who cannot see the status bar. The right group describes the list and the
-connection. From the left, it shows: Fetching metadata with its count while
-Library fetches metadata for several files in the background, on every page;
-Update available when a newer release
-exists; the external IP while Appearance shows it; the number of torrents and,
-while some are selected, how many, as File Explorer counts items; the active
-filter and its count while one is chosen. On Library the list facts instead
-name its configuration, row count and active filters; torrent selection and
-filter facts stay with Torrents. The final item says whether incoming connections
-arrive, a proxy is in use, or the selected network adapter is absent. The
-right group is aligned to the right edge, so an item that appears or changes
-moves the items to its left. Fetching metadata and Update available appear on
-their own, so they come first, where they move nothing; the external IP follows it, because its address
-changes on its own. The filter keeps room for its count with every torrent in
-the list, so a torrent that changes state never moves the labels before it. A
-rate keeps room for its longest text, so live rates never move the labels after
-it. When the
-line is too narrow, labels shorten to their icons, least important first.
-Help > Update and command search open the download page. Double-clicking an
-item opens the place that changes it, as Windows status bars do: a rate,
-Alternative limits or a scheduled pause opens the limits choice in Settings >
-Speed limits; the pause item opens the network adapter while it is absent; the filter
-opens the filter pane; the connection item opens the port in Settings >
-Network, the proxy server while one is in use, or the network adapter while
-it is absent; and Update available
-opens the download page. The torrent count has nothing to change, and All
-paused ends with Resume all, a command that a double-click must not run because
-the status bar only reads. Choosing limits
-belongs in Settings, because an automatic schedule makes an on/off shortcut
-ambiguous.
+Torrents shows its actual displayed/total torrent count when filtered, the
+filter name and selection. Title-bar command search does not filter the table.
+Library shows its published configuration, file count, applied filtering and
+selection. Count files, not distinct movies; publish filtering with the rows,
+so a pending query cannot relabel old results. Before a usable Library result,
+show the configuration only, never an invented zero or a loading message.
+Settings shows its current section, such as `Settings · Network`, from the
+navigation state; it has no collection count. About has no collection facts. Retained disconnected data is
+labelled Last known, while initial torrent connection says Connecting.
+
+Rates describe all torrents and keep their down/up icons and colors. Numeric
+caps appear only while confirmed and unpaused. In Library the transfer group
+is explicitly labelled Torrents, remains present across zero-rate samples
+while managed torrents exist, and yields before Library work. At narrow widths,
+rates may omit numeric caps while showing Limits on; that marker disappears
+with the rates. A cap describes the applied policy, not proof of why a transfer
+is slow. Disconnection shows unavailable rates and suppresses stale restrictions
+and healthy connection icons.
+
+The session uses the engine's confirmed pause reason. Manual pause says All
+paused; scheduled pause names its end when known; a missing adapter says
+Paused · Adapter unavailable; connection setup keeps its own explanation.
+Alternative limits uses the caution Turtle and its known scheduled expiry.
+Pause takes precedence over limits. Full detail and existing announcements
+retain the current notification owner. Library scopes these states to Torrents.
+The routine port/proxy item is shown only on Torrents and says nothing about
+general internet health or privacy.
+
+**Owner ruling, extended 2026-10-13:** Long-running background work appears on
+every page with native progress and an adjacent Cancel X when cancellable.
+This includes metadata batches and IMDb preparation; accepted subtitle work
+also remains visible. Torrent transfers and checks keep progress in their rows.
+The shared background-operation owner supplies coherent lifecycle/progress and
+cancellation facts; the status bar owns their visual presentation. Concurrent
+operations keep separate identities and cancel targets in stable order rather
+than rotating messages. Each X has its own accessible name and tooltip,
+requests cancellation from its operation owner, disables while cancelling and
+remains visible until cleanup finishes. Recover focus to the next usable task
+control, the work-list button or the page when a focused control becomes
+disabled or disappears. Completion and failure retain the
+existing notification owner.
+
+Use the stock WinUI 3 ProgressBar template, brushes and animation. Metadata
+shows completed attempts over the accepted total, including unmatched files;
+never count the file currently being processed as completed. Its precise
+fraction remains readable when the redundant graphical bar yields. IMDb
+names its current phase: parsing reports approximate progress through that
+source; downloading uses a fraction only with a trustworthy byte total.
+Indexing, optimization and finalization are indeterminate.
+Per-phase percentages are never presented as one overall percentage. A
+confirmed wait is named as such; accepted subtitle work alone does not prove
+active network searching. Ambient video-information state appears on Library's
+Videos view only when explicit work does not occupy the space.
+
+The footer measures text in the current language and scale. Remove optional
+update, default-download-volume space, torrent IP and routine port diagnostics
+before core content; remove ordinary rates before active work and holds.
+Shorten wording, then remove redundant bars and decorative icons before
+sacrificing task identity, exact metadata counts or cancellation controls.
+Selection and collection context yield when active operations need their room.
+Do not replace essential meaning with anonymous icons or ellipses. When task
+groups still cannot fit readably, retain the explicit metadata batch and its
+Cancel inline, with a labelled work-count button opening a native Flyout of
+all active operations in stable insertion order. Its count includes the inline
+batch. Each row consumes the same operation and cancellation command; no
+aggregate percentage or Cancel is introduced. A successor batch takes the
+inline slot while its settling predecessor remains in the list. With no
+successor, the settling batch remains inline until cleanup ends. The reporting
+contract and integration inventory are in [Background work](background-work.md).
+Narrow concurrency layout requires native review before release.
+
+Free-space and external-IP appearance settings remain opt-ins and describe
+their scope. Free space belongs to the default download destination's volume;
+an unavailable measurement says so. Torrent IP uses reported torrent-network
+addresses. Both yield when the footer has insufficient room. Update available
+remains passive discovery when space permits; Help > Update owns its action.
+Tooltips and UI Automation preserve full descriptions without announcing every
+rate or processed file.
 
 Settings > Speed limits groups the current mode, standard and alternative caps,
 queue activity, peer connections, and bandwidth accounting. The weekly editor

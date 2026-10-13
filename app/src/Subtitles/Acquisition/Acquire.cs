@@ -63,7 +63,7 @@ internal sealed partial class Acquisition
                                 {
                                     using var command = connection.CreateCommand();
                                     command.CommandText =
-                                        $"SELECT MIN(retry_at) FROM subtitle_jobs WHERE {Due};";
+                                        $"SELECT path,language,manual,retry_at FROM subtitle_jobs WHERE {Due};";
                                     command.Parameters.AddWithValue(
                                         "$automatic",
                                         Enabled && settled.IsCompleted
@@ -72,9 +72,15 @@ internal sealed partial class Acquisition
                                         "$pending",
                                         (int)SubtitleOutcome.Pending
                                     );
-                                    return command.ExecuteScalar() is long value
-                                        ? (long?)value
-                                        : null;
+                                    using var reader = command.ExecuteReader();
+                                    long? earliest = null;
+                                    while (reader.Read())
+                                        if (Accepted(reader.GetString(0), reader.GetString(1), reader.GetBoolean(2)) is not null)
+                                        {
+                                            var value = reader.GetInt64(3);
+                                            earliest = earliest is null ? value : Math.Min(earliest.Value, value);
+                                        }
+                                    return earliest;
                                 },
                                 cancellation
                             )
@@ -121,7 +127,7 @@ internal sealed partial class Acquisition
                                                 reader.GetString(0)
                                             )
                                         );
-                                        if (found is not null)
+                                        if (found is not null && Accepted(reader.GetString(0), reader.GetString(1), reader.GetBoolean(2)) is not null)
                                             due.Add(
                                                 found with
                                                 {
@@ -147,13 +153,25 @@ internal sealed partial class Acquisition
                             .ConfigureAwait(false);
                         if (target is null)
                             break;
-                        await Acquire(target, cancellation).ConfigureAwait(false);
+                        if (Accepted(target.Path, target.Language, target.Manual) is not { } run)
+                            continue;
+                        using (var request = CancellationTokenSource.CreateLinkedTokenSource(cancellation, run.Cancellation.Token))
+                        {
+                            run.Report(run.Observation.Progress, new WorkExecution.Running());
+                            await Acquire(target, request.Token).ConfigureAwait(false);
+                        }
                         await RefreshCounts().ConfigureAwait(false);
                         delay = TimeSpan.Zero;
                         break;
                     }
                 }
-                catch (OperationCanceledException) { }
+                catch (OperationCanceledException)
+                {
+                    lock (_requestSync)
+                        foreach (var run in new[] { _manualWork, _automaticWork })
+                            if (run is not null)
+                                run.Report(run.Observation.Progress, new WorkExecution.Waiting());
+                }
                 catch (SqliteException error)
                 {
                     _databaseFailure = error;
@@ -369,6 +387,9 @@ internal sealed partial class Acquisition
                             );
                             if (_batch.TryGetValue(target.Path, out var entry))
                                 _batch[pending.Path] = entry;
+                            lock (_requestSync)
+                                Accepted(target.Path, target.Language, target.Manual)?.Jobs.Add(
+                                    new(pending.Path, pending.Language, pending.Manual));
                         }
                         return true;
                     },
@@ -741,31 +762,10 @@ internal sealed partial class Acquisition
         Wake();
     }
 
-    // Ends the batch and any manual jobs kept from an earlier session. Saved
-    // subtitles stay, and Reconcile restores the automatic jobs Find took over.
-    internal async Task StopFinding()
+    internal Task StopFinding()
     {
-        Invalidate();
-        await _operation.WaitAsync(_lifetime.Token).ConfigureAwait(false);
-        try
-        {
-            await Run(
-                    connection =>
-                    {
-                        Cancel(connection, manual: true);
-                        return true;
-                    },
-                    _lifetime.Token
-                )
-                .ConfigureAwait(false);
-            await RefreshCounts().ConfigureAwait(false);
-        }
-        finally
-        {
-            _operation.Release();
-        }
-        Notify();
-        await Reconcile().ConfigureAwait(false);
+        lock (_requestSync)
+            return _manualWork?.Stop() ?? Task.CompletedTask;
     }
 
     private FreshRequest? Fresh(Target target)

@@ -80,35 +80,40 @@
       <TextBlock
         Text="{x:Bind ImdbRating, Mode=OneWay}"
         ToolTipService.ToolTip="{x:Bind ImdbTip, Mode=OneWay}"
-        Style="{StaticResource TinyTorrentBodyTextStyle}"
+        AutomationProperties.HelpText="{x:Bind ImdbTip, Mode=OneWay}"
+        Style="{x:Bind local:LibraryTable.RatingStyle(Entry.Ratings, local:RatingSource.Imdb), Mode=OneWay}"
       />
     </DataTemplate>
     <DataTemplate x:Key="TmdbRating" x:DataType="local:LibraryRow">
       <TextBlock
         Text="{x:Bind TmdbRating, Mode=OneWay}"
         ToolTipService.ToolTip="{x:Bind TmdbTip, Mode=OneWay}"
-        Style="{StaticResource TinyTorrentBodyTextStyle}"
+        AutomationProperties.HelpText="{x:Bind TmdbTip, Mode=OneWay}"
+        Style="{x:Bind local:LibraryTable.RatingStyle(Entry.Ratings, local:RatingSource.Tmdb), Mode=OneWay}"
       />
     </DataTemplate>
     <DataTemplate x:Key="RottenTomatoesRating" x:DataType="local:LibraryRow">
       <TextBlock
         Text="{x:Bind RottenTomatoesRating, Mode=OneWay}"
         ToolTipService.ToolTip="{x:Bind RottenTomatoesTip, Mode=OneWay}"
-        Style="{StaticResource TinyTorrentBodyTextStyle}"
+        AutomationProperties.HelpText="{x:Bind RottenTomatoesTip, Mode=OneWay}"
+        Style="{x:Bind local:LibraryTable.RatingStyle(Entry.Ratings, local:RatingSource.RottenTomatoes), Mode=OneWay}"
       />
     </DataTemplate>
     <DataTemplate x:Key="PopcornmeterRating" x:DataType="local:LibraryRow">
       <TextBlock
         Text="{x:Bind PopcornmeterRating, Mode=OneWay}"
         ToolTipService.ToolTip="{x:Bind PopcornmeterTip, Mode=OneWay}"
-        Style="{StaticResource TinyTorrentBodyTextStyle}"
+        AutomationProperties.HelpText="{x:Bind PopcornmeterTip, Mode=OneWay}"
+        Style="{x:Bind local:LibraryTable.RatingStyle(Entry.Ratings, local:RatingSource.Popcornmeter), Mode=OneWay}"
       />
     </DataTemplate>
     <DataTemplate x:Key="MetacriticRating" x:DataType="local:LibraryRow">
       <TextBlock
         Text="{x:Bind MetacriticRating, Mode=OneWay}"
         ToolTipService.ToolTip="{x:Bind MetacriticTip, Mode=OneWay}"
-        Style="{StaticResource TinyTorrentBodyTextStyle}"
+        AutomationProperties.HelpText="{x:Bind MetacriticTip, Mode=OneWay}"
+        Style="{x:Bind local:LibraryTable.RatingStyle(Entry.Ratings, local:RatingSource.Metacritic), Mode=OneWay}"
       />
     </DataTemplate>
     <DataTemplate x:Key="Genres" x:DataType="local:LibraryRow">

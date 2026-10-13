@@ -318,7 +318,6 @@ internal sealed partial class Acquisition
             deletions = _deletions.ToArray();
         if (deletions.Length == 0)
             return;
-        var targets = await Targets(cancellation).ConfigureAwait(false);
         foreach (var deletion in deletions)
         {
             try
@@ -343,6 +342,9 @@ internal sealed partial class Acquisition
                     .ConfigureAwait(false);
                 if (removing)
                     continue;
+                // Read targets after membership, so a withdrawn origin cannot
+                // protect its old caption and consume the accepted deletion.
+                var targets = await Targets(cancellation).ConfigureAwait(false);
                 if (
                     access != SubtitlePathAccess.Protected
                     && !targets.Any(target =>

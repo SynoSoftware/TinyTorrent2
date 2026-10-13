@@ -38,9 +38,9 @@ internal sealed class Provider(Dataset dataset) : IProvider
                 if (words.Length == 0)
                     return new([], false);
                 using var command = connection.CreateCommand();
-                // Exact titles come first, compared as Library's matching
-                // compares them, so an obscure film with a common title is
-                // not cut by the limit. Without the vote order, the index
+                // Exact titles come first, compared by Dataset.Key, so an
+                // obscure film with a common title is not cut by the limit.
+                // Without the vote order, the index
                 // returns its matches by ascending IMDb ID, and a common word
                 // would give the oldest.
                 command.CommandText = """
@@ -51,7 +51,7 @@ internal sealed class Provider(Dataset dataset) : IProvider
                         t.votes DESC LIMIT 50;
                     """;
                 command.Parameters.AddWithValue("$query", string.Join(' ', words));
-                command.Parameters.AddWithValue("$title", FileName.Normalize(query.Text));
+                command.Parameters.AddWithValue("$title", Dataset.Key(query.Text));
                 var choices = new List<VideoChoice>();
                 using (var reader = command.ExecuteReader())
                     while (reader.Read())
