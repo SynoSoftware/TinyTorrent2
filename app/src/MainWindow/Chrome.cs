@@ -60,6 +60,7 @@ public sealed partial class MainWindow
     private void LayoutStatus()
     {
         var library = Model.Page == WindowPage.Library;
+        var about = Model.IsAbout;
         var current = !Model.IsLoading && !Model.IsStorageFailed;
         var transfers = Model.Torrents.Count > 0 || Model.IsLoading;
         var work = Model.Work.Items.Count > 0;
@@ -67,13 +68,20 @@ public sealed partial class MainWindow
         foreach (var label in new[] { CountLabel, InformationLabel, RestrictionLabel })
             label.MaxWidth = double.PositiveInfinity;
         TransferStatus.Spacing = 16;
-        ContextIcon.Glyph = library ? Model.Library.StatusGlyph
+        ContextIcon.Glyph = about ? Syno.Lucide.Info : library ? Model.Library.StatusGlyph
             : Model.Page == WindowPage.Settings ? Syno.Lucide.Settings : Syno.Lucide.List;
         SetStatus(CountLabel, Model.CountStatus);
         SetStatus(InformationLabel, Model.Library.InformationStatus);
-        SetStatus(DownloadLabel, Model.DownloadStatus, Model.DownloadTip);
-        SetStatus(UploadLabel, Model.UploadStatus, Model.UploadTip);
-        SetStatus(TransferLabel, Model.Text.Get("window", "torrents"));
+        var downloadTip = about ? Model.Text.Format("about", "downloaded_hint", Model.LifetimeDownloaded) : Model.DownloadTip;
+        var uploadTip = about ? Model.Text.Format("about", "uploaded_hint", Model.LifetimeUploaded) : Model.UploadTip;
+        SetStatus(DownloadLabel, about ? Model.Text.Format("about", "downloaded", Model.LifetimeDownloaded) : Model.DownloadStatus, downloadTip);
+        SetStatus(UploadLabel, about ? Model.Text.Format("about", "uploaded", Model.LifetimeUploaded) : Model.UploadStatus, uploadTip);
+        SetStatus(TransferLabel, about ? Model.Text.Get("settings", "lifetime_totals") : Model.Text.Get("window", "torrents"));
+        SetStatus(MemoryCaption, Model.Text.Get("about", "memory"));
+        SetStatus(EngineMemoryLabel, Model.Text.Format("about", "engine_memory", Model.EngineMemory),
+            Model.Text.Format("about", "engine_memory_hint", Model.EngineMemory));
+        SetStatus(UiMemoryLabel, Model.Text.Format("about", "ui_memory", Model.UiMemory),
+            Model.Text.Format("about", "ui_memory_hint", Model.UiMemory));
         SetStatus(RestrictionLabel, Model.RestrictionStatus, Model.RestrictionTip);
         SetStatus(LimitsLabel, Model.Text.Get("window", "limits_on"));
         SetStatus(FreeSpaceLabel, Model.FreeSpaceStatus,
@@ -85,30 +93,31 @@ public sealed partial class MainWindow
         ShowStatus(ContextStatus, Model.CountStatus.Length > 0);
         ShowStatus(ContextIcon, true);
         ShowStatus(InformationStatus, library && current && !work && Model.Library.InformationStatus.Length > 0);
-        ShowStatus(DownloadRate, transfers);
-        ShowStatus(UploadRate, transfers);
-        ShowStatus(RestrictionStatus, current && Model.HasRestriction);
-        ShowStatus(TransferLabel, library && (transfers || current && Model.HasRestriction));
+        ShowStatus(MemoryStatus, about);
+        ShowStatus(DownloadRate, about || transfers);
+        ShowStatus(UploadRate, about || transfers);
+        ShowStatus(RestrictionStatus, !about && current && Model.HasRestriction);
+        ShowStatus(TransferLabel, about || library && (transfers || current && Model.HasRestriction));
         ShowStatus(LimitsLabel, false);
-        ShowStatus(FreeSpaceStatus, Model.ShowsFreeSpace);
-        ShowStatus(ExternalIpStatus, current && Model.ShowsExternalIp);
+        ShowStatus(FreeSpaceStatus, !about && Model.ShowsFreeSpace);
+        ShowStatus(ExternalIpStatus, !about && current && Model.ShowsExternalIp);
         ShowStatus(Incoming, current && Model.Page == WindowPage.Torrents);
-        ShowStatus(UpdateAvailable, Model.HasUpdate);
+        ShowStatus(UpdateAvailable, !about && Model.HasUpdate);
         ReserveRate(DownloadRate, DownloadLabel);
         ReserveRate(UploadRate, UploadLabel);
         if (StatusFits())
             return;
 
-        foreach (var control in new FrameworkElement[] { UpdateAvailable, FreeSpaceStatus, ExternalIpStatus, Incoming, InformationStatus })
+        foreach (var control in new FrameworkElement[] { MemoryStatus, UpdateAvailable, FreeSpaceStatus, ExternalIpStatus, Incoming, InformationStatus })
         {
             ShowStatus(control, false);
             if (StatusFits())
                 return;
         }
         FitWork();
-        SetStatus(DownloadLabel, Model.DownloadSpeed, Model.DownloadTip);
-        SetStatus(UploadLabel, Model.UploadSpeed, Model.UploadTip);
-        ShowStatus(LimitsLabel, transfers && Model.HasCaps && !Model.ShowsAlternativeLimits);
+        SetStatus(DownloadLabel, about ? Model.LifetimeDownloaded : Model.DownloadSpeed, downloadTip);
+        SetStatus(UploadLabel, about ? Model.LifetimeUploaded : Model.UploadSpeed, uploadTip);
+        ShowStatus(LimitsLabel, !about && transfers && Model.HasCaps && !Model.ShowsAlternativeLimits);
         ReserveRate(DownloadRate, DownloadLabel);
         ReserveRate(UploadRate, UploadLabel);
         if (StatusFits())

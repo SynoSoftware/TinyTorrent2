@@ -67,6 +67,7 @@ public enum WindowPage
     About,
     Library,
     Connection,
+    Credits,
 }
 
 public enum LibraryConfiguration

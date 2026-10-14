@@ -258,6 +258,9 @@ Use `TINYTORRENT_CAPTURE_REVIEW=settings-prototype` for the implemented Settings
 index and categories with advanced controls hidden and shown, plus manual
 Connection setup. It uses English/Dark and Spanish/Light fixtures; its typed
 capacity is sample input, not a network measurement.
+Its rendering-frame samples record category and Connection motion, rapid
+navigation, and drawer height and clipping during expansion and collapse;
+settled screenshots alone do not establish animation timing.
 Use `TINYTORRENT_CAPTURE_REVIEW=edits` for ordinary Settings departure,
 new input and explicit commits during a pending acknowledgement, and schedule
 edits applied on departure. The acknowledgement races change the setting input

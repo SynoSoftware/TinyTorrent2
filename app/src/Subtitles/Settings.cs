@@ -170,8 +170,17 @@ internal sealed class Settings : UserControl
         _wanted.Resources["ExpanderContentDownBorderThickness"] = new Thickness(0);
         _wanted.Resources["ExpanderContentUpBorderThickness"] = new Thickness(0);
         _wanted.Resources["ExpanderHeaderPadding"] = new Thickness(0);
-        _languages.Loaded += (_, _) => AlignLanguages();
-        _languages.SizeChanged += (_, _) => AlignLanguages();
+        ScrollViewer.SetHorizontalScrollMode(_languages, ScrollMode.Disabled);
+        ScrollViewer.SetHorizontalScrollBarVisibility(_languages, ScrollBarVisibility.Disabled);
+        _languages.Loaded += (_, _) =>
+        {
+            if (_languages.ItemsPanelRoot is { } panel)
+            {
+                panel.SizeChanged -= ResizeLanguages;
+                panel.SizeChanged += ResizeLanguages;
+            }
+            AlignLanguages();
+        };
         _batch.ShowSettings(_find);
         _scanStatus.Check.Visibility = Visibility.Collapsed;
         _scanStatus.MinHeight = 20;
@@ -442,12 +451,14 @@ internal sealed class Settings : UserControl
         AlignLanguages();
     }
 
+    private void ResizeLanguages(object sender, SizeChangedEventArgs args) => AlignLanguages();
+
     private void AlignLanguages()
     {
-        if (_languages.ActualWidth <= 0)
+        if (_languages.ItemsPanelRoot is not { ActualWidth: > 0 } panel)
             return;
-        var columns = _languages.ActualWidth < 480 ? 1 : 2;
-        var width = Math.Floor(_languages.ActualWidth / columns);
+        var columns = panel.ActualWidth < 480 ? 1 : 2;
+        var width = Math.Floor(panel.ActualWidth / columns);
         foreach (var choice in _languages.Items.Cast<ListViewItem>())
             choice.Width = width;
     }
@@ -584,11 +595,6 @@ internal sealed class Settings : UserControl
         grid.Children.Add(value);
         grid.Children.Add(action);
         return grid;
-    }
-
-    internal void Align()
-    {
-        ActionButton.Align([_find, _check, _edit, _scan]);
     }
 
     internal string Coverage

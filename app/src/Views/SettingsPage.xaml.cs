@@ -365,7 +365,7 @@ public sealed partial class SettingsPage : UserControl
         try
         {
             await Main.ResetProtection((ProtectionScope.SelectedItem as ComboBoxItem)?.Tag as string);
-            ProtectionRow.StateText = Model.Text.Get("request_protection", "reset_done");
+            Main.ShowOutcome(Model.Text.Get("request_protection", "reset_done"), string.Empty);
         }
         catch (Exception error)
         {
@@ -724,10 +724,11 @@ public sealed partial class SettingsPage : UserControl
     internal void ShowConnection(ConnectionPage? page, bool animate = true)
     {
         ClearOutline();
-        _motion.Stop();
         if (page is not null)
             ChildContent.Content = page;
         FrameworkElement content = page is null ? PageContent : ChildContent;
+        if (!ReferenceEquals(_pages.Current, content))
+            _motion.Stop();
         if (animate)
             _pages.Show(content, page is null ? -1 : 1);
         else
@@ -758,14 +759,17 @@ public sealed partial class SettingsPage : UserControl
         UpdateDisclosure();
         var nextIndex = _category is null ? -1 : Categories.MenuItems.IndexOf(_category);
         // Only the active category contributes to the restored scroll extent.
-        _motion.Replace(content);
+        foreach (var panel in CategoryPanels.Append(IndexContent).OfType<FrameworkElement>())
+            panel.Visibility = ReferenceEquals(panel, content) ? Visibility.Visible : Visibility.Collapsed;
         UpdateLayout();
         RefreshCoverage();
         AlignCategory();
         var position = _category is { } item ? _positions.GetValueOrDefault(item) : _indexPosition;
         Body.ChangeView(null, position, null, true);
         if (animate && !_pages.IsActive)
-            _motion.Play(content, nextIndex >= previousIndex ? 24 : -24);
+            _motion.Play(PageContent, nextIndex >= previousIndex ? 24 : -24);
+        else
+            _motion.Stop();
     }
 
     private IEnumerable<FrameworkElement> CategoryPanels =>
@@ -886,8 +890,8 @@ public sealed partial class SettingsPage : UserControl
             foreach (var row in rows)
                 row.Align(width);
         }
-        if (_category == PluginsCategory && SubtitlesContent?.Content is SubtitleSettings content)
-            content.Align();
+        if (_category == PluginsCategory)
+            ActionButton.Align(Elements(panel).OfType<ActionButton>());
     }
 
     private static IEnumerable<FrameworkElement> Elements(

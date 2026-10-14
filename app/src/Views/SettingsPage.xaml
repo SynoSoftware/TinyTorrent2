@@ -282,15 +282,6 @@
                       Header="{x:Bind Model.Text.Get('plugins', 'video_provider'), Mode=OneWay}"
                     >
                       <StackPanel Orientation="Horizontal" Spacing="8">
-                        <ComboBox
-                          x:Name="VideoInformation"
-                          Width="260"
-                          SelectionChanged="OnVideoInformation"
-                          IsEnabled="{x:Bind Main.Library.IsAvailable, Mode=OneWay}"
-                          ToolTipService.ToolTip="{x:Bind Model.Text.Get('library', 'information_tip'), Mode=OneWay}"
-                          AutomationProperties.Name="{x:Bind Main.Library.DownloadLabel, Mode=OneWay}"
-                          AutomationProperties.AutomationId="VideoInformation"
-                        />
                         <Button
                           x:Name="ProviderInformation"
                           Style="{StaticResource TinyTorrentSubtleButtonStyle}"
@@ -318,6 +309,15 @@
                             FontSize="{StaticResource TinyTorrentButtonIconSize}"
                           />
                         </Button>
+                        <ComboBox
+                          x:Name="VideoInformation"
+                          Width="260"
+                          SelectionChanged="OnVideoInformation"
+                          IsEnabled="{x:Bind Main.Library.IsAvailable, Mode=OneWay}"
+                          ToolTipService.ToolTip="{x:Bind Model.Text.Get('library', 'information_tip'), Mode=OneWay}"
+                          AutomationProperties.Name="{x:Bind Main.Library.DownloadLabel, Mode=OneWay}"
+                          AutomationProperties.AutomationId="VideoInformation"
+                        />
                       </StackPanel>
                     </controls:SettingsRow>
                     <controls:SettingsRow
@@ -330,21 +330,16 @@
                            Cancel cannot delete the data. -->
                       <StackPanel Orientation="Horizontal" Spacing="8">
                         <controls:WorkStatus x:Name="DataWork" MaxWidth="380" IsExpanded="True" Visibility="Collapsed" />
-                        <Button
+                        <controls:ActionButton
                           x:Name="DataDelete"
-                          Style="{StaticResource TinyTorrentSubtleButtonStyle}"
+                          Glyph="{x:Bind icons:Lucide.Trash2}"
+                          Text="{x:Bind Model.Text.Get('file_action', 'delete'), Mode=OneWay}"
                           Click="OnDataDelete"
                           Visibility="Collapsed"
                           ToolTipService.ToolTip="{x:Bind Model.Text.Get('imdb', 'delete_tip'), Mode=OneWay}"
                           AutomationProperties.Name="{x:Bind Model.Text.Get('imdb', 'delete'), Mode=OneWay}"
                           AutomationProperties.AutomationId="DataDelete"
-                        >
-                          <FontIcon
-                            FontFamily="{x:Bind icons:Lucide.Font}"
-                            Glyph="{x:Bind icons:Lucide.Trash2}"
-                            FontSize="{StaticResource TinyTorrentButtonIconSize}"
-                          />
-                        </Button>
+                        />
                         <controls:ActionButton
                           x:Name="DataDownload"
                           Glyph="{x:Bind icons:Lucide.Download}"
@@ -359,12 +354,11 @@
                   </StackPanel>
                 </controls:SettingsSection>
                 <ContentControl x:Name="SubtitlesContent" HorizontalContentAlignment="Stretch" />
-                <Border Style="{StaticResource TinyTorrentSettingsCardStyle}">
-                  <Grid ColumnSpacing="24">
-                    <Grid.ColumnDefinitions><ColumnDefinition Width="20" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                    <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Globe}"
-                      Style="{StaticResource TinyTorrentGroupIconStyle}" />
-                    <controls:SettingsRow x:Name="LookupsRow" Grid.Column="1" BorderThickness="0" MinHeight="68"
+                <controls:SettingsSection
+                  Header="{x:Bind Model.Text.Get('request_protection', 'title'), Mode=OneWay}"
+                  Style="{StaticResource TinyTorrentSettingsGroupStyle}">
+                  <StackPanel>
+                    <controls:SettingsRow x:Name="LookupsRow"
                       Header="{x:Bind Model.Text.Get('plugins', 'lookups'), Mode=OneWay}"
                       Description="{x:Bind Model.Text.Get('plugins', 'lookups_hint'), Mode=OneWay}"
                       Unit="{x:Bind Model.Text.Get('plugins', 'lookup_scope'), Mode=OneWay}">
@@ -375,21 +369,24 @@
                         AutomationProperties.Name="{x:Bind Model.Text.Get('plugins', 'lookups'), Mode=OneWay}"
                         AutomationProperties.AutomationId="LookupLimit" />
                     </controls:SettingsRow>
-                  </Grid>
-                </Border>
-                <controls:SettingsRow x:Name="ProtectionRow"
-                  Header="{x:Bind Model.Text.Get('request_protection', 'reset'), Mode=OneWay}"
-                  Description="{x:Bind Model.Text.Get('request_protection', 'reset_hint'), Mode=OneWay}">
-                  <StackPanel Orientation="Horizontal" Spacing="12">
-                    <ComboBox x:Name="ProtectionScope" Width="210" Loaded="OnProtectionLoaded"
-                      AutomationProperties.Name="{x:Bind Model.Text.Get('library', 'provider'), Mode=OneWay}"
-                      AutomationProperties.AutomationId="ProtectionScope" />
-                    <controls:ActionButton x:Name="ProtectionReset" Click="OnProtectionReset"
-                      Glyph="{x:Bind icons:Lucide.RotateCcw}"
-                      Text="{x:Bind Model.Text.Get('request_protection', 'reset'), Mode=OneWay}"
-                      AutomationProperties.AutomationId="ProtectionReset" />
+                    <controls:SettingsRow x:Name="ProtectionRow" BorderThickness="0"
+                      Header="{x:Bind Model.Text.Get('request_protection', 'reset'), Mode=OneWay}"
+                      Description="{x:Bind Model.Text.Get('request_protection', 'reset_summary'), Mode=OneWay}">
+                      <StackPanel Orientation="Horizontal" Spacing="12">
+                        <ComboBox x:Name="ProtectionScope" Width="260" Loaded="OnProtectionLoaded"
+                          ToolTipService.ToolTip="{x:Bind Model.Text.Get('request_protection', 'reset_hint'), Mode=OneWay}"
+                          AutomationProperties.Name="{x:Bind Model.Text.Get('library', 'provider'), Mode=OneWay}"
+                          AutomationProperties.AutomationId="ProtectionScope" />
+                        <controls:ActionButton x:Name="ProtectionReset" Click="OnProtectionReset"
+                          Glyph="{x:Bind icons:Lucide.RotateCcw}"
+                          Text="{x:Bind Model.Text.Get('request_protection', 'reset_button'), Mode=OneWay}"
+                          ToolTipService.ToolTip="{x:Bind Model.Text.Get('request_protection', 'reset_hint'), Mode=OneWay}"
+                          AutomationProperties.HelpText="{x:Bind Model.Text.Get('request_protection', 'reset_hint'), Mode=OneWay}"
+                          AutomationProperties.AutomationId="ProtectionReset" />
+                      </StackPanel>
+                    </controls:SettingsRow>
                   </StackPanel>
-                </controls:SettingsRow>
+                </controls:SettingsSection>
                 <controls:SettingsExpander x:Name="DatabaseSummary" Visibility="Collapsed"
                   HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Padding="16,0"
                   Expanding="OnDatabaseExpanding"

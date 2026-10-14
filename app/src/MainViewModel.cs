@@ -774,6 +774,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         var transfers = snapshot.GetProperty("transfers");
         SessionTotals = ReadTotals(transfers.GetProperty("session"));
         LifetimeTotals = ReadTotals(transfers.GetProperty("all_time"));
+        ObserveMemory();
         ObserveSpace();
         var published = Project();
         if (accessChanged)

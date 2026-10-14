@@ -454,19 +454,21 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
         _pacing = false;
     }
 
-    internal Task<IReadOnlyList<VideoChoice>> FindVideo(
+    internal Task<VideoSearch> FindVideo(
         string query,
         string fileName,
         ProviderOption source,
         CancellationToken cancellation,
-        FetchScope scope = FetchScope.New
+        FetchScope scope = FetchScope.New,
+        int? year = null,
+        bool automatic = false
     ) =>
         _videos is null
-            ? Task.FromResult<IReadOnlyList<VideoChoice>>([])
-            : _videos.Search(query, fileName, source, cancellation, scope);
+            ? Task.FromResult(new VideoSearch([], true))
+            : _videos.Search(query, fileName, source, cancellation, scope, year, automatic);
 
-    internal Task<Services.RequestBlock?> Protection(string query, string fileName, ProviderOption source, CancellationToken cancellation) =>
-        _videos is null ? Task.FromResult<Services.RequestBlock?>(null) : _videos.Protection(query, fileName, source, cancellation);
+    internal Task<Services.RequestBlock?> Protection(string query, string fileName, ProviderOption source, CancellationToken cancellation, int? year = null, bool automatic = false) =>
+        _videos is null ? Task.FromResult<Services.RequestBlock?>(null) : _videos.Protection(query, fileName, source, cancellation, year, automatic);
 
     internal Task<IReadOnlyList<VideoFetch>> Plan(IReadOnlyCollection<Entry> entries, ProviderOption source, CancellationToken cancellation) =>
         _videos is null ? Task.FromResult<IReadOnlyList<VideoFetch>>([]) : _videos.Plan(entries, source, cancellation);

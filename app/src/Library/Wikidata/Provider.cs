@@ -69,6 +69,7 @@ internal sealed class Provider : IProvider
                       OPTIONAL { ?item wdt:P1476 ?name }
                     } GROUP BY ?item
                   }
+                  {{(query.Year is { } requested ? "FILTER(?year=" + requested.ToString(CultureInfo.InvariantCulture) + ")" : string.Empty)}}
                   SERVICE wikibase:label {
                     bd:serviceParam wikibase:language "{{query.Language}},mul,en". ?item rdfs:label ?title .
                   }

@@ -7,6 +7,7 @@ using Syno.TinyTorrent.Models;
 using Syno.TinyTorrent.Services;
 using Syno.TinyTorrent.Views;
 using Syno.TinyTorrent.Controls;
+using Windows.Globalization.NumberFormatting;
 
 namespace Syno.TinyTorrent.Library;
 
@@ -21,9 +22,18 @@ internal sealed class MetadataDialog : UserControl, IDraft
     private RequestBlock? _block;
     private RequestBlock? _detailBlock;
     private readonly AutoSuggestBox _input;
+    private readonly NumberBox _year;
+    private readonly FontIcon _broadenedIcon = new()
+    {
+        FontFamily = Lucide.Font,
+        Glyph = Lucide.Search,
+        Style = (Style)Application.Current.Resources["TinyTorrentStatusIconStyle"],
+        Visibility = Visibility.Collapsed,
+    };
     private readonly ListView _results = new()
     {
-        DisplayMemberPath = "Label",
+        ItemTemplate = (DataTemplate)Application.Current.Resources["TinyTorrentVideoChoiceTemplate"],
+        ItemContainerStyle = (Style)Application.Current.Resources["TinyTorrentVideoChoiceItemStyle"],
         MaxHeight = 300,
         SelectionMode = ListViewSelectionMode.Single,
     };
@@ -40,6 +50,8 @@ internal sealed class MetadataDialog : UserControl, IDraft
     };
     private CancellationTokenSource? _request;
     private Exception? _failure;
+    private bool _broadened;
+    private int _revision;
     public bool IsPending { get; private set; }
     public bool CanSubmit => !IsPending && HasDraft && (_detailBlock is null || _detailBlock.CanForce);
     internal bool RequiresForce => _detailBlock?.CanForce == true;
@@ -71,12 +83,22 @@ internal sealed class MetadataDialog : UserControl, IDraft
         {
             Text = FileName.Interpret(entry.Name).Title,
         };
+        _year = new NumberBox
+        {
+            Value = entry.Year ?? double.NaN,
+            Minimum = 1000,
+            Maximum = 9999,
+            MinWidth = 88,
+            NumberFormatter = new DecimalFormatter { FractionDigits = 0, IsGrouped = false },
+        };
         _error.ActionButton = _settings;
         AutomationProperties.SetAutomationId(_source, "MetadataSource");
         AutomationProperties.SetAutomationId(_input, "MetadataSearch");
+        AutomationProperties.SetAutomationId(_year, "MetadataYear");
         AutomationProperties.SetAutomationId(_fetch, "MetadataFetch");
         AutomationProperties.SetAutomationId(_results, "MetadataMatches");
         AutomationProperties.SetLiveSetting(_state, AutomationLiveSetting.Polite);
+        AutomationProperties.SetAccessibilityView(_broadenedIcon, AccessibilityView.Raw);
         AutomationProperties.SetAccessibilityView(
             _progress,
             Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw
@@ -88,16 +110,29 @@ internal sealed class MetadataDialog : UserControl, IDraft
             {
                 new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) },
                 new ColumnDefinition { Width = GridLength.Auto },
+                new ColumnDefinition { Width = GridLength.Auto },
             },
-            Children = { _input, _fetch },
+            Children = { _input, _year, _fetch },
         };
-        Grid.SetColumn(_fetch, 1);
+        Grid.SetColumn(_year, 1);
+        Grid.SetColumn(_fetch, 2);
         var search = new StackPanel { Spacing = 4, Children = { query, _progress } };
+        var status = new Grid
+        {
+            ColumnSpacing = 8,
+            ColumnDefinitions =
+            {
+                new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) },
+                new ColumnDefinition { Width = GridLength.Auto },
+            },
+            Children = { _state, _broadenedIcon },
+        };
+        Grid.SetColumn(_broadenedIcon, 1);
         Content = new StackPanel
         {
             Spacing = 12,
-            MinWidth = 380,
-            Children = { _source, search, _state, _results, _error },
+            MinWidth = 460,
+            Children = { _source, search, status, _results, _error },
         };
         _source.SelectionChanged += async (_, _) => await Find();
         _settings.Click += (_, _) => SettingsRequested?.Invoke(this, new(SettingsCategory.Network));
@@ -109,20 +144,10 @@ internal sealed class MetadataDialog : UserControl, IDraft
         };
         _input.TextChanged += async (_, args) =>
         {
-            if (args.Reason != AutoSuggestionBoxTextChangeReason.UserInput)
-                return;
-            Cancel();
-            _block = null;
-            _failure = null;
-            _fetch.IsEnabled = false;
-            _results.ItemsSource = null;
-            if (string.IsNullOrWhiteSpace(_input.Text))
-            {
-                RefreshText();
-                return;
-            }
-            await ReadProtection();
+            if (args.Reason == AutoSuggestionBoxTextChangeReason.UserInput)
+                await Changed();
         };
+        _year.ValueChanged += async (_, _) => await Changed();
         _results.SelectionChanged += (_, _) =>
         {
             _detailBlock = null;
@@ -141,6 +166,10 @@ internal sealed class MetadataDialog : UserControl, IDraft
             _failure is RouteException ? Visibility.Visible : Visibility.Collapsed;
         _input.PlaceholderText = _library.Text.Get("library", "search_title");
         _input.Header = _library.Text.Get("library", "query");
+        _year.Header = _library.Text.Get("library", "year");
+        AutomationProperties.SetName(_year, _library.Text.Get("library", "year"));
+        ToolTipService.SetToolTip(_year, _library.Text.Get("library", "year_tip"));
+        AutomationProperties.SetHelpText(_year, _library.Text.Get("library", "year_tip"));
         AutomationProperties.SetName(_input, _input.PlaceholderText);
         AutomationProperties.SetName(_results, _library.Text.Get("library", "matches"));
         _error.Message = _failure is null ? string.Empty : _library.Error(_failure);
@@ -152,14 +181,22 @@ internal sealed class MetadataDialog : UserControl, IDraft
             : _failure is not null || count is null ? string.Empty
             : count == 0 ? _library.Text.Get("library", "no_metadata_matches")
             : _library.Text.Format("library", count == 1 ? "match_one" : "match_other", count);
+        if (_broadened && state.Length > 0 && _request is null && _failure is null)
+            state = _library.Text.Format("library", "title_only_matches", state);
+        var broadenedTip = Year is { } year
+            ? _library.Text.Format("library", "title_only_tip", $"{_input.Text} ({year})")
+            : string.Empty;
+        _broadenedIcon.Visibility = _broadened ? Visibility.Visible : Visibility.Collapsed;
+        ToolTipService.SetToolTip(_broadenedIcon, broadenedTip);
         if (_state.Text != state)
         {
             _state.Text = state;
             _state.Visibility = state.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
-            ToolTipService.SetToolTip(_state, state);
             FrameworkElementAutomationPeer.CreatePeerForElement(_state)
                 ?.RaiseAutomationEvent(AutomationEvents.LiveRegionChanged);
         }
+        ToolTipService.SetToolTip(_state, _broadened ? broadenedTip : state);
+        AutomationProperties.SetHelpText(_state, _broadened ? broadenedTip : state);
         _fetch.Text = _block?.CanForce == true ? _library.Text.Get("request_protection", "force_button")
             : _library.Text.Get("library", "fetch");
         _fetch.IsEnabled = _request is null && Source is not null
@@ -174,24 +211,42 @@ internal sealed class MetadataDialog : UserControl, IDraft
     private ProviderOption? Source =>
         _source.SelectedIndex >= 0 ? _sources[_source.SelectedIndex] : null;
 
-    private async Task ReadProtection(CancellationToken cancellation = default)
+    private int? Year => double.IsNaN(_year.Value) ? null : (int)Math.Round(_year.Value);
+
+    private async Task Changed()
+    {
+        Cancel();
+        _block = null;
+        _failure = null;
+        _broadened = false;
+        _fetch.IsEnabled = false;
+        _results.ItemsSource = null;
+        if (string.IsNullOrWhiteSpace(_input.Text))
+            RefreshText();
+        else
+            await ReadProtection();
+    }
+
+    private async Task ReadProtection(CancellationToken cancellation = default, bool automatic = false)
     {
         if (Source is not { } source || string.IsNullOrWhiteSpace(_input.Text))
             return;
         var query = _input.Text;
+        var year = Year;
+        var revision = _revision;
         RequestBlock? block;
         try
         {
-            block = await _library.Protection(query, _entry.Name, source, cancellation);
+            block = await _library.Protection(query, _entry.Name, source, cancellation, year, automatic);
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { return; }
         catch (Exception error)
         {
-            if (!cancellation.IsCancellationRequested && Source == source && _input.Text == query)
+            if (!cancellation.IsCancellationRequested && revision == _revision)
                 Report(error);
             return;
         }
-        if (cancellation.IsCancellationRequested || Source != source || _input.Text != query)
+        if (cancellation.IsCancellationRequested || revision != _revision)
             return;
         _block = block;
         if (_failure is RequestBlockedException || block is not null && _results.ItemsSource is null)
@@ -206,21 +261,24 @@ internal sealed class MetadataDialog : UserControl, IDraft
         var scope = user && _block?.CanForce == true ? FetchScope.Missing
             : user && _entry.HasMetadata ? FetchScope.All : FetchScope.New;
         var query = _input.Text;
+        var year = Year;
         Cancel();
         using var request = new CancellationTokenSource();
         _failure = null;
+        _broadened = false;
         _results.ItemsSource = null;
         Track(request);
         try
         {
             if (!user)
-                await ReadProtection(request.Token);
+                await ReadProtection(request.Token, automatic: true);
             request.Token.ThrowIfCancellationRequested();
-            var choices = await _library.FindVideo(query, _entry.Name, source, request.Token, scope);
+            var answer = await _library.FindVideo(query, _entry.Name, source, request.Token, scope, year, automatic: !user);
             if (!request.IsCancellationRequested)
             {
                 _failure = null;
-                _results.ItemsSource = choices;
+                _broadened = answer.Broadened;
+                _results.ItemsSource = answer.Choices;
             }
         }
         catch (OperationCanceledException) { }
@@ -254,7 +312,7 @@ internal sealed class MetadataDialog : UserControl, IDraft
         IsPending = true;
         _failure = null;
         Track(request);
-        _source.IsEnabled = _input.IsEnabled = _results.IsEnabled = false;
+        _source.IsEnabled = _input.IsEnabled = _year.IsEnabled = _results.IsEnabled = false;
         PropertyChanged?.Invoke(this, new(nameof(CanSubmit)));
         try
         {
@@ -278,7 +336,7 @@ internal sealed class MetadataDialog : UserControl, IDraft
         finally
         {
             IsPending = false;
-            _source.IsEnabled = _input.IsEnabled = _results.IsEnabled = true;
+            _source.IsEnabled = _input.IsEnabled = _year.IsEnabled = _results.IsEnabled = true;
             if (ReferenceEquals(_request, request))
                 Track(null);
             PropertyChanged?.Invoke(this, new(nameof(CanSubmit)));
@@ -301,5 +359,9 @@ internal sealed class MetadataDialog : UserControl, IDraft
         RefreshText();
     }
 
-    internal void Cancel() => _request?.Cancel();
+    internal void Cancel()
+    {
+        _revision++;
+        _request?.Cancel();
+    }
 }

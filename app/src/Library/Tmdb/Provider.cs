@@ -36,6 +36,30 @@ internal sealed class Provider(string key) : IProvider
         CancellationToken cancellation
     )
     {
+        if (query.Year is { } year)
+        {
+            var choices = new List<VideoChoice>();
+            var empty = true;
+            foreach (var kind in new[] { VideoKind.Movie, VideoKind.Series })
+            {
+                var path = kind == VideoKind.Movie ? "search/movie" : "search/tv";
+                var response = await Get(query.Get,
+                    path + "?query=" + Uri.EscapeDataString(query.Text)
+                    + "&year=" + year.ToString(CultureInfo.InvariantCulture)
+                    + "&language=" + Uri.EscapeDataString(query.Language), cancellation).ConfigureAwait(false);
+                try
+                {
+                    var results = response.GetProperty("results");
+                    empty &= results.GetArrayLength() == 0;
+                    choices.AddRange(results.EnumerateArray().Select(item => Choice(item, kind)));
+                }
+                catch (Exception error) when (error is InvalidOperationException or KeyNotFoundException or FormatException)
+                {
+                    throw new VideoException(VideoFailure.InvalidResult, error);
+                }
+            }
+            return new(choices, empty);
+        }
         var data = await Get(
                 query.Get,
                 "search/multi?query="

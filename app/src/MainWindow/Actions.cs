@@ -212,23 +212,30 @@ public sealed partial class MainWindow
     {
         var menu = new MenuFlyout();
         menu.Closed += (_, _) => ClearMenu(menu.Items);
-        menu.Items.Add(
-            new MenuFlyoutItem
-            {
-                Text =
-                    Torrents.Selection.Items.Count == 1
-                        ? ((Torrent)Torrents.Selection.Items[0]).Name
-                        : Model.SelectionText,
-                Icon = Icon(Syno.Lucide.ListChecks),
-                IsEnabled = false,
-            }
-        );
+        menu.Items.Add(MenuHeader(
+            Torrents.Selection.Items.Count == 1
+                ? ((Torrent)Torrents.Selection.Items[0]).Name
+                : Model.SelectionText
+        ));
         menu.Items.Add(new MenuFlyoutSeparator());
         AddSelection(menu.Items, !Model.HasInspector);
         if (position is { } point)
             menu.ShowAt(target, point);
         else
             menu.ShowAt(target);
+    }
+
+    private static MenuFlyoutItem MenuHeader(string text)
+    {
+        var item = new MenuFlyoutItem
+        {
+            Text = text,
+            Icon = Icon(Syno.Lucide.ListChecks),
+            IsEnabled = false,
+            MaxWidth = 320,
+        };
+        item.Resources["MenuFlyoutItemTextTrimming"] = TextTrimming.CharacterEllipsis;
+        return item;
     }
 
     private void AddSelection(IList<MenuFlyoutItemBase> items, bool properties)

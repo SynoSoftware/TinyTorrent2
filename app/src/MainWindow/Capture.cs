@@ -161,6 +161,11 @@ public sealed partial class MainWindow
                     stable = unchanged.ElapsedMilliseconds >= 500;
                     previous = pixels;
                 } while (!stable && rendering.ElapsedMilliseconds < 5000);
+                if (bitmap.PixelWidth == 0 || bitmap.PixelHeight == 0 || pixels.Length == 0)
+                {
+                    frames.Add(new { file = (string?)null, type = element.GetType().Name, rendered = false });
+                    continue;
+                }
                 var frame = frames.Count == 0 ? "window.png" : $"popup-{frames.Count}.png";
                 var file = await folder.CreateFileAsync(
                     frame,
@@ -1159,7 +1164,7 @@ public sealed partial class MainWindow
                 created is { } saved
                 && schedule.Periods.FirstOrDefault(period => period.Matches(saved)) is { } remaining
             )
-                await schedule.Remove(remaining);
+                await schedule.Delete(remaining);
             if (limits >= 0)
                 await Model.ChooseLimits((LimitMode)limits);
         }

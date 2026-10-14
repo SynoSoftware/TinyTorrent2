@@ -14,6 +14,7 @@ public sealed partial class MainWindow
     };
     private bool _noticeHovered;
     private bool _windowActive = true;
+    private readonly HashSet<Notice> _shownNotices = [];
 
     private void ConfigureNotifications()
     {
@@ -41,7 +42,8 @@ public sealed partial class MainWindow
                 // a PointerExited, which would pause the next notices forever.
                 _noticeHovered = false;
             }
-            UpdateNotices();
+            // Retiring shown notices can change the collection again.
+            DispatcherQueue.TryEnqueue(UpdateNotices);
         };
         Model.PropertyChanged += (_, args) =>
         {
@@ -121,8 +123,8 @@ public sealed partial class MainWindow
     }
 
     // Notices show above an open dialog, so a result reported while it is
-    // open is seen at once. They stay hidden, with their time paused, while
-    // they would cover the editor the person is typing in.
+    // open is seen at once. New notices wait while they would cover the
+    // editor the person is typing in.
     private void UpdateNotices()
     {
         if (Root.XamlRoot is null)
@@ -130,6 +132,19 @@ public sealed partial class MainWindow
         NoticeStack.Width = Math.Min(400, Math.Max(0, Root.ActualWidth - 32));
         var visible =
             Model.Notices.Count > 0 && !HasEditorFocus() && !Model.IsClosing && !Model.IsPicking;
+        if (!visible && _shownNotices.Count > 0)
+        {
+            var shown = _shownNotices.ToArray();
+            _shownNotices.Clear();
+            foreach (var notice in shown)
+                if (Model.Notices.Contains(notice))
+                    Model.DismissNotice(notice);
+        }
+        if (visible)
+        {
+            _shownNotices.Clear();
+            _shownNotices.UnionWith(Model.Notices);
+        }
         NoticeStack.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
         PlaceNotices();
         NoticeLayer.IsOpen = visible;

@@ -379,16 +379,10 @@ public sealed partial class MainWindow
     {
         var menu = new MenuFlyout();
         menu.Closed += (_, _) => ClearMenu(menu.Items);
-        menu.Items.Add(
-            new MenuFlyoutItem
-            {
-                Text =
-                    Model.Library.Selected?.Title
-                    ?? Model.Text.Format("window", "selected", Model.Library.Selection.Items.Count),
-                Icon = Icon(Lucide.ListChecks),
-                IsEnabled = false,
-            }
-        );
+        menu.Items.Add(MenuHeader(
+            Model.Library.Selected?.Title
+                ?? Model.Text.Format("window", "selected", Model.Library.Selection.Items.Count)
+        ));
         menu.Items.Add(new MenuFlyoutSeparator());
         foreach (var item in LibraryMenu(MetadataActions.Create(Model.Library)))
             menu.Items.Add(item);
@@ -519,7 +513,9 @@ public sealed partial class MainWindow
                     if (installed is null)
                     {
                         dialog.Title = Model.Text.Get(id, "download_title");
-                        dialog.Content = DataConfirmation(Model.Text.Get(id, "download_body"), Model.Text.Get(id, "preparation_time"));
+                        dialog.Content = DataConfirmation(
+                            [Model.Text.Get(id, "download_body"), Model.Text.Get(id, "download_local")],
+                            [Model.Text.Get(id, "preparation_time")]);
                         dialog.PrimaryButtonText = Model.Text.Get(id, "download");
                         dialog.PrimaryToolTip = Model.Text.Get(id, "download_tip");
                         return;
@@ -532,7 +528,9 @@ public sealed partial class MainWindow
                         current ? Model.Text.Get(id, "update_current")
                         : days < 7 ? Model.Text.FormatCount(id, "update_recent", days)
                         : Model.Text.Format(id, "update_age", days);
-                    dialog.Content = DataConfirmation(body, Model.Text.Get(id, "preparation_time"));
+                    dialog.Content = DataConfirmation(
+                        [body, Model.Text.Get(id, "update_frequency")],
+                        [Model.Text.Get(id, "preparation_time")]);
                     dialog.PrimaryButtonText = Model.Text.Get(id, "update");
                     dialog.PrimaryToolTip = Model.Text.Get(id, "update_tip");
                 }
@@ -555,8 +553,10 @@ public sealed partial class MainWindow
                 {
                     dialog.Title = Model.Text.Get(option.ProviderId, "delete_title");
                     dialog.Content = DataConfirmation(
-                        Model.Text.Format(option.ProviderId, "delete_body", Model.Text.Bytes(data.Length)),
-                        Model.Text.Get(option.ProviderId, "restore_time"));
+                        [Model.Text.Format(option.ProviderId, "delete_body", Model.Text.Bytes(data.Length)),
+                            Model.Text.Get(option.ProviderId, "delete_kept")],
+                        [Model.Text.Get(option.ProviderId, "restore_time"),
+                            Model.Text.Get(option.ProviderId, "preparation_time")]);
                     dialog.PrimaryButtonText = Model.Text.Get("file_action", "delete");
                     dialog.PrimaryToolTip = Model.Text.Get(option.ProviderId, "delete_tip");
                 }
@@ -568,7 +568,7 @@ public sealed partial class MainWindow
         });
     }
 
-    private StackPanel DataConfirmation(string body, string caution)
+    private StackPanel DataConfirmation(IEnumerable<string> facts, IEnumerable<string> caution)
     {
         var icon = new FontIcon
         {
@@ -578,14 +578,14 @@ public sealed partial class MainWindow
         };
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetAccessibilityView(
             icon, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
-        var message = new TextBlock { Text = caution, TextWrapping = TextWrapping.Wrap };
+        var message = Lines(caution);
         Grid.SetColumn(message, 1);
         return new StackPanel
         {
             Spacing = 12,
             Children =
             {
-                new TextBlock { Text = body, TextWrapping = TextWrapping.Wrap },
+                Lines(facts),
                 new Grid
                 {
                     ColumnSpacing = 8,

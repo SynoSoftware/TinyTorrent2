@@ -11,9 +11,15 @@ namespace Syno.TinyTorrent;
 
 public partial class App : Application
 {
+    static App()
+    {
+        // SEM_NOGPFAULTERRORBOX prevents Windows Error Reporting on a crash.
+        SetErrorMode(GetErrorMode() | 0x0002);
+    }
+
     internal static Version Version { get; } =
         typeof(App).Assembly.GetName().Version ?? new Version(0, 0, 0, 0);
-    internal static string UserAgent { get; } = "TinyTorrent/" + Version;
+    internal static string UserAgent { get; } = "TinyTorrent/" + Version + " (+https://github.com/SynoSoftware/TinyTorrent2)";
     private Mutex? _instance;
     private MainWindow? _window;
 
@@ -181,6 +187,12 @@ public partial class App : Application
             MessageBoxW(IntPtr.Zero, report.Text, "TinyTorrent", 0x2010);
         }
     }
+
+    [DllImport("kernel32.dll", ExactSpelling = true)]
+    private static extern uint GetErrorMode();
+
+    [DllImport("kernel32.dll", ExactSpelling = true)]
+    private static extern uint SetErrorMode(uint mode);
 
     [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
     private static extern int SetCurrentProcessExplicitAppUserModelID(string appId);

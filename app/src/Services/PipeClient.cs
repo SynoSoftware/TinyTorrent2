@@ -40,10 +40,15 @@ internal sealed partial class PipeClient : IDisposable
     private bool _awaitingCommand;
     private bool _changesFiles;
     private bool _connected;
+    private int? _processId;
     private bool _disposed;
     private bool _hasConnected;
     private string? _dataDirectory;
     internal string? DataDirectory => _dataDirectory;
+    internal int? ProcessId
+    {
+        get { lock (_gate) return _processId; }
+    }
 
     internal static string LogonSid { get; } = ReadLogonSid();
 
@@ -244,6 +249,8 @@ internal sealed partial class PipeClient : IDisposable
                     lock (_gate)
                     {
                         token.ThrowIfCancellationRequested();
+                        _processId = GetNamedPipeServerProcessId(pipe.SafePipeHandle, out var processId)
+                            ? (int)processId : null;
                         _connected = true;
                     }
                     launchFailure = null;
@@ -341,6 +348,7 @@ internal sealed partial class PipeClient : IDisposable
         lock (_gate)
         {
             _connected = false;
+            _processId = null;
             foreach (var command in _commands.Concat(_reads))
             {
                 if (error is null)
@@ -657,10 +665,11 @@ internal sealed partial class PipeClient : IDisposable
         }
     }
 
+#endif
+
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool GetNamedPipeServerProcessId(SafePipeHandle pipe, out uint processId);
-#endif
 
     // Runs the engine beside the window as an administrator to remove the
     // all-users open commands of `classes` that start a missing program. A

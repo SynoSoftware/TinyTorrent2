@@ -846,6 +846,8 @@ A host header or cell template deliberately chooses wrapping, trimming, or
 clipping for its content and declares a sufficient MinWidth when it contains a
 control or essential value that must remain directly usable. The table does not
 make a rich cell reachable merely by shrinking it below its usable width.
+Header content follows the column's `CellAlignment`, with `Stretch` using left
+alignment, so numeric headings line up with their right-aligned values.
 
 The visual baseline is WinUI. This section owns TableView's appearance across
 hosts; the host owns page composition and its cell content. This applies

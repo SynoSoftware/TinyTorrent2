@@ -220,5 +220,4 @@ internal sealed class ChoiceDialog : UserControl, IDraft
         error is OperationCanceledException
             ? new SubtitleException(SubtitleFailure.Changed)
             : error;
-
 }

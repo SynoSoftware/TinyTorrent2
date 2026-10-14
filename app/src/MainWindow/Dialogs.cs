@@ -229,7 +229,7 @@ public sealed partial class MainWindow
     }
 
     // A confirmation's facts, one trimmed line each.
-    private static UIElement Lines(IEnumerable<string> texts)
+    private static FrameworkElement Lines(IEnumerable<string> texts)
     {
         var lines = new StackPanel { Spacing = 4 };
         foreach (var text in texts)

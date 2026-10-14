@@ -353,46 +353,54 @@ internal sealed class VideoLookup(
     /// <summary>
     /// Searches <paramref name="source"/>, which may differ from the saved
     /// provider; the saved choice does not change. The results include the
-    /// saved choices of the same title, which answer alone when the provider
-    /// fails or is waiting.
+    /// saved choices of the same title for automatic searches, which answer
+    /// alone when the provider fails or is waiting.
     /// </summary>
-    internal Task<IReadOnlyList<VideoChoice>> Search(
+    internal Task<VideoSearch> Search(
         string query,
         string fileName,
         ProviderOption source,
         CancellationToken cancellation,
-        FetchScope scope = FetchScope.New
+        FetchScope scope = FetchScope.New,
+        int? year = null,
+        bool automatic = false
     ) =>
-        Request<IReadOnlyList<VideoChoice>>(
+        Request<VideoSearch>(
             async context =>
             {
                 var saved = await store
                     .Choices(context.Option.ProviderId, query, context.Token)
                     .ConfigureAwait(false);
-                IReadOnlyList<VideoChoice> found;
+                IReadOnlyList<VideoChoice> matching = year is { } requestedYear
+                    ? saved.Where(choice => choice.Year == requestedYear).ToArray() : saved;
+                VideoSearch found;
                 try
                 {
                     found = await Execute(
                             context,
                             async current =>
                             {
-                                var choices = await Search(current, query).ConfigureAwait(false);
-                                if (Matches(FileName.Interpret(fileName), choices).Length != 1)
-                                    await store.RejectSearch(SearchRequest(current, query).Key).ConfigureAwait(false);
-                                return choices;
+                                var answer = await Search(current, query, year, automatic).ConfigureAwait(false);
+                                var release = FileName.Interpret(fileName) with { Title = query, Year = year };
+                                if (Matches(release, answer.Choices).Length != 1)
+                                    await store.RejectSearch(SearchRequest(current, query, answer.Broadened ? null : year).Key).ConfigureAwait(false);
+                                return answer;
                             }
                         )
                         .ConfigureAwait(false);
                 }
-                catch (ProviderException) when (scope == FetchScope.New && saved.Count > 0)
+                catch (ProviderException) when (automatic && scope == FetchScope.New && matching.Count > 0)
                 {
-                    return saved;
+                    found = new(matching, false);
                 }
-                return
-                [
-                    .. found,
-                    .. saved.Where(choice => found.All(result => result.VideoId != choice.VideoId)),
-                ];
+                IReadOnlyList<VideoChoice> retained = !automatic ? [] : found.Broadened ? saved : matching;
+                var choices = found.Choices.Concat(retained.Where(choice =>
+                    found.Choices.All(result => result.VideoId != choice.VideoId)));
+                if (year is { } requested)
+                    choices = choices.OrderBy(choice => choice.Year is { } candidate
+                        ? Math.Abs(candidate - requested) : int.MaxValue);
+                var ranked = choices.ToArray();
+                return found with { Choices = ranked, Empty = ranked.Length == 0 && found.Empty };
             },
             cancellation,
             source,
@@ -448,36 +456,38 @@ internal sealed class VideoLookup(
             cancellation
         );
 
-    internal async Task<RequestBlock?> Protection(string query, string fileName, ProviderOption source, CancellationToken cancellation)
+    internal async Task<RequestBlock?> Protection(string query, string fileName, ProviderOption source, CancellationToken cancellation, int? year = null, bool automatic = false)
     {
         Context context;
         lock (_gate)
             context = Bind(source, cancellation);
         return await AccessProtection(context, cancellation).ConfigureAwait(false)
-            ?? await SearchProtection(context, query, FileName.Interpret(fileName), cancellation).ConfigureAwait(false);
+            ?? await SearchProtection(context, query,
+                FileName.Interpret(fileName) with { Title = query, Year = year }, cancellation, year, automatic).ConfigureAwait(false);
     }
 
     private async Task<RequestBlock?> SearchProtection(
         Context context,
         string query,
         Release release,
-        CancellationToken cancellation
+        CancellationToken cancellation,
+        int? year = null,
+        bool automatic = true
     )
     {
-        var queries = Queries(context, query).ToArray();
+        var queries = Queries(context, query, year, automatic).ToArray();
         for (var index = 0; index < queries.Length; index++)
         {
-            var request = SearchRequest(context, queries[index]);
+            var request = SearchRequest(context, queries[index].Text, queries[index].Year);
             var saved = await store.Search(request.Key, cancellation).ConfigureAwait(false);
             if (saved is { Count: > 0 })
                 return Matches(release, saved).Length == 1 ? null : new(RequestBlockKind.NoMatch);
             // A saved empty answer needs no new request before the fallback.
-            if (saved is not null && index < queries.Length - 1)
-                continue;
             var block = await policy.Read(request, cancellation).ConfigureAwait(false);
-            if (index == queries.Length - 1 || block is null
-                || block is { Kind: not (RequestBlockKind.Missing or RequestBlockKind.NoMatch) })
-                return block;
+            if (saved is { Count: 0 } && block?.Kind == RequestBlockKind.Missing
+                && index < queries.Length - 1)
+                continue;
+            return block;
         }
         return null;
     }
@@ -995,7 +1005,7 @@ internal sealed class VideoLookup(
             return null;
         if (series is not null)
             return await Describe(context, series, request).ConfigureAwait(false);
-        var matches = Matches(release, await Search(context, release.Title).ConfigureAwait(false));
+        var matches = Matches(release, (await Search(context, release.Title).ConfigureAwait(false)).Choices);
         if (matches.Length != 1)
         {
             if (context.Option.IsOnline)
@@ -1013,37 +1023,39 @@ internal sealed class VideoLookup(
         return null;
     }
 
-    private async Task<IReadOnlyList<VideoChoice>> Search(
+    private async Task<VideoSearch> Search(
         Context context,
-        string query
+        string query,
+        int? year = null,
+        bool automatic = true
     )
     {
-        var queries = Queries(context, query).ToArray();
+        var queries = Queries(context, query, year, automatic).ToArray();
         for (var index = 0; index < queries.Length; index++)
         {
-            try
-            {
-                var choices = await SearchOne(context, queries[index]).ConfigureAwait(false);
-                if (choices.Count > 0 || index == queries.Length - 1)
-                    return choices;
-            }
-            catch (RequestBlockedException error) when (index < queries.Length - 1
-                && error.Block.Kind is (RequestBlockKind.Missing or RequestBlockKind.NoMatch)) { }
+            context.Token.ThrowIfCancellationRequested();
+            var answer = await SearchOne(context, queries[index].Text, queries[index].Year).ConfigureAwait(false);
+            if (!answer.Empty || index == queries.Length - 1)
+                return answer with { Broadened = year is not null && queries[index].Year is null };
         }
-        return [];
+        return new([], false);
     }
 
-    private static IEnumerable<string> Queries(Context context, string query)
+    private static IEnumerable<(string Text, int? Year)> Queries(Context context, string query, int? year = null, bool automatic = true)
     {
         query = context.Provider.Prepare(query);
         if (query.Length == 0)
             yield break;
-        yield return query;
+        yield return (query, year);
+        if (!automatic)
+            yield break;
+        if (year is not null)
+            yield return (query, null);
         if (context.Access is null)
             yield break;
         var plain = context.Provider.Prepare(string.Join(' ', Words(query)));
         if (plain.Length > 0 && plain != query)
-            yield return plain;
+            yield return (plain, null);
     }
 
     private static string[] Words(string value) =>
@@ -1051,14 +1063,15 @@ internal sealed class VideoLookup(
             .Where(word => word.Length > 0)
             .ToArray();
 
-    private async Task<IReadOnlyList<VideoChoice>> SearchOne(Context context, string query)
+    private async Task<VideoSearch> SearchOne(Context context, string query, int? year = null)
     {
         if (context.Access is not { } access)
-            return (await context.Provider.Search(new(query, context.Language, Offline), context.Token).ConfigureAwait(false)).Choices;
-        var request = SearchRequest(context, query);
+            return await context.Provider.Search(new(query, context.Language, Offline) { Year = year }, context.Token).ConfigureAwait(false);
+        var request = SearchRequest(context, query, year);
         var since = context.Scope == FetchScope.New ? 0 : context.Accepted ?? 0;
         if (await store.Search(request.Key, context.Token, since).ConfigureAwait(false) is { } saved)
-            return saved;
+            return new(saved, saved.Count == 0
+                && (await policy.Read(request, context.Token).ConfigureAwait(false))?.Kind == RequestBlockKind.Missing);
         if (context.Scope == FetchScope.New || context.Command is null)
         {
             if (await policy.Read(request, context.Token).ConfigureAwait(false) is { } block)
@@ -1068,7 +1081,7 @@ internal sealed class VideoLookup(
         try
         {
             answer = await context.Provider
-                .Search(new(query, context.Language, Get(context, "search", context.Fresh(request.Key))), context.Token)
+                .Search(new(query, context.Language, Get(context, "search", context.Fresh(request.Key))) { Year = year }, context.Token)
                 .ConfigureAwait(false);
         }
         catch (VideoException error) when (error is not ProviderException)
@@ -1083,15 +1096,18 @@ internal sealed class VideoLookup(
         await policy.Succeed(access with { Operation = "search" }).ConfigureAwait(false);
         await Recovered(context, access).ConfigureAwait(false);
         context.Token.ThrowIfCancellationRequested();
-        return answer.Choices;
+        return answer;
     }
 
-    private static LookupRequest SearchRequest(Context context, string query)
+    private static LookupRequest SearchRequest(Context context, string query, int? year = null)
     {
         var option = context.Option;
         query = context.Provider.Prepare(query);
+        var parts = new List<string> { query, option.IsLocalized ? context.Language : string.Empty };
+        if (year is { } requested)
+            parts.Add(requested.ToString(System.Globalization.CultureInfo.InvariantCulture));
         return new(
-            RequestKey.Create(option.ProviderId, "search", [query, option.IsLocalized ? context.Language : string.Empty]),
+            RequestKey.Create(option.ProviderId, "search", parts),
             RequestKey.Create(option.ProviderId, "search-count",
                 [FileName.Normalize(string.Join(' ', Words(query)))])
         );

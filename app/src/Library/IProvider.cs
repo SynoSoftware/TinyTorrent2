@@ -92,11 +92,18 @@ public sealed record VideoChoice(string CatalogId, string VideoId, VideoKind Kin
     public string? Original { get; init; }
 
     public string Label => Title + (Year is { } year ? " (" + year + ")" : string.Empty);
+    public string YearText => Year?.ToString(CultureInfo.CurrentCulture) ?? "—";
 }
 
-internal sealed record VideoQuery(string Text, string Language, ProviderGet Get);
+internal sealed record VideoQuery(string Text, string Language, ProviderGet Get)
+{
+    internal int? Year { get; init; }
+}
 
-internal sealed record VideoSearch(IReadOnlyList<VideoChoice> Choices, bool Empty);
+internal sealed record VideoSearch(IReadOnlyList<VideoChoice> Choices, bool Empty)
+{
+    internal bool Broadened { get; init; }
+}
 
 internal sealed record VideoRequest(Release Release, string Language, ReadRecord Read, ProviderGet Get);
 

@@ -1,6 +1,8 @@
+using System.Diagnostics;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Syno.TinyTorrent.Controls;
 using Syno.TinyTorrent.Helpers;
@@ -29,7 +31,10 @@ public sealed partial class MainWindow
                 $"Library startup did not notify readiness: available={Model.Library.IsAvailable}, failure={Model.Library.FailureCause}", error);
         }
         var resizeScale = Root.XamlRoot.RasterizationScale;
+        AppWindow.Resize(new SizeInt32((int)(1920 * resizeScale), (int)(680 * resizeScale)));
+        await CaptureFill(outcomes);
         AppWindow.Resize(new SizeInt32((int)(1040 * resizeScale), (int)(680 * resizeScale)));
+        await CaptureNoticeReplay(outcomes);
         await ShowSettings(new(SettingsCategory.Transfers));
         await CaptureUi("settings-resize-compact");
         AppWindow.Resize(new SizeInt32((int)(1538 * resizeScale), (int)(1246 * resizeScale)));
@@ -96,13 +101,25 @@ public sealed partial class MainWindow
                 {
                     if (!showAdvanced && category == SettingsCategory.Advanced)
                         continue;
-                    await ShowSettings(new(category));
+                    if (language == "en" && !showAdvanced)
+                        await CaptureMotion(prefix + "-" + category + "-navigation",
+                            () => ShowSettings(new(category)), outcomes);
+                    else
+                        await ShowSettings(new(category));
                     await CaptureLayout();
-                    foreach (var expander in CaptureElements(page).OfType<Expander>().ToArray())
-                        expander.IsExpanded = false;
+                    await CaptureMotion(prefix + "-" + category + "-collapse", () =>
+                    {
+                        foreach (var expander in CaptureElements(page).OfType<Expander>().ToArray())
+                            expander.IsExpanded = false;
+                        return Task.CompletedTask;
+                    }, outcomes);
                     await CapturePage(prefix + "-" + category + "-" + state + "-collapsed", page);
-                    foreach (var expander in CaptureElements(page).OfType<Expander>().ToArray())
-                        expander.IsExpanded = true;
+                    await CaptureMotion(prefix + "-" + category + "-expand", () =>
+                    {
+                        foreach (var expander in CaptureElements(page).OfType<Expander>().ToArray())
+                            expander.IsExpanded = true;
+                        return Task.CompletedTask;
+                    }, outcomes);
                     await CaptureLayout();
                     foreach (var expander in CaptureElements(page).OfType<Expander>().ToArray())
                         expander.IsExpanded = true;
@@ -160,19 +177,23 @@ public sealed partial class MainWindow
             await CaptureUi(prefix + "-queue-destination");
             outcomes.Add(new { journey = "settings links and Back", restored = true });
 
-            CaptureInvoke((Control)page.FindName("ReturnWorkspace"));
+            CaptureInvoke((Control)page.FindName("Brand"));
             await CaptureReady(Model.Navigation, () => Model.Navigation.Current == WindowPage.Torrents);
             await ShowSettings(new());
             var categories = (NavigationView)page.FindName("Categories");
-            for (var visit = 0; visit < 4; visit++)
+            await CaptureMotion(prefix + "-rapid-navigation", async () =>
             {
-                foreach (var name in new[] { "GeneralCategory", "TransfersCategory", "LimitsCategory", "NetworkCategory", "HomeCategory" })
+                for (var visit = 0; visit < 4; visit++)
                 {
-                    var item = (NavigationViewItem)page.FindName(name);
-                    categories.SelectedItem = item;
-                    await CaptureReady(Model.Navigation, () => ReferenceEquals(categories.SelectedItem, item) && Model.Navigation.CanGoBack);
+                    foreach (var name in new[] { "GeneralCategory", "TransfersCategory", "LimitsCategory", "NetworkCategory", "HomeCategory" })
+                    {
+                        var item = (NavigationViewItem)page.FindName(name);
+                        categories.SelectedItem = item;
+                        await CaptureReady(Model.Navigation, () => ReferenceEquals(categories.SelectedItem, item) && Model.Navigation.CanGoBack);
+                        await Task.Delay(40);
+                    }
                 }
-            }
+            }, outcomes);
             await GoBack();
             if (Model.Navigation.Current != WindowPage.Torrents || Model.Navigation.HasBack)
                 throw new InvalidOperationException("Sidebar navigation accumulated Settings history.");
@@ -245,7 +266,7 @@ public sealed partial class MainWindow
             await CapturePlugins(prefix, page);
 
             await ShowSettings(new(SettingsCategory.Limits));
-            await ShowConnection();
+            await CaptureMotion(prefix + "-connection-enter", ShowConnection, outcomes);
             if (Model.Navigation.Current != WindowPage.Connection
                 || _settingsPage?.FindName("ChildContent") is not ContentControl
                 { Content: Views.ConnectionPage, Visibility: Visibility.Visible })
@@ -305,7 +326,7 @@ public sealed partial class MainWindow
                     );
                 outcomes.Add(new { journey = "connection settings submission", applied = true });
             }
-            await ReturnToSettings();
+            await CaptureMotion(prefix + "-connection-return", ReturnToSettings, outcomes);
             await CaptureProxy(prefix);
             await CaptureLayout();
             var drafts = Model.Settings.All.Where(setting => setting.HasDraft).ToArray();
@@ -345,6 +366,82 @@ public sealed partial class MainWindow
         await Model.Settings.PrepareLeave();
     }
 
+    private async Task CaptureNoticeReplay(List<object> outcomes)
+    {
+        await ShowSettings(new(SettingsCategory.Plugins));
+        var page = _settingsPage ?? throw new InvalidOperationException("Settings did not open.");
+        if (!BackButton.Focus(FocusState.Programmatic))
+            throw new InvalidOperationException("The notice review could not focus the window Back button.");
+        await CaptureLayout();
+        Model.Report(new IOException("Proxy connection review"));
+        await CaptureLayout();
+        var shown = Model.Notices.Single(notice => notice.Kind == NoticeKind.CommandError);
+        if (!_shownNotices.Contains(shown))
+            throw new InvalidOperationException("The proxy-error review did not display its notice.");
+        if (!((TextBox)page.FindName("LookupLimit")).Focus(FocusState.Programmatic))
+            throw new InvalidOperationException("The notice review could not focus the search-limit editor.");
+        await CaptureLayout();
+        if (Model.Notices.Contains(shown))
+            throw new InvalidOperationException("A displayed proxy error survived hiding for editor focus.");
+        Model.ShowOutcome("Review result", string.Empty);
+        var unseen = Model.Notices.Last();
+        await CaptureLayout();
+        if (!Model.Notices.Contains(unseen) || _shownNotices.Contains(unseen))
+            throw new InvalidOperationException("A notice received while editing did not wait unseen.");
+        if (!BackButton.Focus(FocusState.Programmatic))
+            throw new InvalidOperationException("The notice review could not leave the search-limit editor.");
+        await CaptureLayout();
+        if (Model.Notices.Contains(shown) || !_shownNotices.Contains(unseen))
+            throw new InvalidOperationException(
+                $"Notice reveal failed: previousRetained={Model.Notices.Contains(shown)}, "
+                    + $"unseenRetained={Model.Notices.Contains(unseen)}, unseenShown={_shownNotices.Contains(unseen)}, "
+                    + $"editorFocused={HasEditorFocus()}, focusedElement={(FocusManager.GetFocusedElement(Root.XamlRoot) as FrameworkElement)?.Name}, "
+                    + $"stackVisibility={NoticeStack.Visibility}, popupOpen={NoticeLayer.IsOpen}."
+            );
+        Model.DismissNotice(unseen);
+        outcomes.Add(new { journey = "shown proxy error retires; unseen notice waits", retained = true });
+    }
+
+    private async Task CaptureMotion(string journey, Func<Task> change, List<object> outcomes)
+    {
+        var page = _settingsPage ?? throw new InvalidOperationException("Settings did not open.");
+        var surface = (FrameworkElement)page.FindName("PageContent");
+        var child = (FrameworkElement)page.FindName("ChildContent");
+        var samples = new List<object>();
+        var clock = Stopwatch.StartNew();
+        void Frame(object? sender, object args)
+        {
+            if (samples.Count >= 60)
+                return;
+            samples.Add(new
+            {
+                elapsedMs = clock.Elapsed.TotalMilliseconds,
+                page.Category,
+                pageX = (surface.RenderTransform as TranslateTransform)?.X ?? 0,
+                childX = (child.RenderTransform as TranslateTransform)?.X ?? 0,
+                drawers = CaptureElements(page, includeCollapsed: true)
+                    .Where(element => element.Name == "ExpanderContentClip" && element.IsLoaded)
+                    .Select(element => new
+                    {
+                        element.ActualHeight,
+                        element.Visibility,
+                        clipHeight = (element.Clip as RectangleGeometry)?.Rect.Height,
+                    }).ToArray(),
+            });
+        }
+        CompositionTarget.Rendering += Frame;
+        try
+        {
+            await change();
+            await Task.Delay(350);
+            outcomes.Add(new { journey, animationsEnabled = new Windows.UI.ViewManagement.UISettings().AnimationsEnabled, samples });
+        }
+        finally
+        {
+            CompositionTarget.Rendering -= Frame;
+        }
+    }
+
     private async Task CaptureProxy(string prefix)
     {
         await ShowSettings(new(SettingsCategory.Network));
@@ -373,9 +470,89 @@ public sealed partial class MainWindow
         }
     }
 
+    private async Task CaptureFill(List<object> outcomes)
+    {
+        await ShowTorrents();
+        await CaptureLayout();
+        var bars = CaptureElements(Torrents, includeCollapsed: true).OfType<ProgressBar>()
+            .ToDictionary(bar => bar, bar => new
+            {
+                bar.Value,
+                Token = bar.RegisterPropertyChangedCallback(
+                    Microsoft.UI.Xaml.Controls.Primitives.RangeBase.ValueProperty,
+                    (_, _) =>
+                    {
+                        if (bar.Value != bar.Maximum)
+                            bar.Value = bar.Maximum;
+                    }),
+            });
+        if (bars.Count == 0)
+            throw new InvalidOperationException("The fill review needs a realized progress cell.");
+        double[] Widths() => CaptureElements(Torrents).OfType<Syno.TableView.Header.Cell>()
+            .Select(cell => cell.ActualWidth).ToArray();
+        try
+        {
+            // The paused fixture has no completed payload; full indicators exercise
+            // native ProgressBar measurement without changing the engine or store.
+            foreach (var bar in bars.Keys)
+                bar.Value = bar.Maximum;
+            await CaptureUi("table-full-progress-preparation");
+            Torrents.FillWidth();
+            await CaptureUi("table-full-progress-before");
+            var before = Widths();
+            for (var visit = 0; visit < 3; visit++)
+            {
+                await Model.Navigation.Navigate(WindowPage.Library);
+                await CaptureLayout();
+                await ShowTorrents();
+                await CaptureUi($"table-full-progress-return-{visit + 1}");
+                var after = Widths();
+                outcomes.Add(new
+                {
+                    journey = "full-progress presentation after Library round trip",
+                    visit = visit + 1,
+                    before,
+                    after,
+                });
+                if (before.Length != after.Length || before.Zip(after)
+                    .Any(pair => Math.Abs(pair.First - pair.Second) > 1))
+                    throw new InvalidOperationException(
+                        "Returning from Library changed the fitted column proportions.");
+            }
+        }
+        finally
+        {
+            foreach (var (bar, state) in bars)
+            {
+                bar.UnregisterPropertyChangedCallback(
+                    Microsoft.UI.Xaml.Controls.Primitives.RangeBase.ValueProperty, state.Token);
+                bar.Value = state.Value;
+            }
+        }
+    }
+
     private async Task CapturePlugins(string prefix, Views.SettingsPage page)
     {
         await ShowSettings(new(SettingsCategory.Plugins));
+        await CaptureDialog(
+            prefix + "-imdb-delete-confirmation",
+            () => Interact(async interaction =>
+            {
+                var dialog = new Controls.Dialog { Glyph = Lucide.Database, PrimaryGlyph = Lucide.Trash2 };
+                await ShowDialog(interaction, dialog, () =>
+                {
+                    dialog.Title = Model.Text.Get("imdb", "delete_title");
+                    dialog.Content = DataConfirmation(
+                        [Model.Text.Format("imdb", "delete_body", Model.Text.Bytes(496815309)),
+                            Model.Text.Get("imdb", "delete_kept")],
+                        [Model.Text.Get("imdb", "restore_time"), Model.Text.Get("imdb", "preparation_time")]);
+                    dialog.PrimaryButtonText = Model.Text.Get("file_action", "delete");
+                    dialog.PrimaryToolTip = Model.Text.Get("imdb", "delete_tip");
+                });
+                return false;
+            }),
+            () => _interaction?.Dialog
+        );
         await CaptureInformation("provider-information", (Button)page.FindName("ProviderInformation"));
         var subtitles = Model.Subtitles ?? throw new InvalidOperationException("Subtitles did not start.");
         var original = subtitles.SupplierId;

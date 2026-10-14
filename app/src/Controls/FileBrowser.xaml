@@ -134,19 +134,21 @@
                   <RowDefinition Height="Auto" />
                   <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
-                <ProgressBar
-                  Style="{StaticResource TinyTorrentProgressStyle}"
-                  Value="{x:Bind ProgressValue, Mode=OneWay}"
-                  IsIndeterminate="{x:Bind IsIndeterminate, Mode=OneWay}"
-                  Visibility="{x:Bind IsIncomplete, Mode=OneWay}"
-                  AutomationProperties.AccessibilityView="Raw"
-                />
-                <ProgressBar
-                  Style="{StaticResource TinyTorrentMutedProgressStyle}"
-                  Value="{x:Bind ProgressValue, Mode=OneWay}"
-                  Visibility="{x:Bind IsComplete, Mode=OneWay}"
-                  AutomationProperties.AccessibilityView="Raw"
-                />
+                <local:Overlay Height="4">
+                  <ProgressBar
+                    Style="{StaticResource TinyTorrentProgressStyle}"
+                    Value="{x:Bind ProgressValue, Mode=OneWay}"
+                    IsIndeterminate="{x:Bind IsIndeterminate, Mode=OneWay}"
+                    Visibility="{x:Bind IsIncomplete, Mode=OneWay}"
+                    AutomationProperties.AccessibilityView="Raw"
+                  />
+                  <ProgressBar
+                    Style="{StaticResource TinyTorrentMutedProgressStyle}"
+                    Value="{x:Bind ProgressValue, Mode=OneWay}"
+                    Visibility="{x:Bind IsComplete, Mode=OneWay}"
+                    AutomationProperties.AccessibilityView="Raw"
+                  />
+                </local:Overlay>
                 <TextBlock
                   Grid.Row="1"
                   Text="{x:Bind ProgressText, Mode=OneWay}"

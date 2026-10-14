@@ -912,15 +912,12 @@ that does not depend on an interactive confirmation. Abrupt termination may lose
 changes since the last successful checkpoint; do not promise zero loss.
 
 A window crash leaves transfers running and the tray able to reopen it. An engine
-failure makes WinUI report that downloads stopped and offer restart. Register the
-engine for [Windows application restart](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-registerapplicationrestart)
-with arguments that restore background state, never replay the original addition
-or a file command. For crashes and hangs, Windows offers restart with user
-consent and only after at least 60 seconds of runtime; this is not a guarantee of
-unattended recovery. With WinUI closed there is no resident watchdog. If Windows
-does not restart it, relaunching the app restores saved state through the same
-recovery path. There is no setting to exit a separate tray while leaving the
-engine behind.
+failure makes WinUI report that downloads stopped and offer restart. Do not
+register for Windows application restart: crash restart depends on Windows Error
+Reporting, which the [privacy policy](architecture.md#privacy) disables to prevent
+crash uploads. With WinUI closed there is no resident watchdog. Relaunching the
+app restores saved state through the same recovery path. There is no setting to
+exit a separate tray while leaving the engine behind.
 
 The [installed-update path](architecture.md#installation-and-updates) waits for
 coordinated application Exit; window close alone does not stop the engine.
@@ -1168,6 +1165,13 @@ Reconcile the request after resume or a power-source change. Do not use away
 mode or promise uninterrupted transfers through user-requested sleep.
 
 ## Diagnostics
+
+Both process startup owners set `SEM_NOGPFAULTERRORBOX` through
+[`SetErrorMode`](https://learn.microsoft.com/en-us/windows/win32/api/errhandlingapi/nf-errhandlingapi-seterrormode)
+to prevent Windows Error Reporting from handling crashes. This is process-local;
+it does not change the person's Windows diagnostics settings or disable
+dependency usage telemetry. The [privacy policy](architecture.md#privacy) owns
+that distinction and the stock Windows App SDK limitation.
 
 Write engine errors and major lifecycle events to a local log in the data
 directory. Keep one current file and one previous file, each capped at 1 MiB.

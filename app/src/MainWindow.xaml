@@ -299,7 +299,7 @@
                   </StackPanel>
                 </Grid>
               </controls:Pane.Header>
-              <Grid RowSpacing="8" Padding="0,8,0,0">
+              <Grid RowSpacing="8" Padding="8,8,8,0">
                 <Grid.RowDefinitions>
                   <RowDefinition Height="Auto" />
                   <RowDefinition Height="*" />
@@ -307,14 +307,16 @@
                 <controls:ActionButton
                   x:Name="ClearFiltersButton"
                   Glyph="{x:Bind icons:Lucide.FunnelX}"
-                  Margin="16,0"
                   Padding="8,4"
                   Command="{x:Bind Model.ClearFilters}"
                   HorizontalAlignment="Stretch"
                 />
+                <!-- WinUI's rounded item backgrounds add a four-pixel side
+                     inset; offset it so their edges align with Clear. -->
                 <ListView
                   x:Name="Filters"
                   Grid.Row="1"
+                  Margin="-4,0"
                   SelectionMode="Single"
                   SelectionChanged="OnFilterChanged"
                 >
@@ -356,7 +358,7 @@
                     </DataTemplate>
                   </ListView.ItemTemplate>
                 </ListView>
-                <ScrollViewer x:Name="LibraryFilters" Grid.Row="1" Margin="16,0" Visibility="Collapsed" />
+                <ScrollViewer x:Name="LibraryFilters" Grid.Row="1" Visibility="Collapsed" />
               </Grid>
             </controls:Pane>
           </Grid>
@@ -564,25 +566,27 @@
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
                           </Grid.RowDefinitions>
-                          <ProgressBar
-                            Style="{StaticResource TinyTorrentProgressStyle}"
-                            Value="{x:Bind Progress, Mode=OneWay}"
-                            Visibility="{x:Bind IsProgressNormal, Mode=OneWay}"
-                            AutomationProperties.AccessibilityView="Raw"
-                          />
-                          <ProgressBar
-                            Style="{StaticResource TinyTorrentMutedProgressStyle}"
-                            Value="{x:Bind Progress, Mode=OneWay}"
-                            Visibility="{x:Bind IsProgressMuted, Mode=OneWay}"
-                            AutomationProperties.AccessibilityView="Raw"
-                          />
-                          <ProgressBar
-                            Style="{StaticResource TinyTorrentProgressStyle}"
-                            Value="{x:Bind Progress, Mode=OneWay}"
-                            ShowError="True"
-                            Visibility="{x:Bind IsError, Mode=OneWay}"
-                            AutomationProperties.AccessibilityView="Raw"
-                          />
+                          <controls:Overlay Height="4">
+                            <ProgressBar
+                              Style="{StaticResource TinyTorrentProgressStyle}"
+                              Value="{x:Bind Progress, Mode=OneWay}"
+                              Visibility="{x:Bind IsProgressNormal, Mode=OneWay}"
+                              AutomationProperties.AccessibilityView="Raw"
+                            />
+                            <ProgressBar
+                              Style="{StaticResource TinyTorrentMutedProgressStyle}"
+                              Value="{x:Bind Progress, Mode=OneWay}"
+                              Visibility="{x:Bind IsProgressMuted, Mode=OneWay}"
+                              AutomationProperties.AccessibilityView="Raw"
+                            />
+                            <ProgressBar
+                              Style="{StaticResource TinyTorrentProgressStyle}"
+                              Value="{x:Bind Progress, Mode=OneWay}"
+                              ShowError="True"
+                              Visibility="{x:Bind IsError, Mode=OneWay}"
+                              AutomationProperties.AccessibilityView="Raw"
+                            />
+                          </controls:Overlay>
                           <TextBlock
                             Grid.Row="1"
                             Text="{x:Bind ProgressText, Mode=OneWay}"
@@ -784,54 +788,8 @@
         </Grid>
       </SplitView>
       <Grid x:Name="SettingsContent" Visibility="Collapsed" />
-      <ScrollViewer x:Name="AboutContent" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
-        <StackPanel Padding="32" Spacing="8">
-          <Image
-            Width="64"
-            Height="64"
-            Margin="0,0,0,8"
-            HorizontalAlignment="Left"
-            AutomationProperties.AccessibilityView="Raw"
-          >
-            <Image.Source>
-              <SvgImageSource UriSource="ms-appx:///Assets/tinyTorrent.svg" />
-            </Image.Source>
-          </Image>
-          <TextBlock
-            Text="{x:Bind Model.AboutTitle, Mode=OneWay}"
-            Style="{StaticResource TinyTorrentPageTitleTextStyle}"
-            AutomationProperties.HeadingLevel="Level1"
-          />
-          <TextBlock
-            Text="{x:Bind Model.AboutDescription, Mode=OneWay}"
-            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-            TextWrapping="Wrap"
-          />
-          <TextBlock
-            Text="{x:Bind Model.VersionText, Mode=OneWay}"
-            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-            TextWrapping="Wrap"
-            IsTextSelectionEnabled="True"
-          />
-          <TextBlock
-            Text="{x:Bind Model.CreditsText, Mode=OneWay}"
-            Margin="0,16,0,0"
-            Style="{StaticResource TinyTorrentSurfaceTitleTextStyle}"
-          />
-          <HyperlinkButton Content="TMDB" NavigateUri="https://www.themoviedb.org/" Padding="0" />
-          <TextBlock
-            Text="{x:Bind Model.TmdbCredit, Mode=OneWay}"
-            TextWrapping="Wrap"
-            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-          />
-          <HyperlinkButton Content="IMDb" NavigateUri="https://www.imdb.com/" Padding="0" Margin="0,8,0,0" />
-          <TextBlock
-            Text="{x:Bind Model.ImdbCredit, Mode=OneWay}"
-            TextWrapping="Wrap"
-            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-          />
-        </StackPanel>
-      </ScrollViewer>
+      <Grid x:Name="AboutContent" Visibility="Collapsed" />
+      <Grid x:Name="CreditsContent" Visibility="Collapsed" />
       <!-- A lasting problem with the whole application, as a Fluent 2 message
              bar above the status bar on every page. It overlays the page so
              showing it moves nothing, and its translucent severity colour sits
@@ -931,7 +889,7 @@
               </Grid.RowDefinitions>
               <!-- One icon per severity, because a theme brush cannot be
                        chosen from code without losing the window's theme. -->
-              <Grid VerticalAlignment="Center" AutomationProperties.AccessibilityView="Raw">
+              <Grid Grid.RowSpan="3" VerticalAlignment="Center" AutomationProperties.AccessibilityView="Raw">
                 <FontIcon
                   FontFamily="{x:Bind icons:Lucide.Font}"
                   Glyph="{x:Bind icons:Lucide.CircleCheck}"
@@ -1086,6 +1044,24 @@
       </StackPanel>
       <StackPanel x:Name="TransferStatus" Grid.Column="4" Orientation="Horizontal" Spacing="16"
         HorizontalAlignment="Right" VerticalAlignment="Center">
+        <StackPanel x:Name="MemoryStatus" Orientation="Horizontal" Spacing="12" Visibility="Collapsed">
+          <TextBlock x:Name="MemoryCaption" Style="{StaticResource TinyTorrentStatusTextStyle}"
+            Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <FontIcon Style="{StaticResource TinyTorrentStatusIconStyle}"
+              FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Cpu}"
+              AutomationProperties.AccessibilityView="Raw" />
+            <TextBlock x:Name="EngineMemoryLabel" Style="{StaticResource TinyTorrentStatusTextStyle}" />
+          </StackPanel>
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <FontIcon Style="{StaticResource TinyTorrentStatusIconStyle}"
+              FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.AppWindow}"
+              AutomationProperties.AccessibilityView="Raw" />
+            <TextBlock x:Name="UiMemoryLabel" Style="{StaticResource TinyTorrentStatusTextStyle}" />
+          </StackPanel>
+          <Border Width="1" Height="16" Background="{ThemeResource DividerStrokeColorDefaultBrush}"
+            AutomationProperties.AccessibilityView="Raw" />
+        </StackPanel>
         <TextBlock x:Name="TransferLabel" Style="{StaticResource TinyTorrentStatusTextStyle}"
             TextTrimming="CharacterEllipsis" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
         <StackPanel x:Name="DownloadRate" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">

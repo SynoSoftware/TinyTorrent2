@@ -22,6 +22,7 @@ public sealed partial class MainViewModel
             Inspector.Show(_selected.Length == 1 ? _selected[0] : null);
         RefreshInspector();
         Library.SetVisible(Page == WindowPage.Library);
+        ObserveMemory();
         Changed(nameof(Page));
         Changed(nameof(ReturnWorkspace));
         Changed(nameof(ReturnText));
@@ -30,13 +31,6 @@ public sealed partial class MainViewModel
         Changed(nameof(ShowsToolbar));
         ((RelayCommand)ClearFilters).Refresh();
     }
-
-    public string AboutTitle => Text.Get("window", "title");
-    public string AboutDescription => Text.Get("about", "description");
-    public string VersionText => Text.Format("about", "version", App.Version.ToString());
-    public string CreditsText => Text.Get("about", "credits");
-    public string TmdbCredit => Text.Get("about", "tmdb");
-    public string ImdbCredit => Text.Get("about", "imdb");
 
     public IReadOnlyList<Torrent> VisibleTorrents { get; private set; } = [];
     public string Query
@@ -120,6 +114,10 @@ public sealed partial class MainViewModel
                     : Navigation.Settings?.Category?.ToString().ToLowerInvariant() ?? "home";
                 return Text.Get("commands", "settings") + " · " + Text.Get("settings", category);
             }
+            if (IsAbout)
+                return Page == WindowPage.Credits
+                    ? Text.Get("about", "title") + " · " + Text.Get("about", "credits")
+                    : Text.Get("about", "title");
             if (Page != WindowPage.Torrents)
                 return string.Empty;
             if (_storageFailed && Torrents.Count == 0)

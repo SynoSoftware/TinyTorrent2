@@ -933,15 +933,27 @@ With multiple movies selected, the command offers the three scopes above and
 uses the same classification for counts and accepted work.
 While it searches or saves, an indeterminate progress bar under the search box
 shows that the provider request is running.
-The labelled query and its neutral Fetch ActionButton share one row, so the
-request action stays beside its input. Fetch has the shared download icon and
+Title, an optional editable Year and the neutral Fetch ActionButton share one
+compact row. Year starts from the selected entry's existing year and remains
+unchanged if a search broadens; it is search input, not another saved year.
+Submitted searches, including Enter in Title, use exactly these criteria and
+never broaden them. Automatic searches on opening or provider changes try title
+and year first, then title alone only after a genuine empty answer. Errors,
+refusals and cancellations never trigger that retry. Both paths use the same
+lookup, cache and protection owners; year-specific answers have distinct keys.
+Results are ordered by distance from the requested year, with unknown years
+last, and each result keeps its year in a separate visible column beside its
+ellipsised title. Fetch has the shared download icon and
 a tooltip distinguishing finding matches from saving one; there is no second
 search button inside the field. Enter in the query follows Fetch's enabled
 state. Empty queries and an in-flight request disable Fetch. A permitted
 override reads Force, with the protection reason in its tooltip. Save remains
 the dialog's default commit and applies only the selected match.
 Request status and the resulting match count appear above the results and are
-announced accessibly. No matches and errors remain inside the dialog; a failed
+announced accessibly. No matches and errors remain inside the dialog. An
+automatic year search that broadens adds “Title only” and a neutral Lucide Search
+icon to that existing, non-wrapping status line. Its tooltip and accessible help
+explain the fallback; no warning colour or additional row is used. A failed
 Save keeps the query and results available for correction. Successful Save closes
 the dialog, refreshes Library and announces the outcome without a duplicate
 success toast, following the interface's feedback-placement rule.

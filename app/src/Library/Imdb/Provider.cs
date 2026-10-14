@@ -46,12 +46,13 @@ internal sealed class Provider(Dataset dataset) : IProvider
                 command.CommandText = """
                     SELECT t.title_id,t.title,t.original,t.year,t.kind FROM title_search s
                     JOIN titles t ON t.title_id=s.rowid
-                    WHERE title_search MATCH $query
+                    WHERE title_search MATCH $query AND ($year IS NULL OR t.year=$year)
                     ORDER BY CASE WHEN t.title_key=$title OR t.original_key=$title THEN 1 ELSE 0 END DESC,
                         t.votes DESC LIMIT 50;
                     """;
                 command.Parameters.AddWithValue("$query", string.Join(' ', words));
                 command.Parameters.AddWithValue("$title", Dataset.Key(query.Text));
+                command.Parameters.AddWithValue("$year", (object?)query.Year ?? DBNull.Value);
                 var choices = new List<VideoChoice>();
                 using (var reader = command.ExecuteReader())
                     while (reader.Read())

@@ -783,6 +783,23 @@
       >
         <Setter Property="FontWeight" Value="SemiBold" />
       </Style>
+      <Style x:Key="TinyTorrentVideoChoiceItemStyle" TargetType="ListViewItem"
+        BasedOn="{StaticResource DefaultListViewItemStyle}">
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      </Style>
+      <DataTemplate x:Key="TinyTorrentVideoChoiceTemplate">
+        <Grid ColumnSpacing="12" AutomationProperties.Name="{Binding Label}">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+          <TextBlock Text="{Binding Title}" Style="{StaticResource TinyTorrentBodyTextStyle}"
+            ToolTipService.ToolTip="{Binding Label}" />
+          <TextBlock Grid.Column="1" Text="{Binding YearText}"
+            Style="{StaticResource TinyTorrentBodyTextStyle}"
+            Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+        </Grid>
+      </DataTemplate>
       <Style x:Key="TinyTorrentNavigationTextStyle" TargetType="TextBlock"
         BasedOn="{StaticResource TinyTorrentBodyTextStyle}">
         <Setter Property="FontSize" Value="16" />
@@ -1000,7 +1017,7 @@
                   BorderThickness="{ThemeResource ExpanderHeaderBorderThickness}"
                   CornerRadius="{TemplateBinding CornerRadius}"
                   MinHeight="{TemplateBinding MinHeight}" IsEnabled="{TemplateBinding IsEnabled}"
-                  Padding="{StaticResource ExpanderHeaderPadding}" HorizontalAlignment="Stretch"
+                  Padding="{ThemeResource ExpanderHeaderPadding}" HorizontalAlignment="Stretch"
                   HorizontalContentAlignment="{StaticResource ExpanderHeaderHorizontalContentAlignment}"
                   VerticalContentAlignment="{StaticResource ExpanderHeaderVerticalContentAlignment}"
                   Content="{TemplateBinding Header}" ContentTemplate="{TemplateBinding HeaderTemplate}"
@@ -1070,7 +1087,7 @@
         </Setter>
       </Style>
       <ItemsPanelTemplate x:Key="TinyTorrentLanguagePanel">
-        <controls:WrapPanel />
+        <controls:WrapPanel Orientation="Horizontal" />
       </ItemsPanelTemplate>
       <Style x:Key="TinyTorrentSettingsGroupStyle" TargetType="controls:SettingsSection">
         <Setter Property="Padding" Value="16,0" />
@@ -1123,15 +1140,23 @@
                   <RowDefinition Height="*" MinHeight="32" />
                   <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
-                <StackPanel Spacing="4" VerticalAlignment="{TemplateBinding VerticalContentAlignment}">
-                  <controls:FieldHeader
-                    Label="{TemplateBinding Header}"
-                    Error="{TemplateBinding Error}" Caution="{TemplateBinding Caution}" />
-                  <TextBlock x:Name="DescriptionLabel" Text="{TemplateBinding Description}"
-                    Style="{StaticResource TinyTorrentTitleDetailTextStyle}"
-                    TextTrimming="CharacterEllipsis"
-                    ToolTipService.ToolTip="{TemplateBinding Description}" />
-                </StackPanel>
+                <Grid VerticalAlignment="{TemplateBinding VerticalContentAlignment}">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                  </Grid.ColumnDefinitions>
+                  <ContentPresenter x:Name="IconPresenter" Content="{TemplateBinding Icon}"
+                    Margin="0,0,12,0" VerticalAlignment="Center" Visibility="Collapsed" />
+                  <StackPanel Grid.Column="1" Spacing="4">
+                    <controls:FieldHeader
+                      Label="{TemplateBinding Header}"
+                      Error="{TemplateBinding Error}" Caution="{TemplateBinding Caution}" />
+                    <TextBlock x:Name="DescriptionLabel" Text="{TemplateBinding Description}"
+                      Style="{StaticResource TinyTorrentTitleDetailTextStyle}"
+                      TextTrimming="CharacterEllipsis"
+                      ToolTipService.ToolTip="{TemplateBinding Description}" />
+                  </StackPanel>
+                </Grid>
                 <Grid
                   x:Name="ContentLayout"
                   Grid.Column="1"
@@ -1206,27 +1231,25 @@
           <Setter.Value>
             <ControlTemplate TargetType="controls:Section">
               <StackPanel Spacing="12">
-                <StackPanel Spacing="4" VerticalAlignment="Center">
-                  <Grid ColumnSpacing="12">
-                    <Grid.ColumnDefinitions>
-                      <ColumnDefinition Width="*" />
-                      <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
+                <Grid ColumnSpacing="12" VerticalAlignment="Center">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                  </Grid.ColumnDefinitions>
+                  <FontIcon
+                    x:Name="Icon"
+                    Glyph="{TemplateBinding Glyph}"
+                    FontFamily="{ThemeResource LucideFont}"
+                    Style="{StaticResource TinyTorrentGroupIconStyle}"
+                  />
+                  <StackPanel Grid.Column="1" Spacing="4">
                     <Grid HorizontalAlignment="Left">
                       <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
                       </Grid.ColumnDefinitions>
-                      <FontIcon
-                        x:Name="Icon"
-                        Glyph="{TemplateBinding Glyph}"
-                        Margin="0,0,8,0"
-                        FontFamily="{ThemeResource LucideFont}"
-                        Style="{StaticResource TinyTorrentGroupIconStyle}"
-                      />
                       <TextBlock
-                        Grid.Column="1"
                         Text="{TemplateBinding Header}"
                         Style="{TemplateBinding HeaderStyle}"
                         ToolTipService.ToolTip="{TemplateBinding Header}"
@@ -1234,7 +1257,7 @@
                       />
                       <ContentControl
                         x:Name="HeaderDetailHost"
-                        Grid.Column="2"
+                        Grid.Column="1"
                         Margin="12,0,0,0"
                         Content="{TemplateBinding HeaderDetail}"
                         IsTabStop="False"
@@ -1243,20 +1266,20 @@
                       />
                     </Grid>
                     <ContentControl
-                      Grid.Column="1"
-                      Content="{TemplateBinding Action}"
+                      x:Name="DetailHost"
+                      Content="{TemplateBinding Detail}"
                       IsTabStop="False"
-                      VerticalAlignment="Center"
+                      HorizontalContentAlignment="Stretch"
+                      Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                     />
-                  </Grid>
+                  </StackPanel>
                   <ContentControl
-                    x:Name="DetailHost"
-                    Content="{TemplateBinding Detail}"
+                    Grid.Column="2"
+                    Content="{TemplateBinding Action}"
                     IsTabStop="False"
-                    HorizontalContentAlignment="Stretch"
-                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    VerticalAlignment="Center"
                   />
-                </StackPanel>
+                </Grid>
                 <ContentPresenter
                   Content="{TemplateBinding Content}"
                   HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"

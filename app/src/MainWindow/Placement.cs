@@ -235,7 +235,7 @@ public sealed partial class MainWindow
                 category = SettingsCategory.General;
             await ShowSettings(new(category));
         }
-        else if (placement.Page == WindowPage.About)
+        else if (placement.Page is WindowPage.About or WindowPage.Credits)
             await ShowAbout();
         else if (placement.Page == WindowPage.Library)
             await Model.Navigation.Navigate(WindowPage.Library);

@@ -230,10 +230,6 @@ Application::Application(std::filesystem::path directory, std::wstring sid, bool
     SetTimer(owner_.get(), tickTimer, tickInterval, nullptr);
     powerNotification_.reset(RegisterPowerSettingNotification(owner_.get(), &GUID_ACDC_POWER_SOURCE,
         DEVICE_NOTIFY_WINDOW_HANDLE));
-    // The trailing \. keeps a root folder such as C:\ from escaping the
-    // closing quote.
-    auto restart = std::wstring(option::background) + L" " + option::data + L" \"" + data + L"\\.\"";
-    RegisterApplicationRestart(restart.c_str(), RESTART_NO_PATCH | RESTART_NO_REBOOT);
 }
 
 #ifdef _DEBUG

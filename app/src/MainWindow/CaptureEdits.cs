@@ -586,7 +586,7 @@ public sealed partial class MainWindow
                 settings.Schedule.Periods.Single(period => period.Matches(added))
             );
             await CapturePage("edits-period-saved");
-            await settings.Schedule.Remove(
+            await settings.Schedule.Delete(
                 settings.Schedule.Periods.Single(period => period.Matches(added))
             );
             if (!PeriodsRetained())
@@ -609,7 +609,7 @@ public sealed partial class MainWindow
                 ) is
                 { } remaining
             )
-                await settings.Schedule.Remove(remaining);
+                await settings.Schedule.Delete(remaining);
             await Model.ChooseLimits(LimitMode.Speed);
             port.Cancel();
             rate.Cancel();

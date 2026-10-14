@@ -38,13 +38,18 @@ internal sealed class Provider(string key) : IProvider
         CancellationToken cancellation
     )
     {
-        var data = await Get(query.Get, "type=movie&s=" + Uri.EscapeDataString(query.Text), cancellation)
+        var data = await Get(query.Get, "type=movie&s=" + Uri.EscapeDataString(query.Text)
+                + (query.Year is { } year ? "&y=" + year.ToString(CultureInfo.InvariantCulture) : string.Empty), cancellation)
             .ConfigureAwait(false);
         try
         {
             // OMDb reports a missing movie as an error rather than an empty list.
             if (Text(data, "Response") == "False")
-                return new([], true);
+            {
+                if (Text(data, "Error") == "Movie not found!")
+                    return new([], true);
+                throw new VideoException(VideoFailure.InvalidResult);
+            }
             var results = data.GetProperty("Search");
             var choices = results
                 .EnumerateArray()

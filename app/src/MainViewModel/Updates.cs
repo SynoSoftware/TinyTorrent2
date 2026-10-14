@@ -119,7 +119,7 @@ public sealed partial class MainViewModel
                 || tag.ValueKind != JsonValueKind.String
             )
                 return;
-            if (!Version.TryParse(tag.GetString()?.TrimStart('v', 'V'), out var version))
+            if (!System.Version.TryParse(tag.GetString()?.TrimStart('v', 'V'), out var version))
                 return;
             version = new Version(
                 version.Major,

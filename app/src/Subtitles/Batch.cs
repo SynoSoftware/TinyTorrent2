@@ -131,10 +131,8 @@ internal sealed class Batch : UserControl, INotifyPropertyChanged
         var choices = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12 };
         choices.Children.Add(_download);
         choices.Children.Add(action);
-        _scopeRow = new SettingsRow { Content = _scope, Detail = _status };
+        _scopeRow = new SettingsRow { Content = _scope };
         _downloadRow = new SettingsRow { Content = choices };
-        _status.MinHeight = 20;
-        _status.Style = (Style)Application.Current.Resources["TinyTorrentTitleDetailTextStyle"];
         _section = new SettingsSection
         {
             Style = (Style)Application.Current.Resources["TinyTorrentSettingsGroupStyle"],
@@ -231,6 +229,8 @@ internal sealed class Batch : UserControl, INotifyPropertyChanged
                 ? _text.Format("subtitles", "batch_found", found, completed.FindTotal)
             : _text.Format("subtitles", "to_search", Count);
         ToolTipService.SetToolTip(_status, _status.Text);
+        if (_scopeRow is not null)
+            _scopeRow.Description = _status.Text;
         _refreshing = false;
         PropertyChanged?.Invoke(this, new(nameof(CanAct)));
     }

@@ -19,8 +19,8 @@ internal sealed class Provider(string key) : IProvider
         new(
             CatalogId,
             "MDBList",
-            new("https://mdblist.com/privacy"),
-            new("https://mdblist.com/terms"),
+            new("https://mdblist.com/static/legal.html"),
+            new("https://mdblist.com/static/legal.html"),
             value => new Provider(value)
         )
         {
@@ -37,7 +37,8 @@ internal sealed class Provider(string key) : IProvider
         CancellationToken cancellation
     )
     {
-        var data = await Get(query.Get, "search/movie?query=" + Uri.EscapeDataString(query.Text), cancellation)
+        var data = await Get(query.Get, "search/movie?query=" + Uri.EscapeDataString(query.Text)
+                + (query.Year is { } year ? "&year=" + year.ToString(CultureInfo.InvariantCulture) : string.Empty), cancellation)
             .ConfigureAwait(false);
         try
         {

@@ -1,5 +1,4 @@
 using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Syno.TinyTorrent.Controls;
 using Syno.TinyTorrent.Models;
@@ -8,7 +7,7 @@ namespace Syno.TinyTorrent.Views;
 
 public sealed partial class SettingsPage
 {
-    private readonly List<(Button Button, TextBlock Title, TextBlock Summary, string Key, Func<string> Value)> _links = [];
+    private readonly List<(SettingsLink Button, string Key, Func<string> Value)> _links = [];
 
     private void InitializeHome()
     {
@@ -55,50 +54,28 @@ public sealed partial class SettingsPage
 
     private void AddLink(StackPanel panel, string key, Func<string> value, SettingTarget target, string glyph)
     {
-        var title = new TextBlock { TextTrimming = TextTrimming.CharacterEllipsis };
-        var summary = new TextBlock
-        {
-            Style = (Style)Application.Current.Resources["TinyTorrentTitleDetailTextStyle"],
-            TextTrimming = TextTrimming.CharacterEllipsis,
-        };
-        var text = new StackPanel { Spacing = 4, Children = { title, summary } };
-        var icon = new FontIcon { FontFamily = Syno.Lucide.Font, Glyph = glyph, FontSize = (double)Application.Current.Resources["TinyTorrentHeaderIconSize"] };
-        var chevron = new FontIcon { FontFamily = Syno.Lucide.Font, Glyph = Syno.Lucide.ChevronRight, FontSize = (double)Application.Current.Resources["TinyTorrentChevronIconSize"] };
-        var content = new Grid { ColumnSpacing = 16 };
-        content.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        content.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        content.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        Grid.SetColumn(text, 1);
-        Grid.SetColumn(chevron, 2);
-        content.Children.Add(icon);
-        content.Children.Add(text);
-        content.Children.Add(chevron);
-        var button = new Button
+        var button = new SettingsLink
         {
             Style = panel == RelatedLinks
                 ? (Style)Application.Current.Resources["TinyTorrentSettingsLinkStyle"]
                 : (Style)Resources["SettingsHomeLinkStyle"],
-            Content = content,
+            Glyph = glyph,
         };
         button.Click += async (_, _) => await Open(target);
         panel.Children.Add(button);
-        _links.Add((button, title, summary, key, value));
+        _links.Add((button, key, value));
     }
 
     private void RefreshHome()
     {
         if (!IsLoaded || Main.Navigation.Current != WindowPage.Settings)
             return;
-        foreach (var (button, title, summary, key, value) in _links)
+        foreach (var (button, key, value) in _links)
         {
             if (_category is null ? button.Parent == RelatedLinks : _category != LimitsCategory || button.Parent != RelatedLinks)
                 continue;
-            title.Text = Model.Text.Get("settings", key);
-            summary.Text = value();
-            ToolTipService.SetToolTip(title, title.Text);
-            ToolTipService.SetToolTip(summary, summary.Text);
-            AutomationProperties.SetName(button, title.Text);
-            AutomationProperties.SetHelpText(button, summary.Text);
+            button.Header = Model.Text.Get("settings", key);
+            button.Description = value();
         }
         RefreshHeader();
     }

@@ -215,16 +215,18 @@ not acquire a loading/preparing state; its readiness ruling remains.
 ## What yields and what belongs elsewhere
 
 - Retain the connection item at the end of the Torrents session group. Network
-  + `Port open` uses the existing success icon; `Port not confirmed` uses caution;
-  Route + `Proxy` stays neutral. Text is neutral in each case. This is torrent
+  + `Others can connect` uses the existing success icon; `Connection unconfirmed` uses caution;
+  Route + `Using proxy` stays neutral. Text is neutral in each case. This is torrent
   connectivity, not general internet health or proof of privacy. It yields as a
   complete icon-and-text item before core facts at narrow widths. Routine port
   status is omitted on Library; an unavailable adapter remains an explicit
   torrent hold there, with the hold's higher priority.
 - Retain existing external-IP and free-space opt-ins in either mode when room
-  permits. Label their scope: `Torrent IP: …` and `Downloads D: · 120 GB free`.
-  Use the confirmed default destination's actual volume; never imply this is
-  Library space or the selected file's disk. Unknown values say unavailable
+  permits. Show `Torrent IP: …` and a drive icon with `120 GB free`; the free-space
+  tooltip identifies the default download folder and its drive, so the folder
+  name cannot be mistaken for a transfer total. Use the confirmed destination's
+  actual volume; never imply this is Library space or the selected file's disk.
+  Unknown values say unavailable
   rather than showing stale healthy values. These are the first items omitted
   at narrow widths. Their settings descriptions must explain that behavior.
 - Retain `Update available` only when a newer release is known, after the core

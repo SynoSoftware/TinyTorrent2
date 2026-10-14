@@ -1,6 +1,7 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media.Animation;
+using Syno.TinyTorrent.Helpers;
 using Windows.Foundation;
 using Windows.UI.ViewManagement;
 
@@ -34,6 +35,8 @@ public sealed partial class SettingsExpander : Expander
     protected override void OnApplyTemplate()
     {
         Stop();
+        if (_drawer is not null)
+            _drawer.SizeChanged -= Motion.Clip;
         if (_body is not null)
             _body.SizeChanged -= OnBodySize;
         _drawer = null;
@@ -44,6 +47,7 @@ public sealed partial class SettingsExpander : Expander
         if (_drawer is null || _body is null)
             return;
 
+        _drawer.SizeChanged += Motion.Clip;
         _body.SizeChanged += OnBodySize;
         Settle();
     }

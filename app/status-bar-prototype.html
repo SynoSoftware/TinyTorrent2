@@ -146,7 +146,7 @@ function render(){
     }
     if(alternative){const limits=group((library&&level>=3?'Torrents · ':'')+(level>=2?'Alternative limits':'Alternative limits until 21:30'),'Alternative limits apply to all torrents until 21:30','turtle');limits.classList.add('alternative');session.append(limits)}
     if(fullHold){const hold=group(level>=5?(library?'Torrents paused':'Scheduled pause'):fullHold,fullHold,'pause');hold.classList.add('hold');session.append(hold)}
-    if(!library&&!empty&&!offline&&level===0){const port=group('Port open','Incoming torrent connections observed; this is not a general internet or privacy status','network');port.classList.add('port');session.append(port)}
+    if(!library&&!empty&&!offline&&level===0){const port=group('Others can connect',"An incoming peer connection has been received, confirming that TinyTorrent's listening port is reachable.",'network');port.classList.add('port');session.append(port)}
     if(session.children.length)status.append(session);
     used=level;
     if(status.scrollWidth<=status.clientWidth)break;

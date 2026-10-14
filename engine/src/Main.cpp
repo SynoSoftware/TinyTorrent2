@@ -50,6 +50,8 @@ std::wstring LogonSid()
 
 int WINAPI wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ PWSTR, _In_ int)
 {
+    // Prevent Windows from reporting application crashes to Microsoft.
+    SetErrorMode(GetErrorMode() | SEM_NOGPFAULTERRORBOX);
     tt::OwnedHandle mutex;
     bool headless = false;
     try

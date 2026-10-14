@@ -104,7 +104,9 @@ and intermediates.
 The window build copies the engine through [CopyEngine.ps1](../app/CopyEngine.ps1).
 An identical binary stays untouched, so UI-only restarts leave transfers running.
 When the binary changes, the script forcibly stops the engine running from that
-destination in the current Windows session and waits before replacing it. This
+destination in the current Windows session and waits before replacing it. It
+resolves junctions before comparing executable paths, because the process can
+report the physical output path rather than the repository's artifacts path. This
 development restart bypasses Exit confirmation and the final checkpoint so the
 build can replace the executable without waiting for a dialog.
 

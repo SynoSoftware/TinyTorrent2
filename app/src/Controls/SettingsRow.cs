@@ -13,6 +13,7 @@ public sealed partial class SettingsRow : ContentControl
     public static readonly DependencyProperty CautionProperty = Text(nameof(Caution));
     public static readonly DependencyProperty StateTextProperty = Text(nameof(StateText));
     public static readonly DependencyProperty DetailProperty = Element(nameof(Detail));
+    public static readonly DependencyProperty IconProperty = Element(nameof(Icon));
     public static readonly DependencyProperty UnitProperty = Text(nameof(Unit));
     public static readonly DependencyProperty UnitSelectorProperty = DependencyProperty.Register(
         nameof(UnitSelector),
@@ -60,6 +61,11 @@ public sealed partial class SettingsRow : ContentControl
     {
         get => (string)GetValue(CautionProperty);
         set => SetValue(CautionProperty, value);
+    }
+    public UIElement? Icon
+    {
+        get => (UIElement?)GetValue(IconProperty);
+        set => SetValue(IconProperty, value);
     }
     public string StateText
     {
@@ -125,6 +131,7 @@ public sealed partial class SettingsRow : ContentControl
         if (GetTemplateChild("DetailPresenter") is ContentPresenter detail)
             detail.Margin = new Thickness(0, hasPrimary ? 8 : 0, 0, 0);
         Show("DescriptionLabel", Description.Length > 0);
+        Show("IconPresenter", Icon is not null);
         Show("StateLabel", StateText.Length > 0);
         Show("UnitLabel", Unit.Length > 0);
         Show("UnitSelectorHost", UnitSelector is not null);

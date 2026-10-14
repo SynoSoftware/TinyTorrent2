@@ -382,7 +382,7 @@ subtitle due, so they never delay one. Batch status counts movies across request
 The person can also choose a subtitle on request. Download Subtitle, in the Library menu, the row's context menu and the Inspector's
 More menu for a video, opens a dialog like Fetch metadata. It lists every full
 subtitle the supplier offers for that video's title in a wanted language, with a
-language choice when several are wanted. Download downloads the selected subtitle
+language choice when several are wanted. Selecting Download saves the chosen subtitle
 beside the video under the [saving rules](#saving-and-following-the-movie),
 records its supplier reference and created ownership together, and never replaces a file already there. Chosen and batch downloads share
 one download, destination-validation and publication owner; a movie moved or removed during the request receives no file at its old destination.

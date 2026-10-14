@@ -491,6 +491,8 @@ from the current position or opacity rather than snapping back to the start.
 One motion owner supplies the shared timing and easing. Motion never delays input
 or a state change. When the user turns animations off in Windows, the same
 changes stay clear without substitute motion.
+Settings category changes move the title, summary and settings together in one
+short entrance, so a new header does not appear before its settings.
 
 Required contrast is 4.5:1 for ordinary text and 3:1 for large text and essential
 non-text indicators such as focus and selection. Measure actual adjacent colors
@@ -660,9 +662,10 @@ one-pixel `CardStrokeColorDefaultBrush` outline, with `OverlayCornerRadius`
 corners. Both end four pixels
 above the workspace's bottom edge. Filters
 retains its four-pixel side insets; the Inspector has a four-pixel right inset
-to match the table header's right edge. Rows retain the native selection inset.
-Filters adds no horizontal padding around its native list rows, so their text
-aligns with the header. The platform owns the
+to match the table header's right edge. The shared Filters body owns a
+eight-pixel inset at the top and both sides for Clear and both modes' scrollable
+choices, so their visible edges align. Torrents compensates the native item's
+four-pixel horizontal background inset to match Clear's width. The platform owns the
 fill and its theme and contrast fallbacks; the pane needs no separate
 palette or floating shadow. Both panes share this material so their surfaces stay
 consistent across Torrents and Library. In both modes, Clear sits directly below
@@ -715,6 +718,28 @@ close the card and move the remaining categories into place without a layout jum
 Keyboard and search paths invoke the same owners. About shows the product
 identity and running version on the same acrylic surface. The current page
 belongs to the main view model.
+About uses the approved split identity composition: the logo and name share a
+baseline, the product description and two-line promise follow, and Version is a
+plain label and value beneath them. The telemetry promise carries an asterisk;
+its localized tooltip and automation help explain the reporting protections and
+the [Microsoft runtime limitation](architecture.md#privacy), including usage
+diagnostics during normal operation. The composition centres in the available
+page viewport and scrolls when it no longer fits. A vertical divider separates
+this open identity column from three Settings link rows: Synapse, source code and Credits.
+At narrower widths the columns stack and the divider becomes horizontal.
+Credits is a child destination in the existing navigation history and uses the
+existing page slide. Its breadcrumb and the caption Back share that history;
+returning to About restores focus to Credits. The shared SettingsLink owns the
+row presentation for Settings and About, with an external-link glyph for
+websites and a chevron for in-app navigation. Credits reuses SettingsSection
+expanders and divided SettingsRow controls, with core technology first, then
+artwork and optional providers. A group with one contribution is a direct link
+row. SettingsRow owns the optional leading artwork slot spanning its title and
+description; TMDB uses it for its required logo. Required provider notices sit
+inside their rows. Licence links use the main window's existing external-open
+owner, and the installer packages required distribution notices. Its scroll
+viewport reaches the window edge, while the content stays bounded and centred,
+so the scrollbar never overlays the contribution surfaces.
 Leaving Settings follows the two owner rulings in
 [Committing edits](#committing-edits). The inspector keeps its target and draft
 while another page is visible. The Torrent menu and row context menu share
@@ -859,6 +884,15 @@ show the configuration only, never an invented zero or a loading message.
 Settings shows its current section, such as `Settings · Network`, from the
 navigation state; it has no collection count. About has no collection facts. Retained disconnected data is
 labelled Last known, while initial torrent connection says Connecting.
+About and Credits show their navigation location, process memory and all-time
+download/upload totals in the existing status bar. The main view model samples
+resident working sets off the UI thread, only while these pages are visible;
+the pipe client identifies the connected engine process. Tooltips state that
+working sets include shared pages. All-time totals come from the same confirmed
+engine snapshot as Settings, with unavailable values during disconnection.
+The status bar retains ownership of presentation and overflow: memory yields
+before background work, and totals use the existing transfer icons and fitting
+path. This changes neither work registration nor its cancellation controls.
 
 Rates describe all torrents and keep their down/up icons and colors. Numeric
 caps appear only while confirmed and unpaused. In Library the transfer group
@@ -877,6 +911,10 @@ Pause takes precedence over limits. Full detail and existing announcements
 retain the current notification owner. Library scopes these states to Torrents.
 The routine port/proxy item is shown only on Torrents and says nothing about
 general internet health or privacy.
+Its short labels are `Others can connect`, `Connection unconfirmed`, `Using proxy`,
+and `Network unavailable`. Tooltips explain the observed incoming connection,
+unconfirmed listening port, proxy route, or unavailable selected adapter, so
+the status stays readable without claiming an unconfirmed firewall problem.
 
 **Owner ruling, extended 2026-10-13:** Long-running background work appears on
 every page with native progress and an adjacent Cancel X when cancellable.
@@ -1112,6 +1150,8 @@ the bottom right, and Close at the top right.
 - The stack takes no room, so showing or hiding a toast moves no page
   content. It never takes focus, and it hides while an editor has focus,
   because it must not cover what the person is typing.
+  Toasts already displayed are retired when the stack hides, so later notices
+  do not replay them. New notices received while hidden wait to be shown.
 - **Owner ruling, 2026-10-11:** toasts show above an open dialog, so a result
   reported while the dialog is open, such as the supplier dialog's Check, is
   seen at once. The supplier dialog's Check result is a toast: Access checked

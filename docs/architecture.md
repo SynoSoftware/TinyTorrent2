@@ -167,6 +167,37 @@ whereas SOCKS4a carries the destination name without a direct DNS lookup. A prox
 that refuses that form leaves the request unavailable. TLS stays inside the
 proxy tunnel for every supported proxy type.
 
+## Privacy
+
+TinyTorrent must not add usage analytics, diagnostic uploads, crash uploads or
+installation identifiers sent to any third party, including Microsoft, because
+download activity and application use are private. Apply supported app-level
+controls to prevent dependency reporting. Diagnostics remain in
+[local logs](engine.md#diagnostics).
+
+**Owner ruling: retain the shared Microsoft runtimes and make the best effort
+available through supported app-level controls.** Shared-runtime deployment and
+servicing stay with Microsoft; do not build or distribute private runtimes or
+change system-wide Windows diagnostics settings. The remaining Microsoft
+runtime limitation is accepted and stays disclosed in the About telemetry
+tooltip, so the qualified claim does not promise control over Windows.
+
+Torrent protocol traffic, enabled metadata and subtitle requests, update checks
+and a connection test the person starts serve product features rather than
+analytics. They still disclose the request and network address to their
+destination and follow the [network route](#network-route). Do not attach
+unrelated usage data or identifiers to those requests.
+
+The current stock Windows App SDK dependency prevents an absolute no-telemetry
+guarantee. Its [data collection notice](https://github.com/microsoft/WindowsAppSDK#data-collection)
+states that it collects usage data. Microsoft
+[explains](https://github.com/microsoft/WindowsAppSDK/discussions/1941)
+that runtime telemetry follows Windows diagnostics settings and that its release
+pipeline injects telemetry support absent from private source builds. Suppressing
+Windows Error Reporting does not suppress that instrumentation. The shared
+runtime therefore prevents an absolute guarantee of no Microsoft telemetry;
+the owner ruling above accepts this limit without changing deployment.
+
 ## Two processes, one download authority
 
 The native engine remains running while downloads may run. It contains libtorrent,

@@ -299,15 +299,21 @@ try {
     $licenses = Join-Path $publish 'licenses'
     $notices = @{
         TinyTorrent = 'LICENSE'; Branding = 'resources/LICENSE'; Lucide = 'lib/Lucide/LICENSE'
-        Libtorrent = '3rdParty/libtorrent/COPYING'; OpenSSL = '3rdParty/openssl/LICENSE.txt'
-        Boost = '3rdParty/boost/LICENSE_1_0.txt'; Json = '3rdParty/json/LICENSE.MIT'
+        Libtorrent = '3rdParty/libtorrent/LICENSE'; OpenSSL = '3rdParty/openssl/LICENSE.txt'
+        Json = '3rdParty/json/LICENSE.MIT'
+        MicrosoftDataSqlite = 'installer/notices/Microsoft.Data.Sqlite.txt'
+        SQLitePCLRaw = 'installer/notices/SQLitePCLRaw.txt'
     }
     foreach ($notice in $notices.GetEnumerator()) {
         $directory = Join-Path $licenses $notice.Key
         $null = New-Item -ItemType Directory -Path $directory -Force
         Copy-Item -LiteralPath (Join-Path $repository $notice.Value) -Destination $directory
     }
-    foreach ($package in $assets.libraries.PSObject.Properties | Where-Object { $_.Value.type -eq 'package' }) {
+    $dependencies = Get-Content -LiteralPath (Join-Path $publish "$window.deps.json") -Raw | ConvertFrom-Json
+    foreach ($package in $assets.libraries.PSObject.Properties | Where-Object {
+        $_.Value.type -eq 'package' -and $dependencies.libraries.PSObject.Properties.Name -contains $_.Name
+    }) {
+        if ($package.Name -like 'SQLite/*') { continue }
         $directory = Join-Path $packages $package.Value.path
         $files = @(Get-ChildItem -LiteralPath $directory -File | Where-Object { $_.Name -match '^(LICENSE|NOTICE|COPYING)' })
         if ($files.Count -gt 0) {

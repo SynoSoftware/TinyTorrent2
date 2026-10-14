@@ -14,6 +14,8 @@ public sealed partial class MainWindow
 {
     private SettingsPage? _settingsPage;
     private ConnectionPage? _connectionPage;
+    private AboutPage? _aboutPage;
+    private CreditsPage? _creditsPage;
     private readonly Motion _motion = new();
     private readonly Motion _pages = new();
     private readonly Motion _workspaces = new();
@@ -64,6 +66,8 @@ public sealed partial class MainWindow
                     return;
                 if (destination == WindowPage.Settings && previous == WindowPage.Connection)
                     _settingsPage?.FocusConnection();
+                else if (destination == WindowPage.About && previous == WindowPage.Credits)
+                    _aboutPage?.FocusCredits();
                 else
                     FocusPage();
             }
@@ -130,6 +134,20 @@ public sealed partial class MainWindow
             BackButton.Focus(FocusState.Programmatic);
     }
 
+    private async Task ShowCredits()
+    {
+        if (!await Model.Navigation.Navigate(WindowPage.Credits))
+            return;
+        DispatcherQueue.TryEnqueue(
+            Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,
+            () =>
+            {
+                if (Model.Navigation.Current == WindowPage.Credits)
+                    _creditsPage?.FocusHeading();
+            }
+        );
+    }
+
     private async Task ShowSettings(SettingTarget target)
     {
         if (target.Category is null && Model.SettingsHome is { } home)
@@ -172,10 +190,25 @@ public sealed partial class MainWindow
         {
             WindowPage.Settings => SettingsContent,
             WindowPage.About => AboutContent,
+            WindowPage.Credits => CreditsContent,
             _ => Workspace,
         };
         _pages.Show(content, Model.Page >= _page ? 1 : -1);
         _page = Model.Page;
+        if (Model.Page == WindowPage.About && _aboutPage is null)
+        {
+            _aboutPage = new AboutPage(Model);
+            _aboutPage.LinkRequested += (_, uri) => Open(new(uri.AbsoluteUri));
+            _aboutPage.CreditsRequested += async (_, _) => await ShowCredits();
+            AboutContent.Children.Add(_aboutPage);
+        }
+        if (Model.Page == WindowPage.Credits && _creditsPage is null)
+        {
+            _creditsPage = new CreditsPage(Model);
+            _creditsPage.LinkRequested += (_, uri) => Open(new(uri.AbsoluteUri));
+            _creditsPage.ReturnRequested += async (_, _) => await GoBack();
+            CreditsContent.Children.Add(_creditsPage);
+        }
         if (Model.Page == WindowPage.Settings)
         {
             var settings = GetSettingsPage();
