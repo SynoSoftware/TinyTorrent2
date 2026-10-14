@@ -76,8 +76,8 @@ last known, and the existing message owner explains the problem.
 | No matches | `Videos · 0 files · Filtered`; distinguish this from an empty Library |
 | A search is pending | Keep count and configuration tied to the last published rows; publish new count, configuration and applied-finding indication together |
 | Before any usable result | Configuration only until a count is known; `Library unavailable` on a real failure, never an invented zero or a loading message |
-| Videos, automatic video information downloads are off | `Automatic video information downloads off`; neutral, because this is the person's choice. Saved information and manual fetching remain available. |
-| Videos, default provider has failed and prevents enrichment | `Waiting for TMDB`, naming the actual provider; detailed reason and recovery stay with the existing feature surface |
+| Videos, automatic video information downloads are off | No notice; this preference belongs to Settings · Plugins, like automatic subtitles. Saved information and manual fetching remain available. |
+| Videos, default provider has failed and prevents requests | `Waiting for TMDB`, naming the actual provider; detailed reason and recovery stay with the existing feature surface |
 | Music or Files | No ambient video-provider state; an explicit metadata batch still appears |
 | Managed torrents exist | Right group: `Torrents  ↓ 1.2 MB/s  ↑ 84 KB/s`; keep it present across zero-rate samples |
 | Background torrent hold | `Torrents paused` / `Torrents paused until 18:00` / `Torrents paused · Adapter unavailable` |

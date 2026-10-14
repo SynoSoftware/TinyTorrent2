@@ -92,15 +92,15 @@ internals of the others:
 Library and subtitles are sibling modules supplied with these shared resources
 by the existing application lifetime owner. Subtitle work queries current
 torrent files in SQLite, including unfinished files; Library's visible rows and
-enrichment setting never gate it. Domain queries stay beside their feature's
-behavior instead of accumulating in a general database class. Sharing the
+automatic download setting never gate it. Domain queries stay beside their
+feature's behavior instead of accumulating in a general database class. Sharing the
 connection does not require sharing provider scheduling or job states.
 
 Stored facts belong to the contribution of their entry. Source synchronization
 applies confirmed withdrawal and cleanup in one SQLite transaction, using the
 database owner's shared rules to remove associations and unreferenced facts. This runs
-even when Library enrichment and subtitles are off, so disabling either cannot
-leave obsolete membership behind. A contribution can have no finished
+even when automatic video information and subtitle downloads are off, so either
+choice cannot leave obsolete membership behind. A contribution can have no finished
 files: an early identification waits for its file while the torrent remains
 managed. Closing or disconnecting the window is not withdrawal.
 
@@ -234,7 +234,7 @@ connection and are rebuilt on reconnect from confirmed source state. Persistent
 tables hold enrichment and decisions, not a second saved torrent/file catalogue.
 Queries join the current projection to those facts. C# subtitle work uses this
 same connection, schema and transaction owner; the native engine never opens
-the database. Subtitle records are independent of Library enrichment enablement.
+the database. Subtitle records are independent of automatic video information downloads.
 
 The current-source SQL projection derives file-read readiness once for both
 features: the file is complete, at least one current contributing torrent
@@ -380,8 +380,9 @@ not match strings shorter than three characters, as documented in the
 ## Identification and early enrichment
 
 Choose one provider: TMDB, Wikidata, OMDb, MDBList or IMDb.
-Provider selection is exclusive, so changing it cancels work belonging to the
-previous provider. Each enabled provider uses the same background
+Default provider selection is exclusive, so changing it cancels automatic
+work belonging to the previous provider. Accepted manual work keeps its chosen
+provider and continues. Each selected provider uses the same background
 identification workflow; TMDB also supports series and episodes, and the others
 support movies only.
 
@@ -516,7 +517,7 @@ block local search, torrent operations or shutdown.
 
 ### TMDB early and background enrichment
 
-With TMDB selected and enrichment enabled, identification begins when a new
+With TMDB selected for automatic downloads, identification begins when a new
 torrent supplies enough filename information; video completion is not a
 prerequisite. Process only recognizable video candidates for movie/TV identification; other
 files retain ordinary filename search without provider requests. Reuse common
@@ -528,8 +529,8 @@ retrieve artwork, trailers or unrelated credits as part of it. Recommendations
 arrive in the same request through `append_to_response`, so they add no
 request; Fetch metadata offers them as choices.
 
-Enrichment runs in C# only while the product window is open and the feature is
-enabled, within the [per-movie limit](architecture.md#third-party-provider-access).
+Automatic downloads run in C# only while the product window is open and the
+setting is on, within the [per-movie limit](architecture.md#third-party-provider-access).
 Closing the window cancels optional work; the next window tries the files
 without a match again. There is no hidden managed process or native fallback. Start with one provider request in flight; concurrency increases only if measured
 enrichment delay warrants it without harming interactive work. A provider
@@ -657,7 +658,7 @@ items forward rather than asking the owner to rediscover them.
   scores or new provider requests to fill the layout.
 - [ ] Match the app's action glyphs and button treatment: Play, Show in Torrents,
   More and Close. Fetch metadata belongs in More at every width. A vertical divider
-  separates these item actions from the inspector's Pin and Close controls. Show in
+  separates these item actions from the inspector's Pin, Maximize and Close controls. Show in
   Torrents uses LocateFixed, never the software logo or a download action glyph.
   The prototype must not replace Play with an external-window glyph.
 - [ ] Retain readable synopsis line spacing, heading-to-body spacing and the
@@ -926,8 +927,10 @@ same row selected.
 
 **Metadata.** In the Library menu, the row context menu and the card's More
 menu, Fetch metadata is a submenu that lists providers declaring per-movie downloads, so the person
-chooses the provider for this request; the card's Fetch button uses the one
-saved in Settings. Fetch metadata opens the same dialog for one file with or without
+chooses the provider for this request. The card's Fetch button offers the same
+providers, followed by Settings. Refresh metadata uses the file's saved online
+provider, independently of the default provider and automatic download setting.
+Fetch metadata opens the same dialog for one file with or without
 an existing match, starting at the chosen provider. It is titled "Fetch metadata", with Save and Cancel.
 With multiple movies selected, the command offers the three scopes above and
 uses the same classification for counts and accepted work.
@@ -978,8 +981,8 @@ The page has no loading state; see the owner ruling under
 | No matches | "No videos match" and the query (or music, or files), with one button for each other configuration that has matches, and its count, plus Clear search. The action buttons share the widest button's natural width through the shared ActionButton alignment. |
 | Engine disconnected | The window's [message bar](interface.md#message-bar). Open and Identify are disabled. |
 | Database unavailable | The window's [message bar](interface.md#message-bar) reports the failure and offers Retry. Any last view stays non-actionable; normal torrent work remains available. |
-| Automatic downloads off | Saved video information and lookup outcomes stay visible. Fetch metadata works with an explicitly chosen provider; Refresh metadata works with the saved online provider. Neither enables automatic downloading. A file without information and the status bar say "Automatic video information downloads off". Its Fetch button lists every provider, then Settings. There is no notice above the table. |
-| Provider failure | "Waiting for TMDB" in the card and the status bar. No dialog. |
+| Automatic downloads off | Saved video information and lookup outcomes stay visible. Fetch metadata works with an explicitly chosen provider; Refresh metadata works with the saved online provider. Neither enables automatic downloading. A file without information shows "No metadata". Its Fetch button lists every provider, then Settings. The automatic download choice stays in Settings · Plugins, without an inspector or status-bar notice, because it is a preference like automatic subtitles. |
+| Provider failure | A file without metadata shows "Waiting for TMDB", naming the default provider, and the status bar shows the same wait. A manual refresh reports its own provider's failure in the existing inspector message, preserving saved information. |
 | Failed Open | The title-cell and card glyph show the failure, and the card shows an error InfoBar with Missing, Unavailable or Couldn't open, the time it was checked, and Retry. |
 
 TMDB's and IMDb's attributions are under Credits on the About page, not on the
@@ -1003,39 +1006,46 @@ files; reconcile with current engine state on reconnect.
 
 ## Privacy and provider release requirements
 
-Normal browsing and typing stay local. Online enrichment starts Off. Choosing a
-provider in Settings is the one explicit enablement; there is no confirmation
+Normal browsing and typing stay local. Automatic video information downloads
+start Off. The Download automatically switch starts them; choosing a provider or
+editing its credentials leaves that switch unchanged. There is no confirmation
 dialog and no per-file consent, because the choice is already the person's
 decision, as with Windows' own online settings. Choosing another provider in
 Fetch metadata is the person's explicit request for that one file and needs no
 further consent. Choosing Off stops further
-automatic provider work and cancels pending requests where possible. Later manual
-Fetch and Refresh requests remain available without enabling automatic work. Cached information
+automatic provider work and cancels its pending requests where possible. Manual
+Fetch and Refresh remain available, and accepted manual work continues. Cached information
 remains usable only as permitted by the applicable terms; source entries and
 filename search remain usable regardless.
 
-Settings presents Download video information automatically as one choice: Off, then the
-providers. Off stops automatic downloading only; saved information stays. Its information button opens the selected provider's disclosure, the
+Settings presents Provider and Download automatically as separate rows in the
+Video information group, like supplier access and automatic subtitles. Provider
+selection, credentials and dataset management remain available in both switch
+states; Off stops only automatic work and shows no disabled-feature notice.
+The provider's information button opens its disclosure, the
 inputs it receives, and links to its privacy policy and terms, in the same
 flyout as the subtitle supplier's. For a provider that takes an API key, a key
 button beside it opens the [account dialog](architecture.md#third-party-provider-access),
 where the person enters their own key or, when the release has one, keeps the
-built-in key. Choosing such a provider when it has no usable key opens that
-dialog: Save stores the key and turns the provider on, and Cancel leaves the
-choice unchanged. Choosing IMDb before its data is downloaded asks to download
-it: Download starts the download and turns IMDb on when it finishes, unless
-the person chose another setting meanwhile, and Cancel leaves the choice
-unchanged. Below it, the IMDb data row shows the data's size and date and
+built-in key. Saving credentials preserves automatic download intent. Turning
+automatic downloads on with no usable key opens that dialog: Save stores the key
+and starts automatic downloads; Cancel leaves them off. Turning them on for IMDb
+before its data is installed asks to download it. Download installs the data and
+starts automatic downloads when it finishes, unless the person chose another
+setting meanwhile; Cancel leaves them off. Downloading or updating the data from
+its own row leaves the switch unchanged. The IMDb data row shows the data's size and date and
 offers Download or Update and Delete data, whichever provider is chosen,
 because every provider's movies use its ratings. While the data downloads, the
-row shows its progress and a button that stops it. Any other provider
-that is unavailable when chosen changes nothing and shows its error in the row.
-Library's Settings button opens this row.
+row shows its progress and a button that stops it. Providers can be selected and
+configured while unavailable. Requests still need the provider's data or key,
+while saved information and other providers remain usable. Library's Settings
+button opens the provider row; Settings search
+has separate destinations for Provider and Download automatically.
 
 Send only the matching inputs a request needs. Do not upload a Library
 inventory, absolute paths, torrent info hashes, trackers, peers or movie bytes.
 Use HTTPS and keep credentials and search contents out of routine logs. State
-the actual network route before enablement. The shared
+the actual network route before starting automatic downloads. The shared
 [network-route rule](architecture.md#network-route) governs every provider;
 disclosure never permits a direct fallback. A provider that cannot honor the
 configured route remains unavailable.
@@ -1114,7 +1124,7 @@ the inputs; total disk capacity and unrelated folders do not affect the work.
   return proposed facts for acceptance there. Network requests and Windows
   property reads never occupy that worker.
 - Hidden Library pages cancel queries/detail reads and stop rendering and
-  sorting. Source synchronization and enabled enrichment may continue while the
+  sorting. Source synchronization and automatic downloads may continue while the
   window remains open. Keep only current row/navigation state, no query history.
 - Closing the window cancels provider/property work, finishes short accepted
   durable edits through the normal close guard, and releases the database,

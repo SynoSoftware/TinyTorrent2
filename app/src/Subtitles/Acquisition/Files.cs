@@ -10,11 +10,11 @@ internal sealed partial class Acquisition
     private readonly List<(
         string Path,
         string Language,
-        string[] Origins,
+        IReadOnlySet<string> Origins,
         DeletionMode Mode
     )> _deletions = [];
 
-    private async Task ReconcileFiles(Target[] targets, CancellationToken cancellation)
+    private async Task ReconcileFiles(TargetIndex targets, CancellationToken cancellation)
     {
         var associations = await Run(
                 connection =>
@@ -47,17 +47,8 @@ internal sealed partial class Acquisition
             var group in associations.GroupBy(value => value.Path, StringComparer.OrdinalIgnoreCase)
         )
         {
-            var destinations = targets
-                .Where(target =>
-                    group.Any(source =>
-                        source.Language == target.Language
-                        && target.Rank == SubtitleFile.Rank(source.Path, source.Language)
-                        && target.Videos.Any(video =>
-                            video.Origin == source.Origin && video.Index == source.Index
-                        )
-                    )
-                )
-                .ToArray();
+            var destinations = targets.Order(group.Select(source => targets.Find(source.Language,
+                SubtitleFile.Rank(source.Path, source.Language), source.Origin, source.Index)).OfType<Target>());
             if (!group.Any(source => source.Created))
             {
                 changed |= await Run(
@@ -139,7 +130,7 @@ internal sealed partial class Acquisition
             if (
                 moved.Length != 1
                 || moved[0].IsAmbiguous
-                || targets.Any(target => StringComparer.OrdinalIgnoreCase.Equals(target.Path, group.Key))
+                || targets.Contains(group.Key)
             )
                 continue;
             var destination = moved[0];
@@ -250,6 +241,7 @@ internal sealed partial class Acquisition
 
     internal async Task<Deletion> CaptureDeletion(string[] origins)
     {
+        var membership = origins.ToHashSet(StringComparer.Ordinal);
         try
         {
             var paths = await Run(
@@ -273,19 +265,19 @@ internal sealed partial class Acquisition
                                 StringComparer.OrdinalIgnoreCase
                             )
                         )
-                            if (group.All(row => origins.Contains(row.Origin)))
+                            if (group.All(row => membership.Contains(row.Origin)))
                                 result.Add((group.Key, group.First().Language));
                         return result.ToArray();
                     },
                     _lifetime.Token
                 )
                 .ConfigureAwait(false);
-            return new Deletion(origins, paths);
+            return new Deletion(membership, paths);
         }
         catch (Exception error) when (error is SqliteException or OperationCanceledException)
         {
             Notify();
-            return new Deletion(origins, []);
+            return new Deletion(membership, []);
         }
     }
 
@@ -313,7 +305,7 @@ internal sealed partial class Acquisition
         CancellationToken cancellation;
         lock (_requestSync)
             cancellation = _requests.Token;
-        (string Path, string Language, string[] Origins, DeletionMode Mode)[] deletions;
+        (string Path, string Language, IReadOnlySet<string> Origins, DeletionMode Mode)[] deletions;
         lock (_deletions)
             deletions = _deletions.ToArray();
         if (deletions.Length == 0)
@@ -382,4 +374,4 @@ internal sealed partial class Acquisition
     );
 }
 
-internal sealed record Deletion(string[] Origins, (string Path, string Language)[] Paths);
+internal sealed record Deletion(IReadOnlySet<string> Origins, (string Path, string Language)[] Paths);

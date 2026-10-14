@@ -953,6 +953,7 @@
         <Setter Property="Margin" Value="4,3,4,5" />
       </Style>
       <Style x:Key="TinyTorrentSettingsCardStyle" TargetType="Border">
+        <Setter Property="controls:SettingsSection.IsCard" Value="True" />
         <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
         <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
         <Setter Property="BorderThickness" Value="1" />
@@ -960,6 +961,7 @@
         <Setter Property="Padding" Value="16,0" />
       </Style>
       <Style x:Key="TinyTorrentSettingsLinkStyle" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
+        <Setter Property="controls:SettingsSection.IsCard" Value="True" />
         <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
         <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
         <Setter Property="HorizontalAlignment" Value="Stretch" />
@@ -1054,7 +1056,8 @@
         <Setter Property="Template">
           <Setter.Value>
             <ControlTemplate TargetType="controls:SettingsSection">
-              <controls:SettingsExpander x:Name="SectionExpander"
+              <controls:SettingsExpander x:Name="Card"
+                controls:SettingsSection.IsCard="True"
                 HorizontalAlignment="Stretch"
                 HorizontalContentAlignment="Stretch"
                 Padding="{TemplateBinding Padding}"
@@ -1105,7 +1108,7 @@
                   <TextBlock x:Name="SummaryLabel" Style="{StaticResource TinyTorrentTitleDetailTextStyle}"
                     TextTrimming="CharacterEllipsis" Visibility="Collapsed" />
                 </StackPanel>
-                <Border x:Name="GroupCard" Style="{StaticResource TinyTorrentSettingsCardStyle}" Padding="{TemplateBinding Padding}">
+                <Border x:Name="Card" Style="{StaticResource TinyTorrentSettingsCardStyle}" Padding="{TemplateBinding Padding}">
                   <ContentPresenter Content="{TemplateBinding Content}" HorizontalContentAlignment="Stretch" />
                 </Border>
               </StackPanel>

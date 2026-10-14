@@ -223,14 +223,10 @@ internal sealed partial class Details : UserControl, IDisposable
                     left.Children.Add(metadata);
                     _refresh.Add(() =>
                     {
-                        // Manual Fetch offers every provider even while automatic downloading is off.
-                        var enabled = !library.IsEnrichmentEnabled || library.IsProviderAvailable;
-                        var message = !library.IsEnrichmentEnabled ? text.Get("library", "download_off")
-                            : !enabled ? text.Get("library", "source_unavailable")
-                            : library.Waiting ?? text.Get("library", "no_metadata");
+                        var message = library.AutomaticWait ?? text.Get("library", "no_metadata");
                         SetValue(metadata, message);
-                        metadata.Glyph = enabled ? Lucide.ScanSearch : Lucide.CloudOff;
-                        ToolTipService.SetToolTip(metadata, !enabled ? text.Get("library", "provider_unavailable") : message);
+                        metadata.Glyph = Lucide.ScanSearch;
+                        ToolTipService.SetToolTip(metadata, message);
                     });
                 }
                 first = null;

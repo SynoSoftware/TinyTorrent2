@@ -564,10 +564,20 @@ internal sealed partial class Acquisition(
     {
         _disposed = true;
         _lifetime.Cancel();
+        Task? reconciling;
         lock (_requestSync)
+        {
             _requests.Cancel();
+            reconciling = _reconciling;
+        }
         if (_worker is not null)
             await _worker.ConfigureAwait(false);
+        if (reconciling is not null)
+        {
+            try { await reconciling.ConfigureAwait(false); }
+            catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
+            catch (Exception error) { System.Diagnostics.Debug.WriteLine(error); }
+        }
         foreach (var run in new[] { _manualWork, _automaticWork })
             if (run is not null)
             {

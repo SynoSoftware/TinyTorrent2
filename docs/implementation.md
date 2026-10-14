@@ -1172,9 +1172,11 @@ Their pending engine representation is explicit so integration has one answer:
 `torrent` takes `view` (general/files/peers/trackers/pieces), with `include_files`
 when opening Pieces. General adds comment, creator, created (Unix seconds),
 piece_size and nullable private; Files adds downloaded bytes. Peer rows contain
-endpoint, client, transport, incoming, encrypted, progress, download_rate,
-upload_rate, downloaded and uploaded. Tracker rows contain url, tier, status,
-seed_count, leecher_count, download_count, next_announce (Unix seconds or zero), and message.
+endpoint, client, transport, incoming, state, encryption, interested, choked,
+remote_interested, remote_choked, read_wait, write_wait, sources, progress,
+download_rate, upload_rate, downloaded and uploaded. Tracker rows contain url,
+tier, status, seed_count, leecher_count, download_count, next_announce (Unix
+seconds or zero), message, and endpoint diagnostics as defined below.
 Pieces returns metadata_ready, piece_size, peers, verified booleans, per-piece
 availability, downloading index/progress pairs and, on opening, files with path,
 first_piece and exclusive end_piece. `history` takes range five_minutes/day and
@@ -1263,9 +1265,9 @@ records the ruling and the arrangement that replaced vcpkg.
 
 ## Wire representation
 
-Protocol version 15 uses a four-byte little-endian UTF-8 JSON frame length,
+Protocol version 16 uses a four-byte little-endian UTF-8 JSON frame length,
 bounded to 16 MiB. The endpoint is `TinyTorrent.<logon SID>`; each connecting
-client first receives `{type:"hello",version:15,session_id:"...",data_directory:"..."}`. The absolute data directory
+client first receives `{type:"hello",version:16,session_id:"...",data_directory:"..."}`. The absolute data directory
 keeps the same store for explicit Restart, which starts the engine beside the
 window rather than a path a pipe peer reports. Requests are
 `{request_id:integer,command:string,...}`. Replies repeat `request_id` and have
@@ -1685,21 +1687,48 @@ actual `disk_path`, byte `size`, `padding`, effective `priority`, and actual byt
 `downloaded` values. Resolve `disk_path` against `save_path` for file operations;
 display `path`. This preserves the torrent's name while unfinished payload uses
 the engine-owned `.!tt` name. The legacy combined detail includes both paths too.
-Peers supplies `peers`: endpoint, client, transport, incoming/encrypted facts,
-progress from 0 to 1, payload `download_rate`/`upload_rate` in bytes per second,
-and payload `downloaded`/`uploaded` byte counters.
+Peers supplies `peers`: `endpoint`, `client`, `transport`, `incoming`,
+`state` (`connecting`, `handshake`, `connected`), and `encryption` (`unknown`,
+`plain`, `handshake`, `rc4`, `tls`). Encryption stays `unknown` until the peer is
+connected. Encryption `handshake` means an obfuscated handshake
+with plain payload; TLS takes precedence over RC4, then handshake obfuscation.
+`transport` is `tcp`, `utp`, `i2p`, or `http`. Web seeds use `http` for the HTTP
+transport family and always report encryption `unknown`, because the peer sample
+does not expose their URL scheme or TLS state. Their state is `connecting` while
+the connection is pending and `connected` thereafter; libtorrent's web-seed
+handshake flag only indicates a missing server header, so it is not used.
+`interested` says we want the peer's pieces; `choked` says we choke the peer.
+`remote_interested` and `remote_choked` describe the peer's corresponding choices.
+`read_wait` and `write_wait` are arrays of `limit`, `network`, and `disk` flags,
+in that order, empty when none are set. These are observed libtorrent waits,
+not inferred causes of slow transfers. `sources` lists all discovery flags in
+stable order: `tracker`, `dht`, `pex`, `lsd`, `resume`, `incoming`.
+Rows also contain progress from 0 to 1, payload `download_rate`/`upload_rate` in
+bytes per second, and payload `downloaded`/`uploaded` byte counters.
 
-Trackers supplies URL/tier rows with status, scrape `seeds`, `leechers`, and
-`downloaded` counts (-1 when unknown), `next_announce` in Unix seconds (0 when
-unscheduled), and the raw tracker message/error. Four roles considered combining
+Trackers supplies `url`/`tier` rows with `status`, scrape `seed_count`,
+`leecher_count`, and `download_count` (-1 when unknown), `next_announce` in Unix
+seconds (0 when unscheduled), and the raw tracker `message`/error. Four roles considered combining
 libtorrent's endpoint and v1/v2 state in order. The everyday user needs a working
 tracker to stay working when another route fails. The network operator needs
 actual failures retained as diagnostic data. The libtorrent reviewer avoids
 adding duplicate scrape counts for several announces to one swarm. The product
 owner keeps the existing one-row-per-URL view: announcing takes precedence,
-then any working route, then error, waiting, or disabled when no route is usable.
+then any working route, then an error on a usable route, waiting, or disabled
+when no route is usable. A route whose retries are exhausted retains its
+diagnostics but cannot make a waiting usable route look failed.
 Scrape counts use the greatest reported value; the next time is the earliest
 usable route's time, respecting its minimum announce interval.
+Each row's `endpoints` array retains every local endpoint, including disabled
+ones, for each info-hash version the torrent has. Entries contain `address`
+(local IP and port, with brackets around IPv6), `version` (`v1` or `v2`),
+`status` (`disabled`, `announcing`, `working`, `error`, `waiting`), consecutive
+`failures`, and raw `message` (tracker text, otherwise the last error).
+An endpoint is disabled when its interface is disabled or its failure limit
+is reached. The aggregate message comes only from an endpoint with the same
+status as the aggregate; when no matching message exists, it is empty. A working
+route therefore never borrows an error from another route. All these diagnostics
+use the existing tracker and peer samples, without additional network requests.
 
 Pieces supplies `metadata_ready`, `piece_size`, connected `peers`, a complete
 `verified` bit list, corresponding `availability` counts, and indexed

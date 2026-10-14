@@ -8,18 +8,20 @@
   xmlns:table="using:Syno.TableView"
   xmlns:icons="using:Syno"
 >
+  <UserControl.Resources>
+    <Style x:Key="PeerToggleStyle" TargetType="ToggleButton" BasedOn="{StaticResource DefaultToggleButtonStyle}">
+      <Setter Property="Width" Value="32" />
+      <Setter Property="Height" Value="32" />
+      <Setter Property="MinWidth" Value="0" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+  </UserControl.Resources>
   <controls:Pane x:Name="Surface">
     <VisualStateManager.VisualStateGroups>
       <VisualStateGroup x:Name="TransferStates">
         <VisualState x:Name="Transferring" />
-        <VisualState x:Name="Muted">
-          <VisualState.Setters>
-            <Setter
-              Target="Progress.Style"
-              Value="{StaticResource TinyTorrentMutedProgressStyle}"
-            />
-          </VisualState.Setters>
-        </VisualState>
         <VisualState x:Name="Error">
           <VisualState.Setters>
             <Setter
@@ -63,37 +65,64 @@
         <TextBlock
           x:Name="HeadingSize"
           Grid.Column="2"
-          Text="{x:Bind Model.Target.SizeText, Mode=OneWay, FallbackValue=''}"
+          Text="{x:Bind Model.SizeText, Mode=OneWay}"
           Style="{StaticResource TinyTorrentTitleDetailTextStyle}"
         />
       </Grid>
     </controls:Pane.Header>
     <controls:Pane.Navigation>
-      <SelectorBar
-        x:Name="Sections"
-        Padding="0"
-        SelectionChanged="OnSection"
-        AutomationProperties.AutomationId="InspectorSections"
-      >
-        <SelectorBarItem
-          x:Name="GeneralSection"
-          AutomationProperties.AutomationId="InspectorGeneral"
-        />
-        <SelectorBarItem x:Name="FilesSection" AutomationProperties.AutomationId="InspectorFiles" />
-        <SelectorBarItem x:Name="PeersSection" AutomationProperties.AutomationId="InspectorPeers" />
-        <SelectorBarItem
-          x:Name="TrackersSection"
-          AutomationProperties.AutomationId="InspectorTrackers"
-        />
-        <SelectorBarItem x:Name="SpeedSection" AutomationProperties.AutomationId="InspectorSpeed" />
-        <SelectorBarItem
-          x:Name="PiecesSection"
-          AutomationProperties.AutomationId="InspectorPieces"
-        />
-      </SelectorBar>
+      <Grid>
+        <SelectorBar
+          x:Name="Sections"
+          Padding="0"
+          SelectionChanged="OnSection"
+          AutomationProperties.AutomationId="InspectorSections"
+        >
+          <SelectorBarItem
+            x:Name="GeneralSection"
+            AutomationProperties.AutomationId="InspectorGeneral"
+          />
+          <SelectorBarItem x:Name="FilesSection" AutomationProperties.AutomationId="InspectorFiles" />
+          <SelectorBarItem x:Name="PeersSection" AutomationProperties.AutomationId="InspectorPeers" />
+          <SelectorBarItem
+            x:Name="TrackersSection"
+            AutomationProperties.AutomationId="InspectorTrackers"
+          />
+          <SelectorBarItem x:Name="SpeedSection" AutomationProperties.AutomationId="InspectorSpeed" />
+          <SelectorBarItem
+            x:Name="PiecesSection"
+            AutomationProperties.AutomationId="InspectorPieces"
+          />
+        </SelectorBar>
+        <SelectorBar
+          x:Name="LibrarySections"
+          Padding="0"
+          Visibility="Collapsed"
+          SelectionChanged="OnSection"
+          AutomationProperties.AutomationId="LibrarySections"
+        >
+          <SelectorBarItem x:Name="LibraryInformation" AutomationProperties.AutomationId="LibraryInformation" />
+          <SelectorBarItem x:Name="LibraryFile" AutomationProperties.AutomationId="LibraryFile" />
+        </SelectorBar>
+      </Grid>
     </controls:Pane.Navigation>
     <controls:Pane.Actions>
       <StackPanel Orientation="Horizontal" Spacing="12">
+        <StackPanel x:Name="PeerActions" Orientation="Horizontal" Spacing="4"
+          VerticalAlignment="Center" Visibility="Collapsed">
+          <ToggleButton x:Name="ShowPeerMap" Checked="OnPeerView" Unchecked="OnPeerView"
+            Style="{StaticResource PeerToggleStyle}"
+            AutomationProperties.AutomationId="ShowPeerMap">
+            <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Map}"
+              FontSize="{StaticResource TinyTorrentButtonIconSize}" />
+          </ToggleButton>
+          <ToggleButton x:Name="ShowPeerTable" Checked="OnPeerView" Unchecked="OnPeerView"
+            Style="{StaticResource PeerToggleStyle}"
+            AutomationProperties.AutomationId="ShowPeerTable">
+            <FontIcon FontFamily="{x:Bind icons:Lucide.Font}" Glyph="{x:Bind icons:Lucide.Table2}"
+              FontSize="{StaticResource TinyTorrentButtonIconSize}" />
+          </ToggleButton>
+        </StackPanel>
         <StackPanel
           x:Name="LibraryActions"
           Orientation="Horizontal"
@@ -160,6 +189,19 @@
             />
           </Button>
           <Button
+            x:Name="Maximize"
+            x:FieldModifier="internal"
+            Style="{StaticResource TinyTorrentSubtleButtonStyle}"
+            AutomationProperties.AutomationId="InspectorMaximize"
+          >
+            <!-- RefreshMaximize sets the glyph, because Bindings.Update would reset a bound one. -->
+            <FontIcon
+              x:Name="MaximizeGlyph"
+              FontFamily="{x:Bind icons:Lucide.Font}"
+              FontSize="{StaticResource TinyTorrentButtonIconSize}"
+            />
+          </Button>
+          <Button
             x:Name="Close"
             x:FieldModifier="internal"
             Style="{StaticResource TinyTorrentSubtleButtonStyle}"
@@ -185,7 +227,7 @@
         >
           <StackPanel x:Name="GeneralContent" Spacing="16" SizeChanged="OnGeneralSize">
             <controls:Section
-              Header="{x:Bind Model.Text.Get('inspector', 'transfer'), Mode=OneWay}"
+              Header="{x:Bind Model.Text.Get('inspector', 'transfer')}"
               Glyph="{x:Bind icons:Lucide.ArrowDownUp}"
             >
               <StackPanel>
@@ -213,7 +255,7 @@
                   Value="{x:Bind Model.Target.Progress, Mode=OneWay}"
                   IsIndeterminate="{x:Bind Model.IsIndeterminate, Mode=OneWay}"
                   ShowError="{x:Bind Model.Target.IsError, Mode=OneWay}"
-                  AutomationProperties.Name="{x:Bind Model.Text.Get('columns', 'progress'), Mode=OneWay}"
+                  AutomationProperties.Name="{x:Bind Model.Text.Get('columns', 'progress')}"
                 />
                 <Grid ColumnSpacing="24">
                   <Grid.ColumnDefinitions>
@@ -234,7 +276,7 @@
                     Spacing="4"
                     HorizontalAlignment="Right"
                     Background="Transparent"
-                    ToolTipService.ToolTip="{x:Bind Model.Text.Get('columns', 'down'), Mode=OneWay}"
+                    ToolTipService.ToolTip="{x:Bind Model.Text.Get('columns', 'down')}"
                   >
                     <FontIcon
                       Style="{StaticResource TinyTorrentStatusIconStyle}"
@@ -258,7 +300,7 @@
                     Spacing="4"
                     HorizontalAlignment="Right"
                     Background="Transparent"
-                    ToolTipService.ToolTip="{x:Bind Model.Text.Get('columns', 'up'), Mode=OneWay}"
+                    ToolTipService.ToolTip="{x:Bind Model.Text.Get('columns', 'up')}"
                   >
                     <FontIcon
                       Style="{StaticResource TinyTorrentStatusIconStyle}"
@@ -280,7 +322,7 @@
                   <controls:Field
                     Style="{StaticResource InspectorStatisticStyle}"
                     Glyph="{x:Bind icons:Lucide.Download}"
-                    Label="{x:Bind Model.Text.Get('inspector', 'downloaded'), Mode=OneWay}"
+                    Label="{x:Bind Model.Text.Get('inspector', 'downloaded')}"
                   >
                     <TextBlock
                       Text="{x:Bind Model.Target.DownloadedText, Mode=OneWay}"
@@ -290,7 +332,7 @@
                   <controls:Field
                     Style="{StaticResource InspectorStatisticStyle}"
                     Glyph="{x:Bind icons:Lucide.Upload}"
-                    Label="{x:Bind Model.Text.Get('peers', 'uploaded'), Mode=OneWay}"
+                    Label="{x:Bind Model.Text.Get('peers', 'uploaded')}"
                   >
                     <TextBlock
                       Text="{x:Bind Model.Target.UploadedText, Mode=OneWay}"
@@ -301,7 +343,7 @@
                     x:Name="Ratio"
                     Style="{StaticResource InspectorStatisticStyle}"
                     Glyph="{x:Bind icons:Lucide.Scale}"
-                    Label="{x:Bind Model.Text.Get('columns', 'ratio'), Mode=OneWay}"
+                    Label="{x:Bind Model.Text.Get('columns', 'ratio')}"
                   >
                     <TextBlock
                       Text="{x:Bind Model.Target.RatioText, Mode=OneWay}"
@@ -312,7 +354,7 @@
                     x:Name="SeedCount"
                     Style="{StaticResource InspectorStatisticStyle}"
                     Glyph="{x:Bind icons:Lucide.Sprout}"
-                    Label="{x:Bind Model.Text.Get('columns', 'seeds'), Mode=OneWay}"
+                    Label="{x:Bind Model.Text.Get('columns', 'seeds')}"
                   >
                     <TextBlock
                       Text="{x:Bind Model.Target.SeedsText, Mode=OneWay}"
@@ -325,7 +367,7 @@
                     x:Name="PeerCount"
                     Style="{StaticResource InspectorStatisticStyle}"
                     Glyph="{x:Bind icons:Lucide.Users}"
-                    Label="{x:Bind Model.Text.Get('columns', 'peers'), Mode=OneWay}"
+                    Label="{x:Bind Model.Text.Get('columns', 'peers')}"
                   >
                     <TextBlock
                       Text="{x:Bind Model.Target.PeersText, Mode=OneWay}"
@@ -338,7 +380,7 @@
                     x:Name="Limit"
                     Style="{StaticResource InspectorStatisticStyle}"
                     Glyph="{x:Bind icons:Lucide.Gauge}"
-                    Label="{x:Bind Model.Text.Get('columns', 'limit'), Mode=OneWay}"
+                    Label="{x:Bind Model.Text.Get('columns', 'limit')}"
                   >
                     <TextBlock
                       Text="{x:Bind Model.LimitText, Mode=OneWay}"
@@ -351,7 +393,7 @@
             </controls:Section>
             <Border Style="{StaticResource InspectorDividerStyle}" />
             <controls:Section
-              Header="{x:Bind Model.Text.Get('inspector', 'properties'), Mode=OneWay}"
+              Header="{x:Bind Model.Text.Get('inspector', 'properties')}"
               Glyph="{x:Bind icons:Lucide.Info}"
             >
               <controls:FieldColumns>
@@ -359,14 +401,14 @@
                   <StackPanel>
                     <controls:Field
                       Glyph="{x:Bind icons:Lucide.Folder}"
-                      Label="{x:Bind Model.Text.Get('inspector', 'folder'), Mode=OneWay}"
+                      Label="{x:Bind Model.Text.Get('inspector', 'folder')}"
                     >
                       <controls:Field.Action>
                         <Button
                           Style="{StaticResource TinyTorrentSubtleButtonStyle}"
                           Command="{x:Bind Model.OpenFolder}"
-                          AutomationProperties.Name="{x:Bind Model.Text.Get('commands', 'open_folder'), Mode=OneWay}"
-                          ToolTipService.ToolTip="{x:Bind Model.Text.Get('commands', 'open_folder'), Mode=OneWay}"
+                          AutomationProperties.Name="{x:Bind Model.Text.Get('commands', 'open_folder')}"
+                          ToolTipService.ToolTip="{x:Bind Model.Text.Get('commands', 'open_folder')}"
                         >
                           <FontIcon
                             FontSize="{StaticResource TinyTorrentButtonIconSize}"
@@ -392,8 +434,8 @@
                         <Button
                           Style="{StaticResource TinyTorrentSubtleButtonStyle}"
                           Command="{x:Bind Model.CopyV1}"
-                          AutomationProperties.Name="{x:Bind Model.Text.Get('commands', 'copy_hash'), Mode=OneWay}"
-                          ToolTipService.ToolTip="{x:Bind Model.Text.Get('commands', 'copy_hash'), Mode=OneWay}"
+                          AutomationProperties.Name="{x:Bind Model.Text.Get('commands', 'copy_hash')}"
+                          ToolTipService.ToolTip="{x:Bind Model.Text.Get('commands', 'copy_hash')}"
                         >
                           <FontIcon
                             FontSize="{StaticResource TinyTorrentButtonIconSize}"
@@ -417,8 +459,8 @@
                         <Button
                           Style="{StaticResource TinyTorrentSubtleButtonStyle}"
                           Command="{x:Bind Model.CopyV2}"
-                          AutomationProperties.Name="{x:Bind Model.Text.Get('commands', 'copy_hash'), Mode=OneWay}"
-                          ToolTipService.ToolTip="{x:Bind Model.Text.Get('commands', 'copy_hash'), Mode=OneWay}"
+                          AutomationProperties.Name="{x:Bind Model.Text.Get('commands', 'copy_hash')}"
+                          ToolTipService.ToolTip="{x:Bind Model.Text.Get('commands', 'copy_hash')}"
                         >
                           <FontIcon
                             FontSize="{StaticResource TinyTorrentButtonIconSize}"
@@ -435,14 +477,14 @@
                     </controls:Field>
                     <controls:Field
                       Glyph="{x:Bind icons:Lucide.Magnet}"
-                      Label="{x:Bind Model.Text.Get('add', 'magnet'), Mode=OneWay}"
+                      Label="{x:Bind Model.Text.Get('add', 'magnet')}"
                     >
                       <controls:Field.Action>
                         <Button
                           Style="{StaticResource TinyTorrentSubtleButtonStyle}"
                           Command="{x:Bind Model.CopyMagnet}"
-                          AutomationProperties.Name="{x:Bind Model.Text.Get('commands', 'copy_magnet'), Mode=OneWay}"
-                          ToolTipService.ToolTip="{x:Bind Model.Text.Get('commands', 'copy_magnet'), Mode=OneWay}"
+                          AutomationProperties.Name="{x:Bind Model.Text.Get('commands', 'copy_magnet')}"
+                          ToolTipService.ToolTip="{x:Bind Model.Text.Get('commands', 'copy_magnet')}"
                         >
                           <FontIcon
                             FontSize="{StaticResource TinyTorrentButtonIconSize}"
@@ -459,7 +501,7 @@
                     </controls:Field>
                     <controls:Field
                       Glyph="{x:Bind icons:Lucide.MessageSquare}"
-                      Label="{x:Bind Model.Text.Get('inspector', 'comment'), Mode=OneWay}"
+                      Label="{x:Bind Model.Text.Get('inspector', 'comment')}"
                     >
                       <TextBlock
                         Text="{x:Bind Model.CommentText, Mode=OneWay}"
@@ -473,7 +515,7 @@
                   <StackPanel>
                     <controls:Field
                       Glyph="{x:Bind icons:Lucide.Clock}"
-                      Label="{x:Bind Model.Text.Get('columns', 'added'), Mode=OneWay}"
+                      Label="{x:Bind Model.Text.Get('columns', 'added')}"
                     >
                       <TextBlock
                         Text="{x:Bind Model.Target.AddedTip, Mode=OneWay, TargetNullValue='—'}"
@@ -483,7 +525,7 @@
                     </controls:Field>
                     <controls:Field
                       Glyph="{x:Bind icons:Lucide.Grid3x3}"
-                      Label="{x:Bind Model.Text.Get('inspector', 'pieces'), Mode=OneWay}"
+                      Label="{x:Bind Model.Text.Get('inspector', 'pieces')}"
                     >
                       <TextBlock
                         Text="{x:Bind Model.PiecesText, Mode=OneWay}"
@@ -493,7 +535,7 @@
                     </controls:Field>
                     <controls:Field
                       Glyph="{x:Bind Model.PrivacyGlyph, Mode=OneWay}"
-                      Label="{x:Bind Model.Text.Get('inspector', 'privacy'), Mode=OneWay}"
+                      Label="{x:Bind Model.Text.Get('inspector', 'privacy')}"
                     >
                       <TextBlock
                         Text="{x:Bind Model.PrivacyText, Mode=OneWay}"
@@ -503,7 +545,7 @@
                     </controls:Field>
                     <controls:Field
                       Glyph="{x:Bind icons:Lucide.Calendar}"
-                      Label="{x:Bind Model.Text.Get('inspector', 'created'), Mode=OneWay}"
+                      Label="{x:Bind Model.Text.Get('inspector', 'created')}"
                     >
                       <TextBlock
                         Text="{x:Bind Model.CreatedText, Mode=OneWay}"
@@ -513,7 +555,7 @@
                     </controls:Field>
                     <controls:Field
                       Glyph="{x:Bind icons:Lucide.Wrench}"
-                      Label="{x:Bind Model.Text.Get('inspector', 'creator'), Mode=OneWay}"
+                      Label="{x:Bind Model.Text.Get('inspector', 'creator')}"
                     >
                       <TextBlock
                         Text="{x:Bind Model.CreatorText, Mode=OneWay}"
@@ -534,30 +576,43 @@
           />
           <TextBlock
             x:Name="WaitingMetadata"
-            Text="{x:Bind Model.Text.Get('pieces', 'metadata'), Mode=OneWay}"
+            Text="{x:Bind Model.Text.Get('pieces', 'metadata')}"
             HorizontalAlignment="Center"
             VerticalAlignment="Center"
             TextWrapping="Wrap"
             Visibility="{x:Bind local:InspectorPane.Hidden(Model.HasFiles), Mode=OneWay}"
           />
         </Grid>
+        <Grid x:Name="PeerContent" x:Load="False" Visibility="Collapsed" SizeChanged="OnPeerSize">
+          <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="0" />
+            <RowDefinition Height="0" />
+          </Grid.RowDefinitions>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="0" />
+            <ColumnDefinition Width="0" />
+          </Grid.ColumnDefinitions>
+          <ContentControl x:Name="PeerDrawing" HorizontalContentAlignment="Stretch"
+            VerticalContentAlignment="Stretch" Visibility="Collapsed" />
+          <controls:Splitter x:Name="PeerSplit" Visibility="Collapsed" />
         <table:Table
-          x:Name="Peers" x:Load="False"
+          x:Name="Peers"
           Margin="0,8,0,0"
-          Visibility="Collapsed"
           ItemsSource="{x:Bind Model.Peers, Mode=OneWay}"
         >
           <table:Table.EmptyContent>
             <TextBlock
               x:Name="NoPeers"
-              Text="{x:Bind Model.Text.Get('peers', 'empty'), Mode=OneWay}"
+              Text="{x:Bind Model.Text.Get('peers', 'empty')}"
               HorizontalAlignment="Center"
               VerticalAlignment="Center"
               TextWrapping="Wrap"
             />
           </table:Table.EmptyContent>
           <table:Table.Columns>
-            <table:Column x:Name="EndpointColumn" Id="endpoint" Width="220" CanHide="False">
+            <table:Column x:Name="EndpointColumn" Id="endpoint" Width="220" MinWidth="160" CanHide="False">
               <table:Column.CellTemplate>
                 <DataTemplate x:DataType="models:Peer">
                   <TextBlock
@@ -568,22 +623,65 @@
                 </DataTemplate>
               </table:Column.CellTemplate>
             </table:Column>
-            <table:Column x:Name="ClientColumn" Id="client" Width="180">
+            <table:Column x:Name="ClientColumn" Id="client" Width="180" MinWidth="96">
               <table:Column.CellTemplate>
                 <DataTemplate x:DataType="models:Peer">
                   <TextBlock
-                    Text="{x:Bind Client, Mode=OneWay}"
+                    Text="{x:Bind ClientText, Mode=OneWay}"
+                    ToolTipService.ToolTip="{x:Bind ClientHint, Mode=OneWay}"
+                    AutomationProperties.HelpText="{x:Bind ClientHint, Mode=OneWay}"
                     VerticalAlignment="Center"
                     TextTrimming="CharacterEllipsis"
                   />
                 </DataTemplate>
               </table:Column.CellTemplate>
             </table:Column>
-            <table:Column x:Name="ConnectionColumn" Id="connection" Width="220">
+            <table:Column x:Name="LocationColumn" Id="location" Width="180" MinWidth="140">
+              <table:Column.CellTemplate>
+                <DataTemplate x:DataType="models:Peer">
+                  <Grid ColumnSpacing="6" Background="Transparent"
+                    ToolTipService.ToolTip="{x:Bind LocationText, Mode=OneWay}">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="Auto" />
+                      <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="{x:Bind icons:Flags.Glyph(CountryCode), Mode=OneWay}"
+                      FontFamily="{StaticResource FlagsFont}" VerticalAlignment="Center"
+                      Visibility="{x:Bind local:InspectorPane.Shown(CountryCode), Mode=OneWay}"
+                      AutomationProperties.AccessibilityView="Raw" />
+                    <TextBlock Grid.Column="1" Text="{x:Bind LocationText, Mode=OneWay}"
+                      VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                  </Grid>
+                </DataTemplate>
+              </table:Column.CellTemplate>
+            </table:Column>
+            <table:Column x:Name="PeerStateColumn" Id="state" Width="120" MinWidth="112">
+              <table:Column.CellTemplate>
+                <DataTemplate x:DataType="models:Peer">
+                  <Grid ColumnSpacing="6" Background="Transparent"
+                    ToolTipService.ToolTip="{x:Bind StateHint, Mode=OneWay}">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="Auto" />
+                      <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <FontIcon FontFamily="{StaticResource LucideFont}"
+                      Glyph="{x:Bind StateGlyph, Mode=OneWay}"
+                      Style="{StaticResource TinyTorrentStatusIconStyle}"
+                      AutomationProperties.AccessibilityView="Raw" />
+                    <TextBlock Grid.Column="1" Text="{x:Bind StateText, Mode=OneWay}"
+                      AutomationProperties.HelpText="{x:Bind StateHint, Mode=OneWay}"
+                      VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                  </Grid>
+                </DataTemplate>
+              </table:Column.CellTemplate>
+            </table:Column>
+            <table:Column x:Name="ConnectionColumn" Id="connection" Width="220" MinWidth="120">
               <table:Column.CellTemplate>
                 <DataTemplate x:DataType="models:Peer">
                   <TextBlock
                     Text="{x:Bind ConnectionText, Mode=OneWay}"
+                    ToolTipService.ToolTip="{x:Bind ConnectionHint, Mode=OneWay}"
+                    AutomationProperties.HelpText="{x:Bind ConnectionHint, Mode=OneWay}"
                     VerticalAlignment="Center"
                   />
                 </DataTemplate>
@@ -593,6 +691,7 @@
               x:Name="PeerProgressColumn"
               Id="progress"
               Width="100"
+              MinWidth="80"
               CellAlignment="Right"
             >
               <table:Column.CellTemplate>
@@ -601,22 +700,26 @@
                 </DataTemplate>
               </table:Column.CellTemplate>
             </table:Column>
-            <table:Column x:Name="PeerDownColumn" Id="down" Width="120" CellAlignment="Right">
+            <table:Column x:Name="PeerDownColumn" Id="down" Width="120" MinWidth="96" CellAlignment="Right">
               <table:Column.CellTemplate>
                 <DataTemplate x:DataType="models:Peer">
                   <TextBlock
                     Text="{x:Bind DownloadText, Mode=OneWay}"
+                    ToolTipService.ToolTip="{x:Bind DownloadHint, Mode=OneWay}"
+                    AutomationProperties.HelpText="{x:Bind DownloadHint, Mode=OneWay}"
                     Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
                     VerticalAlignment="Center"
                   />
                 </DataTemplate>
               </table:Column.CellTemplate>
             </table:Column>
-            <table:Column x:Name="PeerUpColumn" Id="up" Width="120" CellAlignment="Right">
+            <table:Column x:Name="PeerUpColumn" Id="up" Width="120" MinWidth="96" CellAlignment="Right">
               <table:Column.CellTemplate>
                 <DataTemplate x:DataType="models:Peer">
                   <TextBlock
                     Text="{x:Bind UploadText, Mode=OneWay}"
+                    ToolTipService.ToolTip="{x:Bind UploadHint, Mode=OneWay}"
+                    AutomationProperties.HelpText="{x:Bind UploadHint, Mode=OneWay}"
                     Foreground="{ThemeResource TinyTorrentUploadBrush}"
                     VerticalAlignment="Center"
                   />
@@ -627,6 +730,7 @@
               x:Name="PeerDownloadedColumn"
               Id="downloaded"
               Width="120"
+              MinWidth="96"
               CellAlignment="Right"
             >
               <table:Column.CellTemplate>
@@ -642,6 +746,7 @@
               x:Name="PeerUploadedColumn"
               Id="uploaded"
               Width="120"
+              MinWidth="96"
               CellAlignment="Right"
             >
               <table:Column.CellTemplate>
@@ -652,6 +757,7 @@
             </table:Column>
           </table:Table.Columns>
         </table:Table>
+        </Grid>
         <Grid x:Name="Trackers" x:Load="False" Visibility="Collapsed" RowSpacing="12">
           <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
@@ -666,16 +772,16 @@
           >
             <controls:ActionButton
               Glyph="{x:Bind icons:Lucide.Pencil}"
-              ToolTipService.ToolTip="{x:Bind Model.Text.Get('trackers', 'edit_tip'), Mode=OneWay}"
+              ToolTipService.ToolTip="{x:Bind Model.Text.Get('trackers', 'edit_tip')}"
               x:Name="EditTrackers"
-              Text="{x:Bind Model.Text.Get('trackers', 'edit'), Mode=OneWay}"
+              Text="{x:Bind Model.Text.Get('trackers', 'edit')}"
               Command="{x:Bind Model.EditTrackers}"
             />
             <controls:ActionButton
               Glyph="{x:Bind icons:Lucide.RadioTower}"
-              ToolTipService.ToolTip="{x:Bind Model.Text.Get('trackers', 'reannounce_tip'), Mode=OneWay}"
+              ToolTipService.ToolTip="{x:Bind Model.Text.Get('trackers', 'reannounce_tip')}"
               x:Name="Reannounce"
-              Text="{x:Bind Model.Text.Get('trackers', 'reannounce'), Mode=OneWay}"
+              Text="{x:Bind Model.Text.Get('trackers', 'reannounce')}"
               Command="{x:Bind Model.Reannounce}"
             />
           </StackPanel>
@@ -688,7 +794,7 @@
             <table:Table.EmptyContent>
               <TextBlock
                 x:Name="NoTrackers"
-                Text="{x:Bind Model.Text.Get('trackers', 'empty'), Mode=OneWay}"
+                Text="{x:Bind Model.Text.Get('trackers', 'empty')}"
                 HorizontalAlignment="Center"
                 VerticalAlignment="Center"
                 TextWrapping="Wrap"
@@ -717,10 +823,23 @@
               <table:Column x:Name="TrackerStatusColumn" Id="status" Width="120">
                 <table:Column.CellTemplate>
                   <DataTemplate x:DataType="models:Tracker">
-                    <Grid>
-                      <TextBlock Text="{x:Bind StatusText, Mode=OneWay}" VerticalAlignment="Center"
+                    <Grid ColumnSpacing="6" Background="Transparent"
+                      ToolTipService.ToolTip="{x:Bind StatusHint, Mode=OneWay}">
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                      </Grid.ColumnDefinitions>
+                      <FontIcon FontFamily="{StaticResource LucideFont}"
+                        Glyph="{x:Bind StatusGlyph, Mode=OneWay}"
+                        Style="{StaticResource TinyTorrentStatusIconStyle}"
+                        AutomationProperties.AccessibilityView="Raw" />
+                      <TextBlock Grid.Column="1" Text="{x:Bind StatusText, Mode=OneWay}" VerticalAlignment="Center"
+                        TextTrimming="CharacterEllipsis"
+                        AutomationProperties.HelpText="{x:Bind StatusHint, Mode=OneWay}"
                         Visibility="{x:Bind local:InspectorPane.Hidden(IsError), Mode=OneWay}" />
-                      <TextBlock Text="{x:Bind StatusText, Mode=OneWay}" VerticalAlignment="Center"
+                      <TextBlock Grid.Column="1" Text="{x:Bind StatusText, Mode=OneWay}" VerticalAlignment="Center"
+                        TextTrimming="CharacterEllipsis"
+                        AutomationProperties.HelpText="{x:Bind StatusHint, Mode=OneWay}"
                         Foreground="{ThemeResource SystemFillColorCriticalBrush}"
                         Visibility="{x:Bind IsError, Mode=OneWay}" />
                     </Grid>
@@ -750,19 +869,37 @@
                 Width="100"
                 CellAlignment="Right"
               >
+                <table:Column.Header>
+                  <TextBlock Text="{x:Bind Model.Text.Get('trackers', 'downloads')}"
+                    VerticalAlignment="Center"
+                    TextTrimming="CharacterEllipsis"
+                    ToolTipService.ToolTip="{x:Bind Model.Text.Get('trackers', 'downloads_hint')}"
+                    AutomationProperties.HelpText="{x:Bind Model.Text.Get('trackers', 'downloads_hint')}" />
+                </table:Column.Header>
                 <table:Column.CellTemplate>
                   <DataTemplate x:DataType="models:Tracker">
                     <TextBlock
                       Text="{x:Bind DownloadsText, Mode=OneWay}"
+                      ToolTipService.ToolTip="{x:Bind DownloadsHint, Mode=OneWay}"
+                      AutomationProperties.HelpText="{x:Bind DownloadsHint, Mode=OneWay}"
                       VerticalAlignment="Center"
                     />
                   </DataTemplate>
                 </table:Column.CellTemplate>
               </table:Column>
               <table:Column x:Name="NextColumn" Id="next" Width="140">
+                <table:Column.Header>
+                  <TextBlock Text="{x:Bind Model.Text.Get('trackers', 'next')}"
+                    VerticalAlignment="Center"
+                    TextTrimming="CharacterEllipsis"
+                    ToolTipService.ToolTip="{x:Bind Model.Text.Get('trackers', 'next_hint')}"
+                    AutomationProperties.HelpText="{x:Bind Model.Text.Get('trackers', 'next_hint')}" />
+                </table:Column.Header>
                 <table:Column.CellTemplate>
                   <DataTemplate x:DataType="models:Tracker">
-                    <TextBlock Text="{x:Bind NextText, Mode=OneWay}" VerticalAlignment="Center" />
+                    <TextBlock Text="{x:Bind NextText, Mode=OneWay}" VerticalAlignment="Center"
+                      ToolTipService.ToolTip="{x:Bind NextHint, Mode=OneWay}"
+                      AutomationProperties.HelpText="{x:Bind NextHint, Mode=OneWay}" />
                   </DataTemplate>
                 </table:Column.CellTemplate>
               </table:Column>
@@ -771,6 +908,8 @@
                   <DataTemplate x:DataType="models:Tracker">
                     <TextBlock
                       Text="{x:Bind Message, Mode=OneWay}"
+                      ToolTipService.ToolTip="{x:Bind StatusHint, Mode=OneWay}"
+                      AutomationProperties.HelpText="{x:Bind StatusHint, Mode=OneWay}"
                       VerticalAlignment="Center"
                       TextTrimming="CharacterEllipsis"
                     />
@@ -798,21 +937,21 @@
               AcceptsReturn="True"
               TextWrapping="NoWrap"
               FlowDirection="LeftToRight"
-              ToolTipService.ToolTip="{x:Bind Model.Text.Get('trackers', 'hint'), Mode=OneWay}"
-              AutomationProperties.HelpText="{x:Bind Model.Text.Get('trackers', 'hint'), Mode=OneWay}"
+              ToolTipService.ToolTip="{x:Bind Model.Text.Get('trackers', 'hint')}"
+              AutomationProperties.HelpText="{x:Bind Model.Text.Get('trackers', 'hint')}"
             />
             <StackPanel Orientation="Horizontal" Spacing="8">
               <controls:ActionButton
                 Glyph="{x:Bind icons:Lucide.Save}"
-                ToolTipService.ToolTip="{x:Bind Model.Text.Get('trackers', 'save_tip'), Mode=OneWay}"
+                ToolTipService.ToolTip="{x:Bind Model.Text.Get('trackers', 'save_tip')}"
                 x:Name="SaveTrackers"
-                Text="{x:Bind Model.Text.Get('trackers', 'save'), Mode=OneWay}"
+                Text="{x:Bind Model.Text.Get('trackers', 'save')}"
                 IsEnabled="{x:Bind Model.CanEdit, Mode=OneWay}"
               />
               <controls:ActionButton
                 Glyph="{x:Bind icons:Lucide.X}"
                 x:Name="CancelTrackers"
-                Text="{x:Bind Model.Text.Get('add', 'cancel'), Mode=OneWay}"
+                Text="{x:Bind Model.Text.Get('add', 'cancel')}"
                 Command="{x:Bind Model.CancelTrackers}"
               />
             </StackPanel>
@@ -862,7 +1001,7 @@
             Glyph="{x:Bind icons:Lucide.RotateCw}"
             ToolTipService.ToolTip="{x:Bind Model.RetryToolTip, Mode=OneWay}"
             x:Name="Retry"
-            Text="{x:Bind Model.Text.Get('inspector', 'retry'), Mode=OneWay}"
+            Text="{x:Bind Model.Text.Get('inspector', 'retry')}"
             Command="{x:Bind Model.Retry}"
           />
         </InfoBar.ActionButton>

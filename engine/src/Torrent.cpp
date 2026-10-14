@@ -354,20 +354,29 @@ std::vector<std::string> Torrent::Hashes() const
 std::string Torrent::Folder() const
 {
     std::filesystem::path folder = Wide(facts.savePath);
-    auto paths = Paths(true);
-    if (paths.size() == 1)
+    auto metadata = restore ? restore->ti : handle.torrent_file();
+    if (!metadata)
+        return Utf8(folder.wstring());
+    std::optional<std::filesystem::path> first;
+    bool multiple = false;
+    for (auto index : metadata->layout().file_range())
     {
-        return Utf8((folder / paths.front()).parent_path().wstring());
-    }
-    if (!paths.empty() && paths.front().has_parent_path())
-    {
-        auto root = *paths.front().begin();
-        if (std::all_of(paths.begin(), paths.end(),
-            [&root](auto const& path) { return *path.begin() == root; }))
+        if (metadata->layout().pad_file_at(index))
+            continue;
+        auto path = std::filesystem::path(Wide(ContentPath(metadata->layout(), index, facts.layout)));
+        if (!first)
         {
-            folder /= root;
+            first = std::move(path);
+        }
+        else
+        {
+            multiple = true;
+            if (!first->has_parent_path() || *path.begin() != *first->begin())
+                return Utf8(folder.wstring());
         }
     }
+    if (first)
+        folder = multiple ? folder / *first->begin() : (folder / *first).parent_path();
     return Utf8(folder.wstring());
 }
 
@@ -500,6 +509,59 @@ Json Torrent::Describe(Detail const& detail, std::shared_ptr<lt::torrent_info co
 
 namespace
 {
+char const* ToString(PeerState state)
+{
+    switch (state)
+    {
+    case PeerState::Connecting: return "connecting";
+    case PeerState::Handshake: return "handshake";
+    case PeerState::Connected: return "connected";
+    }
+    return "";
+}
+
+char const* ToString(PeerEncryption encryption)
+{
+    switch (encryption)
+    {
+    case PeerEncryption::Unknown: return "unknown";
+    case PeerEncryption::Plain: return "plain";
+    case PeerEncryption::Handshake: return "handshake";
+    case PeerEncryption::Rc4: return "rc4";
+    case PeerEncryption::Tls: return "tls";
+    }
+    return "";
+}
+
+char const* ToString(TrackerStatus status)
+{
+    switch (status)
+    {
+    case TrackerStatus::Disabled: return "disabled";
+    case TrackerStatus::Announcing: return "announcing";
+    case TrackerStatus::Working: return "working";
+    case TrackerStatus::Error: return "error";
+    case TrackerStatus::Waiting: return "waiting";
+    }
+    return "";
+}
+
+std::string DescribeEndpoint(lt::tcp::endpoint const& endpoint)
+{
+    auto address = endpoint.address().to_string();
+    return (endpoint.address().is_v6() ? "[" + address + "]" : address) +
+        ":" + std::to_string(endpoint.port());
+}
+
+Json DescribeWait(lt::bandwidth_state_flags_t state)
+{
+    auto waits = Json::array();
+    if (bool(state & lt::peer_info::bw_limit)) waits.push_back("limit");
+    if (bool(state & lt::peer_info::bw_network)) waits.push_back("network");
+    if (bool(state & lt::peer_info::bw_disk)) waits.push_back("disk");
+    return waits;
+}
+
 Json DescribePeers(std::vector<lt::peer_info> const& peers)
 {
     Json data;
@@ -517,20 +579,51 @@ Json DescribePeers(std::vector<lt::peer_info> const& peers)
         }
         else
         {
-            auto endpoint = peer.remote_endpoint();
-            address = endpoint.address().to_string();
-            address = (endpoint.address().is_v6() ? "[" + address + "]" : address) +
-                ":" + std::to_string(endpoint.port());
+            address = DescribeEndpoint(peer.remote_endpoint());
         }
-        if (bool(peer.connection_type & (lt::peer_info::web_seed | lt::peer_info::http_seed)))
+        auto webSeed = bool(peer.connection_type & (lt::peer_info::web_seed | lt::peer_info::http_seed));
+        if (webSeed)
         {
-            transport = bool(peer.flags & lt::peer_info::ssl_socket) ? "https" : "http";
+            transport = "http";
         }
+        auto state = PeerState::Connected;
+        if (bool(peer.flags & lt::peer_info::connecting))
+        {
+            state = PeerState::Connecting;
+        }
+        else if (!webSeed && bool(peer.flags & lt::peer_info::handshake))
+        {
+            state = PeerState::Handshake;
+        }
+        auto encryption = PeerEncryption::Unknown;
+        if (!webSeed && state == PeerState::Connected)
+        {
+            if (bool(peer.flags & lt::peer_info::ssl_socket))
+                encryption = PeerEncryption::Tls;
+            else if (bool(peer.flags & lt::peer_info::rc4_encrypted))
+                encryption = PeerEncryption::Rc4;
+            else if (bool(peer.flags & lt::peer_info::plaintext_encrypted))
+                encryption = PeerEncryption::Handshake;
+            else
+                encryption = PeerEncryption::Plain;
+        }
+        auto sources = Json::array();
+        if (bool(peer.source & lt::peer_info::tracker)) sources.push_back("tracker");
+        if (bool(peer.source & lt::peer_info::dht)) sources.push_back("dht");
+        if (bool(peer.source & lt::peer_info::pex)) sources.push_back("pex");
+        if (bool(peer.source & lt::peer_info::lsd)) sources.push_back("lsd");
+        if (bool(peer.source & lt::peer_info::resume_data)) sources.push_back("resume");
+        if (bool(peer.source & lt::peer_info::incoming)) sources.push_back("incoming");
         data["peers"].push_back({{"endpoint", address}, {"client", peer.client},
             {"transport", transport},
             {"incoming", !bool(peer.flags & lt::peer_info::outgoing_connection)},
-            {"encrypted", bool(peer.flags & (lt::peer_info::rc4_encrypted |
-                lt::peer_info::plaintext_encrypted | lt::peer_info::ssl_socket))},
+            {"state", ToString(state)}, {"encryption", ToString(encryption)},
+            {"interested", bool(peer.flags & lt::peer_info::interesting)},
+            {"choked", bool(peer.flags & lt::peer_info::choked)},
+            {"remote_interested", bool(peer.flags & lt::peer_info::remote_interested)},
+            {"remote_choked", bool(peer.flags & lt::peer_info::remote_choked)},
+            {"read_wait", DescribeWait(peer.read_state)}, {"write_wait", DescribeWait(peer.write_state)},
+            {"sources", std::move(sources)},
             {"progress", peer.progress_ppm / 1'000'000.0},
             {"download_rate", peer.payload_down_speed}, {"upload_rate", peer.payload_up_speed},
             {"downloaded", peer.total_download}, {"uploaded", peer.total_upload}});
@@ -538,26 +631,38 @@ Json DescribePeers(std::vector<lt::peer_info> const& peers)
     return data;
 }
 
+TrackerStatus ClassifyTracker(lt::announce_infohash const& state, bool usable)
+{
+    if (!usable) return TrackerStatus::Disabled;
+    if (state.updating) return TrackerStatus::Announcing;
+    if (state.last_error || state.fails > 0) return TrackerStatus::Error;
+    return state.start_sent ? TrackerStatus::Working : TrackerStatus::Waiting;
+}
+
+TrackerStatus PreferStatus(TrackerStatus current, TrackerStatus candidate)
+{
+    for (auto status : {TrackerStatus::Announcing, TrackerStatus::Working,
+        TrackerStatus::Error, TrackerStatus::Waiting, TrackerStatus::Disabled})
+    {
+        if (status == current || status == candidate) return status;
+    }
+    return TrackerStatus::Disabled;
+}
+
 // One tracker's row. `now` and `wall` are the same moment on libtorrent's
 // clock and the system clock, read once for the whole list.
 Json DescribeTracker(lt::announce_entry const& tracker, lt::info_hash_t const& hashes,
     lt::time_point now, std::time_t wall)
 {
-    bool enabled = tracker.endpoints.empty();
-    bool updating = false;
-    bool working = false;
-    bool failed = false;
+    auto summary = tracker.endpoints.empty() ? TrackerStatus::Waiting : TrackerStatus::Disabled;
+    std::string message;
     int seedCount = -1;
     int leecherCount = -1;
     int downloadCount = -1;
     std::int64_t next = 0;
-    std::string message;
+    auto endpoints = Json::array();
     for (auto const& endpoint : tracker.endpoints)
     {
-        if (!endpoint.enabled)
-        {
-            continue;
-        }
         for (auto version : {lt::protocol_version::V1, lt::protocol_version::V2})
         {
             if (!hashes.has(version))
@@ -565,11 +670,31 @@ Json DescribeTracker(lt::announce_entry const& tracker, lt::info_hash_t const& h
                 continue;
             }
             auto const& state = endpoint.info_hashes[version];
-            auto usable = tracker.fail_limit == 0 || state.fails < tracker.fail_limit;
-            enabled |= usable;
-            updating |= usable && state.updating;
-            working |= usable && state.start_sent && !state.last_error && state.fails == 0;
-            failed |= bool(state.last_error) || state.fails > 0;
+            auto usable = endpoint.enabled && (tracker.fail_limit == 0 || state.fails < tracker.fail_limit);
+            auto status = ClassifyTracker(state, usable);
+            auto diagnostic = state.message;
+            if (diagnostic.empty() && state.last_error)
+            {
+                diagnostic = state.last_error.message();
+            }
+            auto preferred = PreferStatus(summary, status);
+            if (preferred != summary)
+            {
+                summary = preferred;
+                message.clear();
+            }
+            if (status == summary && !diagnostic.empty())
+            {
+                message = diagnostic;
+            }
+            endpoints.push_back({{"address", DescribeEndpoint(endpoint.local_endpoint)},
+                {"version", version == lt::protocol_version::V1 ? "v1" : "v2"},
+                {"status", ToString(status)}, {"failures", static_cast<int>(state.fails)},
+                {"message", std::move(diagnostic)}});
+            if (!endpoint.enabled)
+            {
+                continue;
+            }
             seedCount = std::max(seedCount, state.scrape_complete);
             leecherCount = std::max(leecherCount, state.scrape_incomplete);
             downloadCount = std::max(downloadCount, state.scrape_downloaded);
@@ -583,21 +708,11 @@ Json DescribeTracker(lt::announce_entry const& tracker, lt::info_hash_t const& h
                     next = time;
                 }
             }
-            if (!state.message.empty())
-            {
-                message = state.message;
-            }
-            else if (state.last_error)
-            {
-                message = state.last_error.message();
-            }
         }
     }
-    auto state = !enabled ? "disabled" : updating ? "announcing" :
-        working ? "working" : failed ? "error" : "waiting";
-    return {{"url", tracker.url}, {"tier", tracker.tier}, {"status", state}, {"seed_count", seedCount},
+    return {{"url", tracker.url}, {"tier", tracker.tier}, {"status", ToString(summary)}, {"seed_count", seedCount},
         {"leecher_count", leecherCount}, {"download_count", downloadCount}, {"next_announce", next},
-        {"message", message}};
+        {"message", message}, {"endpoints", std::move(endpoints)}};
 }
 
 Json DescribeTrackers(std::vector<lt::announce_entry> const& trackers, lt::info_hash_t const& hashes)

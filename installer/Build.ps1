@@ -223,7 +223,8 @@ try {
         (Test-Path -LiteralPath (Join-Path $publish 'Engine.exe'))) {
         throw 'The release must contain TinyTorrent.exe and TinyTorrentUI.exe, without Engine.exe.'
     }
-    foreach ($resource in $metadata.ProjectPriFileName, 'TableView.pri', 'Lucide.pri') {
+    foreach ($resource in $metadata.ProjectPriFileName, 'TableView.pri', 'Lucide.pri', 'Lucide/Fonts/lucide.ttf',
+        'Lucide/Fonts/twemoji.ttf', 'Assets/dbip-country-lite.mmdb') {
         if (-not (Test-Path -LiteralPath (Join-Path $publish $resource) -PathType Leaf)) {
             throw "The published application is missing $resource. The installer was not generated."
         }
@@ -299,10 +300,14 @@ try {
     $licenses = Join-Path $publish 'licenses'
     $notices = @{
         TinyTorrent = 'LICENSE'; Branding = 'resources/LICENSE'; Lucide = 'lib/Lucide/LICENSE'
+        Twemoji = 'lib/Lucide/LICENSE.Twemoji'
         Libtorrent = '3rdParty/libtorrent/LICENSE'; OpenSSL = '3rdParty/openssl/LICENSE.txt'
         Json = '3rdParty/json/LICENSE.MIT'
         MicrosoftDataSqlite = 'installer/notices/Microsoft.Data.Sqlite.txt'
         SQLitePCLRaw = 'installer/notices/SQLitePCLRaw.txt'
+        MaxMindDb = 'installer/notices/MaxMind.Db.txt'
+        Win2D = 'installer/notices/Win2D.txt'
+        DBIP = 'installer/notices/DB-IP.txt'
     }
     foreach ($notice in $notices.GetEnumerator()) {
         $directory = Join-Path $licenses $notice.Key

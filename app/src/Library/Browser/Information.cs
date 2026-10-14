@@ -10,9 +10,12 @@ public sealed partial class Browser
     // What the last Inspector lookup for the selected file left to show.
     private FetchOutcome? _outcome;
     private IProvider? _viewProvider;
-    private bool _viewEnabled;
-    private string? _viewWaiting;
+    private bool _automaticDownload;
+    private string? _automaticWait;
     private DataDownload? _download;
+    // Installation starts automatic downloads only while the person's
+    // provider choice still applies.
+    private bool _automaticOnInstall;
     private bool _resettingProtection;
 
     private abstract record FetchOutcome
@@ -40,9 +43,12 @@ public sealed partial class Browser
     // commands that ask it wait for the same readiness. Explicit requests
     // remain available while automatic downloading is off.
     private bool CanLookup => IsAvailable && _readiness == LibraryReadiness.Ready;
-    private bool CanFetch =>
-        CanLookup && Option is { IsOnline: true }
-        && !IsFetching && Selected?.Entry.Kind == FileKind.Video;
+    private ProviderOption? InformationProvider => Selected?.Entry.CatalogId is { } catalog
+        ? Providers.FirstOrDefault(option => option.ProviderId == catalog) : null;
+    private bool CanRefresh =>
+        CanLookup && InformationProvider is { IsOnline: true }
+        && !IsFetching && Selection.Items.Count == 1
+        && Selected?.Entry is { Kind: FileKind.Video, HasMetadata: true };
 
     /// <summary>
     /// Fetches metadata for the selection from <paramref name="source"/>: one
@@ -55,14 +61,20 @@ public sealed partial class Browser
         FetchMetadataRequested?.Invoke(this, source);
     }
 
-    internal async Task Enable(string providerId)
+    internal async Task EnableAutomaticDownload(string providerId)
     {
-        if (_download is { } download)
-            download.CanEnable = false;
-        CancelInformation();
+        _automaticOnInstall = false;
         if (_videos is null)
             return;
-        await _videos.Enable(providerId);
+        await _videos.EnableAutomaticDownload(providerId);
+    }
+
+    internal async Task SelectProvider(string providerId)
+    {
+        _automaticOnInstall = false;
+        if (_videos is null)
+            return;
+        await _videos.SelectProvider(providerId);
     }
 
     internal bool HasKey(string providerId) => _videos?.HasKey(providerId) == true;
@@ -70,7 +82,6 @@ public sealed partial class Browser
     /// <summary>Saves the person's own API key, as <see cref="VideoLookup.SaveKey"/> describes.</summary>
     internal async Task SaveKey(string providerId, string? key)
     {
-        CancelInformation();
         if (_videos is null)
             return;
         await _videos.SaveKey(providerId, key);
@@ -79,98 +90,17 @@ public sealed partial class Browser
     internal BackgroundWork.Operation? DataWork => _download?.Operation;
     public bool HasDataWork => _download is not null;
 
-    private sealed class DataDownload
-    {
-        private readonly object _gate = new();
-        private WorkObservation _observation = new(
-            new WorkDescription.Imdb(ImdbPhase.Downloading), new WorkProgress.Unknown(),
-            new WorkExecution.Running());
-        private Task _signalling = Task.CompletedTask;
-        private bool _ended;
-        internal BackgroundWork.Operation Operation { get; }
-        internal CancellationTokenSource Cancellation { get; } = new();
-        internal TaskCompletionSource Finished { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        internal bool Interrupted { get; private set; }
-        internal volatile bool CanEnable;
-
-        internal DataDownload(BackgroundWork work)
-        {
-            Operation = work.Begin(_observation, () => Stop(false));
-        }
-
-        internal void Report(Imdb.Dataset.Progress progress)
-        {
-            lock (_gate)
-            {
-                if (_ended || _observation.Execution is not WorkExecution.Running)
-                    return;
-                _observation = _observation with
-                {
-                    Description = new WorkDescription.Imdb(progress.Phase),
-                    Progress = progress.Phase == ImdbPhase.Downloading
-                        ? new WorkProgress.Amount(progress.Received, WorkUnit.Bytes)
-                        : progress.Percent is { } percent
-                            ? new WorkProgress.Fraction(percent, 100, WorkUnit.Percent, true)
-                            : new WorkProgress.Unknown(),
-                };
-                Operation.Report(_observation);
-            }
-        }
-
-        internal void Install(Action install)
-        {
-            lock (_gate)
-            {
-                Cancellation.Token.ThrowIfCancellationRequested();
-                _observation = new(new WorkDescription.Imdb(ImdbPhase.Installing),
-                    new WorkProgress.Unknown(), new WorkExecution.Finishing());
-                Operation.Report(_observation);
-            }
-            install();
-        }
-
-        internal Task Stop(bool interrupted)
-        {
-            lock (_gate)
-            {
-                CanEnable = false;
-                if (_ended || _observation.Execution is WorkExecution.Finishing)
-                    return Finished.Task;
-                Interrupted |= interrupted;
-                if (_observation.Execution is not WorkExecution.Cancelling)
-                {
-                    _observation = _observation with { Execution = new WorkExecution.Cancelling() };
-                    Operation.Report(_observation);
-                    // CancelAsync sets the token immediately and runs callbacks off this gate.
-                    _signalling = Cancellation.CancelAsync();
-                }
-                return Finished.Task;
-            }
-        }
-
-        internal async Task Finish()
-        {
-            Task signalling;
-            lock (_gate)
-            {
-                _ended = true;
-                signalling = _signalling;
-            }
-            try
-            {
-                await signalling.ConfigureAwait(false);
-            }
-            finally
-            {
-                Cancellation.Dispose();
-                Operation.Dispose();
-                Finished.TrySetResult();
-            }
-        }
-    }
+    // Settings shows the IMDb data through the dataset contract.
+    string IDataset.Section => Imdb.Provider.CatalogId;
+    FileInfo? IDataset.Installed => DataProvider?.Dataset?.Inspect();
+    bool IDataset.IsCurrent => DataProvider?.Dataset?.IsCurrent == true;
+    Task<long>? IDataset.Count => DataProvider?.Dataset?.CountTitles();
+    BackgroundWork.Operation? IDataset.DataWork => DataWork;
+    Task<bool> IDataset.Download() => Download();
+    Task IDataset.Delete() => DeleteData();
 
     /// <summary>Whether a data download can start; a protection reset or a running download holds it back.</summary>
-    internal bool CanDownload => !_resettingProtection && _download is null && DataProvider is not null;
+    public bool CanDownload => !_resettingProtection && _download is null && DataProvider is not null;
 
     /// <summary>
     /// Downloads <see cref="DataProvider"/>'s data and replaces the installed
@@ -178,78 +108,65 @@ public sealed partial class Browser
     /// before installation keeps the previous copy; a later failure leaves the
     /// replacement installed. A protection reset or route change that stops it is
     /// reported, because the person did not ask for it.
-    /// With <paramref name="enable"/>, installation selects the provider unless
-    /// the person accepts another choice before activation.
+    /// With <paramref name="enableAutomaticDownload"/>, installation starts
+    /// automatic downloads with the provider unless the person accepts another
+    /// choice before activation.
     /// </summary>
-    internal async Task<bool> Download(bool enable = false)
+    internal async Task<bool> Download(bool enableAutomaticDownload = false)
     {
         if (!CanDownload || DataProvider is not { Dataset: { } dataset } option || _videos is not { } videos)
             return false;
-        var download = new DataDownload(_work) { CanEnable = enable };
-        var cancellation = download.Cancellation.Token;
+        var download = new DataDownload(_work, new WorkDescription.Imdb(ImdbPhase.Downloading));
         _download = download;
-        var installed = false;
+        _automaticOnInstall = enableAutomaticDownload;
+        ShowDownload();
         try
         {
-            ShowDownload();
-            await dataset.Build(download.Report, cancellation);
-            cancellation.ThrowIfCancellationRequested();
-            CancelInformation();
-            await ReplaceData(videos, option, () =>
-            {
-                download.Install(dataset.Install);
-                installed = true;
-            }, () => download.CanEnable);
-        }
-        // A stop can end the build with any error, such as the one a changed
-        // network route causes.
-        catch (Exception) when (download.Interrupted && !installed)
-        {
-            ReportCommand(new VideoException(VideoFailure.Interrupted) { Provider = option });
-        }
-        catch (Exception) when (cancellation.IsCancellationRequested && !installed) { }
-        catch (Exception error)
-        {
-            if (error is VideoException failure)
-                failure.Provider ??= option;
-            ReportCommand(error);
+            return await download.Run(
+                () => dataset.Build(
+                    progress => download.Report(new WorkDescription.Imdb(progress.Phase), Progress(progress)),
+                    download.Cancellation),
+                () =>
+                {
+                    CancelInformation();
+                    return ReplaceData(videos, option,
+                        () => download.Install(new WorkDescription.Imdb(ImdbPhase.Installing), dataset.Install),
+                        () => _automaticOnInstall);
+                },
+                dataset.Discard,
+                error =>
+                {
+                    if (error is VideoException failure)
+                        failure.Provider ??= option;
+                    ReportCommand(error);
+                });
         }
         finally
         {
-            try
-            {
-                if (!installed)
-                    await Task.Run(dataset.Discard);
-            }
-            finally
-            {
-                _download = null;
-                await download.Finish();
-                ShowDownload();
-            }
+            _download = null;
+            ShowDownload();
         }
-        return installed;
     }
 
+    private static WorkProgress Progress(Imdb.Dataset.Progress progress) =>
+        progress.Phase == ImdbPhase.Downloading ? new WorkProgress.Amount(progress.Received, WorkUnit.Bytes)
+        : progress.Percent is { } percent ? new WorkProgress.Fraction(percent, 100, WorkUnit.Percent, true)
+        : new WorkProgress.Unknown();
+
     /// <summary>Stops the running data download at the person's request, and completes when it has ended.</summary>
-    internal Task CancelDownload()
-    {
-        if (_download is not { } download)
-            return Task.CompletedTask;
-        var stopped = download.Stop(interrupted: false);
-        ShowDownload();
-        return stopped;
-    }
+    internal Task CancelDownload() => StopDownload(interrupted: false);
 
     /// <summary>
     /// Stops the running data download as one the person did not ask for,
     /// which reports it, and completes when the download has ended.
     /// </summary>
-    internal Task InterruptDownload()
+    internal Task InterruptDownload() => StopDownload(interrupted: true);
+
+    private Task StopDownload(bool interrupted)
     {
         if (_download is not { } download)
             return Task.CompletedTask;
-        var stopped = download.Stop(interrupted: true);
+        var stopped = download.Stop(interrupted);
         ShowDownload();
         return stopped;
     }
@@ -274,9 +191,8 @@ public sealed partial class Browser
     }
 
     /// <summary>
-    /// Deletes <see cref="DataProvider"/>'s downloaded data, and turns
-    /// automatic downloading off when the provider is the one in use. This reports a
-    /// failure.
+    /// Deletes <see cref="DataProvider"/>'s downloaded data without changing
+    /// automatic download intent. This reports a failure.
     /// </summary>
     internal async Task DeleteData()
     {
@@ -288,8 +204,6 @@ public sealed partial class Browser
         try
         {
             await ReplaceData(videos, option, dataset.Delete);
-            if (IsEnrichmentEnabled && Option == option)
-                await videos.Disable(preserveBatch: true);
         }
         catch (Exception error)
         {
@@ -301,16 +215,17 @@ public sealed partial class Browser
 
     // Every provider's movies show ratings from the data, not only IMDb's, so
     // the rows refresh, and Settings shows the data's new state.
-    private async Task ReplaceData(VideoLookup videos, ProviderOption option, Action replace, Func<bool>? enable = null)
+    private async Task ReplaceData(VideoLookup videos, ProviderOption option, Action replace, Func<bool>? enableAutomaticDownload = null)
     {
         try
         {
-            await videos.Reload(option, replace, enable);
+            await videos.Reload(option, replace, enableAutomaticDownload);
         }
         finally
         {
             Refresh();
             Changed(nameof(Providers));
+            Changed(nameof(IDataset.Installed));
         }
     }
 
@@ -321,14 +236,12 @@ public sealed partial class Browser
         Changed(nameof(CanDownload));
     }
 
-    internal async Task Disable()
+    internal async Task DisableAutomaticDownload()
     {
-        if (_download is { } download)
-            download.CanEnable = false;
-        CancelInformation();
+        _automaticOnInstall = false;
         if (_videos is null)
             return;
-        await _videos.Disable();
+        await _videos.DisableAutomaticDownload();
     }
 
     internal void WatchInspector(bool visible)
@@ -349,24 +262,19 @@ public sealed partial class Browser
     {
         if (_disposed)
             return;
-        if (_viewProvider != Provider || _viewEnabled != IsEnrichmentEnabled)
+        if (_viewProvider != Provider || _automaticDownload != IsAutomaticDownloadEnabled)
         {
-            if (_viewProvider != Provider)
-            {
-                CancelInformation();
-                _viewProvider = Provider;
-                _outcome = null;
-            }
-            _viewEnabled = IsEnrichmentEnabled;
-            Changed(nameof(IsEnrichmentEnabled));
+            _viewProvider = Provider;
+            _automaticDownload = IsAutomaticDownloadEnabled;
+            Changed(nameof(IsAutomaticDownloadEnabled));
             Changed(nameof(Providers));
             Changed(nameof(Provider));
             Refresh();
         }
-        if (_viewWaiting != Waiting)
+        if (_automaticWait != AutomaticWait)
         {
-            _viewWaiting = Waiting;
-            Changed(nameof(Waiting));
+            _automaticWait = AutomaticWait;
+            Changed(nameof(AutomaticWait));
         }
         Changed(nameof(FetchMessage));
         Changed(nameof(Status));
@@ -436,7 +344,7 @@ public sealed partial class Browser
 
     private async Task RequestInformation()
     {
-        if (_videos is not { } videos || Selected is not { } row)
+        if (_videos is not { } videos || Selected is not { } row || InformationProvider is not { } source)
             return;
         var entry = row.Entry;
         await using var request = new InformationRequest(_work);
@@ -445,22 +353,24 @@ public sealed partial class Browser
         ShowInformation();
         try
         {
-            if (Option is { } source && await videos.Protection(FileName.Interpret(entry.Name).Title,
+            if (await videos.Protection(FileName.Interpret(entry.Name).Title,
                     entry.Name, source, request.Token) is not null)
             {
                 request.Token.ThrowIfCancellationRequested();
                 Fetch(source);
                 return;
             }
-            var found = await videos.Lookup(entry, request.Token, request.Report);
+            var found = await videos.Lookup(entry, source, request.Token, request.Report);
             request.Token.ThrowIfCancellationRequested();
             if (!found)
                 _outcome = new FetchOutcome.NoMatch();
         }
         catch (Exception) when (request.Token.IsCancellationRequested) { }
         catch (OperationCanceledException) { }
-        // The provider's own failure shows through VideoLookup.Failure.
-        catch (ProviderException) { }
+        catch (RequestBlockedException)
+        {
+            Fetch(source);
+        }
         catch (VideoException error)
         {
             _outcome = new FetchOutcome.Failed(error);
@@ -468,7 +378,7 @@ public sealed partial class Browser
         catch (Exception error)
         {
             if (ReferenceEquals(videos, _videos))
-                Report(error);
+                ReportCommand(error);
         }
         finally
         {

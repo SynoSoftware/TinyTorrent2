@@ -240,5 +240,13 @@ internal sealed class RetryCommand(long accepted)
 
 internal sealed record FreshRequest(RetryCommand Command, RequestKey Key)
 {
+    /// <summary>
+    /// A request the person makes now for <paramref name="access"/>, which
+    /// tries once past a refusal or a backoff that an earlier request left.
+    /// </summary>
+    internal static FreshRequest Once(ProviderAccess access) =>
+        new(new RetryCommand(DateTimeOffset.UtcNow.UtcTicks) { Recheck = true },
+            RequestKey.Create(access.ProviderId, access.Operation, []));
+
     internal bool Admit(ProviderAccess access, long observed) => Command.Admit(access, Key.QuestionId, observed);
 }

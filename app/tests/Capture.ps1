@@ -1,6 +1,6 @@
 param(
     [ValidateSet('1', 'smoke', 'shell', 'schedule', 'desktop', 'details', 'details-files', 'files', 'files-layout',
-        'search', 'library', 'library-files', 'traffic', 'edits', 'add-layout', 'settings-layout', 'settings-prototype', 'footer')]
+        'search', 'library', 'library-files', 'traffic', 'peers', 'edits', 'add-layout', 'settings-layout', 'settings-prototype', 'footer')]
     [string] $Review = '1',
     [ValidateSet('en', 'es')]
     [string] $Language,

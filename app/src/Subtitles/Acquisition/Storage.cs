@@ -157,10 +157,9 @@ internal sealed partial class Acquisition
                 using (var reader = command.ExecuteReader())
                     while (reader.Read())
                     {
-                        var video = new Video(reader.GetString(0), reader.GetInt32(1))
+                        var video = new Video(reader.GetString(0), reader.GetInt32(1), reader.GetString(3))
                         {
                             Path = reader.GetString(2),
-                            FinalPath = reader.GetString(3),
                             Size = reader.GetInt64(4),
                             Complete = reader.GetBoolean(5),
                             Readable = reader.GetBoolean(6),
@@ -187,7 +186,47 @@ internal sealed partial class Acquisition
             cancellation
         );
 
-    internal async Task Reconcile()
+    private Task? _reconciling;
+    private bool _reconcilePending;
+
+    internal Task Reconcile()
+    {
+        lock (_requestSync)
+        {
+            if (_disposed || !_connected)
+                return Task.CompletedTask;
+            _reconcilePending = true;
+            return _reconciling ??= Task.Run(ReconcileChanges);
+        }
+    }
+
+    private async Task ReconcileChanges()
+    {
+        try
+        {
+            while (true)
+            {
+                lock (_requestSync)
+                {
+                    if (!_reconcilePending || _disposed || !_connected)
+                    {
+                        _reconciling = null;
+                        return;
+                    }
+                    _reconcilePending = false;
+                }
+                await ReconcileOnce().ConfigureAwait(false);
+            }
+        }
+        catch
+        {
+            lock (_requestSync)
+                _reconciling = null;
+            throw;
+        }
+    }
+
+    private async Task ReconcileOnce()
     {
         if (_disposed || !_connected)
             return;
@@ -201,10 +240,14 @@ internal sealed partial class Acquisition
                 cancellation = _requests.Token;
             await DeleteAccepted().ConfigureAwait(false);
             var targets = await Targets(cancellation).ConfigureAwait(false);
-            await ReconcileJobs(targets, cancellation).ConfigureAwait(false);
-            await ReconcileFiles(targets, cancellation).ConfigureAwait(false);
+            var index = new TargetIndex(targets);
+            await ReconcileJobs(index, cancellation).ConfigureAwait(false);
+            await ReconcileFiles(index, cancellation).ConfigureAwait(false);
             try { await Discover(cancellation).ConfigureAwait(false); }
             catch (OperationCanceledException) when (!cancellation.IsCancellationRequested) { }
+            var eligible = targets.Where(Eligible)
+                .SelectMany(target => target.Videos.Select(video =>
+                    (target.Language, video.Origin, video.Index))).ToHashSet();
             var reconciled = await Run(
                     connection =>
                     {
@@ -216,17 +259,16 @@ internal sealed partial class Acquisition
                             Resume(connection);
                         foreach (var target in targets)
                         {
-                            if (!Current(connection, target.Videos))
-                                continue;
-                            var recorded = Recorded(connection, target);
                             if (target.Rank != 1 || !Eligible(target))
+                                continue;
+                            if (!Current(connection, target.Videos))
                                 continue;
                             // A manual job advances to its hash stage whatever the
                             // automatic switch says; an automatic job only while its
                             // torrent is new, because a known torrent's earlier miss
                             // waits for Find.
                             Advance(connection, target);
-                            if (Enabled && !recorded && target.IsNew)
+                            if (Enabled && target.IsNew && !Recorded(connection, target))
                                 Accept(connection, target, false, 1 + Extras);
                         }
                         using var jobs = connection.CreateCommand();
@@ -254,16 +296,8 @@ internal sealed partial class Acquisition
                                 );
                         foreach (var group in associations.GroupBy(item => (item.Path, item.Language)))
                             if (
-                                !targets.Any(target =>
-                                    Eligible(target)
-                                    && target.Language == group.Key.Language
-                                    && target.Videos.Any(video =>
-                                        group.Any(source =>
-                                            source.Origin == video.Origin
-                                            && source.Index == video.Index
-                                        )
-                                    )
-                                )
+                                !group.Any(source => eligible.Contains(
+                                    (source.Language, source.Origin, source.Index)))
                             )
                                 Cancel(connection, language: group.Key.Language, path: group.Key.Path);
                         return true;
@@ -690,7 +724,10 @@ internal sealed partial class Acquisition
                 _lifetime.Token
             )
             .ConfigureAwait(false);
+        var changed = WithSubtitles != counts.Subtitled;
         WithSubtitles = counts.Subtitled;
+        if (changed)
+            LanguagesChanged?.Invoke(this, EventArgs.Empty);
         Finding = counts.Finding;
         Blocked = counts.Blocked;
         if (_batch.Count > 0)
@@ -715,17 +752,50 @@ internal sealed partial class Acquisition
     private void ReportFile(string path, SubtitleFailure reason) =>
         FileFailed?.Invoke(this, new(path, reason));
 
-    private sealed record Video(string Origin, int Index)
+    private sealed class TargetIndex
     {
+        private readonly Dictionary<(string Language, int Rank, string Origin, int Index), Target> _sources = [];
+        private readonly Dictionary<string, Dictionary<string, Target>> _languages = new(StringComparer.Ordinal);
+        private readonly HashSet<string> _paths = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<Target, int> _order = [];
+
+        internal TargetIndex(Target[] targets)
+        {
+            foreach (var target in targets)
+            {
+                _order.Add(target, _order.Count);
+                _paths.Add(target.Path);
+                if (!_languages.TryGetValue(target.Language, out var paths))
+                    _languages.Add(target.Language, paths = new(StringComparer.OrdinalIgnoreCase));
+                paths.TryAdd(target.Path, target);
+                foreach (var video in target.Videos)
+                    _sources.TryAdd((target.Language, target.Rank, video.Origin, video.Index), target);
+            }
+        }
+
+        internal Target? Find(string language, int rank, string origin, int index) =>
+            _sources.GetValueOrDefault((language, rank, origin, index));
+
+        internal Target? Find(string language, string path) =>
+            _languages.TryGetValue(language, out var paths) ? paths.GetValueOrDefault(path) : null;
+
+        internal bool Contains(string path) => _paths.Contains(path);
+
+        internal Target[] Order(IEnumerable<Target> targets) =>
+            targets.Distinct().OrderBy(target => _order[target]).ToArray();
+    }
+
+    private sealed record Video(string Origin, int Index, string FinalPath)
+    {
+        private bool IsExtra { get; } = FileName.Interpret(FinalPath).IsExtra;
         internal required string Path { get; init; }
         internal long EntryId { get; init; }
-        internal required string FinalPath { get; init; }
         internal long Size { get; init; }
         internal bool Complete { get; init; }
         internal bool Readable { get; init; }
         internal bool Wanted { get; init; }
         internal bool IsNew { get; init; }
-        internal bool Eligible => Wanted && !FileName.Interpret(FinalPath).IsExtra;
+        internal bool Eligible => Wanted && !IsExtra;
         internal bool CanHash =>
             Eligible && Complete && Readable && Size >= SubtitleFile.HashMinimum;
     }
@@ -742,7 +812,7 @@ internal sealed partial class Acquisition
         internal SubtitleMatch? Match { get; init; }
         internal bool Complete => Videos.Any(video => video.Eligible && video.Complete);
         internal bool IsNew => Videos.Any(video => video.Eligible && video.IsNew);
-        internal bool IsAmbiguous =>
+        internal bool IsAmbiguous { get; } =
             Videos
                 .Select(video => video.FinalPath)
                 .Distinct(StringComparer.OrdinalIgnoreCase)

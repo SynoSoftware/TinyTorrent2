@@ -27,7 +27,7 @@ internal sealed partial class Acquisition
             );
     }
 
-    private async Task ReconcileJobs(Target[] targets, CancellationToken cancellation)
+    private async Task ReconcileJobs(TargetIndex targets, CancellationToken cancellation)
     {
         var transfers = await Run(
                 connection =>
@@ -49,15 +49,9 @@ internal sealed partial class Acquisition
                     var moved = new List<(string Previous, string Path, string Language, long EntryId)>();
                     foreach (var source in sources)
                     {
-                        var target = targets.FirstOrDefault(target =>
-                            !target.IsAmbiguous
-                            && target.Language == source.Language
-                            && target.Rank == SubtitleFile.Rank(source.Path, source.Language)
-                            && target.Videos.Any(video =>
-                                video.Origin == source.Origin && video.Index == source.Index
-                            )
-                        );
-                        if (target is null || !Current(connection, target.Videos))
+                        var target = targets.Find(source.Language,
+                            SubtitleFile.Rank(source.Path, source.Language), source.Origin, source.Index);
+                        if (target is null || target.IsAmbiguous || !Current(connection, target.Videos))
                             continue;
                         if (StringComparer.OrdinalIgnoreCase.Equals(source.Path, target.Path))
                             continue;
@@ -123,8 +117,7 @@ internal sealed partial class Acquisition
                         continue;
                     foreach (var destination in destinations)
                         run.Jobs.Add(job with { Path = destination.Path });
-                    if (!targets.Any(target => target.Language == job.Language
-                        && StringComparer.OrdinalIgnoreCase.Equals(target.Path, job.Path)))
+                    if (targets.Find(job.Language, job.Path) is null)
                         run.Jobs.Remove(job);
                 }
             }
@@ -132,7 +125,7 @@ internal sealed partial class Acquisition
             if (_batch.ContainsKey(transfer.Previous))
                 _batch[transfer.Path] = transfer.EntryId;
         foreach (var previous in transfers.Select(transfer => transfer.Previous).Distinct())
-            if (!targets.Any(target => StringComparer.OrdinalIgnoreCase.Equals(target.Path, previous)))
+            if (!targets.Contains(previous))
                 _batch.Remove(previous);
     }
 }

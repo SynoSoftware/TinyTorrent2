@@ -64,6 +64,7 @@ public sealed partial class MainViewModel
                 Debug.WriteLine($"Update check cache could not be read: {error.Message}");
             }
             Changed(nameof(HasUpdate));
+            ((RelayCommand)OpenUpdate).Refresh();
         }
         // A check saved in the future, after the clock was wrong, counts as old.
         if (

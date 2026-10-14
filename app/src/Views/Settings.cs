@@ -15,6 +15,7 @@ public sealed class Settings : INotifyPropertyChanged
     private JsonElement _registration;
     private bool _registering;
     private AdapterChoice? _unavailableAdapter;
+    private Task _adapterRefresh = Task.CompletedTask;
     public Strings Text => _owner.Text;
     public Setting Destination { get; }
     public Setting IncompleteFolder { get; }
@@ -785,17 +786,16 @@ public sealed class Settings : INotifyPropertyChanged
         UseStartup = new RelayCommand(() => Register("enable_startup"), () => CanRegister);
     }
 
-    public void RefreshAdapters()
+    public Task RefreshAdapters() =>
+        _adapterRefresh.IsCompleted ? _adapterRefresh = ReadAdapters() : _adapterRefresh;
+
+    private async Task ReadAdapters()
     {
         try
         {
-            var choices = new List<AdapterChoice>
-            {
-                new(string.Empty, Text.Get("settings", "any_adapter")),
-            };
-            foreach (var adapter in NetworkInterface.GetAllNetworkInterfaces())
-                choices.Add(new(adapter.Id, adapter.Name));
-            Adapters = choices;
+            var choices = await Task.Run(() => NetworkInterface.GetAllNetworkInterfaces()
+                .Select(adapter => new AdapterChoice(adapter.Id, adapter.Name)).ToArray());
+            Adapters = [new(string.Empty, Text.Get("settings", "any_adapter")), .. choices];
             _unavailableAdapter = null;
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Adapters)));
             UpdateAdapter();
@@ -1172,7 +1172,6 @@ public sealed class Settings : INotifyPropertyChanged
     // Without names, every property changed.
     internal void Changed(params string[] names)
     {
-        Connection?.Refresh();
         Schedule?.Refresh();
         foreach (var name in names.Length == 0 ? new[] { string.Empty } : names)
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
@@ -1275,11 +1274,12 @@ public sealed class Setting(
     {
         var changed =
             _confirmed.ValueKind != value.ValueKind
-            || _confirmed.GetRawText() != value.GetRawText();
+            || !JsonElement.DeepEquals(_confirmed, value);
         if (changed)
         {
             var preserve = HasDraft || IsPending || _uncertain is not null;
-            _confirmed = value.Clone();
+            // Cloning a child of the snapshot's clone retains the whole snapshot.
+            _confirmed = JsonSerializer.SerializeToElement(value);
             _confirmedInput =
                 value.ValueKind == JsonValueKind.String ? value.GetString()!
                 : value.ValueKind != JsonValueKind.Number || HasUnlimited && value.GetDouble() == 0

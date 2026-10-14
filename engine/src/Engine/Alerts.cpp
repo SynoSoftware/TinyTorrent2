@@ -59,7 +59,7 @@ void Engine::State::Handle(lt::alert* alert)
         On(static_cast<lt::metadata_failed_alert const&>(*alert));
         break;
     case lt::save_resume_data_alert::alert_type:
-        On(static_cast<lt::save_resume_data_alert const&>(*alert));
+        On(static_cast<lt::save_resume_data_alert&>(*alert));
         break;
     case lt::save_resume_data_failed_alert::alert_type:
         On(static_cast<lt::save_resume_data_failed_alert const&>(*alert));
@@ -92,7 +92,7 @@ void Engine::State::Handle(lt::alert* alert)
         On(static_cast<lt::tracker_list_alert const&>(*alert));
         break;
     case lt::peer_info_alert::alert_type:
-        On(static_cast<lt::peer_info_alert const&>(*alert));
+        On(static_cast<lt::peer_info_alert&>(*alert));
         break;
     case lt::file_progress_alert::alert_type:
         On(static_cast<lt::file_progress_alert const&>(*alert));
@@ -387,7 +387,7 @@ void Engine::State::On(lt::metadata_received_alert const& alert)
     }
     if (auto torrent = Find(alert.handle))
     {
-        PrepareFiles(*torrent);
+        ContinueNames();
         torrent->ApplyIntent();
         RecordHashes(*torrent, alert.handle.info_hashes());
         Invalidate(torrent->torrentId);

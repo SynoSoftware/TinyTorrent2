@@ -1,6 +1,7 @@
 #include "Desktop/Application.h"
 #include "Registration.h"
 #include "Strings.h"
+#include <appmodel.h>
 #include <sddl.h>
 #include <shlobj.h>
 #include <shobjidl.h>
@@ -45,6 +46,52 @@ std::wstring LogonSid()
         return sid;
     }
     throw std::runtime_error("No logon SID is available.");
+}
+
+// Counts the starts that left a package, so an engine that Windows keeps
+// inside one stops with an error instead of starting itself forever.
+constexpr wchar_t breakaway[] = L"TINYTORRENT_BREAKAWAY";
+
+// TinyTorrent is never packaged, so any package identity belongs to the app
+// that started it.
+bool IsPackaged()
+{
+    UINT32 length = 0;
+    return GetCurrentPackageFullName(&length, nullptr) != APPMODEL_ERROR_NO_PACKAGE;
+}
+
+// Starts this engine again with the same command line. The new process still
+// runs in the package, but it creates its own children outside it.
+void LeavePackage(int starts)
+{
+    SIZE_T size = 0;
+    InitializeProcThreadAttributeList(nullptr, 1, 0, &size);
+    std::vector<char> storage(size);
+    auto attributes = reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(storage.data());
+    if (!InitializeProcThreadAttributeList(attributes, 1, 0, &size))
+    {
+        throw std::runtime_error("Cannot prepare the start outside the package.");
+    }
+    DWORD policy = PROCESS_CREATION_DESKTOP_APP_BREAKAWAY_ENABLE_PROCESS_TREE;
+    STARTUPINFOEXW startup{};
+    startup.StartupInfo.cb = sizeof(startup);
+    startup.lpAttributeList = attributes;
+    auto executable = tt::Executable();
+    std::wstring command = GetCommandLineW();
+    PROCESS_INFORMATION process{};
+    bool started = UpdateProcThreadAttribute(attributes, 0, PROC_THREAD_ATTRIBUTE_DESKTOP_APP_POLICY, &policy,
+            sizeof(policy), nullptr, nullptr) &&
+        SetEnvironmentVariableW(breakaway, std::to_wstring(starts).c_str()) &&
+        CreateProcessW(executable.c_str(), command.data(), nullptr, nullptr, FALSE, EXTENDED_STARTUPINFO_PRESENT,
+            nullptr, nullptr, &startup.StartupInfo, &process);
+    auto error = GetLastError();
+    DeleteProcThreadAttributeList(attributes);
+    if (!started)
+    {
+        throw std::runtime_error("Cannot start outside the package: Windows error " + std::to_string(error));
+    }
+    CloseHandle(process.hThread);
+    CloseHandle(process.hProcess);
 }
 }
 
@@ -185,6 +232,23 @@ int WINAPI wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ PWSTR, _In_ int)
         // restart names the default store explicitly, so compare the folders.
         std::error_code error;
         bool personal = directory == standard || std::filesystem::equivalent(directory, standard, error);
+        // A packaged process opens AppData files from its package's private
+        // copy first and writes HKCU into that copy, so an engine started by a
+        // packaged app would use a second store and registration. Only a
+        // process's children can leave its package, so leaving takes two
+        // starts.
+        wchar_t buffer[2]{};
+        int starts = GetEnvironmentVariableW(breakaway, buffer, 2) == 1 ? buffer[0] - L'0' : 0;
+        if (personal && IsPackaged())
+        {
+            if (starts >= 2)
+            {
+                throw std::runtime_error(tt::Utf8(strings.Text("error", "package")));
+            }
+            LeavePackage(starts + 1);
+            return 0;
+        }
+        SetEnvironmentVariableW(breakaway, nullptr);
         auto sid = LogonSid();
         {
             tt::Security security(sid);

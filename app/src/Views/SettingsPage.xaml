@@ -38,7 +38,7 @@
         <Setter Property="Template">
           <Setter.Value>
             <ControlTemplate TargetType="controls:SettingsSection">
-              <Border x:Name="GroupCard" Style="{StaticResource TinyTorrentSettingsCardStyle}" Padding="0">
+              <Border x:Name="Card" Style="{StaticResource TinyTorrentSettingsCardStyle}" Padding="0">
                 <StackPanel>
                   <Border Padding="16" BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}" BorderThickness="0,0,0,1">
                     <TextBlock Text="{TemplateBinding Header}" Style="{StaticResource SubtitleTextBlockStyle}"
@@ -279,7 +279,7 @@
                   <StackPanel>
                     <controls:SettingsRow
                       x:Name="InformationRow"
-                      Header="{x:Bind Model.Text.Get('plugins', 'video_provider'), Mode=OneWay}"
+                      Header="{x:Bind Model.Text.Get('library', 'provider'), Mode=OneWay}"
                     >
                       <StackPanel Orientation="Horizontal" Spacing="8">
                         <Button
@@ -310,44 +310,28 @@
                           />
                         </Button>
                         <ComboBox
-                          x:Name="VideoInformation"
+                          x:Name="ProviderChoice"
                           Width="260"
-                          SelectionChanged="OnVideoInformation"
+                          SelectionChanged="OnProviderChoice"
                           IsEnabled="{x:Bind Main.Library.IsAvailable, Mode=OneWay}"
                           ToolTipService.ToolTip="{x:Bind Model.Text.Get('library', 'information_tip'), Mode=OneWay}"
-                          AutomationProperties.Name="{x:Bind Main.Library.DownloadLabel, Mode=OneWay}"
-                          AutomationProperties.AutomationId="VideoInformation"
+                          AutomationProperties.Name="{x:Bind Model.Text.Get('library', 'provider'), Mode=OneWay}"
+                          AutomationProperties.AutomationId="VideoProvider"
                         />
                       </StackPanel>
                     </controls:SettingsRow>
                     <controls:SettingsRow
-                      x:Name="ImdbRow"
-                      Header="{x:Bind Model.Text.Get('imdb', 'data'), Mode=OneWay}"
-                      Visibility="Collapsed"
-                    >
-                      <!-- Download, not Delete, takes the place that Cancel
-                           leaves when a download ends, so a late click on
-                           Cancel cannot delete the data. -->
-                      <StackPanel Orientation="Horizontal" Spacing="8">
-                        <controls:WorkStatus x:Name="DataWork" MaxWidth="380" IsExpanded="True" Visibility="Collapsed" />
-                        <controls:ActionButton
-                          x:Name="DataDelete"
-                          Glyph="{x:Bind icons:Lucide.Trash2}"
-                          Text="{x:Bind Model.Text.Get('file_action', 'delete'), Mode=OneWay}"
-                          Click="OnDataDelete"
-                          Visibility="Collapsed"
-                          ToolTipService.ToolTip="{x:Bind Model.Text.Get('imdb', 'delete_tip'), Mode=OneWay}"
-                          AutomationProperties.Name="{x:Bind Model.Text.Get('imdb', 'delete'), Mode=OneWay}"
-                          AutomationProperties.AutomationId="DataDelete"
-                        />
-                        <controls:ActionButton
-                          x:Name="DataDownload"
-                          Glyph="{x:Bind icons:Lucide.Download}"
-                          Click="OnDataDownload"
-                          AutomationProperties.AutomationId="DataDownload"
-                        />
-                      </StackPanel>
+                      Header="{x:Bind Model.Text.Get('plugins', 'automatic_download'), Mode=OneWay}"
+                      Description="{x:Bind Model.Text.Get('plugins', 'automatic_download_hint'), Mode=OneWay}"
+                      StateText="{x:Bind controls:SettingsRow.State(AutomaticDownload.IsOn, Model.OnText, Model.OffText), Mode=OneWay}">
+                      <ToggleSwitch x:Name="AutomaticDownload"
+                        IsEnabled="{x:Bind Main.Library.IsAvailable, Mode=OneWay}"
+                        Toggled="OnAutomaticDownload"
+                        AutomationProperties.Name="{x:Bind Main.Library.DownloadLabel, Mode=OneWay}"
+                        AutomationProperties.AutomationId="VideoAutomaticDownload" />
                     </controls:SettingsRow>
+                    <controls:DatasetRow x:Name="ImdbRow" />
+                    <controls:DatasetRow x:Name="CityRow" />
                     <controls:SettingsRow Header="{x:Bind Model.Text.Get('plugins', 'movies_with_information'), Mode=OneWay}" BorderThickness="0">
                       <TextBlock x:Name="VideoCoverage" Style="{StaticResource TinyTorrentTitleDetailTextStyle}" />
                     </controls:SettingsRow>

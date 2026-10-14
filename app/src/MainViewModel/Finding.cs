@@ -129,6 +129,8 @@ public sealed partial class MainViewModel
                 : Text.Format("window", "filtered_torrents", VisibleTorrents.Count, Torrents.Count, FilterName);
             if (_selected.Length > 0)
                 count = Text.Format("window", "torrents_selected", count, _selected.Length);
+            if (Inspector.PeerSummary is { Length: > 0 } peers)
+                count += " · " + peers;
             return !_connected || _storageFailed ? Text.Format("window", "last_known", count) : count;
         }
     }
@@ -222,7 +224,7 @@ public sealed partial class MainViewModel
             .Take(30)
             .ToArray();
         var torrents = Torrents
-            .Where(torrent => MatchesQuery(torrent.Name + " " + torrent.Status, words))
+            .Where(torrent => words.All(word => torrent.SearchText.Contains(word, StringComparison.Ordinal)))
             .Take(30 - actions.Length)
             .Select(torrent => new Suggestion(
                 torrent.Name,
@@ -424,6 +426,10 @@ public sealed partial class MainViewModel
             Text.Get("settings", "proxy")
         );
         yield return SettingSuggestion(
+            new(SettingsCategory.Plugins, "video_provider"),
+            Text.Get("plugins", "video_provider")
+        );
+        yield return SettingSuggestion(
             new(SettingsCategory.Plugins, "video_information"),
             Library.DownloadLabel
         );
@@ -459,6 +465,7 @@ public sealed partial class MainViewModel
 
 public sealed class FilterChoice(MainViewModel owner, TorrentFilter filter) : INotifyPropertyChanged
 {
+    private int _count;
     public TorrentFilter Filter { get; } = filter;
     public string Glyph => Filter switch
     {
@@ -470,15 +477,21 @@ public sealed class FilterChoice(MainViewModel owner, TorrentFilter filter) : IN
         _ => Lucide.List,
     };
     public string Label => owner.Text.Get("filters", Filter.ToString().ToLowerInvariant());
-    public int Count => owner.Torrents.Count(torrent => MainViewModel.Matches(torrent, Filter));
+    public int Count => _count;
     public bool IsCountAccent => Filter == TorrentFilter.Downloading && Count > 0;
     public bool IsCountCritical => Filter == TorrentFilter.Errors && Count > 0;
     public bool IsCountNeutral => !IsCountAccent && !IsCountCritical;
     public string Caption => owner.Text.Format("filters", "count", Label, Count);
     public event PropertyChangedEventHandler? PropertyChanged;
 
-    internal void Refresh() =>
+    internal void Refresh(bool textChanged = true)
+    {
+        var count = owner.Torrents.Count(torrent => MainViewModel.Matches(torrent, Filter));
+        if (!textChanged && count == _count)
+            return;
+        _count = count;
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
+    }
 
     public override string ToString() => Caption;
 }

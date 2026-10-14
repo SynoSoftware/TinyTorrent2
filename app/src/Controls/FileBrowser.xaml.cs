@@ -124,7 +124,7 @@ public sealed partial class FileBrowser : UserControl
     private void OnChanged(object? sender, EventArgs args)
     {
         RefreshActions();
-        if (Files.Sort is not null)
+        if (Files.Sort is { } sort && (sort.Column == ProgressColumn || sort.Column == PriorityColumn))
             Files.RefreshView();
     }
 

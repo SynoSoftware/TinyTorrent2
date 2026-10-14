@@ -10,6 +10,7 @@ public sealed class LimitSelector : ComboBox
 {
     private readonly MainViewModel _main;
     private bool _refreshing;
+    private (string Language, bool CanEdit, bool Speed, bool Alternative, bool None, bool Schedule, int Index)? _shown;
 
     internal LimitSelector(MainViewModel main)
     {
@@ -28,10 +29,21 @@ public sealed class LimitSelector : ComboBox
         Refresh();
     }
 
-    private void OnChanged(object? sender, PropertyChangedEventArgs args) => Refresh();
+    private void OnChanged(object? sender, PropertyChangedEventArgs args)
+    {
+        if (args.PropertyName is nameof(MainViewModel.LimitsIndex) or nameof(MainViewModel.CanEdit)
+            or nameof(MainViewModel.CanUseSpeed) or nameof(MainViewModel.CanUseAlternative)
+            or nameof(MainViewModel.CanUseNone) or nameof(MainViewModel.CanFollowSchedule) or "")
+            Refresh();
+    }
 
     private void Refresh()
     {
+        var current = (_main.Text.Language, _main.CanEdit, _main.CanUseSpeed, _main.CanUseAlternative,
+            _main.CanUseNone, _main.CanFollowSchedule, _main.LimitsIndex);
+        if (_shown == current)
+            return;
+        _shown = current;
         _refreshing = true;
         IsEnabled = _main.CanEdit;
         AutomationProperties.SetName(this, _main.Text.Get("transfer_limits", "control"));

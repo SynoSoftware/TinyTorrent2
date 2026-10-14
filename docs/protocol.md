@@ -169,7 +169,7 @@ Stop refresh work when its window consumer exits. Details and old snapshots do n
 accumulate behind a disconnected client. The `history` request accepts
 `torrent_id` to read that torrent's samples; an unknown or removed torrent is
 refused with `torrent_removed`. Without `torrent_id` it reads session totals for
-diagnostics. Both accept `range` as `five_minutes` or `day`; torrent replies
+the global Speed inspector and diagnostics. Both accept `range` as `five_minutes` or `day`; torrent replies
 include `torrent_id`. Each sample carries its first and last observation times
 as `start` and `time`, and the observation `count` represented by its average.
 Consumers use those bounds to distinguish coarse samples from missing time and

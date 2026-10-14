@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Globalization;
 using System.Reflection;
 using System.Text;
@@ -9,8 +10,9 @@ namespace Syno.TinyTorrent.Services;
 
 public sealed class Strings
 {
+    private static readonly string[] _units = ["bytes", "kib", "mib", "gib", "tib"];
     private Catalogue _current;
-    private readonly string[] _languageTags;
+    private readonly HashSet<string> _languageTags;
 
     public string Language => _current.Language;
     internal Syno.TableView.Strings Table => _current.Table;
@@ -21,15 +23,7 @@ public sealed class Strings
 
     internal Strings(IEnumerable<string> languageTags)
     {
-        _languageTags = languageTags
-            .Concat(
-                CultureInfo
-                    .GetCultures(CultureTypes.AllCultures)
-                    .Where(culture => culture.Name.Length > 0)
-                    .Select(culture => culture.Name)
-            )
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
+        _languageTags = languageTags.ToHashSet(StringComparer.OrdinalIgnoreCase);
         _current = Prepare("en");
     }
 
@@ -38,7 +32,7 @@ public sealed class Strings
         var english = Read("en") ?? throw new InvalidDataException("Missing English catalogue.");
         var text = english.ToDictionary(
             group => group.Key,
-            group => new Dictionary<string, string>(group.Value)
+            group => new Dictionary<string, CompositeFormat>(group.Value)
         );
         var culture = CultureInfo.GetCultureInfo(language);
         var parents = new Stack<string>();
@@ -54,49 +48,26 @@ public sealed class Strings
                 if (
                     !english.TryGetValue(group.Key, out var messages)
                     || !messages.TryGetValue(message.Key, out var fallback)
-                    || !Arguments(message.Value).SetEquals(Arguments(fallback))
+                    || !Arguments(message.Value.Format).SetEquals(Arguments(fallback.Format))
                 )
                     throw new InvalidDataException($"Invalid message '{group.Key}.{message.Key}'.");
                 text[group.Key][message.Key] = message.Value;
             }
-        }
-        var names = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        var previous = CultureInfo.CurrentUICulture;
-        try
-        {
-            CultureInfo.CurrentUICulture = culture;
-            foreach (
-                var tag in _languageTags.Append(language).Distinct(StringComparer.OrdinalIgnoreCase)
-            )
-            {
-                try
-                {
-                    names.Add(tag, CultureInfo.GetCultureInfo(tag).DisplayName);
-                }
-                catch (CultureNotFoundException)
-                {
-                    names.Add(tag, tag);
-                }
-            }
-        }
-        finally
-        {
-            CultureInfo.CurrentUICulture = previous;
         }
         return new Catalogue(
             language,
             text,
             Syno.TableView.Strings.Load(language),
             culture.TextInfo.IsRightToLeft,
-            names
+            _languageTags
         );
     }
 
     internal void Publish(Catalogue catalogue) => Volatile.Write(ref _current, catalogue);
 
-    internal string LanguageName(string tag) => _current.LanguageNames.GetValueOrDefault(tag, tag);
+    internal string LanguageName(string tag) => _current.LanguageName(tag);
 
-    private static Dictionary<string, Dictionary<string, string>>? Read(string language)
+    private static Dictionary<string, Dictionary<string, CompositeFormat>>? Read(string language)
     {
         using var stream = Assembly
             .GetExecutingAssembly()
@@ -104,17 +75,16 @@ public sealed class Strings
         if (stream is null)
             return null;
         using var document = JsonDocument.Parse(stream);
-        var text = new Dictionary<string, Dictionary<string, string>>();
+        var text = new Dictionary<string, Dictionary<string, CompositeFormat>>();
         foreach (var group in document.RootElement.EnumerateObject())
         {
-            var messages = new Dictionary<string, string>();
+            var messages = new Dictionary<string, CompositeFormat>();
             foreach (var message in group.Value.EnumerateObject())
             {
                 var value =
                     message.Value.GetString()
                     ?? throw new InvalidDataException("A message is null.");
-                CompositeFormat.Parse(value);
-                messages.Add(message.Name, value);
+                messages.Add(message.Name, CompositeFormat.Parse(value));
             }
             text.Add(group.Name, messages);
         }
@@ -128,33 +98,29 @@ public sealed class Strings
             .Select(match => match.Groups[1].Value)
             .ToHashSet();
 
-    public string? Find(string group, string key) =>
+    private CompositeFormat? FindFormat(string group, string key) =>
         _current.Text.TryGetValue(group, out var messages)
         && messages.TryGetValue(key, out var text)
             ? text
             : null;
 
+    public string? Find(string group, string key) => FindFormat(group, key)?.Format;
+
     public string Get(string group, string key) => Find(group, key) ?? group + "." + key;
 
     public string Format(string group, string key, params object[] values) =>
-        string.Format(CultureInfo.CurrentCulture, Get(group, key), values);
+        FindFormat(group, key) is { } format
+            ? string.Format(CultureInfo.CurrentCulture, format, values)
+            : Get(group, key);
 
     internal string FormatCount(string group, string key, long count, params object[] values) =>
         Format(group, key + (count == 1 ? "_one" : "_other"), [count, .. values]);
 
-    public string Status(string code) =>
-        _current.Text.TryGetValue("status", out var messages)
-        && messages.TryGetValue(code, out var text)
-            ? text
-            : Get("status", "unknown");
+    public string Status(string code) => Find("status", code) ?? Get("status", "unknown");
 
     public string Error(string code, string? detail)
     {
-        var message =
-            _current.Text.TryGetValue("errors", out var messages)
-            && messages.TryGetValue(code, out var text)
-                ? text
-                : Get("errors", "unknown");
+        var message = Find("errors", code) ?? Get("errors", "unknown");
         return string.IsNullOrWhiteSpace(detail)
             ? message
             : Format("errors", "detail", message, detail);
@@ -186,7 +152,7 @@ public sealed class Strings
         var reason = error is { Failure: VideoFailure.Refused, Provider.Access: not Access.Key }
             ? "refused_request"
             : error.Failure.ToString().ToLowerInvariant();
-        return Format("library", "failure_" + reason, error.Provider?.Name ?? string.Empty);
+        return Format("library", "failure_" + reason, error.Provider?.Name ?? error.Subject ?? string.Empty);
     }
 
     internal string Protection(RequestBlock block)
@@ -212,14 +178,13 @@ public sealed class Strings
 
     public string Bytes(double value)
     {
-        var units = new[] { "bytes", "kib", "mib", "gib", "tib" };
         var unit = 0;
-        while (value >= 1024 && unit < units.Length - 1)
+        while (value >= 1024 && unit < _units.Length - 1)
         {
             value /= 1024;
             unit++;
         }
-        return Format("units", units[unit], value);
+        return Format("units", _units[unit], value);
     }
 
     /// <summary>Shortens a large number as IMDb does: 950, 2.7K, 12K, 2.7M.</summary>
@@ -274,9 +239,42 @@ public sealed class Strings
 
     internal sealed record Catalogue(
         string Language,
-        Dictionary<string, Dictionary<string, string>> Text,
+        Dictionary<string, Dictionary<string, CompositeFormat>> Text,
         Syno.TableView.Strings Table,
         bool IsRightToLeft,
-        IReadOnlyDictionary<string, string> LanguageNames
-    );
+        IReadOnlySet<string> LanguageTags
+    )
+    {
+        private readonly ConcurrentDictionary<string, string> _names = new(StringComparer.OrdinalIgnoreCase);
+
+        internal string LanguageName(string tag)
+        {
+            try
+            {
+                return _names.GetOrAdd(tag, ResolveName);
+            }
+            catch (CultureNotFoundException)
+            {
+                return tag;
+            }
+        }
+
+        private string ResolveName(string tag)
+        {
+            var previous = CultureInfo.CurrentUICulture;
+            try
+            {
+                CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo(Language);
+                var supplied = LanguageTags.Contains(tag)
+                    || string.Equals(tag, Language, StringComparison.OrdinalIgnoreCase);
+                if (tag.Length == 0 && !supplied)
+                    return tag;
+                return CultureInfo.GetCultureInfo(tag, predefinedOnly: !supplied).DisplayName;
+            }
+            finally
+            {
+                CultureInfo.CurrentUICulture = previous;
+            }
+        }
+    }
 }

@@ -126,10 +126,9 @@ internal sealed partial class Acquisition
                     using (var reader = command.ExecuteReader())
                         while (reader.Read())
                         {
-                            var video = new Video(reader.GetString(0), reader.GetInt32(1))
+                            var video = new Video(reader.GetString(0), reader.GetInt32(1), reader.GetString(3))
                             {
                                 Path = reader.GetString(2),
-                                FinalPath = reader.GetString(3),
                                 Size = reader.GetInt64(4),
                                 Complete = reader.GetBoolean(5),
                                 Readable = reader.GetBoolean(6),
@@ -159,8 +158,11 @@ internal sealed partial class Acquisition
             .ConfigureAwait(false);
         HashSet<Discovery> accepted;
         lock (_requestSync)
+        {
+            _cancelledScans.IntersectWith(movies.Where(movie => !movie.Scanned));
             accepted = movies.Where(movie => movie.Video.Eligible && movie.Video.Readable
                 && (force || !movie.Scanned && !_cancelledScans.Contains(movie))).ToHashSet();
+        }
         if (accepted.Count == 0)
             return new(0, 0);
         var run = owner ?? new WorkRun(this, SubtitleWork.Discovery);
@@ -178,6 +180,17 @@ internal sealed partial class Acquisition
             var failures = 0;
             var folders = movies.GroupBy(movie => (movie.Folder, movie.Recursive))
                 .Where(folder => folder.Any(accepted.Contains)).ToArray();
+            var entries = folders.Select(folder => folder.Key.Folder)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(folder => folder, _ => new HashSet<long>(), StringComparer.OrdinalIgnoreCase);
+            foreach (var movie in movies.Where(movie => movie.Video.Eligible))
+            {
+                cancellation.ThrowIfCancellationRequested();
+                for (var parent = Path.GetDirectoryName(movie.Video.FinalPath); parent is not null;
+                    parent = Path.GetDirectoryName(parent))
+                    if (entries.TryGetValue(parent, out var contained) && contained.Count < 2)
+                        contained.Add(movie.Video.EntryId);
+            }
             var done = 0;
             foreach (var folder in folders)
             {
@@ -186,14 +199,7 @@ internal sealed partial class Acquisition
                 var pending = folder.Where(accepted.Contains).ToArray();
                 // Samples and unselected files are not movies, so a Sample folder
                 // leaves Subs/English.srt to the one movie beside it.
-                var sole =
-                    movies
-                        .Where(movie =>
-                            movie.Video.Eligible && Within(movie.Video.FinalPath, folder.Key.Folder)
-                        )
-                        .Select(movie => movie.Video.EntryId)
-                        .Distinct()
-                        .Count() == 1;
+                var sole = entries[folder.Key.Folder].Count == 1;
                 List<(Discovery Movie, string Path, string Language)> records;
                 try
                 {

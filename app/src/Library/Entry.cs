@@ -12,6 +12,7 @@ public sealed record Entry(long EntryId, string Path, string Name, long Size)
 
     // The file has a provider match, which supplies its Library metadata.
     public bool HasMetadata { get; init; }
+    internal string? CatalogId { get; init; }
 
     // The selected provider searched for the file and found no match.
     public bool IsUnmatched { get; init; }
@@ -56,6 +57,7 @@ public sealed class Languages(IList<string> codes)
 
 internal sealed record Query(string Text, LibraryConfiguration Configuration)
 {
+    internal bool IncludesFacets { get; init; }
     // The selected provider's catalogue, or null when no provider is selected.
     internal string? CatalogId { get; init; }
     internal IReadOnlyDictionary<string, string> Filters =>

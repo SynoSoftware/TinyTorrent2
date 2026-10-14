@@ -71,7 +71,7 @@ void Engine::State::FailCheckpoint(Torrent& torrent, Problem problem)
     torrent.retryAt = std::chrono::steady_clock::now() + checkpointRetry;
 }
 
-void Engine::State::On(lt::save_resume_data_alert const& alert)
+void Engine::State::On(lt::save_resume_data_alert& alert)
 {
     auto torrent = Find(alert.handle);
     if (!torrent)
@@ -83,10 +83,10 @@ void Engine::State::On(lt::save_resume_data_alert const& alert)
     torrent->unsaved = false;
     if (torrent->checkpointPhase == CheckpointPhase::Writing)
     {
-        torrent->pendingCheckpoint = alert.params;
+        torrent->pendingCheckpoint = std::move(alert.params);
         return;
     }
-    SaveCheckpoint(*torrent, alert.params);
+    SaveCheckpoint(*torrent, std::move(alert.params));
 }
 
 void Engine::State::SaveCheckpoint(Torrent& torrent, lt::add_torrent_params params)
@@ -158,7 +158,8 @@ void Engine::State::SaveCheckpoint(Torrent& torrent, lt::add_torrent_params para
                 }
                 auto document = Saved();
                 document.torrents.at(id).verifyFiles = false;
-                changes.Commit(document.ToJson(), [this, id](Outcome saved)
+                changes.Commit([document = std::move(document)] { return document.ToJson(); },
+                    [this, id](Outcome saved)
                 {
                     auto& torrent = torrents.at(id);
                     bool refresh = !saved.error && torrent.pendingCheckpoint.has_value();

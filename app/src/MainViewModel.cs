@@ -13,6 +13,7 @@ namespace Syno.TinyTorrent;
 public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
 {
     private readonly PipeClient _client;
+    private readonly ICommand[] _commands;
     private readonly DispatcherQueue _dispatcher;
     private readonly Dictionary<string, Torrent> _byId = [];
     private readonly List<Torrent> _torrents = [];
@@ -60,6 +61,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     private bool _dark;
     private bool _toolbarOpen = true;
     private bool _showsSettingsIndex = true;
+    private bool _applyingSnapshot;
+    private long _limitsMinute;
+    private (bool CanClose, bool CanExit, bool HasDraft)? _taskState;
 
     public Strings Text { get; }
     internal BackgroundWork Work { get; }
@@ -334,6 +338,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         AddDraft = new AddDraft(this, _client, strings);
         FileDraft = new FileDraft(this, _client);
         SpeedLimit = new SpeedLimit(this, _client);
+        Geolocation = new Geolocation(_providerHttp, Work);
+        Geolocation.Failed += (_, error) => Report(error);
         Inspector = new Inspector(this, _client);
         Library = new LibraryBrowser(strings, dispatcher, Work);
         Library.RetryRequested += (_, _) => RequestSnapshot();
@@ -355,6 +361,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             .ToArray();
         AddDraft.PropertyChanged += OnTaskChanged;
         Inspector.PropertyChanged += OnTaskChanged;
+        Inspector.RowsUpdated += (_, section) =>
+        {
+            if (section == InspectorSection.Peers)
+                Changed(nameof(CountStatus));
+        };
         Settings.PropertyChanged += (sender, args) =>
         {
             if (!_closed && !_applyingSettings && _providerRoute is not null)
@@ -611,6 +622,47 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             },
             () => HasUpdate
         );
+        _commands =
+        [
+            Add,
+            AddMagnet,
+            Pause,
+            Resume,
+            Force,
+            SwitchSequential,
+            SwitchFirstLast,
+            LimitSpeed,
+            SwitchFilters,
+            SwitchToolbar,
+            Verify,
+            Remove,
+            MoveFiles,
+            DeleteFiles,
+            Up,
+            Down,
+            Top,
+            Bottom,
+            PauseAll,
+            ResumeAll,
+            ResolvePause,
+            Open,
+            OpenFolder,
+            CopyMagnet,
+            CopyHash,
+            Properties,
+            Limits,
+            ClearFilters,
+            ShowSettings,
+            ShowTorrents,
+            ShowAbout,
+            OpenUpdate,
+            Exit,
+            SwitchTheme,
+            Restart,
+            RetryFeatures,
+            DeleteDatabase,
+            RepairDatabase,
+        ];
         Settings.Updates.PropertyChanged += (_, _) =>
         {
             ObserveUpdates();
@@ -658,7 +710,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
                 else
                     CloseRequested?.Invoke(this, true);
             });
-        PropertyChanged += (_, _) => SyncNotices();
+        PropertyChanged += (_, _) =>
+        {
+            if (!_applyingSnapshot)
+                SyncNotices();
+        };
     }
 
     public void Start()
@@ -675,7 +731,30 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
 
     private void Apply(JsonElement snapshot)
     {
+        _applyingSnapshot = true;
+        try
+        {
+            ApplySnapshot(snapshot);
+            SyncNotices();
+        }
+        finally
+        {
+            _applyingSnapshot = false;
+        }
+    }
+
+    private void ApplySnapshot(JsonElement snapshot)
+    {
         var previousAccess = (_connected, _loading, _storageFailed, _shuttingDown);
+        var previousError = _startupError;
+        var previousLimits = (IsPaused, _limitOrigin, _appliedLimits, _pause, _downloadCap, _uploadCap, MissingAdapter);
+        var previousIncoming = (HasIncoming, MissingAdapter, Settings.Proxy.IsInUse, Settings.Proxy.Route);
+        var previousIp = (_externalIpv4, _externalIpv6);
+        var previousRates = (_downloadRate, _uploadRate);
+        var previousTotals = (SessionTotals, LifetimeTotals);
+        var previousCount = Torrents.Count;
+        var previousSelection = _selected.Length;
+        var previousLanguageSaved = _languageSaved;
         var sessionId = snapshot.GetProperty("session_id").GetString()!;
         var reconnected = !_connected || _sessionId != sessionId;
         if (_sessionId != sessionId)
@@ -699,8 +778,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         {
             if (accessChanged)
                 Refresh();
-            else
-                RefreshWindow();
+            else if (previousError != _startupError)
+                Changed(nameof(CurrentStatus));
             ObserveUpdates();
             if (first)
                 ShowRequested?.Invoke(this, EventArgs.Empty);
@@ -740,6 +819,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         )
             _languageLoad = LoadLanguage(tag);
         var present = new HashSet<string>();
+        var rowsChanged = false;
+        var inspectedChanged = false;
         foreach (var item in snapshot.GetProperty("torrents").EnumerateArray())
         {
             var torrentId = item.GetProperty("torrent_id").GetString()!;
@@ -749,15 +830,21 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
                 torrent = new Torrent(torrentId, Text);
                 _byId.Add(torrentId, torrent);
                 _torrents.Add(torrent);
+                rowsChanged = true;
             }
-            torrent.Update(item);
+            var changed = torrent.Update(item);
+            rowsChanged |= changed;
+            inspectedChanged |= changed && ReferenceEquals(torrent, Inspector.Target);
         }
         foreach (var torrent in Torrents.Where(row => !present.Contains(row.TorrentId)).ToArray())
         {
             _torrents.Remove(torrent);
             _byId.Remove(torrent.TorrentId);
+            rowsChanged = true;
         }
         _selected = _selected.Where(row => present.Contains(row.TorrentId)).ToArray();
+        var selectionChanged = previousSelection != _selected.Length
+            || rowsChanged && _selected.Length > 0;
         if (_current is not null && !present.Contains(_current.TorrentId))
             _current = null;
         if (Inspector.Target is { } target && !Contains(target))
@@ -776,20 +863,70 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         LifetimeTotals = ReadTotals(transfers.GetProperty("all_time"));
         ObserveMemory();
         ObserveSpace();
-        var published = Project();
+        var published = rowsChanged && Project();
         if (accessChanged)
             Refresh();
         else
         {
-            FileDraft.Refresh();
-            RefreshWindow();
+            if (rowsChanged)
+            {
+                Changed(nameof(Torrents));
+                foreach (var choice in Filters)
+                    choice.Refresh(false);
+                if (FileDraft.Torrents.Length > 0)
+                    FileDraft.Refresh();
+            }
+            if (published || previousCount != Torrents.Count || previousSelection != _selected.Length)
+                Changed(nameof(CountStatus));
+            if (previousCount != Torrents.Count)
+            {
+                Changed(nameof(EmptyTitle));
+                Changed(nameof(EmptyInstruction));
+                Changed(nameof(EmptyActionText));
+                Changed(nameof(EmptyActionGlyph));
+                Changed(nameof(EmptyActionToolTip));
+                Changed(nameof(EmptyAction));
+            }
+            if (selectionChanged)
+            {
+                Changed(nameof(SelectionText));
+                Changed(nameof(HasSelection));
+                Changed(nameof(CanEditSelection));
+                Changed(nameof(Sequential));
+                Changed(nameof(FirstLast));
+                Changed(nameof(Limited));
+            }
+            var limitsChanged = previousLimits != (IsPaused, _limitOrigin, _appliedLimits, _pause, _downloadCap, _uploadCap, MissingAdapter);
+            var minute = DateTime.Now.Ticks / TimeSpan.TicksPerMinute;
+            if (limitsChanged || minute != _limitsMinute)
+                RefreshLimits();
+            _limitsMinute = minute;
+            if (limitsChanged || previousRates != (_downloadRate, _uploadRate))
+                RefreshRates();
+            if (previousIncoming != (HasIncoming, MissingAdapter, Settings.Proxy.IsInUse, Settings.Proxy.Route))
+                RefreshIncoming();
+            if (previousIp != (_externalIpv4, _externalIpv6))
+                Changed(nameof(ExternalIp));
+            if (previousTotals.SessionTotals != SessionTotals)
+                Changed(nameof(SessionTotals));
+            if (previousTotals.LifetimeTotals != LifetimeTotals)
+            {
+                Changed(nameof(LifetimeTotals));
+                Changed(nameof(LifetimeDownloaded));
+                Changed(nameof(LifetimeUploaded));
+            }
+            if (previousLanguageSaved != _languageSaved)
+                Changed(nameof(CurrentStatus));
+            if (selectionChanged || limitsChanged || previousCount != Torrents.Count)
+                foreach (RelayCommand command in _commands)
+                    command.Refresh();
         }
         ObserveUpdates();
         if (first)
             ShowRequested?.Invoke(this, EventArgs.Empty);
         ObserveFiles(snapshot);
-        Inspector.Observe(sessionId);
-        SnapshotApplied?.Invoke(this, new SnapshotAppliedEventArgs(published));
+        Inspector.Observe(sessionId, inspectedChanged || previousSelection != _selected.Length);
+        SnapshotApplied?.Invoke(this, new SnapshotAppliedEventArgs(published, rowsChanged));
         // Torrents added together are shown together, once all of them are in the list.
         if (_revealIds.Length > 0 && _revealIds.All(_byId.ContainsKey))
         {
@@ -1200,55 +1337,16 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             return;
         foreach (var choice in Filters)
             choice.Refresh();
+        _taskState = (CanClose, CanExit, HasDraft);
         Changed(string.Empty);
-        foreach (
-            RelayCommand command in new[]
-            {
-                Add,
-                AddMagnet,
-                Pause,
-                Resume,
-                Force,
-                SwitchSequential,
-                SwitchFirstLast,
-                LimitSpeed,
-                SwitchFilters,
-                SwitchToolbar,
-                Verify,
-                Remove,
-                MoveFiles,
-                DeleteFiles,
-                Up,
-                Down,
-                Top,
-                Bottom,
-                PauseAll,
-                ResumeAll,
-                ResolvePause,
-                Open,
-                OpenFolder,
-                CopyMagnet,
-                CopyHash,
-                Properties,
-                Limits,
-                ClearFilters,
-                ShowSettings,
-                ShowTorrents,
-                ShowAbout,
-                OpenUpdate,
-                Exit,
-                SwitchTheme,
-                Restart,
-                RetryFeatures,
-                DeleteDatabase,
-                RepairDatabase,
-            }
-        )
+        foreach (RelayCommand command in _commands)
             command.Refresh();
     }
 
     private void OnTaskChanged(object? sender, PropertyChangedEventArgs args)
     {
+        if (ReferenceEquals(sender, Inspector))
+            Changed(nameof(CountStatus));
         if (ReferenceEquals(sender, Settings))
         {
             ObserveSpace();
@@ -1256,12 +1354,69 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             Changed(nameof(ShowsExternalIp));
             Changed(nameof(ShowsTitleSpeeds));
             Changed(nameof(ShowsFreeSpace));
+            RefreshIncoming();
+            RefreshLimits();
+            RefreshRates();
         }
-        Changed(nameof(CanClose));
-        Changed(nameof(CanExit));
-        Changed(nameof(HasDraft));
-        Changed(nameof(HasInspector));
-        ((RelayCommand)Exit).Refresh();
+        var state = (CanClose, CanExit, HasDraft);
+        var previous = _taskState;
+        _taskState = state;
+        if (previous?.CanClose != state.CanClose)
+            Changed(nameof(CanClose));
+        if (previous?.CanExit != state.CanExit)
+        {
+            Changed(nameof(CanExit));
+            ((RelayCommand)Exit).Refresh();
+        }
+        if (previous?.HasDraft != state.HasDraft)
+            Changed(nameof(HasDraft));
+    }
+
+    private void RefreshRates()
+    {
+        Changed(nameof(DownloadSpeed));
+        Changed(nameof(UploadSpeed));
+        Changed(nameof(DownloadStatus));
+        Changed(nameof(UploadStatus));
+        Changed(nameof(DownloadTip));
+        Changed(nameof(UploadTip));
+    }
+
+    private void RefreshIncoming()
+    {
+        Changed(nameof(HasIncoming));
+        Changed(nameof(MissingAdapter));
+        Changed(nameof(Incoming));
+        Changed(nameof(IncomingStatus));
+        Changed(nameof(IncomingGlyph));
+        Changed(nameof(IsIncomingProxied));
+        Changed(nameof(IsIncomingOpen));
+        Changed(nameof(IsIncomingClosed));
+    }
+
+    private void RefreshLimits()
+    {
+        Changed(nameof(IsPaused));
+        Changed(nameof(IsSessionPaused));
+        Changed(nameof(FixedLimits));
+        Changed(nameof(FollowsSchedule));
+        Changed(nameof(LimitsIndex));
+        Changed(nameof(HasStandardLimits));
+        Changed(nameof(HasAlternativeLimits));
+        Changed(nameof(IsPausedByChoice));
+        Changed(nameof(HasRestriction));
+        Changed(nameof(RestrictionStatus));
+        Changed(nameof(RestrictionTip));
+        Changed(nameof(ShowsAlternativeLimits));
+        Changed(nameof(HasCaps));
+        Changed(nameof(AlternativeTip));
+        Changed(nameof(LimitsHeading));
+        Changed(nameof(LimitsSummary));
+        Changed(nameof(ScheduleSummary));
+        Changed(nameof(DownloadCap));
+        Changed(nameof(UploadCap));
+        Changed(nameof(PauseStatus));
+        Changed(nameof(LimitsNow));
     }
 
     private void Changed(string property) =>
@@ -1280,9 +1435,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     }
 }
 
-internal sealed class SnapshotAppliedEventArgs(bool published) : EventArgs
+internal sealed class SnapshotAppliedEventArgs(bool published, bool rowsChanged) : EventArgs
 {
     public bool Published { get; } = published;
+    public bool RowsChanged { get; } = rowsChanged;
 }
 
 internal readonly record struct TransferTotals(long Downloaded, long Uploaded);

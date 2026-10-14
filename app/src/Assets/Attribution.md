@@ -13,3 +13,15 @@ The Credits page uses this upstream artwork.
 
 The installer owns distribution notices; their provenance is in
 [installer/notices](../../../installer/notices/README.md).
+
+## Peer map
+
+`world.json` contains Natural Earth country boundaries from the approved peer-map
+prototype (the 110m country geometry distributed by `@d3-maps/atlas` 1.0.0),
+representative country anchors, and the 32 largest populated-place records for
+each of Russia, Canada, the United States, China, Brazil, Australia, India,
+Argentina, Mexico and Indonesia. These records come from Natural Earth's
+[10m populated places](https://www.naturalearthdata.com/downloads/10m-cultural-vectors/10m-populated-places/).
+Coordinates are rounded to five decimal places. Population weights are a visual
+proxy, not a density raster or evidence of individual peers' locations.
+Natural Earth makes the data [public domain](https://www.naturalearthdata.com/about/terms-of-use/).

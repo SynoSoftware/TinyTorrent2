@@ -8,6 +8,8 @@ namespace Syno.TinyTorrent.Models;
 public sealed class Torrent(string torrentId, Strings strings) : INotifyPropertyChanged
 {
     private bool _connected;
+    private DateTimeOffset _ageRefresh;
+    private string? _searchText;
     public string TorrentId { get; } = torrentId;
     public string Name { get; private set; } = string.Empty;
     public string SavePath { get; private set; } = string.Empty;
@@ -54,7 +56,7 @@ public sealed class Torrent(string torrentId, Strings strings) : INotifyProperty
     public bool IsError => StatusCode == "error" || ErrorCode.Length > 0;
     public bool IsProgressMuted =>
         !IsError && !IsMoving && (IsPaused || (Progress >= 1 && StatusCode != "checking"));
-    public bool IsProgressNormal => !IsProgressMuted && !IsError && !IsMoving;
+    public bool ShowsProgress => !IsMoving || IsError;
     public bool IsDownloading => StatusCode == "downloading" && !IsError;
     public bool IsStatusNeutral => !IsDownloading && !IsError;
     public string StatusGlyph =>
@@ -106,6 +108,7 @@ public sealed class Torrent(string torrentId, Strings strings) : INotifyProperty
     public string CompletedOnText => Ago(CompletedOn);
     public string? CompletedOnTip => Time(CompletedOn);
     public string QueueText => IsQueued ? (Queue + 1).ToString(CultureInfo.CurrentCulture) : "—";
+    internal string SearchText => _searchText ??= FileName.Normalize(Name + " " + Status);
 
     // The limits that are set, such as "↓ 0.5 MB/s"; empty without one.
     public string LimitText => Limits(string.Empty);
@@ -143,49 +146,91 @@ public sealed class Torrent(string torrentId, Strings strings) : INotifyProperty
 
     public override string ToString() => Name;
 
-    internal void RefreshText() =>
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
+    internal void RefreshText()
+    {
+        _searchText = null;
+        Notify();
+    }
+
+    private void Notify() => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
 
     internal void Disconnect()
     {
         _connected = false;
-        RefreshText();
+        Notify();
     }
 
-    internal void Update(JsonElement row)
+    internal bool Update(JsonElement row)
     {
+        var changed = !_connected;
         _connected = true;
-        Name = row.GetProperty("name").GetString()!;
-        SavePath = row.GetProperty("save_path").GetString()!;
-        FinalFolder = row.GetProperty("final_folder").GetString()!;
-        IsMoving = row.GetProperty("moving").GetBoolean();
-        MoveDestination = row.GetProperty("move_destination").GetString()!;
-        Size = row.GetProperty("size").GetInt64();
-        Completed = row.GetProperty("completed").GetInt64();
-        Downloaded = row.GetProperty("downloaded").GetInt64();
-        Uploaded = row.GetProperty("uploaded").GetInt64();
-        SeedCount = row.GetProperty("seed_count").GetInt32();
-        PeerCount = row.GetProperty("peer_count").GetInt32();
-        SwarmSeedCount = row.GetProperty("swarm_seed_count").GetInt32();
-        SwarmLeecherCount = row.GetProperty("swarm_leecher_count").GetInt32();
-        Queue = row.GetProperty("queue").GetInt32();
-        Added = Moment(row.GetProperty("added"));
-        CompletedOn = Moment(row.GetProperty("completed_on"));
-        Hashes = row.GetProperty("hashes")
-            .EnumerateArray()
-            .Select(hash => hash.GetString()!)
-            .ToArray();
-        Sequential = row.GetProperty("sequential").GetBoolean();
-        FirstLast = row.GetProperty("first_last").GetBoolean();
-        DownloadLimit = row.GetProperty("download_limit").GetInt32();
-        UploadLimit = row.GetProperty("upload_limit").GetInt32();
-        Progress = row.GetProperty("progress").GetDouble();
-        StatusCode = row.GetProperty("status").GetString()!;
-        DownloadRate = row.GetProperty("download_rate").GetDouble();
-        UploadRate = row.GetProperty("upload_rate").GetDouble();
-        ErrorCode = row.GetProperty("error").GetString()!;
-        ErrorDetail = row.GetProperty("detail").GetString()!;
-        RefreshText();
+        var previousName = Name;
+        var previousStatus = StatusCode;
+        Name = ReadText("name", Name);
+        SavePath = ReadText("save_path", SavePath);
+        FinalFolder = ReadText("final_folder", FinalFolder);
+        IsMoving = Set(IsMoving, row.GetProperty("moving").GetBoolean());
+        MoveDestination = ReadText("move_destination", MoveDestination);
+        Size = Set(Size, row.GetProperty("size").GetInt64());
+        Completed = Set(Completed, row.GetProperty("completed").GetInt64());
+        Downloaded = Set(Downloaded, row.GetProperty("downloaded").GetInt64());
+        Uploaded = Set(Uploaded, row.GetProperty("uploaded").GetInt64());
+        SeedCount = Set(SeedCount, row.GetProperty("seed_count").GetInt32());
+        PeerCount = Set(PeerCount, row.GetProperty("peer_count").GetInt32());
+        SwarmSeedCount = Set(SwarmSeedCount, row.GetProperty("swarm_seed_count").GetInt32());
+        SwarmLeecherCount = Set(SwarmLeecherCount, row.GetProperty("swarm_leecher_count").GetInt32());
+        Queue = Set(Queue, row.GetProperty("queue").GetInt32());
+        Added = Set(Added, Moment(row.GetProperty("added")));
+        CompletedOn = Set(CompletedOn, Moment(row.GetProperty("completed_on")));
+        var hashes = row.GetProperty("hashes");
+        var sameHashes = hashes.GetArrayLength() == Hashes.Length;
+        for (var index = 0; sameHashes && index < Hashes.Length; index++)
+            sameHashes = hashes[index].ValueEquals(Hashes[index]);
+        if (!sameHashes)
+        {
+            Hashes = hashes.EnumerateArray().Select(hash => hash.GetString()!).ToArray();
+            changed = true;
+        }
+        Sequential = Set(Sequential, row.GetProperty("sequential").GetBoolean());
+        FirstLast = Set(FirstLast, row.GetProperty("first_last").GetBoolean());
+        DownloadLimit = Set(DownloadLimit, row.GetProperty("download_limit").GetInt32());
+        UploadLimit = Set(UploadLimit, row.GetProperty("upload_limit").GetInt32());
+        Progress = Set(Progress, row.GetProperty("progress").GetDouble());
+        StatusCode = ReadText("status", StatusCode);
+        DownloadRate = Set(DownloadRate, row.GetProperty("download_rate").GetDouble());
+        UploadRate = Set(UploadRate, row.GetProperty("upload_rate").GetDouble());
+        ErrorCode = ReadText("error", ErrorCode);
+        ErrorDetail = ReadText("detail", ErrorDetail);
+        if (Name != previousName || StatusCode != previousStatus)
+            _searchText = null;
+        var now = DateTimeOffset.UtcNow;
+        if (changed)
+        {
+            _ageRefresh = now;
+            Notify();
+        }
+        else if (now - _ageRefresh >= TimeSpan.FromMinutes(1) || now < _ageRefresh)
+        {
+            _ageRefresh = now;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(AddedText)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CompletedOnText)));
+        }
+        return changed;
+
+        T Set<T>(T previous, T value)
+        {
+            changed |= !EqualityComparer<T>.Default.Equals(previous, value);
+            return value;
+        }
+
+        string ReadText(string name, string previous)
+        {
+            var value = row.GetProperty(name);
+            if (value.ValueEquals(previous))
+                return previous;
+            changed = true;
+            return value.GetString()!;
+        }
     }
 
     // The engine sends 0 for a time it does not have.

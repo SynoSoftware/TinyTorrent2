@@ -32,7 +32,10 @@ The application references the WinUI components it uses rather than the whole
 Windows App SDK, avoiding unused AI, machine-learning, widgets and search files.
 The published executables must be `TinyTorrent.exe` and `TinyTorrentUI.exe`.
 The publish step includes the UI resource index with its embedded compiled XAML;
-the release command rejects missing application or library resource indexes.
+the release command rejects missing application or library resource indexes,
+the Lucide and flag fonts and the DB-IP country data, so published
+installations keep their icons and peer flags. The app build fetches the month's
+country data, as [peer location](../docs/peer-location.md) describes.
 The command compresses the staged engine with UPX, preserves its resources
 (including properties and icons), and verifies the compressed data before
 signing and packaging. Build outputs stay uncompressed.
@@ -69,13 +72,18 @@ and its private key stay in the certificate store.
 
 ## What the installer does
 
-Setup installs for the current user under Local App Data. It checks compatible
-.NET and Windows App Runtime installations and downloads only
+Setup installs for the current user under Local App Data. The installer uses
+Inno Setup's smaller x86 engine in 64-bit install mode; TinyTorrent and its
+prerequisites remain x64. It checks compatible .NET and Windows App Runtime
+installations and downloads only
 missing prerequisites from the verified Microsoft URLs pinned into this
 installer. Runtime installers and shared runtime files are not bundled in the
 release. Internet access is needed when a prerequisite is missing; Microsoft
 prerequisite installers can request administrator approval. Cancelling or a
 failed runtime check stops setup before application files are replaced.
+Setup checks the installed components again after each Microsoft installer runs;
+when Windows needs a restart to finish a prerequisite, Setup offers that restart
+before application files are replaced.
 Visual C++ redistributables are unnecessary: the engine uses a static CRT, and
 the Windows App Runtime uses Microsoft's
 [Hybrid CRT](https://github.com/microsoft/WindowsAppSDK/blob/main/docs/Coding-Guidelines/HybridCRT.md).
@@ -84,9 +92,14 @@ First installation offers torrent/link handling and optional sign-in startup.
 Upgrades preserve those choices, request the engine's coordinated Exit, and
 resume background transfers if TinyTorrent was running. Setup asks the installed
 engine to exit before replacing it, so shutdown uses that release's pipe protocol.
-Uninstall uses the
-same Exit and registration owners and preserves saved state, downloads, and
-shared runtimes. The [installation contract](../docs/architecture.md#installation-and-updates)
+If that executable is missing or cannot start, Setup uses its bundled engine to
+request Exit instead. A refused Exit still stops installation to protect unfinished
+input. Inno Setup handles remaining file locks through Windows Restart Manager.
+Optional handler or startup registration failures leave the app installed and
+usable, with those choices available again in Settings. Uninstall uses the same
+Exit and registration owners and preserves saved state, downloads, and shared
+runtimes. Missing program files or failed optional registration cleanup do not
+prevent removal. The [installation contract](../docs/architecture.md#installation-and-updates)
 owns these decisions.
 
 Generating an installer does not publish it or establish product release

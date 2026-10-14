@@ -13,7 +13,6 @@ public sealed partial class Scheduler : UserControl
     private readonly PeriodEditor _editor;
     public Schedule Model { get; }
     internal Control Map => Timeline;
-    internal FrameworkElement Surface => WeekCard;
     internal Control Selector => (Control)Mode.Content;
 
     internal Scheduler(Schedule model, LimitSelector selector)

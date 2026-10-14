@@ -10,7 +10,7 @@ using Selection = Syno.TableView.Selection;
 
 namespace Syno.TinyTorrent.Library;
 
-public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyncDisposable
+public sealed partial class Browser : INotifyPropertyChanged, IDataset, IDisposable, IAsyncDisposable
 {
     private readonly DispatcherQueue _dispatcher;
     private readonly object _gate = new();
@@ -32,6 +32,9 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
     private bool _available;
     private string _emptyText = string.Empty;
     private bool _visible;
+    private bool _typing;
+    private bool _showsFacets;
+    private bool _erasing;
     private volatile LibraryReadiness _readiness;
     private bool _disposed;
     private string _query = string.Empty;
@@ -45,6 +48,8 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
     public IReadOnlyList<LibraryRow> Rows { get; private set; } = [];
     // Results keep their configuration while a search for another one is pending.
     internal LibraryConfiguration RowsConfiguration => _rowsQuery?.Configuration ?? Configuration;
+    internal LibraryConfiguration? FacetsConfiguration =>
+        _rowsQuery is { IncludesFacets: true } query ? query.Configuration : null;
 
     internal async Task<Coverage?> ReadCoverage()
     {
@@ -52,7 +57,8 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
             return null;
         try
         {
-            return await store.ReadCoverage();
+            var coverage = await store.ReadCoverage();
+            return IsAvailable && ReferenceEquals(store, _store) ? coverage : null;
         }
         catch (OperationCanceledException) { }
         catch (Exception error)
@@ -65,6 +71,7 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
 
 #if CAPTURE
     internal Task SearchCompletion => _searching ?? Task.CompletedTask;
+    internal bool IsReady => CanLookup;
 
     internal Task<int> PrepareTiming() =>
         (
@@ -91,21 +98,21 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
     public string Message =>
         Selected?.OpeningFailure is not null ? Selected.Failure
         : _outcome is FetchOutcome.Failed fetch ? Error(fetch.Error)
-        : Selected?.Entry.Kind == FileKind.Video
-        && _videos?.Failure is { } failure
+        : Selected?.Entry is { Kind: FileKind.Video, HasMetadata: false }
+        && AutomaticWait is not null && _videos?.Failure is { } failure
             ? Error(failure)
         : string.Empty;
     internal string RetryTip =>
         Selected?.OpeningFailure is not null ? Text.Get("library", "retry_open_tip")
-        : Option is { } option ? Text.Format("library", "retry_provider_tip", option.Name)
+        : (_outcome is FetchOutcome.Failed fetch ? fetch.Error.Provider ?? InformationProvider : Option) is { } option
+            ? Text.Format("library", "retry_provider_tip", option.Name)
         : string.Empty;
 
     /// <summary>
-    /// Text such as "Waiting for TMDB" while a failure of the saved provider
-    /// holds lookups back, otherwise null. Videos without metadata show it in the card.
+    /// A default-provider failure blocking automatic work, otherwise null.
     /// </summary>
-    internal string? Waiting =>
-        IsEnrichmentEnabled && _videos?.Failure is not null && Option is { } option
+    internal string? AutomaticWait =>
+        IsAutomaticDownloadEnabled && _videos?.Failure is not null && Option is { } option
             ? Text.Format("library", "waiting", option.Name)
             : null;
 
@@ -146,8 +153,7 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
     };
     internal string InformationStatus => _rowsQuery?.Configuration != LibraryConfiguration.Videos || !IsAvailable
         ? string.Empty
-        : !IsEnrichmentEnabled ? Text.Get("library", "download_off")
-        : Waiting ?? string.Empty;
+        : AutomaticWait ?? string.Empty;
     public bool IsEmpty =>
         Query.Length == 0 && Filters.Count == 0 && !Counts.Values.Any(count => count > 0);
 
@@ -178,8 +184,7 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
         _loadedDetail?.BoxOffice is { } takings
             ? Text.Format("library", "dollars", Text.Compact(takings))
             : string.Empty;
-    public bool IsProviderAvailable => _videos?.IsAvailable == true;
-    public bool IsEnrichmentEnabled => _videos?.Enabled == true;
+    public bool IsAutomaticDownloadEnabled => _videos?.IsAutomaticDownloadEnabled == true;
     private string? LookupCatalog => Option?.ProviderId;
     public string DownloadLabel => Text.Get("library", "download_information");
     public string FetchMetadataLabel => Text.Get("library", "fetch_metadata");
@@ -218,10 +223,24 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
             if (_query == value)
                 return;
             _query = value;
-            SearchChanged();
+            SearchChanged(typing: value.Length > 0);
             Changed(nameof(Query));
         }
     }
+
+    internal bool ShowsFacets
+    {
+        get => _showsFacets;
+        set
+        {
+            if (_showsFacets == value)
+                return;
+            _showsFacets = value;
+            SearchChanged();
+        }
+    }
+
+    internal void SubmitSearch() => SearchChanged();
 
     public ICommand Open { get; }
     public ICommand OpenFolder { get; }
@@ -230,7 +249,7 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
     public ICommand FetchMetadata { get; }
     public ICommand ShowSettings { get; }
     public ICommand Retry { get; }
-    public ICommand FetchDetails { get; }
+    public ICommand RefreshMetadata { get; }
     public ICommand ClearFilters { get; }
     public ICommand ShowTorrents { get; }
     internal event EventHandler<LibraryRow>? OpenRequested;
@@ -242,6 +261,7 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
     internal event EventHandler? RetryRequested;
     internal event EventHandler? FiltersRequested;
     internal event EventHandler? PropertiesRequested;
+    internal event EventHandler? CoverageChanged;
     internal event EventHandler<Exception>? CommandFailed;
 
     // Raised with the number of files Fetch metadata left unidentified
@@ -322,17 +342,19 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
         EraseMetadata = new RelayCommand(
             async () =>
             {
-                if (_store is not { } store)
+                if (_erasing || _store is not { } store)
                     return;
                 var entries = Selection
                     .Items.Cast<LibraryRow>()
                     .Select(row => row.Entry)
                     .Where(entry => entry.HasMetadata)
                     .ToArray();
+                _erasing = true;
+                RefreshCommands();
                 try
                 {
-                    foreach (var entry in entries)
-                        await store.EraseMetadata(entry, CancellationToken.None);
+                    if (await store.EraseMetadata(entries, CancellationToken.None) is { } failure)
+                        throw new VideoException(failure);
                 }
                 catch (OperationCanceledException) { }
                 catch (Exception error)
@@ -342,32 +364,36 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
                 }
                 finally
                 {
+                    _erasing = false;
                     Refresh();
                 }
             },
             () =>
-                IsAvailable && Selection.Items.Cast<LibraryRow>().Any(row => row.Entry.HasMetadata)
+                IsAvailable && !_erasing && Selection.Items.Cast<LibraryRow>().Any(row => row.Entry.HasMetadata)
         );
-        FetchDetails = new RelayCommand(RequestInformation, () => CanFetch);
+        RefreshMetadata = new RelayCommand(RequestInformation, () => CanRefresh);
         Retry = new RelayCommand(
             () =>
             {
                 if (Selected?.OpeningFailure is not null)
                     Open.Execute(null);
-                else if (_outcome is FetchOutcome.Failed)
-                    FetchDetails.Execute(null);
                 else
                 {
                     _videos?.Retry();
-                    if (!IsEnrichmentEnabled)
-                        FetchDetails.Execute(null);
+                    if (Selected?.Entry.HasMetadata == true)
+                        RefreshMetadata.Execute(null);
+                    else
+                        FetchMetadata.Execute(null);
                 }
                 return Task.CompletedTask;
             },
             () =>
                 Selected?.OpeningFailure is not null ? Open.CanExecute(null)
-                : _outcome is FetchOutcome.Failed ? FetchDetails.CanExecute(null)
-                : _videos?.Failure is { } failure && !(failure.RetryAt > DateTimeOffset.UtcNow)
+                : _outcome is FetchOutcome.Failed fetch
+                    ? !(fetch.Error is ProviderException { RetryAt: { } retry } && retry > DateTimeOffset.UtcNow)
+                        && RefreshMetadata.CanExecute(null)
+                : AutomaticWait is not null && _videos?.Failure is { } failure
+                    && !(failure.RetryAt > DateTimeOffset.UtcNow) && FetchMetadata.CanExecute(null)
         );
         ClearFilters = new RelayCommand(
             () =>
@@ -432,10 +458,10 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
                 Report(error);
         });
 
-    // Lookups and file facts can store many files a second, and each refresh
-    // searches the Library again and replaces the table's rows. Their changes
+    // Lookups, file facts and subtitles can store many files a second. Each
+    // refresh searches the Library again and replaces the table's rows. Changes
     // refresh the rows at once, then at most once a second while they arrive.
-    private void StoredChanged()
+    internal void StoredChanged()
     {
         _stored = true;
         if (!_pacing)
@@ -589,6 +615,7 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
 
     private void CancelRequests()
     {
+        _typing = false;
         _revision++;
         _search?.Cancel();
         _detail?.Cancel();
@@ -676,6 +703,7 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
         _ = ReadDetail();
         RefreshState();
         RefreshCommands();
+        CoverageChanged?.Invoke(this, EventArgs.Empty);
     }
 
     private void RefreshRows()
@@ -692,8 +720,9 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
             _searching = Search();
     }
 
-    private void SearchChanged()
+    private void SearchChanged(bool typing = false)
     {
+        _typing = typing;
         _revision++;
         _search?.Cancel();
         RefreshRows();
@@ -710,9 +739,15 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
             _search = cancellation;
             try
             {
+                if (_typing)
+                {
+                    _typing = false;
+                    await Task.Delay(TimeSpan.FromMilliseconds(200), cancellation.Token);
+                }
                 var query = new Query(Query, Configuration)
                 {
                     CatalogId = LookupCatalog,
+                    IncludesFacets = ShowsFacets,
                     Configurations = _filters.ToDictionary(
                         pair => pair.Key,
                         pair =>
@@ -743,13 +778,15 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
                 foreach (var key in _rows.Keys.Where(key => !retained.Contains(key)).ToArray())
                     _rows.Remove(key);
                 rowsChanged |= !Rows.SequenceEqual(rows);
-                var facetsChanged = _rowsQuery?.Configuration != query.Configuration || !Facets.SequenceEqual(matches.Facets);
+                var facetsChanged = query.IncludesFacets &&
+                    (FacetsConfiguration != query.Configuration || !Facets.SequenceEqual(matches.Facets));
                 var countsChanged = Counts.Count != matches.Counts.Count
                     || Counts.Any(pair => !matches.Counts.TryGetValue(pair.Key, out var count) || count != pair.Value);
                 if (rowsChanged)
                     Rows = rows;
                 _rowsQuery = query;
-                Facets = matches.Facets;
+                if (query.IncludesFacets)
+                    Facets = matches.Facets;
                 Counts = matches.Counts;
                 var selection =
                     _selections.Remove(Configuration, out var remembered)
@@ -957,7 +994,7 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
                 EraseMetadata,
                 Retry,
                 ClearFilters,
-                FetchDetails,
+                RefreshMetadata,
             }
         )
             ((RelayCommand)command).Refresh();

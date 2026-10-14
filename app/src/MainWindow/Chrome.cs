@@ -13,6 +13,9 @@ namespace Syno.TinyTorrent;
 public sealed partial class MainWindow
 {
     private readonly UISettings _uiSettings = new();
+    private bool _dragPending;
+    private RectInt32[]? _dragRegions;
+    private readonly TextBlock _measureProbe = new();
 
     private void OnTextScaling(UISettings sender, object args) =>
         DispatcherQueue.TryEnqueue(() =>
@@ -185,12 +188,16 @@ public sealed partial class MainWindow
 
     private static void SetStatus(TextBlock label, string text, string? description = null)
     {
-        label.Text = text;
-        AutomationProperties.SetName(label, description ?? text);
-        ToolTipService.SetToolTip(label, description ?? text);
+        if (label.Text != text)
+            label.Text = text;
+        description ??= text;
+        if (AutomationProperties.GetName(label) != description)
+            AutomationProperties.SetName(label, description);
+        if (!Equals(ToolTipService.GetToolTip(label), description))
+            ToolTipService.SetToolTip(label, description);
     }
 
-    private static void ReserveRate(StackPanel panel, TextBlock label)
+    private void ReserveRate(StackPanel panel, TextBlock label)
     {
         var text = new string(label.Text.Select(character => char.IsDigit(character) ? '8' : character).ToArray());
         var icon = (FrameworkElement)panel.Children[0];
@@ -198,11 +205,13 @@ public sealed partial class MainWindow
         panel.Width = MeasureText(label, text) + panel.Spacing + icon.DesiredSize.Width;
     }
 
-    private static double MeasureText(TextBlock label, string text)
+    private double MeasureText(TextBlock label, string text)
     {
-        var probe = new TextBlock { Style = label.Style, Text = text };
-        probe.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-        return probe.DesiredSize.Width;
+        _measureProbe.Style = label.Style;
+        _measureProbe.Text = text;
+        _measureProbe.InvalidateMeasure();
+        _measureProbe.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        return _measureProbe.DesiredSize.Width;
     }
 
     private bool StatusFits() => StatusWidth() <= StatusBar.ActualWidth;
@@ -261,15 +270,29 @@ public sealed partial class MainWindow
             Math.Max(0, searchSpace - Search.Width)
         );
         if (Search.Margin.Left != offset)
-        {
             Search.Margin = new Thickness(offset, 0, 0, 0);
-            DispatcherQueue.TryEnqueue(
-                Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,
-                UpdateChrome
-            );
-        }
-        if (Caption.ActualHeight <= 0)
+        QueueDragRegions();
+    }
+
+    private void QueueDragRegions()
+    {
+        if (_dragPending || _allowClose)
             return;
+        _dragPending = DispatcherQueue.TryEnqueue(
+            Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,
+            () =>
+            {
+                _dragPending = false;
+                UpdateDragRegions();
+            }
+        );
+    }
+
+    private void UpdateDragRegions()
+    {
+        if (_allowClose || Root.XamlRoot is null || Caption.ActualHeight <= 0)
+            return;
+        var scale = Root.XamlRoot.RasterizationScale;
         var start = AppWindow.TitleBar.LeftInset;
         var end = Math.Max(
             start,
@@ -299,7 +322,11 @@ public sealed partial class MainWindow
         }
         if (end > start)
             rectangles.Add(new RectInt32(start, 0, end - start, height));
-        AppWindow.TitleBar.SetDragRectangles(rectangles.ToArray());
+        var regions = rectangles.ToArray();
+        if (_dragRegions is not null && _dragRegions.SequenceEqual(regions))
+            return;
+        AppWindow.TitleBar.SetDragRectangles(regions);
+        _dragRegions = regions;
     }
 
     private RectInt32 GetRegion(FrameworkElement control)

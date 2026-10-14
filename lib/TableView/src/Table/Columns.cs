@@ -1,4 +1,6 @@
 using System.Collections.ObjectModel;
+using Microsoft.UI;
+using Microsoft.UI.Input;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
@@ -17,6 +19,9 @@ public sealed partial class Table
     private static readonly Size Unbounded = new(double.PositiveInfinity, double.PositiveInfinity);
 
     private readonly List<(UIElement Element, long Token)> _visibilityObservers = [];
+    private readonly Dictionary<EffectiveColumn, double> _fittedWidths = [];
+    private InputNonClientPointerSource? _windowFrame;
+    private bool _windowSizing;
 
     private static readonly Thickness DefaultCellPadding = new(12, 6, 12, 6);
 
@@ -93,8 +98,10 @@ public sealed partial class Table
             ? EffectiveLayout.VisibleColumns.Select(visible => visible.Width).ToArray()
             : [];
 
-        FitVisible();
-        ScaleToWidth();
+        bool changed = FitVisible(publish: false, reuse: !notify && _windowSizing);
+        changed |= ScaleToWidth();
+        if (changed)
+            EffectiveLayout.Rebuild();
 
         if (
             notify
@@ -118,12 +125,12 @@ public sealed partial class Table
     /// what is left; when even the minimums do not fit, the columns run past the edge as section 8
     /// allows.
     /// </remarks>
-    private void ScaleToWidth()
+    private bool ScaleToWidth()
     {
         double width = _headerStrip?.ActualWidth ?? 0;
         if (width <= 0)
         {
-            return;
+            return false;
         }
 
         List<EffectiveColumn> scaled = EffectiveLayout
@@ -132,7 +139,9 @@ public sealed partial class Table
             .ToList();
 
         // What the scaled columns share: the room less the visible columns that keep theirs.
-        double room = width - EffectiveLayout.TotalWidth + scaled.Sum(column => column.Width);
+        double room = width - EffectiveLayout.VisibleColumns.Sum(visible => visible.Width)
+            + scaled.Sum(column => column.Width);
+        bool changed = false;
 
         while (scaled.Count > 0)
         {
@@ -145,7 +154,7 @@ public sealed partial class Table
             {
                 foreach (EffectiveColumn column in scaled)
                 {
-                    SetColumnWidth(column, column.Width * factor);
+                    changed |= SetColumnWidth(column, column.Width * factor, publish: false);
                 }
 
                 break;
@@ -153,24 +162,26 @@ public sealed partial class Table
 
             foreach (EffectiveColumn column in floored)
             {
-                SetColumnWidth(column, column.Column.MinWidth);
+                changed |= SetColumnWidth(column, column.Column.MinWidth, publish: false);
                 room -= column.Column.MinWidth;
                 scaled.Remove(column);
             }
         }
+        return changed;
     }
 
     /// <returns>False when no width changed.</returns>
-    private bool FitVisible()
+    private bool FitVisible(bool publish = true, bool reuse = false)
     {
         bool changed = false;
 
-        // Each fit republishes the layout, so the visible set is taken before the first one.
-        foreach (VisibleColumn visible in EffectiveLayout.VisibleColumns.ToArray())
+        foreach (VisibleColumn visible in EffectiveLayout.VisibleColumns)
         {
-            changed |= FitColumn(visible.Column);
+            changed |= FitColumn(visible.Column, publish: false, reuse: reuse);
         }
 
+        if (changed && publish)
+            EffectiveLayout.Rebuild();
         return changed;
     }
 
@@ -205,6 +216,38 @@ public sealed partial class Table
 
     private void OnFillVisibilityChanged(DependencyObject sender, DependencyProperty property) =>
         QueueFill();
+
+    private void WatchWindowSizing()
+    {
+        StopWatchingWindowSizing();
+        WindowId window = XamlRoot?.ContentIslandEnvironment?.AppWindowId ?? default;
+        if (window.Value == 0)
+            return;
+        _windowFrame = InputNonClientPointerSource.GetForWindowId(window);
+        _windowFrame.EnteredMoveSize += OnEnteredMoveSize;
+        _windowFrame.ExitedMoveSize += OnExitedMoveSize;
+    }
+
+    private void StopWatchingWindowSizing()
+    {
+        if (_windowFrame is null)
+            return;
+        _windowFrame.EnteredMoveSize -= OnEnteredMoveSize;
+        _windowFrame.ExitedMoveSize -= OnExitedMoveSize;
+        _windowFrame = null;
+        _windowSizing = false;
+    }
+
+    // A drag on the window frame measures at its first fill and reuses those
+    // widths until it ends: the window's width does not change the content's.
+    private void OnEnteredMoveSize(InputNonClientPointerSource sender, EnteredMoveSizeEventArgs args)
+    {
+        _fittedWidths.Clear();
+        _windowSizing = true;
+    }
+
+    private void OnExitedMoveSize(InputNonClientPointerSource sender, ExitedMoveSizeEventArgs args) =>
+        _windowSizing = false;
 
     private void OnFillSizeChanged(object sender, SizeChangedEventArgs args)
     {
@@ -295,9 +338,9 @@ public sealed partial class Table
     internal bool CanFitColumns =>
         EffectiveLayout.VisibleColumns.Any(visible => CanFitColumn(visible.Column));
 
-    /// <summary>Give this column a width override and republish the layout.</summary>
+    /// <summary>Batch sizing defers publication until all final widths are set.</summary>
     /// <returns>False when the clamped width is already the effective width.</returns>
-    internal bool SetColumnWidth(EffectiveColumn column, double width)
+    internal bool SetColumnWidth(EffectiveColumn column, double width, bool publish = true)
     {
         double clamped = column.Clamp(width);
         if (clamped == column.Width)
@@ -306,7 +349,8 @@ public sealed partial class Table
         }
 
         column.WidthOverride = clamped;
-        EffectiveLayout.Rebuild();
+        if (publish)
+            EffectiveLayout.Rebuild();
         return true;
     }
 
@@ -486,12 +530,17 @@ public sealed partial class Table
     /// Section 10's bounded fit: the widest realized header cell or row cell for this column,
     /// raised to the column's minimum. Nothing realized means nothing to fit.
     /// </summary>
-    private bool FitColumn(EffectiveColumn column)
+    private bool FitColumn(EffectiveColumn column, bool publish = true, bool reuse = false)
     {
         if (!CanFitColumn(column))
         {
             return false;
         }
+
+        // Keep the unscaled fit: scaling a width already clamped at MinWidth
+        // would change its proportion when the table grows again.
+        if (reuse && _fittedWidths.TryGetValue(column, out double fitted))
+            return SetColumnWidth(column, fitted, publish);
 
         int index = EffectiveLayout.IndexOfVisible(column);
         double widest = 0;
@@ -516,7 +565,10 @@ public sealed partial class Table
             panel.InvalidateMeasure();
         }
 
-        return measured && SetColumnWidth(column, widest);
+        if (!measured)
+            return false;
+        _fittedWidths[column] = column.Clamp(widest);
+        return SetColumnWidth(column, widest, publish);
     }
 
     /// <summary>

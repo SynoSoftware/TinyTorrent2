@@ -53,6 +53,31 @@ enum class TorrentView
     Pieces
 };
 
+enum class PeerState
+{
+    Connecting,
+    Handshake,
+    Connected
+};
+
+enum class PeerEncryption
+{
+    Unknown,
+    Plain,
+    Handshake,
+    Rc4,
+    Tls
+};
+
+enum class TrackerStatus
+{
+    Disabled,
+    Announcing,
+    Working,
+    Error,
+    Waiting
+};
+
 // A part of a torrent's detail that one libtorrent query answers.
 enum class DetailKind
 {

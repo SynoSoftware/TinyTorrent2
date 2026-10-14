@@ -19,21 +19,48 @@ public sealed partial class InspectorPane : UserControl
     private Torrent? _target;
     private InspectorSection _section;
     private bool _refreshing;
+    private bool _tracking;
     private bool _awaitingArrival;
     private bool _composing;
+    private bool _maximized;
     private (Torrent Target, int Index)? _fileReveal;
     public Inspector Model { get; }
     internal double HeaderHeight => Surface.HeaderHeight;
-    internal InspectorLayout Layout
+
+    // The window gives a maximized pane the whole workspace, toolbar included.
+    internal bool IsMaximized
     {
-        get => new(Peers?.Layout ?? _layout.Peers, TrackerTable?.Layout ?? _layout.Trackers);
+        get => _maximized;
         set
         {
-            _layout = value;
+            _maximized = value;
+            RefreshMaximize();
+        }
+    }
+    internal InspectorLayout Layout
+    {
+        get => new(Peers?.Layout ?? _layout.Peers, TrackerTable?.Layout ?? _layout.Trackers) { View = _layout.View };
+        set
+        {
+            var view = value.View ?? PeerView.Default;
+            view = view with
+            {
+                // Saved side-by-side layouts now follow the available space.
+                Layout = (int)view.Layout == 3 ? PeerLayout.Both
+                    : Enum.IsDefined(view.Layout) ? view.Layout : PeerView.Default.Layout,
+                Side = Fraction(view.Side, PeerView.Default.Side),
+                Stacked = Fraction(view.Stacked, PeerView.Default.Stacked),
+            };
+            _layout = value with { View = view };
             if (Peers is not null && value.Peers is { } peers)
                 Peers.Layout = peers;
             if (TrackerTable is not null && value.Trackers is { } trackers)
                 TrackerTable.Layout = trackers;
+            ArrangePeers(fit: true);
+            RefreshPeerActions();
+
+            static double Fraction(double value, double fallback) =>
+                double.IsFinite(value) ? Math.Clamp(value, .15, .85) : fallback;
         }
     }
 
@@ -41,6 +68,7 @@ public sealed partial class InspectorPane : UserControl
     {
         Model = model;
         InitializeComponent();
+        RefreshMaximize();
         SectionContent.SizeChanged += Motion.Clip;
         _torrentSections = new[]
         {
@@ -65,14 +93,14 @@ public sealed partial class InspectorPane : UserControl
         };
         Unloaded += (_, _) =>
         {
-            CancelReveal();
             _motion.Stop();
             _arrival.Stop();
             Model.TextChanged -= OnText;
             Model.PropertyChanged -= OnModel;
             Model.RowsUpdated -= OnRows;
             Model.RecoveryRequested -= OnRecovery;
-            Map?.Show(null, Model.Text);
+            StopTracking();
+            ClearLibraryContent();
         };
         RefreshText();
         Refresh();
@@ -84,7 +112,7 @@ public sealed partial class InspectorPane : UserControl
         {
             InspectorSection.General => (FrameworkElement?)General,
             InspectorSection.Files => Files,
-            InspectorSection.Peers => Peers,
+            InspectorSection.Peers => PeerContent,
             InspectorSection.Trackers => Trackers,
             InspectorSection.Speed => Speed,
             InspectorSection.Pieces => Map,
@@ -92,7 +120,12 @@ public sealed partial class InspectorPane : UserControl
         };
         if (content is not null)
             return content;
-        content = (FrameworkElement)FindName(section == InspectorSection.Pieces ? nameof(Map) : section.ToString());
+        content = (FrameworkElement)FindName(section switch
+        {
+            InspectorSection.Pieces => nameof(Map),
+            InspectorSection.Peers => nameof(PeerContent),
+            _ => section.ToString(),
+        });
         switch (section)
         {
             case InspectorSection.General:
@@ -124,9 +157,11 @@ public sealed partial class InspectorPane : UserControl
             case InspectorSection.Peers:
                 Peers
                     .Schema<Peer>()
-                    .Key(peer => peer.Endpoint)
+                    .Key(peer => peer.Key)
                     .SortKey(EndpointColumn, peer => peer.Endpoint)
                     .SortKey(ClientColumn, peer => peer.Client)
+                    .SortKey(LocationColumn, peer => peer.LocationText)
+                    .SortKey(PeerStateColumn, peer => peer.State)
                     .SortKey(ConnectionColumn, peer => peer.ConnectionText)
                     .SortKey(PeerProgressColumn, peer => peer.Progress)
                     .SortKey(PeerDownColumn, peer => peer.DownloadRate)
@@ -135,6 +170,7 @@ public sealed partial class InspectorPane : UserControl
                     .SortKey(PeerUploadedColumn, peer => peer.Uploaded);
                 if (_layout.Peers is { } peers)
                     Peers.Layout = peers;
+                SetupPeers();
                 break;
             case InspectorSection.Trackers:
                 TrackerInput.TextCompositionStarted += (_, _) => _composing = true;
@@ -232,8 +268,13 @@ public sealed partial class InspectorPane : UserControl
 
     private void OnRows(object? sender, InspectorSection section)
     {
+        if (_library is not null || !Model.IsVisible)
+            return;
         if (section == InspectorSection.Peers)
+        {
             Peers?.RefreshView();
+            RefreshMap();
+        }
         else if (section == InspectorSection.Trackers)
             TrackerTable?.RefreshView();
     }
@@ -288,19 +329,25 @@ public sealed partial class InspectorPane : UserControl
 
     private async void OnSection(SelectorBar sender, SelectorBarSelectionChangedEventArgs args)
     {
-        if (_library is not null && !_refreshing)
+        if (_refreshing)
+            return;
+        if (ReferenceEquals(sender, LibrarySections))
         {
+            if (_library is null)
+                return;
             var previous = _librarySection;
             _librarySection = sender.SelectedItem;
-            RefreshLibrary();
             if (_librarySection != previous && _libraryContent is not null)
-                _arrival.Play(
+                _arrival.Enter(
                     _libraryContent,
-                    ReferenceEquals(_librarySection, _fileSection) ? 24 : -24
+                    forward: ReferenceEquals(_librarySection, LibraryFile),
+                    update: () => RefreshLibrary()
                 );
+            else
+                RefreshLibrary();
             return;
         }
-        if (_refreshing || sender.SelectedItem is not { Tag: InspectorSection section })
+        if (_library is not null || sender.SelectedItem is not { Tag: InspectorSection section })
             return;
         Refresh();
         await Model.Navigate(section);
@@ -310,14 +357,22 @@ public sealed partial class InspectorPane : UserControl
     {
         if (_library is not null)
         {
-            RefreshLibrary(rebuild: true);
+            _tracking = false;
+            RefreshLibrary();
             return;
         }
+        if (!Model.IsVisible)
+        {
+            StopTracking();
+            return;
+        }
+        if (!_tracking)
+            RefreshText();
         EmptyText.Text = Model.EmptyText;
-        var inspecting = Model.Target is not null && Model.IsVisible;
+        var inspecting = Model.HasContent && Model.IsVisible;
         var content = inspecting ? LoadSection(Model.Section) : EmptyState;
         if (!workspace && inspecting && _section != Model.Section)
-            _motion.Show(content, Model.Section >= _section ? 1 : -1);
+            _motion.Show(content, forward: Model.Section >= _section);
         else
             _motion.CrossFade(content);
         if (_target != Model.Target)
@@ -338,9 +393,13 @@ public sealed partial class InspectorPane : UserControl
         }
         _section = Model.Section;
         _refreshing = true;
-        Sections.IsEnabled = inspecting;
+        Sections.IsEnabled = Model.IsVisible;
+        foreach (var section in _torrentSections)
+            section.IsEnabled = Model.CanShow((InspectorSection)section.Tag);
         Sections.SelectedItem = Sections.Items.First(item => Equals(item.Tag, Model.Section));
         _refreshing = false;
+        PeerActions.Visibility = Model.Section == InspectorSection.Peers ? Visibility.Visible : Visibility.Collapsed;
+        ArrangePeers();
         var loading = Model.IsAvailable && Model.IsLoading;
         if (Peers is not null)
         {
@@ -356,19 +415,26 @@ public sealed partial class InspectorPane : UserControl
         }
         Map?.Show(Model.Pieces, Model.Text);
         if (General is not null)
+        {
+            Progress.Style = Controls.Progress.SelectStyle(Model.Target is { IsProgressMuted: true });
             VisualStateManager.GoToState(
                 this,
-                Model.Target is { IsError: true } ? "Error"
-                    : Model.Target is { IsProgressMuted: true } ? "Muted"
-                    : "Transferring",
+                Model.Target is { IsError: true } ? "Error" : "Transferring",
                 false
             );
+        }
         RevealFile();
     }
 
     internal void RefreshText()
     {
+        if (_library is null && !Model.IsVisible)
+        {
+            StopTracking();
+            return;
+        }
         Bindings.Update();
+        _tracking = _library is null;
         if (Trackers is not null)
             ActionButton.Align([EditTrackers, Reannounce]);
         if (_library is not null)
@@ -383,15 +449,19 @@ public sealed partial class InspectorPane : UserControl
             AutomationProperties.SetName(section, section.Text);
         }
         AutomationProperties.SetName(Sections, text.Get("inspector", "sections"));
+        AutomationProperties.SetName(LibrarySections, text.Get("inspector", "sections"));
         AutomationProperties.SetName(Close, text.Get("inspector", "close"));
         ToolTipService.SetToolTip(Close, text.Get("inspector", "close"));
         AutomationProperties.SetName(Minimize, text.Get("inspector", "minimize"));
         ToolTipService.SetToolTip(Minimize, text.Get("inspector", "minimize"));
+        RefreshMaximize();
         if (Peers is not null)
         {
             Peers.Strings = text.Table;
             EndpointColumn.DisplayName = text.Get("peers", "endpoint");
             ClientColumn.DisplayName = text.Get("peers", "client");
+            LocationColumn.DisplayName = text.Get("peers", "location");
+            PeerStateColumn.DisplayName = text.Get("peers", "state");
             ConnectionColumn.DisplayName = text.Get("peers", "connection_label");
             PeerProgressColumn.DisplayName = text.Get("columns", "progress");
             PeerDownColumn.DisplayName = text.Get("columns", "down");
@@ -413,13 +483,41 @@ public sealed partial class InspectorPane : UserControl
             MessageColumn.DisplayName = text.Get("trackers", "message");
         }
         Speed?.RefreshText(text);
+        RefreshPeerActions();
         _files?.RefreshText();
         Peers?.RefreshView();
         TrackerTable?.RefreshView();
+    }
+
+    private void RefreshMaximize()
+    {
+        var name = Model.Text.Get("inspector", _maximized ? "restore" : "maximize");
+        MaximizeGlyph.Glyph = _maximized ? Syno.Lucide.Minimize2 : Syno.Lucide.Maximize2;
+        AutomationProperties.SetName(Maximize, name);
+        ToolTipService.SetToolTip(Maximize, name);
+    }
+
+    private void StopTracking()
+    {
+        CancelReveal();
+        Bindings.StopTracking();
+        _tracking = false;
+        Map?.Show(null, Model.Text);
+        if (PeerDrawing is not null)
+            PeerDrawing.Content = null;
+        _peerMap = null;
     }
 }
 
 public sealed record InspectorLayout(
     Syno.TableView.ColumnLayout? Peers,
     Syno.TableView.ColumnLayout? Trackers
-);
+)
+{
+    public PeerView View { get; init; } = PeerView.Default;
+}
+
+public sealed record PeerView(PeerLayout Layout, double Side, double Stacked)
+{
+    internal static PeerView Default { get; } = new(PeerLayout.Table, .55, .5);
+}

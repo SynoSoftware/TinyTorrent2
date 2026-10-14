@@ -10,28 +10,45 @@ namespace Syno.TinyTorrent.Views;
 public sealed partial class SettingsPage
 {
     private bool _readingCoverage;
+    private bool _coveragePending;
     private bool _readingStatistics;
+
+    private bool ShowsCoverage => IsLoaded && Main.Navigation.Current == WindowPage.Settings
+        && _category == PluginsCategory && Plugins is not null;
+
+    private void OnCoverage(object? sender, EventArgs args) => RefreshCoverage();
 
     private async void RefreshCoverage()
     {
-        if (!IsLoaded || Main.Navigation.Current != WindowPage.Settings || _category != PluginsCategory || Plugins is null || _readingCoverage)
+        if (!ShowsCoverage)
+            return;
+        _coveragePending = true;
+        if (_readingCoverage)
             return;
         _readingCoverage = true;
         try
         {
-            var coverage = await Main.Library.ReadCoverage();
-            VideoCoverage.Text = coverage is null
-                ? "—"
-                : Model.Text.Format("plugins", "coverage", coverage.Informed, coverage.Total);
-            if (SubtitlesContent.Content is SubtitleSettings subtitles)
-                subtitles.Coverage = coverage is null || Main.Subtitles is null
-                    ? "—"
-                    : Model.Text.Format("subtitles", "coverage", Main.Subtitles.WithSubtitles, coverage.Total);
-            if (Main.Page == WindowPage.Settings && _category == PluginsCategory
-                && DatabaseSummary.Visibility == Visibility.Visible)
+            while (_coveragePending && ShowsCoverage)
             {
-                var size = await Main.ReadDatabaseSize();
-                DatabaseSize.Text = size is null ? "—" : Model.Text.Bytes(size.Value);
+                _coveragePending = false;
+                var coverage = await Main.Library.ReadCoverage();
+                if (!ShowsCoverage)
+                    return;
+                if (_coveragePending)
+                    continue;
+                VideoCoverage.Text = coverage is null
+                    ? "—"
+                    : Model.Text.Format("plugins", "coverage", coverage.Informed, coverage.Total);
+                if (SubtitlesContent.Content is SubtitleSettings subtitles)
+                    subtitles.Coverage = coverage is null || Main.Subtitles is null
+                        ? "—"
+                        : Model.Text.Format("subtitles", "coverage", Main.Subtitles.WithSubtitles, coverage.Total);
+                if (DatabaseSummary.Visibility == Visibility.Visible)
+                {
+                    var size = await Main.ReadDatabaseSize();
+                    if (ShowsCoverage && !_coveragePending && DatabaseSummary.Visibility == Visibility.Visible)
+                        DatabaseSize.Text = size is null ? "—" : Model.Text.Bytes(size.Value);
+                }
             }
         }
         finally

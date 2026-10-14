@@ -554,7 +554,7 @@ public:
     void Remove(std::vector<std::string> const& ids, Reply reply,
         std::optional<DeletionMode> mode = std::nullopt);
     std::list<Deletion>::iterator PrepareDeletion(std::vector<std::string> const& ids,
-        std::optional<DeletionMode> mode);
+        std::optional<DeletionMode> mode, Scope scope);
     void RemoveHandles(std::vector<std::string> const& ids, std::list<Deletion>::iterator deletion);
     bool CanRemove(Torrent const& torrent) const;
     void RemoveDeferred();
@@ -582,7 +582,6 @@ public:
     void On(lt::torrent_removed_alert const& alert);
     void On(lt::torrent_delete_failed_alert const& alert);
     void RecoverFiles();
-    void PrepareFiles(Torrent& torrent);
     void ReleaseFiles(std::vector<lt::torrent_handle> const& handles);
     static void PrepareNames(lt::add_torrent_params& params, bool appendsSuffix, Layout layout);
     // Returns whether any rename was requested.
@@ -625,7 +624,7 @@ public:
     void QueryCompletions();
     void ObserveCompletion(Torrent& torrent, lt::torrent_status latest);
     void FailCheckpoint(Torrent& torrent, Problem problem);
-    void On(lt::save_resume_data_alert const& alert);
+    void On(lt::save_resume_data_alert& alert);
     void On(lt::save_resume_data_failed_alert const& alert);
 
     // Display reads answer immediately and receive their missing detail later;
@@ -653,7 +652,7 @@ public:
     void EndReading();
     void RecoverDetail(lt::alerts_dropped_alert const& alert);
     void On(lt::tracker_list_alert const& alert);
-    void On(lt::peer_info_alert const& alert);
+    void On(lt::peer_info_alert& alert);
     void On(lt::file_progress_alert const& alert);
     void On(lt::file_priorities_alert const& alert);
     void On(lt::piece_availability_alert const& alert);

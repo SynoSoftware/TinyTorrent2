@@ -196,7 +196,7 @@ public class ColumnResetTests
     // grants no InternalsVisibleTo. Reflection reaches them without widening the public surface.
 
     private static void SetColumnWidth(Table table, string id, double width) =>
-        Invoke(table, "SetColumnWidth", TableHarness.EffectiveColumn(table, id), width);
+        TableHarness.SetWidth(table, id, width);
 
     private static void SetColumnVisibility(Table table, string id, bool visible) =>
         Invoke(table, "SetColumnVisibility", TableHarness.EffectiveColumn(table, id), visible);

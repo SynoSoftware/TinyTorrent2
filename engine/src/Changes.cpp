@@ -33,10 +33,10 @@ void Changes::Next()
     }
 }
 
-void Changes::Commit(Json document, std::function<void(Outcome)> completion)
+void Changes::Commit(std::function<Json()> encode, std::function<void(Outcome)> completion)
 {
     committing_ = true;
-    store_.Write(file_, [document = std::move(document)] { return document.dump(); },
+    store_.Write(file_, [encode = std::move(encode)] { return encode().dump(); },
         [this, completion = std::move(completion)](StorageOutcome stored)
     {
         auto outcome = stored.ToOutcome(ErrorCode::StorageFailed);
@@ -50,9 +50,9 @@ void Changes::Commit(Json document, std::function<void(Outcome)> completion)
     });
 }
 
-void Changes::Commit(Json document, Reply reply, std::function<Json()> apply)
+void Changes::Commit(std::function<Json()> encode, Reply reply, std::function<Json()> apply)
 {
-    Commit(std::move(document),
+    Commit(std::move(encode),
         [reply = std::move(reply), apply = std::move(apply)](Outcome outcome)
     {
         reply(outcome.error ? Failure(*outcome.error, outcome.detail) : apply());

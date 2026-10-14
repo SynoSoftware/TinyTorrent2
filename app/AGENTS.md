@@ -65,9 +65,7 @@ It has found text and controls clipped or pushed out of view at narrow sizes or
 in Spanish, input and drafts lost, and crashes while the window closes. For an
 authorized app review, choose a mode covering the requested checks.
 
-Each review costs a separate build and a run, and both hold the owner's
-machine. Finish the edits first, choose the narrowest mode that covers the
-change, and run it once. Look at the screenshots of the changed area, because
-most layout defects were found there and not by the journeys' own checks.
-[Testing](../docs/testing.md#windows-evidence)
-lists the modes and how to build and launch them.
+Reuse a current capture build across review modes; another mode alone needs no
+build. [Testing](../docs/testing.md#windows-evidence) owns validation scope and
+the available journeys. Inspect screenshots of the changed area, because the
+journeys' behavior checks do not establish layout quality.

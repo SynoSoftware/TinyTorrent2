@@ -30,9 +30,6 @@ internal sealed class Dataset(ProviderHttp http, string directory, RequestPolicy
     private const string RatingsHeader = "tconst\taverageRating\tnumVotes";
     private const string EpisodesHeader = "tconst\tparentTconst\tseasonNumber\tepisodeNumber";
 
-    // Windows reports a full disk as ERROR_DISK_FULL or ERROR_HANDLE_DISK_FULL.
-    private const int DiskFull = unchecked((int)0x80070070);
-    private const int HandleDiskFull = unchecked((int)0x80070027);
     private const int ThreadModeBackgroundBegin = 0x10000;
     private const int ThreadModeBackgroundEnd = 0x20000;
     private static readonly Uri Basics = new("https://datasets.imdbws.com/title.basics.tsv.gz");
@@ -100,12 +97,7 @@ internal sealed class Dataset(ProviderHttp http, string directory, RequestPolicy
     /// <exception cref="VideoException">The download or the import failed.</exception>
     internal async Task Build(Action<Progress> report, CancellationToken cancellation)
     {
-        // Each download is the person's own request, so it tries once past a
-        // refusal or a backoff that an earlier download left.
-        var fresh = new FreshRequest(
-            new RetryCommand(DateTimeOffset.UtcNow.UtcTicks) { Recheck = true },
-            RequestKey.Create(Provider.CatalogId, "dataset", [])
-        );
+        var fresh = FreshRequest.Once(Access);
         try
         {
             var received = 0L;
@@ -151,7 +143,7 @@ internal sealed class Dataset(ProviderHttp http, string directory, RequestPolicy
         }
         catch (Exception error)
             when (error is SqliteException { SqliteErrorCode: raw.SQLITE_FULL }
-                or IOException { HResult: DiskFull or HandleDiskFull })
+                || error is IOException io && DataDownload.IsDiskFull(io))
         {
             throw new VideoException(VideoFailure.DiskFull, error);
         }

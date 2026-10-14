@@ -14,12 +14,9 @@ public sealed partial class InspectorPane
 {
     private LibraryBrowser? _library;
     private ScrollViewer? _libraryContent;
-    private readonly SelectorBarItem _informationSection = new();
-    private readonly SelectorBarItem _fileSection = new();
     private SelectorBarItem? _librarySection;
     private ICommand? _downloadSubtitles;
-    private Entry? _libraryEntry;
-    private bool _libraryFile;
+    private (LibraryBrowser Browser, Entry? Entry, bool File, string Language)? _libraryView;
 
     internal void ShowLibrary(LibraryBrowser? library, ICommand? downloadSubtitles)
     {
@@ -30,19 +27,18 @@ public sealed partial class InspectorPane
         {
             _library.PropertyChanged -= OnLibrary;
             ClearLibraryActions();
-            (_libraryContent?.Content as Details)?.Dispose();
             LibraryOpen.Command = null;
             _library.CancelInformation();
         }
         _library = library;
+        PeerActions.Visibility = Visibility.Collapsed;
+        ArrangePeers();
         if (library is not null)
         {
             Bindings.StopTracking();
             library.PropertyChanged += OnLibrary;
             if (_libraryContent is null)
             {
-                AutomationProperties.SetAutomationId(_informationSection, "LibraryInformation");
-                AutomationProperties.SetAutomationId(_fileSection, "LibraryFile");
                 _libraryContent = new ScrollViewer
                 {
                     HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
@@ -52,26 +48,11 @@ public sealed partial class InspectorPane
                 SectionViews.Children.Add(_libraryContent);
             }
         }
-        _refreshing = true;
-        Sections.SelectedItem = null;
-        Sections.Items.Clear();
-        if (library is null)
-        {
-            foreach (var section in _torrentSections)
-                Sections.Items.Add(section);
-            Sections.SelectedItem = _torrentSections[(int)Model.Section];
-        }
-        else
-        {
-            Sections.Items.Add(_informationSection);
-            Sections.Items.Add(_fileSection);
-            Sections.SelectedItem = _librarySection ?? _informationSection;
-        }
-        _refreshing = false;
+        Sections.Visibility = library is null ? Visibility.Visible : Visibility.Collapsed;
+        LibrarySections.Visibility = library is null ? Visibility.Collapsed : Visibility.Visible;
         LibraryActions.Visibility = library is null ? Visibility.Collapsed : Visibility.Visible;
         if (library is null)
         {
-            Bindings.Update();
             Retry.Command = Model.Retry;
         }
         _arrival.Stop();
@@ -88,12 +69,14 @@ public sealed partial class InspectorPane
         if (args.PropertyName == nameof(LibraryBrowser.IsInspectorVisible))
         {
             if (library.IsInspectorVisible)
-                RefreshLibrary(rebuild: true);
+                RefreshLibrary();
             else
                 ClearLibraryActions();
             return;
         }
         if (!library.IsInspectorVisible)
+            return;
+        if (args.PropertyName == nameof(LibraryBrowser.Rows) && _libraryView?.Entry == library.Selected?.Entry)
             return;
         if (args.PropertyName == nameof(LibraryBrowser.IsAvailable))
         {
@@ -120,7 +103,7 @@ public sealed partial class InspectorPane
         if (args.PropertyName == nameof(LibraryBrowser.FileType))
         {
             RefreshLibraryOpenTip();
-            if (ReferenceEquals(Sections.SelectedItem, _fileSection))
+            if (ReferenceEquals(LibrarySections.SelectedItem, LibraryFile))
                 RefreshLibrary();
             return;
         }
@@ -134,8 +117,7 @@ public sealed partial class InspectorPane
             is nameof(LibraryBrowser.Selected)
                 or nameof(LibraryBrowser.Rows)
                 or nameof(LibraryBrowser.Synopsis)
-                or nameof(LibraryBrowser.IsEnrichmentEnabled)
-                or nameof(LibraryBrowser.Waiting)
+                or nameof(LibraryBrowser.AutomaticWait)
                 or ""
         )
         {
@@ -148,7 +130,7 @@ public sealed partial class InspectorPane
         }
     }
 
-    private void RefreshLibrary(bool rebuild = false)
+    private void RefreshLibrary()
     {
         if (_library is not { IsInspectorVisible: true } library || _libraryContent is null)
             return;
@@ -160,33 +142,32 @@ public sealed partial class InspectorPane
         ToolTipService.SetToolTip(HeadingName, row?.Name ?? string.Empty);
         HeadingSize.Text = row?.Size ?? string.Empty;
         _refreshing = true;
-        Sections.IsEnabled = row is not null;
-        _informationSection.Text = text.Get("library", "info");
-        _fileSection.Text = text.Get("library", "file");
-        _informationSection.IsEnabled =
+        LibrarySections.IsEnabled = row is not null;
+        LibraryInformation.Text = text.Get("library", "info");
+        LibraryFile.Text = text.Get("library", "file");
+        LibraryInformation.IsEnabled =
             row is null || row.Entry.Kind is FileKind.Video or FileKind.Audio;
-        Sections.SelectedItem = _informationSection.IsEnabled
-            ? _librarySection ?? _informationSection
-            : _fileSection;
+        LibrarySections.SelectedItem = LibraryInformation.IsEnabled
+            ? _librarySection ?? LibraryInformation
+            : LibraryFile;
         _refreshing = false;
-        if (row is null || !ReferenceEquals(Sections.SelectedItem, _informationSection))
+        if (row is null || !ReferenceEquals(LibrarySections.SelectedItem, LibraryInformation))
             library.CancelInformation();
         RefreshLibraryFailure();
         Retry.Command = library.Retry;
-        var showsFile = ReferenceEquals(Sections.SelectedItem, _fileSection);
-        var targetChanged = _libraryEntry?.EntryId != row?.Entry.EntryId;
-        if (rebuild || targetChanged || LibraryMore.Flyout is null)
+        var showsFile = ReferenceEquals(LibrarySections.SelectedItem, LibraryFile);
+        var targetChanged = _libraryView?.Entry?.EntryId != row?.Entry.EntryId;
+        if (_libraryView?.Language != text.Language || targetChanged || LibraryMore.Flyout is null)
             RefreshLibraryActions();
-        if (!rebuild && _libraryEntry == row?.Entry && _libraryFile == showsFile
-            && _libraryContent.Content is Details details)
+        var view = (library, row?.Entry, showsFile, text.Language);
+        if (_libraryView == view && _libraryContent.Content is Details details)
             details.Refresh(library);
         else
         {
             ClearLibraryContent();
             _libraryContent.Content = new Details(library, showsFile, _libraryContent);
         }
-        _libraryEntry = row?.Entry;
-        _libraryFile = showsFile;
+        _libraryView = view;
         _motion.CrossFade(row is null ? EmptyState : _libraryContent);
     }
 
@@ -215,7 +196,7 @@ public sealed partial class InspectorPane
         var refresh = new MenuFlyoutItem
         {
             Text = text.Get("library", "refresh_metadata"),
-            Command = library.FetchDetails,
+            Command = library.RefreshMetadata,
             Icon = new FontIcon { FontFamily = Syno.Lucide.Font, Glyph = Syno.Lucide.RefreshCw },
         };
         var subtitle = new MenuFlyoutItem

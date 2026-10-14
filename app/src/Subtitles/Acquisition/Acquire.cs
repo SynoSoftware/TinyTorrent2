@@ -93,9 +93,9 @@ internal sealed partial class Acquisition
                             delay = TimeSpan.FromSeconds(Math.Min(remaining, int.MaxValue / 1000));
                             break;
                         }
-                        var targets = (await Targets(cancellation).ConfigureAwait(false))
+                        var targets = new TargetIndex((await Targets(cancellation).ConfigureAwait(false))
                             .Where(Eligible)
-                            .ToArray();
+                            .ToArray());
                         var target = await Run(
                                 connection =>
                                 {
@@ -120,14 +120,10 @@ internal sealed partial class Acquisition
                                     var due = new List<Target>();
                                     while (reader.Read())
                                     {
-                                        var found = targets.FirstOrDefault(value =>
-                                            value.Language == reader.GetString(1)
-                                            && StringComparer.OrdinalIgnoreCase.Equals(
-                                                value.Path,
-                                                reader.GetString(0)
-                                            )
-                                        );
-                                        if (found is not null && Accepted(reader.GetString(0), reader.GetString(1), reader.GetBoolean(2)) is not null)
+                                        var path = reader.GetString(0);
+                                        var language = reader.GetString(1);
+                                        var found = targets.Find(language, path);
+                                        if (found is not null && Accepted(path, language, reader.GetBoolean(2)) is not null)
                                             due.Add(
                                                 found with
                                                 {
@@ -734,7 +730,7 @@ internal sealed partial class Acquisition
             var accepted = await Run(
                     connection =>
                     {
-                        var paths = new List<string>();
+                        var paths = new HashSet<string>(StringComparer.Ordinal);
                         foreach (var first in Searchable(connection, targets, scope, entries))
                             if (Accept(connection, first with
                             {

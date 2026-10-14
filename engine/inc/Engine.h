@@ -65,6 +65,7 @@ inline void NormaliseMagnet(std::string& source)
 
 struct Notice
 {
+    static constexpr std::size_t limit = 32;
     NoticeKind kind;
     std::string name;
     std::string detail;

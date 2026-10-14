@@ -115,7 +115,8 @@ public sealed partial class PiecesMap : UserControl
     {
         if (_data is null && data is null && _language == text.Language)
             return;
-        var changed = _data is null || data is null || !_data.SameMap(data);
+        var changed = !ReferenceEquals(_data, data)
+            && (_data is null || data is null || !_data.SameMap(data));
         var languageChanged = _language != text.Language;
         if (data is null || _data?.Count != data.Count)
         {
@@ -141,14 +142,19 @@ public sealed partial class PiecesMap : UserControl
             var counts = data?.Counts(0, data.Count);
             var labels = Labels();
             var totals = Totals();
+            var legendChanged = false;
             foreach (var kind in Enum.GetValues<PieceKind>())
             {
-                labels[(int)kind].Text = Pieces.Name(text, kind);
-                totals[(int)kind].Text = counts is null
+                var label = Pieces.Name(text, kind);
+                var total = counts is null
                     ? "—"
                     : counts[(int)kind].ToString("N0", CultureInfo.CurrentCulture);
+                legendChanged |= labels[(int)kind].Text != label || totals[(int)kind].Text != total;
+                labels[(int)kind].Text = label;
+                totals[(int)kind].Text = total;
             }
-            RefreshLegend();
+            if (legendChanged)
+                RefreshLegend();
             AutomationProperties.SetName(this, text.Get("inspector", "pieces"));
             Refresh();
         }
@@ -255,11 +261,18 @@ public sealed partial class PiecesMap : UserControl
             var layout = await Task.Run(() => Render(data, space, palette));
             if (revision != _revision || !IsLoaded)
                 return;
-            var bitmap = new WriteableBitmap(layout.PixelWidth, layout.PixelHeight);
+            var arriving = _layout is null;
+            if (arriving)
+            {
+                _arrival.Stop();
+                Bitmap.Opacity = 0;
+            }
+            var bitmap = Bitmap.Source as WriteableBitmap;
+            if (bitmap is null || bitmap.PixelWidth != layout.PixelWidth || bitmap.PixelHeight != layout.PixelHeight)
+                bitmap = new WriteableBitmap(layout.PixelWidth, layout.PixelHeight);
             using (var stream = bitmap.PixelBuffer.AsStream())
                 stream.Write(layout.Pixels);
             bitmap.Invalidate();
-            var arriving = _layout is null;
             _layout = layout with { Pixels = [] };
             Hover.Width = Hover.Height = layout.Side + 2;
             Selection.Width = Selection.Height = layout.Side + 4;
@@ -269,8 +282,6 @@ public sealed partial class PiecesMap : UserControl
             Drawing.IsHitTestVisible = true;
             if (arriving)
             {
-                _arrival.Stop();
-                Bitmap.Opacity = 0;
                 _arrival.Fade(Bitmap, 1);
             }
             Refresh();

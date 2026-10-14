@@ -53,6 +53,11 @@ links and does not embed licence texts.
 | Fluent UI System Icons | MIT copyright/permission notice. [Upstream licence](https://github.com/microsoft/fluentui-system-icons/blob/main/LICENSE). | Existing artwork content includes `Assets/Settings/LICENSE`. |
 | Microsoft.Data.Sqlite | MIT text and copyright; its restored package declares a licence expression without a root licence file. [Versioned source](https://github.com/dotnet/efcore/blob/v10.0.12/LICENSE.txt). | `installer/notices/Microsoft.Data.Sqlite.txt`, copied by the installer. |
 | SQLitePCLRaw | Apache-2.0 text and package copyright; its restored packages declare expressions without root licence files. [Versioned source](https://github.com/ericsink/SQLitePCL.raw/blob/ed046114d5a30534e13294d94d78eb73de896ad4/LICENSE.TXT). | `installer/notices/SQLitePCLRaw.txt`, copied by the installer. |
+| MaxMind.Db | Apache-2.0 text; the package declares the expression without a licence file. [Upstream licence](https://github.com/maxmind/MaxMind-DB-Reader-dotnet/blob/main/LICENSE). | `installer/notices/MaxMind.Db.txt`, copied by the installer. |
+| Win2D | MIT copyright and permission notice for the native peer-map renderer. [Upstream licence](https://github.com/microsoft/Win2D/blob/master/LICENSE.txt). | `installer/notices/Win2D.txt`, copied by the installer. |
+| Natural Earth | Public-domain world boundaries and populated-place data. [Terms](https://www.naturalearthdata.com/about/terms-of-use/). | Voluntary Credits row and provenance in `app/src/Assets/Attribution.md`. |
+| DB-IP country and city data | CC BY 4.0 attribution: "IP Geolocation by DB-IP" with a link. [Licence](https://creativecommons.org/licenses/by/4.0/). | Credits row and licence table; `installer/notices/DB-IP.txt`, copied by the installer. |
+| Twemoji country-flag font | CC BY 4.0 attribution for the artwork, and the MIT notice of the subset that cut it from Mozilla's Twemoji font. [Upstream licence](https://github.com/talkjs/country-flag-emoji-polyfill/blob/master/LICENSE.md). | Credits row; installer reads `lib/Lucide/LICENSE.Twemoji`, which names the source and the change. |
 | WebView2 SDK | BSD licence and supplied third-party notices. Core, Core.Projection and Loader binaries are present in the existing output. [Exact package licence](https://www.nuget.org/packages/Microsoft.Web.WebView2/1.0.3719.77/License). | Installer copies the restored runtime dependency's `LICENSE.txt` and `NOTICE.txt`. |
 | Windows App SDK projections | Microsoft package terms and supplied notices. [Exact WinUI package licence](https://www.nuget.org/packages/Microsoft.WindowsAppSDK.WinUI/2.3.6/License). | Installer copies licence/notice files for the packages represented in the published dependency graph. The separately installed Microsoft runtime retains its vendor distribution. |
 
@@ -98,6 +103,17 @@ remove integrations or change the settled built-in-key policy without the
 owner's decision. The owner permits built-in free application keys only where
 the applicable free terms cover them, as stated in
 [third-party provider access](architecture.md#third-party-provider-access).
+
+### DB-IP
+
+The [Lite databases](https://db-ip.com/db/lite.php) are CC BY 4.0: free for
+any use with attribution to DB-IP.com, downloadable without an account or key,
+and republished monthly. The app installs the country data and downloads the
+city data on request ([peer location](peer-location.md)). The Credits row,
+the licence table and `installer/notices/DB-IP.txt` carry the attribution.
+MaxMind's GeoLite2 data was not chosen: its licence requires an account and
+licence key for every download and the destruction of a copy within thirty
+days of each release, which a bundled copy cannot meet.
 
 ### TMDB
 

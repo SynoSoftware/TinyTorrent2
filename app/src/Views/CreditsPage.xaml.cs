@@ -26,11 +26,19 @@ public sealed partial class CreditsPage : UserControl
             new("nlohmann/json", "json", "https://github.com/nlohmann/json", new("MIT", "https://github.com/nlohmann/json/blob/develop/LICENSE.MIT")),
             new("WebView2 SDK", "webview", "https://github.com/MicrosoftEdge/WebView2Feedback", new("BSD-3-Clause", "https://www.nuget.org/packages/Microsoft.Web.WebView2/1.0.3719.77/License")),
             new("Windows SDK .NET projections", "windows_sdk", "https://learn.microsoft.com/windows/apps/desktop/modernize/desktop-to-uwp-enhance", new("Microsoft", "https://aka.ms/WinSDKLicenseURL")),
+            new("MaxMind.Db", "maxmind_db", "https://github.com/maxmind/MaxMind-DB-Reader-dotnet", new("Apache-2.0", "https://www.apache.org/licenses/LICENSE-2.0")),
+            new("Win2D", "win2d", "https://github.com/microsoft/Win2D", new("MIT", "https://github.com/microsoft/Win2D/blob/master/LICENSE.txt")),
         ]),
         new("artwork", Lucide.Palette,
         [
             new("Lucide", "lucide", "https://lucide.dev/", new("ISC / MIT", "https://lucide.dev/license")),
             new("Fluent UI System Icons", "fluent", "https://github.com/microsoft/fluentui-system-icons", new("MIT", "https://github.com/microsoft/fluentui-system-icons/blob/main/LICENSE")),
+            new("Twemoji", "twemoji", "https://github.com/mozilla/twemoji-colr", new("CC BY 4.0", "https://creativecommons.org/licenses/by/4.0/")),
+        ]),
+        new("location", Lucide.MapPin,
+        [
+            new("DB-IP", "dbip", "https://db-ip.com/", new("CC BY 4.0", "https://creativecommons.org/licenses/by/4.0/")),
+            new("Natural Earth", "natural_earth", "https://www.naturalearthdata.com/", new("Public domain", "https://www.naturalearthdata.com/about/terms-of-use/")),
         ]),
         new("video", Lucide.Film,
         [

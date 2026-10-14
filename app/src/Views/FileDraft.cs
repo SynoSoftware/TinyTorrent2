@@ -71,12 +71,8 @@ public sealed class FileDraft : IDraft
             .Count() == 1
             ? _torrents[0].SavePath
             : _owner.Text.Get("file_action", "multiple_locations");
-    public Torrent[] Torrents => _torrents.Select(Selected).ToArray();
-    public FolderGroup[] Folders =>
-        _torrents
-            .GroupBy(torrent => torrent.SavePath, StringComparer.OrdinalIgnoreCase)
-            .Select(folder => new FolderGroup(folder.Key, folder.Select(Selected).ToArray()))
-            .ToArray();
+    public Torrent[] Torrents { get; private set; } = [];
+    public FolderGroup[] Folders { get; private set; } = [];
     public string Total =>
         IsMove && _torrents.Length == 1
             ? string.Empty
@@ -152,6 +148,7 @@ public sealed class FileDraft : IDraft
         _torrents = torrents
             .Select(torrent => new FileLocation(torrent.TorrentId, torrent.Name, torrent.SavePath))
             .ToArray();
+        RefreshItems();
         _shared = [];
         _loaded = false;
         _reading = false;
@@ -179,7 +176,12 @@ public sealed class FileDraft : IDraft
             var scope = await _client.Send("file_scope", new { torrent_ids = torrentIds });
             if (torrentIds != _torrentIds)
                 return;
-            _torrents = ReadLocations(scope.GetProperty("torrents"));
+            var torrents = ReadLocations(scope.GetProperty("torrents"));
+            var changed = !_torrents.Select(torrent => (torrent.TorrentId, torrent.SavePath))
+                .SequenceEqual(torrents.Select(torrent => (torrent.TorrentId, torrent.SavePath)));
+            _torrents = torrents;
+            if (changed)
+                RefreshItems();
             _shared = ReadLocations(scope.GetProperty("shared"));
             _loaded = true;
             if (IsMove && _failure == failure)
@@ -269,6 +271,11 @@ public sealed class FileDraft : IDraft
     internal void Cancel()
     {
         _torrentIds = [];
+        _selection = [];
+        _torrents = [];
+        _shared = [];
+        Torrents = [];
+        Folders = [];
         Confirmation.NeverShow = false;
         _reading = false;
         _destination = string.Empty;
@@ -279,6 +286,15 @@ public sealed class FileDraft : IDraft
 
     internal void Refresh() =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
+
+    private void RefreshItems()
+    {
+        Torrents = _torrents.Select(Selected).ToArray();
+        Folders = _torrents
+            .GroupBy(torrent => torrent.SavePath, StringComparer.OrdinalIgnoreCase)
+            .Select(folder => new FolderGroup(folder.Key, folder.Select(Selected).ToArray()))
+            .ToArray();
+    }
 
     private static FileLocation[] ReadLocations(JsonElement rows) =>
         rows.EnumerateArray()

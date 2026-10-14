@@ -57,10 +57,13 @@ public sealed partial class MainViewModel
                 || current is not null && !Contains(current)
             )
                 return false;
+            var global = Inspector.IsGlobal;
             if (changesTarget && !Inspector.Show(next))
                 return false;
             _selected = selected;
             _current = current;
+            if (global != Inspector.IsGlobal)
+                Inspector.RefreshDetail();
             // The inspector shows the selected count when it has no target.
             Inspector.Refresh();
             RefreshWindow();

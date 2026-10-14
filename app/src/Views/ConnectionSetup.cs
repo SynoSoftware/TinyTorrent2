@@ -17,12 +17,14 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
     private string _measuredId = string.Empty;
     private string _testFailure = string.Empty;
     private int _remaining;
+    private (LimitProfile? Fixed, bool Standard, bool Alternative)? _limits;
 
     internal ConnectionSetup(Settings settings, MainViewModel main, PipeClient client)
     {
         _settings = settings;
         _main = main;
         _client = client;
+        _settings.PropertyChanged += (_, _) => Refresh();
     }
 
     // A slider's share of the connection capacity, in percent. Its top
@@ -188,43 +190,36 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
         StandardFollows && _standardShare < Unlimited
         || AlternativeFollows && _alternativeShare < Unlimited;
 
-    public IReadOnlyList<ConnectionChange> ModeRows
+    public IReadOnlyList<ConnectionChange> ModeRows { get; private set; } = [];
+    public IReadOnlyList<ConnectionChange> StandardRows { get; private set; } = [];
+    public IReadOnlyList<ConnectionChange> AlternativeRows { get; private set; } = [];
+    public IReadOnlyList<ConnectionChange> QueueRows { get; private set; } = [];
+
+    private IReadOnlyList<ConnectionChange> CreateModeRows(Proposal? proposal)
     {
-        get
-        {
-            if (_main.FixedLimits != LimitProfile.None)
-                return [];
-            var enables = Propose()?.EnablesLimits == true;
-            return
-            [
-                new(
-                    Text.Get("transfer_limits", "control"),
-                    Text.Get("transfer_limits", "none"),
-                    enables ? Text.Get("settings", "speed") : Text.Get("transfer_limits", "none"),
-                    enables
-                ),
-            ];
-        }
+        if (_main.FixedLimits != LimitProfile.None)
+            return [];
+        var enables = proposal?.EnablesLimits == true;
+        return
+        [
+            new(
+                Text.Get("transfer_limits", "control"),
+                Text.Get("transfer_limits", "none"),
+                enables ? Text.Get("settings", "speed") : Text.Get("transfer_limits", "none"),
+                enables
+            ),
+        ];
     }
 
-    public IReadOnlyList<ConnectionChange> StandardRows =>
-        PairRows(SavedStandard, Propose()?.Standard);
-    public IReadOnlyList<ConnectionChange> AlternativeRows =>
-        PairRows(SavedAlternative, Propose()?.Alternative);
-
-    public IReadOnlyList<ConnectionChange> QueueRows
+    private IReadOnlyList<ConnectionChange> CreateQueueRows(QueueLimits? queue)
     {
-        get
-        {
-            var saved = SavedQueue;
-            var queue = Propose()?.Queue;
-            return
-            [
-                Row(Text.Get("connection_setup", "active_downloads"), saved.Downloads, queue?.Downloads, Count),
-                Row(Text.Get("connection_setup", "active_seeds"), saved.Seeds, queue?.Seeds, Count),
-                Row(Text.Get("connection_setup", "active_torrents"), saved.Total, queue?.Total, Count),
-            ];
-        }
+        var saved = SavedQueue;
+        return
+        [
+            Row(Text.Get("connection_setup", "active_downloads"), saved.Downloads, queue?.Downloads, Count),
+            Row(Text.Get("connection_setup", "active_seeds"), saved.Seeds, queue?.Seeds, Count),
+            Row(Text.Get("connection_setup", "active_torrents"), saved.Total, queue?.Total, Count),
+        ];
     }
 
     public void Open()
@@ -241,6 +236,7 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
 
     internal void Observe(JsonElement value)
     {
+        var previous = (_phase, _remaining, _testFailure, _download, _upload);
         var previousPhase = _phase;
         _phase = value.GetProperty("phase").GetString() switch
         {
@@ -285,7 +281,12 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
         }
         else
             _testFailure = string.Empty;
-        Refresh();
+        var limits = (_main.FixedLimits, _main.HasStandardLimits, _main.HasAlternativeLimits);
+        if (previous != (_phase, _remaining, _testFailure, _download, _upload) || _limits != limits)
+        {
+            _limits = limits;
+            Refresh();
+        }
         if (
             _phase != previousPhase
             && _phase != ConnectionPhase.Idle
@@ -365,7 +366,20 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
         });
     }
 
-    internal void Refresh() => PropertyChanged?.Invoke(this, new(string.Empty));
+    internal void Refresh()
+    {
+        var proposal = Propose();
+        ModeRows = RetainRows(ModeRows, CreateModeRows(proposal));
+        StandardRows = RetainRows(StandardRows, PairRows(SavedStandard, proposal?.Standard));
+        AlternativeRows = RetainRows(AlternativeRows, PairRows(SavedAlternative, proposal?.Alternative));
+        QueueRows = RetainRows(QueueRows, CreateQueueRows(proposal?.Queue));
+        PropertyChanged?.Invoke(this, new(string.Empty));
+    }
+
+    private static IReadOnlyList<ConnectionChange> RetainRows(
+        IReadOnlyList<ConnectionChange> current,
+        IReadOnlyList<ConnectionChange> next
+    ) => current.SequenceEqual(next) ? current : next;
 
     private Dictionary<string, object>? Changes()
     {

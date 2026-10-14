@@ -49,6 +49,7 @@ internal sealed class MetadataDialog : UserControl, IDraft
         Style = (Style)Application.Current.Resources["TinyTorrentBodyTextStyle"],
     };
     private CancellationTokenSource? _request;
+    private CancellationTokenSource? _protection;
     private Exception? _failure;
     private bool _broadened;
     private int _revision;
@@ -224,7 +225,19 @@ internal sealed class MetadataDialog : UserControl, IDraft
         if (string.IsNullOrWhiteSpace(_input.Text))
             RefreshText();
         else
-            await ReadProtection();
+        {
+            using var protection = new CancellationTokenSource();
+            _protection = protection;
+            try
+            {
+                await ReadProtection(protection.Token);
+            }
+            finally
+            {
+                if (ReferenceEquals(_protection, protection))
+                    _protection = null;
+            }
+        }
     }
 
     private async Task ReadProtection(CancellationToken cancellation = default, bool automatic = false)
@@ -363,5 +376,6 @@ internal sealed class MetadataDialog : UserControl, IDraft
     {
         _revision++;
         _request?.Cancel();
+        _protection?.Cancel();
     }
 }

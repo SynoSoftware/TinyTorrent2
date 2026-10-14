@@ -11,7 +11,6 @@ namespace tt
 {
 namespace
 {
-constexpr std::size_t noticeLimit = 32;
 constexpr auto statusInterval = std::chrono::seconds(1);
 constexpr auto checkpointInterval = std::chrono::seconds(30);
 
@@ -192,6 +191,7 @@ void Engine::State::Start(Document const& saved, Resumes& resumes)
             std::fill(params.file_priorities.begin(), params.file_priorities.end(), lt::dont_download);
         Restore(id, facts, std::move(params));
     }
+    ContinueNames();
     queueOrder = saved.queueOrder;
     ApplyQueue();
     for (auto& [id, torrent] : torrents)
@@ -230,7 +230,6 @@ void Engine::State::Restore(std::string const& id, Facts facts, lt::add_torrent_
     }
     auto& torrent = Install(id, handle, std::move(facts), params);
     torrent.namePhase = NamePhase::Pending;
-    PrepareFiles(torrent);
     if (torrent.facts.trackers)
     {
         handle.replace_trackers(*torrent.facts.trackers);
@@ -281,7 +280,7 @@ void Engine::State::SaveTransfers()
     {
         auto document = Saved();
         auto totals = document.transfers;
-        changes.Commit(document.ToJson(), [this, totals](Outcome outcome)
+        changes.Commit([document = std::move(document)] { return document.ToJson(); }, [this, totals](Outcome outcome)
         {
             transfersPending = false;
             if (!outcome.error)
@@ -570,7 +569,7 @@ void Engine::State::Notify(NoticeKind kind, std::string name, std::string detail
     std::string code)
 {
     log.Write("notification", torrentId, ToString(kind));
-    if (notices.size() == noticeLimit)
+    if (notices.size() == Notice::limit)
     {
         notices.erase(notices.begin());
     }
@@ -604,7 +603,7 @@ void Engine::State::RecordHashes(Torrent& torrent)
         }
         auto document = Saved();
         document.torrents.at(id).hashes = hashes;
-        changes.Commit(document.ToJson(), [this, id, hashes](Outcome outcome)
+        changes.Commit([document = std::move(document)] { return document.ToJson(); }, [this, id, hashes](Outcome outcome)
         {
             auto& torrent = torrents.at(id);
             if (!outcome.error)
@@ -698,13 +697,13 @@ void Engine::State::Maintain()
         auto time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
         auto activity = Activity();
         history.Sample(time, double(activity.downloadRate), double(activity.uploadRate));
+        ContinueNames();
         for (auto& [id, torrent] : torrents)
         {
             if (!torrent.deleted)
                 torrent.history.Sample(time, double(torrent.status.download_payload_rate),
                     double(torrent.status.upload_payload_rate));
             QueryPriorities(torrent);
-            PrepareFiles(torrent);
             FinishFiles(torrent);
             FinishDownload(torrent);
         }

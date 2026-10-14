@@ -50,6 +50,7 @@ public partial class App : Application
     protected override async void OnLaunched(LaunchActivatedEventArgs args)
     {
         Resources["LucideFont"] = Syno.Lucide.Font;
+        Resources["FlagsFont"] = Syno.Flags.Font;
         Marshal.ThrowExceptionForHR(SetCurrentProcessExplicitAppUserModelID("Syno.TinyTorrent"));
         _instance = new Mutex(false, "Local\\TinyTorrent.Window." + PipeClient.LogonSid);
         var owned = Acquire(_instance, 0);

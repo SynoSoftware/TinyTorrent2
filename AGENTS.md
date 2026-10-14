@@ -116,14 +116,14 @@ do not define this product.
   and then the app build, because the app copies the engine from its own lane. Return to the default output once it is free. Every output folder holds
   a complete set of executables, and one that is not rebuilt runs old code with
   no sign of it.
-- After every build, compare the files it compiled, which the build log lists,
-  with what you changed. A source edit recompiles that file; a header edit
-  recompiles the files that include it. When a build compiles more than that,
-  or takes longer than its file count explains, find the cause and fix the
-  build before building again, because every later build pays the same cost.
-- After every build or test run, check that it did not start a recursive copy.
-  All generated output belongs in `artifacts/`, so this command, run from the
-  repository root, must print nothing:
+- Read the build summary. Investigate unexpected target rebuilds or duration
+  before repeating them, because every later build pays that cost. Native header
+  changes rebuild their consumers; C# source changes recompile the assembly.
+- Check output containment once for a build/test batch. Repeat after changes to
+  project files, copy steps or test-output paths, or when unexpected output
+  appears; unchanged output rules do not need another repository scan after
+  every check. All generated output belongs in `artifacts/`, so this command,
+  run from the repository root, must print nothing:
   `& "C:\Program Files\Everything\es.exe" -path $PWD /ad "wfn:bin|wfn:obj|wfn:bin-fl|wfn:TestResults" "!*\artifacts\*" "!*\3rdParty\*"`.
   The one exception is `3rdParty/`, the compiled dependencies, which stays
   outside `artifacts/` so cleaning build output never forces a dependency

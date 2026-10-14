@@ -152,7 +152,7 @@ internal sealed partial class Acquisition
             {
                 if (!Ended && !Stopping)
                 {
-                    _owner._cancelledScans.UnionWith(Scans);
+                    _owner._cancelledScans.UnionWith(Scans.Where(scan => !scan.Scanned));
                     Observation = Observation with { Execution = new WorkExecution.Cancelling() };
                     Operation.Report(Observation);
                     _signalling = Cancellation.CancelAsync();

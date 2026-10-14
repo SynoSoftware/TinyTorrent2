@@ -8,40 +8,28 @@ build entry points and permission to launch desktop applications.
 
 ## The everyday loop
 
-Start with source reasoning, compiler guarantees, and existing coverage. Run the
-smallest relevant existing check, using its native filter where available. When
-a compile check is needed, build the project whose source changed and each
-project that uses an interface the change altered; any other build holds the
-owner's machine and proves nothing about the change. Run the installer
-(`Release.cmd`) only when the change touches `installer/` or the owner asks,
-because each run also consumes a build number in `Directory.Build.props`. Reuse
-valid build outputs; never test stale binaries.
-Documentation and screen-copy edits do not justify an application build or suite.
+Choose evidence for each distinct failure the change could cause. Use source
+reasoning, compiler guarantees and existing coverage first; run the smallest
+existing check that adds evidence, with its native filter. Multiple checks of
+the same behavior need a distinct failure each can catch. A full suite is for a
+deliberate integration or release check, or an explicit owner request.
 
-Aim for seconds for routine checks. If the only available check takes five
-minutes, decide whether this edit needs the evidence it provides. A focused
-review or an authorized, narrow manual check can be sufficient for a low-risk
-change. State what remains unverified. Do not build a new test framework merely
-to avoid one slow run, and do not skip essential data-integrity evidence to meet
-an arbitrary time budget.
+Finish related edits and inspect their direct consumers before compiling,
+including reflection-based test calls. Build affected targets once and reuse
+current outputs across checks. Run the installer (`Release.cmd`) only for
+installer work or an owner request, because it also consumes a build number.
+Documentation and screen-copy edits need no application build or suite.
 
-Run a slower integration check after related edits have settled when the risk
-actually crosses that boundary. Rerun it if a subsequent change affects what it
-proved or a failure requires another attempt. Do not rerun unchanged checks just
-because another agent reviewed the work or a small unrelated edit followed.
-Coordinate one run and share its result.
+Review the settled diff once. Use an independent review for a material
+correctness or ownership risk; it replaces a second general review. After a
+finding, review the correction and rerun only checks whose evidence it changes.
+Keep one shared record of findings and results so agents can use completed work.
 
-Review the settled change, not intermediate code that is about to be replaced.
-Finish and integrate a coherent working slice before its independent review;
-keep only checks that could prevent data loss or catch a failure in the next
-step. Repeated reviews of temporary arrangements cost time without establishing
-the delivered behavior. Milestone completion still needs its final adversarial
-review and relevant runtime evidence. Common sense takes precedence over a
-mechanical review sequence.
-
-A full suite is a deliberate integration or release check, or an explicit user
-request. It is not the default completion gate for each bug fix. A known relevant
-failure still needs resolution; postponing broad coverage does not excuse it.
+A known relevant failure needs resolution. When it reveals a stale harness,
+inspect the affected calls together before rerunning, rather than rebuilding
+after each setup error. Choose a slower integration check when the risk crosses
+that boundary; avoid adding another framework just to shorten a run. Preserve
+essential data-integrity checks and state what remains unverified.
 
 The engine checks that start the Transfer peer download real payload and take
 minutes, so they run only when the owner asks for them. `engine/tests/Checks.ps1`
@@ -206,6 +194,14 @@ A second review window exits without activating an existing
 application. Normal launches perform no automatic capture.
 Use `TINYTORRENT_CAPTURE_REVIEW=smoke` to rerun the recovery journeys without
 repeating the Settings viewport or full themes-and-sizes batches.
+Use `Capture.ps1 -Review peers` for the native peer map, header toggles, adaptive
+arrangement, internal splitters and inspector height in Light and Dark. It checks global peers and
+empty-selection Speed against the disposable engine before supplying synthetic
+peer coordinates and rates to the real inspector for visual review. A country
+database lookup uses the bundled MMDB; the synthetic city points do not establish
+city-database accuracy or live transfer timing. The unknown-origin scene retains
+markers without arcs. This journey also renders the country flags whose deferred
+font binding previously failed when table cells were created.
 Use `TINYTORRENT_CAPTURE_REVIEW=add-layout` for the workspace headers and empty/long-link
 magnet Add dialog in English and Spanish, Light and Dark, at the three review sizes.
 It also captures the engine-stopped message bar with its Restart action and records

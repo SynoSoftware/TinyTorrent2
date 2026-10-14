@@ -251,7 +251,8 @@ void Engine::State::RecordWatch(std::string source, std::string stamp, std::func
         }
         auto document = Saved();
         document.watchedSources[source] = stamp;
-        changes.Commit(document.ToJson(), [this, source, stamp, completion](Outcome outcome)
+        changes.Commit([document = std::move(document)] { return document.ToJson(); },
+            [this, source, stamp, completion](Outcome outcome)
         {
             if (outcome.error)
             {
@@ -306,8 +307,11 @@ void Engine::State::CommitAddition(std::string const& id)
     {
         document.queueOrder.push_back(id);
     }
-    changes.Commit(document.ToJson(), [this, id, order = document.queueOrder,
-        folder = document.settings.lastFolder, watched = document.watchedSources](Outcome outcome)
+    auto order = document.queueOrder;
+    auto folder = document.settings.lastFolder;
+    auto watched = document.watchedSources;
+    changes.Commit([document = std::move(document)] { return document.ToJson(); },
+        [this, id, order = std::move(order), folder = std::move(folder), watched = std::move(watched)](Outcome outcome)
     {
         if (outcome.error)
         {

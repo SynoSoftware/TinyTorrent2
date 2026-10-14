@@ -9,8 +9,9 @@ constexpr DWORD messageLimit = 16 * 1024 * 1024;
 // Each instance serves one connection at a time.
 constexpr DWORD instances = 8;
 constexpr DWORD bufferSize = 64 * 1024;
-// Messages that wait for a slow client; one more closes its connection.
-constexpr std::size_t outputLimit = 4;
+// One engine turn can forward every notice while a reply is being written.
+// Leave room for the reply and control messages, then disconnect a slow client.
+constexpr std::size_t outputLimit = Notice::limit + 8;
 
 // Durations in milliseconds, as GetTickCount64 counts.
 constexpr ULONGLONG forwardTimeout = 5000;

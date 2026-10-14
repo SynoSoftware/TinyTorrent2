@@ -368,9 +368,14 @@ void Engine::State::On(lt::tracker_list_alert const& alert)
     Receive(alert.handle, DetailKind::Trackers, [&alert](Detail& detail) { detail.trackers = alert.trackers; });
 }
 
-void Engine::State::On(lt::peer_info_alert const& alert)
+void Engine::State::On(lt::peer_info_alert& alert)
 {
-    Receive(alert.handle, DetailKind::Peers, [&alert](Detail& detail) { detail.peers = alert.peer_info; });
+    Receive(alert.handle, DetailKind::Peers, [&alert](Detail& detail)
+    {
+        detail.peers = std::move(alert.peer_info);
+        for (auto& peer : detail.peers)
+            peer.pieces.clear();
+    });
 }
 
 void Engine::State::On(lt::file_progress_alert const& alert)

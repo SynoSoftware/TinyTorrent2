@@ -46,11 +46,13 @@ internal sealed class ItemIdentity : IEqualityComparer<object>
 internal sealed class SelectionState
 {
     private readonly ItemIdentity _identity;
+    private readonly Func<object, int> _indexOf;
     private HashSet<object> _selected;
 
-    internal SelectionState(ItemIdentity identity)
+    internal SelectionState(ItemIdentity identity, Func<object, int> indexOf)
     {
         _identity = identity;
+        _indexOf = indexOf;
         _selected = new HashSet<object>(identity);
     }
 
@@ -216,14 +218,14 @@ internal sealed class SelectionState
             return;
         }
 
-        int to = IndexOf(view, item);
+        int to = _indexOf(item);
         if (to < 0)
         {
             return;
         }
 
         object anchor = Anchor ?? item;
-        int from = IndexOf(view, anchor);
+        int from = _indexOf(anchor);
         if (from < 0)
         {
             from = to;
@@ -300,35 +302,20 @@ internal sealed class SelectionState
         out object? current
     )
     {
-        HashSet<object> requested = new(_identity);
+        HashSet<int> positions = new();
         foreach (object item in items)
         {
             if (item is not null)
             {
-                requested.Add(item);
+                int index = _indexOf(item);
+                if (index >= 0 && IsInteractive(view[index]))
+                    positions.Add(index);
             }
         }
 
-        List<object> resolved = new();
-        current = null;
-        foreach (object item in view)
-        {
-            if (!IsInteractive(item))
-            {
-                continue;
-            }
-
-            if (requested.Contains(item))
-            {
-                resolved.Add(item);
-            }
-
-            if (currentItem is not null && _identity.Equals(item, currentItem))
-            {
-                current = item;
-            }
-        }
-
+        List<object> resolved = positions.Order().Select(index => view[index]).ToList();
+        int currentIndex = currentItem is null ? -1 : _indexOf(currentItem);
+        current = currentIndex >= 0 && IsInteractive(view[currentIndex]) ? view[currentIndex] : null;
         return Limit(resolved);
     }
 
@@ -413,18 +400,5 @@ internal sealed class SelectionState
         Current = current;
         Anchor = anchor;
         Focus = focus;
-    }
-
-    private int IndexOf(IReadOnlyList<object> view, object item)
-    {
-        for (int i = 0; i < view.Count; i++)
-        {
-            if (_identity.Equals(view[i], item))
-            {
-                return i;
-            }
-        }
-
-        return -1;
     }
 }

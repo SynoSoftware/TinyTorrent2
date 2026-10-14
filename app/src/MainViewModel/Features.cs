@@ -119,6 +119,7 @@ public sealed partial class MainViewModel
 
     internal event EventHandler? DatabaseDeletionRequested;
     internal SubtitleAcquisition? Subtitles { get; private set; }
+    internal Geolocation Geolocation { get; }
 
     internal Task<Statistics?> ReadStatistics() => ReadDatabase(database => database.ReadStatistics());
 
@@ -207,6 +208,7 @@ public sealed partial class MainViewModel
                 http
             ) { Work = Work };
             Library.Attach(store, videos, new FileFacts(_database, Work));
+            Geolocation.Attach(directory, policy);
             var subtitles = new SubtitleAcquisition(
                 _database,
                 _providerHttp,
@@ -224,7 +226,7 @@ public sealed partial class MainViewModel
             subtitles.LanguagesChanged += (_, _) => _dispatcher.TryEnqueue(() =>
             {
                 if (ReferenceEquals(Subtitles, subtitles))
-                    Library.Refresh();
+                    Library.StoredChanged();
             });
             subtitles.FileFailed += (_, failure) => _dispatcher.TryEnqueue(() =>
             {
@@ -268,9 +270,10 @@ public sealed partial class MainViewModel
         if (_providerRoute == route)
             return;
         _providerRoute = route;
-        // The new route ends the running IMDb data download, which the person
-        // did not ask for, so it is stopped as an interruption first.
+        // The new route ends a running data download, which the person did
+        // not ask for, so it is stopped as an interruption first.
         _ = Library.InterruptDownload();
+        _ = Geolocation.InterruptDownload();
         _providerHttp.Configure(route);
         await _featureAccess.WaitAsync();
         try
@@ -318,9 +321,10 @@ public sealed partial class MainViewModel
         }
     }
 
-    private async Task RefreshFeatures()
+    private async Task RefreshFeatures(bool wait = false)
     {
         var source = _fileSource;
+        Task reconciling = Task.CompletedTask;
         await _featureAccess.WaitAsync();
         try
         {
@@ -368,11 +372,7 @@ public sealed partial class MainViewModel
                 Subtitles.SetConnected(true);
             }
             await Subtitles.SetLanguage(Text.Language);
-            await Subtitles.Reconcile();
-            lock (_featuresGate)
-                if (!_closed && !_featuresClosed && _fileSource is { IsReady: true } && IsConnected)
-                    _featureFailure = null;
-            RefreshFeedback();
+            reconciling = ReconcileSubtitles(Subtitles);
         }
         catch (Exception error)
         {
@@ -383,6 +383,39 @@ public sealed partial class MainViewModel
         finally
         {
             _featureAccess.Release();
+        }
+        if (wait)
+            await reconciling;
+    }
+
+    private async Task ReconcileSubtitles(SubtitleAcquisition subtitles)
+    {
+        var failure = _featureFailure;
+        try
+        {
+            await subtitles.Reconcile();
+            lock (_featuresGate)
+            {
+                if (_closed || _closing || _featuresClosed || _resetting
+                    || !ReferenceEquals(subtitles, Subtitles)
+                    || _fileSource is not { IsReady: true } || !IsConnected)
+                    return;
+                if (ReferenceEquals(_featureFailure, failure))
+                    _featureFailure = null;
+            }
+            RefreshFeedback();
+        }
+        catch (OperationCanceledException) when (subtitles.IsDisposed) { }
+        catch (Exception error)
+        {
+            lock (_featuresGate)
+            {
+                if (_closed || _closing || _featuresClosed || _resetting
+                    || !ReferenceEquals(subtitles, Subtitles))
+                    return;
+                subtitles.SetConnected(false);
+            }
+            ReportFeature(error);
         }
     }
 
@@ -460,10 +493,15 @@ public sealed partial class MainViewModel
             RequestSnapshot();
     }
 
-    internal async Task DownloadData(bool enable = false)
+    internal Task DownloadData(IDataset dataset) => AnnounceData(dataset, dataset.Download());
+
+    /// <summary>Downloads the data of the provider the person chose, which the installed data selects.</summary>
+    internal Task PrepareAutomaticDownload() => AnnounceData(Library, Library.Download(enableAutomaticDownload: true));
+
+    private async Task AnnounceData(IDataset dataset, Task<bool> download)
     {
-        if (await Library.Download(enable))
-            Announce(Text.Get("imdb", "ready"));
+        if (await download)
+            Announce(Text.Get(dataset.Section, "ready"));
     }
 
     internal int LookupLimit => _requestPolicy?.Limit ?? RequestPolicy.DefaultLimit;
@@ -494,6 +532,10 @@ public sealed partial class MainViewModel
                 return;
             using var operation = Work.Begin(new(new WorkDescription.Maintenance(MaintenanceWork.ResetProtection),
                 new WorkProgress.Unknown(), new WorkExecution.Finishing()));
+            // The reset clears what a running download writes, so the download
+            // ends first, as the IMDb download does inside SuspendProtection.
+            if (providerId is null)
+                await Geolocation.InterruptDownload();
             await Library.SuspendProtection(() => subtitles.Suspend(() => database.Run(connection =>
             {
                 Store.ResetProtection(connection, providerId);
@@ -517,7 +559,7 @@ public sealed partial class MainViewModel
         if (_subtitlesStarting is { } starting)
             await starting;
         if (ReferenceEquals(subtitles, Subtitles))
-            await RefreshFeatures();
+            await RefreshFeatures(wait: true);
     }
 
     internal void DisconnectFeatures()
@@ -544,6 +586,7 @@ public sealed partial class MainViewModel
                 await update;
             await DetachFeatures();
             await Library.DisposeAsync();
+            Geolocation.Dispose();
             _providerHttp.Dispose();
             if (_database is not null)
                 await _database.DisposeAsync();
@@ -570,6 +613,7 @@ public sealed partial class MainViewModel
         }
         Changed(nameof(Subtitles));
         var libraryClosing = Library.Detach();
+        await Geolocation.Detach();
         if (source is not null)
             await source.DisposeAsync();
         if (starting is not null)

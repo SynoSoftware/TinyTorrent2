@@ -9,6 +9,7 @@ internal abstract record WorkDescription
 {
     private WorkDescription() { }
     internal sealed record Imdb(ImdbPhase Phase) : WorkDescription;
+    internal sealed record City(CityPhase Phase) : WorkDescription;
     internal sealed record Metadata(MetadataScope Scope) : WorkDescription;
     internal sealed record Subtitles(SubtitleWork Work) : WorkDescription;
     internal sealed record FileProperties : WorkDescription;

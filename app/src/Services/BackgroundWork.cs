@@ -99,12 +99,14 @@ internal sealed class BackgroundWork : IDisposable
         internal WorkObservation _latest;
         internal bool _ended;
         private bool _requesting;
+        private bool _canCancel;
 
         internal Operation(BackgroundWork owner, WorkObservation initial, Func<Task>? cancel)
         {
             _owner = owner;
             _latest = Current = initial;
             _cancel = cancel;
+            _canCancel = CanExecute(null);
         }
 
         internal WorkObservation Current { get; private set; }
@@ -139,6 +141,15 @@ internal sealed class BackgroundWork : IDisposable
                 Current = observation;
                 PropertyChanged?.Invoke(this, new(nameof(Current)));
             }
+            RefreshCancel();
+        }
+
+        private void RefreshCancel()
+        {
+            var canCancel = CanExecute(null);
+            if (_canCancel == canCancel)
+                return;
+            _canCancel = canCancel;
             CanExecuteChanged?.Invoke(this, EventArgs.Empty);
         }
 
@@ -157,7 +168,7 @@ internal sealed class BackgroundWork : IDisposable
                     return;
                 _requesting = true;
             }
-            CanExecuteChanged?.Invoke(this, EventArgs.Empty);
+            RefreshCancel();
             try
             {
                 await _cancel!();

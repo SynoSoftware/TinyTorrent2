@@ -25,30 +25,46 @@ internal sealed partial class Store
             """;
 
     internal Task<IReadOnlyList<VideoChoice>?> Search(RequestKey key, CancellationToken cancellation, long since = 0) =>
-        database.Run<IReadOnlyList<VideoChoice>?>(
-            connection =>
-            {
-                using var command = SearchCommand(connection, key);
-                command.CommandText = """
-                    SELECT v.video_id,v.type,v.title,v.original,v.year FROM video_searches s
-                        LEFT JOIN json_each(s.choices) c ON 1
-                        LEFT JOIN video_choices v ON v.catalog_id=s.catalog_id AND v.video_id=c.value
-                    WHERE s.catalog_id=$catalog AND s.question_id=$question AND s.checked>=$since ORDER BY c.key;
-                    """;
-                command.Parameters.AddWithValue("$since", since);
-                using var reader = command.ExecuteReader();
-                var choices = new List<VideoChoice>();
-                var found = false;
-                while (reader.Read())
-                {
-                    found = true;
-                    if (!reader.IsDBNull(0))
-                        choices.Add(ReadChoice(reader, key.ProviderId));
-                }
-                return found ? choices : null;
-            },
-            cancellation
-        );
+        database.Run(connection => Search(connection, key, since), cancellation);
+
+    private static IReadOnlyList<VideoChoice>? Search(SqliteConnection connection, RequestKey key, long since = 0)
+    {
+        using var command = SearchCommand(connection, key);
+        command.CommandText = """
+            SELECT v.video_id,v.type,v.title,v.original,v.year FROM video_searches s
+                LEFT JOIN json_each(s.choices) c ON 1
+                LEFT JOIN video_choices v ON v.catalog_id=s.catalog_id AND v.video_id=c.value
+            WHERE s.catalog_id=$catalog AND s.question_id=$question AND s.checked>=$since ORDER BY c.key;
+            """;
+        command.Parameters.AddWithValue("$since", since);
+        using var reader = command.ExecuteReader();
+        var choices = new List<VideoChoice>();
+        var found = false;
+        while (reader.Read())
+        {
+            found = true;
+            if (!reader.IsDBNull(0))
+                choices.Add(ReadChoice(reader, key.ProviderId));
+        }
+        return found ? choices : null;
+    }
+
+    internal Task<IReadOnlyDictionary<RequestKey, VideoProtection>> Protection(
+        IReadOnlyCollection<LookupRequest> requests,
+        RequestPolicy policy,
+        CancellationToken cancellation
+    ) => database.Run<IReadOnlyDictionary<RequestKey, VideoProtection>>(connection =>
+    {
+        var protection = new Dictionary<RequestKey, VideoProtection>();
+        foreach (var request in requests.DistinctBy(request => request.Key))
+        {
+            cancellation.ThrowIfCancellationRequested();
+            var choices = Search(connection, request.Key);
+            protection.Add(request.Key, new(choices,
+                choices is { Count: > 0 } ? null : policy.Read(connection, request)));
+        }
+        return protection;
+    }, cancellation);
 
     internal Task SaveSearch(
         LookupRequest request,
@@ -296,6 +312,8 @@ internal sealed partial class Store
                         video,
                         attempt.Target.Kind == LookupKind.Explicit || attempt.Explicit
                     );
+                    command.CommandText = Database.PruneVideos + Database.Invalidate;
+                    command.ExecuteNonQuery();
                 }
                 return accepted;
             },
@@ -369,6 +387,8 @@ internal sealed partial class Store
 }
 
 internal sealed record VideoTarget(Entry Entry, string CatalogId, LookupKind Kind);
+
+internal sealed record VideoProtection(IReadOnlyList<VideoChoice>? Choices, RequestBlock? Block);
 
 // Language is null when the provider's information is the same in every language.
 internal sealed record VideoAttempt(

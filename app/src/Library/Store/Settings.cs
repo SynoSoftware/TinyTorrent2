@@ -6,7 +6,7 @@ namespace Syno.TinyTorrent.Library;
 
 internal sealed partial class Store
 {
-    internal Task<bool> Enabled(CancellationToken cancellation) =>
+    internal Task<bool> AutomaticDownload(CancellationToken cancellation) =>
         database.Run(
             connection =>
             {
@@ -33,7 +33,19 @@ internal sealed partial class Store
             cancellation
         );
 
-    internal Task EnableProvider(string providerId, CancellationToken cancellation) =>
+    internal Task SelectProvider(string providerId, CancellationToken cancellation) =>
+        database.Run(
+            connection =>
+            {
+                using var command = connection.CreateCommand();
+                command.CommandText = "UPDATE library_settings SET source=$provider WHERE singleton=1;";
+                command.Parameters.AddWithValue("$provider", providerId);
+                return command.ExecuteNonQuery();
+            },
+            cancellation
+        );
+
+    internal Task EnableAutomaticDownload(string providerId, CancellationToken cancellation) =>
         database.Run(
             connection =>
             {
@@ -108,7 +120,7 @@ internal sealed partial class Store
         );
     }
 
-    internal Task DisableProvider(CancellationToken cancellation) =>
+    internal Task DisableAutomaticDownload(CancellationToken cancellation) =>
         database.Run(
             connection =>
             {

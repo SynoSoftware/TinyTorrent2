@@ -19,6 +19,8 @@ namespace Syno.TinyTorrent;
 public sealed partial class MainWindow
 {
     private FileDialog? _fileDialog;
+    private MenuFlyout? _selectionMenu;
+    private string? _selectionLanguage;
 
     private void OnQueueKey(object sender, KeyRoutedEventArgs args)
     {
@@ -210,15 +212,23 @@ public sealed partial class MainWindow
 
     private void ShowSelectionMenu(FrameworkElement target, Point? position)
     {
-        var menu = new MenuFlyout();
-        menu.Closed += (_, _) => ClearMenu(menu.Items);
-        menu.Items.Add(MenuHeader(
-            Torrents.Selection.Items.Count == 1
+        if (_selectionMenu is null || _selectionLanguage != Model.Text.Language)
+        {
+            if (_selectionMenu is not null)
+                ClearMenu(_selectionMenu.Items);
+            _selectionMenu = new MenuFlyout();
+            _selectionLanguage = Model.Text.Language;
+            _selectionMenu.Items.Add(MenuHeader(string.Empty));
+            _selectionMenu.Items.Add(new MenuFlyoutSeparator());
+            AddSelection(_selectionMenu.Items, properties: true);
+        }
+        var menu = _selectionMenu;
+        ((MenuFlyoutItem)menu.Items[0]).Text = Torrents.Selection.Items.Count == 1
                 ? ((Torrent)Torrents.Selection.Items[0]).Name
-                : Model.SelectionText
-        ));
-        menu.Items.Add(new MenuFlyoutSeparator());
-        AddSelection(menu.Items, !Model.HasInspector);
+                : Model.SelectionText;
+        foreach (var item in menu.Items.OfType<MenuFlyoutItem>())
+            if (ReferenceEquals(item.Command, Model.Properties))
+                item.Visibility = Model.HasInspector ? Visibility.Collapsed : Visibility.Visible;
         if (position is { } point)
             menu.ShowAt(target, point);
         else

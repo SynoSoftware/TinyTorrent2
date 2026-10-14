@@ -7,15 +7,15 @@ $ErrorActionPreference = 'Stop'
 
 function Resolve-PhysicalPath([string] $Path) {
     $entry = Get-Item -LiteralPath $Path
+    $parent = Split-Path -Path $entry.FullName -Parent
+    if (-not $parent) {
+        return $entry.FullName
+    }
     $target = $entry.ResolveLinkTarget($true)
     if ($target) {
         return Resolve-PhysicalPath $target.FullName
     }
-    $parent = Split-Path -Path $entry.FullName -Parent
-    if ($parent) {
-        return Join-Path (Resolve-PhysicalPath $parent) $entry.Name
-    }
-    return $entry.FullName
+    return Join-Path (Resolve-PhysicalPath $parent) $entry.Name
 }
 
 if (Test-Path -LiteralPath $Destination) {

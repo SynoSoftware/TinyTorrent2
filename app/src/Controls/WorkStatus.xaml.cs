@@ -10,6 +10,7 @@ namespace Syno.TinyTorrent.Controls;
 
 public sealed partial class WorkStatus : UserControl
 {
+    private readonly TextBlock _probe = new();
     private Strings? _text;
     private bool _library;
     private bool _compact;
@@ -44,9 +45,11 @@ public sealed partial class WorkStatus : UserControl
 
     internal void Fit(bool compact, bool minimal = false)
     {
+        MaxWidth = double.PositiveInfinity;
+        if (_compact == compact && _minimal == minimal)
+            return;
         _compact = compact;
         _minimal = minimal;
-        MaxWidth = double.PositiveInfinity;
         Refresh();
     }
 
@@ -80,6 +83,7 @@ public sealed partial class WorkStatus : UserControl
         var key = description switch
         {
             WorkDescription.Imdb imdb => "imdb_" + imdb.Phase.ToString().ToLowerInvariant(),
+            WorkDescription.City city => "city_" + city.Phase.ToString().ToLowerInvariant(),
             WorkDescription.Metadata metadata => metadata.Scope switch
             {
                 MetadataScope.Batch => library ? "metadata" : "library_metadata",
@@ -146,12 +150,15 @@ public sealed partial class WorkStatus : UserControl
         Label.TextTrimming = IsExpanded ? TextTrimming.None : TextTrimming.CharacterEllipsis;
         Count.Text = _compact ? shortCount : fullCount;
         Count.Visibility = IsExpanded || Count.Text.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
-        var probe = new TextBlock { Style = Count.Style, Text = widest };
-        probe.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-        Count.MinWidth = probe.DesiredSize.Width;
+        _probe.Style = Count.Style;
+        _probe.Text = widest;
+        _probe.InvalidateMeasure();
+        _probe.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        Count.MinWidth = _probe.DesiredSize.Width;
         Icon.Glyph = observation.Execution is WorkExecution.Waiting ? Lucide.Clock : observation.Description switch
         {
             WorkDescription.Imdb => Lucide.Database,
+            WorkDescription.City => Lucide.MapPin,
             WorkDescription.Metadata => Lucide.Download,
             WorkDescription.Subtitles { Work: SubtitleWork.Discovery } => Lucide.FolderSearch,
             WorkDescription.Subtitles => Lucide.Captions,

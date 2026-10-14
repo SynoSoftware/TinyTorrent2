@@ -31,13 +31,9 @@ public sealed partial class MainWindow
         );
         Model.Notices.CollectionChanged += (_, _) =>
         {
-            if (Model.Notices.Count > 0)
+            UpdateNoticeTimer();
+            if (Model.Notices.Count == 0)
             {
-                _noticeTimer.Start();
-            }
-            else
-            {
-                _noticeTimer.Stop();
                 // A notice that closes under the pointer may leave without
                 // a PointerExited, which would pause the next notices forever.
                 _noticeHovered = false;
@@ -69,7 +65,10 @@ public sealed partial class MainWindow
         // A notice that arrives while the person works in another window
         // waits until they return, as Windows and VS Code notices do.
         Activated += (_, args) =>
+        {
             _windowActive = args.WindowActivationState != WindowActivationState.Deactivated;
+            UpdateNoticeTimer();
+        };
         _noticeTimer.Tick += (_, _) =>
         {
             UpdateNotices();
@@ -90,6 +89,14 @@ public sealed partial class MainWindow
             }
         };
         Closed += (_, _) => _noticeTimer.Stop();
+    }
+
+    private void UpdateNoticeTimer()
+    {
+        if (_windowActive && Model.Notices.Count > 0)
+            _noticeTimer.Start();
+        else
+            _noticeTimer.Stop();
     }
 
     // The popup's corner is the stack's bottom-right, so it follows the

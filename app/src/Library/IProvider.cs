@@ -269,6 +269,9 @@ internal class VideoException(VideoFailure failure, Exception? inner = null)
 
     /// <summary>The provider that failed, which Library sets so the text can name it.</summary>
     internal ProviderOption? Provider { get; set; }
+
+    /// <summary>What the text names instead when no provider is involved, such as the city data's publisher.</summary>
+    internal string? Subject { get; set; }
 }
 
 internal class ProviderException(VideoFailure failure, DateTimeOffset? retryAt = null, Exception? inner = null)

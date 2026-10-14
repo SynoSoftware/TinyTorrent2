@@ -532,6 +532,7 @@ void Engine::State::Verify(std::vector<std::string> const& ids, Reply reply)
         torrents.at(id).handle.force_recheck();
         Invalidate(id);
     }
+    statusPending = true;
     ApplyQueue();
     reply(Success());
 }
@@ -549,17 +550,19 @@ void Engine::State::Remove(std::vector<std::string> const& ids, Reply reply, std
         (!mode || (namesReady && CanRemove(torrents.at(id))) ? ready : later).push_back(id);
     }
     Json kept = 0;
-    auto deletion = PrepareDeletion(ready, mode);
+    auto scope = mode && !ready.empty() ? FileScope(ready) : Scope{};
     if (mode)
     {
-        kept = namesReady ? Json(FileScope(ids).kept.size()) : Json();
+        kept = namesReady ? Json(later.empty() ? scope.kept.size() : FileScope(ids).kept.size()) : Json();
     }
+    auto deletion = PrepareDeletion(ready, mode, std::move(scope));
     auto removed = [&ids](std::string const& id) { return Contains(ids, id); };
     auto document = Saved();
     std::erase_if(document.torrents, [&removed](auto const& entry) { return removed(entry.first); });
     std::erase_if(document.queueOrder, removed);
-    changes.Commit(document.ToJson(),
-        [this, ready, later, order = document.queueOrder, deletion, kept, reply, mode](Outcome outcome)
+    auto order = document.queueOrder;
+    changes.Commit([document = std::move(document)] { return document.ToJson(); },
+        [this, ready, later, order = std::move(order), deletion, kept, reply, mode](Outcome outcome)
     {
         if (outcome.error)
         {
@@ -586,7 +589,7 @@ void Engine::State::Remove(std::vector<std::string> const& ids, Reply reply, std
 }
 
 std::list<Engine::State::Deletion>::iterator Engine::State::PrepareDeletion(std::vector<std::string> const& ids,
-    std::optional<DeletionMode> mode)
+    std::optional<DeletionMode> mode, Scope scope)
 {
     if (ids.empty())
     {
@@ -596,7 +599,6 @@ std::list<Engine::State::Deletion>::iterator Engine::State::PrepareDeletion(std:
     deleting.mode = mode;
     if (mode)
     {
-        auto scope = FileScope(ids);
         deleting.holds = std::move(scope.holds);
         for (auto const& file : scope.files)
         {
@@ -710,7 +712,8 @@ void Engine::State::RemoveDeferred()
         for (auto const& [id, torrent] : torrents)
             if (torrent.deleted && torrent.deletionMode == mode && CanRemove(torrent))
                 ready.push_back(id);
-        RemoveHandles(ready, PrepareDeletion(ready, mode));
+        if (!ready.empty())
+            RemoveHandles(ready, PrepareDeletion(ready, mode, FileScope(ready)));
     }
 }
 
@@ -740,7 +743,7 @@ void Engine::State::SetIntent(std::vector<std::string> const& ids, Intent intent
         }
         next.emplace(id, facts);
     }
-    changes.Commit(document.ToJson(), reply, [this, ids, intent, next]
+    changes.Commit([document = std::move(document)] { return document.ToJson(); }, reply, [this, ids, intent, next]
     {
         for (auto const& id : ids)
         {
@@ -762,6 +765,7 @@ void Engine::State::SetIntent(std::vector<std::string> const& ids, Intent intent
             }
             torrent.ApplyIntent();
         }
+        statusPending = true;
         return Success();
     });
 }
@@ -785,7 +789,7 @@ void Engine::State::ChangeFacts(std::vector<std::string> const& ids,
         reply(Success());
         return;
     }
-    changes.Commit(document.ToJson(), reply, [this, next]
+    changes.Commit([document = std::move(document)] { return document.ToJson(); }, reply, [this, next]
     {
         for (auto const& [id, facts] : next)
         {

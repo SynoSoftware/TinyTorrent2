@@ -1,4 +1,5 @@
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 
 namespace Syno.TinyTorrent.Controls;
@@ -6,6 +7,14 @@ namespace Syno.TinyTorrent.Controls;
 // App.xaml supplies the shared template for each settings group.
 public sealed partial class SettingsSection : ContentControl
 {
+    public static readonly DependencyProperty IsCardProperty = DependencyProperty.RegisterAttached(
+        "IsCard", typeof(bool), typeof(SettingsSection), new PropertyMetadata(false)
+    );
+
+    public static bool GetIsCard(DependencyObject element) => (bool)element.GetValue(IsCardProperty);
+
+    public static void SetIsCard(DependencyObject element, bool value) => element.SetValue(IsCardProperty, value);
+
     public bool IsAdvanced { get; set; }
     public static readonly DependencyProperty GlyphProperty = Text(nameof(Glyph));
     public static readonly DependencyProperty HeaderProperty = Text(nameof(Header));
@@ -43,10 +52,7 @@ public sealed partial class SettingsSection : ContentControl
         set => SetValue(IsExpandedProperty, value);
     }
 
-    internal FrameworkElement Surface =>
-        GetTemplateChild("GroupCard") as FrameworkElement
-        ?? GetTemplateChild("SectionExpander") as FrameworkElement
-        ?? this;
+    internal FrameworkElement? Card => GetTemplateChild("Card") as FrameworkElement;
 
     protected override void OnApplyTemplate()
     {
@@ -56,6 +62,7 @@ public sealed partial class SettingsSection : ContentControl
 
     private void RefreshSummary()
     {
+        AutomationProperties.SetName(this, Header);
         if (GetTemplateChild("HeaderLayout") is Grid header)
         {
             header.ColumnDefinitions[0].Width = new GridLength(

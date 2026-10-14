@@ -1017,7 +1017,8 @@ void Engine::State::Configure(Json const& choices, std::function<void(Outcome)> 
         }
         auto document = Saved();
         document.settings = next;
-        changes.Commit(document.ToJson(), [this, next = document.settings, finish, completion](Outcome outcome)
+        changes.Commit([document = std::move(document)] { return document.ToJson(); },
+            [this, next, finish, completion](Outcome outcome)
         {
             if (outcome.error)
             {
@@ -1096,7 +1097,8 @@ void Engine::State::PauseSession(bool paused, std::function<void(Outcome)> compl
         }
         auto document = Saved();
         document.settings.allPaused = paused;
-        changes.Commit(document.ToJson(), [this, paused, finish, completion](Outcome outcome)
+        changes.Commit([document = std::move(document)] { return document.ToJson(); },
+            [this, paused, finish, completion](Outcome outcome)
         {
             if (outcome.error)
             {
@@ -1118,7 +1120,8 @@ void Engine::State::RecordPrograms(std::vector<std::string> programs, std::funct
     {
         auto document = Saved();
         document.settings.reportedPrograms = programs;
-        changes.Commit(document.ToJson(), [this, programs, completion](Outcome outcome)
+        changes.Commit([document = std::move(document)] { return document.ToJson(); },
+            [this, programs, completion](Outcome outcome)
         {
             if (outcome.error)
             {

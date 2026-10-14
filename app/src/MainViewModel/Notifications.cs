@@ -41,9 +41,8 @@ public sealed partial class MainViewModel
     private Status? _dismissedStatus;
     private bool _showsStatus;
 
-    // The subtitle failures the open SubtitleError notice reports, oldest
-    // first; empty when it is closed.
-    private readonly List<Subtitles.FileFailure> _subtitleFailures = [];
+    private Subtitles.FileFailure? _subtitleFailure;
+    private int _subtitleFailureCount;
 
     // The events the window reports as toasts, oldest first, so the newest
     // notice sits nearest the window corner.
@@ -222,7 +221,7 @@ public sealed partial class MainViewModel
                 notice.Message = CommandError;
                 break;
             case NoticeKind.SubtitleError:
-                var latest = _subtitleFailures[^1];
+                var latest = _subtitleFailure!;
                 var reason = Text.Get(
                     "subtitles",
                     "failure_" + latest.Reason.ToString().ToLowerInvariant()
@@ -236,7 +235,7 @@ public sealed partial class MainViewModel
                 );
                 notice.Subject = Path.GetFileName(latest.Path);
                 notice.Message =
-                    _subtitleFailures.Count == 1
+                    _subtitleFailureCount == 1
                         ? reason
                         : Text.Format(
                             "errors",
@@ -245,7 +244,7 @@ public sealed partial class MainViewModel
                             Text.Format(
                                 "errors",
                                 "additional_problems",
-                                _subtitleFailures.Count - 1
+                                _subtitleFailureCount - 1
                             )
                         );
                 notice.Action = ShowSubtitleSettings;
@@ -350,7 +349,8 @@ public sealed partial class MainViewModel
     {
         if (_closed)
             return;
-        _subtitleFailures.Add(failure);
+        _subtitleFailure = failure;
+        _subtitleFailureCount++;
         var notice = Notices.FirstOrDefault(shown => shown.Kind == NoticeKind.SubtitleError);
         if (notice is null)
         {
@@ -377,7 +377,8 @@ public sealed partial class MainViewModel
                 ClearError();
                 break;
             case NoticeKind.SubtitleError:
-                _subtitleFailures.Clear();
+                _subtitleFailure = null;
+                _subtitleFailureCount = 0;
                 Notices.Remove(notice);
                 break;
             default:

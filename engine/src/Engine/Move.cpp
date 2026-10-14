@@ -22,6 +22,7 @@ void Engine::State::StartMove(std::vector<std::string> const& ids, std::string c
         return;
     }
     std::map<std::filesystem::path, std::filesystem::path, decltype(&PathBefore)> sources(PathBefore);
+    std::vector<std::filesystem::path> destinations;
     Move moving;
     moving.ids = ids;
     moving.destination = destination;
@@ -50,24 +51,25 @@ void Engine::State::StartMove(std::vector<std::string> const& ids, std::string c
         auto origins = FilePaths(torrent, torrent.facts.savePath);
         moving.holds.insert(moving.holds.end(), logical.begin(), logical.end());
         moving.holds.insert(moving.holds.end(), origins.begin(), origins.end());
-        auto destinations = to;
+        destinations.insert(destinations.end(), to.begin(), to.end());
         destinations.insert(destinations.end(), logical.begin(), logical.end());
-        for (auto const& [otherId, other] : torrents)
+    }
+    std::sort(destinations.begin(), destinations.end(), PathBefore);
+    destinations.erase(std::unique(destinations.begin(), destinations.end(), SamePath), destinations.end());
+    for (auto const& [otherId, other] : torrents)
+    {
+        if (Contains(ids, otherId))
         {
-            if (Contains(ids, otherId))
-            {
-                continue;
-            }
-            auto outside = FilePaths(other);
-            auto actual = FilePaths(other, {}, false);
-            outside.insert(outside.end(), actual.begin(), actual.end());
-            std::sort(outside.begin(), outside.end(), PathBefore);
-            if (std::any_of(destinations.begin(), destinations.end(), [&outside](auto const& path)
-                { return std::binary_search(outside.begin(), outside.end(), path, PathBefore); }))
-            {
-                accepted({ErrorCode::DestinationInUse, other.Name()});
-                return;
-            }
+            continue;
+        }
+        auto outside = FilePaths(other);
+        auto actual = FilePaths(other, {}, false);
+        outside.insert(outside.end(), actual.begin(), actual.end());
+        if (std::any_of(outside.begin(), outside.end(), [&destinations](auto const& path)
+            { return std::binary_search(destinations.begin(), destinations.end(), path, PathBefore); }))
+        {
+            accepted({ErrorCode::DestinationInUse, other.Name()});
+            return;
         }
     }
     auto document = Saved();
@@ -76,7 +78,7 @@ void Engine::State::StartMove(std::vector<std::string> const& ids, std::string c
         document.torrents.at(id).moveDestination = destination;
     }
     move = std::move(moving);
-    changes.Commit(document.ToJson(), [this, accepted](Outcome outcome)
+    changes.Commit([document = std::move(document)] { return document.ToJson(); }, [this, accepted](Outcome outcome)
     {
         if (outcome.error)
         {
@@ -288,7 +290,7 @@ void Engine::State::SaveMove()
                 moved(document.torrents.at(id));
             }
         }
-        changes.Commit(document.ToJson(), [this, moved](Outcome outcome)
+        changes.Commit([document = std::move(document)] { return document.ToJson(); }, [this, moved](Outcome outcome)
         {
             if (outcome.error)
             {
@@ -330,7 +332,7 @@ void Engine::State::FailMove(Problem problem)
                     document.torrents.at(id).moveDestination.clear();
                 }
             }
-            changes.Commit(document.ToJson(), [this, problem](Outcome outcome)
+            changes.Commit([document = std::move(document)] { return document.ToJson(); }, [this, problem](Outcome outcome)
             {
                 if (!outcome.error)
                 {
@@ -364,14 +366,14 @@ void Engine::State::EndMove(std::optional<Problem> problem)
             torrent.notifiedError = problem->detail;
             Notify(NoticeKind::Error, torrent, problem->detail, problem->Code());
         }
-        else
-        {
-            PrepareFiles(torrent);
-        }
     }
     if (problem)
     {
         log.Write("move", "", ToString(problem->kind));
+    }
+    else
+    {
+        ContinueNames();
     }
 }
 

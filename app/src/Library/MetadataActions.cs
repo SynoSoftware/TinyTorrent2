@@ -20,8 +20,8 @@ internal static class MetadataActions
     }
 
     /// <summary>
-    /// The Info page's Fetch button: per-movie providers, then Settings, where
-    /// downloading turns on. The menu is built each time it opens, because
+    /// The Info page's Fetch button: per-movie providers, then provider settings.
+    /// The menu is built each time it opens, because
     /// providers and their availability change after the page is built.
     /// </summary>
     internal static ActionButton Button(Browser browser)

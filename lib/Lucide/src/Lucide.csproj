@@ -5,7 +5,7 @@
     <Platforms>x64;ARM64</Platforms>
     <RootNamespace>Syno</RootNamespace>
     <!-- A WinUI library, so its content reaches every referencing app under Lucide/ and
-         ms-appx:///Lucide/Fonts/lucide.ttf resolves. -->
+         its fonts resolve under ms-appx:///Lucide/Fonts/. -->
     <UseWinUI>true</UseWinUI>
     <WinUISDKReferences>false</WinUISDKReferences>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -18,10 +18,14 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.2705" />
     <PackageReference Include="Microsoft.WindowsAppSDK.WinUI" Version="2.3.9" />
+    <PackageReference Include="Microsoft.WindowsAppSDK.InteractiveExperiences" Version="2.1.9" />
   </ItemGroup>
 
   <!-- Byte-identical to the copy vendored in LabForms and Pharmacy. -->
   <ItemGroup>
     <Content Include="Fonts\lucide.ttf" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="Fonts\twemoji.ttf" />
   </ItemGroup>
 </Project>

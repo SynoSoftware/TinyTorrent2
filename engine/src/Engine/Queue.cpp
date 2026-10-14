@@ -50,9 +50,10 @@ void Engine::State::ApplyQueue()
     queuePending = false;
     std::erase_if(queueOrder, [this](auto const& id) { return !torrents.contains(id) || torrents.at(id).deleted; });
     auto order = CurrentQueue();
+    std::set<std::string> listed(queueOrder.begin(), queueOrder.end());
     for (auto const& id : order)
     {
-        if (!Contains(queueOrder, id))
+        if (listed.insert(id).second)
         {
             queueOrder.push_back(id);
         }
@@ -85,7 +86,7 @@ void Engine::State::Queue(std::vector<std::string> const& ids, QueueMove move, s
     order = Reorder(std::move(order), ids, move, before);
     auto document = Saved();
     document.queueOrder = order;
-    changes.Commit(document.ToJson(), reply, [this, order]
+    changes.Commit([document = std::move(document)] { return document.ToJson(); }, reply, [this, order]
     {
         queueOrder = order;
         ApplyQueue();

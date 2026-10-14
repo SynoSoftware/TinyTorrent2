@@ -8,6 +8,7 @@ namespace Syno.TinyTorrent.Views;
 public sealed partial class SettingsPage
 {
     private readonly List<(SettingsLink Button, string Key, Func<string> Value)> _links = [];
+    private bool _homeQueued;
 
     private void InitializeHome()
     {
@@ -26,7 +27,7 @@ public sealed partial class SettingsPage
         AddLink(HomeAppearance, "home_language", () => Model.Text.LanguageName(Model.Text.Language),
             new(SettingsCategory.Appearance, "language"), Syno.Lucide.Languages);
         AddLink(HomeLibrary, "video_information", () => VideoProvider,
-            new(SettingsCategory.Plugins, "video_information"), Syno.Lucide.Film);
+            new(SettingsCategory.Plugins, "video_provider"), Syno.Lucide.Film);
         _automatic = new Syno.TinyTorrent.Subtitles.Automatic(Model.Text, ReportSubtitles, home: true)
         {
             Margin = new Thickness(16, 0, 16, 0),
@@ -64,6 +65,17 @@ public sealed partial class SettingsPage
         button.Click += async (_, _) => await Open(target);
         panel.Children.Add(button);
         _links.Add((button, key, value));
+    }
+
+    private void QueueHome()
+    {
+        if (_homeQueued || !IsLoaded || Main.Navigation.Current != WindowPage.Settings)
+            return;
+        _homeQueued = DispatcherQueue.TryEnqueue(() =>
+        {
+            _homeQueued = false;
+            RefreshHome();
+        });
     }
 
     private void RefreshHome()

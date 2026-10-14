@@ -25,8 +25,6 @@ public sealed partial class SettingsPage : UserControl
     private bool _refreshing;
     private bool _refreshingProviders;
     private bool _showAdvanced;
-    private FileInfo? _data;
-    private Task<long>? _titles;
     private Task _providerSave = Task.CompletedTask;
     private Task _lookupSave = Task.CompletedTask;
     private bool _lookupEdited;
@@ -48,9 +46,11 @@ public sealed partial class SettingsPage : UserControl
     public event EventHandler<Setting>? FolderRequested;
     public event EventHandler? ProxyRequested;
     internal event EventHandler<SubtitleSupplier>? SupplierRequested;
-    internal event EventHandler<ProviderOption>? KeyRequested;
-    internal event EventHandler<ProviderOption>? DownloadRequested;
-    internal event EventHandler<ProviderOption>? DeleteRequested;
+    internal event EventHandler<ProviderSetup>? KeyRequested;
+    /// <summary>Automatic downloading needs the selected provider's data installed.</summary>
+    internal event EventHandler? AutomaticDataRequested;
+    internal event EventHandler<IDataset>? UpdateRequested;
+    internal event EventHandler<IDataset>? DeleteRequested;
     public event EventHandler? ConnectionRequested;
     internal event EventHandler? LayoutChanged;
 
@@ -65,7 +65,6 @@ public sealed partial class SettingsPage : UserControl
         BodyContent.SizeChanged += Motion.Clip;
         PageHost.SizeChanged += Motion.Clip;
         BodyContent.LayoutUpdated += (_, _) => PositionOutline();
-        BodyContent.GotFocus += OnFocus;
         _outlineTimer.Tick += (_, _) => ClearOutline();
         _pages.Show(PageContent);
         Loaded += OnLoaded;
@@ -80,13 +79,14 @@ public sealed partial class SettingsPage : UserControl
         Model.PropertyChanged += OnModel;
         Main.PropertyChanged += OnMain;
         Main.Library.PropertyChanged += OnProviders;
+        Main.Library.CoverageChanged += OnCoverage;
         RefreshSubtitles();
         _display.TextScaleFactorChanged += OnTextScale;
         _themeSettings = ThemeSettings.CreateForWindowId(XamlRoot.ContentIslandEnvironment.AppWindowId);
         _themeSettings.Changed += OnThemeChanged;
         RefreshIcons();
         RefreshText();
-        Model.RefreshAdapters();
+        _ = Model.RefreshAdapters();
         _ = Model.ObserveRegistration();
     }
 
@@ -107,6 +107,7 @@ public sealed partial class SettingsPage : UserControl
         Model.PropertyChanged -= OnModel;
         Main.PropertyChanged -= OnMain;
         Main.Library.PropertyChanged -= OnProviders;
+        Main.Library.CoverageChanged -= OnCoverage;
         _display.TextScaleFactorChanged -= OnTextScale;
         if (_themeSettings is { } theme)
         {
@@ -150,50 +151,58 @@ public sealed partial class SettingsPage : UserControl
 
     private void OnText(object? sender, EventArgs args) => RefreshText();
 
-    // Video information lists Off first, then the providers in their order;
-    // choosing a provider turns information on with it.
-    private int InformationIndex =>
-        Main.Library.IsEnrichmentEnabled && Main.Library.Option is { } option
-            ? Main.Library.Providers.ToList().IndexOf(option) + 1
-            : 0;
+    private int ProviderIndex => Main.Library.Option is { } option
+        ? Main.Library.Providers.ToList().IndexOf(option) : -1;
 
-    private async void OnVideoInformation(object sender, SelectionChangedEventArgs args)
+    private async void OnProviderChoice(object sender, SelectionChangedEventArgs args)
     {
-        var index = VideoInformation.SelectedIndex;
+        var index = ProviderChoice.SelectedIndex;
         if (
             _refreshingProviders
             || index < 0
-            || !VideoInformation.IsEnabled
-            || _providerSave.IsCompleted && index == InformationIndex
+            || !ProviderChoice.IsEnabled
+            || _providerSave.IsCompleted && index == ProviderIndex
         )
             return;
-        // A provider without its downloaded data asks to download it, and the
-        // finished download turns the provider on; until then the choice stays
-        // as it was.
-        if (index > 0 && Main.Library.Providers[index - 1] is { Dataset.IsInstalled: false } missing)
+        var option = Main.Library.Providers[index];
+        await SaveProvider(Main.Library.SelectProvider(option.ProviderId));
+    }
+
+    private async void OnAutomaticDownload(object sender, RoutedEventArgs args)
+    {
+        if (_refreshingProviders || !AutomaticDownload.IsEnabled
+            || _providerSave.IsCompleted && AutomaticDownload.IsOn == Main.Library.IsAutomaticDownloadEnabled
+            || ProviderChoice.SelectedIndex < 0)
+            return;
+        var option = Main.Library.Providers[ProviderChoice.SelectedIndex];
+        if (AutomaticDownload.IsOn && !PrepareAutomaticDownload(option))
+            return;
+        await SaveProvider(AutomaticDownload.IsOn
+            ? Main.Library.EnableAutomaticDownload(option.ProviderId)
+            : Main.Library.DisableAutomaticDownload());
+    }
+
+    private bool PrepareAutomaticDownload(ProviderOption option)
+    {
+        if (option is { Dataset.IsInstalled: false })
         {
             RefreshProviders();
             if (Main.Library.CanDownload)
-                DownloadRequested?.Invoke(this, missing);
-            return;
+                AutomaticDataRequested?.Invoke(this, EventArgs.Empty);
+            return false;
         }
-        // A provider with no usable key asks for the person's own, and saving
-        // it turns the provider on; until then the choice stays as it was.
-        if (
-            index > 0
-            && Main.Library.Providers[index - 1] is { Access: Access.Key } chosen
-            && !chosen.HasBuiltInKey
-            && !Main.Library.HasKey(chosen.ProviderId)
-        )
+        if (option is { Access: Access.Key, HasBuiltInKey: false }
+            && !Main.Library.HasKey(option.ProviderId))
         {
             RefreshProviders();
-            KeyRequested?.Invoke(this, chosen);
-            return;
+            KeyRequested?.Invoke(this, new(option, true));
+            return false;
         }
-        var save =
-            index == 0
-                ? Main.Library.Disable()
-                : Main.Library.Enable(Main.Library.Providers[index - 1].ProviderId);
+        return true;
+    }
+
+    private async Task SaveProvider(Task save)
+    {
         _providerSave = save;
         try
         {
@@ -212,23 +221,7 @@ public sealed partial class SettingsPage : UserControl
     private void OnProviderKey(object sender, RoutedEventArgs args)
     {
         if (Main.Library.Option is { Access: Access.Key } option)
-            KeyRequested?.Invoke(this, option);
-    }
-
-    // Updating asks first and states the installed data's age, so the person
-    // can judge whether the new download is worth its size.
-    private void OnDataDownload(object sender, RoutedEventArgs args)
-    {
-        if (Main.Library.DataProvider is { Dataset.IsInstalled: true } option)
-            DownloadRequested?.Invoke(this, option);
-        else
-            _ = Main.DownloadData();
-    }
-
-    private void OnDataDelete(object sender, RoutedEventArgs args)
-    {
-        if (Main.Library.DataProvider is { } option)
-            DeleteRequested?.Invoke(this, option);
+            KeyRequested?.Invoke(this, new(option, false));
     }
 
     private void OnProviderInformation(object sender, RoutedEventArgs args)
@@ -405,32 +398,30 @@ public sealed partial class SettingsPage : UserControl
     private void OnMain(object? sender, PropertyChangedEventArgs args)
     {
         // Preserve the draft when shared settings refresh during an edit.
-        if (args.PropertyName is nameof(MainViewModel.LookupLimit) or ""
+        if (args.PropertyName is nameof(MainViewModel.LookupLimit)
             && _lookupSave.IsCompleted && !_lookupEdited && LookupLimit is not null
             && TextEditor.Find(LookupLimit)?.FocusState is null or FocusState.Unfocused)
             RefreshLookupLimit();
-        if (args.PropertyName is nameof(MainViewModel.CurrentStatus) or nameof(MainViewModel.Page) or "")
-            RefreshCoverage();
         if (args.PropertyName is nameof(MainViewModel.Page) or nameof(MainViewModel.Subtitles) or "")
             RefreshSubtitles();
         if (args.PropertyName is nameof(MainViewModel.CurrentStatus) or nameof(MainViewModel.Page)
             or nameof(MainViewModel.Subtitles) or nameof(MainViewModel.FreeSpaceStatus)
-            or nameof(MainViewModel.ShowsFreeSpace) or "")
-            RefreshHome();
+            or nameof(MainViewModel.ShowsFreeSpace) or nameof(MainViewModel.SessionTotals)
+            or nameof(MainViewModel.LifetimeTotals) or nameof(MainViewModel.Torrents)
+            or nameof(MainViewModel.LimitsSummary) or nameof(MainViewModel.ScheduleSummary)
+            or nameof(MainViewModel.LimitsNow) or nameof(MainViewModel.IncomingStatus) or "")
+            QueueHome();
     }
 
     private void OnProviders(object? sender, PropertyChangedEventArgs args)
     {
-        if (args.PropertyName == nameof(Main.Library.Status))
-            RefreshHeader();
-        if (args.PropertyName is nameof(Main.Library.IsEnrichmentEnabled) or nameof(Main.Library.Providers) or "")
-            RefreshHome();
+        if (args.PropertyName is nameof(Main.Library.Status) or nameof(Main.Library.IsAutomaticDownloadEnabled)
+            or nameof(Main.Library.Providers) or "")
+            QueueHome();
         if (args.PropertyName is nameof(Main.Library.IsAvailable) or "")
             RefreshCoverage();
         if (args.PropertyName is nameof(Main.Library.Providers) or "")
             RefreshProviders();
-        else if (args.PropertyName is nameof(Main.Library.DataWork) or nameof(Main.Library.CanDownload))
-            RefreshData();
     }
 
     private void RefreshLookupLimit()
@@ -446,101 +437,24 @@ public sealed partial class SettingsPage : UserControl
 
     private void RefreshProviders()
     {
-        if (VideoInformation is null)
+        if (ProviderChoice is null)
             return;
         ProviderInformation.IsEnabled = Main.Library.Option is not null;
-        // The key button belongs to the provider the box shows, so it hides
-        // while information is off.
         ProviderKey.Visibility =
-            InformationIndex > 0 && Main.Library.Option is { Access: Access.Key }
+            Main.Library.Option is { Access: Access.Key }
                 ? Visibility.Visible
                 : Visibility.Collapsed;
-        var dataset = Main.Library.DataProvider?.Dataset;
-        _data = dataset?.Inspect();
-        _titles = _data is null ? null : dataset?.CountTitles();
-        if (_titles is { IsCompleted: false } counting)
-        {
-            ShowTitles(counting);
-        }
-        RefreshData();
+        // The row has nothing to manage until Library attaches.
+        ImdbRow.Show(Main.Library.DataProvider is null ? null : Main.Library, Model.Text);
         if (!_providerSave.IsCompleted)
             return;
         _refreshingProviders = true;
-        VideoInformation.ItemsSource = Main
+        ProviderChoice.ItemsSource = Main
             .Library.Providers.Select(option => option.Name)
-            .Prepend(Model.OffText)
             .ToArray();
-        VideoInformation.SelectedIndex = InformationIndex;
+        ProviderChoice.SelectedIndex = ProviderIndex;
+        AutomaticDownload.IsOn = Main.Library.IsAutomaticDownloadEnabled;
         _refreshingProviders = false;
-    }
-
-    private void RefreshData()
-    {
-        if (Plugins is null)
-            return;
-        // The row has nothing to manage until Library attaches.
-        if (Main.Library.DataProvider is not { } option)
-        {
-            ImdbRow.Visibility = Visibility.Collapsed;
-            return;
-        }
-        ImdbRow.Visibility = Visibility.Visible;
-        var section = option.ProviderId;
-        var progress = Main.Library.DataWork;
-        var focused = XamlRoot is null ? null : FocusManager.GetFocusedElement(XamlRoot) as Control;
-        var focus = focused?.FocusState ?? FocusState.Unfocused;
-        var workFocused = DataWork.HasFocus;
-        ImdbRow.Description = _data is { } installed
-            ? DescribeData(section, installed)
-            : Model.Text.Get(section, "data_hint");
-        DataDownload.Text = Model.Text.Get(section, _data is null ? "download" : "update");
-        ToolTipService.SetToolTip(
-            DataDownload,
-            Model.Text.Get(section, _data is null ? "download_tip" : "update_tip")
-        );
-        DataDownload.IsEnabled = Main.Library.CanDownload;
-        DataDownload.Visibility = progress is null ? Visibility.Visible : Visibility.Collapsed;
-        DataDelete.Visibility =
-            progress is null && _data is not null ? Visibility.Visible : Visibility.Collapsed;
-        DataWork.Show(progress, Model.Text);
-        if (focused is not null
-            && (workFocused || ReferenceEquals(focused, DataDownload) || ReferenceEquals(focused, DataDelete))
-            && (focused.Visibility == Visibility.Collapsed || !focused.IsEnabled || workFocused && !DataWork.CanFocus))
-        {
-            if (progress is null && DataDownload.IsEnabled)
-                DataDownload.Focus(focus);
-            else if (!DataWork.FocusCancel(focus))
-                ImdbRow.Focus(FocusState.Programmatic);
-        }
-    }
-
-    // The age is in whole days, as the update dialog states it.
-    private string DescribeData(string section, FileInfo installed)
-    {
-        var size = Model.Text.Bytes(installed.Length);
-        var days = (int)(DateTime.UtcNow - installed.LastWriteTimeUtc).TotalDays;
-        var age = days == 0 ? Model.Text.Get(section, "age_new") : Model.Text.FormatCount(section, "age", days);
-        return _titles is { IsCompletedSuccessfully: true } titles
-            ? Model.Text.Format(section, "data_titles", Model.Text.FormatCount(section, "title_count", titles.Result), size, age)
-            : Model.Text.Format(section, "data_summary", size, age);
-    }
-
-    // Counting reads the whole data, so the row adds the count when it
-    // arrives. Data that cannot be read keeps its size and age.
-    private async void ShowTitles(Task<long> titles)
-    {
-        try
-        {
-            await titles;
-        }
-        catch (Library.ProviderException)
-        {
-            return;
-        }
-        if (titles == _titles)
-        {
-            RefreshData();
-        }
     }
 
     private void OnTextScale(UISettings sender, object args) =>
@@ -567,7 +481,7 @@ public sealed partial class SettingsPage : UserControl
                 && !ReferenceEquals(previous, choice.SelectedItem);
         }
         _refreshing = false;
-        RefreshHome();
+        QueueHome();
         if (unitsChanged)
             AlignCategory();
     }
@@ -584,6 +498,7 @@ public sealed partial class SettingsPage : UserControl
     internal void RefreshText()
     {
         RefreshProviders();
+        CityRow?.RefreshText();
         RefreshProtection();
         if (!_lookupEdited)
             RefreshLookupLimit();
@@ -701,7 +616,7 @@ public sealed partial class SettingsPage : UserControl
         Categories.SelectedItem = Main.Navigation.Current == WindowPage.Connection ? LimitsCategory : _category ?? HomeCategory;
         _refreshing = false;
         if (await Main.Navigation.SelectCategory(target.Category))
-            Navigate(target, focus: true);
+            FocusTarget(target);
     }
 
     private async void OnCategoryInvoked(NavigationView sender, NavigationViewItemInvokedEventArgs args)
@@ -718,7 +633,7 @@ public sealed partial class SettingsPage : UserControl
         }
         if (Main.Navigation.Current == WindowPage.Connection && args.InvokedItemContainer == LimitsCategory
             && await Main.Navigation.SelectCategory(SettingsCategory.Limits))
-            Navigate(new(SettingsCategory.Limits), focus: true);
+            FocusTarget(new(SettingsCategory.Limits));
     }
 
     internal void ShowConnection(ConnectionPage? page, bool animate = true)
@@ -730,7 +645,7 @@ public sealed partial class SettingsPage : UserControl
         if (!ReferenceEquals(_pages.Current, content))
             _motion.Stop();
         if (animate)
-            _pages.Show(content, page is null ? -1 : 1);
+            _pages.Show(content, forward: page is not null);
         else
             _pages.Replace(content);
         _refreshing = true;
@@ -754,32 +669,48 @@ public sealed partial class SettingsPage : UserControl
         else
             _indexPosition = Body.VerticalOffset;
         _category = next;
-        var content = LoadCategory();
-        RefreshText();
-        UpdateDisclosure();
         var nextIndex = _category is null ? -1 : Categories.MenuItems.IndexOf(_category);
-        // Only the active category contributes to the restored scroll extent.
-        foreach (var panel in CategoryPanels.Append(IndexContent).OfType<FrameworkElement>())
-            panel.Visibility = ReferenceEquals(panel, content) ? Visibility.Visible : Visibility.Collapsed;
-        UpdateLayout();
-        RefreshCoverage();
-        AlignCategory();
-        var position = _category is { } item ? _positions.GetValueOrDefault(item) : _indexPosition;
-        Body.ChangeView(null, position, null, true);
         if (animate && !_pages.IsActive)
-            _motion.Play(PageContent, nextIndex >= previousIndex ? 24 : -24);
+            _motion.Enter(PageContent, forward: nextIndex >= previousIndex, update: UpdateContent);
         else
+        {
             _motion.Stop();
+            UpdateContent();
+        }
+
+        void UpdateContent()
+        {
+            var content = LoadCategory(out var loaded);
+            if (loaded)
+            {
+                RefreshText();
+                UpdateDisclosure();
+            }
+            else
+            {
+                RefreshSubtitles();
+                RefreshHome();
+            }
+            // Only the active category contributes to the restored scroll extent.
+            foreach (var panel in CategoryPanels.Append(IndexContent).OfType<FrameworkElement>())
+                panel.Visibility = ReferenceEquals(panel, content) ? Visibility.Visible : Visibility.Collapsed;
+            UpdateLayout();
+            RefreshCoverage();
+            AlignCategory();
+            var position = _category is { } item ? _positions.GetValueOrDefault(item) : _indexPosition;
+            Body.ChangeView(null, position, null, true);
+        }
     }
 
     private IEnumerable<FrameworkElement> CategoryPanels =>
         new FrameworkElement?[] { General, Transfers, Network, Limits, Appearance, Advanced, Schedule, Plugins }
             .OfType<FrameworkElement>();
 
-    private FrameworkElement LoadCategory()
+    private FrameworkElement LoadCategory(out bool loaded)
     {
         var name = _category is null ? nameof(IndexContent) : (string)_category.Tag;
         var existing = _category is null ? IndexContent : CategoryPanels.FirstOrDefault(panel => panel.Name == name);
+        loaded = existing is null;
         if (existing is not null)
             return existing;
         var content = (FrameworkElement)FindName(name);
@@ -813,7 +744,13 @@ public sealed partial class SettingsPage : UserControl
         }
         else if (_category == PluginsCategory)
         {
-            DataWork.FocusInvalidated += (_, _) => ImdbRow.Focus(FocusState.Programmatic);
+            foreach (var row in new[] { ImdbRow, CityRow })
+            {
+                row.DownloadRequested += (_, dataset) => _ = Main.DownloadData(dataset);
+                row.UpdateRequested += (_, dataset) => UpdateRequested?.Invoke(this, dataset);
+                row.DeleteRequested += (_, dataset) => DeleteRequested?.Invoke(this, dataset);
+            }
+            CityRow.Show(Main.Geolocation, Model.Text);
             var subtitles = new SubtitleSettings(Model.Text, Main.RetrySubtitles, ReportSubtitles);
             subtitles.SupplierRequested += (_, supplier) => SupplierRequested?.Invoke(this, supplier);
             SubtitlesContent.Content = subtitles;
@@ -953,10 +890,10 @@ public sealed partial class SettingsPage : UserControl
     internal async Task Open(SettingTarget target)
     {
         if (await Main.Navigation.Navigate(target))
-            Navigate(target, focus: true);
+            FocusTarget(target);
     }
 
-    internal void Navigate(SettingTarget target, bool focus = false, bool animate = true)
+    internal void Navigate(SettingTarget target, bool animate = true)
     {
         ClearOutline();
         if (target.Category is not { } category)
@@ -965,16 +902,6 @@ public sealed partial class SettingsPage : UserControl
             Categories.SelectedItem = HomeCategory;
             _refreshing = false;
             ShowCategory(animate);
-            if (!focus)
-                return;
-            DispatcherQueue.TryEnqueue(
-                Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,
-                () =>
-                {
-                    if (Main.Navigation.Current == WindowPage.Settings && Main.Navigation.Settings == target)
-                        Heading.Focus(FocusState.Programmatic);
-                }
-            );
             return;
         }
         if (category == SettingsCategory.Advanced)
@@ -983,8 +910,10 @@ public sealed partial class SettingsPage : UserControl
         Categories.SelectedItem = CategoryItems[(int)category];
         _refreshing = false;
         ShowCategory(animate);
-        if (!focus)
-            return;
+    }
+
+    private void FocusTarget(SettingTarget target)
+    {
         Reveal(target);
         DispatcherQueue.TryEnqueue(
             Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,
@@ -998,7 +927,7 @@ public sealed partial class SettingsPage : UserControl
                     _scheduler?.FocusAdd();
                     return;
                 }
-                if (target.Name is null)
+                if (target.Category is null || target.Name is null)
                 {
                     Heading.Focus(FocusState.Programmatic);
                     return;
@@ -1062,7 +991,8 @@ public sealed partial class SettingsPage : UserControl
             "connection_setup" => CurrentProfiles?.Field("connection_setup"),
             "language" => Languages,
             "theme" => _themes?.Choices,
-            "video_information" => VideoInformation,
+            "video_provider" => ProviderChoice,
+            "video_information" => AutomaticDownload,
             "lookup_limit" => LookupLimit,
             "subtitle_automatic"
             or "subtitle_extras"
@@ -1269,3 +1199,5 @@ public sealed partial class SettingsPage : UserControl
         }
     }
 }
+
+internal sealed record ProviderSetup(ProviderOption Provider, bool EnableAutomaticDownload);

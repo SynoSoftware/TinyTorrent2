@@ -146,8 +146,7 @@ public sealed partial class MainWindow
                 source = "existing pipe, verified fixture files, production SQLite",
             }
         );
-        // An online provider looks up videos in the background once it is
-        // on, so the review keeps video information off and sends no requests.
+        // Automatic downloads stay off so the capture sends no provider requests.
         Model.Library.Configuration = LibraryConfiguration.Videos;
         await CaptureReady(Model.Library, () => Model.Library.Rows.Count == 2);
         await Model.Navigation.Navigate(WindowPage.Torrents);
@@ -166,7 +165,7 @@ public sealed partial class MainWindow
             var sections = CaptureElements(InspectorContent)
                 .OfType<SelectorBar>()
                 .Single(section =>
-                    AutomationProperties.GetAutomationId(section) == "InspectorSections"
+                    AutomationProperties.GetAutomationId(section) == "LibrarySections"
                 );
             var information = sections.Items.Single(item =>
                 AutomationProperties.GetAutomationId(item) == "LibraryInformation"
@@ -565,7 +564,7 @@ public sealed partial class MainWindow
         var sections = CaptureElements(InspectorContent)
             .OfType<SelectorBar>()
             .Single(section =>
-                AutomationProperties.GetAutomationId(section) == "InspectorSections"
+                AutomationProperties.GetAutomationId(section) == "LibrarySections"
             );
         var selected = sections.SelectedItem;
         try
@@ -728,8 +727,8 @@ public sealed partial class MainWindow
             return engine.PrivateMemorySize64 + window.PrivateMemorySize64;
         }
         var baseline = PrivateBytes();
-        var sourceReadyAtBaseline = Model.Library.IsAvailable;
-        await CaptureReady(Model.Library, () => Model.Library.IsAvailable, TimeSpan.FromMinutes(3));
+        var sourceReadyAtBaseline = Model.Library.IsReady;
+        await CaptureReady(Model, () => Model.Library.IsReady, TimeSpan.FromMinutes(3));
         source.Stop();
         var titles = await Model.Library.PrepareTiming();
         if (titles != 1000)

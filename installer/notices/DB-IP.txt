@@ -1,0 +1,7 @@
+IP Geolocation by DB-IP
+https://db-ip.com
+
+TinyTorrent installs the DB-IP IP to Country Lite database and, when the
+person downloads it, the DB-IP IP to City Lite database. Both are licensed
+under the Creative Commons Attribution 4.0 International License:
+https://creativecommons.org/licenses/by/4.0/

@@ -106,7 +106,9 @@ public sealed partial class MainWindow : Window
                 );
         Model.SnapshotApplied += (_, change) =>
         {
-            if (!change.Published)
+            // Project already publishes changes to the ascending queue order.
+            if (!change.Published && change.RowsChanged && Torrents.Sort is { } sort
+                && (sort.Column != QueueColumn || sort.Direction != Syno.TableView.SortDirection.Ascending))
                 Torrents.RefreshView();
         };
         Model.RevealRequested += async (_, torrents) =>

@@ -47,6 +47,32 @@ _Avoid_: download, when referring to checking existing bytes.
 **Peer**: another BitTorrent client exchanging a torrent's pieces with
 TinyTorrent. Peers include seeds and leechers.
 
+**Handshake**: the initial BitTorrent exchange that identifies the torrent and
+peer before ordinary piece exchange begins. An open connection can still be
+waiting for its handshake.
+
+**Choke**: a peer's decision to withhold piece uploads to the other side of a
+connection. Each side makes its own decision independently of whether it wants
+pieces from the other.
+
+**Tracker**: a service that introduces peers sharing a torrent. Its completed
+download count is the completions it reports, not the number currently downloading.
+
+**Web seed**: an HTTP or HTTPS source of a torrent's content. It provides
+downloads without participating in BitTorrent piece uploads or choke negotiation.
+
+**Peer location**: the approximate country and, when available, coordinates
+and city that a peer's address resolves to on this computer.
+_Avoid_: geolocation, in product text.
+
+**Estimated distribution**: a country's measured peer activity spread over
+representative populated regions. These are illustrative destinations, not
+observed peer coordinates or network routes.
+
+**City data**: DB-IP's address-to-city data, downloaded when the person asks
+and kept on this computer as a replaceable copy, like IMDb data. The country
+data that resolves flags is installed with the app.
+
 **Seed**: a torrent or a peer with the entire payload available for sharing,
 rather than only its wanted files complete.
 
@@ -192,9 +218,18 @@ the term is metadata; torrent metadata describes the download's contents.
 **Video information**: Library metadata about a movie, series or episode,
 from the provider.
 
-**Provider**: what the person chose to supply video information: an online
-service, such as TMDB, or IMDb, which answers from IMDb data.
+**Automatic video information downloads**: background provider work allowed by
+the saved setting. Off stops only this work; saved video information, manual Fetch
+metadata and Refresh metadata remain available, including accepted manual work.
+_Avoid_: enabling or disabling video information, Library or the provider.
+
+**Provider**: an online service supplying video information, such as TMDB, or
+IMDb, which answers from IMDb data.
 _Avoid_: source, which means a torrent file or magnet.
+
+**Default provider**: the saved provider choice for automatic work and the
+starting choice for Fetch metadata. Selecting it preserves automatic download
+intent. Refresh metadata uses the provider saved with that file's metadata.
 
 **IMDb data**: IMDb's movie and TV data, downloaded when the person asks and
 kept on this computer as a replaceable copy. The IMDb provider answers from it
@@ -292,9 +327,9 @@ _Avoid_: result, when naming an operation's outcome.
 **Snapshot**: a coherent, completed copy of engine state for presentation.
 _Avoid_: observation, when it means the same copy.
 
-**Detail**: what one inspector section shows about one torrent, such as its
-peers or pieces. The window reads it while the section is visible; snapshots
-do not include it.
+**Detail**: what one inspector section shows about a torrent, such as its peers
+or pieces, or across torrents when no torrent is selected. It is separate from
+the torrent list's snapshot.
 
 **Refresh interval**: how often the product window requests current engine data.
 It does not determine how often the engine records speed history.

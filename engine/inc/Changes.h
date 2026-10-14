@@ -18,11 +18,12 @@ public:
     Changes(Store& store, std::filesystem::path file, Log& log);
     // Returns false, and queues nothing, when the queue is full.
     bool Queue(std::function<void()> change);
-    // Writes the document; a change calls this at most once.
-    void Commit(Json document, std::function<void(Outcome)> completion);
+    // Encodes the captured document on the storage worker; a change calls
+    // this at most once.
+    void Commit(std::function<Json()> encode, std::function<void(Outcome)> completion);
     // Commits a command's change. Only after the write succeeds does `apply`
     // change the state to match; its result is the reply.
-    void Commit(Json document, Reply reply, std::function<Json()> apply);
+    void Commit(std::function<Json()> encode, Reply reply, std::function<Json()> apply);
     bool IsIdle() const;
 
 private:

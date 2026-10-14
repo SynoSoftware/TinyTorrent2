@@ -392,6 +392,13 @@ The automatic disk policy is recorded in [engine settings](engine.md#disk-write-
 Runtime packages need a concrete job; test frameworks and build tools stay out
 of the shipped dependency graph.
 
+The app build fetches DB-IP's free country data once a month into
+`artifacts/data/` and copies it beside the app, so every build resolves peer
+flags from data at most a month old without a copy in git. The fetch is the
+one network step an ordinary build takes; without network it uses the newest
+cached month, and fails only when no copy exists
+([peer location](peer-location.md)).
+
 Remove unnecessary retained work and duplicate data before constraining useful
 transfer buffers or peer activity. Bound queues and retained data at their existing
 owners. Each worker has identifiable blocking work and an idle wait. DLLs, shared
@@ -472,7 +479,10 @@ reuses compatible installed ones, and fetches missing ones from Microsoft's
 official distribution. Prerequisite installation can need elevation or be blocked by machine policy;
 report that outcome instead of promising every machine a no-admin installation.
 Cancelling a prerequisite must leave a retryable installation, not launch a
-broken window. Updating TinyTorrent does not redownload an already compatible runtime.
+broken window. Setup verifies the installed runtime after its installer finishes
+and offers a required restart before replacing application files, so a vendor
+exit code alone does not decide whether the application can run.
+Updating TinyTorrent does not redownload an already compatible runtime.
 
 First installation offers opening torrents with TinyTorrent, selected by
 default, and starting at sign-in, not selected by default, because people do not
@@ -484,8 +494,12 @@ the engine's [registration actions](engine.md#windows-registration);
 Settings calls the same owner. Upgrades preserve disabled registrations and
 existing default-app choices without repeating setup prompts. The installer owns
 the engine-targeting shortcut and Installed apps entry, not a second handler writer.
-Uninstall requests coordinated Exit, unregisters TinyTorrent, and removes its
-program files. It leaves downloads, saved engine data, and shared runtimes intact.
+Optional registration failures do not turn a usable installation into a failed
+one; Settings can retry those choices through the same engine owner.
+Uninstall requests coordinated Exit, attempts both registration cleanups, and
+removes its program files. Missing program files and failed optional cleanup do
+not trap the user in an installation they cannot remove. It leaves downloads,
+saved engine data, and shared runtimes intact.
 
 The installer does not silently add firewall rules or change network profiles.
 [Windows Firewall](https://learn.microsoft.com/en-us/windows/security/operating-system-security/network-security/windows-firewall/rules)
@@ -496,7 +510,10 @@ inbound access is blocked. Port mapping does not bypass the host firewall.
 Updates use the same release installer, after the coordinated
 [Exit](engine.md#closing-and-shutdown). When TinyTorrent was running before the
 update, the installer starts it again, so downloads do not stay stopped until
-the person remembers to open it. Stage and validate a complete release
+the person remembers to open it. If the installed executable cannot start,
+Setup uses the bundled engine to request Exit; a running application's refused
+Exit still stops replacement to protect unfinished input. Windows Restart Manager
+handles remaining file locks. Stage and validate a complete release
 before replacing it; never launch an engine/window pair from different releases.
 Keep an interrupted update recoverable without modifying downloads.
 

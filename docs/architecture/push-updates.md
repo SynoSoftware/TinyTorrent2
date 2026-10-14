@@ -40,7 +40,8 @@ sees three things because of that:
   `detail` result when the section's queries finish.
 - The pipe keeps one latest-wins slot per connection for `detail`. Replies and
   control messages go first. The reliable output queue closes the connection
-  after four unsent messages, so pushed updates must never enter it.
+  after one notice batch plus space for replies and controls, so pushed updates
+  must never enter it.
 - `refresh_interval` exists on both sides: a window preference and an engine
   setting (Settings.cpp), 1,000 to 10,000 ms. The protocol says it changes
   window demand only.

@@ -11,8 +11,7 @@ namespace Syno.TinyTorrent.Views;
 
 public sealed partial class SettingsPage
 {
-    private string VideoProvider => Main.Library.IsEnrichmentEnabled && Main.Library.Option is { } option
-        ? option.Name : Model.OffText;
+    private string VideoProvider => Main.Library.Option?.Name ?? "—";
     private TextBlock Heading => _category is null ? IdentityTitle : PageTitle;
 
     private void RefreshHeader()
@@ -54,7 +53,12 @@ public sealed partial class SettingsPage
             var artwork = category == SettingsCategory.Limits ? "speed" : category.Value.ToString().ToLowerInvariant();
             var uri = new Uri("ms-appx:///Assets/Settings/" + artwork + ".png");
             if (PageArtwork.Source is not BitmapImage image || image.UriSource != uri)
-                PageArtwork.Source = new BitmapImage(uri);
+                PageArtwork.Source = new BitmapImage
+                {
+                    DecodePixelType = DecodePixelType.Logical,
+                    DecodePixelWidth = (int)PageArtwork.Width,
+                    UriSource = uri,
+                };
         }
 
         (string Glyph, string Caption, string Value) first;

@@ -161,7 +161,7 @@ void Engine::State::CommitEdit(std::string const& id,
     }
     auto document = Saved();
     document.torrents.at(id) = facts;
-    changes.Commit(document.ToJson(), [apply, reply](Outcome outcome)
+    changes.Commit([document = std::move(document)] { return document.ToJson(); }, [apply, reply](Outcome outcome)
     {
         if (!outcome.error)
         {

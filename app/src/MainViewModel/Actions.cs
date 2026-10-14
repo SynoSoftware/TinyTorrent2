@@ -15,6 +15,9 @@ public sealed partial class MainViewModel
     public bool HasIncoming { get; private set; }
     private string _externalIpv4 = string.Empty;
     private string _externalIpv6 = string.Empty;
+    internal string PublicAddress => _connected
+        ? _externalIpv4.Length > 0 ? _externalIpv4 : _externalIpv6
+        : string.Empty;
     public bool ShowsExternalIp => Settings.ShowExternalIp.IsOn;
     public string ExternalIp =>
         !_connected || _externalIpv4.Length + _externalIpv6.Length == 0
@@ -77,6 +80,18 @@ public sealed partial class MainViewModel
     public ICommand LimitSpeed { get; }
     public SpeedLimit SpeedLimit { get; }
     public Inspector Inspector { get; }
+    private bool _minimized;
+    internal bool IsMinimized
+    {
+        get => _minimized;
+        set
+        {
+            if (_minimized == value)
+                return;
+            _minimized = value;
+            RefreshInspector();
+        }
+    }
     private bool _inspectorOpen;
     public bool HasInspector
     {
@@ -248,30 +263,35 @@ public sealed partial class MainViewModel
             return;
         }
         showDialog |= AddDraft.Sources.Any(source => Settings.AddPreference(source.Source).ConfirmedOn);
-        await using var addition = showDialog ? null : AddDraft.BeginAddition();
-        await AddDraft.PrepareAll();
-        if (IsAddOpen || AddDraft.IsAdditionCancelled)
-            return;
-        // A torrent already in the list needs no Add dialog: Submit shows it where
-        // it is, and only trackers it lacks are worth a question.
-        if (AddDraft.Sources.All(source => source.IsDuplicate))
+        var merge = false;
+        await using (var addition = AddDraft.BeginAddition())
         {
-            if (AddDraft.Sources.Any(source => source.MergeAvailable))
-                MergeRequested?.Invoke(this, EventArgs.Empty);
-            else if (await AddDraft.Submit())
-                Announce(Text.Get("errors", "duplicate"));
-            return;
+            await AddDraft.PrepareAll();
+            if (IsAddOpen || AddDraft.IsAdditionCancelled)
+                return;
+            // A torrent already in the list needs no Add dialog: Submit shows it where
+            // it is, and only trackers it lacks are worth a question.
+            if (AddDraft.Sources.All(source => source.IsDuplicate))
+            {
+                merge = AddDraft.Sources.Any(source => source.MergeAvailable);
+                if (!merge)
+                {
+                    if (await AddDraft.Submit())
+                        Announce(Text.Get("errors", "duplicate"));
+                    return;
+                }
+            }
+            else if (!showDialog)
+            {
+                if (!AddDraft.Sources.Any(source => source.MergeAvailable))
+                    await AddDraft.Submit();
+                if (AddDraft.IsAdditionCancelled)
+                    return;
+            }
         }
-        if (showDialog)
-        {
-            AddRequested?.Invoke(this, EventArgs.Empty);
-            return;
-        }
-        if (!AddDraft.Sources.Any(source => source.MergeAvailable))
-            await AddDraft.Submit();
-        if (AddDraft.IsAdditionCancelled)
-            return;
-        if (AddDraft.Sources.Count > 0)
+        if (merge)
+            MergeRequested?.Invoke(this, EventArgs.Empty);
+        else if (AddDraft.Sources.Count > 0)
             AddRequested?.Invoke(this, EventArgs.Empty);
     }
 
@@ -490,7 +510,8 @@ public sealed partial class MainViewModel
             return;
         try
         {
-            var detail = await Detail(_selected[0]);
+            var detail = await _client.Send(
+                "torrent", new { torrent_id = _selected[0].TorrentId, view = "general" });
             await Copy(
                 hashes
                     ? string.Join(
@@ -550,7 +571,7 @@ public sealed partial class MainViewModel
 
     private void RefreshInspector()
     {
-        Inspector.SetVisible(HasInspector && !IsInspectorCompact && Page == WindowPage.Torrents);
+        Inspector.SetVisible(!IsMinimized && HasInspector && !IsInspectorCompact && Page == WindowPage.Torrents);
         Library.WatchInspector(HasInspector && !IsInspectorCompact && Page == WindowPage.Library);
     }
 }

@@ -26,6 +26,8 @@ public sealed class AddDraft : IDraft
     private CancellationTokenSource? _polling;
     private Task _poller = Task.CompletedTask;
     private Task _pass = Task.CompletedTask;
+    private Task _spaceReader = Task.CompletedTask;
+    private long? _space;
     private readonly FileSelection _emptyFiles;
     private AdditionPhase _phase;
     private Addition? _addition;
@@ -64,6 +66,8 @@ public sealed class AddDraft : IDraft
             if (_destination == value)
                 return;
             _destination = value;
+            _space = null;
+            RefreshSpace();
             if (IsDestinationError(_failure))
                 _failure = null;
             foreach (var source in Sources)
@@ -143,12 +147,12 @@ public sealed class AddDraft : IDraft
     // Magnet text not yet accepted becomes one more source when Add runs.
     private int SubmitCount => Sources.Count + (Magnet.Trim().Length > 0 ? 1 : 0);
     public string Space =>
-        DiskSpace.Read(_destination) is not { } free ? string.Empty
+        _space is not { } free ? string.Empty
         : Needed > free
             ? _strings.Format("add", "short", _strings.Bytes(Needed), _strings.Bytes(free))
         : _strings.Format("add", "free", _strings.Bytes(free));
-    public bool HasSpace => DiskSpace.Read(_destination) is not null;
-    public bool LacksSpace => DiskSpace.Read(_destination) is { } free && Needed > free;
+    public bool HasSpace => _space is not null;
+    public bool LacksSpace => _space is { } free && Needed > free;
     private long Needed =>
         Sources
             .Where(source => source.MetadataReady && !source.IsDuplicate)
@@ -352,8 +356,10 @@ public sealed class AddDraft : IDraft
             var remaining = _accepted.Where(_draft.Sources.Contains).ToArray();
             _observation = _observation with
             {
-                Progress = new WorkProgress.Fraction(_accepted.Length - remaining.Length,
-                    _accepted.Length, WorkUnit.Files),
+                Progress = _draft._phase == AdditionPhase.Preparing
+                    ? new WorkProgress.Unknown()
+                    : new WorkProgress.Fraction(_accepted.Length - remaining.Length,
+                        _accepted.Length, WorkUnit.Files),
                 Execution = submitting is not null && remaining.All(source => source == submitting)
                     ? new WorkExecution.Finishing() : new WorkExecution.Running(),
             };
@@ -624,6 +630,7 @@ public sealed class AddDraft : IDraft
         if (_polling is not null)
             return;
         _polling = new CancellationTokenSource();
+        RefreshSpace();
         _poller = Poll(_poller, _polling);
     }
 
@@ -631,7 +638,30 @@ public sealed class AddDraft : IDraft
     {
         _polling?.Cancel();
         _polling = null;
+        _space = null;
         _client.Withdraw(Consumer.Draft);
+    }
+
+    private void RefreshSpace()
+    {
+        if (_polling is not null && _spaceReader.IsCompleted)
+            _spaceReader = ReadSpace();
+    }
+
+    private async Task ReadSpace()
+    {
+        while (_polling is { } polling)
+        {
+            var destination = _destination;
+            var free = await Task.Run(() => DiskSpace.Read(destination));
+            if (_polling != polling || _destination != destination)
+                continue;
+            _space = free;
+            PropertyChanged?.Invoke(this, new(nameof(Space)));
+            PropertyChanged?.Invoke(this, new(nameof(HasSpace)));
+            PropertyChanged?.Invoke(this, new(nameof(LacksSpace)));
+            return;
+        }
     }
 
     // Starts after the previous poller ends, so two never overlap. Each pass
@@ -696,6 +726,7 @@ public sealed class AddDraft : IDraft
                 source.Refresh();
             }
         }
+        RefreshSpace();
         Refresh();
     }
 
@@ -745,7 +776,11 @@ public sealed class AddDraft : IDraft
         if (HasDraft)
             return;
         if (usesDestination)
+        {
             _destination = _defaultDestination;
+            _space = null;
+            RefreshSpace();
+        }
         if (usesPaused)
             _paused = _defaultPaused;
         if (usesQueue)
@@ -772,6 +807,8 @@ public sealed class AddDraft : IDraft
         Confirmation.NeverShow = false;
         _failure = null;
         _destination = _defaultDestination;
+        _space = null;
+        RefreshSpace();
         Refresh();
     }
 

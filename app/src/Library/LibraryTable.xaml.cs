@@ -225,13 +225,14 @@ public sealed partial class LibraryTable : UserControl
 
         public int Compare(LibraryRow? left, LibraryRow? right)
         {
-            var artist = StringComparer.CurrentCultureIgnoreCase.Compare(
+            var artist = string.Compare(
                 left?.Artist,
-                right?.Artist
+                right?.Artist,
+                StringComparison.CurrentCultureIgnoreCase
             );
             if (artist != 0)
                 return artist;
-            var album = StringComparer.CurrentCultureIgnoreCase.Compare(left?.Album, right?.Album);
+            var album = string.Compare(left?.Album, right?.Album, StringComparison.CurrentCultureIgnoreCase);
             return album != 0 ? album : Nullable.Compare(left?.Entry.Track, right?.Entry.Track);
         }
     }

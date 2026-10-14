@@ -181,6 +181,68 @@ public class ColumnFitTests
         });
 
     [TestMethod]
+    public Task AFrameDragReusesItsFirstFitAcrossMinimumWidthsUntilItEnds() =>
+        TestHost.RunAsync(async () =>
+        {
+            Column a = Column("a", 200);
+            Border header = new() { Width = 176, Height = 20 };
+            a.Header = header;
+            a.MinWidth = 80;
+            Column b = Column("b", 200);
+            b.Header = new Border { Width = 276, Height = 20 };
+            Table table = Build(a, b);
+            await TableHarness.LoadAsync(table);
+            await SettleAsync(table);
+
+            header.Width = 76;
+            Proof.Call(table, "OnEnteredMoveSize", null, null);
+            table.Width = 200;
+            table.UpdateLayout();
+            Assert.AreEqual(80d, TableHarness.EffectiveWidth(table, "a"), 0.01);
+            Assert.AreEqual(120d, TableHarness.EffectiveWidth(table, "b"), 0.01);
+
+            header.Width = 276;
+            table.Width = 600;
+            table.UpdateLayout();
+            Assert.AreEqual(150d, TableHarness.EffectiveWidth(table, "a"), 0.01);
+            Assert.AreEqual(450d, TableHarness.EffectiveWidth(table, "b"), 0.01);
+
+            Proof.Call(table, "OnExitedMoveSize", null, null);
+            table.UpdateLayout();
+            Assert.AreEqual(150d, TableHarness.EffectiveWidth(table, "a"), 0.01);
+            Assert.AreEqual(450d, TableHarness.EffectiveWidth(table, "b"), 0.01);
+
+            table.Width = 500;
+            table.UpdateLayout();
+            Assert.AreEqual(250d, TableHarness.EffectiveWidth(table, "a"), 0.01);
+            Assert.AreEqual(250d, TableHarness.EffectiveWidth(table, "b"), 0.01);
+        });
+
+    [TestMethod]
+    public Task NewRowsAreMeasuredOnTheNextResizeWithoutMovingColumnsOnArrival() =>
+        TestHost.RunAsync(async () =>
+        {
+            Column a = Column("a", 200);
+            a.Header = new Border { Width = 400, Height = 20 };
+            Table table = Build(a, Column("b", 200));
+            table.ItemsSource = Rows(20, 100);
+            await TableHarness.LoadAsync(table);
+            await SettleAsync(table);
+
+            table.Width = 600;
+            table.UpdateLayout();
+            double before = TableHarness.EffectiveWidth(table, "a");
+            table.ItemsSource = Rows(20, 600);
+            table.UpdateLayout();
+            Assert.AreEqual(before, TableHarness.EffectiveWidth(table, "a"), 0d);
+
+            table.Width = 500;
+            table.UpdateLayout();
+            Assert.AreEqual(250d, TableHarness.EffectiveWidth(table, "a"), 0.01);
+            Assert.AreEqual(250d, TableHarness.EffectiveWidth(table, "b"), 0.01);
+        });
+
+    [TestMethod]
     public Task RestoringLayoutDoesNotMoveLiveWidths() =>
         TestHost.RunAsync(async () =>
         {

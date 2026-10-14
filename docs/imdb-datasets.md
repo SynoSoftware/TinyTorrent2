@@ -281,12 +281,14 @@ remain usable while a remote dataset download is waiting.
 ### Settings
 
 The provider's `ProviderOption` declares that it needs a download, as an API
-provider declares that it needs a key, and Settings owns the flow. It is a new
-branch beside the key flow, which applies only to `Access.Key` providers:
+provider declares that it needs a key. Settings keeps this configuration
+independent of automatic download intent. Starting automatic downloads offers
+the data setup or key setup that the chosen provider needs:
 
-1. The person chooses **IMDb** in Video information when `imdb.db` does not
-   exist. A dialog states the download size, about 290 MB, and asks
-   **Download** or **Cancel**. Cancel leaves the choice as it was. The size is
+1. Choosing **IMDb** in Provider preserves automatic download intent. Turning
+   **Download automatically** on when `imdb.db` does not exist opens a dialog
+   stating the download size, about 290 MB, and asks **Download** or **Cancel**.
+   Cancel leaves automatic downloads off. The size is
    fixed text, because it changes slowly and reading it would cost a request.
 2. The **IMDb data** row under Video information (phase 2, point 5) shows the
    download progress in MB, then the current preparation stage and approximate
@@ -296,10 +298,10 @@ branch beside the key flow, which applies only to `Access.Key` providers:
    45%"; it leaves out "IMDb", which the row's name already says. The shared
    observation supplies Settings and the status bar with the same phase and
    cancellation command. The status bar names IMDb on every page. Narrator hears each new
-   stage. When the import is complete, the provider turns on, unless the
+   stage. When the import is complete, automatic downloads start, unless the
    person chose another setting meanwhile, because that choice is newer. Only
-   this flow turns IMDb on; the row's own Download and Update never change the
-   provider.
+   this setup flow turns automatic downloads on; the row's own Download and
+   Update preserve the provider and automatic download setting.
    Library owns this pending activation. A later accepted provider choice
    revokes it even when the final setting equals the original one. Installation
    and conditional activation use the existing serialized provider-change path
@@ -318,15 +320,15 @@ branch beside the key flow, which applies only to `Access.Key` providers:
    old adds that little has changed. Older data only states its age.
    That download does not change the provider.
    **Delete data** asks first,
-   naming the size, then removes `imdb.db` and turns Video information off
-   when IMDb is the selected provider.
+   naming the size, then removes `imdb.db` while preserving the provider,
+   automatic download setting and saved video information.
    Delete retained archives before removing the installed file, so an archive
    error leaves the usable data and selected provider intact.
 4. When IMDb is chosen but `imdb.db` is missing, for example after an app
    update changed the file version, the row's **Download** gets it, because a
-   provider that is already chosen cannot be chosen again. Library shows IMDb
-   as it shows any unavailable provider: the Details card says "Provider
-   unavailable", and its Fetch button offers Settings.
+   provider that is already chosen cannot be chosen again. Missing data holds
+   only IMDb's automatic work. Saved information stays visible; a file without
+   metadata shows "No metadata" and Fetch offers online providers and Settings.
 
 ### Ending a download
 
@@ -452,9 +454,9 @@ row snapshot. The C# read needs none of them:
    own row, **IMDb data**, under Video information. It shows the title count,
    size and age, or what the data is for and its size, and has **Download** or
    **Update** and **Delete data**. While the data downloads, the row shows the
-   progress and a button that stops it. **Delete data** asks first, and turns
-   video information off only when IMDb is the selected provider. Choosing IMDb without the data
-   still asks to download it, as phase 1 describes.
+   progress and a button that stops it. **Delete data** asks first and preserves
+   the provider and automatic download intent. Starting automatic
+   downloads without the data asks to download it, as phase 1 describes.
 
 Library owns this rule, because it applies to every provider.
 

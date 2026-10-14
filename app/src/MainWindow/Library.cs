@@ -1,7 +1,6 @@
 using System.Windows.Input;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Data;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media.Animation;
 using Syno.TinyTorrent.Library;
@@ -22,9 +21,11 @@ public sealed partial class MainWindow
     private Storyboard? _navigationFlip;
     private CancellationTokenSource? _associationRead;
     private MenuFlyoutSubItem? _libraryFetch;
+    private bool _menuPending;
 
     private void ConfigureLibrary()
     {
+        Model.Library.ShowsFacets = Model.IsFilterOpen;
         Model.Library.CommandFailed += (_, error) => Model.Report(error);
         Model.Library.BatchLimited += (_, files) => Model.ShowSearchLimit(files);
         // A submenu has no command, so the menu bar's Fetch metadata follows
@@ -47,14 +48,25 @@ public sealed partial class MainWindow
                 RefreshLibraryFilters();
             if (
                 Model.Page == WindowPage.Library
+                && !_menuPending && !_allowClose
                 && args.PropertyName
                     is nameof(LibraryBrowser.Origins)
                         or nameof(LibraryBrowser.Selection)
                         or nameof(LibraryBrowser.Selected)
                         or nameof(LibraryBrowser.IsAvailable)
-                        or nameof(LibraryBrowser.IsEnrichmentEnabled)
+                        or nameof(LibraryBrowser.Providers)
             )
-                RefreshLibraryMenu();
+            {
+                // Selection raises both Selected and Selection in the same turn.
+                _menuPending = DispatcherQueue.TryEnqueue(() =>
+                {
+                    if (!_menuPending)
+                        return;
+                    _menuPending = false;
+                    if (!_allowClose && Model.Page == WindowPage.Library)
+                        RefreshLibraryMenu();
+                });
+            }
             if (
                 Model.Page == WindowPage.Library
                 && args.PropertyName == nameof(LibraryBrowser.Configuration)
@@ -63,6 +75,8 @@ public sealed partial class MainWindow
         };
         Model.PropertyChanged += (_, args) =>
         {
+            if (args.PropertyName == nameof(MainViewModel.IsFilterOpen))
+                Model.Library.ShowsFacets = Model.IsFilterOpen;
             if (args.PropertyName == nameof(MainViewModel.IsClosing) && Model.IsClosing)
                 _associationRead?.Cancel();
         };
@@ -95,7 +109,7 @@ public sealed partial class MainWindow
             (InspectorContent.Content as InspectorPane)?.RevealFile(origin.FileIndex);
         };
         Model.Library.SettingsRequested += async (_, _) =>
-            await ShowSettings(new(SettingsCategory.Plugins, "video_information"));
+            await ShowSettings(new(SettingsCategory.Plugins, "video_provider"));
         Model.LibraryRequested += async (_, _) =>
         {
             if (await Model.Navigation.Navigate(WindowPage.Library))
@@ -219,8 +233,6 @@ public sealed partial class MainWindow
             _associationRead?.Cancel();
         else
             UpdateAssociation();
-        if (Model.Page is WindowPage.Torrents or WindowPage.Library)
-            _workspaces.Show(library ? LibraryContent : TorrentContent, library ? 1 : -1);
         Filters.Visibility = library ? Visibility.Collapsed : Visibility.Visible;
         LibraryFilters.Visibility = library ? Visibility.Visible : Visibility.Collapsed;
         Workspace.OpenPaneLength = library ? 280 : 196;
@@ -237,6 +249,8 @@ public sealed partial class MainWindow
             RefreshLibraryFilters();
         UpdateInspectorSize();
         UpdateChrome();
+        if (Model.Page is WindowPage.Torrents or WindowPage.Library)
+            _workspaces.Show(library ? LibraryContent : TorrentContent, forward: library);
     }
 
     private void RefreshNavigation()
@@ -399,6 +413,12 @@ public sealed partial class MainWindow
         yield return fetch;
         yield return new MenuFlyoutItem
         {
+            Text = Model.Text.Get("library", "refresh_metadata"),
+            Command = Model.Library.RefreshMetadata,
+            Icon = Icon(Lucide.RefreshCw),
+        };
+        yield return new MenuFlyoutItem
+        {
             Text = Model.Text.Get(
                 "subtitles",
                 Model.Library.Selection.Items.Count == 1 ? "choose" : "download_title"
@@ -417,6 +437,7 @@ public sealed partial class MainWindow
 
     private void RefreshLibraryMenu()
     {
+        _menuPending = false;
         TorrentMenu.Title = Model.Text.Get("library", "title");
         TorrentMenu.AccessKey = MenuKey("library");
         ClearMenu(TorrentMenu.Items);
@@ -449,10 +470,7 @@ public sealed partial class MainWindow
         }
     }
 
-    // Asks for the person's own API key for option. Saving also turns
-    // information on with option, because Settings opens this dialog when the
-    // person chooses a provider that has no usable key.
-    private Task ShowKey(ProviderOption option)
+    private Task ShowKey(ProviderOption option, bool enableAutomaticDownload = false)
     {
         var library = Model.Library;
         return ShowAccount(
@@ -470,134 +488,11 @@ public sealed partial class MainWindow
                     var key = input.Secret.Length > 0 ? input.Secret : null;
                     if (key is not null || (!input.KeepSecret && library.HasKey(option.ProviderId)))
                         await library.SaveKey(option.ProviderId, key);
-                    if (!library.IsEnrichmentEnabled || library.Option != option)
-                        await library.Enable(option.ProviderId);
+                    if (enableAutomaticDownload)
+                        await library.EnableAutomaticDownload(option.ProviderId);
                 }
             )
         );
-    }
-
-    // Settings opens this dialog when the person chooses a provider whose
-    // data is not downloaded, and the finished download turns the provider
-    // on. It also opens when the person updates installed data, and then
-    // states the data's age. The download continues after the dialog closes,
-    // and Settings shows its progress.
-    private async Task ConfirmDownload(ProviderOption option)
-    {
-        var installed = option.Dataset?.Inspect();
-        var current = option.Dataset?.IsCurrent == true;
-        await Interact(async interaction =>
-        {
-            var dialog = new Controls.Dialog { Glyph = Lucide.Database, PrimaryGlyph = Lucide.Download };
-            dialog.SetBinding(
-                ContentDialog.IsPrimaryButtonEnabledProperty,
-                new Binding
-                {
-                    Source = Model.Library,
-                    Path = new PropertyPath(nameof(LibraryBrowser.CanDownload)),
-                    Mode = BindingMode.OneWay,
-                }
-            );
-            dialog.PrimaryButtonClick += (sender, args) =>
-            {
-                args.Cancel = !Model.Library.CanDownload;
-                if (!args.Cancel)
-                    _ = Model.DownloadData(enable: installed is null);
-            };
-            var choice = await ShowDialog(
-                interaction,
-                dialog,
-                () =>
-                {
-                    var id = option.ProviderId;
-                    if (installed is null)
-                    {
-                        dialog.Title = Model.Text.Get(id, "download_title");
-                        dialog.Content = DataConfirmation(
-                            [Model.Text.Get(id, "download_body"), Model.Text.Get(id, "download_local")],
-                            [Model.Text.Get(id, "preparation_time")]);
-                        dialog.PrimaryButtonText = Model.Text.Get(id, "download");
-                        dialog.PrimaryToolTip = Model.Text.Get(id, "download_tip");
-                        return;
-                    }
-                    // Current data warns, as Dataset.IsCurrent explains; data
-                    // less than a week old notes that little has changed.
-                    var days = (int)(DateTime.UtcNow - installed.LastWriteTimeUtc).TotalDays;
-                    dialog.Title = Model.Text.Get(id, "update_title");
-                    var body =
-                        current ? Model.Text.Get(id, "update_current")
-                        : days < 7 ? Model.Text.FormatCount(id, "update_recent", days)
-                        : Model.Text.Format(id, "update_age", days);
-                    dialog.Content = DataConfirmation(
-                        [body, Model.Text.Get(id, "update_frequency")],
-                        [Model.Text.Get(id, "preparation_time")]);
-                    dialog.PrimaryButtonText = Model.Text.Get(id, "update");
-                    dialog.PrimaryToolTip = Model.Text.Get(id, "update_tip");
-                }
-            );
-            return choice == ContentDialogResult.Primary;
-        });
-    }
-
-    private async Task ConfirmDataDeletion(ProviderOption option)
-    {
-        if (option.Dataset?.Inspect() is not { } data)
-            return;
-        await Interact(async interaction =>
-        {
-            var dialog = new Controls.Dialog { Glyph = Lucide.Database, PrimaryGlyph = Lucide.Trash2 };
-            var choice = await ShowDialog(
-                interaction,
-                dialog,
-                () =>
-                {
-                    dialog.Title = Model.Text.Get(option.ProviderId, "delete_title");
-                    dialog.Content = DataConfirmation(
-                        [Model.Text.Format(option.ProviderId, "delete_body", Model.Text.Bytes(data.Length)),
-                            Model.Text.Get(option.ProviderId, "delete_kept")],
-                        [Model.Text.Get(option.ProviderId, "restore_time"),
-                            Model.Text.Get(option.ProviderId, "preparation_time")]);
-                    dialog.PrimaryButtonText = Model.Text.Get("file_action", "delete");
-                    dialog.PrimaryToolTip = Model.Text.Get(option.ProviderId, "delete_tip");
-                }
-            );
-            if (choice != ContentDialogResult.Primary)
-                return false;
-            await Model.Library.DeleteData();
-            return true;
-        });
-    }
-
-    private StackPanel DataConfirmation(IEnumerable<string> facts, IEnumerable<string> caution)
-    {
-        var icon = new FontIcon
-        {
-            FontFamily = Lucide.Font,
-            Glyph = Lucide.TriangleAlert,
-            Style = (Style)Root.Resources["DataCautionIconStyle"],
-        };
-        Microsoft.UI.Xaml.Automation.AutomationProperties.SetAccessibilityView(
-            icon, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
-        var message = Lines(caution);
-        Grid.SetColumn(message, 1);
-        return new StackPanel
-        {
-            Spacing = 12,
-            Children =
-            {
-                Lines(facts),
-                new Grid
-                {
-                    ColumnSpacing = 8,
-                    ColumnDefinitions =
-                    {
-                        new ColumnDefinition { Width = GridLength.Auto },
-                        new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) },
-                    },
-                    Children = { icon, message },
-                },
-            },
-        };
     }
 
     private async Task FetchBatch(ProviderOption source)
@@ -693,7 +588,7 @@ public sealed partial class MainWindow
 
     private void RefreshLibraryFilters()
     {
-        LibraryFilters.IsEnabled = Model.Library.RowsConfiguration == Model.Library.Configuration;
+        LibraryFilters.IsEnabled = Model.Library.FacetsConfiguration == Model.Library.Configuration;
         if (!Model.IsFilterOpen || !LibraryFilters.IsEnabled)
             return;
         if (LibraryFilters.Content is not StackPanel panel)
@@ -830,7 +725,8 @@ public sealed partial class MainWindow
                         && ReferenceEquals(choices.Items[index], items[index])
                     )
                         continue;
-                    choices.Items.Remove(items[index]);
+                    if (items[index].Tag is string value && existing.ContainsKey(value))
+                        choices.Items.Remove(items[index]);
                     choices.Items.Insert(index, items[index]);
                 }
                 while (choices.Items.Count > items.Count)

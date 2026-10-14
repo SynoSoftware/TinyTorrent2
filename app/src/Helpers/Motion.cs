@@ -8,18 +8,21 @@ namespace Syno.TinyTorrent.Helpers;
 
 internal sealed class Motion
 {
+    private static readonly Duration Duration = new(TimeSpan.FromMilliseconds(250));
     private readonly UISettings _settings = new();
     private readonly Storyboard _storyboard = new();
+    private readonly List<TranslateTransform> _translations = [];
     private FrameworkElement? _outgoing;
+    private bool _hitTest;
     internal FrameworkElement? Current { get; private set; }
     internal bool IsActive => _storyboard.GetCurrentState() == ClockState.Active;
 
     internal Motion() => _storyboard.Completed += (_, _) => Stop();
 
-    internal void Show(FrameworkElement content, int direction = 1) =>
-        Change(content, direction, false);
+    internal void Show(FrameworkElement content, bool forward = true) =>
+        Change(content, forward, false);
 
-    internal void CrossFade(FrameworkElement content) => Change(content, 1, true);
+    internal void CrossFade(FrameworkElement content) => Change(content, true, true);
 
     internal void Replace(FrameworkElement content)
     {
@@ -31,7 +34,7 @@ internal sealed class Motion
             previous.Visibility = Visibility.Collapsed;
     }
 
-    private void Change(FrameworkElement content, int direction, bool crossFade)
+    private void Change(FrameworkElement content, bool forward, bool crossFade)
     {
         if (ReferenceEquals(Current, content))
             return;
@@ -49,6 +52,7 @@ internal sealed class Motion
             return;
 
         _outgoing = previous;
+        _hitTest = previous.IsHitTestVisible;
         if (!previous.IsLoaded || !_settings.AnimationsEnabled)
         {
             Stop();
@@ -62,25 +66,42 @@ internal sealed class Motion
         }
         else
         {
-            var distance = direction * Math.Max(previous.ActualWidth, content.ActualWidth);
+            var distance = GetOffset(previous, forward);
             Slide(previous, departure, -distance);
             Slide(content, arrival ?? departure + distance, 0);
         }
-        _storyboard.Begin();
+        Begin(content);
     }
 
-    internal void Play(FrameworkElement content, double offset = 24)
+    internal void Enter(FrameworkElement content, bool forward = true, Action? update = null)
     {
-        var start =
-            ReferenceEquals(Current, content) && _storyboard.GetCurrentState() == ClockState.Active
-                ? (content.RenderTransform as TranslateTransform)?.X ?? offset
-                : offset;
+        var active = ReferenceEquals(Current, content) && IsActive;
+        var offset = GetOffset(content, forward);
+        var start = active ? (content.RenderTransform as TranslateTransform)?.X ?? offset : offset;
         Stop();
         if (content.Visibility != Visibility.Visible || !_settings.AnimationsEnabled)
+        {
+            update?.Invoke();
             return;
+        }
         Current = content;
         Slide(content, start, 0);
-        _storyboard.Begin();
+        Begin(content, update);
+    }
+
+    private void Begin(FrameworkElement content, Action? update = null)
+    {
+        try
+        {
+            update?.Invoke();
+            content.UpdateLayout();
+            _storyboard.Begin();
+        }
+        catch
+        {
+            Stop();
+            throw;
+        }
     }
 
     internal void Fade(FrameworkElement content, double opacity) =>
@@ -89,6 +110,7 @@ internal sealed class Motion
     internal void Fade(FrameworkElement content, double from, double to)
     {
         Stop();
+        Current = content;
         content.Opacity = to;
         if (!content.IsLoaded || !_settings.AnimationsEnabled || from == to)
             return;
@@ -96,33 +118,28 @@ internal sealed class Motion
         _storyboard.Begin();
     }
 
-    private void Blend(FrameworkElement content, double from, double to)
-    {
-        var animation = new DoubleAnimation
-        {
-            From = from,
-            To = to,
-            Duration = new Duration(TimeSpan.FromMilliseconds(180)),
-            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
-        };
-        Storyboard.SetTarget(animation, content);
-        Storyboard.SetTargetProperty(animation, nameof(UIElement.Opacity));
-        _storyboard.Children.Add(animation);
-    }
+    private void Blend(FrameworkElement content, double from, double to) =>
+        Animate(content, nameof(UIElement.Opacity), from, to);
 
     private void Slide(FrameworkElement content, double from, double to)
     {
-        var transform = new TranslateTransform();
+        var transform = new TranslateTransform { X = from };
         content.RenderTransform = transform;
+        _translations.Add(transform);
+        Animate(transform, nameof(TranslateTransform.X), from, to);
+    }
+
+    private void Animate(DependencyObject target, string property, double from, double to)
+    {
         var animation = new DoubleAnimation
         {
             From = from,
             To = to,
-            Duration = new Duration(TimeSpan.FromMilliseconds(180)),
+            Duration = Duration,
             EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
         };
-        Storyboard.SetTarget(animation, transform);
-        Storyboard.SetTargetProperty(animation, nameof(TranslateTransform.X));
+        Storyboard.SetTarget(animation, target);
+        Storyboard.SetTargetProperty(animation, property);
         _storyboard.Children.Add(animation);
     }
 
@@ -130,10 +147,13 @@ internal sealed class Motion
     {
         _storyboard.Stop();
         _storyboard.Children.Clear();
+        foreach (var transform in _translations)
+            transform.X = 0;
+        _translations.Clear();
         if (_outgoing is { } outgoing)
         {
             outgoing.Visibility = Visibility.Collapsed;
-            outgoing.IsHitTestVisible = true;
+            outgoing.IsHitTestVisible = _hitTest;
             _outgoing = null;
         }
     }
@@ -143,4 +163,11 @@ internal sealed class Motion
         {
             Rect = new Rect(0, 0, args.NewSize.Width, args.NewSize.Height),
         };
+
+    private static double GetOffset(FrameworkElement content, bool forward)
+    {
+        var host = VisualTreeHelper.GetParent(content) as FrameworkElement;
+        var width = Math.Max(content.ActualWidth, host?.ActualWidth ?? 0);
+        return forward ? width : -width;
+    }
 }

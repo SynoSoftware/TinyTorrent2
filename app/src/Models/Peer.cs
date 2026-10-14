@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Globalization;
+using System.Net;
 using System.Text.Json;
 using Syno.TinyTorrent.Services;
 
@@ -8,11 +9,26 @@ namespace Syno.TinyTorrent.Models;
 public sealed class Peer : INotifyPropertyChanged
 {
     private readonly Strings _text;
+    private readonly Geolocation _geolocation;
+    private Location? _location;
+    private int _locationVersion = -1;
+    private int _notifiedVersion;
+    private PeerTransport _transport;
+    private PeerEncryption _encryption;
+    private PeerSource _sources;
+    private bool _interested;
+    private bool _choked;
+    private bool _remoteInterested;
+    private bool _remoteChoked;
+    private TransferWait _readWait;
+    private TransferWait _writeWait;
+
     public string Endpoint { get; }
+    internal string TorrentId { get; }
+    internal string Key => TorrentId + "/" + Endpoint;
     public string Client { get; private set; } = string.Empty;
-    public string Transport { get; private set; } = string.Empty;
     public bool Incoming { get; private set; }
-    public bool Encrypted { get; private set; }
+    public PeerState State { get; private set; }
     public double Progress { get; private set; }
     public double DownloadRate { get; private set; }
     public double UploadRate { get; private set; }
@@ -23,39 +39,242 @@ public sealed class Peer : INotifyPropertyChanged
     public string UploadText => _text.Format("units", "rate", _text.Bytes(UploadRate));
     public string DownloadedText => _text.Bytes(Downloaded);
     public string UploadedText => _text.Bytes(Uploaded);
-    public string ConnectionText =>
-        _text.Format(
-            "peers",
-            "connection",
-            Transport.ToUpperInvariant(),
-            _text.Get("peers", Incoming ? "incoming" : "outgoing"),
-            _text.Get("peers", Encrypted ? "encrypted" : "unencrypted")
-        );
+    public string ClientText => string.IsNullOrEmpty(Client) ? "—" : Client;
+
+    /// <summary>The ISO country code that names the peer's flag, or empty without a location.</summary>
+    public string CountryCode => Location?.Code ?? string.Empty;
+    public string LocationText
+    {
+        get
+        {
+            if (Location is not { } location)
+                return "—";
+            var country = location.Country.Name(_text.Language) ?? location.Code;
+            return location.City?.Name(_text.Language) is { } city
+                ? _text.Format("peers", "location_city", city, country)
+                : country;
+        }
+    }
+
+    // The address never changes, so its location is looked up once, and again
+    // only when the city data changes.
+    internal Location? Location
+    {
+        get
+        {
+            if (_locationVersion != _geolocation.Version)
+            {
+                _locationVersion = _geolocation.Version;
+                _location = IPEndPoint.TryParse(Endpoint, out var endpoint) ? _geolocation.Find(endpoint.Address) : null;
+            }
+            return _location;
+        }
+    }
+
+    public string StateText => _text.Get("peers", State.ToString().ToLowerInvariant());
+    public string StateGlyph => State switch
+    {
+        PeerState.Connecting => Syno.Lucide.Plug,
+        PeerState.Handshake => Syno.Lucide.Handshake,
+        PeerState.Connected => Syno.Lucide.CircleCheck,
+        _ => Syno.Lucide.CircleQuestionMark,
+    };
+    public string StateHint => _text.Format("peers", "state_hint", StateExplanation, SourcesText);
+    public string ClientHint => string.IsNullOrEmpty(Client)
+        ? _text.Get("peers", _transport == PeerTransport.Http ? "web_client_unknown" : "client_unknown")
+        : Client;
+    public string ConnectionHint => _text.Get("peers", _encryption switch
+    {
+        PeerEncryption.Plain => "plain_hint",
+        PeerEncryption.Handshake => "handshake_encryption_hint",
+        PeerEncryption.Rc4 => "rc4_hint",
+        PeerEncryption.Tls => "tls_hint",
+        _ => "encryption_unknown",
+    });
+    public string DownloadHint
+    {
+        get
+        {
+            if (State != PeerState.Connected)
+                return StateExplanation;
+            if (_transport == PeerTransport.Http)
+                return _text.Format("peers", "web_download_hint", WaitText(_readWait));
+            return _text.Format("peers", "transfer_hint",
+                _text.Get("peers", _interested ? "interested" : "not_interested"),
+                _text.Get("peers", _remoteChoked ? "remote_choked" : "remote_unchoked"),
+                WaitText(_readWait));
+        }
+    }
+    public string UploadHint
+    {
+        get
+        {
+            if (_transport == PeerTransport.Http)
+                return _text.Get("peers", "web_upload_hint");
+            if (State != PeerState.Connected)
+                return StateExplanation;
+            return _text.Format("peers", "transfer_hint",
+                _text.Get("peers", _remoteInterested ? "remote_interested" : "remote_not_interested"),
+                _text.Get("peers", _choked ? "choked" : "unchoked"),
+                WaitText(_writeWait));
+        }
+    }
+    public string ConnectionText
+    {
+        get
+        {
+            var transport = _transport == PeerTransport.Unknown
+                ? _text.Get("peers", "unknown")
+                : _transport.ToString().ToUpperInvariant();
+            var direction = _text.Get("peers", Incoming ? "incoming" : "outgoing");
+            var encryption = _text.Get("peers", _encryption switch
+            {
+                PeerEncryption.Plain or PeerEncryption.Handshake => "plain",
+                PeerEncryption.Rc4 => "rc4",
+                PeerEncryption.Tls => "tls",
+                _ => "unknown",
+            });
+            return _text.Format("peers", "connection", transport, direction, encryption);
+        }
+    }
     public event PropertyChangedEventHandler? PropertyChanged;
 
-    internal Peer(Strings text, JsonElement data)
+    internal Peer(Strings text, Geolocation geolocation, JsonElement data, string torrentId)
     {
         _text = text;
+        _geolocation = geolocation;
+        _notifiedVersion = geolocation.Version;
         Endpoint = data.GetProperty("endpoint").GetString()!;
+        TorrentId = torrentId;
         Update(data);
     }
 
     internal void Update(JsonElement data)
     {
-        Client = data.GetProperty("client").GetString()!;
-        Transport = data.GetProperty("transport").GetString()!;
-        Incoming = data.GetProperty("incoming").GetBoolean();
-        Encrypted = data.GetProperty("encrypted").GetBoolean();
-        Progress = data.GetProperty("progress").GetDouble();
-        DownloadRate = data.GetProperty("download_rate").GetDouble();
-        UploadRate = data.GetProperty("upload_rate").GetDouble();
-        Downloaded = data.GetProperty("downloaded").GetInt64();
-        Uploaded = data.GetProperty("uploaded").GetInt64();
-        RefreshText();
+        var version = _geolocation.Version;
+        var changed = _notifiedVersion != version;
+        _notifiedVersion = version;
+        var client = data.GetProperty("client");
+        if (!client.ValueEquals(Client))
+        {
+            Client = client.GetString()!;
+            changed = true;
+        }
+        _transport = Set(_transport, data.GetProperty("transport").GetString() switch
+        {
+            "tcp" => PeerTransport.Tcp,
+            "utp" => PeerTransport.Utp,
+            "i2p" => PeerTransport.I2p,
+            "http" => PeerTransport.Http,
+            _ => PeerTransport.Unknown,
+        });
+        Incoming = Set(Incoming, data.GetProperty("incoming").GetBoolean());
+        State = Set(State, data.GetProperty("state").GetString() switch
+        {
+            "connecting" => PeerState.Connecting,
+            "handshake" => PeerState.Handshake,
+            "connected" => PeerState.Connected,
+            _ => PeerState.Unknown,
+        });
+        _encryption = Set(_encryption, data.GetProperty("encryption").GetString() switch
+        {
+            "plain" => PeerEncryption.Plain,
+            "handshake" => PeerEncryption.Handshake,
+            "rc4" => PeerEncryption.Rc4,
+            "tls" => PeerEncryption.Tls,
+            _ => PeerEncryption.Unknown,
+        });
+        var sources = PeerSource.None;
+        foreach (var source in data.GetProperty("sources").EnumerateArray())
+            sources |= source.GetString() switch
+            {
+                "tracker" => PeerSource.Tracker,
+                "dht" => PeerSource.Dht,
+                "pex" => PeerSource.Pex,
+                "lsd" => PeerSource.Lsd,
+                "resume" => PeerSource.Resume,
+                "incoming" => PeerSource.Incoming,
+                _ => PeerSource.None,
+            };
+        _sources = Set(_sources, sources);
+        _interested = Set(_interested, data.GetProperty("interested").GetBoolean());
+        _choked = Set(_choked, data.GetProperty("choked").GetBoolean());
+        _remoteInterested = Set(_remoteInterested, data.GetProperty("remote_interested").GetBoolean());
+        _remoteChoked = Set(_remoteChoked, data.GetProperty("remote_choked").GetBoolean());
+        _readWait = Set(_readWait, ReadWaits(data.GetProperty("read_wait")));
+        _writeWait = Set(_writeWait, ReadWaits(data.GetProperty("write_wait")));
+        Progress = Set(Progress, data.GetProperty("progress").GetDouble());
+        DownloadRate = Set(DownloadRate, data.GetProperty("download_rate").GetDouble());
+        UploadRate = Set(UploadRate, data.GetProperty("upload_rate").GetDouble());
+        Downloaded = Set(Downloaded, data.GetProperty("downloaded").GetInt64());
+        Uploaded = Set(Uploaded, data.GetProperty("uploaded").GetInt64());
+        if (changed)
+            RefreshText();
+
+        T Set<T>(T previous, T value)
+        {
+            changed |= !EqualityComparer<T>.Default.Equals(previous, value);
+            return value;
+        }
     }
 
     internal void RefreshText() =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
+
+    private string StateExplanation => _text.Get("peers", State switch
+    {
+        PeerState.Connecting => "connecting_hint",
+        PeerState.Handshake => "handshake_hint",
+        PeerState.Connected => "connected_hint",
+        _ => "unknown",
+    });
+
+    private string SourcesText
+    {
+        get
+        {
+            List<string> sources = [];
+            if (_sources.HasFlag(PeerSource.Tracker))
+                sources.Add(_text.Get("peers", "source_tracker"));
+            if (_sources.HasFlag(PeerSource.Dht))
+                sources.Add(_text.Get("peers", "source_dht"));
+            if (_sources.HasFlag(PeerSource.Pex))
+                sources.Add(_text.Get("peers", "source_pex"));
+            if (_sources.HasFlag(PeerSource.Lsd))
+                sources.Add(_text.Get("peers", "source_lsd"));
+            if (_sources.HasFlag(PeerSource.Resume))
+                sources.Add(_text.Get("peers", "source_resume"));
+            if (_sources.HasFlag(PeerSource.Incoming))
+                sources.Add(_text.Get("peers", "source_incoming"));
+            return sources.Count == 0 ? _text.Get("peers", "unknown") : string.Join(", ", sources);
+        }
+    }
+
+    private static TransferWait ReadWaits(JsonElement data)
+    {
+        var waits = TransferWait.None;
+        foreach (var wait in data.EnumerateArray())
+            waits |= wait.GetString() switch
+            {
+                "limit" => TransferWait.Limit,
+                "network" => TransferWait.Network,
+                "disk" => TransferWait.Disk,
+                _ => TransferWait.None,
+            };
+        return waits;
+    }
+
+    private string WaitText(TransferWait waits)
+    {
+        List<string> reasons = [];
+        if (waits.HasFlag(TransferWait.Limit))
+            reasons.Add(_text.Get("peers", "wait_limit"));
+        if (waits.HasFlag(TransferWait.Network))
+            reasons.Add(_text.Get("peers", "wait_network"));
+        if (waits.HasFlag(TransferWait.Disk))
+            reasons.Add(_text.Get("peers", "wait_disk"));
+        return reasons.Count == 0 ? _text.Get("peers", "wait_none") : string.Join(", ", reasons);
+    }
 
     public override string ToString() => Endpoint;
 }

@@ -81,8 +81,7 @@ function render(){
   const criterion=filtered?(library?'Filtered':'Downloading'):'';
   const fullContext=[offline?'Last known':'',context,criterion,selection?`${selection} selected`:''].filter(Boolean).join(' · ');
   const fullActivity=batch?`${library?'Metadata':'Library metadata'}${waiting?' waiting':''} · 2 of 7 processed`:
-    subtitles?'Subtitle work':
-    library&&config==='Videos'&&scenario==='off'?'Automatic video information downloads off':'';
+    subtitles?'Subtitle work':'';
   const fullHold=paused?(library?'Torrents paused until 18:00':'Paused until 18:00'):'';
   document.body.classList.toggle('dark',$('theme').value==='dark');
   $('configuration').disabled=!library;

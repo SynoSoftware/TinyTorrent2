@@ -89,6 +89,8 @@ internal sealed partial class Store(Database database, Imdb.Dataset imdb)
         CancellationToken cancellation
     )
     {
+        if (!imdb.IsInstalled)
+            return entries;
         var ratings = await imdb.Ratings(
                 entries.Select(entry => entry.ImdbId).OfType<long>().ToHashSet(),
                 cancellation
@@ -191,7 +193,7 @@ internal sealed partial class Store(Database database, Imdb.Dataset imdb)
                             section == "series" ? new[] { "series", "season" } : new[] { section }
                         )
                         .ToArray();
-                foreach (var section in sections)
+                foreach (var section in query.IncludesFacets ? sections : [])
                 {
                     cancellation.ThrowIfCancellationRequested();
                     using var command = connection.CreateCommand();
@@ -365,15 +367,7 @@ internal sealed partial class Store(Database database, Imdb.Dataset imdb)
                 AND x.outcome='no_match') AS unmatched
         """;
 
-    internal async Task<Detail?> Detail(long entryId, string? catalogId, CancellationToken cancellation)
-    {
-        var detail = await ReadDetail(entryId, catalogId, cancellation).ConfigureAwait(false);
-        return detail is null
-            ? null
-            : detail with { Entry = (await Rate([detail.Entry], cancellation).ConfigureAwait(false))[0] };
-    }
-
-    private Task<Detail?> ReadDetail(long entryId, string? catalogId, CancellationToken cancellation) =>
+    internal Task<Detail?> Detail(long entryId, string? catalogId, CancellationToken cancellation) =>
         database.Run(
             connection =>
             {
@@ -441,21 +435,34 @@ internal sealed partial class Store(Database database, Imdb.Dataset imdb)
             cancellation
         );
 
-    internal Task EraseMetadata(Entry entry, CancellationToken cancellation) =>
-        database.Run(
+    internal Task<VideoFailure?> EraseMetadata(IReadOnlyCollection<Entry> entries, CancellationToken cancellation) =>
+        database.Run<VideoFailure?>(
             connection =>
             {
                 using var command = connection.CreateCommand();
                 command.CommandText =
                     "SELECT EXISTS(SELECT 1 FROM collected_files f "
                     + "WHERE entry_id=$entry AND path=$path COLLATE PATH AND f.name=$name);";
-                command.Parameters.AddWithValue("$entry", entry.EntryId);
-                command.Parameters.AddWithValue("$path", entry.Path);
-                command.Parameters.AddWithValue("$name", entry.Name);
-                if (Convert.ToInt64(command.ExecuteScalar()) == 0)
-                    throw new VideoException(VideoFailure.FileChanged);
-                SaveIdentification(connection, entry.EntryId, null, true);
-                return true;
+                command.Parameters.Add("$entry", SqliteType.Integer);
+                command.Parameters.Add("$path", SqliteType.Text);
+                command.Parameters.Add("$name", SqliteType.Text);
+                VideoFailure? failure = null;
+                foreach (var entry in entries)
+                {
+                    cancellation.ThrowIfCancellationRequested();
+                    command.Parameters["$entry"].Value = entry.EntryId;
+                    command.Parameters["$path"].Value = entry.Path;
+                    command.Parameters["$name"].Value = entry.Name;
+                    if (Convert.ToInt64(command.ExecuteScalar()) == 0)
+                    {
+                        failure = VideoFailure.FileChanged;
+                        continue;
+                    }
+                    SaveIdentification(connection, entry.EntryId, null, true);
+                }
+                command.CommandText = Database.PruneVideos + Database.Invalidate;
+                command.ExecuteNonQuery();
+                return failure;
             },
             cancellation
         );
@@ -484,9 +491,7 @@ internal sealed partial class Store(Database database, Imdb.Dataset imdb)
             """
                 UPDATE video_attempts SET request='',outcome=COALESCE(outcome,'cancelled')
                 WHERE (origin,file_index) IN (SELECT origin,file_index FROM source_files WHERE entry_id=$entry);
-                """
-            + Database.PruneVideos
-            + Database.Invalidate;
+                """;
         command.ExecuteNonQuery();
     }
 
@@ -781,6 +786,8 @@ internal sealed partial class Store(Database database, Imdb.Dataset imdb)
             Type = reader.GetString(6),
             Year = (int?)Number(7),
             HasMetadata = !reader.IsDBNull(reader.GetOrdinal("video_id")),
+            CatalogId = reader.IsDBNull(reader.GetOrdinal("catalog_id"))
+                ? null : reader.GetString(reader.GetOrdinal("catalog_id")),
             IsUnmatched = reader.GetBoolean(reader.GetOrdinal("unmatched")),
             Genres = reader.GetString(8),
             Cast = reader.GetString(9),

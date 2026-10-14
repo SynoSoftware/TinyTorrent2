@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Buffers.Binary;
 using System.ComponentModel;
 using System.Diagnostics;
@@ -15,7 +16,7 @@ internal sealed partial class PipeClient : IDisposable
 {
     private const int MaximumFrame = 16 * 1024 * 1024;
     private const int CommandLimit = 32;
-    private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(15);
+    internal static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(15);
 
     // TinyTorrent.csproj records the engine's file name from the shared build properties.
     private static readonly string EngineFile = typeof(PipeClient)
@@ -45,6 +46,10 @@ internal sealed partial class PipeClient : IDisposable
     private bool _hasConnected;
     private string? _dataDirectory;
     internal string? DataDirectory => _dataDirectory;
+    internal bool IsConnected
+    {
+        get { lock (_gate) return _connected; }
+    }
     internal int? ProcessId
     {
         get { lock (_gate) return _processId; }
@@ -571,7 +576,7 @@ internal sealed partial class PipeClient : IDisposable
             var hello = await Read(pipe, deadline.Token);
             if (
                 hello.GetProperty("type").GetString() != "hello"
-                || hello.GetProperty("version").GetInt32() != 15
+                || hello.GetProperty("version").GetInt32() != 16
             )
                 throw new InvalidDataException(strings.Get("connection", "version"));
             return hello;
@@ -704,10 +709,18 @@ internal sealed partial class PipeClient : IDisposable
         var length = BinaryPrimitives.ReadInt32LittleEndian(header);
         if (length <= 0 || length > MaximumFrame)
             throw new InvalidDataException("Invalid pipe frame length.");
-        var bytes = new byte[length];
-        await pipe.ReadExactlyAsync(bytes, token);
-        using var document = JsonDocument.Parse(bytes);
-        return document.RootElement.Clone();
+        var bytes = ArrayPool<byte>.Shared.Rent(length);
+        try
+        {
+            var message = bytes.AsMemory(0, length);
+            await pipe.ReadExactlyAsync(message, token);
+            using var document = JsonDocument.Parse(message);
+            return document.RootElement.Clone();
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(bytes);
+        }
     }
 
     private static async Task Write(Stream pipe, object message, CancellationToken token)

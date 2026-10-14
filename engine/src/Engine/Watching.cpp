@@ -79,7 +79,9 @@ void Engine::State::WatchFolder()
                 }
                 auto document = Saved();
                 std::erase_if(document.watchedSources, absent);
-                changes.Commit(document.ToJson(), [this, folder, retained = document.watchedSources](Outcome outcome)
+                auto retained = document.watchedSources;
+                changes.Commit([document = std::move(document)] { return document.ToJson(); },
+                    [this, folder, retained = std::move(retained)](Outcome outcome)
                 {
                     watchPhase = WatchPhase::Idle;
                     if (outcome.error == ErrorCode::Overloaded)

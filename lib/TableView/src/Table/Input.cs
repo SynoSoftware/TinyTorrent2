@@ -669,19 +669,9 @@ public sealed partial class Table
     /// <summary>Ctrl: each covered row flips against the selection as it stood at press.</summary>
     private List<object> MarqueeToggledAgainstStart()
     {
-        HashSet<object> started = new(_gestureSelection!.Items, _identity);
-        HashSet<object> covered = new(MarqueeCovered(), _identity);
-
-        List<object> items = new();
-        foreach (object item in View)
-        {
-            if (_selection.IsInteractive(item) && started.Contains(item) != covered.Contains(item))
-            {
-                items.Add(item);
-            }
-        }
-
-        return items;
+        HashSet<object> items = new(_gestureSelection!.Items, _identity);
+        items.SymmetricExceptWith(MarqueeCovered());
+        return items.ToList();
     }
 
     /// <summary>Shift: the inclusive run from the anchor out to the far edge of what is covered.</summary>

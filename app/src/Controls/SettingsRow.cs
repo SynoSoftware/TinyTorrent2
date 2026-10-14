@@ -26,6 +26,8 @@ public sealed partial class SettingsRow : ContentControl
 
     internal void Align(double unitWidth)
     {
+        if (_unitWidth == unitWidth)
+            return;
         _unitWidth = unitWidth;
         Update();
     }
@@ -119,6 +121,7 @@ public sealed partial class SettingsRow : ContentControl
 
     private void Update()
     {
+        AutomationProperties.SetName(this, Header);
         var hasPrimary = Header.Length > 0 || Description.Length > 0 || Error.Length > 0
             || Caution.Length > 0 || Content is not null || StateText.Length > 0
             || Unit.Length > 0 || UnitSelector is not null;

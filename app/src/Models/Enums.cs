@@ -13,6 +13,13 @@ internal enum ImdbPhase
     Installing,
 }
 
+internal enum CityPhase
+{
+    Downloading,
+    Unpacking,
+    Installing,
+}
+
 internal enum RatingSample
 {
     Unknown,
@@ -248,6 +255,13 @@ public enum InspectorSection
     Pieces,
 }
 
+public enum PeerLayout
+{
+    Table,
+    Map,
+    Both,
+}
+
 public enum PieceKind
 {
     Unavailable,
@@ -256,6 +270,53 @@ public enum PieceKind
     Missing,
     Downloading,
     Verified,
+}
+
+internal enum PeerTransport
+{
+    Unknown,
+    Tcp,
+    Utp,
+    I2p,
+    Http,
+}
+
+public enum PeerState
+{
+    Unknown,
+    Connecting,
+    Handshake,
+    Connected,
+}
+
+internal enum PeerEncryption
+{
+    Unknown,
+    Plain,
+    Handshake,
+    Rc4,
+    Tls,
+}
+
+[Flags]
+internal enum PeerSource
+{
+    None = 0,
+    Tracker = 1,
+    Dht = 2,
+    Pex = 4,
+    Lsd = 8,
+    Resume = 16,
+    Incoming = 32,
+}
+
+[Flags]
+internal enum TransferWait
+{
+    None = 0,
+    Limit = 1,
+    Network = 2,
+    Disk = 4,
 }
 
 public enum TrackerStatus
@@ -496,6 +557,7 @@ internal enum CaptureMode
     Search,
     Library,
     Traffic,
+    Peers,
     LibraryFiles,
     Edits,
     AddLayout,

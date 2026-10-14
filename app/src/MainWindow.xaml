@@ -568,22 +568,10 @@
                           </Grid.RowDefinitions>
                           <controls:Overlay Height="4">
                             <ProgressBar
-                              Style="{StaticResource TinyTorrentProgressStyle}"
+                              Style="{x:Bind controls:Progress.SelectStyle(IsProgressMuted), Mode=OneWay}"
                               Value="{x:Bind Progress, Mode=OneWay}"
-                              Visibility="{x:Bind IsProgressNormal, Mode=OneWay}"
-                              AutomationProperties.AccessibilityView="Raw"
-                            />
-                            <ProgressBar
-                              Style="{StaticResource TinyTorrentMutedProgressStyle}"
-                              Value="{x:Bind Progress, Mode=OneWay}"
-                              Visibility="{x:Bind IsProgressMuted, Mode=OneWay}"
-                              AutomationProperties.AccessibilityView="Raw"
-                            />
-                            <ProgressBar
-                              Style="{StaticResource TinyTorrentProgressStyle}"
-                              Value="{x:Bind Progress, Mode=OneWay}"
-                              ShowError="True"
-                              Visibility="{x:Bind IsError, Mode=OneWay}"
+                              ShowError="{x:Bind IsError, Mode=OneWay}"
+                              Visibility="{x:Bind ShowsProgress, Mode=OneWay}"
                               AutomationProperties.AccessibilityView="Raw"
                             />
                           </controls:Overlay>

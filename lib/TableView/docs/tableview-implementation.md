@@ -83,6 +83,10 @@ still use the platform resources required by the contract.
 `Table.QueueFill` coalesces load, width and ancestor-visibility notifications into
 one fill after visible layout, then detaches its layout listener. It uses the
 same fit and scale as `FillWidth`, without raising a persistence notification.
+`Table/Columns.cs` learns when the window frame drag starts and ends from the
+window's `InputNonClientPointerSource` (`EnteredMoveSize`, `ExitedMoveSize`).
+It discards the fitted widths when a drag starts and reuses them for every fill
+until it ends. Outside a drag every fill measures.
 Collapsed ancestors defer the fill until the table is shown. Visibility callbacks
 are registered while loaded and removed on unload; ordinary row updates and
 scrolling do not request a fill.

@@ -14,7 +14,7 @@ AppPublisherURL=https://github.com/SynoSoftware/TinyTorrent2
 AppUpdatesURL=https://github.com/SynoSoftware/TinyTorrent2/releases/latest
 DefaultDirName={localappdata}\Programs\TinyTorrent
 PrivilegesRequired=lowest
-SetupArchitecture=x64
+SetupArchitecture=x86
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion={#MinWindows}
@@ -28,7 +28,7 @@ OutputDir={#OutputDir}
 OutputBaseFilename={#InstallerName}
 Compression=lzma2/max
 SolidCompression=yes
-CloseApplications=no
+CloseApplications=yes
 RestartApplications=no
 ChangesAssociations=yes
 #ifdef Signed
@@ -59,6 +59,8 @@ english.Windows=Windows App Runtime
 spanish.Windows=Windows App Runtime
 english.RuntimeFailed=%1 could not be installed. Please try again. If Windows asks for administrator approval, allow the Microsoft installer. Error: %2
 spanish.RuntimeFailed=No se pudo instalar %1. Inténtalo de nuevo. Si Windows solicita permisos de administrador, permite el instalador de Microsoft. Error: %2
+english.RuntimeRestart=Restart Windows to finish installing %1, then run TinyTorrent Setup again.
+spanish.RuntimeRestart=Reinicia Windows para terminar de instalar %1 y vuelve a ejecutar el instalador de TinyTorrent.
 english.CheckFailed=The required components could not be checked. Please try again or contact support.
 spanish.CheckFailed=No se pudieron comprobar los componentes necesarios. Inténtalo de nuevo o contacta con soporte.
 english.CloseFailed=TinyTorrent is still running. Finish any open prompt or operation, or choose Exit and stop transfers, then try again.
@@ -115,7 +117,7 @@ begin
     ExpandConstant('{tmp}\Requirements.ps1') + '" -Kind ' + Kind,
     '', SW_HIDE, ewWaitUntilTerminated, Code) then
     RaiseException(CustomMessage('CheckFailed'));
-  if Code > 1 then
+  if (Code <> 0) and (Code <> 1) then
     RaiseException(CustomMessage('CheckFailed'));
   Result := Code = 0;
 end;
@@ -133,7 +135,8 @@ begin
   Result := (PageID = wpSelectTasks) and not FirstInstall;
 end;
 
-procedure InstallRuntime(const Kind, Parameters: String; Elevated: Boolean);
+procedure InstallRuntime(const Kind, Parameters: String; Elevated: Boolean;
+  var NeedsRestart: Boolean);
 var
   Code: Integer;
   Started: Boolean;
@@ -146,24 +149,42 @@ begin
   else
     Started := Exec(ExpandConstant('{tmp}\' + Kind + '.exe'),
       Parameters, '', SW_HIDE, ewWaitUntilTerminated, Code);
-  if not Started or ((Code <> 0) and (Code <> 3010)) then
-    RaiseException(FmtMessage(
-      CustomMessage('RuntimeFailed'), [CustomMessage(Kind), IntToStr(Code)]));
-  RebootNeeded := RebootNeeded or (Code = 3010);
+  Log(Format('%s installer: started=%d, code=%d', [Kind, Ord(Started), Code]));
+  RebootNeeded := RebootNeeded or (Started and (Code = 3010));
+  if Requirement(Kind) then exit;
+  if Started and (Code = 3010) then
+  begin
+    NeedsRestart := True;
+    RaiseException(FmtMessage(CustomMessage('RuntimeRestart'), [CustomMessage(Kind)]));
+  end;
+  RaiseException(FmtMessage(
+    CustomMessage('RuntimeFailed'), [CustomMessage(Kind), IntToStr(Code)]));
 end;
 
 function StopEngine(const Filename: String): Boolean;
 var
   Code: Integer;
 begin
-  Result := Exec(Filename, '--headless --exit', '', SW_HIDE,
-    ewWaitUntilTerminated, Code) and (Code = 0);
+  if Exec(Filename, '--headless --exit', '', SW_HIDE,
+    ewWaitUntilTerminated, Code) then
+  begin
+    Result := Code = 0;
+    exit;
+  end;
+  if IsUninstaller then
+  begin
+    Result := not FileExists(Filename);
+    exit;
+  end;
+  Log(Format('Installed engine could not start (%d); using the bundled engine.', [Code]));
+  ExtractTemporaryFile('{#EngineName}.exe');
+  Result := Exec(ExpandConstant('{tmp}\{#EngineName}.exe'), '--headless --exit', '',
+    SW_HIDE, ewWaitUntilTerminated, Code) and (Code = 0);
 end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   DotNet, Windows: Boolean;
-  Engine: String;
 begin
   Result := '';
   try
@@ -182,22 +203,11 @@ begin
       finally
         Downloads.Hide;
       end;
-      if DotNet then InstallRuntime('DotNet', '/install /quiet /norestart', True);
-      if Windows then InstallRuntime('Windows', '--quiet', False);
-      if not Requirement('DotNet') or not Requirement('Windows') then
-      begin
-        NeedsRestart := RebootNeeded;
-        RaiseException(CustomMessage('CheckFailed'));
-      end;
+      if DotNet then InstallRuntime('DotNet', '/install /quiet /norestart', True, NeedsRestart);
+      if Windows then InstallRuntime('Windows', '--quiet', False, NeedsRestart);
     end;
     WasRunning := WasRunning or Requirement('Running');
-    Engine := ExpandConstant('{app}\{#EngineName}.exe');
-    if not FileExists(Engine) then
-    begin
-      ExtractTemporaryFile('{#EngineName}.exe');
-      Engine := ExpandConstant('{tmp}\{#EngineName}.exe');
-    end;
-    if not StopEngine(Engine) then
+    if not StopEngine(ExpandConstant('{app}\{#EngineName}.exe')) then
       Result := CustomMessage('CloseFailed');
   except
     Result := GetExceptionMessage;
@@ -211,35 +221,36 @@ begin
   Result := Exec(ExpandConstant('{app}\{#EngineName}.exe'),
     '--headless --registration ' + Operation, '', SW_HIDE,
     ewWaitUntilTerminated, Code) and (Code = 0);
+  Log(Format('Registration %s: code=%d', [Operation, Code]));
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   Code: Integer;
+  Registered: Boolean;
 begin
   if CurStep = ssPostInstall then
   begin
     if FirstInstall then
     begin
       if WizardIsTaskSelected('handlers') then
-      begin
-        if not Registration('register_handlers') then
-          RaiseException(CustomMessage('RegistrationFailed'));
-      end
-      else if not Registration('unregister_handlers') then
-        RaiseException(CustomMessage('RegistrationFailed'));
+        Registered := Registration('register_handlers')
+      else
+        Registered := Registration('unregister_handlers');
       if WizardIsTaskSelected('startup') then
-      begin
-        if not Registration('enable_startup') then
-          RaiseException(CustomMessage('RegistrationFailed'));
-      end
-      else if not Registration('disable_startup') then
-        RaiseException(CustomMessage('RegistrationFailed'));
+        Registered := Registration('enable_startup') and Registered
+      else
+        Registered := Registration('disable_startup') and Registered;
+      if not Registered then
+        SuppressibleMsgBox(CustomMessage('RegistrationFailed'), mbInformation, MB_OK, IDOK);
     end;
     if WasRunning and not RebootNeeded then
       if not Exec(ExpandConstant('{app}\{#EngineName}.exe'), '--background', '',
         SW_SHOWNORMAL, ewNoWait, Code) then
-        RaiseException(CustomMessage('CloseFailed'));
+      begin
+        Log(Format('Background restart failed (%d); offering launch on Finish.', [Code]));
+        WasRunning := False;
+      end;
   end;
 end;
 
@@ -256,7 +267,6 @@ begin
     SuppressibleMsgBox(CustomMessage('CloseFailed'), mbError, MB_OK, IDOK);
     exit;
   end;
-  Result := Registration('unregister_handlers') and Registration('disable_startup');
-  if not Result then
-    SuppressibleMsgBox(CustomMessage('RegistrationFailed'), mbError, MB_OK, IDOK);
+  Registration('unregister_handlers');
+  Registration('disable_startup');
 end;

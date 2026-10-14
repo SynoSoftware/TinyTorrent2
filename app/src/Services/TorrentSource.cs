@@ -16,7 +16,7 @@ internal sealed class TorrentSource : IAsyncDisposable
     private bool _failureReported;
     private string? _session;
     private long _revision;
-    private Contribution[]? _contributions;
+    private Dictionary<string, (Contribution Contribution, long Size)>? _contributions;
     private CancellationTokenSource _generation = new();
 
     internal event EventHandler? Changed;
@@ -212,12 +212,14 @@ internal sealed class TorrentSource : IAsyncDisposable
                 }
                 catch (OperationCanceledException) when (!cancellation.IsCancellationRequested)
                 {
-                    // Foreground detail replaces background demand on the connection.
-                    return;
+                    // Foreground demand yields the connection without ending collection.
+                    if (!_client.IsConnected)
+                        return;
                 }
             }
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
+        catch (IOException) when (!_client.IsConnected) { }
         catch (Exception error)
         {
             lock (_gate)
@@ -253,14 +255,19 @@ internal sealed class TorrentSource : IAsyncDisposable
 
     private async Task<bool> Reconcile(JsonElement snapshot, CancellationToken cancellation)
     {
-        var contributions = snapshot.GetProperty("torrents").EnumerateArray().Select(Read).ToArray();
+        Dictionary<string, (Contribution Contribution, long Size)>? previous;
+        lock (_gate)
+            previous = _contributions;
+        var contributions = snapshot.GetProperty("torrents").EnumerateArray()
+            .Select(row => Read(row, previous)).ToDictionary(item => item.Contribution.Origin);
         lock (_gate)
         {
             cancellation.ThrowIfCancellationRequested();
             if (_contributions is not null && _contributions.SequenceEqual(contributions))
                 return false;
         }
-        var changed = await _sources.Reconcile(contributions, cancellation).ConfigureAwait(false);
+        var changed = await _sources.Reconcile(
+            contributions.Values.Select(item => item.Contribution).ToArray(), cancellation).ConfigureAwait(false);
         lock (_gate)
         {
             cancellation.ThrowIfCancellationRequested();
@@ -269,7 +276,10 @@ internal sealed class TorrentSource : IAsyncDisposable
         return changed;
     }
 
-    private static Contribution Read(JsonElement row)
+    private static (Contribution Contribution, long Size) Read(
+        JsonElement row,
+        IReadOnlyDictionary<string, (Contribution Contribution, long Size)>? contributions
+    )
     {
         var settled =
             !row.GetProperty("moving").GetBoolean()
@@ -277,12 +287,17 @@ internal sealed class TorrentSource : IAsyncDisposable
             && row.GetProperty("status").GetString() != "checking";
         var path = row.GetProperty("save_path").GetString()!;
         var complete = row.GetProperty("complete").GetBoolean();
-        return new Contribution(
-            row.GetProperty("torrent_id").GetString()!,
-            row.GetProperty("name").GetString()!,
-            complete,
-            settled
-        )
+        var origin = row.GetProperty("torrent_id").GetString()!;
+        var name = row.GetProperty("name").GetString()!;
+        var size = row.GetProperty("size").GetInt64();
+        if (contributions is not null && contributions.TryGetValue(origin, out var previous))
+        {
+            var contribution = previous.Contribution;
+            if (previous.Size == size && contribution.Name == name && contribution.SavePath == path
+                && contribution.Complete == complete && contribution.Settled == settled)
+                return previous;
+        }
+        return (new Contribution(origin, name, complete, settled)
         {
             SavePath = path,
             Stamp = JsonSerializer.Serialize(
@@ -291,10 +306,10 @@ internal sealed class TorrentSource : IAsyncDisposable
                     path,
                     complete,
                     settled,
-                    size = row.GetProperty("size").GetInt64(),
+                    size,
                 }
             ),
-        };
+        }, size);
     }
 
     private static IReadOnlyList<SourceFile>? Files(Contribution contribution, FileDetail detail)

@@ -79,58 +79,64 @@ bool Engine::State::FilesBusy() const
         std::any_of(torrents.begin(), torrents.end(), [](auto const& entry) { return entry.second.deleted; });
 }
 
-void Engine::State::PrepareFiles(Torrent& torrent)
+void Engine::State::ContinueNames()
 {
-    if (!changes.IsIdle() || torrent.deleted || torrent.restore || torrent.namePhase != NamePhase::Pending ||
-        torrent.FilesBusy() || FilesBusy() ||
-        std::chrono::steady_clock::now() < torrent.renameAt)
+    if (!changes.IsIdle() || FilesBusy())
         return;
-    auto metadata = torrent.handle.torrent_file();
-    if (!metadata)
-        return;
-    if (!torrent.names)
-    {
-        torrent.filesPending = true;
-        return;
-    }
     constexpr std::ptrdiff_t limit = 8;
     auto pending = std::count_if(torrents.begin(), torrents.end(),
         [](auto const& entry) { return entry.second.namePhase == NamePhase::Preparing; });
-    if (pending >= limit)
-        return;
-    torrent.namePhase = NamePhase::Preparing;
-    torrent.needsRecheck |= torrent.facts.verifyFiles;
-    torrent.ApplyIntent();
-    auto prepared = std::make_shared<lt::add_torrent_params>();
-    auto current = std::make_shared<lt::renamed_files>();
-    prepared->ti = metadata;
-    prepared->save_path = torrent.facts.savePath;
-    payload.Run([this, prepared, current, handle = torrent.handle,
-        appendsSuffix = torrent.facts.appendsSuffix, layout = torrent.facts.layout]
+    auto now = std::chrono::steady_clock::now();
+    for (auto& [id, torrent] : torrents)
     {
-        ReleaseFiles({handle});
-        *current = handle.get_renamed_files();
-        prepared->renamed_files = current->export_filenames(prepared->ti->layout());
-        PrepareNames(*prepared, appendsSuffix, layout);
-    },
-        [this, id = torrent.torrentId, prepared, current](StorageOutcome outcome)
-    {
-        auto found = torrents.find(id);
-        if (found == torrents.end())
-            return;
-        auto& torrent = found->second;
-        if (outcome.failure)
+        if (torrent.deleted || torrent.restore || torrent.namePhase != NamePhase::Pending ||
+            torrent.FilesBusy() || now < torrent.renameAt)
+            continue;
+        auto metadata = torrent.handle.torrent_file();
+        if (!metadata)
+            continue;
+        if (!torrent.names)
         {
-            torrent.namePhase = NamePhase::Pending;
-            torrent.renameAt = std::chrono::steady_clock::now() + std::chrono::seconds(30);
-            log.Write("rename", id, outcome.detail);
-            ContinueNames();
-            return;
+            torrent.filesPending = true;
+            continue;
         }
-        torrent.needsRecheck |= ApplyNames(torrent.handle, *prepared, *current, torrent.renaming);
-        if (torrent.renaming.empty())
-            FinishNames(torrent);
-    });
+        if (pending >= limit)
+            continue;
+        ++pending;
+        torrent.namePhase = NamePhase::Preparing;
+        torrent.needsRecheck |= torrent.facts.verifyFiles;
+        torrent.ApplyIntent();
+        auto prepared = std::make_shared<lt::add_torrent_params>();
+        auto current = std::make_shared<lt::renamed_files>();
+        prepared->ti = metadata;
+        prepared->save_path = torrent.facts.savePath;
+        payload.Run([this, prepared, current, handle = torrent.handle,
+            appendsSuffix = torrent.facts.appendsSuffix, layout = torrent.facts.layout]
+        {
+            ReleaseFiles({handle});
+            *current = handle.get_renamed_files();
+            prepared->renamed_files = current->export_filenames(prepared->ti->layout());
+            PrepareNames(*prepared, appendsSuffix, layout);
+        },
+            [this, id, prepared, current](StorageOutcome outcome)
+        {
+            auto found = torrents.find(id);
+            if (found == torrents.end())
+                return;
+            auto& torrent = found->second;
+            if (outcome.failure)
+            {
+                torrent.namePhase = NamePhase::Pending;
+                torrent.renameAt = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+                log.Write("rename", id, outcome.detail);
+                ContinueNames();
+                return;
+            }
+            torrent.needsRecheck |= ApplyNames(torrent.handle, *prepared, *current, torrent.renaming);
+            if (torrent.renaming.empty())
+                FinishNames(torrent);
+        });
+    }
 }
 
 void Engine::State::PrepareNames(lt::add_torrent_params& params, bool appendsSuffix, Layout layout)
@@ -184,12 +190,6 @@ bool Engine::State::ApplyNames(lt::torrent_handle const& handle, lt::add_torrent
         changed = true;
     }
     return changed;
-}
-
-void Engine::State::ContinueNames()
-{
-    for (auto& [id, torrent] : torrents)
-        PrepareFiles(torrent);
 }
 
 void Engine::State::FinishNames(Torrent& torrent)
@@ -319,9 +319,9 @@ void Engine::State::CompleteFiles(Torrent& torrent, lt::span<std::int64_t const>
 
 void Engine::State::FinishFiles(Torrent& torrent, std::optional<lt::file_index_t> after)
 {
-    if (IsShuttingDown() || torrent.deleted || torrent.filesPending || torrent.namePhase != NamePhase::Ready || FilesBusy() || !additions.empty() ||
-        !changes.IsIdle() ||
-        std::chrono::steady_clock::now() < torrent.renameAt || torrent.completedFiles.empty())
+    if (IsShuttingDown() || torrent.deleted || torrent.filesPending || torrent.namePhase != NamePhase::Ready ||
+        torrent.completedFiles.empty() || std::chrono::steady_clock::now() < torrent.renameAt ||
+        !additions.empty() || !changes.IsIdle() || FilesBusy())
         return;
     if (!NamesReady())
         return;

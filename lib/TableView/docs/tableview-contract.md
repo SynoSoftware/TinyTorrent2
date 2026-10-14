@@ -1038,12 +1038,17 @@ the width a column has before the first fill.
 Resizing, fitting and filling change only that instance's widths. Destroying it
 discards those widths; another instance starts with a fresh fill.
 
-**Owner ruling: every table fills its width when shown and when its available
-width changes.** This includes opening a previously hidden tab, resizing the
+Every table fills its width when shown and when its available
+width changes. This includes opening a previously hidden tab, resizing the
 window, and moving a splitter, so every table uses the space it actually has.
 The table owns these triggers; hosts do not duplicate the calls. It waits for
 a completed visible layout, including visible ancestors, then runs the same
-bounded fit and scale as `FillWidth()`. Hidden tables defer this work until shown.
+bounded fit and scale as `FillWidth()`. While the user drags the window frame,
+the first fill measures and later fills reuse those unscaled fitted widths
+until the drag ends, because the window's width does not change the content's
+natural width. Minimum-width clamps must not change those proportions. There
+is no refit when the drag ends; the next fill after it measures again, and
+explicit fit commands always measure. Hidden tables defer this work until shown.
 Several size or visibility notifications before that layout produce one fill.
 Automatic fills raise no `LayoutChanged`, because width changes must not trigger
 saved-layout writes. Assigning `Layout`, data arrival, property updates, sorting,

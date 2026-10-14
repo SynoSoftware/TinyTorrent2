@@ -71,19 +71,18 @@ internal sealed class FileSources(Database database)
         );
 
     internal Task MarkChecked(Contribution contribution, CancellationToken cancellation) =>
-        database.Run(
-            connection =>
-            {
-                using var command = connection.CreateCommand();
-                command.CommandText =
-                    "UPDATE contributions SET checked=$checked WHERE origin=$origin AND stamp=$stamp;";
-                command.Parameters.AddWithValue("$checked", Environment.TickCount64);
-                command.Parameters.AddWithValue("$origin", contribution.Origin);
-                command.Parameters.AddWithValue("$stamp", contribution.Stamp);
-                return command.ExecuteNonQuery();
-            },
-            cancellation
-        );
+        database.Run(connection => MarkChecked(connection, contribution), cancellation);
+
+    private static int MarkChecked(SqliteConnection connection, Contribution contribution)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText =
+            "UPDATE contributions SET checked=$checked WHERE origin=$origin AND stamp=$stamp;";
+        command.Parameters.AddWithValue("$checked", Environment.TickCount64);
+        command.Parameters.AddWithValue("$origin", contribution.Origin);
+        command.Parameters.AddWithValue("$stamp", contribution.Stamp);
+        return command.ExecuteNonQuery();
+    }
 
     internal Task<bool> Reconcile(
         IReadOnlyList<Contribution> contributions,
@@ -178,12 +177,20 @@ internal sealed class FileSources(Database database)
             {
                 using var command = connection.CreateCommand();
                 command.CommandText =
-                    "SELECT COUNT(*) FROM contributions WHERE origin=$origin AND stamp=$stamp;";
+                    "SELECT collected FROM contributions WHERE origin=$origin AND stamp=$stamp;";
                 command.Parameters.AddWithValue("$origin", contribution.Origin);
                 command.Parameters.AddWithValue("$stamp", contribution.Stamp);
-                if (Convert.ToInt64(command.ExecuteScalar()) == 0)
+                if (command.ExecuteScalar() is not long collected)
                     return false;
 
+                if (collected != 0 && Unchanged(connection, contribution.Origin, files, cancellation))
+                {
+                    MarkChecked(connection, contribution);
+                    return false;
+                }
+
+                // Share saved choices and subtitle ownership before changed
+                // membership separates or removes their current contributors.
                 command.CommandText = Database.Reconcile;
                 var changed = command.ExecuteNonQuery() != 0;
                 command.CommandText = "DELETE FROM received;";
@@ -219,8 +226,7 @@ internal sealed class FileSources(Database database)
                     }
                 )
                     write.Parameters.Add("$" + name, SqliteType.Integer);
-                command.CommandText = "SELECT collected=0 FROM contributions WHERE origin=$origin;";
-                changed |= Convert.ToInt64(command.ExecuteScalar()) != 0;
+                changed |= collected == 0;
                 foreach (var file in files)
                 {
                     cancellation.ThrowIfCancellationRequested();
@@ -236,8 +242,7 @@ internal sealed class FileSources(Database database)
                     write.Parameters["$name"].Value = name;
                     write.Parameters["$path"].Value = file.Path;
                     write.Parameters["$size"].Value = file.Size;
-                    write.Parameters["$complete"].Value =
-                        file.Complete && StringComparer.OrdinalIgnoreCase.Equals(file.Path, path);
+                    write.Parameters["$complete"].Value = IsComplete(file, path);
                     write.Parameters["$wanted"].Value = file.Wanted;
                     var kind = FileName.Kind(path);
                     write.Parameters["$kind"].Value = (int)kind;
@@ -273,6 +278,41 @@ internal sealed class FileSources(Database database)
             },
             cancellation
         );
+
+    private static bool Unchanged(
+        SqliteConnection connection,
+        string origin,
+        IReadOnlyList<SourceFile> files,
+        CancellationToken cancellation
+    )
+    {
+        var incoming = files.ToDictionary(file => file.Index);
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT f.file_index,f.path,f.name,l.path,f.size,f.complete,f.wanted
+            FROM source_files f JOIN locations l USING(entry_id) WHERE f.origin=$origin;
+            """;
+        command.Parameters.AddWithValue("$origin", origin);
+        using var reader = command.ExecuteReader();
+        var count = 0;
+        while (reader.Read())
+        {
+            cancellation.ThrowIfCancellationRequested();
+            if (!incoming.TryGetValue(reader.GetInt32(0), out var file))
+                return false;
+            var path = Path.GetFullPath(file.FinalPath);
+            if (reader.GetString(1) != file.Path || reader.GetString(2) != Path.GetFileName(path)
+                || !StringComparer.OrdinalIgnoreCase.Equals(reader.GetString(3), path)
+                || reader.GetInt64(4) != file.Size || reader.GetBoolean(5) != IsComplete(file, path)
+                || reader.GetBoolean(6) != file.Wanted)
+                return false;
+            count++;
+        }
+        return count == files.Count;
+    }
+
+    private static bool IsComplete(SourceFile file, string path) =>
+        file.Complete && StringComparer.OrdinalIgnoreCase.Equals(file.Path, path);
 
     private static long Locate(SqliteConnection connection, string origin, int index, string path)
     {

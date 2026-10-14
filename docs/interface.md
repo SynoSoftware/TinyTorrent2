@@ -485,14 +485,18 @@ Ordered tabs use horizontal motion in their visible order and reverse when
 returning, so direction has an observable meaning. Changing the selected torrent
 or Library file gently fades its new details into place once; live statistics
 and information updates never replay that entrance. These changes do not fade
-through a blank surface. Shared motion uses 180 ms with cubic ease-out, clipped
+through a blank surface. Shared motion uses 250 ms with cubic ease-out, clipped
 to its host, without bounce or decorative staggering. Rapid navigation continues
 from the current position or opacity rather than snapping back to the start.
 One motion owner supplies the shared timing and easing. Motion never delays input
 or a state change. When the user turns animations off in Windows, the same
 changes stay clear without substitute motion.
-Settings category changes move the title, summary and settings together in one
-short entrance, so a new header does not appear before its settings.
+**Owner ruling: Settings categories enter from outside the content viewport,
+without fading.** A short nudge makes the replacement appear instant, and a
+fade can superimpose pages. The title, summary and settings travel together by
+the full viewport width, in navigation order. Entrances start off-screen before
+layout can present the new content. Content creation and layout finish before
+navigation animations start, so loading does not consume their visible duration.
 
 Required contrast is 4.5:1 for ordinary text and 3:1 for large text and essential
 non-text indicators such as focus and selection. Measure actual adjacent colors
@@ -939,8 +943,9 @@ source; downloading uses a fraction only with a trustworthy byte total.
 Indexing, optimization and finalization are indeterminate.
 Per-phase percentages are never presented as one overall percentage. A
 confirmed wait is named as such; accepted subtitle work alone does not prove
-active network searching. Ambient video-information state appears on Library's
-Videos view only when explicit work does not occupy the space.
+active network searching. A video-provider wait appears on Library's Videos view
+only when explicit work does not occupy the space. Automatic download preferences
+stay in Settings · Plugins, because an intentional choice needs no ambient notice.
 
 The footer measures text in the current language and scale. Remove optional
 update, default-download-volume space, torrent IP and routine port diagnostics
@@ -1344,7 +1349,7 @@ the title-bar search's existing scope of torrents, commands and settings.
 Settings uses the approved Windows Settings composition in
 `app/settings-windows-prototype.html`, variant C, and its accompanying notes.
 Its sidebar contains Home, General, Transfers, Speed limits, Schedule,
-Appearance, Network, Library & subtitles, and Advanced. Advanced appears while
+Appearance, Network, Plugins, and Advanced. Advanced appears while
 Advanced mode is on. The sidebar's TinyTorrent logo and name form a
 native button that returns directly to the workspace Settings was opened from.
 The sidebar's footer items are Advanced mode and then the same return action,
@@ -1428,10 +1433,21 @@ Transfers contains Download locations, Adding torrents, Queue, Seeding limits,
 Watched folder, Skip files, and a Delete through Recycle Bin switch. Skip files
 hides its pattern editor while off, retaining the saved patterns. Network begins with adapter
 and proxy cards; advanced groups contain encryption, peer connections,
-discovery and incoming connections. Library & subtitles places video
-information before supplier access, wanted languages, automatic subtitles and
+discovery and incoming connections. Plugins places video
+information, with the IMDb data and City data rows, before supplier access,
+wanted languages, automatic subtitles and
 additional matches, followed by Library search, local scan and the shared
-provider search limit. Filtering languages never discards hidden selections.
+provider search limit. Video information separates Provider from the Download
+automatically switch; configuring a provider, its credentials or its data does
+not change automatic download intent. Provider configuration supports manual
+requests independently of automatic work, so its controls stay available in
+either switch state. The switch's neutral description states its background work.
+The header facts identify the video provider and subtitle
+supplier; automatic download state stays at each setting's control, so neither
+preference is given extra prominence. The two data rows are one control with one pair of
+dialogs, worded from each dataset's text section, so a download, update or
+deletion of either data reads and behaves the same
+([peer location](peer-location.md)). Filtering languages never discards hidden selections.
 Search and scan feedback occupy reserved single-line slots, so results do not
 shift controls.
 
@@ -1452,10 +1468,16 @@ external IP and title-bar speeds use three directly accessible switch cards.
 The external-IP card follows Advanced mode; hiding it keeps its saved
 value and removes its whole card from the layout.
 
-Home, search and related links use one reveal-expand-scroll-focus path. A
-destination surface receives a neutral outline with normal card rounding,
-flush against the block and excluding external section headings. It lasts
-three seconds or until focus enters a control. Theme selection retains its
+Home, search and related links use one reveal-expand-scroll-focus path.
+
+**Owner ruling: the destination outline encloses the whole visible card,
+including its icon, padding and contents, and excludes external headings.**
+The card styles and each section template's `Card` part identify that surface; the reveal path
+selects the nearest enclosing card, never an inner row, label or editor. This
+keeps the outline off title text and prevents narrower highlights when a card
+adds an icon beside its rows. The outline is neutral with normal card rounding,
+flush against the block. It lasts three seconds or until focus enters a control.
+Theme selection retains its
 accent outline and checkmark. Sidebar category selection replaces the current
 Settings visit, so Back does not retrace every peer category. Related links keep
 their return destination and scroll position; breadcrumbs describe hierarchy.
@@ -1716,6 +1738,52 @@ hierarchy. Torrent-specific file commands stay in the application. Tracker error
 status text uses the critical brush; other tracker states remain neutral, so
 failed trackers stand out without colouring every healthy row.
 
+Peers has one compact State column: Connecting, Handshake, or Connected, with
+a leading Lucide icon. Tracker Status likewise has a leading state icon. Icons
+are static, use the existing inline size, and stay out of automation; the text
+still names every state. An unidentified client shows a dash. Connection uses
+Plain, RC4, or TLS, with unknown encryption until the handshake finishes. Its
+tooltip distinguishes handshake obfuscation from encrypted payload. Web seeds
+report unknown encryption when their sample lacks that information, and their
+upload tooltip explains that they only provide downloads.
+Peer State tooltips explain the connection stage and discovery sources; rate
+tooltips show interest, choke and observed bandwidth, network or disk waits.
+These facts explain the current sample without claiming one cause for a slow
+transfer.
+
+Peers has a Location column after Client: the country's flag at the cell's
+text size, followed by the country name, or by the city and country once the
+person downloads the city data. The flag is decorative and stays out of
+automation; the text carries the location, and a tooltip shows it in full
+when the column is narrow. An address the data lacks, such as a private
+address, a web seed or an I2P destination, shows a dash. There is no switch:
+the column shows what the installed data can resolve
+([peer location](peer-location.md)).
+
+The Peers header has two icon-only Lucide toggle buttons, Map and Table, beside
+the existing pane actions. Either or both remain visible; the last visible view
+cannot be switched off. There is no additional toolbar or footer row. When both
+are visible, the inspector chooses the arrangement that fits the larger map in
+the available space, rather than a fixed portrait/landscape breakpoint. The
+shared Splitter adjusts their proportions without switching arrangement during
+the gesture. Each orientation retains its proportion in the saved layout.
+The map and table share live peer observations and keep individual connections
+in the table. Connection and active counts join the existing status-bar context;
+map hover details describe the location, rates and precision.
+[Peer location](peer-location.md#map) owns aggregation, precision and rendering.
+With no torrent selected, Peers shows all torrents and Speed shows session
+history; the other sections still require a selected torrent. A multiple
+selection does not silently choose one torrent. Scope follows the selection;
+there is no separate All torrents control or map-precision selector.
+
+Tracker headers stay short: Downloads and Next. Header and value tooltips explain
+completed downloads reported by the tracker and the next announce or retry;
+an unreported count stays a dash, not zero. Status and Message tooltips retain
+per-local-endpoint and info-hash-version status, consecutive failures and raw
+diagnostics. The visible message belongs to the displayed aggregate status,
+so a working route cannot inherit another route's error. Diagnostic text also
+appears as automation help. These details add no columns or network requests.
+
 **Owner ruling:** the six inspector sections use a native SelectorBar at the
 start of one header row. The torrent name is centred in the space between the
 SelectorBar and the Pin and Close icon buttons. The owner
@@ -1816,7 +1884,8 @@ keeps the destination and choices. Accepted
 work appears as Moving files without a file-copy percentage; row errors direct
 the person to reopen Move files and choose the folder holding the files.
 
-The Speed view shows the [selected torrent's speed history](engine.md#state-and-work)
+The Speed view shows the [selected torrent's speed history](engine.md#state-and-work),
+or session history when nothing is selected,
 and replaces its graph when the selected torrent changes. It continues while WinUI
 is closed, so reopening shows what happened meanwhile. Unknown gaps, such as the
 time before an engine restart, are not interpolated into invented history.

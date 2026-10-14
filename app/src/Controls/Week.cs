@@ -37,6 +37,7 @@ public sealed partial class Week : UserControl
     private int _day;
     private int _minute;
     private int? _hoverDay;
+    private int? _gridStep;
     private double TrackWidth => Math.Max(1, ActualWidth - Gutter);
 
     internal Week(Schedule model)
@@ -55,7 +56,7 @@ public sealed partial class Week : UserControl
             _model.TextChanged += OnText;
             _settings.TextScaleFactorChanged += OnScaling;
             _clock.Start();
-            DrawGrid();
+            DrawGrid(rebuild: true);
             Invalidate();
         };
         Unloaded += (_, _) =>
@@ -112,7 +113,7 @@ public sealed partial class Week : UserControl
 
     private void OnText(object? sender, EventArgs args)
     {
-        DrawGrid();
+        DrawGrid(rebuild: true);
         Invalidate();
     }
 
@@ -120,7 +121,7 @@ public sealed partial class Week : UserControl
         DispatcherQueue.TryEnqueue(() =>
         {
             CancelDrag();
-            DrawGrid();
+            DrawGrid(rebuild: true);
             Invalidate();
         });
 
@@ -135,13 +136,13 @@ public sealed partial class Week : UserControl
 
     private void Place(FrameworkElement element, double x, double y)
     {
-        element.IsHitTestVisible = false;
-        AutomationProperties.SetAccessibilityView(
-            element,
-            Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw
-        );
+        if (element.Parent is null)
+        {
+            element.IsHitTestVisible = false;
+            AutomationProperties.SetAccessibilityView(element, AccessibilityView.Raw);
+            Backdrop.Children.Add(element);
+        }
         Position(element, x, y);
-        Backdrop.Children.Add(element);
     }
 
     private static void Position(FrameworkElement element, double x, double y)
@@ -187,16 +188,26 @@ public sealed partial class Week : UserControl
             TextTrimming = TextTrimming.CharacterEllipsis,
         };
 
-    private void DrawGrid()
+    private void DrawGrid(bool rebuild = false)
     {
-        Backdrop.Children.Clear();
         Height = Ruler + 7 * RowHeight;
         if (ActualWidth <= Gutter + 24)
+        {
+            Backdrop.Children.Clear();
+            _gridStep = null;
             return;
+        }
         var step = TrackWidth >= 192 * _settings.TextScaleFactor ? 6 : 12;
+        rebuild |= _gridStep != step;
+        if (rebuild)
+            Backdrop.Children.Clear();
+        _gridStep = step;
+        var index = 0;
         for (var hour = 0; hour <= 24; hour += step)
         {
-            var label = Text(hour.ToString("00"), "WeekSecondaryStyle");
+            var label = rebuild ? Text(hour.ToString("00"), "WeekSecondaryStyle")
+                : (TextBlock)Backdrop.Children[index];
+            index++;
             label.Width = 28 * _settings.TextScaleFactor;
             label.TextAlignment =
                 hour == 0 ? TextAlignment.Left
@@ -212,32 +223,32 @@ public sealed partial class Week : UserControl
         }
         for (var day = 0; day < 7; day++)
         {
-            var label = Text(_model.ShortDay(day));
+            var label = rebuild ? Text(_model.ShortDay(day)) : (TextBlock)Backdrop.Children[index];
+            index++;
             label.Width = Gutter - 8;
-            label.Measure(new Size(label.Width, double.PositiveInfinity));
+            if (rebuild)
+                label.Measure(new Size(label.Width, double.PositiveInfinity));
             Place(label, 0, Y(day) + (RowHeight - label.DesiredSize.Height) / 2);
-            Place(
-                new Border
+            var track = rebuild ? new Border
                 {
-                    Width = TrackWidth,
-                    Height = RowHeight - 4,
                     Style = (Style)Resources["WeekTrackStyle"],
                     BorderThickness = new(1),
-                },
-                Gutter,
-                Y(day)
-            );
+                } : (Border)Backdrop.Children[index];
+            index++;
+            track.Width = TrackWidth;
+            track.Height = RowHeight - 4;
+            Place(track, Gutter, Y(day));
             for (var hour = step; hour < 24; hour += step)
-                Place(
-                    new Border
+            {
+                var line = rebuild ? new Border
                     {
                         Width = 1,
                         Height = RowHeight - 4,
                         Style = (Style)Resources["WeekLineStyle"],
-                    },
-                    X(hour * 60),
-                    Y(day)
-                );
+                    } : (Border)Backdrop.Children[index];
+                index++;
+                Place(line, X(hour * 60), Y(day));
+            }
         }
     }
 

@@ -62,6 +62,12 @@ ratings for every provider's movies. Phases 1 and 2 have implementation done;
 dataset measurements and live-data validation remain outstanding. Phase 3 is
 not implemented and remains a design for review.
 
+[Peer location](peer-location.md) owns the peers' Location column: the DB-IP
+country data installed with the app, the city data the person downloads
+through the same dataset path as IMDb data, and the flags.
+It also owns the native peer map and its estimated country distribution. The
+[implementation plan](peer-map-plan.md) records the approved scope and validation gaps.
+
 For TableView work, continue with the [table glossary](../lib/TableView/CONTEXT.md),
 [TableView contract](../lib/TableView/docs/tableview-contract.md), and
 [TableView implementation](../lib/TableView/docs/tableview-implementation.md).

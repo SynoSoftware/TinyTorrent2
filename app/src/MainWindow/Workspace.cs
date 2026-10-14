@@ -175,9 +175,13 @@ public sealed partial class MainWindow
             _settingsPage.ProxyRequested += async (_, _) => await ShowProxy();
             _settingsPage.SupplierRequested += async (_, supplierId) =>
                 await ShowSupplier(supplierId);
-            _settingsPage.KeyRequested += async (_, option) => await ShowKey(option);
-            _settingsPage.DownloadRequested += async (_, option) => await ConfirmDownload(option);
-            _settingsPage.DeleteRequested += async (_, option) => await ConfirmDataDeletion(option);
+            _settingsPage.KeyRequested += async (_, setup) =>
+                await ShowKey(setup.Provider, setup.EnableAutomaticDownload);
+            _settingsPage.AutomaticDataRequested += async (_, _) =>
+                await ConfirmDownload(Model.Library, Model.PrepareAutomaticDownload);
+            _settingsPage.UpdateRequested += async (_, dataset) =>
+                await ConfirmDownload(dataset, () => Model.DownloadData(dataset));
+            _settingsPage.DeleteRequested += async (_, dataset) => await ConfirmDataDeletion(dataset);
             _settingsPage.ConnectionRequested += async (_, _) => await ShowConnection();
             _settingsPage.LayoutChanged += (_, _) => UpdateChrome();
         }
@@ -193,8 +197,7 @@ public sealed partial class MainWindow
             WindowPage.Credits => CreditsContent,
             _ => Workspace,
         };
-        _pages.Show(content, Model.Page >= _page ? 1 : -1);
-        _page = Model.Page;
+        var animate = ReferenceEquals(_pages.Current, content) && !_pages.IsActive;
         if (Model.Page == WindowPage.About && _aboutPage is null)
         {
             _aboutPage = new AboutPage(Model);
@@ -220,17 +223,19 @@ public sealed partial class MainWindow
                     _connectionPage.ReturnRequested += async (_, _) => await ReturnToSettings();
                     _connectionPage.ParentRequested += async (_, _) => await ShowSettings(new(SettingsCategory.Limits));
                 }
-                settings.ShowConnection(_connectionPage, animate: !_pages.IsActive);
+                settings.ShowConnection(_connectionPage, animate);
             }
             else
             {
-                settings.ShowConnection(null, animate: !_pages.IsActive);
-                settings.Navigate(Model.Navigation.Settings ?? new(), animate: !_pages.IsActive);
+                settings.ShowConnection(null, animate);
+                settings.Navigate(Model.Navigation.Settings ?? new(), animate: animate);
             }
         }
         TorrentMenu.IsEnabled = Model.Page is WindowPage.Torrents or WindowPage.Library;
         ViewMenu.IsEnabled = TorrentMenu.IsEnabled;
         UpdateLibraryPage();
+        _pages.Show(content, forward: Model.Page >= _page);
+        _page = Model.Page;
     }
 
     private void UpdateBack()
@@ -432,6 +437,7 @@ public sealed partial class MainWindow
             return;
         if (Model.Page == WindowPage.Library)
         {
+            Model.Library.SubmitSearch();
             _libraryTable?.FocusRows();
             return;
         }
@@ -450,10 +456,15 @@ public sealed partial class MainWindow
     private void UpdateInspectorSize()
     {
         var expanded = Model.HasInspector && !Model.IsInspectorCompact;
+        var maximized = expanded && InspectorContent.Content is InspectorPane { IsMaximized: true };
         var opening = InspectorSurface.Visibility != Visibility.Visible;
-        Split.Visibility = InspectorSurface.Visibility = expanded
-            ? Visibility.Visible
-            : Visibility.Collapsed;
+        InspectorSurface.Visibility = expanded ? Visibility.Visible : Visibility.Collapsed;
+        Split.Visibility = expanded && !maximized ? Visibility.Visible : Visibility.Collapsed;
+        // A maximized inspector spans every workspace row on both pages. The
+        // workspace content collapses, because it would show through the pane.
+        WorkspaceContent.Visibility = maximized ? Visibility.Collapsed : Visibility.Visible;
+        Grid.SetRow(InspectorSurface, maximized ? 0 : 2);
+        Grid.SetRowSpan(InspectorSurface, maximized ? 3 : 1);
         InspectorToggle.Visibility =
             Model.HasInspector && Model.IsInspectorCompact
                 ? Visibility.Visible
@@ -468,6 +479,7 @@ public sealed partial class MainWindow
             var pane = new InspectorPane(Model.Inspector);
             pane.Close.Click += OnInspectorClose;
             pane.Minimize.Click += OnInspectorMinimize;
+            pane.Maximize.Click += OnInspectorMaximize;
             if (_placement?.Inspector is { } layout)
                 pane.Layout = layout;
             InspectorContent.Content = pane;
@@ -488,7 +500,7 @@ public sealed partial class MainWindow
         Split.SetBounds(0, maximum, _splitHeight);
         InspectorRow.Height = new GridLength(Split.Value);
         if (opening && Model.Page == WindowPage.Torrents)
-            _motion.Play(InspectorSurface, 12);
+            _motion.Enter(InspectorSurface);
     }
 
     private void OnInspectorMinimize(object sender, RoutedEventArgs args)
@@ -498,6 +510,14 @@ public sealed partial class MainWindow
                 ? FocusState.Keyboard
                 : FocusState.Programmatic;
         CollapseInspector(focus);
+    }
+
+    // The split height is kept while maximized, so Restore returns to it.
+    private void OnInspectorMaximize(object sender, RoutedEventArgs args)
+    {
+        var pane = (InspectorPane)InspectorContent.Content;
+        pane.IsMaximized = !pane.IsMaximized;
+        UpdateInspectorSize();
     }
 
     private void OnSplitCommitted(object? sender, double previous)

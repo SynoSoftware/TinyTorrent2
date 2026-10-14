@@ -58,8 +58,11 @@
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.2705" />
     <PackageReference Include="Microsoft.WindowsAppSDK.WinUI" Version="2.3.9" />
     <PackageReference Include="Microsoft.WindowsAppSDK.Runtime" Version="2.5.1" />
+    <PackageReference Include="MaxMind.Db" Version="5.2.0" />
+    <PackageReference Include="Microsoft.Graphics.Win2D" Version="1.4.0" />
     <ProjectReference Include="..\..\lib\TableView\src\TableView.csproj" />
     <EmbeddedResource Include="Resources\*.json" LogicalName="%(Filename)%(Extension)" />
+    <EmbeddedResource Include="Assets\world.json" LogicalName="world.json" />
     <Content Include="Assets\tmdb.svg" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Assets\*.jpg;Assets\Settings\*.svg;Assets\Settings\*.png;Assets\Settings\LICENSE" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\..\resources\TinyTorrent.ico" Link="Assets\TinyTorrent.ico" CopyToOutputDirectory="PreserveNewest" />
@@ -70,7 +73,9 @@
     <None Include="$(ArtifactsPath)\bin\Engine\$(Configuration)\$(EngineTargetName).exe" Link="$(EngineTargetName).exe" CopyToOutputDirectory="Never" CopyToPublishDirectory="PreserveNewest" Visible="false" />
     <UpToDateCheckInput Include="$(ArtifactsPath)\bin\Engine\$(Configuration)\$(EngineTargetName).exe" />
     <UpToDateCheckInput Include="..\CopyEngine.ps1" />
+    <UpToDateCheckInput Include="..\CountryData.ps1" />
     <UpToDateCheckOutput Include="$(TargetDir)$(EngineTargetName).exe" />
+    <UpToDateCheckOutput Include="$(TargetDir)Assets\dbip-country-lite.mmdb" />
     <AssemblyMetadata Include="EngineFile" Value="$(EngineTargetName).exe" />
     <AssemblyMetadata Include="TmdbToken" Value="$(TmdbToken)" Condition="'$(TmdbToken)' != ''" />
     <AssemblyMetadata Include="OmdbKey" Value="$(OmdbKey)" Condition="'$(OmdbKey)' != ''" />
@@ -85,12 +90,31 @@
       <FileWrites Include="$(TargetDir)$(EngineTargetName).exe" />
     </ItemGroup>
   </Target>
-  <!-- WinUI adds generated resources to build output, but .NET Publish does
-       not collect the application's PRI or loose compiled XAML. -->
+  <!-- Peer countries resolve from DB-IP's country data, which the build fetches
+       once a month, so a release ships the current month's file. -->
+  <Target Name="CountryData" BeforeTargets="_CopyOutOfDateSourceItemsToOutputDirectory;CopyFilesToOutputDirectory">
+    <Exec Command="pwsh -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)..\CountryData.ps1&quot; -Cache &quot;$(ArtifactsPath)\data&quot; -Destination &quot;$(TargetDir)Assets\dbip-country-lite.mmdb&quot;" />
+    <ItemGroup>
+      <FileWrites Include="$(TargetDir)Assets\dbip-country-lite.mmdb" />
+    </ItemGroup>
+  </Target>
+  <!-- .NET Publish does not collect all the resources WinUI adds to build output. -->
   <Target Name="PublishXamlResources" AfterTargets="ComputeFilesToPublish" DependsOnTargets="_GenerateProjectPriFile;CustomOutputGroupForPackaging">
     <ItemGroup>
       <ResolvedFileToPublish Include="$(ProjectPriFullPath)">
         <RelativePath>$(ProjectPriFileName)</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
+      <ResolvedFileToPublish Include="$(TargetDir)Lucide\Fonts\lucide.ttf">
+        <RelativePath>Lucide\Fonts\lucide.ttf</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
+      <ResolvedFileToPublish Include="$(TargetDir)Lucide\Fonts\twemoji.ttf">
+        <RelativePath>Lucide\Fonts\twemoji.ttf</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
+      <ResolvedFileToPublish Include="$(TargetDir)Assets\dbip-country-lite.mmdb">
+        <RelativePath>Assets\dbip-country-lite.mmdb</RelativePath>
         <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
       </ResolvedFileToPublish>
       <ResolvedFileToPublish Include="@(CustomOutputGroupForPackagingOutput)" Condition="'$(DisableEmbeddedXbf)' == 'true'">
