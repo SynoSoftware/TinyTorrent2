@@ -74,7 +74,10 @@ internal sealed class Automatic : UserControl
                 return;
             await model.SetEnabled(enabled);
         }
-        catch (OperationCanceledException) { }
+        catch (OperationCanceledException)
+        {
+            System.Diagnostics.Debug.WriteLine("Automatic subtitle setting save cancelled.");
+        }
         catch (Exception error)
         {
             if (!model.IsDisposed && (_model is null || _model == model))

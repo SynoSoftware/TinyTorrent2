@@ -244,7 +244,10 @@ internal sealed partial class Acquisition
             await ReconcileJobs(index, cancellation).ConfigureAwait(false);
             await ReconcileFiles(index, cancellation).ConfigureAwait(false);
             try { await Discover(cancellation).ConfigureAwait(false); }
-            catch (OperationCanceledException) when (!cancellation.IsCancellationRequested) { }
+            catch (OperationCanceledException) when (!cancellation.IsCancellationRequested)
+            {
+                System.Diagnostics.Debug.WriteLine("Automatic subtitle file discovery cancelled.");
+            }
             var eligible = targets.Where(Eligible)
                 .SelectMany(target => target.Videos.Select(video =>
                     (target.Language, video.Origin, video.Index))).ToHashSet();
@@ -310,7 +313,10 @@ internal sealed partial class Acquisition
             if (reconciled)
                 _saveFailed = false;
         }
-        catch (OperationCanceledException) { }
+        catch (OperationCanceledException)
+        {
+            System.Diagnostics.Debug.WriteLine("Subtitle membership reconciliation cancelled.");
+        }
         catch (SqliteException) { }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)
         {

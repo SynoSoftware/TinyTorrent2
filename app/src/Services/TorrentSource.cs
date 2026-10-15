@@ -216,7 +216,10 @@ internal sealed class TorrentSource : IAsyncDisposable
                 }
             }
         }
-        catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+            System.Diagnostics.Debug.WriteLine("Torrent file collection cancelled.");
+        }
         catch (IOException) when (!_client.IsConnected) { }
         catch (Exception error)
         {

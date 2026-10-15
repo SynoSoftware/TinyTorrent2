@@ -859,7 +859,9 @@
           Property="Background"
           Value="{ThemeResource LayerOnMicaBaseAltFillColorDefaultBrush}"
         />
-        <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
+        <!-- CardStrokeColorDefaultBrush differs too little from the dark Mica
+             base to see, so the outline uses the in-app surface stroke. -->
+        <Setter Property="BorderBrush" Value="{ThemeResource SurfaceStrokeColorDefaultBrush}" />
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="CornerRadius" Value="{ThemeResource OverlayCornerRadius}" />
         <Setter Property="HorizontalContentAlignment" Value="Stretch" />

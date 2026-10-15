@@ -60,7 +60,10 @@ public sealed partial class Browser : INotifyPropertyChanged, IDataset, IDisposa
             var coverage = await store.ReadCoverage();
             return IsAvailable && ReferenceEquals(store, _store) ? coverage : null;
         }
-        catch (OperationCanceledException) { }
+        catch (OperationCanceledException)
+        {
+            System.Diagnostics.Debug.WriteLine("Library coverage read cancelled.");
+        }
         catch (Exception error)
         {
             if (ReferenceEquals(store, _store))
@@ -356,7 +359,10 @@ public sealed partial class Browser : INotifyPropertyChanged, IDataset, IDisposa
                     if (await store.EraseMetadata(entries, CancellationToken.None) is { } failure)
                         throw new VideoException(failure);
                 }
-                catch (OperationCanceledException) { }
+                catch (OperationCanceledException)
+                {
+                    System.Diagnostics.Debug.WriteLine("Library metadata removal cancelled.");
+                }
                 catch (Exception error)
                 {
                     if (ReferenceEquals(store, _store))
@@ -822,7 +828,10 @@ public sealed partial class Browser : INotifyPropertyChanged, IDataset, IDisposa
                 RefreshState();
                 RefreshCommands();
             }
-            catch (OperationCanceledException) { }
+            catch (OperationCanceledException)
+            {
+                System.Diagnostics.Debug.WriteLine("Library search cancelled.");
+            }
             catch (Exception error)
             {
                 if (!cancellation.IsCancellationRequested)
@@ -908,7 +917,10 @@ public sealed partial class Browser : INotifyPropertyChanged, IDataset, IDisposa
                 Changed(nameof(Origins));
             }
         }
-        catch (OperationCanceledException) { }
+        catch (OperationCanceledException)
+        {
+            System.Diagnostics.Debug.WriteLine("Library detail read cancelled.");
+        }
         catch (Exception error)
         {
             if (!cancellation.IsCancellationRequested)

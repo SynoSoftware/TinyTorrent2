@@ -276,6 +276,8 @@ internal sealed partial class Acquisition
         }
         catch (Exception error) when (error is SqliteException or OperationCanceledException)
         {
+            if (error is OperationCanceledException)
+                System.Diagnostics.Debug.WriteLine("Subtitle deletion preparation cancelled.");
             Notify();
             return new Deletion(membership, []);
         }
@@ -353,6 +355,7 @@ internal sealed partial class Acquisition
             }
             catch (OperationCanceledException)
             {
+                System.Diagnostics.Debug.WriteLine($"Subtitle file deletion cancelled ({deletion.Language}).");
                 return;
             }
             catch (Exception error) when (error is IOException or UnauthorizedAccessException)

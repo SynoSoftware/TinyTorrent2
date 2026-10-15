@@ -91,7 +91,10 @@ internal sealed partial class Acquisition
             await run.Finish().ConfigureAwait(false);
             await RefreshCounts().ConfigureAwait(false);
         }
-        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested)
+        {
+            System.Diagnostics.Debug.WriteLine("Saving cancelled subtitle jobs interrupted: worker is stopping.");
+        }
         catch (Microsoft.Data.Sqlite.SqliteException error) { _databaseFailure = error; }
         finally
         {

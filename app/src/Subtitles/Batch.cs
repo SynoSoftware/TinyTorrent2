@@ -265,7 +265,10 @@ internal sealed class Batch : UserControl, INotifyPropertyChanged
             await model.Find(scope, guesses, _entries);
             _batchId = model.BatchId;
         }
-        catch (OperationCanceledException) { }
+        catch (OperationCanceledException)
+        {
+            System.Diagnostics.Debug.WriteLine($"Subtitle batch search cancelled ({scope}).");
+        }
         catch (Exception error)
         {
             _report(error, "failed_subtitle_find");
@@ -285,7 +288,10 @@ internal sealed class Batch : UserControl, INotifyPropertyChanged
         {
             await model.StopFinding();
         }
-        catch (OperationCanceledException) { }
+        catch (OperationCanceledException)
+        {
+            System.Diagnostics.Debug.WriteLine("Stopping the subtitle batch was cancelled.");
+        }
         catch (Exception error)
         {
             _report(error, "failed_subtitle_stop");

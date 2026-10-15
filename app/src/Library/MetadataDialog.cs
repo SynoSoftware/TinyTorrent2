@@ -252,7 +252,11 @@ internal sealed class MetadataDialog : UserControl, IDraft
         {
             block = await _library.Protection(query, _entry.Name, source, cancellation, year, automatic);
         }
-        catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { return; }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+            System.Diagnostics.Debug.WriteLine($"Metadata search protection read cancelled ({source.ProviderId}).");
+            return;
+        }
         catch (Exception error)
         {
             if (!cancellation.IsCancellationRequested && revision == _revision)
@@ -294,7 +298,10 @@ internal sealed class MetadataDialog : UserControl, IDraft
                 _results.ItemsSource = answer.Choices;
             }
         }
-        catch (OperationCanceledException) { }
+        catch (OperationCanceledException)
+        {
+            System.Diagnostics.Debug.WriteLine($"Metadata search cancelled ({source.ProviderId}).");
+        }
         catch (Exception error)
         {
             if (!request.IsCancellationRequested)
@@ -335,6 +342,7 @@ internal sealed class MetadataDialog : UserControl, IDraft
         }
         catch (OperationCanceledException)
         {
+            System.Diagnostics.Debug.WriteLine($"Metadata save cancelled ({source.ProviderId}).");
             return false;
         }
         catch (Exception error)

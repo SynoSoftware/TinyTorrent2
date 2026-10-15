@@ -206,7 +206,10 @@ internal sealed class AccountDialog : UserControl, IDraft
         {
             await _check(Input, cancellation.Token);
         }
-        catch (Exception) when (cancellation.IsCancellationRequested) { }
+        catch (Exception) when (cancellation.IsCancellationRequested)
+        {
+            System.Diagnostics.Debug.WriteLine($"Account check cancelled ({Title}).");
+        }
         finally
         {
             if (_checking == cancellation)

@@ -57,9 +57,13 @@ internal sealed class DataDownload
         // network route causes.
         catch (Exception) when (_interrupted && !_installed)
         {
+            System.Diagnostics.Debug.WriteLine($"Data download interrupted: {_observation.Description}.");
             report(new Library.VideoException(VideoFailure.Interrupted));
         }
-        catch (Exception) when (cancellation.IsCancellationRequested && !_installed) { }
+        catch (Exception) when (cancellation.IsCancellationRequested && !_installed)
+        {
+            System.Diagnostics.Debug.WriteLine($"Data download cancelled: {_observation.Description}.");
+        }
         catch (Exception error)
         {
             report(error);

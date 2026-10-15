@@ -108,7 +108,10 @@ public sealed partial class MainWindow
                             if (!cancellation.IsCancellationRequested)
                                 Model.ShowOutcome(Model.Text.Get("subtitles", "connected"), name);
                         }
-                        catch (OperationCanceledException) { }
+                        catch (OperationCanceledException)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"Subtitle account check cancelled ({supplier.SupplierId}).");
+                        }
                         catch (Exception error) when (!cancellation.IsCancellationRequested)
                         {
                             Model.Report(error, "failed_subtitle_check", name, null);

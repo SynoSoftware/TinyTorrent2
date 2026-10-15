@@ -68,6 +68,11 @@ through the same dataset path as IMDb data, and the flags.
 It also owns the native peer map and its estimated country distribution. The
 [implementation plan](peer-map-plan.md) records the approved scope and validation gaps.
 
+The [communication plan](communication-plan.md) records the reviewed
+responsiveness fixes and the next scoped-subscription design. It distinguishes
+source changes from unverified runtime behavior; the protocol and engine
+contracts remain authoritative.
+
 For TableView work, continue with the [table glossary](../lib/TableView/CONTEXT.md),
 [TableView contract](../lib/TableView/docs/tableview-contract.md), and
 [TableView implementation](../lib/TableView/docs/tableview-implementation.md).

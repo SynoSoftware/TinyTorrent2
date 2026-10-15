@@ -133,10 +133,13 @@ public sealed partial class MainViewModel
             ((RelayCommand)OpenUpdate).Refresh();
             await SaveCheck();
         }
+        catch (OperationCanceledException)
+        {
+            Debug.WriteLine("Update check cancelled.");
+        }
         catch (Exception error)
             when (error
                     is HttpRequestException
-                        or OperationCanceledException
                         or JsonException
                         or IOException
                         or InvalidOperationException

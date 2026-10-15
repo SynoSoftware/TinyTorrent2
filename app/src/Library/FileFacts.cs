@@ -192,7 +192,10 @@ internal sealed class FileFacts(Database database, BackgroundWork work) : IAsync
                 }
             }
         }
-        catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+            System.Diagnostics.Debug.WriteLine("Library file properties read cancelled.");
+        }
         catch (Exception error)
         {
             Failed?.Invoke(this, error);

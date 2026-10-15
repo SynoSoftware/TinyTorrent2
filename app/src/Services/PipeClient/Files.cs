@@ -98,6 +98,7 @@ internal sealed partial class PipeClient
                 if (_files is not null && _inspector is null)
                     return true;
                 request.Completion.TrySetCanceled();
+                System.Diagnostics.Debug.WriteLine("Background torrent file read cancelled: demand changed.");
                 return false;
             }
             if (request.Consumer != Consumer.Inspector && request.Consumer is not null)

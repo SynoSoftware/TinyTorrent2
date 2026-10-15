@@ -383,8 +383,10 @@ public sealed partial class Browser
             if (!found)
                 _outcome = new FetchOutcome.NoMatch();
         }
-        catch (Exception) when (request.Token.IsCancellationRequested) { }
-        catch (OperationCanceledException) { }
+        catch (Exception error) when (request.Token.IsCancellationRequested || error is OperationCanceledException)
+        {
+            System.Diagnostics.Debug.WriteLine($"Library metadata refresh cancelled ({source.ProviderId}).");
+        }
         catch (RequestBlockedException)
         {
             Fetch(source);

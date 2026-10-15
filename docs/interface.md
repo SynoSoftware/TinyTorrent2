@@ -670,9 +670,9 @@ focus the current page's search. Scope labels in global search distinguish a
 command for the selection from a command for all torrents.
 
 The shared `Pane` control owns the Filters and Inspector surfaces: its template
-uses the Settings cards' `LayerOnMicaBaseAltFillColorDefaultBrush` background and
-one-pixel `CardStrokeColorDefaultBrush` outline, with `OverlayCornerRadius`
-corners. Both end four pixels
+uses the Settings cards' `LayerOnMicaBaseAltFillColorDefaultBrush` background,
+a one-pixel `SurfaceStrokeColorDefaultBrush` outline that stays visible in Light
+and Dark, and `OverlayCornerRadius` corners. Both end four pixels
 above the workspace's bottom edge. Filters
 retains its four-pixel side insets; the Inspector has a four-pixel right inset
 to match the table header's right edge. The shared Filters body owns a

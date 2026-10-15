@@ -212,7 +212,11 @@ internal sealed partial class ProviderHttp : IDisposable
         catch (OperationCanceledException error) when (!cancellation.IsCancellationRequested)
         {
             if (route.IsCancellationRequested)
+            {
+                System.Diagnostics.Debug.WriteLine($"Provider request cancelled ({request.RequestUri?.Host}): network route changed.");
                 throw new HttpRouteException("The selected network route changed.", error);
+            }
+            System.Diagnostics.Debug.WriteLine($"Provider request timed out or was interrupted ({request.RequestUri?.Host}).");
             if (call is not null)
                 await call.Policy.Fail(call.Request.Access, new(RequestBlockKind.Backoff)).ConfigureAwait(false);
             throw new HttpRequestException("Provider request was interrupted.", error);

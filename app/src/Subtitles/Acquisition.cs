@@ -96,6 +96,7 @@ internal sealed partial class Acquisition(
         }
         catch (OperationCanceledException)
         {
+            System.Diagnostics.Debug.WriteLine($"Subtitle candidate count cancelled ({scope}).");
             return 0;
         }
     }

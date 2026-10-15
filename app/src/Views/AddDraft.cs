@@ -372,6 +372,7 @@ public sealed class AddDraft : IDraft
             {
                 _observation = _observation with { Execution = new WorkExecution.Cancelling() };
                 _operation.Report(_observation);
+                System.Diagnostics.Debug.WriteLine($"Torrent addition cancelled ({_accepted.Length} sources).");
             }
             return Task.CompletedTask;
         }
@@ -683,7 +684,10 @@ public sealed class AddDraft : IDraft
                 await _pass;
             }
         }
-        catch (OperationCanceledException) { }
+        catch (OperationCanceledException)
+        {
+            System.Diagnostics.Debug.WriteLine("Torrent addition preview polling cancelled.");
+        }
         catch (Exception error)
         {
             _failure = error;
@@ -720,6 +724,7 @@ public sealed class AddDraft : IDraft
             }
             catch (OperationCanceledException) when (token.IsCancellationRequested)
             {
+                System.Diagnostics.Debug.WriteLine($"Torrent addition preview read cancelled ({source.PreviewId}).");
                 return;
             }
             catch (Exception error)

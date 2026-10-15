@@ -360,7 +360,10 @@ public sealed partial class MainWindow
             )
                 Model.Library.Associate(association);
         }
-        catch (OperationCanceledException) { }
+        catch (OperationCanceledException)
+        {
+            System.Diagnostics.Debug.WriteLine("Library file association read cancelled.");
+        }
         catch (Exception error)
         {
             System.Diagnostics.Debug.WriteLine("File association: " + error.GetType().Name);

@@ -502,6 +502,7 @@ internal sealed class Settings : UserControl
         }
         catch (OperationCanceledException)
         {
+            System.Diagnostics.Debug.WriteLine("Subtitle settings save cancelled.");
             return false;
         }
         catch (Exception error)
@@ -531,7 +532,10 @@ internal sealed class Settings : UserControl
             model = current;
             await model.Check();
         }
-        catch (OperationCanceledException) { }
+        catch (OperationCanceledException)
+        {
+            System.Diagnostics.Debug.WriteLine($"Subtitle supplier check cancelled ({model.SupplierId}).");
+        }
         // The status line already says when a used-up allowance returns.
         catch (SubtitleException error)
             when (error.Reason == SubtitleFailure.Quota && _model?.RetryAt > DateTimeOffset.UtcNow)
@@ -561,7 +565,10 @@ internal sealed class Settings : UserControl
             if (ReferenceEquals(model, _model))
                 _scanned = result;
         }
-        catch (OperationCanceledException) { }
+        catch (OperationCanceledException)
+        {
+            System.Diagnostics.Debug.WriteLine("Subtitle file rescan cancelled.");
+        }
         catch (Exception error)
         {
             if (CanReport(model))

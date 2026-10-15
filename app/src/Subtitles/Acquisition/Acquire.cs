@@ -163,6 +163,7 @@ internal sealed partial class Acquisition
                 }
                 catch (OperationCanceledException)
                 {
+                    System.Diagnostics.Debug.WriteLine("Subtitle acquisition cancelled.");
                     lock (_requestSync)
                         foreach (var run in new[] { _manualWork, _automaticWork })
                             if (run is not null)
@@ -179,7 +180,10 @@ internal sealed partial class Acquisition
                 }
             }
         }
-        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested)
+        {
+            System.Diagnostics.Debug.WriteLine("Subtitle worker wait cancelled: worker is stopping.");
+        }
     }
 
     private async Task Validate(Target target, CancellationToken cancellation)
@@ -421,6 +425,7 @@ internal sealed partial class Acquisition
         }
         catch (OperationCanceledException) when (!cancellation.IsCancellationRequested)
         {
+            System.Diagnostics.Debug.WriteLine($"Subtitle lookup cancelled ({target.Language}): target changed.");
             await SetOutcome(target, SubtitleOutcome.Pending, null, cancellation).ConfigureAwait(false);
         }
         catch (Exception error)

@@ -180,6 +180,7 @@ internal sealed partial class PipeClient : IDisposable
                 return;
             _reads.Remove(pending);
             pending.Completion.TrySetCanceled();
+            Debug.WriteLine($"Unsent engine read '{pending.Name}' cancelled ({consumer}): withdrawn.");
         }
     }
 
@@ -289,10 +290,14 @@ internal sealed partial class PipeClient : IDisposable
                     {
                         await Task.Delay(1000, token);
                     }
-                    catch (OperationCanceledException) { }
+                    catch (OperationCanceledException)
+                    {
+                        Debug.WriteLine("Engine reconnect wait cancelled: pipe client is stopping.");
+                    }
                 }
                 catch (OperationCanceledException) when (token.IsCancellationRequested)
                 {
+                    Debug.WriteLine("Engine connection loop cancelled: pipe client is stopping.");
                     break;
                 }
                 catch (IOException) when (token.IsCancellationRequested)
@@ -374,7 +379,10 @@ internal sealed partial class PipeClient : IDisposable
             foreach (var request in _commands.Concat(_reads))
             {
                 if (error is null)
+                {
                     request.Completion.TrySetCanceled(_lifetime.Token);
+                    Debug.WriteLine($"Queued engine request '{request.Name}' cancelled: connection closed.");
+                }
                 else
                     request.Completion.TrySetException(
                         new IOException(_strings.Get("connection", "unavailable"), error)
@@ -392,12 +400,14 @@ internal sealed partial class PipeClient : IDisposable
     // again until it has answered.
     private async Task Refresh(CancellationToken token)
     {
-        try
+        using var stopping = token.Register(() =>
         {
-            while (await _refreshTimer.WaitForNextTickAsync(token))
-                await RefreshSnapshot();
-        }
-        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+            lock (_gate)
+                _refreshTimer.Dispose();
+            Debug.WriteLine("Engine snapshot polling stopped: pipe client is stopping.");
+        });
+        while (await _refreshTimer.WaitForNextTickAsync())
+            await RefreshSnapshot();
     }
 
     internal void SetRefreshInterval(int milliseconds)
@@ -421,18 +431,21 @@ internal sealed partial class PipeClient : IDisposable
     private void UpdateRefreshInterval()
     {
         var period = TimeSpan.FromMilliseconds(_connectionTestActive ? 1000 : _refreshInterval);
-        if (!_disposed && _refreshTimer.Period != period)
+        if (!_disposed && !_lifetime.IsCancellationRequested && _refreshTimer.Period != period)
             _refreshTimer.Period = period;
     }
 
     internal async Task RefreshSnapshot()
     {
-        // The connection loop reports failures from these optional refreshes.
-        try
+        Task read;
+        lock (_gate)
         {
-            await Read(Consumer.Summary, "snapshot");
+            if (_disposed || !_connected)
+                return;
+            read = Read(Consumer.Summary, "snapshot");
         }
-        catch (Exception) { }
+        // The connection loop reports failures from these optional refreshes.
+        await read.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
     }
 
     private async Task Execute(NamedPipeClientStream pipe, Request request, CancellationToken token)
@@ -473,10 +486,12 @@ internal sealed partial class PipeClient : IDisposable
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
+            Debug.WriteLine($"Engine request '{request.Name}' cancelled: connection closed.");
             request.Completion.TrySetCanceled(token);
         }
         catch (OperationCanceledException error) when (deadline.IsCancellationRequested)
         {
+            Debug.WriteLine($"Engine request '{request.Name}' timed out after {RequestTimeout.TotalSeconds} seconds.");
             var failure = new TimeoutException(_strings.Get("connection", "uncertain"), error);
             request.Completion.TrySetException(failure);
             throw failure;
@@ -546,6 +561,7 @@ internal sealed partial class PipeClient : IDisposable
                 && error is OperationCanceledException or IOException or ObjectDisposedException
             )
         {
+            Debug.WriteLine("Engine message receive cancelled: connection closed.");
             lock (_gate)
                 foreach (var pending in _replies.Values)
                     pending.Completion.TrySetCanceled(token);
@@ -613,6 +629,7 @@ internal sealed partial class PipeClient : IDisposable
         }
         catch (OperationCanceledException error) when (!token.IsCancellationRequested)
         {
+            Debug.WriteLine("Engine greeting wait timed out.");
             throw new TimeoutException(strings.Get("connection", "unavailable"), error);
         }
     }
@@ -637,6 +654,7 @@ internal sealed partial class PipeClient : IDisposable
         }
         catch (Exception error) when (error is OperationCanceledException or TimeoutException)
         {
+            Debug.WriteLine("Forwarding the open request to the engine timed out.");
             throw new IOException(strings.Get("connection", "unavailable"), error);
         }
     }

@@ -737,7 +737,10 @@ internal sealed class VideoLookup(
                         Stored?.Invoke(this, EventArgs.Empty);
                     }
                     catch (OperationCanceledException) when (_changingContext
-                        && !run.Cancellation.IsCancellationRequested) { }
+                        && !run.Cancellation.IsCancellationRequested)
+                    {
+                        System.Diagnostics.Debug.WriteLine("Metadata batch lookup cancelled: provider context changed.");
+                    }
                     catch (Exception error) when (error is ProviderException { RetryAt: not null }
                         or RequestBlockedException { Block.RetryAt: not null })
                     {
@@ -755,7 +758,10 @@ internal sealed class VideoLookup(
                 }
             }
         }
-        catch (OperationCanceledException) { }
+        catch (OperationCanceledException)
+        {
+            System.Diagnostics.Debug.WriteLine("Metadata batch cancelled.");
+        }
         catch (Exception error) { BatchFailed?.Invoke(this, error); }
         finally
         {
@@ -862,6 +868,7 @@ internal sealed class VideoLookup(
                         && !_lifetime.IsCancellationRequested
                     )
                 {
+                    System.Diagnostics.Debug.WriteLine($"Interactive metadata lookup cancelled ({option.ProviderId}): lookup context changed.");
                     throw new VideoException(VideoFailure.LookupStopped);
                 }
                 finally
@@ -1368,7 +1375,10 @@ internal sealed class VideoLookup(
                 }
             }
         }
-        catch (OperationCanceledException) { }
+        catch (OperationCanceledException)
+        {
+            System.Diagnostics.Debug.WriteLine($"Automatic metadata lookup cancelled ({context.Option.ProviderId}).");
+        }
         catch (ProviderException) { }
         catch (RequestBlockedException) { }
         catch (Exception error) { Failed?.Invoke(this, error); }

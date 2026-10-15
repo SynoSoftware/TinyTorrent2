@@ -136,7 +136,10 @@ public sealed partial class MainViewModel
             var result = await read(database);
             return ReferenceEquals(database, _database) ? result : default;
         }
-        catch (OperationCanceledException) { }
+        catch (OperationCanceledException)
+        {
+            System.Diagnostics.Debug.WriteLine("Database summary read cancelled.");
+        }
         catch (Exception error)
         {
             if (ReferenceEquals(database, _database))
@@ -405,7 +408,10 @@ public sealed partial class MainViewModel
             }
             RefreshFeedback();
         }
-        catch (OperationCanceledException) when (subtitles.IsDisposed) { }
+        catch (OperationCanceledException) when (subtitles.IsDisposed)
+        {
+            System.Diagnostics.Debug.WriteLine("Subtitle reconciliation cancelled: worker is stopping.");
+        }
         catch (Exception error)
         {
             lock (_featuresGate)
