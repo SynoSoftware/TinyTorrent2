@@ -3,6 +3,7 @@
 #include "Resources.h"
 #include <algorithm>
 #include <commctrl.h>
+#include <dwmapi.h>
 #include <shellapi.h>
 #include <shobjidl.h>
 #include <propkey.h>
@@ -119,6 +120,14 @@ HWND FindWinUiWindow(DWORD processId)
         return FALSE;
     }, reinterpret_cast<LPARAM>(&target));
     return target.window;
+}
+
+// The window stays cloaked until it is ready or has a connection failure to show.
+bool IsShown(HWND window)
+{
+    DWORD cloaked = 0;
+    return window && IsWindowVisible(window) &&
+        SUCCEEDED(DwmGetWindowAttribute(window, DWMWA_CLOAKED, &cloaked, sizeof(cloaked))) && !cloaked;
 }
 
 // Makes the taskbar relaunch the engine, under the product's name and icon,
@@ -519,6 +528,15 @@ void Application::OnTimer()
             }
         }
     }
+    // A launched window that appears without `ready` shows its own failure,
+    // so the splash closes and the engine reports nothing.
+    if (waitingSince_ && exit_ == ExitPhase::Idle && ShownWindow())
+    {
+        waitingSince_ = 0;
+        reopen_ = false;
+        launchedAt_ = 0;
+        splash_.Close();
+    }
     if (waitingSince_ && GetTickCount64() - waitingSince_ > windowTimeout)
     {
         waitingSince_ = 0;
@@ -875,6 +893,17 @@ bool Application::Open()
     }
     if (IsWindowRunning())
     {
+        // It will not send `ready`, so waiting would only end in a false report.
+        if (auto window = ShownWindow())
+        {
+            reopen_ = false;
+            if (IsIconic(window))
+            {
+                ShowWindow(window, SW_RESTORE);
+            }
+            SetForegroundWindow(window);
+            return true;
+        }
         if (!waitingSince_)
         {
             waitingSince_ = GetTickCount64();
@@ -947,6 +976,16 @@ bool Application::Open()
 bool Application::IsWindowRunning() const
 {
     return process_ && WaitForSingleObject(process_.get(), 0) == WAIT_TIMEOUT;
+}
+
+HWND Application::ShownWindow() const
+{
+    if (windowClient_ || !IsWindowRunning())
+    {
+        return nullptr;
+    }
+    auto window = FindWinUiWindow(GetProcessId(process_.get()));
+    return IsShown(window) ? window : nullptr;
 }
 
 void Application::Exit()

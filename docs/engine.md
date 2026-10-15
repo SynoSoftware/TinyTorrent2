@@ -736,7 +736,11 @@ the notice open, so Retry stays available after the person checks the folder.
 There is no second recovery dialog.
 A launched WinUI that hands off to an existing window and exits is not a launch
 failure. If readiness times out while the process is still alive, report that it
-has not opened; a timeout does not authorize another launch.
+has not opened; a timeout does not authorize another launch. A launched window
+that appears without `ready` shows its own connection failure, such as an engine
+of another version, so the splash closes and nothing is reported; Open then
+raises that window rather than waiting for a `ready` it will not send, and
+closing it opens nothing.
 Opening again reuses the existing activation handling and process checks,
 without resubmitting an addition whose outcome is unknown. Existing transfers
 continue after a failed Open. A late ready window ends the splash wait.
@@ -916,7 +920,8 @@ Exit is waiting for that choice; the window timeout pauses for the person and
 resumes when closing continues. A failed window-close preparation cancels Exit
 and preserves the window. Open during Exit is refused as shutting down rather than
 acknowledged and discarded. Reopening a disconnected but living window retains its
-process and starts the same bounded readiness wait used for a new window.
+process and starts the same bounded readiness wait used for a new window; a
+window already on screen is raised instead.
 
 If the final save fails, report it through the tray and keep the engine alive.
 Choosing Exit again retries the same shutdown operation. Do not discard unsaved

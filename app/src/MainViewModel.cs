@@ -52,7 +52,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     private string[] _revealIds = [];
     private string _sessionId = string.Empty;
     private bool _connected;
-    private string? _connectionReason;
+    private PipeClient.Disconnection? _disconnection;
     private bool _loaded;
     private bool _ready;
     private bool _shuttingDown;
@@ -217,12 +217,14 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             if (_presentedStatus is { } presented)
                 return presented;
 #endif
-            var reason = _connectionReason ?? string.Empty;
+            var reason = _disconnection?.Reason ?? string.Empty;
             if (!_connected)
             {
                 if (_sessionId.Length == 0 && reason.Length == 0)
                     return null;
-                var title = _sessionId.Length == 0 ? "not_started" : "stopped";
+                var title = _disconnection is { IsOtherVersion: true } ? "other_version"
+                    : _sessionId.Length == 0 ? "not_started"
+                    : "stopped";
                 var stopped = Text.Get("window", "disconnected");
                 return new(
                     Text.Get("notifications", title),
@@ -315,7 +317,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     public event EventHandler? ConfirmExitRequested;
     public event EventHandler<string>? AnnouncementRequested;
     public ICommand Restart { get; }
-    public bool CanRestart => !_connected && _connectionReason is not null;
+    public bool CanRestart => IsDisconnected && _disconnection is { IsOtherVersion: false };
+    public bool IsDisconnected => !_connected && _disconnection is not null;
     public string RestartText => Text.Get("connection", "restart");
     private ICommand RetryFeatures { get; }
     private ICommand DeleteDatabase { get; }
@@ -683,7 +686,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
                 if (!_closed)
                     RequestSettings(new(SettingsCategory.General, setting));
             });
-        _client.Disconnected += reason =>
+        _client.Disconnected += disconnection =>
             _dispatcher.TryEnqueue(() =>
             {
                 if (_closed)
@@ -693,7 +696,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
                     _limitsChoice = null;
                 _waiting = null;
                 _restriction = null;
-                _connectionReason = reason;
+                _disconnection = disconnection;
                 _ready = false;
                 AddDraft.Invalidate();
                 Inspector.Disconnect();
@@ -766,7 +769,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             AddDraft.Invalidate();
         _sessionId = sessionId;
         _connected = true;
-        _connectionReason = null;
+        _disconnection = null;
         _loading = snapshot.TryGetProperty("loading", out var startup) && startup.GetBoolean();
         _storageFailed =
             snapshot.TryGetProperty("storage_failed", out var storage) && storage.GetBoolean();

@@ -436,7 +436,7 @@ public sealed partial class MainWindow : Window
             )
                 RefreshLibraryFilters();
         }
-        if (Model.CanRestart)
+        if (Model.IsDisconnected)
             Reveal();
         if (
             string.IsNullOrEmpty(args.PropertyName)

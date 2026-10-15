@@ -40,7 +40,7 @@ internal sealed class TorrentSource : IAsyncDisposable
             || snapshot.GetProperty("storage_failed").GetBoolean()
         )
         {
-            Disconnect(string.Empty);
+            Disconnect(new(string.Empty, false));
             return;
         }
         var invalidated = false;
@@ -99,7 +99,7 @@ internal sealed class TorrentSource : IAsyncDisposable
         _generation = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
     }
 
-    private void Disconnect(string reason)
+    private void Disconnect(PipeClient.Disconnection disconnection)
     {
         lock (_gate)
         {

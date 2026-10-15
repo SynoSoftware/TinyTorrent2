@@ -102,7 +102,7 @@ internal sealed partial class PipeClient : IDisposable
     }
 
     internal event Action<JsonElement>? Snapshot;
-    internal event Action<string>? Disconnected;
+    internal event Action<Disconnection>? Disconnected;
     internal event Action<string>? Control;
 
     // The engine names the Settings card to open.
@@ -240,17 +240,24 @@ internal sealed partial class PipeClient : IDisposable
                         throw;
                     }
                     var hello = await ReadGreeting(pipe, _strings, token);
+                    var store = hello.TryGetProperty("data_directory", out var directory)
+                        ? directory.GetString()
+                        : null;
+#if DEBUG
+                    // Preserve this engine's store before replacing its process.
+                    // Another build's engine stops before its version is
+                    // checked, because a different version is the usual case.
+                    if (!_hasConnected && StopOtherEngine(pipe))
+                    {
+                        _dataDirectory = store ?? _dataDirectory;
+                        continue;
+                    }
+#endif
+                    CheckVersion(pipe, hello, _strings);
                     _ =
                         hello.GetProperty("session_id").GetString()
                         ?? throw new InvalidDataException();
-                    _dataDirectory = hello.TryGetProperty("data_directory", out var directory)
-                        ? directory.GetString()
-                        : _dataDirectory;
-#if DEBUG
-                    // Preserve this engine's store before replacing its process.
-                    if (!_hasConnected && StopOtherEngine(pipe))
-                        continue;
-#endif
+                    _dataDirectory = store ?? _dataDirectory;
                     _hasConnected = true;
                     lock (_gate)
                     {
@@ -279,7 +286,7 @@ internal sealed partial class PipeClient : IDisposable
                                 ? launchFailure?.Message ?? string.Empty
                                 : error.Message;
                         if (message != lastFailure)
-                            Disconnected?.Invoke(message);
+                            Disconnected?.Invoke(new(message, error is VersionException));
                         lastFailure = message;
                     }
                     try
@@ -591,17 +598,54 @@ internal sealed partial class PipeClient : IDisposable
         try
         {
             var hello = await Read(pipe, deadline.Token);
-            if (
-                hello.GetProperty("type").GetString() != "hello"
-                || hello.GetProperty("version").GetInt32() != 19
-            )
-                throw new InvalidDataException(strings.Get("connection", "version"));
+            if (hello.GetProperty("type").GetString() != "hello")
+                throw new InvalidDataException(strings.Get("connection", "unavailable"));
             return hello;
         }
         catch (OperationCanceledException error) when (!token.IsCancellationRequested)
         {
             Debug.WriteLine("Engine greeting wait timed out.");
             throw new TimeoutException(strings.Get("connection", "unavailable"), error);
+        }
+    }
+
+    // Another version stays unusable however often the window retries, so the
+    // message says where that engine runs: another folder's engine exits from
+    // the tray, while a folder holding both versions needs reinstalling.
+    private static void CheckVersion(NamedPipeClientStream pipe, JsonElement hello, Strings strings)
+    {
+        if (hello.TryGetProperty("version", out var version) && version.GetInt32() == 19)
+            return;
+        var message = EnginePath(pipe) switch
+        {
+            null => strings.Get("connection", "version_hidden"),
+            { } path when IsAdjacent(path) => strings.Get("connection", "version"),
+            { } path => strings.Format("connection", "version_elsewhere", Path.GetDirectoryName(path)!),
+        };
+        throw new VersionException(message);
+    }
+
+    private static string AdjacentEngine => Path.Combine(AppContext.BaseDirectory, EngineFile);
+
+    private static bool IsAdjacent(string path) =>
+        string.Equals(path, AdjacentEngine, StringComparison.OrdinalIgnoreCase);
+
+    // The executable of the engine serving `pipe`, compared as launched, which
+    // matches because the window starts the engine beside it. Windows hides the
+    // path of an engine running as administrator.
+    private static string? EnginePath(NamedPipeClientStream pipe)
+    {
+        if (!GetNamedPipeServerProcessId(pipe.SafePipeHandle, out var id))
+            return null;
+        try
+        {
+            using var engine = Process.GetProcessById((int)id);
+            return engine.MainModule?.FileName;
+        }
+        catch (Exception error)
+            when (error is ArgumentException or Win32Exception or InvalidOperationException)
+        {
+            return null;
         }
     }
 
@@ -612,7 +656,7 @@ internal sealed partial class PipeClient : IDisposable
             using var pipe = CreatePipe();
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(3));
             await pipe.ConnectAsync(timeout.Token);
-            await ReadGreeting(pipe, strings, timeout.Token);
+            CheckVersion(pipe, await ReadGreeting(pipe, strings, timeout.Token), strings);
             await Write(pipe, new { request_id = 1, command = "open" }, timeout.Token);
             while (true)
             {
@@ -643,10 +687,9 @@ internal sealed partial class PipeClient : IDisposable
     // rather than a path a pipe peer reported.
     internal static void StartEngine(Strings strings, params string[] arguments)
     {
-        var adjacent = Path.Combine(AppContext.BaseDirectory, EngineFile);
-        if (!File.Exists(adjacent))
+        if (!File.Exists(AdjacentEngine))
             throw new FileNotFoundException(strings.Format("connection", "missing", EngineFile));
-        var start = new ProcessStartInfo(adjacent)
+        var start = new ProcessStartInfo(AdjacentEngine)
         {
             UseShellExecute = false,
             CreateNoWindow = true,
@@ -665,24 +708,16 @@ internal sealed partial class PipeClient : IDisposable
     // because the capture output's copy may serve a review's disposable store.
     private static bool StopOtherEngine(NamedPipeClientStream pipe)
     {
-        if (!GetNamedPipeServerProcessId(pipe.SafePipeHandle, out var id))
+        // An engine running as administrator hides its path, so it keeps running.
+        if (
+            EnginePath(pipe) is not { } path
+            || IsAdjacent(path)
+            || !GetNamedPipeServerProcessId(pipe.SafePipeHandle, out var id)
+        )
             return false;
         try
         {
-            using var current = Process.GetCurrentProcess();
             using var engine = Process.GetProcessById((int)id);
-            // Paths compare as launched, which matches because this window
-            // starts the engine beside it. An engine running as administrator
-            // hides its path, so it keeps running.
-            var adjacent = Path.Combine(
-                Path.GetDirectoryName(current.MainModule!.FileName)!,
-                EngineFile
-            );
-            if (
-                engine.MainModule?.FileName is not { } path
-                || string.Equals(path, adjacent, StringComparison.OrdinalIgnoreCase)
-            )
-                return false;
             engine.Kill();
             return engine.WaitForExit(5000);
         }
@@ -720,7 +755,7 @@ internal sealed partial class PipeClient : IDisposable
     // handlers reported, which is the person's evidence that they remain.
     internal async Task RepairMachine(IEnumerable<string> classes)
     {
-        var start = new ProcessStartInfo(Path.Combine(AppContext.BaseDirectory, EngineFile))
+        var start = new ProcessStartInfo(AdjacentEngine)
         {
             UseShellExecute = true,
             Verb = "runas",
@@ -803,6 +838,12 @@ internal sealed partial class PipeClient : IDisposable
             _lifetime.Dispose();
         }
     }
+
+    // Why the window has no engine. An engine of another version keeps running,
+    // so restarting the window's own engine cannot replace it.
+    internal readonly record struct Disconnection(string Reason, bool IsOtherVersion);
+
+    private sealed class VersionException(string message) : Exception(message);
 
     private sealed record PendingReply(Request Request, bool ChangesFiles)
     {

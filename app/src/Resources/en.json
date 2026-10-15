@@ -632,7 +632,9 @@
   },
   "connection": {
     "restart": "Restart",
-    "version": "The engine and window versions don't match. Install a complete TinyTorrent release.",
+    "version": "The engine and window in this folder are from different versions. Reinstall TinyTorrent.",
+    "version_elsewhere": "Another version of TinyTorrent is running from {0}. Choose Exit in the tray, then start TinyTorrent again.",
+    "version_hidden": "Another version of TinyTorrent is running. Choose Exit in the tray, then start TinyTorrent again.",
     "unavailable": "The engine is unavailable.",
     "overload": "Too many commands are pending. Try again shortly.",
     "uncertain": "The connection was lost. TinyTorrent is reconnecting to confirm the current state.",
@@ -1354,6 +1356,7 @@
     "finished": "Download finished",
     "stopped": "Downloads stopped",
     "not_started": "Engine not started",
+    "other_version": "Engine version mismatch",
     "storage_tip": "Open the engine data folder",
     "language_tip": "Open Settings to choose the language again",
     "storage": "Downloads not loaded",

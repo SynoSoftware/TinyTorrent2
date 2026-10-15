@@ -51,6 +51,9 @@ private:
     void ForgetWindow();
     bool Open();
     bool IsWindowRunning() const;
+    // The launched window when it is on screen without a connection to this
+    // engine, showing its own failure, such as an engine of another version.
+    HWND ShownWindow() const;
     void Exit();
     bool ConfirmExit();
     void BeginExit();

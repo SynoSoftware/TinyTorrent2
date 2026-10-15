@@ -72,14 +72,20 @@ current application state. Start with the operations the actual window needs.
 
 The first message carries the protocol version and an engine-session identity.
 Both executables ship together, so reject a different version with a usable
-error rather than negotiating. Raise the version with every change to a
+error rather than negotiating. Retrying never fixes it, so the error says where
+the other engine runs, read from the pipe's server process: an engine from
+another folder is exited from the tray, and a folder holding both versions is
+reinstalled. Restart starts the engine beside the window, which cannot replace
+a running engine, so the window does not offer it. Raise the version with every change to a
 message's fields, because developer builds from different commits share one
 engine per user and otherwise fail on a missing field instead of this error. The session identity lets a restart invalidate
 previews and other transient references; durable torrent identities survive a
 restart, and info hashes do not replace them.
-The greeting also gives the engine executable and absolute data-directory paths
-for an explicit Restart, so a surviving window restarts the same saved store rather
-than silently choosing a different developer or user-data location.
+The greeting also gives the absolute data-directory path for an explicit
+Restart, so a surviving window restarts the same saved store rather than silently
+choosing a different developer or user-data location. A window ignores it from
+an engine of another version, except a debug build that replaces that engine and
+keeps its store.
 
 ## Outcomes and reconnection
 
